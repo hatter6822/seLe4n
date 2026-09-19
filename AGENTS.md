@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.107.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.108.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3368,7 +3368,7 @@ this time on a queue that is not empty.  **And the tree had already decided it i
 the other artefact**: `intrusiveQueueWellFormedB`, the check every harness state is
 asserted against, has required `headTcb.queuePPrev = some .endpointHead` since it was
 written — *one question answered in two places*, with the Bool right and the Prop
-wrong, and the divergence sitting exactly where the proofs are silent.  Five things
+wrong, and the divergence sitting exactly where the proofs are silent.  Six things
 new code must respect.
 
 (1) **The clause lives in `intrusiveQueueWellFormed`'s P2**, beside `queuePrev =
@@ -3393,6 +3393,33 @@ re-derives `endpointQueueNoDup`'s disjointness clause) and
 `endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent` the builder.  So nothing
 *assumes* exclusivity; the conjunct exists so the bundle can **transport** it
 without reading an `ipcState`, which is what keeps it inside this bundle's charter.
+
+**...and it is checked at runtime too — since `v0.35.108`, not since it was added**
+(PR #897 review).  RR8.3's item (6) had recorded the rule one cut earlier ("the
+conjunct is checked at runtime, not only proved") and `v0.35.106` added the conjunct
+with no check, so this is that rule unswept at the very next opportunity.  The gap
+was not one omitted call: **nothing** in `stateInvariantChecksFor` was
+cross-endpoint — `endpointDualQueueWellFormedB` is literally the two per-queue
+checks of one endpoint — and nothing tied an endpoint queue's head to its own
+`ipcState`, so a state the bundle refuses passed the entire surface.  Two endpoints
+each holding `{head := some t, tail := some t}` over one thread the live enqueue
+left with `(none, some .endpointHead, none)` is that state, and popping either queue
+then clears `t`'s links and strands the other: the OD1.1 / OD3.9 stranding class a
+fourth time, on a queue that is not empty.  `endpointQueueHeadDisjointChecks` asks,
+per occupied head, whether any **other** `(endpoint, kind)` claims it — so it is
+robust to a repeated index entry and it names the colliding pair, which is the whole
+content of a disjointness failure.  Three things its witness records.  A violating
+state **cannot** be reached by live operations (every kernel queue writer maintains
+disjointness by construction, which is why the conjunct is provable), so the witness
+writes the second endpoint's boundary by hand through `corruptEndpointQueueHeads`,
+as the RR8.3 witnesses write a corrupted back-pointer by hand.  Its claim is a
+**differential** against the control rather than "the only failing check is the new
+one", because `baseState`'s TCBs are unsynced and two `threadState` checks fail on
+both states — a plain claim there would have been false for a reason unrelated to
+the finding.  And the strand is measured rather than described: the pop is taken
+with `expectOkVal`, because `expectOkSt` asserts the invariant surface on the
+post-state and that post-state is the corrupt one the finding is about.  The golden
+trace's `[PIP-005]` count moved 28 → 29, which is the measurement that it runs.
 
 (4) **A writer discharges it locally, from its own guard.**
 `endpointQueueHeadDisjoint_of_singleQueueUpdate` (itself derived from the general

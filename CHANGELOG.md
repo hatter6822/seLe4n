@@ -1,3 +1,68 @@
+## v0.35.108 — the fifth conjunct is checked at runtime
+
+**PR #897 review (Codex P2).**  `v0.35.106` added `endpointQueueHeadDisjoint` as
+`dualQueueSystemInvariant`'s fifth conjunct and added no runtime check — one cut
+after WS-RR RR8.3's item (6) had recorded the rule that a conjunct is *checked at
+runtime, not only proved*.  So this is that rule unswept at the very next
+opportunity, which is the shape this project keeps paying for: a rule written down
+is not a rule enforced.
+
+**The gap was the whole surface, not one omitted call.**  Nothing in
+`stateInvariantChecksFor` was cross-endpoint — `endpointDualQueueWellFormedB` is
+literally `intrusiveQueueWellFormedB sendQ && intrusiveQueueWellFormedB receiveQ`
+for *one* endpoint — and nothing tied an endpoint queue's head to its own
+`ipcState`.  Two endpoints each holding `{head := some t, tail := some t}`, over one
+thread the live enqueue left with `(queuePrev := none, queuePPrev := some
+.endpointHead, queueNext := none)`, therefore passed **every** check the harness
+runs while the proof bundle refuses the state.  `assertStateInvariantsFor` would
+have accepted such a fixture, and popping either queue then clears the shared TCB's
+links and leaves the other queue's head unlinked — the OD1.1 / OD3.9 stranding
+class a fourth time, on a queue that is not even empty.
+
+`endpointQueueHeadDisjointChecks` asks, per occupied head, whether any **other**
+`(endpoint, queue kind)` claims the same one.  Per-occupied-head rather than "count
+the claimants and expect one", so a repeated entry in `objectIndex` cannot be
+mis-reported as a violation; and it names the colliding pair, because *which* two
+queues collide is the whole content of a disjointness failure.
+`endpointQueueHeadDisjointBool` is the single-boolean form, for suites and for the
+witness, mirroring `queuePPrevAgreesWithPrevBool`.
+
+**Three things the witness records, and each is a correction to a first draft.**
+A violating state **cannot** be reached by live operations — every kernel queue
+writer maintains disjointness by construction, which is exactly why the conjunct is
+provable — so `runEndpointQueueHeadDisjointChecks` installs the shared head with
+the *live* `endpointSendDual` on one endpoint and writes only the second endpoint's
+boundary by hand, through a new `corruptEndpointQueueHeads` sibling of
+`corruptThreadQueueLinks`.  Its central claim is a **differential** against the
+control rather than "the only failing check is the new one": that plainer form was
+written first and is false, because `baseState`'s TCBs carry `threadState :=
+.Inactive` unsynced, so `threadStateConsistentChecks` and
+`threadInactiveFlagConsistentChecks` fail on *both* states — documented behaviour of
+those two, and a claim that tripped on it would have been false for a reason
+unrelated to the finding.  And the strand is measured rather than described: the pop
+is taken with `expectOkVal`, not `expectOkSt`, because the latter asserts the
+invariant surface on the post-state and that post-state is the corrupt one the
+finding is about — asserting it away would have deleted the payoff.
+
+**Measurements.**  The golden trace's `[PIP-005]` count moves 28 → 29, which is the
+evidence the check runs; that one line is the only fixture change.  The witness was
+mutation-tested against the **pre-fix surface** — the check defined but not appended
+to `stateInvariantChecksFor` — and fails there on exactly the clause that asserts
+the surface reports it, so it discriminates on reachability from the surface rather
+than on the check's own body.  Five Tier 3 anchors, two of them relations —
+that the check is *reached* from `stateInvariantChecksFor` and that the runner is
+*called* from the dispatcher — since a definition nothing calls is precisely the
+state this cut closes.
+
+One mechanical note, and it is this project's own rule catching the author.  The
+dispatcher anchor was first written against the registration line *including its
+trailing comment*; hand-testing it with raw `rg` passed and Tier 3 failed, because
+`run_check` reads the comment-free code view.  *Gates read code, prose reads prose*
+— so an anchor verified with a bare `rg` has not been verified at all, and the
+relation is now a gap from `runNegativeChecks` to the call, which is the code.
+
+Refs: docs/spec/SELE4N_SPEC.md §8.12 (dualQueueSystemInvariant)
+
 ## v0.35.107 — the first donating arm declares a scheduler footprint
 
 **WS-RR RR8.12 (Cut 8a-ii).**  `UncoveredLockDomain.syscallSeamSchedulerDomain`

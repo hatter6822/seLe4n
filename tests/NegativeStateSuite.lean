@@ -181,6 +181,30 @@ private def corruptThreadQueueLinks
       }
   | _ => .error .objectNotFound
 
+/-- **PR #897 review (`v0.35.108`)**: the sibling of `corruptThreadQueueLinks`, one
+level up — write an endpoint's two queue boundaries directly.
+
+Needed because the fifth `dualQueueSystemInvariant` conjunct is *cross*-endpoint, so
+no sequence of live operations can reach a violating state: every kernel queue
+writer maintains disjointness by construction, which is exactly why the conjunct is
+provable.  A witness for it therefore has to write the second endpoint by hand, as
+the pairing witnesses write a corrupted back-pointer by hand. -/
+private def corruptEndpointQueueHeads
+    (st : SystemState)
+    (epId : SeLe4n.ObjId)
+    (sendHead recvHead : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match (st.objects[epId]? : Option KernelObject) with
+  | some (.endpoint ep) =>
+      .ok {
+        st with
+        objects := st.objects.insert epId (.endpoint {
+          ep with
+          sendQ := { head := sendHead, tail := sendHead }
+          receiveQ := { head := recvHead, tail := recvHead }
+        })
+      }
+  | _ => .error .objectNotFound
+
 -- WS-F2 untyped memory test constants and states
 private def f2UntypedObjId : SeLe4n.ObjId := ⟨80⟩
 private def f2UntypedChildId : SeLe4n.ObjId := ⟨81⟩
@@ -1524,6 +1548,104 @@ private def runDualQueueTailPairingChecks : IO Unit := do
   expectBool "...so the whole guard is false, and only because of the tail"
     (SeLe4n.Model.dualQueueRemovalGuard qS (SeLe4n.ThreadId.ofNat 7) tcbS .endpointHead) false
 
+/-- **PR #897 review (`v0.35.108`)**: the FIFTH `dualQueueSystemInvariant`
+conjunct's runtime check, and the state that shows the surface was silent about it.
+
+`v0.35.106` added `endpointQueueHeadDisjoint` and added no runtime check, one cut
+after WS-RR RR8.3 had recorded the rule that a conjunct is *checked at runtime, not
+only proved*.  The gap ran wider than one omitted call: **nothing** in
+`stateInvariantChecksFor` was cross-endpoint — `endpointDualQueueWellFormedB` is
+literally the two per-queue checks of one endpoint — and nothing tied an endpoint
+queue's head to its own `ipcState`.  So a state the proof bundle refuses passed
+every check the harness runs, and `assertStateInvariantsFor` would have accepted a
+fixture on which popping either queue clears the shared TCB's links and strands the
+other queue: the OD1.1 / OD3.9 stranding class a fourth time, on a queue that is
+not even empty.
+
+Four assertions, and the third and fourth are what make the first two about the
+*cross-endpoint* fact rather than about queue well-formedness. -/
+private def runEndpointQueueHeadDisjointChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  -- `wrongTypeId` is a second, genuine `.endpoint` installed in `baseState` for an
+  -- unrelated wrong-kind lookup test.  It is used here because it is already in
+  -- `objectIndex`, which a raw insert of a fresh object would not maintain — and
+  -- the check reads `st.objectIndex`, so an object outside it is invisible.
+  let otherEndpointId := wrongTypeId
+  -- The shared head is installed by the LIVE operation on one endpoint, so its TCB
+  -- links are exactly what the kernel writes; only the second endpoint's boundary
+  -- is written by hand.
+  let (_, stSingle) ← expectOkSt "head disjoint: enqueue the sole sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let stShared ← expectOkVal "head disjoint: a SECOND endpoint claims the same head"
+    (corruptEndpointQueueHeads stSingle otherEndpointId none (some (SeLe4n.ThreadId.ofNat 7)))
+
+  -- (1) the state the bundle refuses is refused by the runtime check too.
+  expectBool "two queues sharing one head FAIL the head-disjointness check"
+    (endpointQueueHeadDisjointBool stShared) false
+  expectBool "...and `stateInvariantChecksFor` reports it"
+    ((stateInvariantChecksFor stShared.objectIndex stShared).any
+      (fun c => !c.2 && c.1.startsWith "endpoint queue heads disjoint")) true
+
+  -- (2) the control: the same state before the second endpoint claimed the head.
+  expectBool "control: one queue, one head — the check passes"
+    (endpointQueueHeadDisjointBool stSingle) true
+
+  -- (3) **the decisive half.**  Every OTHER check in the surface accepts the
+  -- violating state: both queues are well formed (the hand-written one is
+  -- `{head := some 7, tail := some 7}` over a TCB the live enqueue left with
+  -- `queuePrev = none`, `queuePPrev = some .endpointHead`, `queueNext = none`), and
+  -- the RR8.3 pairing is untouched because no TCB was written at all.  So before
+  -- this cut the harness's verdict on `stShared` was *clean*.
+  expectBool "the RR8.3 pairing ACCEPTS it — no TCB was written"
+    (queuePPrevAgreesWithPrevBool stShared) true
+  expectBool "both endpoints' queues are individually WELL FORMED"
+    ((stateInvariantChecksFor stShared.objectIndex stShared).all
+      (fun c => c.2 || !(c.1.startsWith "endpoint intrusive"
+        || c.1.startsWith "endpoint dual-queue"))) true
+  -- ...and the claim stated as a DIFFERENTIAL against the control, which is what
+  -- "the surface was silent" means.  A plain "the only failing check is the new
+  -- one" would be false for a reason that has nothing to do with the shared head:
+  -- `baseState`'s TCBs carry `threadState := .Inactive` and were never synced, so
+  -- `threadStateConsistentChecks` and `threadInactiveFlagConsistentChecks` fail on
+  -- BOTH states.  That is the documented behaviour of those two — they validate
+  -- inference self-consistency, not operational drift, which is why
+  -- `assertStateInvariantsFor` syncs before it checks.  Subtracting the control's
+  -- failures leaves exactly the two rows the new check reports, one per colliding
+  -- queue.
+  let failing (st : SystemState) : List String :=
+    ((stateInvariantChecksFor st.objectIndex st).filter (fun c => !c.2)).map (·.1)
+  let sharedOnly := (failing stShared).filter (fun l => !((failing stSingle).contains l))
+  expectBool "the shared head adds EXACTLY the new check's rows and nothing else"
+    (sharedOnly.all (fun l => l.startsWith "endpoint queue heads disjoint")) true
+  expectBool "...and it adds one row per colliding queue, so the pair is named"
+    (sharedOnly.length == 2) true
+
+  -- (4) and the strand itself: popping one queue clears the shared TCB's links, so
+  -- the other queue's head is left unlinked and its own removal is then refused —
+  -- which is what a state the bundle refuses buys an attacker who can reach it.
+  -- `expectOkVal`, not `expectOkSt`: the latter asserts the invariant surface on the
+  -- post-state, and this post-state is the corrupt one the finding is ABOUT — the
+  -- pop succeeds and leaves the other endpoint's receive queue malformed, which is
+  -- the two rows it would report.  Asserting them away would delete the payoff.
+  let (_, stPopped) ← expectOkVal "head disjoint: pop the shared head from ONE queue"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stShared)
+  expectBool "the pop leaves the OTHER endpoint's queue malformed"
+    ((stateInvariantChecksFor stPopped.objectIndex stPopped).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive receiveQ invariant")) true
+  expectBool "the shared TCB's links are cleared by that pop"
+    (match stPopped.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == none && tcb.queuePrev == none && tcb.queueNext == none
+     | none => false) true
+  expectErr "...and the OTHER queue can now never dequeue its own head"
+    (SeLe4n.Kernel.endpointQueueRemoveDual otherEndpointId true (SeLe4n.ThreadId.ofNat 7)
+      stPopped)
+    .endpointQueueEmpty
+  -- The conjunct, elaborated because a run cannot exercise a theorem.
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint
+  pure ()
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1533,6 +1655,7 @@ private def runNegativeChecks : IO Unit := do
   runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
   runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
   runDualQueueTailPairingChecks                         -- WS-RR RR8.4
+  runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).

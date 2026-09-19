@@ -1118,6 +1118,31 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds[^\n
 # chain unmoved (`tests/NegativeStateSuite.lean`).
 run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrevChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*queuePPrevAgreesWithPrevChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
+# PR #897 review (`v0.35.108`): and the FIFTH conjunct's check, which `v0.35.106`
+# did not add -- one cut after RR8.3 recorded the rule that a conjunct is checked at
+# runtime and not only proved.  RELATION, not presence: the check must be REACHED
+# from `stateInvariantChecksFor`, since a definition nothing calls is exactly the
+# state the finding is about.  Mutation: keep the definition and drop the `++` from
+# the surface -- which is the pre-fix tree, and which the NegativeStateSuite witness
+# was verified to fail on.
+run_check "INVARIANT" rg -n '^def endpointQueueHeadDisjointChecks \(' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjointChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
+# ...and the witness that shows the surface was silent, with its own decisive shape:
+# the violating state is reached by a LIVE enqueue plus one hand-written endpoint
+# boundary (no kernel writer can build it -- disjointness is maintained by
+# construction, which is why the conjunct is provable), and the claim is a
+# DIFFERENTIAL against the control, because `baseState`'s unsynced `threadState`
+# fields make two unrelated checks fail on both states.
+run_check "INVARIANT" rg -n '^private def runEndpointQueueHeadDisjointChecks : IO Unit' tests/NegativeStateSuite.lean
+# RELATION: the runner is CALLED from the dispatcher, since a runner nothing calls
+# is the same silence one artefact over.  Written as a gap from `runNegativeChecks`
+# rather than as the registration line with its trailing comment -- `run_check` reads
+# the comment-free code view, so an anchor on `-- PR #897 review` is satisfied by
+# nothing and fails on a clean tree.  (It did: hand-testing with raw `rg` passed and
+# the gate failed, which is exactly the *gates read code, prose reads prose* rule.)
+run_check "INVARIANT" bash -lc 'rg -U -n "def runNegativeChecks[^\n]*(\n([ \t][^\n]*)?)*runEndpointQueueHeadDisjointChecks" tests/NegativeStateSuite.lean'
+
+run_check "INVARIANT" rg -n '^private def corruptEndpointQueueHeads$' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n '^private def runDualQueuePPrevPairingChecks' tests/NegativeStateSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "private def runNegativeChecks[^\n]*(\n([ \t][^\n]*)?)*runDualQueuePPrevPairingChecks" tests/NegativeStateSuite.lean'
 # The retype replacement is pristine in `queuePPrev` too, and that is not

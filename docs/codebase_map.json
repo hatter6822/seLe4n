@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "348d73c3ee0a4f2b88e3bf7d1cd3504a303a9481",
-      "tree_sha": "2165d39fb76f6a215bc185e1357c84cfb016627b",
-      "committed_at_utc": "2026-09-19T03:25:42+00:00"
+      "commit_sha": "cc007b32d719d71b9d0cea6f974d333655d9be60",
+      "tree_sha": "cc972d260a20a83b79810ae189cedfbd1464304d",
+      "committed_at_utc": "2026-09-19T05:13:37+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "43912a8f7bceb3c00693da952a6fd7e5f10c3e99d3095b1bc0d0f14eb88bbd4b"
+    "source_digest": "098e3a81caa97d7d8cebf77a144f05ccc7b306895125cbe795ab14eb3e63d8fe"
   },
   "summary": {
     "module_count": 403,
-    "declaration_count": 21999
+    "declaration_count": 22003
   },
   "readme_sync": {
-    "version": "0.35.107",
+    "version": "0.35.108",
     "lean_toolchain": "v4.28.0",
     "production_files": 333,
-    "production_loc": 394194,
+    "production_loc": 394244,
     "test_files": 70,
-    "test_loc": 79985,
+    "test_loc": 80108,
     "proved_theorem_lemma_decls": 13097,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -270482,7 +270482,7 @@
     {
       "module": "SeLe4n.Testing.InvariantChecks",
       "path": "SeLe4n/Testing/InvariantChecks.lean",
-      "declaration_count": 53,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -270657,8 +270657,36 @@
         },
         {
           "kind": "def",
+          "name": "endpointQueueHeadDisjointChecks",
+          "line": 195,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "filter",
+            "foldr",
+            "getEndpoint",
+            "head",
+            "none",
+            "st",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "endpointQueueHeadDisjointBool",
+          "line": 217,
+          "called": [
+            "SystemState",
+            "all",
+            "endpointQueueHeadDisjointChecks",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "cspaceSlotCoherencyChecks",
-          "line": 189,
+          "line": 233,
           "called": [
             "ObjId",
             "SystemState",
@@ -270673,7 +270701,7 @@
         {
           "kind": "def",
           "name": "capabilityRightsStructuralChecks",
-          "line": 219,
+          "line": 263,
           "called": [
             "ObjId",
             "SystemState",
@@ -270689,7 +270717,7 @@
         {
           "kind": "def",
           "name": "lifecycleMetadataChecks",
-          "line": 232,
+          "line": 276,
           "called": [
             "ObjId",
             "SystemState",
@@ -270702,7 +270730,7 @@
         {
           "kind": "def",
           "name": "serviceGraphAcyclicityChecks",
-          "line": 241,
+          "line": 285,
           "called": [
             "ServiceId",
             "SystemState",
@@ -270717,7 +270745,7 @@
         {
           "kind": "def",
           "name": "vspaceAsidUniquenessChecks",
-          "line": 251,
+          "line": 295,
           "called": [
             "ASID",
             "ObjId",
@@ -270733,7 +270761,7 @@
         {
           "kind": "def",
           "name": "asidTableConsistencyChecks",
-          "line": 262,
+          "line": 306,
           "called": [
             "ObjId",
             "SystemState",
@@ -270746,7 +270774,7 @@
         {
           "kind": "def",
           "name": "untypedWatermarkChecks",
-          "line": 285,
+          "line": 329,
           "called": [
             "ObjId",
             "SystemState",
@@ -270762,7 +270790,7 @@
         {
           "kind": "def",
           "name": "notificationWaiterConsistentChecks",
-          "line": 298,
+          "line": 342,
           "called": [
             "ObjId",
             "SystemState",
@@ -270777,7 +270805,7 @@
         {
           "kind": "def",
           "name": "runQueueThreadPriorityConsistentB",
-          "line": 314,
+          "line": 358,
           "called": [
             "SystemState",
             "all",
@@ -270789,7 +270817,7 @@
         {
           "kind": "def",
           "name": "blockedOnSendNotRunnableChecks",
-          "line": 321,
+          "line": 365,
           "called": [
             "ObjId",
             "SystemState",
@@ -270804,7 +270832,7 @@
         {
           "kind": "def",
           "name": "blockedOnReceiveNotRunnableChecks",
-          "line": 338,
+          "line": 382,
           "called": [
             "ObjId",
             "SystemState",
@@ -270819,7 +270847,7 @@
         {
           "kind": "def",
           "name": "blockedThreadPendingMessageChecks",
-          "line": 367,
+          "line": 411,
           "called": [
             "ObjId",
             "SystemState",
@@ -270833,7 +270861,7 @@
         {
           "kind": "def",
           "name": "currentThreadInActiveDomainB",
-          "line": 389,
+          "line": 433,
           "called": [
             "SystemState",
             "activeDomainOnCore",
@@ -270847,7 +270875,7 @@
         {
           "kind": "def",
           "name": "uniqueWaitersCheck",
-          "line": 401,
+          "line": 445,
           "called": [
             "ObjId",
             "SystemState",
@@ -270862,7 +270890,7 @@
         {
           "kind": "def",
           "name": "cdtChildMapConsistentCheck",
-          "line": 416,
+          "line": 460,
           "called": [
             "SystemState",
             "any",
@@ -270874,7 +270902,7 @@
         {
           "kind": "def",
           "name": "cdtParentMapConsistentCheck",
-          "line": 433,
+          "line": 477,
           "called": [
             "SystemState",
             "any",
@@ -270885,7 +270913,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecksFor",
-          "line": 447,
+          "line": 491,
           "called": [
             "ObjId",
             "ServiceId",
@@ -270902,6 +270930,7 @@
             "currentThreadInActiveDomainB",
             "currentThreadValidB",
             "endpointDualQueueWellFormedB",
+            "endpointQueueHeadDisjointChecks",
             "foldr",
             "getEndpoint",
             "getNotification",
@@ -270932,7 +270961,7 @@
         {
           "kind": "def",
           "name": "stateInvariantChecks",
-          "line": 511,
+          "line": 561,
           "called": [
             "SystemState",
             "st",
@@ -270942,7 +270971,7 @@
         {
           "kind": "def",
           "name": "failedChecks",
-          "line": 514,
+          "line": 564,
           "called": [
             "none"
           ]
@@ -270950,7 +270979,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsFor",
-          "line": 521,
+          "line": 571,
           "called": [
             "ObjId",
             "ServiceId",
@@ -270968,7 +270997,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariants",
-          "line": 532,
+          "line": 582,
           "called": [
             "SystemState",
             "assertStateInvariantsFor",
@@ -270978,7 +271007,7 @@
         {
           "kind": "def",
           "name": "assertStateInvariantsWithoutSync",
-          "line": 539,
+          "line": 589,
           "called": [
             "ObjId",
             "ServiceId",
@@ -270995,7 +271024,7 @@
         {
           "kind": "def",
           "name": "assertLiveThreadStateInvariantsFor",
-          "line": 558,
+          "line": 608,
           "called": [
             "ObjId",
             "SystemState",
@@ -271011,7 +271040,7 @@
         {
           "kind": "def",
           "name": "assertLiveThreadStateInvariants",
-          "line": 568,
+          "line": 618,
           "called": [
             "SystemState",
             "assertLiveThreadStateInvariantsFor",
@@ -271021,7 +271050,7 @@
         {
           "kind": "def",
           "name": "collectQueueMembersB",
-          "line": 583,
+          "line": 633,
           "called": [
             "SystemState",
             "ThreadId",
@@ -271033,7 +271062,7 @@
         {
           "kind": "def",
           "name": "checkNoStaleEndpointQueueRefs",
-          "line": 597,
+          "line": 647,
           "called": [
             "SystemState",
             "all",
@@ -271049,7 +271078,7 @@
         {
           "kind": "def",
           "name": "checkNoStaleNotificationWaitRefs",
-          "line": 619,
+          "line": 669,
           "called": [
             "SystemState",
             "all",
@@ -271062,7 +271091,7 @@
         {
           "kind": "def",
           "name": "checkRegistryDependencyConsistent",
-          "line": 629,
+          "line": 679,
           "called": [
             "SystemState",
             "all",
@@ -271073,7 +271102,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextStoreConsistent",
-          "line": 636,
+          "line": 686,
           "called": [
             "SystemState",
             "all",
@@ -271088,7 +271117,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextNotDualBound",
-          "line": 648,
+          "line": 698,
           "called": [
             "SystemState",
             "all",
@@ -271102,7 +271131,7 @@
         {
           "kind": "def",
           "name": "checkSchedContextRunQueueConsistent",
-          "line": 663,
+          "line": 713,
           "called": [
             "SystemState",
             "all",
@@ -271118,7 +271147,7 @@
         {
           "kind": "def",
           "name": "checkBlockingAcyclic",
-          "line": 678,
+          "line": 728,
           "called": [
             "ObjId",
             "SystemState",
@@ -271134,7 +271163,7 @@
         {
           "kind": "def",
           "name": "checkRegistryEndpointValid",
-          "line": 706,
+          "line": 756,
           "called": [
             "SystemState",
             "all",
@@ -271147,7 +271176,7 @@
         {
           "kind": "def",
           "name": "checkRegistryInterfaceValid",
-          "line": 716,
+          "line": 766,
           "called": [
             "SystemState",
             "all",
@@ -271158,7 +271187,7 @@
         {
           "kind": "def",
           "name": "checkServiceGraphInvariant",
-          "line": 722,
+          "line": 772,
           "called": [
             "SystemState",
             "acyclic",
@@ -271175,7 +271204,7 @@
         {
           "kind": "def",
           "name": "checkLifecycleObjectTypeLockstep",
-          "line": 738,
+          "line": 788,
           "called": [
             "SystemState",
             "all",
@@ -271188,7 +271217,7 @@
         {
           "kind": "def",
           "name": "checkCrossSubsystemInvariant",
-          "line": 756,
+          "line": 806,
           "called": [
             "SystemState",
             "checkBlockingAcyclic",
@@ -271208,7 +271237,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariant",
-          "line": 770,
+          "line": 820,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
@@ -271223,7 +271252,7 @@
         {
           "kind": "def",
           "name": "assertCrossSubsystemInvariants",
-          "line": 790,
+          "line": 840,
           "called": [
             "SystemState",
             "checkCrossSubsystemInvariant",
@@ -291180,7 +291209,7 @@
     {
       "module": "tests.NegativeStateSuite",
       "path": "tests/NegativeStateSuite.lean",
-      "declaration_count": 96,
+      "declaration_count": 98,
       "declarations": [
         {
           "kind": "instance",
@@ -291412,8 +291441,25 @@
         },
         {
           "kind": "def",
+          "name": "corruptEndpointQueueHeads",
+          "line": 192,
+          "called": [
+            "KernelError",
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "epId",
+            "head",
+            "insert",
+            "st",
+            "tail"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "f2UntypedObjId",
-          "line": 185,
+          "line": 209,
           "called": [
             "ObjId"
           ]
@@ -291421,7 +291467,7 @@
         {
           "kind": "def",
           "name": "f2UntypedChildId",
-          "line": 186,
+          "line": 210,
           "called": [
             "ObjId"
           ]
@@ -291429,7 +291475,7 @@
         {
           "kind": "def",
           "name": "f2UntypedAuthCnode",
-          "line": 187,
+          "line": 211,
           "called": [
             "ObjId"
           ]
@@ -291437,7 +291483,7 @@
         {
           "kind": "def",
           "name": "f2UntypedAuthSlot",
-          "line": 188,
+          "line": 212,
           "called": [
             "CSpaceAddr",
             "f2UntypedAuthCnode",
@@ -291447,7 +291493,7 @@
         {
           "kind": "def",
           "name": "f2UntypedState",
-          "line": 191,
+          "line": 215,
           "called": [
             "SystemState",
             "badge",
@@ -291466,7 +291512,7 @@
         {
           "kind": "def",
           "name": "f2DeviceUntypedId",
-          "line": 217,
+          "line": 241,
           "called": [
             "ObjId"
           ]
@@ -291474,7 +291520,7 @@
         {
           "kind": "def",
           "name": "f2DeviceState",
-          "line": 219,
+          "line": 243,
           "called": [
             "SystemState",
             "badge",
@@ -291493,7 +291539,7 @@
         {
           "kind": "def",
           "name": "runBaselineLookupNegativeChecks",
-          "line": 247,
+          "line": 271,
           "called": [
             "assertStateInvariantsFor",
             "badSlot",
@@ -291511,7 +291557,7 @@
         {
           "kind": "def",
           "name": "runCspaceMutationAndRevokeNegativeChecks",
-          "line": 268,
+          "line": 292,
           "called": [
             "CSpaceAddr",
             "Capability",
@@ -291546,7 +291592,7 @@
         {
           "kind": "def",
           "name": "runVSpaceAndNotificationF03NegativeChecks",
-          "line": 477,
+          "line": 501,
           "called": [
             "KernelObject",
             "SystemState",
@@ -291578,7 +291624,7 @@
         {
           "kind": "def",
           "name": "runBadgeTruncationNegativeChecks",
-          "line": 586,
+          "line": 610,
           "called": [
             "badge",
             "baseState",
@@ -291597,7 +291643,7 @@
         {
           "kind": "def",
           "name": "runIpcPayloadBoundsNegativeChecks",
-          "line": 632,
+          "line": 656,
           "called": [
             "IpcMessage",
             "TransferCap.fromNode",
@@ -291618,7 +291664,7 @@
         {
           "kind": "def",
           "name": "runDualQueueEndpointFifoNegativeChecks",
-          "line": 730,
+          "line": 754,
           "called": [
             "KernelObject",
             "SystemState",
@@ -291669,7 +291715,7 @@
         {
           "kind": "def",
           "name": "runServiceCycleNegativeChecks",
-          "line": 1079,
+          "line": 1103,
           "called": [
             "ServiceGraphEntry",
             "ServiceId",
@@ -291686,7 +291732,7 @@
         {
           "kind": "def",
           "name": "runUntypedF2NegativeChecks",
-          "line": 1130,
+          "line": 1154,
           "called": [
             "QueueNextPath.lastEdge",
             "RHTable.empty",
@@ -291719,7 +291765,7 @@
         {
           "kind": "def",
           "name": "retiredPairingAcceptingAnyMissingBackPointer",
-          "line": 1219,
+          "line": 1243,
           "called": [
             "SystemState",
             "foldr",
@@ -291732,7 +291778,7 @@
         {
           "kind": "def",
           "name": "runDualQueuePPrevPairingChecks",
-          "line": 1253,
+          "line": 1277,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -291789,7 +291835,7 @@
         {
           "kind": "def",
           "name": "runDualQueueTailPairingChecks",
-          "line": 1465,
+          "line": 1489,
           "called": [
             "IntrusiveQueue",
             "SystemState",
@@ -291824,8 +291870,42 @@
         },
         {
           "kind": "def",
+          "name": "runEndpointQueueHeadDisjointChecks",
+          "line": 1567,
+          "called": [
+            "SystemState",
+            "all",
+            "any",
+            "baseState",
+            "contains",
+            "corruptEndpointQueueHeads",
+            "empty",
+            "endpointId",
+            "endpointQueueHeadDisjoint",
+            "endpointQueueHeadDisjointBool",
+            "endpointQueueRemoveDual",
+            "endpointSendDual",
+            "expectErr",
+            "expectOkSt",
+            "expectOkVal",
+            "filter",
+            "getTcb",
+            "length",
+            "none",
+            "ofNat",
+            "pure",
+            "queuePPrevAgreesWithPrevBool",
+            "st",
+            "stSingle",
+            "stateInvariantChecksFor",
+            "throw",
+            "wrongTypeId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runNegativeChecks",
-          "line": 1527,
+          "line": 1649,
           "called": [
             "expectErr",
             "notificationId",
@@ -291837,6 +291917,7 @@
             "runDualQueueEndpointFifoNegativeChecks",
             "runDualQueuePPrevPairingChecks",
             "runDualQueueTailPairingChecks",
+            "runEndpointQueueHeadDisjointChecks",
             "runIpcPayloadBoundsNegativeChecks",
             "runServiceCycleNegativeChecks",
             "runUntypedF2NegativeChecks",
@@ -291846,7 +291927,7 @@
         {
           "kind": "def",
           "name": "runH2NegativeChecks",
-          "line": 1551,
+          "line": 1674,
           "called": [
             "SystemState",
             "badge",
@@ -291870,7 +291951,7 @@
         {
           "kind": "def",
           "name": "runAuditCoverageChecks",
-          "line": 1599,
+          "line": 1722,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -291906,7 +291987,7 @@
         {
           "kind": "def",
           "name": "runWSH7Checks",
-          "line": 1718,
+          "line": 1841,
           "called": [
             "CNode",
             "Capability",
@@ -291934,7 +292015,7 @@
         {
           "kind": "def",
           "name": "runWSH11Checks",
-          "line": 1777,
+          "line": 1900,
           "called": [
             "ASID",
             "ObjId",
@@ -291973,7 +292054,7 @@
         {
           "kind": "def",
           "name": "runWSH13Checks",
-          "line": 1978,
+          "line": 2101,
           "called": [
             "ServiceId",
             "SystemState",
@@ -291989,7 +292070,7 @@
         {
           "kind": "def",
           "name": "runWSH15Checks",
-          "line": 2020,
+          "line": 2143,
           "called": [
             "CNode",
             "Capability",
@@ -292021,7 +292102,7 @@
         {
           "kind": "def",
           "name": "runWSH15PlatformChecks",
-          "line": 2104,
+          "line": 2227,
           "called": [
             "Irq",
             "KernelObject",
@@ -292037,7 +292118,7 @@
         {
           "kind": "def",
           "name": "runWSH16LifecycleChecks",
-          "line": 2154,
+          "line": 2277,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -292062,7 +292143,7 @@
         {
           "kind": "def",
           "name": "runAN4A5LifecycleVisibilityChecks",
-          "line": 2347,
+          "line": 2470,
           "called": [
             "CSpaceAddr",
             "KernelObject",
@@ -292091,7 +292172,7 @@
         {
           "kind": "def",
           "name": "runWSJ1DecodeChecks",
-          "line": 2401,
+          "line": 2524,
           "called": [
             "RegValue",
             "RegisterFile",
@@ -292115,7 +292196,7 @@
         {
           "kind": "def",
           "name": "runWSKGCSpaceChecks",
-          "line": 2547,
+          "line": 2670,
           "called": [
             "CSpaceAddr",
             "SyscallDecodeResult",
@@ -292139,7 +292220,7 @@
         {
           "kind": "def",
           "name": "runWSKGLifecycleVSpaceChecks",
-          "line": 2615,
+          "line": 2738,
           "called": [
             "ASID",
             "Capability",
@@ -292169,7 +292250,7 @@
         {
           "kind": "def",
           "name": "runWSKGServiceIpcChecks",
-          "line": 2692,
+          "line": 2815,
           "called": [
             "ObjId",
             "ServiceId",
@@ -292194,7 +292275,7 @@
         {
           "kind": "def",
           "name": "runWSKGDeterminismChecks",
-          "line": 2744,
+          "line": 2867,
           "called": [
             "MessageInfo",
             "RegValue",
@@ -292221,7 +292302,7 @@
         {
           "kind": "def",
           "name": "runWSKGChecks",
-          "line": 2816,
+          "line": 2939,
           "called": [
             "runWSKGCSpaceChecks",
             "runWSKGDeterminismChecks",
@@ -292232,7 +292313,7 @@
         {
           "kind": "def",
           "name": "runWSL4BlockedThreadChecks",
-          "line": 2831,
+          "line": 2954,
           "called": [
             "ObjId",
             "SystemState",
@@ -292258,7 +292339,7 @@
         {
           "kind": "def",
           "name": "runWSM3CapTransferNegativeChecks",
-          "line": 2905,
+          "line": 3028,
           "called": [
             "CNode",
             "Capability",
@@ -292280,7 +292361,7 @@
         {
           "kind": "def",
           "name": "runL13CapTransferShortCircuitChecks",
-          "line": 2976,
+          "line": 3099,
           "called": [
             "CNode",
             "Capability",
@@ -292306,7 +292387,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardOnlyChecks",
-          "line": 3077,
+          "line": 3200,
           "called": [
             "ObjId",
             "badge",
@@ -292324,7 +292405,7 @@
         {
           "kind": "def",
           "name": "runWSM4SmallBitsChecks",
-          "line": 3120,
+          "line": 3243,
           "called": [
             "ObjId",
             "badge",
@@ -292343,7 +292424,7 @@
         {
           "kind": "def",
           "name": "runWSM4GuardMismatchChecks",
-          "line": 3184,
+          "line": 3307,
           "called": [
             "ObjId",
             "badge",
@@ -292361,7 +292442,7 @@
         {
           "kind": "def",
           "name": "runWSM4MaxDepthLoopChecks",
-          "line": 3265,
+          "line": 3388,
           "called": [
             "CPtr",
             "ObjId",
@@ -292382,7 +292463,7 @@
         {
           "kind": "def",
           "name": "runWSM4SlotEdgeChecks",
-          "line": 3330,
+          "line": 3453,
           "called": [
             "ObjId",
             "badge",
@@ -292400,7 +292481,7 @@
         {
           "kind": "def",
           "name": "runWSM4WrapperIntegrationChecks",
-          "line": 3407,
+          "line": 3530,
           "called": [
             "ObjId",
             "badge",
@@ -292418,7 +292499,7 @@
         {
           "kind": "def",
           "name": "runWSM4ResolveEdgeCaseChecks",
-          "line": 3456,
+          "line": 3579,
           "called": [
             "runWSM4GuardMismatchChecks",
             "runWSM4GuardOnlyChecks",
@@ -292431,7 +292512,7 @@
         {
           "kind": "def",
           "name": "runWSR2RevocationChecks",
-          "line": 3476,
+          "line": 3599,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -292456,7 +292537,7 @@
         {
           "kind": "def",
           "name": "runWSR4CoherenceChecks",
-          "line": 3577,
+          "line": 3700,
           "called": [
             "Capability",
             "InterfaceId",
@@ -292486,7 +292567,7 @@
         {
           "kind": "def",
           "name": "runS2GCapabilityErrorTests",
-          "line": 3713,
+          "line": 3836,
           "called": [
             "CSpaceAddr",
             "CdtNodeId",
@@ -292517,7 +292598,7 @@
         {
           "kind": "def",
           "name": "runS2HLifecycleErrorTests",
-          "line": 3840,
+          "line": 3963,
           "called": [
             "CSpaceAddr",
             "ObjId",
@@ -292548,7 +292629,7 @@
         {
           "kind": "def",
           "name": "runX2RuntimeInvariantTests",
-          "line": 3916,
+          "line": 4039,
           "called": [
             "ASID",
             "DomainScheduleEntry",
@@ -292586,7 +292667,7 @@
         {
           "kind": "def",
           "name": "runZ8SchedContextNegativeChecks",
-          "line": 4035,
+          "line": 4158,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -292609,7 +292690,7 @@
         {
           "kind": "def",
           "name": "runAC1BudgetFailClosedChecks",
-          "line": 4103,
+          "line": 4226,
           "called": [
             "ObjId",
             "SystemState",
@@ -292627,7 +292708,7 @@
         {
           "kind": "def",
           "name": "runAC1CdtTrackingChecks",
-          "line": 4159,
+          "line": 4282,
           "called": [
             "CNode",
             "CSpaceAddr",
@@ -292651,7 +292732,7 @@
         {
           "kind": "def",
           "name": "r1EpId",
-          "line": 4217,
+          "line": 4340,
           "called": [
             "ObjId"
           ]
@@ -292659,7 +292740,7 @@
         {
           "kind": "def",
           "name": "r1CallerTid",
-          "line": 4218,
+          "line": 4341,
           "called": [
             "ThreadId"
           ]
@@ -292667,7 +292748,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverTid",
-          "line": 4219,
+          "line": 4342,
           "called": [
             "ThreadId"
           ]
@@ -292675,7 +292756,7 @@
         {
           "kind": "def",
           "name": "r1CallerCNode",
-          "line": 4220,
+          "line": 4343,
           "called": [
             "ObjId"
           ]
@@ -292683,7 +292764,7 @@
         {
           "kind": "def",
           "name": "r1ReceiverCNode",
-          "line": 4221,
+          "line": 4344,
           "called": [
             "ObjId"
           ]
@@ -292691,7 +292772,7 @@
         {
           "kind": "def",
           "name": "r1TargetObj",
-          "line": 4222,
+          "line": 4345,
           "called": [
             "ObjId"
           ]
@@ -292699,7 +292780,7 @@
         {
           "kind": "def",
           "name": "r1ReplyId",
-          "line": 4225,
+          "line": 4348,
           "called": [
             "ReplyId"
           ]
@@ -292707,7 +292788,7 @@
         {
           "kind": "def",
           "name": "r1Cap",
-          "line": 4227,
+          "line": 4350,
           "called": [
             "Capability",
             "badge",
@@ -292719,7 +292800,7 @@
         {
           "kind": "def",
           "name": "r1MsgWithCaps",
-          "line": 4232,
+          "line": 4355,
           "called": [
             "IpcMessage",
             "TransferCap.fromNode",
@@ -292731,7 +292812,7 @@
         {
           "kind": "def",
           "name": "r1EndpointRights",
-          "line": 4235,
+          "line": 4358,
           "called": [
             "AccessRightSet",
             "ofList"
@@ -292740,7 +292821,7 @@
         {
           "kind": "def",
           "name": "r1BaseState",
-          "line": 4238,
+          "line": 4361,
           "called": [
             "SystemState",
             "buildChecked",
@@ -292766,7 +292847,7 @@
         {
           "kind": "def",
           "name": "r1QueuedState",
-          "line": 4260,
+          "line": 4383,
           "called": [
             "KernelError",
             "SystemState",
@@ -292781,7 +292862,7 @@
         {
           "kind": "def",
           "name": "r1FaultyState",
-          "line": 4265,
+          "line": 4388,
           "called": [
             "SystemState",
             "erase",
@@ -292792,7 +292873,7 @@
         {
           "kind": "def",
           "name": "r1CheckHealthyState",
-          "line": 4268,
+          "line": 4391,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -292808,7 +292889,7 @@
         {
           "kind": "def",
           "name": "r1CheckFaultyState",
-          "line": 4278,
+          "line": 4401,
           "called": [
             "SystemState",
             "endpointCallWithCaps",
@@ -292823,7 +292904,7 @@
         {
           "kind": "def",
           "name": "r1CheckLookupCspaceRoot",
-          "line": 4289,
+          "line": 4412,
           "called": [
             "SystemState",
             "lookupCspaceRoot",
@@ -292835,7 +292916,7 @@
         {
           "kind": "def",
           "name": "runR1IpcCallPathSymmetryChecks",
-          "line": 4319,
+          "line": 4442,
           "called": [
             "r1CheckFaultyState",
             "r1CheckHealthyState",
@@ -292848,7 +292929,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedScId",
-          "line": 4344,
+          "line": 4467,
           "called": [
             "SchedContextId"
           ]
@@ -292856,7 +292937,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedTid",
-          "line": 4346,
+          "line": 4469,
           "called": [
             "ThreadId"
           ]
@@ -292864,7 +292945,7 @@
         {
           "kind": "def",
           "name": "r5eOrphanedBoundState",
-          "line": 4348,
+          "line": 4471,
           "called": [
             "SystemState",
             "buildChecked",
@@ -292880,7 +292961,7 @@
         {
           "kind": "def",
           "name": "runR5EOrphanedSchedContextChecks",
-          "line": 4367,
+          "line": 4490,
           "called": [
             "KernelError",
             "SystemState",
@@ -292895,7 +292976,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 4396,
+          "line": 4519,
           "called": [
             "runAC1BudgetFailClosedChecks",
             "runAC1CdtTrackingChecks",
