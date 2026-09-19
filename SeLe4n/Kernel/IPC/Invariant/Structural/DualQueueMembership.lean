@@ -3825,8 +3825,8 @@ theorem storeObject_reply_preserves_ipcInvariantCore
       (fun rr => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: per-endpoint well-formedness + link integrity
   -- + chain acyclicity. All lookups are `.endpoint`/`.tcb` (non-reply).
-  · obtain ⟨hEpWF, hLI, hAcyc, hPP⟩ := hInv.dualQueueSystemInvariant
-    refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_, ?_⟩
+  · obtain ⟨hEpWF, hLI, hAcyc, hPP, hHD⟩ := hInv.dualQueueSystemInvariant
+    refine ⟨?_, reply_store_tcbQueueLinkIntegrity_forward hAgree hLI, ?_, ?_, ?_⟩
     · intro epId ep hEp
       have hEp' := (hAgree epId (.endpoint ep)
         (fun rr => by exact KernelObject.noConfusion)).mp hEp
@@ -3843,6 +3843,9 @@ theorem storeObject_reply_preserves_ipcInvariantCore
     · intro tid tcb hTcb
       exact hPP tid tcb ((hAgree tid.toObjId (.tcb tcb)
         (fun rr => by exact KernelObject.noConfusion)).mp hTcb)
+    -- **PR #897 review**: ...and no endpoint either, so the fifth conjunct carries.
+    · refine endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => ?_) hHD
+      exact (hAgree epId (.endpoint ep) (fun rr => by exact KernelObject.noConfusion)).mp hEp
   -- 3. allPendingMessagesBounded: reads `.tcb` only.
   · intro tid tcb msg hObj hMsg
     exact hInv.allPendingMessagesBounded tid tcb msg
@@ -4091,9 +4094,9 @@ private theorem intrusiveQueueWellFormed_forward_of_readAgreement
   obtain ⟨hEmpty, hHead, hTail⟩ := hWF
   refine ⟨hEmpty, ?_, ?_⟩
   · intro hd hHd
-    obtain ⟨tcb, hObj, hPrevNone⟩ := hHead hd hHd
-    obtain ⟨tx, hStObj, _, _, _, hQP, _⟩ := hBwd hd.toObjId tcb hObj
-    exact ⟨tx, hStObj, hQP.trans hPrevNone⟩
+    obtain ⟨tcb, hObj, hPrevNone, hPPHead⟩ := hHead hd hHd
+    obtain ⟨tx, hStObj, _, _, _, hQP, hQPP, _⟩ := hBwd hd.toObjId tcb hObj
+    exact ⟨tx, hStObj, hQP.trans hPrevNone, hQPP.trans hPPHead⟩
   · intro tl hTl
     obtain ⟨tcb, hObj, hNextNone⟩ := hTail tl hTl
     obtain ⟨tx, hStObj, _, _, hQN, _⟩ := hBwd tl.toObjId tcb hObj
@@ -4194,8 +4197,8 @@ theorem ipcInvariantCore_of_nonBindingAgreements
         (fun sc => by exact KernelObject.noConfusion)
         (fun r => by exact KernelObject.noConfusion)).mp hObj)
   -- 2. dualQueueSystemInvariant: endpoints via (a), TCB links via (b).
-  · obtain ⟨hEpWF, hLI, hAcyc, hPP⟩ := hInv.dualQueueSystemInvariant
-    refine ⟨?_, tcbQueueLinkIntegrity_forward_of_readAgreement hFwd hBwd hLI, ?_, ?_⟩
+  · obtain ⟨hEpWF, hLI, hAcyc, hPP, hHD⟩ := hInv.dualQueueSystemInvariant
+    refine ⟨?_, tcbQueueLinkIntegrity_forward_of_readAgreement hFwd hBwd hLI, ?_, ?_, ?_⟩
     · intro epId ep hEp
       have hEp' := (hNT epId (.endpoint ep)
         (fun tt => by exact KernelObject.noConfusion)
@@ -4216,6 +4219,13 @@ theorem ipcInvariantCore_of_nonBindingAgreements
     · intro tid tcb hTcb
       obtain ⟨ty, hTy, _, _, _, hPrev, hPPrev, _⟩ := hFwd tid.toObjId tcb hTcb
       exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (hPP tid ty hTy)
+    -- **PR #897 review**: the read agreement covers endpoints too (a), so the
+    -- fifth conjunct transports at every endpoint key.
+    · refine endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => ?_) hHD
+      exact (hNT epId (.endpoint ep)
+        (fun tt => by exact KernelObject.noConfusion)
+        (fun sc => by exact KernelObject.noConfusion)
+        (fun r => by exact KernelObject.noConfusion)).mp hEp
   -- 3. allPendingMessagesBounded: reads `tcb.pendingMessage` → (b) forward.
   · intro tid tcb msg hObj hMsg
     obtain ⟨ty, hStObj, _, hPM, _⟩ := hFwd tid.toObjId tcb hObj

@@ -95,7 +95,9 @@ Encodes structural properties of a doubly-linked intrusive queue using local
 boundary/link properties that are directly verifiable without traversal:
 
 1. **Head/tail consistency**: head = none ↔ tail = none.
-2. **Head boundary**: head TCB exists with queuePrev = none.
+2. **Head boundary**: head TCB exists with queuePrev = none and
+   queuePPrev = some .endpointHead (the two link fields are one
+   back-pointer -- WS-RR RR8.3 -- so they are carried together).
 3. **Tail boundary**: tail TCB exists with queueNext = none.
 4. **Doubly-linked forward integrity**: for any TCB with queueNext = some b,
    b exists and b.queuePrev = some a.
@@ -105,13 +107,89 @@ boundary/link properties that are directly verifiable without traversal:
 Properties 4-5 are global over all TCBs in the system state. This is deliberately
 stronger than scoping to queue members: it ensures no TCB anywhere has a dangling
 or inconsistent queue link, which simplifies preservation proofs (no need to
-track queue membership through state transitions). -/
+track queue membership through state transitions).
+
+**P2 carries the head's back-pointer** (PR #897 review, closed at `v0.35.106`).
+`queuePPrev` carries exactly one bit beyond `queuePrev` -- whether the node is
+linked into a queue at all -- and `queuePPrevAgreesWithPrev` is the *pointwise*
+half of that: its `none` arm obliges `queuePrev = none`, which is **necessary and
+not sufficient**, because a queue's *head* also has no predecessor.  So before this
+cut a queue whose head carried `(none, none, none)` -- the shape every link clear
+writes -- satisfied every conjunct of `dualQueueSystemInvariant` while
+`endpointQueueRemoveDual`, whose guard takes a `QueuePPrev` rather than an
+`Option`, refused that head and reported `.endpointQueueEmpty` for the sole member
+of a queue that is not empty.  That member could never leave: the WS-OD OD1.1 /
+OD3.9 stranding class a fourth time, at the one spot RR8.3's pairing and
+`v0.35.99`'s strengthening of it both left open, since a pointwise predicate over
+one TCB structurally cannot say "on no queue".
+
+**Two artefacts answered "is this queue well-formed" and the PROVED one was the
+weaker.**  `SeLe4n/Testing/InvariantChecks.lean`'s `intrusiveQueueWellFormedB` --
+the check every harness state is asserted against -- has required
+`headTcb.queuePPrev = some .endpointHead` since it was written, so the divergence
+sat exactly where the proofs are silent: this project's *one question answered in
+two places* shape, with the Bool right and the Prop wrong.  The state was
+unreachable (`bootSafeEndpointCheck` requires all four boundaries `none`;
+`endpointQueueEnqueue` refuses a thread carrying any link and writes
+`.endpointHead` on a new head; every removal maintains the pair), which is what
+made it a verification gap rather than a live defect -- and a gap the Bool check
+would have caught while the bundle would not.
+`tests/NegativeStateSuite.lean`'s `runDualQueuePPrevPairingChecks` case (5)
+exhibits the state and both readings, and is now the witness that the **bundle**
+refuses it too.
+
+**Folding the clause in needed a fifth conjunct, measured rather than assumed.**
+The obligation lands on `storeTcbQueueLinks_preserves_iqwf`, whose *clearing*
+callers (`storeTcbQueueLinks st tid none none none`, the pop's head unlink) used to
+discharge the head clause with `fun _ _ _ => rfl`: the cleared thread has
+`queuePrev = none`, so the clause survived even if that thread was some *other*
+queue's head.  With the back-pointer in P2 they must prove the cleared thread is
+**not** a head of any queue they transport -- and `endpointQueueNoDup` gives
+disjointness only *within* one endpoint (`sendQ.head ≠ receiveQ.head`), nothing
+across endpoints.  So `endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s
+**fifth conjunct**, which is the extension point RR8.3 built when it wrote the four
+named accessors "before a fifth conjunct arrives".
+
+**It is a consequence of `ipcInvariantCore`, not a new assumption**
+(`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent`, over
+`queueHeadExclusive`): a head's `ipcState` names *its* endpoint and *its* queue
+kind, and a thread has one `ipcState`.  And it is *preserved* without ever reading
+an `ipcState`, which is what keeps it inside this bundle's charter -- every writer
+supplies the two obligations of `endpointQueueHeadDisjoint_of_singleQueueUpdate`
+locally: a pop promotes a successor, which has a predecessor
+(`not_queueHead_of_queuePrev_some`); an enqueue promotes a thread its own guard
+refused a back-pointer to (`not_queueHead_of_queuePPrev_none`, which is the
+strengthened P2 paying for itself); a mid-queue removal and a tail append move no
+head at all.  The two operations that clear a *victim's* links without owning its
+queues -- the notification purge and the reply-path restore -- take the victim's
+off-boundary fact as a stated hypothesis (`hOffEp`), supplied from
+`queueHeadBlockedConsistent` by the composite that holds the whole bundle, because
+a thread blocked on a notification or a reply bounds no endpoint queue.
+
+That leaves this predicate's deliberate boundary-locality intact: it is still
+"local boundary/link properties ... verifiable without traversal", and connectivity
+is still a caller obligation (`dualQueueRemovalGuardHolds`'s `hMem` and
+`hTailLast`, RR8.4's `queueTailPairAgrees` guard, `sweptThreadQueueCoherent`) --
+the head's back-pointer is a boundary fact after all, and what it needed was a
+sibling conjunct about *which* queue a thread heads rather than a traversal.
+
+**The payoff is a retired caller obligation.**  A queue member's `queuePPrev` is
+now derivable rather than hypothesised: at the head from P2, at an interior node
+from `tcbQueueLinkIntegrity`'s forward clause plus the pairing (a node with a
+predecessor cannot carry `none` or `.endpointHead`).  `queuePPrev_of_queueMember`
+is that derivation and `dualQueueRemovalGuardHolds_of_member` is
+`dualQueueRemovalGuardHolds` with `hPPrev` discharged -- the shape RR8.4 reached
+when the tail guard retired WS-OD OD1.3's `spliceRemovedIsTailWhenLast`. -/
 def intrusiveQueueWellFormed (q : IntrusiveQueue) (st : SystemState) : Prop :=
   -- P1: Empty queue consistency — head and tail agree on emptiness
   (q.head = none ↔ q.tail = none) ∧
-  -- P2: Head boundary — head TCB exists with no predecessor
+  -- P2: Head boundary — the head TCB exists, has no predecessor, and its
+  -- back-pointer says so.  The two link fields are one back-pointer (WS-RR
+  -- RR8.3), so they are carried together; `intrusiveQueueWellFormedB` — the
+  -- check every harness state is asserted against — has always required both.
   (∀ hd, q.head = some hd →
-    ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) ∧ tcb.queuePrev = none) ∧
+    ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) ∧ tcb.queuePrev = none ∧
+      tcb.queuePPrev = some .endpointHead) ∧
   -- P3: Tail boundary — tail TCB exists with no successor
   (∀ tl, q.tail = some tl →
     ∃ tcb, st.objects[tl.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = none)
@@ -283,6 +361,47 @@ theorem queuePPrevHeadPositionAgrees_of_member {st : SystemState}
       rw [hPrevSome] at hHdPrev
       exact absurd hHdPrev (by simp)
 
+/-- **PR #897 review (`v0.35.106`)**: a queue member that is **not** the head
+carries a back-pointer, and one that names its own predecessor — so
+`endpointQueueRemoveDual`'s `queuePPrev = none` arm, which reports
+`.endpointQueueEmpty` and can never dequeue the thread, is **unreachable** for an
+interior member.
+
+This is the *interior* half of "a member carries a `queuePPrev`"; the head's half
+is `intrusiveQueueWellFormed`'s P2, which carries `some .endpointHead` since
+`v0.35.106`.  `queuePPrev_of_queueMember` below joins the two, so a caller
+removing **any** member of a well-formed queue discharges
+`dualQueueRemovalGuardHolds`'s `hPPrev` from the bundle rather than supplying it.
+
+The two halves are kept separate because they rest on different facts: this one on
+`tcbQueueLinkIntegrity`'s forward clause plus the pairing, the head's on the
+queue's own boundary clause.  A single proof over both would hide which conjunct a
+future weakening breaks. -/
+theorem queuePPrev_tcbNext_of_reachable {st : SystemState}
+    {hd tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hPath : QueueNextPath st hd tid) :
+    ∃ p, tcb.queuePrev = some p ∧ tcb.queuePPrev = some (.tcbNext p) := by
+  obtain ⟨pr, prTcb, hPr, hPrNext⟩ := hPath.lastEdge
+  obtain ⟨tcb', hTcb', hPrev⟩ := hLink.1 pr prTcb hPr tid hPrNext
+  rw [hTcb] at hTcb'
+  obtain rfl : tcb = tcb' := KernelObject.tcb.inj (Option.some.inj hTcb')
+  refine ⟨pr, hPrev, ?_⟩
+  -- `cases h : e` generalises `e` in the goal as well as in `hPair`, so each
+  -- branch reduces the pairing's own `match` and the surviving one is an equation
+  -- between the two names for the predecessor.
+  cases hPP : tcb.queuePPrev with
+  | none => simp [TCB.queuePPrevAgreesWithPrev, hPP, hPrev] at hPair
+  | some v =>
+      cases v with
+      | endpointHead => simp [TCB.queuePPrevAgreesWithPrev, hPP, hPrev] at hPair
+      | tcbNext q0 =>
+          simp only [TCB.queuePPrevAgreesWithPrev, hPP, hPrev, Option.some.injEq] at hPair
+          simp [hPair]
+
+
 /-- **WS-RR RR8.4**: the free direction of the tail pairing — a tail has no
 successor (`intrusiveQueueWellFormed`'s third clause), so a thread that has one
 is not the tail.
@@ -381,6 +500,217 @@ def dualQueueEndpointWellFormed (epId : SeLe4n.ObjId) (st : SystemState) : Prop 
       intrusiveQueueWellFormed ep.receiveQ st
   | _ => True  -- Non-endpoint objects trivially satisfy
 
+/-- **PR #897 review (`v0.35.106`): a thread heads at most one endpoint queue** —
+`dualQueueSystemInvariant`'s fifth conjunct, and the one fact that makes the
+strengthened head boundary (`intrusiveQueueWellFormed`'s P2) *preservable*.
+
+A queue is an `IntrusiveQueue` record holding thread ids, so nothing in the
+bundle's other four conjuncts forbids two endpoints naming one thread as their
+head: link integrity and acyclicity say nothing about which queue a thread is
+on, and both heads would satisfy P2.  But `endpointQueuePopHead` clears the
+popped thread's links, so on a state where that thread also heads *another*
+queue the clear leaves that queue's head with no back-pointer — the shape
+`endpointQueueRemoveDual` then refuses.  The operation therefore preserves the
+strengthened boundary exactly on states where this holds, which is why the fact
+belongs in the bundle rather than in each caller's hypothesis list.
+
+**It is a consequence of `ipcInvariantCore`, not a new assumption**
+(`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent`, over
+`queueHeadExclusive`): a head's `ipcState` names *its* endpoint and *its* queue
+kind, and a thread has one `ipcState`.  And it is *preserved* without ever
+reading an `ipcState`, which is what keeps it inside this bundle's charter: the
+new head a pop installs has `queuePrev = some <popped>`, and the thread an
+enqueue makes a head has `queuePPrev = none` in the pre-state — each is enough
+to rule the thread out of every other queue's head position through P2.
+
+The queue kind is indexed by `Bool` to match `endpointQueuePopHead` /
+`endpointQueueEnqueue`, which take `isReceiveQ` and read
+`if isReceiveQ then ep.receiveQ else ep.sendQ`; stating it over the two fields
+separately would need four clauses and give consumers a case split the
+operations do not have. -/
+def endpointQueueHeadDisjoint (st : SystemState) : Prop :=
+  ∀ (epA epB : SeLe4n.ObjId) (eA eB : Endpoint) (hd : SeLe4n.ThreadId)
+    (recvA recvB : Bool),
+    st.objects[epA]? = some (.endpoint eA) →
+    st.objects[epB]? = some (.endpoint eB) →
+    (if recvA then eA.receiveQ else eA.sendQ).head = some hd →
+    (if recvB then eB.receiveQ else eB.sendQ).head = some hd →
+    epA = epB ∧ recvA = recvB
+
+/-- The predicate reads endpoint objects and nothing else, so a *backward*
+transport of the endpoints suffices: anything the post-state calls an endpoint
+the pre-state called the same endpoint.  Every operation in this tree that
+writes no endpoint has such a lemma already (`…_endpoint_backward`), which is
+what makes the fifth conjunct a one-line obligation for all of them. -/
+theorem endpointQueueHeadDisjoint_of_endpointBackward {st st' : SystemState}
+    (hBack : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st'.objects[epId]? = some (.endpoint ep) → st.objects[epId]? = some (.endpoint ep))
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  exact h epA epB eA eB hd recvA recvB (hBack epA eA hEpA) (hBack epB eB hEpB) hA hB
+
+/-- ...and the same from plain agreement of the object stores. -/
+theorem endpointQueueHeadDisjoint_of_getElem_eq {st st' : SystemState}
+    (hEq : ∀ (id : SeLe4n.ObjId), st'.objects[id]? = st.objects[id]?)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' :=
+  endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => by rw [← hEq epId]; exact hEp) h
+
+/-- A thread that heads one endpoint queue is not the head of the *other* queue
+of the same endpoint — the fifth conjunct's same-endpoint instance, which is
+what `endpointQueuePopHead`'s proof needs for the queue it does not pop. -/
+theorem endpointQueueHeadDisjoint.otherKind {st : SystemState}
+    (h : endpointQueueHeadDisjoint st)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {hd : SeLe4n.ThreadId} {recv : Bool}
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hHead : (if recv then ep.receiveQ else ep.sendQ).head = some hd) :
+    (if recv then ep.sendQ else ep.receiveQ).head ≠ some hd := by
+  intro hOther
+  have := (h epId epId ep ep hd recv (!recv) hEp hEp hHead (by
+    cases recv with
+    | false => simpa using hOther
+    | true => simpa using hOther)).2
+  cases recv <;> simp at this
+
+/-- A thread that heads one endpoint's queue heads no queue of any *other*
+endpoint — the cross-endpoint instance. -/
+theorem endpointQueueHeadDisjoint.otherEndpoint {st : SystemState}
+    (h : endpointQueueHeadDisjoint st)
+    {epA epB : SeLe4n.ObjId} {eA eB : Endpoint} {hd : SeLe4n.ThreadId} {recvA recvB : Bool}
+    (hNe : epA ≠ epB)
+    (hEpA : st.objects[epA]? = some (.endpoint eA))
+    (hEpB : st.objects[epB]? = some (.endpoint eB))
+    (hA : (if recvA then eA.receiveQ else eA.sendQ).head = some hd) :
+    (if recvB then eB.receiveQ else eB.sendQ).head ≠ some hd := by
+  intro hB
+  exact hNe (h epA epB eA eB hd recvA recvB hEpA hEpB hA hB).1
+
+/-- **PR #897 review (`v0.35.106`)**: a thread that has a predecessor heads no
+endpoint queue.  This is the fact that lets `endpointQueuePopHead` re-establish
+the fifth conjunct without reading an `ipcState`: the successor it promotes to
+head had `queuePrev = some <popped>`, and P2 says a head has none. -/
+theorem not_queueHead_of_queuePrev_some {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    {tid p : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPrev : tcb.queuePrev = some p)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (recv : Bool)
+    (hEpObj : st.objects[epId]? = some (.endpoint ep)) :
+    (if recv then ep.receiveQ else ep.sendQ).head ≠ some tid := by
+  intro hHead
+  have hWf := hEp epId ep hEpObj
+  unfold dualQueueEndpointWellFormed at hWf
+  rw [hEpObj] at hWf
+  have hBoundary : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) ∧ t.queuePrev = none ∧
+      t.queuePPrev = some .endpointHead := by
+    cases recv with
+    | false => exact hWf.1.2.1 tid (by simpa using hHead)
+    | true => exact hWf.2.2.1 tid (by simpa using hHead)
+  obtain ⟨t, hT, hP, _⟩ := hBoundary
+  rw [hTcb] at hT
+  obtain rfl : tcb = t := KernelObject.tcb.inj (Option.some.inj hT)
+  rw [hPrev] at hP
+  exact absurd hP (by simp)
+
+/-- ...and a thread whose back-pointer is absent heads no endpoint queue either —
+the strengthened P2's own payoff, and what makes `endpointQueueEnqueue`'s guard
+(`queuePPrev.isSome → .illegalState`) sufficient to show the thread it enqueues is
+not already some other queue's head. -/
+theorem not_queueHead_of_queuePPrev_none {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = none)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (recv : Bool)
+    (hEpObj : st.objects[epId]? = some (.endpoint ep)) :
+    (if recv then ep.receiveQ else ep.sendQ).head ≠ some tid := by
+  intro hHead
+  have hWf := hEp epId ep hEpObj
+  unfold dualQueueEndpointWellFormed at hWf
+  rw [hEpObj] at hWf
+  have hBoundary : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) ∧ t.queuePrev = none ∧
+      t.queuePPrev = some .endpointHead := by
+    cases recv with
+    | false => exact hWf.1.2.1 tid (by simpa using hHead)
+    | true => exact hWf.2.2.1 tid (by simpa using hHead)
+  obtain ⟨t, hT, _, hPP⟩ := hBoundary
+  rw [hTcb] at hT
+  obtain rfl : tcb = t := KernelObject.tcb.inj (Option.some.inj hT)
+  rw [hPPrev] at hPP
+  exact absurd hPP (by simp)
+
+/-- **PR #897 review (`v0.35.106`)**: head-disjointness survives any update whose
+new heads are each accounted for — either the head that (endpoint, kind) already
+had, or a *fresh* one, where "fresh" is whatever the writer can prove and must
+(a) head nothing in the pre-state and (b) pin the (endpoint, kind) uniquely.
+
+Those two obligations are exactly what makes the argument go through, and both
+queue-writer shapes in this tree supply them: a removal promotes the victim's
+successor, so freshness is "this queue's pre-state head was the victim" — unique
+by pre-state disjointness; an enqueue promotes a thread its own guard refused a
+back-pointer to, so freshness is "this is the one queue the operation names".
+`endpointQueueHeadDisjoint_of_singleQueueUpdate` is the second shape packaged, and
+is *derived* from this rather than stated beside it. -/
+theorem endpointQueueHeadDisjoint_of_freshHeads {st st' : SystemState}
+    {freshAt : SeLe4n.ObjId → Bool → SeLe4n.ThreadId → Prop}
+    (hFreshNew : ∀ (k : SeLe4n.ObjId) (r : Bool) (hd : SeLe4n.ThreadId), freshAt k r hd →
+      ∀ (k2 : SeLe4n.ObjId) (e2 : Endpoint) (r2 : Bool), st.objects[k2]? = some (.endpoint e2) →
+        (if r2 then e2.receiveQ else e2.sendQ).head ≠ some hd)
+    (hFreshUnique : ∀ (kA kB : SeLe4n.ObjId) (rA rB : Bool) (hd : SeLe4n.ThreadId),
+      freshAt kA rA hd → freshAt kB rB hd → kA = kB ∧ rA = rB)
+    (hHeads : ∀ (k : SeLe4n.ObjId) (e' : Endpoint) (r : Bool) (hd : SeLe4n.ThreadId),
+      st'.objects[k]? = some (.endpoint e') →
+      (if r then e'.receiveQ else e'.sendQ).head = some hd →
+      (∃ e, st.objects[k]? = some (.endpoint e) ∧
+        (if r then e.receiveQ else e.sendQ).head = some hd) ∨ freshAt k r hd)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  rcases hHeads epA eA recvA hd hEpA hA with ⟨e1, hE1, hH1⟩ | hF1 <;>
+    rcases hHeads epB eB recvB hd hEpB hB with ⟨e2, hE2, hH2⟩ | hF2
+  · exact h epA epB e1 e2 hd recvA recvB hE1 hE2 hH1 hH2
+  · exact absurd hH1 (hFreshNew epB recvB hd hF2 epA e1 recvA hE1)
+  · exact absurd hH2 (hFreshNew epA recvA hd hF1 epB e2 recvB hE2)
+  · exact hFreshUnique epA epB recvA recvB hd hF1 hF2
+
+/-- ...and the single-queue instance, which is what an operation that rewrites one
+queue of one endpoint supplies: freshness is "this is that queue". -/
+theorem endpointQueueHeadDisjoint_of_singleQueueUpdate {st st' : SystemState}
+    {epId : SeLe4n.ObjId} {ep epNew : Endpoint} {recvQ : Bool}
+    (hOther : ∀ (k : SeLe4n.ObjId) (e : Endpoint), k ≠ epId →
+      st'.objects[k]? = some (.endpoint e) → st.objects[k]? = some (.endpoint e))
+    (hPre : st.objects[epId]? = some (.endpoint ep))
+    (hNew : st'.objects[epId]? = some (.endpoint epNew))
+    (hUnchanged : (if recvQ then epNew.sendQ else epNew.receiveQ).head
+      = (if recvQ then ep.sendQ else ep.receiveQ).head)
+    (hRewritten : ∀ hd, (if recvQ then epNew.receiveQ else epNew.sendQ).head = some hd →
+      (if recvQ then ep.receiveQ else ep.sendQ).head = some hd ∨
+        ∀ (k : SeLe4n.ObjId) (e : Endpoint) (r : Bool), st.objects[k]? = some (.endpoint e) →
+          (if r then e.receiveQ else e.sendQ).head ≠ some hd)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  have hAtEp : ∀ (k : SeLe4n.ObjId) (e : Endpoint), k = epId →
+      st'.objects[k]? = some (.endpoint e) → e = epNew := by
+    intro k e hk hEk
+    rw [hk, hNew] at hEk
+    exact (KernelObject.endpoint.inj (Option.some.inj hEk)).symm
+  refine endpointQueueHeadDisjoint_of_freshHeads
+    (freshAt := fun k r hd => (k = epId ∧ r = recvQ) ∧
+      ∀ (k2 : SeLe4n.ObjId) (e2 : Endpoint) (r2 : Bool), st.objects[k2]? = some (.endpoint e2) →
+        (if r2 then e2.receiveQ else e2.sendQ).head ≠ some hd)
+    (fun _ _ _ hF => hF.2)
+    (fun kA kB rA rB _ hA hB => ⟨hA.1.1.trans hB.1.1.symm, hA.1.2.trans hB.1.2.symm⟩)
+    (fun k e' r hd hEk hHk => ?_) h
+  by_cases hk : k = epId
+  · rw [hAtEp k e' hk hEk] at hHk
+    by_cases hrq : r = recvQ
+    · subst hrq
+      rcases hRewritten hd hHk with hL | hN
+      · exact Or.inl ⟨ep, hk ▸ hPre, hL⟩
+      · exact Or.inr ⟨⟨hk, rfl⟩, hN⟩
+    · refine Or.inl ⟨ep, hk ▸ hPre, ?_⟩
+      cases recvQ <;> cases r <;> simp_all
+  · exact Or.inl ⟨e', hOther k e' hk hEk, hHk⟩
+
 /-- WS-H5: System-level dual-queue invariant — all endpoints in the system
 maintain dual-queue well-formedness AND system-wide TCB link integrity holds.
 tcbQueueLinkIntegrity is a system-level property (not per-endpoint) that
@@ -393,16 +723,19 @@ def dualQueueSystemInvariant (st : SystemState) : Prop :=
     dualQueueEndpointWellFormed epId st) ∧
   tcbQueueLinkIntegrity st ∧
   tcbQueueChainAcyclic st ∧
-  queuePPrevAgreesWithPrev st
+  queuePPrevAgreesWithPrev st ∧
+  endpointQueueHeadDisjoint st
 
-/-- **WS-RR RR8.3**: named accessors for the four conjuncts, so a consumer names
+/-- **WS-RR RR8.3**: named accessors for the five conjuncts, so a consumer names
 the fact it wants rather than a projection path.
 
 A positional `⟨hEp, hLink, hAcyclic⟩` is a claim about the conjunction's
 *nesting*, and adding this bundle's fourth conjunct broke ten such sites.  The
 project has paid for that shape twice already at `PlatformConfig.wellFormed`
 (PR #889 review rounds 19 and 22), where the remedy was accessors that depend on
-no nesting; these are that remedy applied here before a fifth conjunct arrives. -/
+no nesting; these are that remedy applied here, and `v0.35.106`'s fifth conjunct
+(`endpointQueueHeadDisjoint`) is the measurement that it paid — it shifted no
+projection path, because every consumer reaches for a name. -/
 theorem dualQueueSystemInvariant.endpointsWellFormed {st : SystemState}
     (h : dualQueueSystemInvariant st) :
     ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
@@ -419,7 +752,13 @@ theorem dualQueueSystemInvariant.chainAcyclic {st : SystemState}
 
 theorem dualQueueSystemInvariant.pprevAgrees {st : SystemState}
     (h : dualQueueSystemInvariant st) : queuePPrevAgreesWithPrev st := by
-  unfold dualQueueSystemInvariant at h; exact h.2.2.2
+  unfold dualQueueSystemInvariant at h; exact h.2.2.2.1
+
+/-- **PR #897 review (`v0.35.106`)**: the fifth conjunct's accessor.  The four
+above were written "before a fifth conjunct arrives"; this is it. -/
+theorem dualQueueSystemInvariant.headDisjoint {st : SystemState}
+    (h : dualQueueSystemInvariant st) : endpointQueueHeadDisjoint st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.2.2
 
 /-- **WS-RR RR8.3**: the same, from the bundle a caller actually holds.
 
@@ -453,6 +792,57 @@ theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState
     | true => simpa using hEpWF.2
   exact dualQueueRemovalGuardHolds hWF hDual.linkIntegrity hDual.pprevAgrees hTcb hPPrev hMem hTailLast
 
+
+/-- **PR #897 review (`v0.35.106`)**: every member of a well-formed queue carries
+a `queuePPrev`, so `endpointQueueRemoveDual`'s `queuePPrev = none` arm — which
+reports `.endpointQueueEmpty` and can never dequeue the thread — is **unreachable**
+for a member of a queue this bundle admits.
+
+The head's half is `intrusiveQueueWellFormed`'s P2 (`some .endpointHead`, carried
+since `v0.35.106`) and the interior half is `queuePPrev_tcbNext_of_reachable`.
+Before P2 carried the back-pointer only the second was available, so this
+derivation existed for an interior member alone and the head kept a hypothesis
+`dualQueueSystemInvariant` could not discharge. -/
+theorem queuePPrev_of_queueMember {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    ∃ pprev, tcb.queuePPrev = some pprev := by
+  rcases hMem with hHead | ⟨hd, hHead, hPath⟩
+  · obtain ⟨hdTcb, hHdObj, _, hHdPPrev⟩ := hWF.2.1 tid hHead
+    rw [hTcb] at hHdObj
+    obtain rfl : tcb = hdTcb := KernelObject.tcb.inj (Option.some.inj hHdObj)
+    exact ⟨.endpointHead, hHdPPrev⟩
+  · obtain ⟨p, _, hPPrev⟩ := queuePPrev_tcbNext_of_reachable hLink hTcb hPair hPath
+    exact ⟨.tcbNext p, hPPrev⟩
+
+/-- **PR #897 review (`v0.35.106`)**: and the guard passes for such a member, with
+the `QueuePPrev` it needs produced rather than supplied.
+
+`dualQueueRemovalGuardHolds` above takes `hPPrev : tcb.queuePPrev = some pprev`
+from its caller; this is that hypothesis **discharged** for any member, head
+included, so the statement is about the member rather than about a field value the
+caller happened to have.  `hMem` and `hTailLast` remain, because queue
+connectivity and the tail's identity are what no conjunct of this bundle
+entails — the shape RR8.4 reached when the tail guard retired WS-OD OD1.3's
+`spliceRemovedIsTailWhenLast`. -/
+theorem dualQueueRemovalGuardHolds_of_member {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hPP : queuePPrevAgreesWithPrev st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
+    ∃ pprev, tcb.queuePPrev = some pprev ∧
+      dualQueueRemovalGuard q tid tcb pprev = true := by
+  obtain ⟨pprev, hPPrev⟩ :=
+    queuePPrev_of_queueMember hWF hLink hTcb (hPP tid tcb hTcb) hMem
+  exact ⟨pprev, hPPrev,
+    dualQueueRemovalGuardHolds hWF hLink hPP hTcb hPPrev hMem hTailLast⟩
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`
 since WS-H12a) has been removed; meaningful dual-queue structural checking
@@ -1728,6 +2118,123 @@ def queueHeadBlockedConsistent (st : SystemState) : Prop :=
     (ep.receiveQ.head = some hd → tcb.ipcState = .blockedOnReceive epId) ∧
     (ep.sendQ.head = some hd →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
+
+/-- **PR #897 review (`v0.35.106`): cross-endpoint queue-head exclusivity IS
+derivable — from `queueHeadBlockedConsistent`, which this tree already states.**
+
+A thread has exactly one `ipcState`, and that conjunct says a head's `ipcState`
+names **its** endpoint and **its** queue kind: the `receiveQ` head is
+`.blockedOnReceive epId` and the `sendQ` head is `.blockedOnSend epId` or
+`.blockedOnCall epId`.  So a thread heading two queues would have an `ipcState`
+naming two endpoints, or naming a receive and a send at once — and the
+constructors are injective and distinct.  Hence a thread heads **at most one**
+endpoint queue, across endpoints and across the two queues of one endpoint.
+
+This is what `endpointQueueNoDup`'s disjointness clause states for the
+same-endpoint case (`sendQ.head ≠ receiveQ.head`) and does not state across
+endpoints; the blocking conjunct gives both, and gives the same-endpoint case
+*without* that clause.
+
+**Why it matters, and why it is not in `intrusiveQueueWellFormed`.**  Folding a
+queue head's `queuePPrev` into that predicate's head boundary (P2) needs exactly
+this fact, to prove that a store *clearing* one thread's links cannot break
+another queue's head clause.  But `intrusiveQueueWellFormed` is deliberately
+blocking-agnostic — it is "local boundary/link properties ... verifiable without
+traversal" — and its low-level preservation lemmas
+(`storeTcbQueueLinks_preserves_iqwf`) take only that predicate, so the blocking
+fact is out of scope there.  The back-pointer clause therefore belongs **beside**
+`queueHeadBlockedConsistent` in `ipcInvariantCore`, where every preservation proof
+already has this lemma's hypothesis in hand.  `docs/REGISTERED_DEBT.md` table C
+records the measurement. -/
+theorem queueHeadExclusive {st : SystemState}
+    (hHB : queueHeadBlockedConsistent st)
+    {epA epB : SeLe4n.ObjId} {eA eB : Endpoint} {hd : SeLe4n.ThreadId} {tcb : TCB}
+    (hEpA : st.objects[epA]? = some (.endpoint eA))
+    (hEpB : st.objects[epB]? = some (.endpoint eB))
+    (hTcb : st.objects[hd.toObjId]? = some (.tcb tcb))
+    (hA : eA.receiveQ.head = some hd ∨ eA.sendQ.head = some hd)
+    (hB : eB.receiveQ.head = some hd ∨ eB.sendQ.head = some hd) :
+    epA = epB := by
+  obtain ⟨hRecvA, hSendA⟩ := hHB epA eA hd tcb hEpA hTcb
+  obtain ⟨hRecvB, hSendB⟩ := hHB epB eB hd tcb hEpB hTcb
+  -- Heading *either* queue of an endpoint pins the thread's one `ipcState` to one
+  -- of three constructors, each naming *that* endpoint.
+  have hStateA : tcb.ipcState = .blockedOnReceive epA ∨
+      tcb.ipcState = .blockedOnSend epA ∨ tcb.ipcState = .blockedOnCall epA := by
+    rcases hA with hA | hA
+    · exact Or.inl (hRecvA hA)
+    · rcases hSendA hA with h | h
+      · exact Or.inr (Or.inl h)
+      · exact Or.inr (Or.inr h)
+  have hStateB : tcb.ipcState = .blockedOnReceive epB ∨
+      tcb.ipcState = .blockedOnSend epB ∨ tcb.ipcState = .blockedOnCall epB := by
+    rcases hB with hB | hB
+    · exact Or.inl (hRecvB hB)
+    · rcases hSendB hB with h | h
+      · exact Or.inr (Or.inl h)
+      · exact Or.inr (Or.inr h)
+  -- Nine shapes: the three diagonals are constructor injectivity, the six
+  -- off-diagonals are distinct constructors.
+  rcases hStateA with h1 | h1 | h1 <;> rcases hStateB with h2 | h2 | h2 <;>
+    rw [h1] at h2 <;>
+    simp only [ThreadIpcState.blockedOnReceive.injEq, ThreadIpcState.blockedOnSend.injEq,
+      ThreadIpcState.blockedOnCall.injEq, reduceCtorEq] at h2 <;>
+    exact h2
+
+/-- ...and the same-endpoint corollary: a thread cannot head both of one
+endpoint's queues.  `endpointQueueNoDup` states this as its own clause; the
+blocking conjunct gives it, so the two agree and this is the derivation. -/
+theorem queueHeadKindExclusive {st : SystemState}
+    (hHB : queueHeadBlockedConsistent st)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {hd : SeLe4n.ThreadId} {tcb : TCB}
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hTcb : st.objects[hd.toObjId]? = some (.tcb tcb))
+    (hRecv : ep.receiveQ.head = some hd) : ep.sendQ.head ≠ some hd := by
+  intro hSend
+  obtain ⟨hR, hS⟩ := hHB epId ep hd tcb hEp hTcb
+  have h1 := hR hRecv
+  rcases hS hSend with h2 | h2 <;> rw [h1] at h2 <;> exact absurd h2 (by simp)
+
+/-- **PR #897 review (`v0.35.106`): the fifth conjunct is a CONSEQUENCE of
+`ipcInvariantCore`, not a new assumption.**
+
+`endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s fifth conjunct and is
+preserved without reading any `ipcState`; this is what says it is also *true*
+wherever the tree already establishes the core bundle, so an establishing site
+pays nothing.  It needs the head boundary as well as the blocking conjunct,
+because `queueHeadBlockedConsistent` is silent about a head whose TCB does not
+resolve and `intrusiveQueueWellFormed`'s P2 is what says it does. -/
+theorem endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    (hHB : queueHeadBlockedConsistent st) : endpointQueueHeadDisjoint st := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  -- The head TCB resolves, by the head boundary of whichever queue names it.
+  obtain ⟨tcb, hTcb⟩ : ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) := by
+    have hWf := hEp epA eA hEpA
+    unfold dualQueueEndpointWellFormed at hWf
+    rw [hEpA] at hWf
+    cases recvA with
+    | false => obtain ⟨t, hT, _, _⟩ := hWf.1.2.1 hd (by simpa using hA); exact ⟨t, hT⟩
+    | true => obtain ⟨t, hT, _, _⟩ := hWf.2.2.1 hd (by simpa using hA); exact ⟨t, hT⟩
+  have hAor : eA.receiveQ.head = some hd ∨ eA.sendQ.head = some hd := by
+    cases recvA with
+    | false => exact Or.inr (by simpa using hA)
+    | true => exact Or.inl (by simpa using hA)
+  have hBor : eB.receiveQ.head = some hd ∨ eB.sendQ.head = some hd := by
+    cases recvB with
+    | false => exact Or.inr (by simpa using hB)
+    | true => exact Or.inl (by simpa using hB)
+  have hEq : epA = epB := queueHeadExclusive hHB hEpA hEpB hTcb hAor hBor
+  subst hEq
+  obtain rfl : eA = eB := by
+    rw [hEpA] at hEpB; exact KernelObject.endpoint.inj (Option.some.inj hEpB)
+  refine ⟨rfl, ?_⟩
+  cases recvA <;> cases recvB
+  · rfl
+  · exact absurd (by simpa using hA) (queueHeadKindExclusive hHB hEpA hTcb (by simpa using hB))
+  · exact absurd (by simpa using hB) (queueHeadKindExclusive hHB hEpA hTcb (by simpa using hA))
+  · rfl
 
 /-- IPC de-threading D4 (Finding F-2): queue **tail** blocking-state consistency — the dual of
 `queueHeadBlockedConsistent` for the tail boundary.  If a thread is the tail of an endpoint's
@@ -4898,8 +5405,8 @@ theorem intrusiveQueueWellFormed_of_storeAgrees {st st' : SystemState}
   obtain ⟨hEmpty, hHead, hTail⟩ := h
   refine ⟨hEmpty, ?_, ?_⟩
   · intro hd hHd
-    obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
-    exact ⟨tcb, by rw [hA]; exact hTcb, hPrev⟩
+    obtain ⟨tcb, hTcb, hPrev, hPP⟩ := hHead hd hHd
+    exact ⟨tcb, by rw [hA]; exact hTcb, hPrev, hPP⟩
   · intro tl hTl
     obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
     exact ⟨tcb, by rw [hA]; exact hTcb, hNext⟩
@@ -4935,10 +5442,11 @@ theorem tcbQueueChainAcyclic_of_storeAgrees {st st' : SystemState}
 theorem dualQueueSystemInvariant_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEp, hLinks, hAcyc, hPP⟩ := h
+  obtain ⟨hEp, hLinks, hAcyc, hPP, hHD⟩ := h
   refine ⟨?_, tcbQueueLinkIntegrity_of_storeAgrees hA hLinks,
     tcbQueueChainAcyclic_of_storeAgrees hA hAcyc,
-    queuePPrevAgreesWithPrev_of_storeAgrees hA hPP⟩
+    queuePPrevAgreesWithPrev_of_storeAgrees hA hPP,
+    endpointQueueHeadDisjoint_of_getElem_eq hA hHD⟩
   intro epId ep hLk
   have hLk0 : st.objects[epId]? = some (.endpoint ep) := by rw [← hA]; exact hLk
   have := hEp epId ep hLk0
@@ -6876,8 +7384,8 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
     dualQueueSystemInvariant (cleanupPreReceiveDonation st receiver) := by
   exact cleanupPreReceiveDonation_frame_helper st receiver hInv
     fun scId originalOwner newOwner? st' hRet => by
-      obtain ⟨hDQWF, hLink, hAcyc, hPP⟩ := hInv
-      refine ⟨?_, ?_, ?_, ?_⟩
+      obtain ⟨hDQWF, hLink, hAcyc, hPP, hHD⟩ := hInv
+      refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · -- dualQueueEndpointWellFormed for all endpoints in st'
         intro epId ep hEp'
         have hEpPre := returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv newOwner? hRet epId ep hEp'
@@ -6893,11 +7401,11 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
           intro q ⟨hEmpty, hHead, hTail⟩
           refine ⟨hEmpty, ?_, ?_⟩
           · intro hd hHd
-            obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
-            obtain ⟨tcb', hTcb', _, hQP', _, _⟩ :=
-              returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv newOwner? hRet
-                hd.toObjId tcb hTcb
-            exact ⟨tcb', hTcb', hQP' ▸ hPrev⟩
+            obtain ⟨tcb, hTcb, hPrev, hPP⟩ := hHead hd hHd
+            obtain ⟨tcb', hTcb', sb, rfl⟩ :=
+              returnDonatedSchedContext_tcb_rewrite st st' receiver scId originalOwner hObjInv
+                newOwner? hRet hd.toObjId tcb hTcb
+            exact ⟨_, hTcb', hPrev, hPP⟩
           · intro tl hTl
             obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
             obtain ⟨tcb', hTcb', hQN', _, _, _⟩ :=
@@ -6946,6 +7454,11 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
           returnDonatedSchedContext_tcb_rewrite_backward st st' receiver scId originalOwner
             newOwner? hObjInv hRet tid.toObjId tcb' hTcb'
         exact ⟨tcb, hPre, rfl, rfl⟩
+      · -- **PR #897 review**: the donation return writes no endpoint, so the
+        -- fifth conjunct transports backward at every endpoint key.
+        exact endpointQueueHeadDisjoint_of_endpointBackward
+          (fun epId ep hEp' => returnDonatedSchedContext_endpoint_backward st st' receiver scId
+            originalOwner hObjInv newOwner? hRet epId ep hEp') hHD
 
 /-- AI4-A: cleanupPreReceiveDonation preserves endpointQueueNoDup. -/
 theorem cleanupPreReceiveDonation_preserves_endpointQueueNoDup

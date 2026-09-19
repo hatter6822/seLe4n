@@ -3336,7 +3336,7 @@ private theorem retypeWrite_dualQueueSystemInvariant
     (hDet : retypeTargetDetached st target)
     (hInv : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic, hPPair⟩ := hInv
+  obtain ⟨hEpWF, ⟨hFwd, hRev⟩, hAcyclic, hPPair, hHD⟩ := hInv
   have hIQtrans : ∀ (q : IntrusiveQueue),
       intrusiveQueueWellFormed q st →
       (∀ hd, q.head = some hd → hd.toObjId ≠ target) →
@@ -3345,12 +3345,12 @@ private theorem retypeWrite_dualQueueSystemInvariant
     intro q ⟨hP1, hP2, hP3⟩ hHd hTl
     refine ⟨hP1, ?_, ?_⟩
     · intro hd hH
-      obtain ⟨tcbH, hTH, hPnone⟩ := hP2 hd hH
-      exact ⟨tcbH, by rw [hNe _ (hHd hd hH)]; exact hTH, hPnone⟩
+      obtain ⟨tcbH, hTH, hPnone, hPPHead⟩ := hP2 hd hH
+      exact ⟨tcbH, by rw [hNe _ (hHd hd hH)]; exact hTH, hPnone, hPPHead⟩
     · intro tl hT
       obtain ⟨tcbT, hTT, hNnone⟩ := hP3 tl hT
       exact ⟨tcbT, by rw [hNe _ (hTl tl hT)]; exact hTT, hNnone⟩
-  refine ⟨?_, ⟨?_, ?_⟩, ?_, ?_⟩
+  refine ⟨?_, ⟨?_, ?_⟩, ?_, ?_, ?_⟩
   · -- per-endpoint dual-queue well-formedness
     intro epId ep hEp
     unfold dualQueueEndpointWellFormed
@@ -3438,6 +3438,24 @@ private theorem retypeWrite_dualQueueSystemInvariant
       exact TCB.queuePPrevAgreesWithPrev_of_pprev_none hQPP hQPrev
     · rw [hNe _ hKt] at hTcb
       exact hPPair tid tcb hTcb
+  · -- **PR #897 review**: the fifth conjunct.  The pristine replacement's queues
+    -- are empty, so it contributes no head at all; every other key reads the
+    -- pre-state, where head-disjointness already holds.
+    refine endpointQueueHeadDisjoint_of_freshHeads
+      (freshAt := fun _ _ _ => False) (fun _ _ _ h => h.elim)
+      (fun _ _ _ _ _ h _ => h.elim) (fun k e r hd hEk hHk => ?_) hHD
+    by_cases hKe : k = target
+    · rw [hKe] at hEk
+      obtain rfl : newObj = .endpoint e := retypeWrite_at_target hAt hEk
+      obtain ⟨hSH, hST, hRH, hRT⟩ := hFresh
+      cases r with
+      | false =>
+          simp only [Bool.false_eq_true, ↓reduceIte] at hHk
+          rw [hSH] at hHk; cases hHk
+      | true =>
+          simp only [↓reduceIte] at hHk
+          rw [hRH] at hHk; cases hHk
+    · exact Or.inl ⟨e, by rw [← hNe _ hKe]; exact hEk, hHk⟩
 
 /-- The retype write — one arbitrary-kind object replaced by a pristine one at
 a fully detached slot — preserves the whole `ipcInvariantFull` bundle.  This is

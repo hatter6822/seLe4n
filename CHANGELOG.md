@@ -1,3 +1,115 @@
+## v0.35.106 — the head's back-pointer is the queue's fact
+
+**PR #897 review (Codex P2).**  `intrusiveQueueWellFormed`'s **P2** constrained
+only `queuePrev`, so a queue whose **sole member** carried `(none, none, none)` —
+the shape every link clear writes — satisfied every conjunct of
+`dualQueueSystemInvariant`, while `endpointQueueRemoveDual`, whose guard takes a
+`QueuePPrev` rather than an `Option`, refused that head and reported
+`.endpointQueueEmpty` for a queue that is **not** empty.  That member could never
+leave: the WS-OD OD1.1 / OD3.9 stranding class a **fourth** time, at the one spot
+RR8.3's pairing and `v0.35.99`'s strengthening of it both left open.
+
+`queuePPrevAgreesWithPrev` structurally cannot reach it, and that is the finding
+rather than a limit to work around: `queuePrev = none` is what a *detached* thread
+carries **and** what a queue's **head** carries, so a pointwise predicate over one
+TCB cannot distinguish them, whatever its `none` arm is strengthened to.  The
+clause therefore moved to where it can be said — P2, a fact about a *queue's*
+head — and the "one bit" `queuePPrev` carries is now stated at two levels, split by
+what each level can see.
+
+**Two artefacts answered "is this queue well-formed" and the PROVED one was the
+weaker.**  `SeLe4n/Testing/InvariantChecks.lean`'s `intrusiveQueueWellFormedB` —
+the check every harness state is asserted against — has required
+`headTcb.queuePPrev = some .endpointHead` since it was written.  So the divergence
+sat exactly where the proofs are silent: this project's *one question answered in
+two places* shape, with the Bool right and the Prop wrong.  The state is
+unreachable (`bootSafeEndpointCheck` requires all four boundaries `none`;
+`endpointQueueEnqueue` refuses a thread carrying any link and writes
+`.endpointHead` on a new head; every removal maintains the pair), which is what
+made it a verification gap rather than a live defect — and a gap the Bool check
+would have caught while the bundle would not.
+
+**Folding the clause in cost a fifth conjunct, measured rather than assumed.**
+The obligation lands on `storeTcbQueueLinks_preserves_iqwf`, whose *clearing*
+callers (the pop's head unlink) discharged the head clause with `fun _ _ _ => rfl`
+because the cleared thread has `queuePrev = none` — so the clause survived even if
+that thread was some *other* queue's head.  With the back-pointer in P2 they must
+prove the cleared thread heads **none** of the queues they transport, and
+`endpointQueueNoDup` gives disjointness only *within* one endpoint.  So
+`endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s **fifth** conjunct —
+the extension point RR8.3 built when it wrote four named accessors "before a fifth
+conjunct arrives", and the measurement that the shape paid: **no projection path
+moved**.  `ipcInvariantFull` still has twenty conjuncts.
+
+**Cross-endpoint exclusivity is a CONSEQUENCE of `ipcInvariantCore`, not a new
+assumption.**  `queueHeadExclusive` derives it from `queueHeadBlockedConsistent`:
+a head's `ipcState` names *its* endpoint and *its* queue kind, and a thread has one
+`ipcState`.  `queueHeadKindExclusive` is the same-endpoint corollary, which
+re-derives `endpointQueueNoDup`'s own disjointness clause, and
+`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent` is the builder.  A
+Tier 3 negative refuses the conjunct appearing as a hypothesis *inside*
+`queueHeadExclusive`, because a derivation that consumes what it derives reads
+exactly like one that decides.
+
+Nothing *assumes* exclusivity; the conjunct exists so the bundle can **transport**
+it without reading an `ipcState`, which is what keeps it inside this bundle's
+charter.  Every queue writer discharges it from its own guard through
+`endpointQueueHeadDisjoint_of_singleQueueUpdate` — itself *derived* from the
+general `_of_freshHeads` rather than stated beside it: a pop promotes a successor,
+which has a predecessor (`not_queueHead_of_queuePrev_some`); an enqueue promotes a
+thread its own guard refused a back-pointer to (`not_queueHead_of_queuePPrev_none`,
+which is the strengthened P2 paying for itself); a mid-queue removal and a tail
+append move no head at all.  The two operations that clear a *victim's* links
+without owning its queues — the notification purge and the reply-path restore —
+take the victim's off-boundary fact as a **stated** hypothesis (`hOffEp`), which
+the composite holding the whole bundle supplies from `queueHeadBlockedConsistent`,
+because a thread blocked on a notification or a reply bounds no endpoint queue.
+
+**The payoff is a retired caller obligation.**  A queue **member**'s `queuePPrev`
+is now derived rather than hypothesised — at the head from P2, at an interior node
+from `tcbQueueLinkIntegrity`'s forward clause plus the pairing — so
+`queuePPrev_of_queueMember` joins the halves and
+`dualQueueRemovalGuardHolds_of_member` is `dualQueueRemovalGuardHolds` with
+`hPPrev` **discharged** for any member, head included.  The interior-only
+predecessor of that theorem (`dualQueueRemovalGuard_of_reachableMember`, one cut
+old) is **deleted** rather than kept beside it, with a Tier 3 negative refusing the
+name: with both halves derivable it is strictly subsumed, and two spellings of one
+discharge is the duplication this project retires.  `hMem` and `hTailLast` remain,
+because queue connectivity and the tail's identity are what no conjunct of this
+bundle entails.
+
+Also in this cut:
+
+- **The witness reads the field, not a verdict.**
+  `tests/NegativeStateSuite.lean`'s `runDualQueuePPrevPairingChecks` case (5)
+  asserts directly that the corrupted head carries `none` and the control's carries
+  `some .endpointHead` — the clause P2 now requires — beside the pairing still
+  *accepting* it, which is not a defect but the reason the clause could not live
+  there.  Asserting the field rather than a predicate's verdict is what makes the
+  witness about P2's strengthening rather than about the pairing beside it.
+- **Twelve modules carry the fifth conjunct**, each by the cheapest route its
+  operation allows: `storeObject_tcb_preserves_endpointQueueHeadDisjoint` and
+  `storeObject_nonEndpoint_preserves_endpointQueueHeadDisjoint` for a write that
+  touches no endpoint, `_of_objects_eq` for a transport, `_of_singleQueueUpdate` for
+  the pop and the four removal paths, `_of_freshHeads` for the enqueue and the
+  cancellation sweep, and vacuity at the boot and `default` states — the boot's
+  discharged from `bootSafeObjectCheck`, which admits an endpoint only with both
+  queues empty, so no endpoint has a head to collide.
+- **`storeObject_tcb_preserves_intrusiveQueueWellFormed` takes the pair.**  Its
+  `hPPrevEq` sits between `hPrevEq` and `hNextEq` at ten call sites, because the two
+  link fields are one back-pointer and a frame that carries one carries both;
+  `storeTcbQueueLinks_preserves_iqwf`'s `hHeadOk` concludes the pair for the same
+  reason.
+- **`spliceOutMidQueueNode_queuePPrev_frame`**, the sibling of
+  `_queuePrev_frame` — `queueUnlinkPredecessor` writes `queueNext` only, so the two
+  proofs are identical, which is the machine-checked form of that.
+- **`dualQueueSystemInvariant_perCore` carries the conjunct whole**, like the
+  endpoint clause and unlike the three TCB-level ones, because it mentions no TCB.
+- Documentation: P2's docstring records the two-artefact divergence, the fifth
+  conjunct's cost and the derivation; `TCB.queuePPrevAgreesWithPrev`'s records that
+  its `none` arm is necessary-only *by construction* and where the head's half
+  lives; `CLAUDE.md` / `AGENTS.md` carry the five things new code must respect.
+
 ## v0.35.105 — a frozen mirror gave one answer to two live questions
 
 **PR #897 review (Codex P2).**  `frozenSchedContextConfigure` propagates the two

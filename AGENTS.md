@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.105.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.106.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3306,8 +3306,9 @@ its two link fields) or, for a queue writer, the per-primitive siblings
 `storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev` and
 `storeObject_tcb_preserves_queuePPrevAgreesWithPrev`.  The bundle has **named
 accessors** (`.endpointsWellFormed` / `.linkIntegrity` / `.chainAcyclic` /
-`.pprevAgrees`) so a fifth conjunct does not shift every projection path, and a
-positional `.2.2` into it is now a statement about a pair.
+`.pprevAgrees` / `.headDisjoint`) so the fifth conjunct `v0.35.106` added did not
+shift a single projection path, and a positional `.2.2` into it is now a statement
+about a pair.
 
 (2) **The dual removal's precondition is a named definition the transition
 reads.**  `dualQueueRemovalGuard` *is* `endpointQueueRemoveDual`'s
@@ -3353,6 +3354,69 @@ harness state asserts it; the golden trace's `[PIP-005]` count moved 27 → 28,
 which is the measurement that it runs.  Its witness is decisive in both
 directions, and the mutation that decides **keeps every queue and every
 `queueNext` chain and corrupts one back-pointer**.
+
+**...and the head's back-pointer is the QUEUE's fact, not the TCB's — so it needed
+a fifth conjunct** (PR #897 review, `v0.35.106`).  RR8.3 closed *present but wrong*
+and `v0.35.99` closed *absent on an interior node*; what both left open is the
+**head**.  `queuePrev = none` is what a detached thread carries **and** what a
+queue's head carries, so `queuePPrevAgreesWithPrev` — a pointwise predicate over
+one TCB — structurally cannot distinguish them, whatever its `none` arm is
+strengthened to.  A queue whose sole member carried `(none, none, none)` therefore
+satisfied every conjunct of the bundle while `endpointQueueRemoveDual` refused it
+with `.endpointQueueEmpty`: the OD1.1 / OD3.9 stranding class a **fourth** time, and
+this time on a queue that is not empty.  **And the tree had already decided it in
+the other artefact**: `intrusiveQueueWellFormedB`, the check every harness state is
+asserted against, has required `headTcb.queuePPrev = some .endpointHead` since it was
+written — *one question answered in two places*, with the Bool right and the Prop
+wrong, and the divergence sitting exactly where the proofs are silent.  Five things
+new code must respect.
+
+(1) **The clause lives in `intrusiveQueueWellFormed`'s P2**, beside `queuePrev =
+none`, because it is a fact about a *queue's head* and a pointwise TCB predicate
+cannot say it.  A new queue writer states both link fields of a head it installs;
+`storeTcbQueueLinks_preserves_iqwf`'s `hHeadOk` carries the pair.
+
+(2) **`endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s FIFTH conjunct**,
+and `ipcInvariantFull` still has twenty.  It says a thread heads at most one
+endpoint queue, counting send and receive as different queues — which is what a
+*clearing* writer needs, since with the back-pointer in P2 it must show the thread
+it clears heads none of the queues it transports, and `endpointQueueNoDup` gives
+disjointness only *within* one endpoint.  The bundle's named accessors gained
+`.headDisjoint`, and that RR8.3 built them "before a fifth conjunct arrives" is the
+measurement that the shape paid: no projection path moved.
+
+(3) **It is a consequence of `ipcInvariantCore`, not a new assumption.**
+`queueHeadExclusive` derives it from `queueHeadBlockedConsistent` — a head's
+`ipcState` names *its* endpoint and *its* queue kind, and a thread has one
+`ipcState` — with `queueHeadKindExclusive` the same-endpoint corollary (which
+re-derives `endpointQueueNoDup`'s disjointness clause) and
+`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent` the builder.  So nothing
+*assumes* exclusivity; the conjunct exists so the bundle can **transport** it
+without reading an `ipcState`, which is what keeps it inside this bundle's charter.
+
+(4) **A writer discharges it locally, from its own guard.**
+`endpointQueueHeadDisjoint_of_singleQueueUpdate` (itself derived from the general
+`_of_freshHeads`) takes two obligations, and each queue writer already has them: a
+pop promotes a successor, which has a predecessor
+(`not_queueHead_of_queuePrev_some`); an enqueue promotes a thread its own guard
+refused a back-pointer to (`not_queueHead_of_queuePPrev_none` — the strengthened P2
+paying for itself); a mid-queue removal and a tail append move no head.  The two
+operations that clear a *victim's* links without owning its queues — the
+notification purge and the reply-path restore — take the victim's off-boundary fact
+as a **stated** hypothesis (`hOffEp`), which the composite holding the whole bundle
+supplies from `queueHeadBlockedConsistent`, because a thread blocked on a
+notification or a reply bounds no endpoint queue.
+
+(5) **The payoff is a retired caller obligation.**  A queue member's `queuePPrev` is
+now derived rather than hypothesised — at the head from P2, at an interior node from
+`tcbQueueLinkIntegrity`'s forward clause plus the pairing — so
+`queuePPrev_of_queueMember` joins the halves and
+`dualQueueRemovalGuardHolds_of_member` is `dualQueueRemovalGuardHolds` with `hPPrev`
+discharged.  `hMem` and `hTailLast` remain, because queue connectivity and the
+tail's identity are what no conjunct of this bundle entails.  Its witness is
+`tests/NegativeStateSuite.lean` case (5), which reads the field off both states
+directly — asserting the *field* rather than a predicate's verdict is what makes it
+about P2's strengthening rather than about the pairing beside it.
 
 **...and the BOUNDARY the removals write is one definition too — and asking the
 fact rather than a proxy for it is what retires a stated hypothesis** (WS-RR

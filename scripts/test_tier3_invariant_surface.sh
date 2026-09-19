@@ -15630,4 +15630,56 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t
 # the reservation for a `.bound` thread -- reading `targetTcb.priority` there is
 # the sibling divergence the sweep found.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSetMCPriority[^\n]*(\n([ \t][^\n]*)?)*if \(st1\.threadBasePriority targetTcb.\)\.val > newMCP\.val then" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# ---------------------------------------------------------------------------
+# `v0.35.106`: the head's back-pointer is the QUEUE's fact, and exclusivity is
+# what makes it preservable.
+#
+# RR8.3 closed *present but wrong* and `v0.35.99` closed *absent on an interior
+# node*; both left the **head**, whose `queuePrev = none` is legitimate, so the
+# pointwise pairing could not reach it and a one-thread queue whose member carried
+# `(none, none, none)` satisfied the whole bundle while `endpointQueueRemoveDual`
+# refused it with `.endpointQueueEmpty`.  `intrusiveQueueWellFormedB` -- the check
+# every harness state is asserted against -- had required the back-pointer since it
+# was written, so the PROVED artefact was the weaker one.  Reported on PR #897.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def intrusiveQueueWellFormed[^\n]*(\n([ \t][^\n]*)?)*      tcb\.queuePPrev = some \.endpointHead\) ." SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# ...and P2 may not go back to constraining `queuePrev` alone.  The negative keeps
+# the head clause and drops only the back-pointer conjunct, which is the mutation
+# that decides: every other token of the definition is unchanged.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def intrusiveQueueWellFormed[^\n]*(\n([ \t][^\n]*)?)*= some \(\.tcb tcb\) . tcb\.queuePrev = none\) .\n" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The runtime mirror has always asked for it; pinned so the two artefacts cannot
+# part again in the other direction.
+run_check "INVARIANT" bash -lc 'rg -U -n "headTcb\.queuePPrev = some \.endpointHead" SeLe4n/Testing/InvariantChecks.lean'
+# The fifth conjunct that makes a *clearing* writer able to discharge P2: a thread
+# heads at most one endpoint queue, send and receive counted as different queues.
+run_check "INVARIANT" rg -n '^def endpointQueueHeadDisjoint' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem dualQueueSystemInvariant\.headDisjoint' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# ...and it is a CONSEQUENCE of `ipcInvariantCore`, not a new assumption: a head's
+# `ipcState` names its endpoint and its queue kind, and a thread has one
+# `ipcState`.  `queueHeadExclusive` is the cross-endpoint statement and
+# `queueHeadKindExclusive` the same-endpoint corollary.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem queueHeadExclusive[^\n]*(\n([ \t][^\n]*)?)*\(hHB : queueHeadBlockedConsistent st\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent[^\n]*(\n([ \t][^\n]*)?)*queueHeadBlockedConsistent st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# ...and the derivation may not consume the conjunct it derives, which would make
+# it a tautology reading exactly like a derivation.  Scoped to the declaration, so
+# the negative fires on a hypothesis added inside it and not on the file's other
+# uses of the name.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem queueHeadExclusive[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The two local facts every queue writer discharges the conjunct with, and the
+# general form the specialised one is DERIVED from rather than stated beside.
+run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePrev_some' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePPrev_none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueHeadDisjoint_of_singleQueueUpdate[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint_of_freshHeads" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# The payoff: a queue MEMBER's back-pointer is derived rather than hypothesised,
+# joining P2's head half with the pairing's interior half, so the removal guard
+# discharges for any member.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem queuePPrev_of_queueMember[^\n]*(\n([ \t][^\n]*)?)*queuePPrev_tcbNext_of_reachable" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dualQueueRemovalGuardHolds_of_member[^\n]*(\n([ \t][^\n]*)?)*queuePPrev_of_queueMember" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# ...and the interior-only predecessor of that theorem must not come back beside
+# it: with both halves derivable it is strictly subsumed, and two spellings of one
+# discharge is the duplication this project retires.
+run_negative_check "INVARIANT" rg -n 'dualQueueRemovalGuard_of_reachableMember' SeLe4n/ tests/
+# The splice carries the head's field through the same frame its sibling uses for
+# `queuePrev`, which is what lets the cancellation composite transport P2.
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_queuePPrev_frame' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 finalize_report

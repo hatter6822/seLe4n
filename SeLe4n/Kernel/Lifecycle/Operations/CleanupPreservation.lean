@@ -2094,6 +2094,26 @@ theorem spliceOutMidQueueNode_queuePrev_frame (st : SystemState) (tid : SeLe4n.T
     exact h1
   · rcases hcase with rfl | rfl <;> rfl
 
+/-- **PR #897 review (`v0.35.106`)**: ...and its `queuePPrev`, for the same reason
+— `queueUnlinkPredecessor` writes `queueNext` alone.  The head boundary carries the
+pair now, so a consumer that framed only `queuePrev` framed half a back-pointer. -/
+theorem spliceOutMidQueueNode_queuePPrev_frame (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (k : SeLe4n.ObjId) (t0 : TCB)
+    (hInv : st.objects.invExt) (hLookup : lookupTcb st tid = some tcb)
+    (hk : st.objects[k]? = some (.tcb t0))
+    (hNe : ∀ n, tcb.queueNext = some n → n.toObjId ≠ k) :
+    ∃ t', (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t') ∧
+      t'.queuePPrev = t0.queuePPrev := by
+  obtain ⟨t1, h1, hcase⟩ := queueNeighbourPatch_tcb_forward st.objects tcb.queuePrev
+    (queueUnlinkPredecessor tcb) hInv k t0 hk
+  refine ⟨t1, ?_, ?_⟩
+  · rw [spliceOutMidQueueNode_eq_patches, hLookup]
+    simp only
+    rw [queueNeighbourPatch_at_other _ tcb.queueNext _
+      (queueNeighbourPatch_invExt _ _ _ hInv) k hNe]
+    exact h1
+  · rcases hcase with rfl | rfl <;> rfl
+
 /-- Every thread that is not the swept thread's predecessor keeps its `queueNext`. -/
 theorem spliceOutMidQueueNode_queueNext_frame (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (k : SeLe4n.ObjId) (t0 : TCB)

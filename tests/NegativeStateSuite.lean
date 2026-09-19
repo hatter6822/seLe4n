@@ -1244,7 +1244,12 @@ Four assertions the tree could not make before this cut (the fourth added at
 3. A **detached** thread carrying `(none, .endpointHead, none)` *satisfies* the
    pairing and still fails the guard, on the position half.  That is the honest
    measurement of what the invariant does **not** buy: membership is a separate
-   hypothesis, which is why `dualQueueRemovalGuardHolds` takes one. -/
+   hypothesis, which is why `dualQueueRemovalGuardHolds` takes one.
+4. A queue's **head** carrying no back-pointer at all *satisfies* the pairing —
+   `queuePrev = none` is what a head legitimately has — so the pointwise arm
+   cannot reach it.  Case (5) below is that state, and the assertion added at
+   `v0.35.106` is that `intrusiveQueueWellFormed`'s **P2** now refuses it, which
+   is where a fact about a queue's head belongs. -/
 private def runDualQueuePPrevPairingChecks : IO Unit := do
   let (_, stPair1) ← expectOkSt "pprev pairing enqueue sender 7"
     (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
@@ -1339,6 +1344,82 @@ private def runDualQueuePPrevPairingChecks : IO Unit := do
     (retiredPairingAcceptingAnyMissingBackPointer stPair3) true
   let (_, _) ← expectOkSt "control: the untouched interior node CAN be removed"
     (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stPair3)
+
+  -- (5) **PR #897 review (`v0.35.106`): the HEAD, which `v0.35.99` did not reach.**
+  -- Case (4) above closed *present but wrong* for an interior node.  A queue's
+  -- **head** has `queuePrev = none` legitimately, so the strengthened `none` arm's
+  -- obligation (`queuePrev = none`) is *satisfied* by a head carrying no
+  -- back-pointer at all — a pointwise predicate over one TCB structurally cannot
+  -- say "on no queue", whatever it is strengthened to.  So the clause moved to
+  -- where it can be said: `intrusiveQueueWellFormed`'s **P2**, a fact about a
+  -- queue's head, which this case is the witness for.
+  let (_, stSingle) ← expectOkSt "pprev pairing enqueue a single sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let stHeadNoBackPointer ← expectOkVal "pprev pairing clear the SOLE member's back-pointer"
+    (corruptThreadQueueLinks stSingle (SeLe4n.ThreadId.ofNat 7) none none none)
+  let qSingle ← sendQOf stHeadNoBackPointer
+  expectBool "control: the queue names that thread as BOTH head and tail"
+    (qSingle.head == some (SeLe4n.ThreadId.ofNat 7)
+      && qSingle.tail == some (SeLe4n.ThreadId.ofNat 7)) true
+  -- The clause P2 now carries, read off both states directly: the corrupted head
+  -- carries no back-pointer and the control's carries `.endpointHead`.  Asserting
+  -- the *field* rather than only a predicate's verdict is what makes this witness
+  -- about P2's own strengthening rather than about the pairing beside it.
+  expectBool "the corrupted head carries NO back-pointer — the clause P2 requires"
+    (match stHeadNoBackPointer.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == none
+     | none => false) true
+  expectBool "control: the untouched head carries `some .endpointHead`"
+    (match stSingle.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == some .endpointHead
+     | none => false) true
+  -- The **pairing** still accepts it, and that is not a defect: the head really has
+  -- no predecessor, so this arm's obligation is met.  It is why the clause could
+  -- not live here.
+  expectBool "the pairing ACCEPTS a queue head carrying no back-pointer"
+    (queuePPrevAgreesWithPrevBool stHeadNoBackPointer) true
+  -- ...and the removal refuses its sole member — the strand this closes.
+  expectErr "...and the removal refuses the queue's SOLE member, stranding it"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7)
+      stHeadNoBackPointer)
+    .endpointQueueEmpty
+  -- **Both artefacts refuse it now, and until `v0.35.106` only one did.**
+  -- `intrusiveQueueWellFormedB` has required `headTcb.queuePPrev = some
+  -- .endpointHead` since it was written, while `intrusiveQueueWellFormed`'s P2
+  -- constrained only `queuePrev` — two artefacts answering "is this queue
+  -- well-formed" with the **proved** one the weaker, at exactly the clause that
+  -- strands a thread.  Folding it in cost `dualQueueSystemInvariant` a fifth
+  -- conjunct (`endpointQueueHeadDisjoint`); see P2's docstring for that
+  -- measurement.
+  expectBool "the RUNTIME check refuses it — and P2 refuses it too since v0.35.106"
+    ((stateInvariantChecksFor stHeadNoBackPointer.objectIndex stHeadNoBackPointer).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) true
+  -- ...and the control: with the back-pointer intact, the runtime check passes and
+  -- the sole member can be removed, so the assertions above are about the cleared
+  -- field and not about a fixture the harness dislikes for other reasons.
+  expectBool "control: with the back-pointer intact the runtime check passes"
+    ((stateInvariantChecksFor stSingle.objectIndex stSingle).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) false
+  let (_, _) ← expectOkSt "control: ...and the SOLE member CAN be removed"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stSingle)
+  -- The payoff, elaborated because a run cannot exercise a theorem: with both
+  -- halves in place a queue **member**'s back-pointer is derived rather than
+  -- hypothesised, at the head from P2 and at an interior node from the pairing.
+  let _ := @SeLe4n.Kernel.queuePPrev_tcbNext_of_reachable
+  let _ := @SeLe4n.Kernel.queuePPrev_of_queueMember
+  let _ := @SeLe4n.Kernel.dualQueueRemovalGuardHolds_of_member
+  -- And the fifth conjunct that made P2's strengthening preservable: exclusivity
+  -- is a *consequence* of `ipcInvariantCore`, not a new assumption, and the two
+  -- local facts every queue writer discharges it with.
+  let _ := @SeLe4n.Kernel.queueHeadExclusive
+  let _ := @SeLe4n.Kernel.queueHeadKindExclusive
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_singleQueueUpdate
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_freshHeads
+  let _ := @SeLe4n.Kernel.not_queueHead_of_queuePrev_some
+  let _ := @SeLe4n.Kernel.not_queueHead_of_queuePPrev_none
+  let _ := @SeLe4n.Kernel.spliceOutMidQueueNode_queuePPrev_frame
+  pure ()
 
 -- WS-RR RR8.4: the four shapes a guarded removal writes, and the two removals'
 -- boundary pins.  Elaborated here because `runDualQueueTailPairingChecks` below

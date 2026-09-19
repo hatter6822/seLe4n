@@ -4937,7 +4937,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       unfold notificationInvariant notificationQueueWellFormed
       rw [hNtfn.1]; exact ⟨hNtfn.2.1, hNtfn.2.2⟩
     · -- dualQueueSystemInvariant
-      refine ⟨?_, ?_, ?_, ?_⟩
+      refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · -- all endpoints have well-formed queues
         intro epId ep hObj
         have hEp := (hBS epId _ hObj).1 ep rfl
@@ -4978,6 +4978,18 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         exact TCB.queuePPrevAgreesWithPrev_of_pprev_none
           ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.2.1
           ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.1
+      · -- **PR #897 review (`v0.35.106`)**: head-disjointness is vacuous on the
+        -- boot state, whose endpoints `bootSafeObjectCheck` admits only with both
+        -- queues empty — so no endpoint has a head to collide.
+        intro epA _ eA _ hd recvA _ hEpA _ hA _
+        have hEp := (hBS epA _ hEpA).1 eA rfl
+        cases recvA with
+        | false =>
+            simp only [Bool.false_eq_true, ↓reduceIte] at hA
+            rw [hEp.1] at hA; exact absurd hA (by simp)
+        | true =>
+            simp only [↓reduceIte] at hA
+            rw [hEp.2.2.1] at hA; exact absurd hA (by simp)
     · -- allPendingMessagesBounded
       intro tid tcb msg hObj hPend
       have hTcb := (hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl

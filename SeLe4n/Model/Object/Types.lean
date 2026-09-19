@@ -1143,12 +1143,35 @@ closed *present but wrong* and left *absent on a linked node* open, which is
 weaker than the "one bit" this field is documented to carry.  Reported on
 PR #897 and confirmed by reading the two conjuncts rather than the prose.
 
+**The `none` arm is only NECESSARY, and the HEAD case is why the "one bit" needs
+two conjuncts** (PR #897 review, `v0.35.106`).  `queuePrev = none` is what a
+*detached* thread carries **and** what a queue's **head** carries, so this arm
+cannot distinguish them -- a pointwise predicate over one TCB structurally cannot
+say "on no queue", whatever it is strengthened to.  So the bit is carried at two
+levels, split by what each level can see: this predicate says the *pair* agrees at
+one TCB, and `intrusiveQueueWellFormed`'s **P2** says a *queue's head* carries
+`some .endpointHead`.  The second is a fact about a queue and belongs to the queue.
+
+Until `v0.35.106` P2 constrained only `queuePrev`, so a queue whose head carried
+`(none, none, none)` satisfied this arm and every other conjunct of
+`dualQueueSystemInvariant` while the dual removal refused it -- the sole member of a
+one-thread queue could never be dequeued.  Folding the clause into P2 cost
+`dualQueueSystemInvariant` a fifth conjunct (`endpointQueueHeadDisjoint`, a
+consequence of `ipcInvariantCore`'s `queueHeadBlockedConsistent`), and P2's own
+docstring carries that measurement.  `tests/NegativeStateSuite.lean`'s case (5) is
+the witness: the pairing accepts the corrupted head, and the bundle now refuses it.
+
+With both halves in place a queue **member**'s `queuePPrev` is derivable rather
+than hypothesised -- at the head from P2, at an interior node from
+`tcbQueueLinkIntegrity`'s forward clause plus this pairing
+(`queuePPrev_tcbNext_of_reachable`), joined by `queuePPrev_of_queueMember`.
+
 **Why pointwise.**  Every operational writer of the pair writes both fields in
 one store (`tcbWithQueueLinks`) or inherits them together
 (`queueUnlinkSuccessor`), so the obligation each site discharges is about the
 record it stores and never about the rest of the object table.  That is what
-makes the store-level lift (`queuePPrevAgreesWithPrev`, the fourth conjunct of
-`dualQueueSystemInvariant`) cheap to preserve: a transition that leaves both
+makes the store-level lift (`queuePPrevAgreesWithPrev`, the fourth of
+`dualQueueSystemInvariant`'s five conjuncts) cheap to preserve: a transition that leaves both
 fields alone discharges it by `rfl` through
 `TCB.queuePPrevAgreesWithPrev_of_pairEq`.
 

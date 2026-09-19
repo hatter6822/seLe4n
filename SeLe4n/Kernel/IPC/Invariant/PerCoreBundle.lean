@@ -208,7 +208,11 @@ def dualQueueSystemInvariant_perCore (st : SystemState) (c : CoreId) : Prop :=
     dualQueueEndpointWellFormed epId st) ∧
   tcbQueueLinkIntegrity_perCore st c ∧
   tcbQueueChainAcyclic_perCore st c ∧
-  queuePPrevAgreesWithPrev_perCore st c
+  queuePPrevAgreesWithPrev_perCore st c ∧
+  -- **PR #897 review (`v0.35.106`)**: the fifth conjunct is carried whole, like
+  -- the first: it is a fact about *shared* endpoint objects and mentions no TCB,
+  -- so there is nothing in it to restrict to a core.
+  endpointQueueHeadDisjoint st
 
 /-- SM6.D: per-core form of `allPendingMessagesBounded` (WS-H12d/A-09). -/
 def allPendingMessagesBounded_perCore (st : SystemState) (c : CoreId) : Prop :=
@@ -440,7 +444,8 @@ theorem dualQueueSystemInvariant_perCore_of_global {st : SystemState}
     dualQueueSystemInvariant_perCore st c :=
   ⟨h.endpointsWellFormed, tcbQueueLinkIntegrity_perCore_of_global h.linkIntegrity c,
    tcbQueueChainAcyclic_perCore_of_global h.chainAcyclic c,
-   fun tid tcb hTcb _ => h.pprevAgrees tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb)⟩
+   fun tid tcb hTcb _ => h.pprevAgrees tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mp hTcb),
+   h.headDisjoint⟩
 
 theorem allPendingMessagesBounded_perCore_of_global {st : SystemState}
     (h : allPendingMessagesBounded st) (c : CoreId) :
@@ -614,8 +619,9 @@ theorem dualQueueSystemInvariant_of_forall_perCore {st : SystemState}
   ⟨(h bootCoreId).1,
    tcbQueueLinkIntegrity_of_forall_perCore (fun c => (h c).2.1),
    tcbQueueChainAcyclic_of_forall_perCore (fun c => (h c).2.2.1),
-   fun tid tcb hRaw =>
-     (h (threadHomeCore tcb)).2.2.2 tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl⟩
+   (fun tid tcb hRaw =>
+     (h (threadHomeCore tcb)).2.2.2.1 tid tcb ((SystemState.getTcb?_eq_some_iff _ _ _).mpr hRaw) rfl),
+   (h bootCoreId).2.2.2.2⟩
 
 theorem allPendingMessagesBounded_of_forall_perCore {st : SystemState}
     (h : ∀ c, allPendingMessagesBounded_perCore st c) :
@@ -921,7 +927,11 @@ theorem default_ipcInvariantFull_perCore (c : CoreId) :
       fun b tcbB hB _ a _ => absurd hB default_no_tcb⟩,
      fun tid tcb hTcb _ _ => default_no_tcb hTcb,
      -- **WS-RR RR8.3**: vacuous on the boot state, which holds no TCB at all.
-     fun tid tcb hTcb _ => absurd hTcb default_no_tcb⟩
+     (fun tid tcb hTcb _ => absurd hTcb default_no_tcb),
+     -- **PR #897 review**: ...and the fifth conjunct is vacuous for the dual
+     -- reason — the boot state holds no *endpoint* either.
+     fun epA _ eA _ _ _ _ hEpA _ _ _ => by
+       rw [default_objects_getElem_none'] at hEpA; cases hEpA⟩
   allPendingMessagesBounded := fun tid tcb msg hTcb _ _ => absurd hTcb default_no_tcb
   badgeWellFormed :=
     ⟨fun oid ntfn badge h _ => (by rw [default_objects_getElem_none'] at h; cases h),

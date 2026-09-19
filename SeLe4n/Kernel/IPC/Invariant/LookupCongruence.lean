@@ -174,11 +174,13 @@ congruences above. -/
 theorem dualQueueSystemInvariant_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc, hPP⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP, hHD⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_getElem_eq hEq hLink,
           tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc,
-          queuePPrevAgreesWithPrev_of_getElem_eq hEq hPP⟩
+          queuePPrevAgreesWithPrev_of_getElem_eq hEq hPP,
+          -- **PR #897 review**: the fifth conjunct reads endpoints, which agree.
+          endpointQueueHeadDisjoint_of_getElem_eq hEq hHD⟩
   rw [hEq] at hObj
   exact dualQueueEndpointWellFormed_of_getElem_eq hEq (hEp epId ep hObj)
 
@@ -1137,11 +1139,15 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
 theorem dualQueueSystemInvariant_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc, hPP⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP, hHD⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_readViewAgreement hView hLink,
           tcbQueueChainAcyclic_of_readViewAgreement hView hAcyc,
-          queuePPrevAgreesWithPrev_of_readViewAgreement hView hPP⟩
+          queuePPrevAgreesWithPrev_of_readViewAgreement hView hPP,
+          -- **PR #897 review**: the read view agrees on endpoints, which is all the
+          -- fifth conjunct reads.
+          endpointQueueHeadDisjoint_of_endpointBackward
+            (fun epId ep hEp' => by rw [hView.endpoint] at hEp'; exact hEp') hHD⟩
   rw [hView.endpoint] at hObj
   exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId ep hObj)
 
