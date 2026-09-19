@@ -972,10 +972,16 @@ seL4-MCS's own `doReplyTransfer` -> `reply_remove` -> `receiveIPC` order) and
 context from the first to the second.  The migration facts below are about that
 pair, and this driver runs them exactly as the arm does; the receive leg is
 elided because these checks supply `nextThread` directly rather than dequeuing
-it, which is the same elision the pre-WS-RM fused step allowed. -/
-private def runReplyRecvDonationSteps (tid recordedServer nextThread : SeLe4n.ThreadId)
+it, which is the same elision the pre-WS-RM fused step allowed.
+
+**WS-HP HP4.5**: the pop is keyed on the reply capability's frame (`rid`) and the
+caller it answers (`prevCaller`), as the arm keys it, rather than on the recorded
+server's `.donated` binding.  The parameters mirror `replyRecvBody`'s own, because
+a driver that re-derives what the arm is handed is testing its own derivation. -/
+private def runReplyRecvDonationSteps (tid : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (prevCaller recordedServer nextThread : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) : Except KernelError SystemState :=
-  match replyRecvPopDonation recordedServer st with
+  match replyRecvPopDonation rid prevCaller st with
   | .error e => .error e
   | .ok (returned?, st1) =>
       match replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned?
@@ -1043,7 +1049,18 @@ private def runDonationMigrationChecks : IO Unit := do
     -- round-trip arm alone cannot tell "both migrations ran" from "neither did":
     -- returning to the owner and re-donating to the same server lands the entries
     -- back where they started.
-    match runReplyRecvDonationSteps donServer donServer donServer c1 stCall with
+    -- **WS-HP HP4.5**: the driver's pop is keyed on the frame, so assert the
+    -- resolver answers before relying on it -- a pop that silently found no head
+    -- would be the identity, and every migration check below would then pass by
+    -- measuring nothing.  The binding-driven reading coincides here (the recorded
+    -- server *is* the holder on this state), which is why the two arms agreed
+    -- before HP4 and why a witness has to name which one it exercises.
+    assertBool "HP4.5: the answered frame names the holder and the donated context"
+      (replyFrameHeadHolder? stCall donReply == some (scClient, donServer))
+    assertBool "HP4.5: ...and the binding-driven reading agrees on this state"
+      (replyDonationReturn? stCall donServer == some (scClient, donClient))
+    match runReplyRecvDonationSteps donServer donReply donClient donServer donServer c1
+        stCall with
     | .error _ => assertBool "the .replyRecv return-only arm succeeds" false
     | .ok stRet =>
       assertBool "the .replyRecv return-only arm succeeds" true
@@ -1062,7 +1079,8 @@ private def runDonationMigrationChecks : IO Unit := do
     -- re-donation — and the third core is what makes them distinguishable.
     let stCallD : SystemState :=
       { stCall with objects := stCall.objects.insert donDelegate.toObjId (.tcb donDelegateTcb) }
-    match runReplyRecvDonationSteps donDelegate donServer donClient c1 stCallD with
+    match runReplyRecvDonationSteps donDelegate donReply donClient donServer donClient c1
+        stCallD with
     | .error _ => assertBool "the .replyRecv rendezvous arm succeeds" false
     | .ok stRr =>
       assertBool "the .replyRecv rendezvous arm succeeds" true
@@ -1095,7 +1113,8 @@ private def runDonationMigrationChecks : IO Unit := do
             ((ReplenishQueue.empty.insert scCaller2 400).insert scCaller2 500) }
     assertBool "pre: the queued caller's SC holds both replenishments on its home core 3"
       (decide (replenishCountFor stCallQ c3 scCaller2 = 2))
-    match runReplyRecvDonationSteps donDelegate donServer donCaller2 c1 stCallQ with
+    match runReplyRecvDonationSteps donDelegate donReply donClient donServer donCaller2 c1
+        stCallQ with
     | .error _ => assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" false
     | .ok stQ =>
       assertBool "the .replyRecv distinct-caller rendezvous arm succeeds" true
@@ -1163,7 +1182,8 @@ private def runDonationMigrationChecks : IO Unit := do
     -- queued caller's context is donated to it and it must keep running — the
     -- passive-server steady state.  An unconditional deschedule passes the
     -- delegated case above and fails this one.
-    match runReplyRecvDonationSteps donServer donServer donCaller2 c1 stCallQ with
+    match runReplyRecvDonationSteps donServer donReply donClient donServer donCaller2 c1
+        stCallQ with
     | .error _ => assertBool "the .replyRecv non-delegated rendezvous arm succeeds" false
     | .ok stN =>
       assertBool "the .replyRecv non-delegated rendezvous arm succeeds" true
@@ -2099,7 +2119,7 @@ private def runDonationReturnPopChecks : IO Unit := do
   -- the stack: the pop bound the target outright and left that dead frame
   -- heading the context forever, pinning both objects against every retype and
   -- against ever linking the Reply again.  `severAtCut` is now implemented by
-  -- the *detach* at the cancellation (`detachReplyFrameAbove`), so a linked
+  -- the *splice* at the cancellation (`spliceReplyFrameOut`), so a linked
   -- frame always has a blocked caller (`Reply.wellFormed`) and this shape is an
   -- invariant violation — refused, never settled.  Pinned in three halves: the
   -- resolver's verdict, the declared below-head read (which is on the link
@@ -2175,9 +2195,16 @@ private def pushStoreShaped (donorBinding : SchedContextBinding)
         (.tcb { mkTcb 91 40 none with
                   schedContextBinding := donorBinding, replyObject := donorReply? })
     |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
+    -- **WS-HP HP5 (fixture correction)**: the outer caller names the reply object it
+    -- is blocked on.  `pushOuterReply.caller` has always named it back, so the store
+    -- was one `replyCallerLinkage` forbids; and since HP5.1 the cancellation
+    -- reclaim's trigger reads exactly this field, so the omission made the OD5.2
+    -- checks below pass for the wrong reason.  Two local re-spellings of this TCB
+    -- collapse onto `pushOuterBlockedTcb` with it.
     |>.withObject pushOuter.toObjId
         (.tcb { mkTcb 93 50 none with
-                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) })
+                  ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+                  replyObject := some pushOuterReply })
     |>.build)
 
 /-- The donor's own reply object, fresh: linked to the donor, on no stack —
@@ -2188,6 +2215,18 @@ private def pushFreshHead : Reply :=
 /-- The well-formed depth-2 pre-state. -/
 private def pushStore : SystemState :=
   pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply) pushFreshHead
+
+/-- The outer caller's TCB exactly as `pushStoreShaped` holds it: reply-blocked on
+the donor and naming the reply object that blocking is about.
+
+One definition, because three checks below need it and two of them used to spell it
+again locally — and one of those spellings carried a note saying no assertion read
+the `replyObject`, which WS-HP HP5.1 made false by keying the cancellation reclaim's
+trigger on that very field. -/
+private def pushOuterBlockedTcb : TCB :=
+  { mkTcb 93 50 none with
+      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+      replyObject := some pushOuterReply }
 
 private def pushBindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
     Option SchedContextBinding :=
@@ -2202,7 +2241,7 @@ private def pushLinksOf (st : SystemState) (rid : SeLe4n.ReplyId) :
   | some (.reply r) => some (r.prev, r.next)
   | _ => none
 
-/-- The whole of what a detach can write: both frames' links and the context's
+/-- The whole of what a splice can write: the frames' links and the context's
 head.  `SystemState` has no `BEq`, and comparing this rather than asserting a
 single field is what lets "the step is the identity" be checked instead of
 described. -/
@@ -2360,34 +2399,38 @@ private def runDonationPushChecks : IO Unit := do
   -- OD5.2: the middle-caller policy, from the cancellation end.  The reclaim
   -- fires for the immediate donor and declines below the cut; both are the
   -- chosen `severAtCut` policy rather than an omission.
-  assertBool "OD5.2: the reclaim fires for the caller the holder names as owner"
-    (Lifecycle.Suspend.cancelledCallerDonation? pushStore pushOuter
-       { mkTcb 93 50 none with
-           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
+  -- **WS-HP HP5.3**: both restated on the STACK, which is what the trigger reads
+  -- since HP5.1.  The first fires because the victim's own frame heads the context;
+  -- the second declines because a frame sits above it — and that state is now the
+  -- one the **live push** produces, rather than a hand-shaped `.unbound` donor.
+  -- Before this correction both passed for the same wrong reason: the TCB they
+  -- passed carried no `replyObject` at all, so the trigger declined on the first
+  -- too and the pair discriminated nothing.
+  assertBool "OD5.2: the reclaim fires when the victim's own frame heads the context"
+    (Lifecycle.Suspend.cancelledCallerDonation? pushStore pushOuter pushOuterBlockedTcb
        == some (pushSc, pushDonor))
-  assertBool "OD5.2: the reclaim declines below the cut (the holder donated onward)"
-    (Lifecycle.Suspend.cancelledCallerDonation?
-       (pushStoreShaped .unbound (some pushDonorReply) pushFreshHead) pushOuter
-       { mkTcb 93 50 none with
-           ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor) }
-       == none)
-  assertBool "OD5.2: the policy this kernel implements is `severAtCut`"
-    (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.severAtCut)
+  assertBool "OD5.2: the reclaim declines below the cut (a frame sits above the victim's)"
+    (match donateSchedContext pushStore pushDonor pushServer pushSc with
+     | .ok pushed =>
+         Lifecycle.Suspend.cancelledCallerDonation? pushed pushOuter pushOuterBlockedTcb == none
+     | .error _ => false)
+  assertBool "HP6.8: the policy this kernel implements is `spliceOutTheCut`"
+    (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.spliceOutTheCut)
   -- OD4.7: the `.call` footprint already declares every object the push writes.
   assertBool "OD4.7: the resolved `.call` footprint declares the donated context"
     (((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
         (SeLe4n.ObjId.ofNat 0)).pairs.any
         (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
 
-/-- **`v0.35.4`: the middle-caller detach, and the wedge it removes.**
+/-- **`v0.35.4`: the middle-caller removal, and the wedge it removes.**
 
 Its own runner rather than a tail of the push checks: the C code generator
 nests a `do`-block's statements, and a helper past roughly 150 Lean lines
 compiles to an `if`-tree that can exceed clang's bracket limit.  The boundary
 resets the nesting, and the concern is distinct anyway -- the push builds the
 stack these checks then cut. -/
-private def runMiddleCallerDetachChecks : IO Unit := do
-  IO.println "--- §3.19 the middle-caller detach, and the wedge it removes (`v0.35.4`) ---"
+private def runMiddleCallerRemovalChecks : IO Unit := do
+  IO.println "--- §3.19 the middle-caller removal, and the wedge it removes (`v0.35.4`; spliced since HP6.3) ---"
   -- The state a depth-2 push leaves is exactly the one the pinning defect
   -- needed: two frames, the outer caller's below the donor's.  Cancelling the
   -- *outer* caller consumes a frame that is not the head, and before this cut
@@ -2396,20 +2439,16 @@ private def runMiddleCallerDetachChecks : IO Unit := do
   -- and after it.
   match donateSchedContext pushStore pushDonor pushServer pushSc with
   | .error e =>
-    assertBool s!"the detach witness needs a depth-2 push (got {reprStr e})" false
+    assertBool s!"the removal witness needs a depth-2 push (got {reprStr e})" false
   | .ok pushed =>
-    -- The outer caller, carrying the reply object it is blocked on.  Built here
-    -- rather than in `pushStoreShaped`, whose `pushOuter` is shared with every
-    -- assertion above and whose `replyObject` none of them reads.
-    let outerTcb : TCB :=
-      { mkTcb 93 50 none with
-          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-          replyObject := some pushOuterReply }
-    -- Step one: the detach's WRITING arm.  Every `detachReplyFrameAbove` result
+    -- The outer caller, exactly as the store holds it (WS-HP HP5: one definition,
+    -- since the reclaim's trigger now reads its `replyObject`).
+    let outerTcb : TCB := pushOuterBlockedTcb
+    -- Step one: the splice's WRITING arm.  Every `spliceReplyFrameOut` result
     -- proved elsewhere is discharged on a state whose frame has nothing above
     -- it, where the step is the identity; this is the arm that stores.
-    let detached := detachFrameAboveThreadReply pushed outerTcb
-    assertBool "the detach clears the `prev` of the frame ABOVE the cancelled one"
+    let detached := spliceThreadReplyFrameOut pushed outerTcb
+    assertBool "the removal clears the `prev` of the frame ABOVE the cancelled one (a bottom frame: the splice's sever arm)"
       (pushLinksOf detached pushDonorReply == some (none, some (.head pushSc)))
     assertBool "...and writes nothing on the cancelled frame itself — the consume does that"
       (pushLinksOf detached pushOuterReply == some (none, some (.frame pushDonorReply)))
@@ -2441,12 +2480,12 @@ private def runMiddleCallerDetachChecks : IO Unit := do
        | .ok st' => pushHeadOf st' == some none
        | .error _ => false)
     -- NEGATIVE, and the reason this witness exists: the SAME consume with the
-    -- detach omitted.  Every object is still there and every field the consume
+    -- splice omitted.  Every object is still there and every field the consume
     -- writes is identical; what changes is the relation between the head and the
     -- frame below it.  That state is what wedged the chain — the pop refuses and
     -- the context can never leave the server.
     let wedged := Lifecycle.Suspend.consumeReplyLink pushed pushOuter outerTcb
-    assertBool "NEGATIVE: without the detach the head still links down to the consumed frame"
+    assertBool "NEGATIVE: without the splice the head still links down to the consumed frame"
       (pushLinksOf wedged pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "NEGATIVE: ...and the outer-caller resolution refuses it"
       (match replyStackOuterCaller? wedged pushSc with
@@ -2456,7 +2495,7 @@ private def runMiddleCallerDetachChecks : IO Unit := do
       (match returnDonatedSchedContextResolved wedged pushServer pushSc pushDonor with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
-    -- The detach is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
+    -- The splice is FAIL-CLOSED and the wrapper is TOTAL: a frame above that
     -- does not link back is refused by the primitive, and the cancellation still
     -- runs rather than failing — which is what keeps a severed stack's lower
     -- frames cancellable.  Both halves, since the primitive's refusal and the
@@ -2466,33 +2505,33 @@ private def runMiddleCallerDetachChecks : IO Unit := do
     -- That is the state a second cancellation — of the caller below the cut —
     -- meets, so the refusal and the wrapper's fold together are what keep a
     -- severed stack's lower frames cancellable rather than wedged in turn.
-    assertBool "the detach refuses a frame above that does not link back"
-      (match detachReplyFrameAbove detached pushOuterReply with
+    assertBool "the splice refuses a frame above that does not link back"
+      (match spliceReplyFrameOut detached pushOuterReply with
        | .error e => e == KernelError.invalidArgument
        | .ok _ => false)
     assertBool "...and the cancellation wrapper folds that refusal to the identity"
-      (pushStackShape (detachFrameAboveThreadReply detached outerTcb)
+      (pushStackShape (spliceThreadReplyFrameOut detached outerTcb)
          == pushStackShape detached)
     assertBool "...so the caller below a cut can still be cancelled, and leaves cleanly"
       (match (Lifecycle.Suspend.consumeReplyLink
-                (detachFrameAboveThreadReply detached outerTcb)
+                (spliceThreadReplyFrameOut detached outerTcb)
                 pushOuter outerTcb).getReply? pushOuterReply with
        | some r => r.isFree
        | none => false)
     -- ...and a frame above that names no Reply at all is a different refusal,
     -- so the two fail-closed arms are told apart rather than merged.
-    assertBool "the detach refuses a frame above that resolves to no Reply"
-      (match detachReplyFrameAbove
+    assertBool "the splice refuses a frame above that resolves to no Reply"
+      (match spliceReplyFrameOut
           (pushStoreShaped (.donated pushSc pushOuter) (some pushDonorReply)
             { pushFreshHead with next := some (.frame ⟨98⟩) })
           pushDonorReply with
        | .error e => e == KernelError.objectNotFound
        | .ok _ => false)
-    assertBool "the detach is the identity for a frame with nothing above it"
-      (pushStackShape (detachFrameAboveThreadReply pushed
+    assertBool "the splice is the identity for a frame with nothing above it"
+      (pushStackShape (spliceThreadReplyFrameOut pushed
          { outerTcb with replyObject := some pushDonorReply }) == pushStackShape pushed)
     assertBool "...and for a thread holding no reply object at all"
-      (pushStackShape (detachFrameAboveThreadReply pushed
+      (pushStackShape (spliceThreadReplyFrameOut pushed
          { outerTcb with replyObject := none }) == pushStackShape pushed)
 
 -- ============================================================================
@@ -2502,13 +2541,10 @@ private def runMiddleCallerDetachChecks : IO Unit := do
 /-- **WS-RM**: the depth-2 chain's outer caller, carrying the reply object it is
 blocked on.
 
-`§3.19`'s detach witness builds the same TCB for the *cancellation* path; the
+`§3.19`'s removal witness builds the same TCB for the *cancellation* path; the
 reply path answers the very same frame, which is the point — one removal step,
 two callers of it. -/
-private def replyRemovalOuterTcb : TCB :=
-  { mkTcb 93 50 none with
-      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
-      replyObject := some pushOuterReply }
+private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb
 
 /-- **WS-RM**: a thread holding a *copy* of the outer caller's reply capability,
 homed on core 1 -- a **delegated** replier.
@@ -2522,32 +2558,152 @@ of its own still outstanding, so the frame the delegate answers is *not* the
 head of its stack. -/
 private def replyRemovalDelegate : SeLe4n.ThreadId := ⟨99⟩
 
+/-- **WS-HP HP10.9**: the state a depth-2 donating chain is built *from* — the
+reservation's **owner** still holds it, `.bound`.
+
+`pushStore` is that state's successor with the first push already applied by hand,
+which is why nothing in this tree had ever measured the field HP10 turns on:
+`SchedContext.donationOrigin` is written by `donateSchedContext` on a **first**
+push (`donationFirstPush` — the donor's binding still *owns* the context it is
+lending), and every fixture that carried an origin set it directly.  A witness
+whose field is supplied by its fixture asserts nothing about the production write
+that is supposed to supply it.
+
+So this is `pushStore` with the first push undone: the context is bound to
+`pushOuter` and heads no stack, `pushOuterReply` is free (both links clear, its
+caller set), and `pushOuter` is `.bound pushSc`.  It is `.blockedOnReply` on
+`pushDonor` already, which is not a liberty — `endpointCall` blocks the caller and
+links its reply object *before* `applyCallDonation` runs, so `.bound` **and**
+`.blockedOnReply` is exactly the state the live `.call` hands the donation. -/
+private def pushOwnerStore : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject pushSc.toObjId
+        (.schedContext { SchedContext.empty pushSc with boundThread := some pushOuter })
+    |>.withObject pushOuterReply.toObjId
+        (.reply { replyId := pushOuterReply, caller := some pushOuter })
+    |>.withObject pushDonorReply.toObjId (.reply pushFreshHead)
+    |>.withObject pushDonor.toObjId
+        (.tcb { mkTcb 91 40 none with replyObject := some pushDonorReply })
+    |>.withObject pushServer.toObjId (.tcb (mkTcb 92 30 none))
+    |>.withObject pushOuter.toObjId
+        (.tcb { pushOuterBlockedTcb with schedContextBinding := .bound pushSc })
+    |>.build)
+
+/-- **WS-HP HP10.9**: the depth-2 chain, built by the live push **twice** — so the
+reservation's origin is recorded by production rather than by this fixture.
+
+`pushOuter` lends to `pushDonor` (a **first** push: the donor owns what it lends,
+so the origin is recorded), and `pushDonor` lends on to `pushServer` (an
+**onward** push: the donor holds a `.donated` binding, `ownScId?` is `none`, and
+the field is left alone — which is what makes it the *origin* rather than the
+immediate donor).  The result is `pushStore`'s own post-push shape plus that one
+field, and §3.20 asserts the agreement, so the hand-built fixture is known to be a
+state the kernel reaches rather than assumed to be. -/
+private def replyRemovalChain : Except KernelError SystemState :=
+  match donateSchedContext pushOwnerStore pushOuter pushDonor pushSc with
+  | .error e => .error e
+  | .ok depth1 => donateSchedContext depth1 pushDonor pushServer pushSc
+
+/-- **WS-RM**: the intermediate caller of a live depth-2 chain, blocked on its own
+reply to `pushServer`.
+
+One definition, because the in-order contrast, the in-order reply and the
+depth-two accounting differential all need it and three of them used to spell it
+again locally. -/
+private def replyRemovalInOrderDonorTcb : TCB :=
+  { mkTcb 91 40 none with
+      schedContextBinding := SchedContextBinding.unbound,
+      ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+      replyObject := some pushDonorReply }
+
+/-- **WS-RM**: the removal witness's state, from a pushed depth-2 chain: the outer
+caller reply-blocked on the intermediate one, plus the **delegate** that holds a
+copy of its reply capability. -/
+private def replyRemovalStateOf (pushed : SystemState) : SystemState :=
+  { pushed with
+      objects := (pushed.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb)).insert
+        replyRemovalDelegate.toObjId (.tcb (mkTcb 99 45 (some c1))) }
+
+/-- **WS-HP HP10.9**: the whole depth-2 sequence, from a pushed chain to the
+bindings the live `.reply` spine leaves — `(pushOuter's, pushDonor's)`.
+
+A delegate answers the owner **out of order**, whose frame is the stack's bottom
+and so leaves the stack; then the intermediate caller's own server replies **in
+order**, through `endpointReplyCrossCoreDispatch` — the live `.reply` arm, leg and
+pop and reversion and migration together, because the pop is inside it and the pop
+is where the redirect lives.
+
+Taking the chain as a *parameter* is what makes this witness decisive without a
+mutation.  A mutation of the production code fails to **elaborate** rather than
+failing this suite — the origin write, the resolver and the three pops are each
+pinned as theorems, which is the situation §3.23 recorded for the splice's store
+shape — so what discriminates is a differential *within* the suite: this function
+applied to a chain whose first push recorded an origin, and to `pushStore`'s,
+which predates HP10.4 and records none.  The two chains differ in exactly one
+field and the reservation ends on a different thread. -/
+private def replyRemovalOutcome (pushed : SystemState) :
+    Option (Option SchedContextBinding × Option SchedContextBinding) :=
+  match endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId
+      (replyRemovalStateOf pushed) with
+  | (_, .error _) => none
+  | (postOoO, .ok _) =>
+    let stInOrderPre : SystemState :=
+      { postOoO with
+          objects := postOoO.objects.insert pushDonor.toObjId (.tcb replyRemovalInOrderDonorTcb) }
+    match endpointReplyCrossCoreDispatch pushServer pushDonor IpcMessage.empty bootCoreId
+        stInOrderPre with
+    | (_, .error _) => none
+    | (stFinal, .ok _) => some (pushBindingOf stFinal pushOuter, pushBindingOf stFinal pushDonor)
+
 private def runReplyFrameRemovalChecks : IO Unit := do
   IO.println "--- §3.20 WS-RM: the reply path takes the answered frame off its stack ---"
-  match donateSchedContext pushStore pushDonor pushServer pushSc with
+  -- **WS-HP HP10.9**: the first push, measured on its own, because it is the step
+  -- that records the reservation's origin and nothing in the tree had run it.
+  match donateSchedContext pushOwnerStore pushOuter pushDonor pushSc with
+  | .error e =>
+    assertBool s!"the depth-1 push from the OWNER must succeed (got {reprStr e})" false
+  | .ok depth1 =>
+    assertBool "PRE: a FIRST push records the reservation's origin"
+      ((depth1.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+    -- ...and it reproduces the hand-built depth-1 fixture exactly, which is what
+    -- makes `pushStore` a state the kernel reaches rather than one this suite
+    -- asserts about.  The origin is the single field that differs, and it differs
+    -- because `pushStore` predates HP10.4.
+    assertBool "...and otherwise reproduces `pushStore`'s stack shape"
+      (pushStackShape depth1 == pushStackShape pushStore)
+    assertBool "...and `pushStore`'s bindings"
+      (pushBindingOf depth1 pushOuter == some .unbound
+        && pushBindingOf depth1 pushDonor == some (.donated pushSc pushOuter)
+        && pushBindingOf depth1 pushServer == pushBindingOf pushStore pushServer)
+    assertBool "...while `pushStore` itself records no origin, being older than HP10.4"
+      ((pushStore.getSchedContext? pushSc).bind (·.donationOrigin) == none)
+  match replyRemovalChain with
   | .error e =>
     assertBool s!"the removal witness needs a depth-2 push (got {reprStr e})" false
   | .ok pushed =>
+    -- **WS-HP HP10.9**: the ONWARD push leaves the origin alone.  A field that
+    -- tracked the immediate donor would read `pushDonor` here, and the immediate
+    -- donor is already recoverable from `.donated scId owner` — so this assertion
+    -- is what distinguishes an *origin* from a duplicate of the binding.
+    assertBool "PRE: an ONWARD push preserves the origin — it is not the immediate donor"
+      ((pushed.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+    assertBool "...and the onward push's own donor is recorded in the BINDING, not the field"
+      (pushBindingOf pushed pushServer == some (.donated pushSc pushDonor))
     -- The stack a depth-2 `Call` chain leaves: `pushDonorReply` heads the
-    -- context and links down to `pushOuterReply`, which links back up.
-    let stChain : SystemState :=
-      { pushed with
-          objects := (pushed.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb)).insert
-            replyRemovalDelegate.toObjId (.tcb (mkTcb 99 45 (some c1))) }
+    -- context and links down to `pushOuterReply`, which links back up.  Built
+    -- through the same `replyRemovalStateOf` the accounting differential below
+    -- drives, so the shape the step assertions measure is the shape it measures.
+    let stChain : SystemState := replyRemovalStateOf pushed
     assertBool "pre: the donor's frame heads the context and links down to the outer one"
       (pushLinksOf stChain pushDonorReply == some (some pushOuterReply, some (.head pushSc)))
     assertBool "pre: the outer frame links up to the head, heading nothing"
       (pushLinksOf stChain pushOuterReply == some (none, some (.frame pushDonorReply)))
     -- The in-order contrast's own pre-state: `pushDonor` blocked on its own
     -- reply to `pushServer`, which is what a live depth-2 chain looks like.
-    let inOrderDonorTcb : TCB :=
-      { mkTcb 91 40 none with
-          schedContextBinding := SchedContextBinding.unbound,
-          ipcState := ThreadIpcState.blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
-          replyObject := some pushDonorReply }
     let stChainInOrder : SystemState :=
       { stChain with
-          objects := stChain.objects.insert pushDonor.toObjId (.tcb inOrderDonorTcb) }
+          objects := stChain.objects.insert pushDonor.toObjId
+            (.tcb replyRemovalInOrderDonorTcb) }
     -- The footprint declares the frame the removal writes, resolved from the
     -- answered thread's own reply object.
     assertBool "the footprint resolves the frame ABOVE the answered one"
@@ -2577,48 +2733,97 @@ private def runReplyFrameRemovalChecks : IO Unit := do
     -- the out-of-order reply left `pushDonorReply.prev` naming a consumed frame,
     -- the walk's reciprocity test refused it, and this call returned
     -- `.invalidArgument` — a wedged call chain reached from an ordinary reply.
+    --
+    -- **WS-HP HP10.9**: this reply is now run through the **live `.reply` spine**
+    -- rather than through `endpointReplyOnCore` alone, because the spine is what
+    -- performs the pop, and the pop is where the redirect lives.  The accounting
+    -- assertions below used to measure `returnDonatedSchedContextResolved`
+    -- directly, which was an accurate proxy for the pop while nothing redirected
+    -- and is a proxy that omits the redirect now — *a proxy is not the fact*.
+    let stInOrderPre : SystemState :=
+      { postOoO with
+          objects := postOoO.objects.insert pushDonor.toObjId
+            (.tcb replyRemovalInOrderDonorTcb) }
+    let (stInOrderLeg, resInOrderLeg) :=
+      endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId stInOrderPre
     assertBool "PAYOFF: the in-order reply that follows succeeds — the wedge is gone"
-      (match (endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
-                { postOoO with
-                    objects := postOoO.objects.insert pushDonor.toObjId
-                      (.tcb { mkTcb 91 40 none with
-                                schedContextBinding := .unbound,
-                                ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
-                                  (some pushServer),
-                                replyObject := some pushDonorReply }) }).2 with
-       | .ok _ => true
-       | .error _ => false)
+      (match resInOrderLeg with | .ok _ => true | .error _ => false)
     -- ...and the pop the reply chain runs after it resolves, rather than
-    -- refusing a stale link.
+    -- refusing a stale link.  **This is the answer that names the WRONG thread**:
+    -- the owner's own frame has left the stack, so reachability reports the
+    -- surviving frame as the bottom and the pop's reachability recipient is the
+    -- thread that answered it.  HP10.7's redirect is what overrides it.
     assertBool "PAYOFF: the pop resolves the remaining stack to its bottom"
       (match replyStackOuterCaller? postOoO pushSc with
        | .ok none => true | _ => false)
-    assertBool "PAYOFF: ...so the donation return succeeds and settles the context"
-      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+    -- **WS-HP HP10.9 — THE PAYOFF, WHERE THIS ROW USED TO CARRY A COST.**
+    --
+    -- Up to `v0.35.52` these three assertions measured the loss: taking a caller
+    -- out of the middle of a chain is destructive to the donation accounting, the
+    -- removal moves no scheduling context, and the later pop donated to whatever
+    -- the remaining stack said was outermost — so the reservation settled `.bound`
+    -- on `pushDonor`, a thread strictly *inside* the chain, and `pushOuter`, which
+    -- owned it, was left `.unbound` for good.  Reachable from an ordinary
+    -- delegated reply.  seL4-MCS has the same loss: `reply_pop` donates to the
+    -- answered frame's own `replyTCB`.
+    --
+    -- **This is a TWO-frame stack, so HP6's splice provably could not reach it**:
+    -- `pushOuterReply` is the bottom, nothing sits below it to reconnect, and
+    -- `severAtCut` and `spliceOutTheCut` write the same `none` into the frame
+    -- above.  The sentence that explains why this witness cannot *measure* the
+    -- depth-≥ 3 defect is the reason the depth-2 defect survived the fix for it.
+    -- What closes it is the reservation's recorded **origin**
+    -- (`SchedContext.donationOrigin`, written by the first push above) read in
+    -- place of stack reachability — `donationAccountingPreserved_atCallDepthTwo`.
+    assertBool "PAYOFF: the live reply spine settles the reservation on its OWNER, not the intermediate caller"
+      (replyRemovalOutcome pushed == some (some (.bound pushSc), some .unbound))
+    -- **NEGATIVE — the decisive differential, and it needs no mutation.**  A
+    -- mutation of the production code here fails to *elaborate* rather than
+    -- failing this suite: the origin write, the resolver and the three reply-path
+    -- pops are each pinned as theorems, which is the situation §3.23 recorded for
+    -- the splice's store shape.  So what makes the payoff above discriminate is
+    -- the same function applied to `pushStore`'s own chain, which predates HP10.4
+    -- and records **no** origin: one field differs, and the reservation ends on a
+    -- different thread.  These are the values this row asserted up to `v0.35.52`,
+    -- and the outcome every state this tree reached before HP10.4 still has.
+    assertBool "NEGATIVE: with NO origin recorded the same spine settles it on the INTERMEDIATE caller"
+      (match donateSchedContext pushStore pushDonor pushServer pushSc with
+       | .ok noOrigin => replyRemovalOutcome noOrigin == some (some .unbound, some (.bound pushSc))
+       | .error _ => false)
+    assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
+      (!(pushOuter == pushDonor))
+    -- **NEGATIVE — the retired reachability reading, spelled out beside the live
+    -- one.**  `returnDonatedSchedContextResolved` at the answered caller is what
+    -- the pop did before HP10.7, and it is still the identity everywhere the
+    -- redirect declines, so it cannot be deleted; what it must not be is the
+    -- recipient at the bottom of a stack whose owner's frame was removed.  These
+    -- two assertions are the values this row asserted up to `v0.35.52`, so a
+    -- revert of the flip does not merely fail the payoff above — it makes these
+    -- pass, which is what makes the pair known to discriminate rather than merely
+    -- to pass (the lesson HP5.5 and HP7 recorded on this same surface).
+    assertBool "NEGATIVE: the retired reachability recipient would settle it on the INTERMEDIATE caller"
+      (match returnDonatedSchedContextResolved stInOrderLeg pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushDonor == some (.bound pushSc)
        | .error _ => false)
-    -- **THE COST, PINNED RATHER THAN DESCRIBED.**  Taking a caller out of the
-    -- middle of a chain is destructive to the donation accounting: the removal
-    -- moves no scheduling context, and the later pop donates to whatever the
-    -- remaining stack says is outermost.  So the context settles `.bound` on the
-    -- INTERMEDIATE caller above, and `pushOuter` -- which owned it -- is left
-    -- `.unbound` for good.  The in-order unwind below is the contrast: there the
-    -- intermediate caller receives it `.donated … pushOuter`, still owing it
-    -- outward.
-    --
-    -- This is a TWO-frame stack, where `pushOuterReply` is the bottom, so
-    -- `severAtCut` and `spliceOutTheCut` write the same value and the policy is
-    -- not what is being measured here.  §3.22 is the depth-three witness where
-    -- they differ and the cost is the policy's.
-    --
-    -- Asserted here because the project's standard for this trade is WS-OD's:
-    -- "its cost is stated rather than hidden".  A witness that checked only the
-    -- payoff would let the cost drift silently.
-    assertBool "COST: the original owner is left unbound, having lost its reservation"
-      (match returnDonatedSchedContextResolved postOoO pushServer pushSc pushDonor with
+    assertBool "NEGATIVE: ...leaving the original owner unbound, having lost its reservation"
+      (match returnDonatedSchedContextResolved stInOrderLeg pushServer pushSc pushDonor with
        | .ok st' => pushBindingOf st' pushOuter == some .unbound
        | .error _ => false)
-    assertBool "COST (contrast): an IN-ORDER unwind leaves it owed outward, not owned"
+    -- ...and the live pop's own recipient is the origin rather than that thread,
+    -- read at the state the pop runs on.  The two readings computed side by side
+    -- is what makes the flip a measurement.
+    assertBool "PAYOFF: the live pop's recipient is the recorded ORIGIN, not the answered caller"
+      (replyDonationRecipient stInOrderLeg pushSc pushDonor == pushOuter)
+    -- **AGREEMENT, where this row used to carry a contrast.**  An IN-ORDER unwind
+    -- never lost the reservation, and HP10.9 leaves it byte for byte: the pop is
+    -- at a `some` arm (the surviving stack still names an outer caller), where
+    -- `donationOriginRecipient?` is silent by construction
+    -- (`replyDonationRecipient_eq_of_outer_some`), so the intermediate caller
+    -- receives it `.donated … pushOuter` — still owed outward — exactly as before.
+    -- That the two routes now *agree* on where the reservation ends up is the
+    -- closure of the defect, which is why this reads as an agreement rather than
+    -- as a contrast.
+    assertBool "AGREEMENT: an IN-ORDER unwind still leaves it owed outward, not owned"
       (match endpointReplyOnCore pushServer pushDonor IpcMessage.empty bootCoreId
                 stChainInOrder with
        | (stIn, .ok _) =>
@@ -2626,13 +2831,28 @@ private def runReplyFrameRemovalChecks : IO Unit := do
             | .ok st' => pushBindingOf st' pushDonor == some (.donated pushSc pushOuter)
             | .error _ => false)
        | (_, .error _) => false)
+    -- ...and the SECOND pop of that unwind delivers it home, so "reaches its
+    -- owner" is measured on both routes rather than asserted for one.  The
+    -- redirect is the identity here too: at the bottom of this stack reachability
+    -- and the recorded origin name the same thread, which is what "inert wherever
+    -- it was already right" means operationally.
+    assertBool "AGREEMENT: ...and the second pop of that unwind delivers it to the owner"
+      (match endpointReplyCrossCoreDispatch pushServer pushDonor IpcMessage.empty
+                bootCoreId stChainInOrder with
+       | (stAfterFirst, .ok _) =>
+           (match endpointReplyCrossCoreDispatch pushDonor pushOuter IpcMessage.empty
+                     bootCoreId stAfterFirst with
+            | (stAfterSecond, .ok _) =>
+                pushBindingOf stAfterSecond pushOuter == some (.bound pushSc)
+            | (_, .error _) => false)
+       | (_, .error _) => false)
     -- NEGATIVE, and the reason this witness exists: the SAME reply with the
-    -- detach omitted.  Every object is present and every field the consume
+    -- splice omitted.  Every object is present and every field the consume
     -- writes is identical; what changes is the head's link down to a frame whose
     -- caller is gone.  A fixture that exercised only the in-order path would
     -- pass before this cut and after it.
     let wedged := SystemState.consumeCallerReply pushOuter pushOuterReply stChain
-    assertBool "NEGATIVE: without the detach the head still links down to the answered frame"
+    assertBool "NEGATIVE: without the splice the head still links down to the answered frame"
       (match wedged with
        | .ok ((), st') => pushLinksOf st' pushDonorReply == some (some pushOuterReply,
            some (.head pushSc))
@@ -2705,18 +2925,36 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
          | some r => r.next == some (.head scClient)
          | none => false)
       -- **The chain payoff's own condition, exhibited on this state.**
-      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` holds
-      -- under `answeredHeadContextIsServerDonation`, a pre-state fact neither
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` used to
+      -- hold under `answeredHeadContextIsServerDonation`, a pre-state fact neither
       -- `ipcInvariantFull` nor `donationChainWellFormed` entails (the bundle
       -- relates a caller's recorded reply target to no donation, and the chain
-      -- invariant carries no binding clause at all).  A hypothesis nothing
-      -- exhibits is indistinguishable from one that cannot hold, so here are its
-      -- premises and its conclusion at the only quadruple that satisfies them,
+      -- invariant carries no binding clause at all).  A hypothesis nothing exhibits
+      -- is indistinguishable from one that cannot hold, so the two rows below are
+      -- its premise and its conclusion at the only quadruple that satisfies them,
       -- on a state a real MCS chain reaches through the live operations.
-      assertBool "the chain condition's premise: the answered caller records the server"
+      --
+      -- **WS-HP HP4.4 and HP7 (`v0.35.46`).**  HP4.4 replaced that condition in the
+      -- composite with the strictly weaker `replyFrameHeadIsBound`, and HP7 deleted
+      -- it -- so these two rows now exhibit the **retired** reading, kept because
+      -- they are what shows the retired and live conditions coincide on this shape,
+      -- and the row after them exhibits what the composite actually carries.  Both
+      -- are worth having: a cut that changed only the live condition would leave
+      -- the first two passing, and a cut that changed only the trigger would leave
+      -- the third passing.
+      assertBool "the RETIRED chain condition's premise: the answered caller records the server"
         (recordedReplyServer? stQueued donClient == some donServer)
       assertBool "...and its conclusion: that server holds the context that frame heads"
         (replyDonationReturn? stQueued donServer == some (scClient, donClient))
+      -- ...and the LIVE condition, which is what
+      -- `endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed` carries:
+      -- the context the answered frame heads is bound to *some* thread.  Weaker by
+      -- construction -- it names no particular server -- and here the holder it
+      -- names is the recorded server, which is the coincidence HP6.8's splice can
+      -- break at an orphan head.
+      assertBool "the LIVE chain condition: the head context is bound, and here to that server"
+        (replyFrameHeadContext? stQueued donReply == some scClient
+         && replyFrameHeadHolder? stQueued donReply == some (scClient, donServer))
       -- Leg one alone: the caller is answered and the Reply is NOT free, because
       -- it still heads the context.  `Reply.isFree` reads both links, so the
       -- receive leg below cannot re-link this object yet.
@@ -2741,7 +2979,19 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
          | .ok _ => false)
       -- Leg two, in the live order: the donation pop runs between the legs, and
       -- it is what frees the Reply.
-      match replyRecvPopDonation donServer stAfterReply with
+      --
+      -- **WS-HP HP4.5: and this is the state that forces the pop's key.**  The
+      -- reply leg ran `consumeCallerReply`, so the answered caller no longer
+      -- holds a reply object and nothing keyed on *the caller* can find the
+      -- frame any more -- which is why `.reply`'s pop reads `answeredReplyObject?`
+      -- on its PRE-state and this arm takes `rid` from the reply capability it
+      -- was invoked with.  Both assertions below are about this state, after the
+      -- leg: the caller-keyed route is gone and the frame-keyed one still answers.
+      assertBool "HP4.5: the reply leg has consumed the caller's reply object"
+        (answeredReplyObject? stAfterReply donClient == none)
+      assertBool "HP4.5: ...while the frame still names the holder and the context"
+        (replyFrameHeadHolder? stAfterReply donReply == some (scClient, donServer))
+      match replyRecvPopDonation donReply donClient stAfterReply with
       | .error e => assertBool s!"the donation pop must succeed (got {reprStr e})" false
       | .ok (returned?, stPopped) =>
         assertBool "the pop hands the context back to its original owner"
@@ -2918,10 +3168,22 @@ nothing below it, so "take the frame above off this frame's stack" and "splice
 this frame out of the list" write the same value -- `none` -- into the frame
 above, and the two readings of a middle removal cannot be told apart there.
 **Three frames is the shallowest stack on which they differ**, and that is what
-makes `cancelledMiddleCallerPolicy`'s stated cost measurable rather than
-described: the frames below the cut leave the context's stack, so the
-reservation settles on the thread *above* the cut instead of travelling on
-outward to the thread that owned it.
+makes `cancelledMiddleCallerPolicy` measurable rather than described.
+
+Up to `v0.35.44` this witness measured the sever's **cost**: the frames below the
+cut left the context's stack, so the reservation settled on the thread *above* the
+cut and its owner was left `.unbound` for good -- a callee that delegated its
+caller's reply capability to a confederate could capture that caller's CBS
+reservation.  Since WS-HP HP6.8 (`v0.35.45`) it measures the splice's **payoff**:
+the frame above the cut is re-pointed at the frame below, so the reservation
+travels outward and the pop that answers the bottom frame delivers it home.  The
+retired sever's values are spelled out in the negatives below, which is what makes
+the assertions known to discriminate rather than merely to pass.
+
+The depth-**two** loss the splice provably cannot reach -- both policies write
+`none` into the frame above a bottom frame -- is WS-HP HP10's, and §3.20 is
+deliberately left asserting the depth-two outcome unchanged: that is the
+measurement that this cut is confined to depth ≥ 3.
 
 Reachable with no more authority than `§3.20` needs -- three nested donating
 `Call`s (which the transitive chain makes ordinary since OD4) and one delegated
@@ -2995,47 +3257,503 @@ private def runMiddleRemovalDepthThreeChecks : IO Unit := do
       (match res with | .ok _ => true | .error _ => false)
     assertBool "the answered frame leaves the structure entirely (`Reply.isFree`)"
       (match post.getReply? pushDonorReply with | some r => r.isFree | none => false)
-    -- **THE COST, MEASURED.**  The head's link down is cleared rather than
-    -- re-pointed at the frame below the cut, so the bottom frame -- whose caller
-    -- `pushOuter` owns the reservation -- is no longer on the context's stack.
-    assertBool "COST: the head's link down is CLEARED, not re-pointed at the frame below the cut"
-      (pushLinksOf post depth3Reply == some (none, some (.head pushSc)))
-    assertBool "COST: ...so the bottom frame is off the stack, holding only a stale upward link"
-      (pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply)))
-    assertBool "COST: ...and the pop therefore reads the remaining stack as bottomed out"
-      (match replyStackOuterCaller? post pushSc with | .ok none => true | _ => false)
-    assertBool "COST: ...so the reservation settles `.bound` on the thread ABOVE the cut"
+    -- **THE PAYOFF, MEASURED.**  The head's link down is **re-pointed** at the
+    -- frame below the cut rather than cleared, and that frame links back up at the
+    -- head, so the bottom frame -- whose caller `pushOuter` owns the reservation --
+    -- stays on the context's stack.  Under `severAtCut`, which this kernel
+    -- implemented up to `v0.35.44` and which seL4-MCS still implements, the first
+    -- of these was `(none, some (.head pushSc))` and every assertion below it
+    -- failed the other way.
+    assertBool "PAYOFF: the head's link down is RE-POINTED at the frame below the cut"
+      (pushLinksOf post depth3Reply == some (some pushOuterReply, some (.head pushSc)))
+    assertBool "PAYOFF: ...and the frame below links back up at the head"
+      (pushLinksOf post pushOuterReply == some (none, some (.frame depth3Reply)))
+    -- NEGATIVE, and the reason the two assertions above discriminate: the
+    -- **retired** `severAtCut` values, spelled here and nowhere else.  A revert of
+    -- the splice makes each of these hold and each assertion above fail.
+    assertBool "NEGATIVE: the head does NOT read as a severed cut"
+      (!(pushLinksOf post depth3Reply == some (none, some (.head pushSc))))
+    assertBool "NEGATIVE: ...and the frame below does NOT keep a stale upward link"
+      (!(pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply))))
+    -- ...so the pop resolves the remaining stack to the reservation's OWNER,
+    -- where the sever left it reading as bottomed out.
+    assertBool "PAYOFF: the pop resolves the remaining stack to the reservation's owner"
+      (match replyStackOuterCaller? post pushSc with
+       | .ok (some outer) => outer == pushOuter
+       | _ => false)
+    assertBool "PAYOFF: ...so the reservation leaves the cut owed OUTWARD"
       (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
-       | .ok st' => pushBindingOf st' pushServer == some (.bound pushSc)
+       | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushOuter)
        | .error _ => false)
-    assertBool "COST: ...and its owner is left unbound, two hops outside the cut"
+    assertBool "PAYOFF: ...and its owner is still unbound, waiting rather than abandoned"
       (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
        | .ok st' => pushBindingOf st' pushOuter == some .unbound
        | .error _ => false)
-    -- **CONTRAST**: the same three-frame stack unwound IN ORDER keeps the debt
-    -- travelling outward -- the reservation reaches `pushDonor` still owed to
-    -- `pushOuter`.  This is the half that shows the loss is the removal's, not
-    -- the chain's.
-    assertBool "CONTRAST: an IN-ORDER pop on the same stack owes the context outward"
+    -- **AND IT ARRIVES.**  One pop leaves the reservation owed; the pop that
+    -- answers the bottom frame delivers it home.  The sever could not reach this
+    -- state at all -- the bottom frame had left the stack, so no later pop carried
+    -- the context below the cut and `.bound pushSc` on the thread ABOVE the cut was
+    -- terminal.
+    assertBool "PAYOFF: ...and the next pop delivers it home `.bound` to its owner"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' pushServer pushSc pushOuter with
+            | .ok st'' => pushBindingOf st'' pushOuter == some (.bound pushSc)
+            | .error _ => false)
+       | .error _ => false)
+    assertBool "PAYOFF: ...leaving the intermediate caller unbound, owing nothing"
+      (match returnDonatedSchedContextResolved post depth3Server pushSc pushServer with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' pushServer pushSc pushOuter with
+            | .ok st'' => pushBindingOf st'' pushServer == some .unbound
+            | .error _ => false)
+       | .error _ => false)
+    -- **AGREEMENT**: the same three-frame stack unwound IN ORDER reaches the same
+    -- binding.  Under the sever these two disagreed -- that disagreement was the
+    -- defect -- and the contrast half is kept because a witness that only checked
+    -- the out-of-order path could not say the two now coincide.
+    assertBool "AGREEMENT: an IN-ORDER pop on the same stack owes the context outward too"
       (match returnDonatedSchedContextResolved chain depth3Server pushSc pushServer with
        | .ok st' => pushBindingOf st' pushServer == some (.donated pushSc pushDonor)
        | .error _ => false)
-    -- **WHAT THE POLICY BUYS**, and why it is not merely a loss: a frame cut off
-    -- the stack carries no `.head` link, so consuming its caller clears it
-    -- outright (`Reply.consumed`'s non-head branch).  No object is pinned, and
-    -- no consumed frame is left heading a context -- which is the state
-    -- `replyStackOuterCaller?` refuses and the defect `v0.35.4` closed.
+    -- **NOTHING IS PINNED BY A REMOVAL**, at either policy: a frame whose own
+    -- caller is consumed while it heads no context is cleared outright
+    -- (`Reply.consumed`'s non-head branch), and since HP6.3 the removal clears the
+    -- cut frame's downward link itself -- seL4's `reply_unlink` downward half -- so
+    -- `donationChainWellFormed` survives the removal rather than being transiently
+    -- broken.
+    assertBool "PAYOFF: the cut frame's own downward link is cleared by the removal"
+      (pushLinksOf post pushDonorReply == some (none, none))
     let stBottom : SystemState :=
       { post with
           objects := post.objects.insert pushOuter.toObjId (.tcb replyRemovalOuterTcb) }
     let (postBottom, resBottom) :=
       endpointReplyOnCore replyRemovalDelegate pushOuter IpcMessage.empty bootCoreId stBottom
-    assertBool "PAYOFF: the cut-off frame's own caller can still be answered"
+    assertBool "PAYOFF: the bottom frame's own caller can still be answered"
       (match resBottom with | .ok _ => true | .error _ => false)
     assertBool "PAYOFF: ...and that frees it, so nothing is pinned by the cut"
       (match postBottom.getReply? pushOuterReply with | some r => r.isFree | none => false)
     assertBool "PAYOFF: ...leaving no consumed frame heading the context"
       (pushHeadOf postBottom == some (some depth3Reply))
+
+/-! ### §3.23 WS-HP HP9.1: a middle removal at stack depth FOUR
+
+**Why depth 3 is not enough**, and this is the whole reason for the sub-task.
+The splice writes `above.prev := some below`, where `below` is the *cut frame's own*
+`prev` — and `below`'s own `prev` is **not touched**.  At depth 3 a middle cut
+leaves exactly one frame below it, so "the stack stays connected" and "the frame
+immediately beneath the reconnection survives" are the same statement, and §3.22
+cannot tell them apart.  Four frames is the shallowest stack on which **two** frames
+sit below a cut, which makes the splice's *transitivity* measurable: the chain has
+to remain walkable past the reconnection, and the reservation has to reach the
+bottom-most owner through **three** successive pops rather than two.
+
+A splice that re-pointed the frame above at its new neighbour while disturbing that
+neighbour's own downward link would pass §3.22 and fail here.  So would one that
+re-headed the context at the wrong frame: under `severAtCut` the head's `prev` is
+cleared, and pop one would then read the remaining stack as bottomed out and settle
+the reservation `.bound` on a thread **two** hops inside the chain rather than on
+its owner.
+
+The cut is the *third* frame from the bottom, not the second: cutting the second
+would leave one frame below and measure §3.22 again.
+
+**What this witness does and does not catch, measured.**  A code mutation of the
+splice's *stores* never reaches it: `spliceReplyFrameStores_cases` states the three
+stores exactly, so both candidate mutations — the full sever, and one that
+reconnects the pair while clobbering the frame below's own downward link — fail to
+**elaborate**, four errors each, before any suite runs.  That is the stronger
+guarantee and it is where the store shape is pinned.  What this scenario measures
+is therefore the **composition**, which no theorem states and which §3.22 cannot
+reach: that the reconnected chain is walkable past its reconnection, and that three
+successive pops carry the reservation from the innermost holder to its owner.
+§3.22 does two pops over a two-frame remainder; three frames below a head is a
+different proposition, and it is the one HP10 kept true when the recipient
+stopped being derived from stack reachability: at depth ≥ 3 every pop sits at a
+`some` arm, where the redirect is the identity by theorem
+(`replyDonationRecipient_eq_of_outer_some`), and this scenario is byte-identical
+across HP10.7.
+
+Non-vacuous by construction: every pop assertion reads `.error _ => false`, so a
+refused pop fails the row rather than passing it. -/
+private def depth4Server : SeLe4n.ThreadId := ⟨103⟩
+private def depth4Reply : SeLe4n.ReplyId := ⟨104⟩
+
+/-- The four-frame stack, built by pushing a third time: `depth3Server` lends the
+context on to `depth4Server`.  Every push is the live `donateSchedContext`, so the
+shape is the one the kernel produces rather than one assembled by hand. -/
+private def depth4Chain : Except KernelError SystemState :=
+  match depth3Chain with
+  | .error e => .error e
+  | .ok depth3 =>
+      let stReady : SystemState :=
+        { depth3 with
+            objects := ((depth3.objects.insert depth4Reply.toObjId
+                (.reply { replyId := depth4Reply, caller := some depth3Server })).insert
+                depth4Server.toObjId (.tcb (mkTcb 103 20 none))).insert
+                depth3Server.toObjId
+                (.tcb { mkTcb 101 25 none with
+                          schedContextBinding := .donated pushSc pushServer,
+                          ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97)
+                            (some depth4Server),
+                          replyObject := some depth4Reply }) }
+      donateSchedContext stReady depth3Server depth4Server pushSc
+
+/-- **WS-HP HP10.5: the reservation origin cannot outlive the thread it names.**
+
+`SchedContext.donationOrigin` is history the kernel validates rather than an
+invariant, and that is sound only while the `ThreadId` it holds still means the
+thread that lent the reservation.  A `ThreadId` is an index, so destroying the
+origin thread and allocating at its id would leave a later pop handing a
+reservation to an unrelated thread — with `donationRecipientAcceptable` satisfied,
+because that guard asks whether the *recipient* may take a context, never whether
+the recorded origin is still the lender.
+
+So the destroy path scrubs it (`clearDonationOriginReferences`, reached from
+`cleanupTcbReferences` and thence `lifecyclePreRetypeCleanup`), and this witness is
+the measurement: a context recording `pushOuter` as its origin, after a reference
+scrub of `pushOuter`, records nothing.  The **negative** beside it is the same
+scrub of a *different* thread, which must leave the origin alone — a sweep that
+cleared unconditionally would pass the first assertion and destroy the field's
+whole purpose. -/
+private def runDonationOriginIdReuseChecks : IO Unit := do
+  IO.println "--- §3.24 WS-HP HP10.5: a recorded origin does not outlive its thread ---"
+  let stOrigin : SystemState :=
+    { pushStore with
+        objects := pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some pushOuter }) }
+  let originOf (st : SystemState) : Option (Option SeLe4n.ThreadId) :=
+    (st.getSchedContext? pushSc).map (·.donationOrigin)
+  assertBool "pre: the context records `pushOuter` as the reservation's origin"
+    (originOf stOrigin == some (some pushOuter))
+  -- **THE SCRUB.**  `cleanupTcbReferences` is what `lifecyclePreRetypeCleanup` runs
+  -- before a TCB is destroyed; the origin clear is its fourth sweep.
+  assertBool "PAYOFF: a reference scrub of that thread clears the origin"
+    (originOf (cleanupTcbReferences stOrigin pushOuter) == some none)
+  -- ...and the primitive on its own, so the sweep is known to be what does it
+  -- rather than one of the three sweeps beside it.
+  assertBool "PAYOFF: ...and the primitive alone is what does it"
+    (originOf (clearDonationOriginReferences stOrigin pushOuter) == some none)
+  -- NEGATIVE: scrubbing a DIFFERENT thread must leave the origin standing.  A
+  -- sweep that cleared unconditionally would satisfy both payoffs above and
+  -- silently destroy the only thing the field is for.
+  assertBool "NEGATIVE: scrubbing a different thread leaves the origin recorded"
+    (originOf (clearDonationOriginReferences stOrigin pushServer)
+      == some (some pushOuter))
+  assertBool "NEGATIVE: ...and so does the composed scrub of a different thread"
+    (originOf (cleanupTcbReferences stOrigin pushServer)
+      == some (some pushOuter))
+  -- ...and the scrub is the identity on a context recording no origin at all,
+  -- which is every state before a first donation.
+  assertBool "the scrub is the identity when nothing records an origin"
+    (originOf (clearDonationOriginReferences pushStore pushOuter) == some none)
+
+/-- **`v0.35.61`** (the post-landing audit): a recorded origin naming a thread the
+store does not hold.  Reachable only through a stale field, which
+`clearDonationOriginReferences` prevents; what §3.25's last negative measures is
+the resolver's *contract* -- a candidate resolves -- not the field's reachability. -/
+private def staleOrigin : SeLe4n.ThreadId := ⟨89⟩
+
+/-- **WS-HP HP10.7: the redirect computes a DIFFERENT recipient, and both guards
+decline.**
+
+The measurement this phase owes.  Every state the tree reached before HP10.7
+either records no origin or records one that *is* the answered caller, so on all
+of them the redirect is the identity and a suite that only exercised those would
+pass with the whole flip reverted.  The shape that separates them is the
+out-of-order removal of plan §3.2: a client answered by a delegate is woken
+`.ready`, its frame leaves the stack, and the surviving bottom frame names the
+*intermediate* caller — so reachability says one thread and the recorded origin
+says another.
+
+Four assertions, and the last two are why the guard is a conjunction.  A thread
+that is still `.blockedOnReply` is a thread whose own reservation is travelling,
+and rebinding it would falsify the owner clause of whatever binding is waiting on
+it (`donationOriginRebindable`); a thread that already holds a binding is the case
+`donationRecipientAcceptable` has always covered.  Both decline to the
+reachability answer rather than refusing the pop, which is the difference between
+a recovery and a regression. -/
+private def runDonationOriginRedirectChecks : IO Unit := do
+  IO.println "--- §3.25 WS-HP HP10.7: the reply pop's recipient is the recorded origin ---"
+  -- The context sits at the BOTTOM of its stack (`pushOuterReply.prev = none`),
+  -- held by `pushServer`, and records `pushOuter` as the reservation's origin.
+  let withOrigin (outerTcb : TCB) : SystemState :=
+    { pushStore with
+        objects := (pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some pushOuter })).insert
+            pushOuter.toObjId (.tcb outerTcb) }
+  -- **The depth-2 shape**: the origin was answered out of order, so it is awake,
+  -- holds nothing, and is on no stack.  Homed on core 1, where `pushServer` is not.
+  let stRedirect : SystemState := withOrigin (mkTcb 93 50 (some c1))
+  assertBool "pre: the pop is at the BOTTOM of the stack (nothing further out)"
+    (match replyStackOuterCaller? stRedirect pushSc with
+     | .ok none => true
+     | _ => false)
+  assertBool "pre: ...and the context records `pushOuter` as the origin"
+    ((stRedirect.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
+  -- **PAYOFF**: reachability names `pushServer`; the origin names `pushOuter`, and
+  -- the redirect follows the origin.  This is the assertion a revert of the flip
+  -- fails.
+  assertBool "PAYOFF: the resolver answers the recorded origin"
+    (donationOriginRecipient? stRedirect pushSc == some pushOuter)
+  assertBool "PAYOFF: ...and the pop's recipient is that origin, NOT the answered caller"
+    (replyDonationRecipient stRedirect pushSc pushServer == pushOuter)
+  assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
+    (!(pushOuter == pushServer))
+  -- **PAYOFF**: and the replenishment migration's DESTINATION follows it too.  A
+  -- redirect that moved the reservation without moving the queue would leave
+  -- `replenishQueueAffinityConsistentOnCore` false from the instant it committed.
+  assertBool "PAYOFF: the migration's destination home is the ORIGIN's core"
+    (replyDonationRecipientHome stRedirect pushOuterReply pushServer
+      == determineTargetCore stRedirect pushOuter)
+  assertBool "PAYOFF: ...and that is core 1, not the answered caller's"
+    (replyDonationRecipientHome stRedirect pushOuterReply pushServer == c1)
+  -- NEGATIVE: a still-reply-blocked origin is one whose own reservation is still
+  -- owed, and some other binding may name it as owner; the redirect declines.
+  let stBlockedOrigin : SystemState := withOrigin pushOuterBlockedTcb
+  assertBool "NEGATIVE: a reply-blocked origin fails the rebindability guard"
+    (donationOriginRebindable stBlockedOrigin pushOuter == false)
+  -- CONTROL: the *recipient* guard admits it, so the decline above is attributable
+  -- to rebindability alone.  Without this the negative would pass under a resolver
+  -- that declined for the other reason, and the guard would read as load-bearing
+  -- while asserting nothing.
+  assertBool "CONTROL: ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable stBlockedOrigin pushOuter == true)
+  assertBool "NEGATIVE: ...so the resolver declines it"
+    (donationOriginRecipient? stBlockedOrigin pushSc == none)
+  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient stBlockedOrigin pushSc pushServer == pushServer)
+  -- NEGATIVE: an origin that already holds a reservation of its own is the case
+  -- `donationRecipientAcceptable` has always covered.
+  let stBoundOrigin : SystemState :=
+    withOrigin { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
+  assertBool "NEGATIVE: a bound origin fails the recipient guard"
+    (donationRecipientAcceptable stBoundOrigin pushOuter == false)
+  -- CONTROL: and rebindability admits *it*, so the two guards are known to be
+  -- independent rather than two spellings of one test.
+  assertBool "CONTROL: ...while the rebindability guard ALONE admits it"
+    (donationOriginRebindable stBoundOrigin pushOuter == true)
+  assertBool "NEGATIVE: ...so the resolver declines that too"
+    (donationOriginRecipient? stBoundOrigin pushSc == none)
+  -- NEGATIVE: and with NO origin recorded the redirect is the identity, which is
+  -- every state this tree reached before HP10.4.
+  assertBool "NEGATIVE: no origin recorded — the recipient is the answered caller"
+    (replyDonationRecipient pushStore pushSc pushServer == pushServer)
+  assertBool "NEGATIVE: ...and the destination home is the answered caller's"
+    (replyDonationRecipientHome pushStore pushOuterReply pushServer
+      == determineTargetCore pushStore pushServer)
+  -- NEGATIVE (`v0.35.61`, the post-landing audit): an origin that no longer
+  -- RESOLVES is not a candidate.  Both guards pass a thread with no TCB (their
+  -- `_of_none` arms), so before the resolver resolved the origin itself the pop's
+  -- own `lookupTcb` was what met a stale origin -- as `.objectNotFound`, a
+  -- refusal on the one shape the redirect exists to make a fallback.  The two
+  -- CONTROLs are what make the last assertion attributable: with both guards
+  -- admitting the thread, only the resolution check can be what declines it,
+  -- and deleting that check answers `some staleOrigin` here.
+  let stStaleOrigin : SystemState :=
+    { pushStore with
+        objects := pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some pushServer,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some staleOrigin }) }
+  assertBool "CONTROL: the stale origin resolves to no thread"
+    (lookupTcb stStaleOrigin staleOrigin).isNone
+  assertBool "CONTROL: ...and BOTH guards admit it, vacuously"
+    (donationRecipientAcceptable stStaleOrigin staleOrigin == true
+      && donationOriginRebindable stStaleOrigin staleOrigin == true)
+  assertBool "NEGATIVE: so only the resolution check can decline it, and it does"
+    (donationOriginRecipient? stStaleOrigin pushSc == none)
+  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient stStaleOrigin pushSc pushServer == pushServer)
+
+private def runMiddleRemovalDepthFourChecks : IO Unit := do
+  IO.println "--- §3.23 WS-HP HP9.1: a middle removal at stack depth four ---"
+  match depth4Chain with
+  | .error e =>
+    assertBool s!"the witness needs a depth-4 chain (got {reprStr e})" false
+  | .ok chain =>
+    -- The stack, bottom to top: `pushOuterReply` → `pushDonorReply` → `depth3Reply`
+    -- → `depth4Reply`.  All four links asserted, because the point of the scenario
+    -- is what survives beneath a cut and a missing pre-state link would make that
+    -- vacuous.
+    assertBool "pre: the head frame links down to the third one"
+      (pushLinksOf chain depth4Reply == some (some depth3Reply, some (.head pushSc)))
+    assertBool "pre: the third frame links both ways"
+      (pushLinksOf chain depth3Reply
+        == some (some pushDonorReply, some (.frame depth4Reply)))
+    assertBool "pre: the second frame links both ways"
+      (pushLinksOf chain pushDonorReply
+        == some (some pushOuterReply, some (.frame depth3Reply)))
+    assertBool "pre: the bottom frame links up only"
+      (pushLinksOf chain pushOuterReply == some (none, some (.frame pushDonorReply)))
+    assertBool "pre: the context is held by the innermost server, owed to the one before it"
+      (pushBindingOf chain depth4Server == some (.donated pushSc depth3Server))
+    -- The frame the delegate answers is `depth3Reply`, whose caller is `pushServer`:
+    -- the THIRD frame from the bottom, so two frames remain below the cut.
+    assertBool "pre: the cut frame's caller is blocked on its own call"
+      (match chain.getTcb? pushServer with
+       | some t => t.ipcState == .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some depth3Server)
+       | none => false)
+    assertBool "the footprint resolves the frame ABOVE the cut"
+      (answeredReplyFrameAbove? chain pushServer == some depth4Reply)
+    -- **The middle removal**, through a delegated reply capability.
+    let (post, res) :=
+      endpointReplyOnCore replyRemovalDelegate pushServer IpcMessage.empty bootCoreId chain
+    assertBool "the out-of-order reply to the third frame's caller succeeds"
+      (match res with | .ok _ => true | .error _ => false)
+    assertBool "the answered frame leaves the structure entirely (`Reply.isFree`)"
+      (match post.getReply? depth3Reply with | some r => r.isFree | none => false)
+    -- **THE TRANSITIVITY, MEASURED.**  The head is re-pointed at the frame below the
+    -- cut, that frame links back up at the head — and the frame below *it* is
+    -- untouched, which is the half depth 3 cannot see.
+    assertBool "PAYOFF: the head's link down is RE-POINTED at the frame below the cut"
+      (pushLinksOf post depth4Reply == some (some pushDonorReply, some (.head pushSc)))
+    assertBool "PAYOFF: ...and that frame links back up at the head"
+      (pushLinksOf post pushDonorReply == some (some pushOuterReply, some (.frame depth4Reply)))
+    assertBool "PAYOFF: ...while the frame BELOW it is untouched — the transitive half"
+      (pushLinksOf post pushOuterReply == some (none, some (.frame pushDonorReply)))
+    -- NEGATIVE: the retired `severAtCut` values, spelled here and nowhere else, so
+    -- the three assertions above are known to discriminate.
+    assertBool "NEGATIVE: the head does NOT read as a severed cut"
+      (!(pushLinksOf post depth4Reply == some (none, some (.head pushSc))))
+    -- ...and the whole remaining stack is walkable, bottom-most owner included.
+    assertBool "PAYOFF: the pop resolves the remaining stack one frame down, not to the bottom"
+      (match replyStackOuterCaller? post pushSc with
+       | .ok (some outer) => outer == pushDonor
+       | _ => false)
+    -- **THREE POPS, AND IT ARRIVES.**  Depth 3 needed two; the third is the one a
+    -- sever at this depth could never reach, because both frames below the cut had
+    -- left the stack.
+    --
+    -- Each pop's *recipient* is the previous pop's **production-resolved** owner:
+    -- `returnDonatedSchedContextResolved` reads `replyStackOuterCaller?` of its own
+    -- state, so the `.donated pushSc X` this row asserts is where the kernel says
+    -- the reservation is still owed, and the next row then pops at that same `X`.
+    -- The witness follows that answer rather than supplying it — which is the only
+    -- reason the chain measures the composition instead of the fixture.
+    assertBool "PAYOFF: pop one owes the context outward to the second frame's caller"
+      (match returnDonatedSchedContextResolved post depth4Server pushSc depth3Server with
+       | .ok st' => pushBindingOf st' depth3Server == some (.donated pushSc pushDonor)
+       | .error _ => false)
+    assertBool "PAYOFF: pop two owes it outward again, to the bottom frame's caller"
+      (match returnDonatedSchedContextResolved post depth4Server pushSc depth3Server with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' depth3Server pushSc pushDonor with
+            | .ok st'' => pushBindingOf st'' pushDonor == some (.donated pushSc pushOuter)
+            | .error _ => false)
+       | .error _ => false)
+    assertBool "PAYOFF: pop three delivers it HOME `.bound` to its owner"
+      (match returnDonatedSchedContextResolved post depth4Server pushSc depth3Server with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' depth3Server pushSc pushDonor with
+            | .ok st'' =>
+                (match returnDonatedSchedContextResolved st'' pushDonor pushSc pushOuter with
+                 | .ok st''' => pushBindingOf st''' pushOuter == some (.bound pushSc)
+                 | .error _ => false)
+            | .error _ => false)
+       | .error _ => false)
+    -- ...and nothing between the cut and the owner is left holding it.
+    assertBool "PAYOFF: ...leaving every intermediate caller unbound, owing nothing"
+      (match returnDonatedSchedContextResolved post depth4Server pushSc depth3Server with
+       | .ok st' =>
+           (match returnDonatedSchedContextResolved st' depth3Server pushSc pushDonor with
+            | .ok st'' =>
+                (match returnDonatedSchedContextResolved st'' pushDonor pushSc pushOuter with
+                 | .ok st''' =>
+                     pushBindingOf st''' depth3Server == some .unbound &&
+                     pushBindingOf st''' pushDonor == some .unbound
+                 | .error _ => false)
+            | .error _ => false)
+       | .error _ => false)
+    -- The cut frame's own downward link is cleared by the removal, as at depth 3.
+    assertBool "PAYOFF: the cut frame's own downward link is cleared by the removal"
+      (pushLinksOf post depth3Reply == some (none, none))
+
+-- ============================================================================
+-- §3.26 the `.receive` replenish segment is keyed on the donation's own guard
+--        (WS-RR RR8.12, PR #897 Codex review)
+-- ============================================================================
+
+/-! The narrowing is pinned definitionally — reverting the segment breaks
+`endpointReceiveHandoffReplenishCores_of_blockedOnSend` at elaboration — so what no
+theorem states is that **both shapes are reachable by the live operations and the
+segment differs between them**.  That is this section's whole subject.
+
+The retired reading lives here, `private`, and nowhere else: computed beside the
+live one on both shapes, so the assertions are known to discriminate rather than
+merely to pass. -/
+
+/-- The superseded segment: keyed on *is there a queued sender at all*, which named
+both cores on every rendezvous including a plain `Send`. -/
+private def senderKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receiveRendezvousSender? st endpointId with
+  | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
+  | none        => []
+
+private def runReceiveReplenishSegmentChecks : IO Unit := do
+  IO.println "--- §3.26 WS-RR RR8.12: the `.receive` replenish segment follows the donation ---"
+  -- (a) a `Call` rendezvous: the donation can migrate, so both cores are declared.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
+  | some (stCall, _) =>
+    assertBool "the caller parks `.blockedOnCall`" (ipcStateIs stCall donClient (.blockedOnCall donEp))
+    assertBool "the pre-state guard fires on a queued Call"
+      (decide (rendezvousSenderIsCall stCall donClient = true))
+    assertBool "...so the narrowed resolver names the queued caller"
+      (decide (receiveRendezvousCallSender? stCall donEp = some donClient))
+    assertBool "...and the segment declares the donor's and the receiver's homes"
+      (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer
+                 = [determineTargetCore stCall donClient,
+                    determineTargetCore stCall donServer]))
+    assertBool "CONTROL: the retired reading agrees here — both name two cores"
+      (decide (senderKeyedReplenishCores stCall donEp donServer
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer))
+  -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
+  --     lock is declared.  This is the shape the superseded segment over-declared.
+  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver send parks the sender" false
+  | some (stSend, _) =>
+    assertBool "the sender parks `.blockedOnSend`" (ipcStateIs stSend donClient (.blockedOnSend donEp))
+    assertBool "the pre-state guard is false on a queued plain Send"
+      (decide (rendezvousSenderIsCall stSend donClient = false))
+    assertBool "...so the narrowed resolver names nobody"
+      (decide (receiveRendezvousCallSender? stSend donEp = none))
+    assertBool "PAYOFF: the segment declares NO replenish-queue lock"
+      (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer = []))
+    -- The decisive comparison: same state, same endpoint, same receiver; the
+    -- retired reading declares two cores for a migration that does not happen.
+    assertBool "NEGATIVE (the defect): the retired reading declared TWO cores here"
+      (decide ((senderKeyedReplenishCores stSend donEp donServer).length = 2))
+    -- ...and the reason it is sound to declare none: the donation step is the
+    -- identity, because the receive leg leaves the dequeued sender `.ready`.
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stSend) with
+    | none => assertBool "RR8.12: the receive completes the plain-Send rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "the receive dequeues the parked sender" (sender == donClient)
+      assertBool "the dequeued sender is woken `.ready`, not `.blockedOnReply`"
+        (ipcStateIs stRecv donClient .ready)
+      assertBool "...so the post-state donation guard is false"
+        (decide (rendezvousDequeuedCall stRecv donClient = false))
+      -- Asserted on the replenish queues themselves rather than on state equality:
+      -- what the footprint claims is that no replenishment moves, and that is the
+      -- proposition, not "the states are equal" (which `SystemState` cannot decide).
+      assertBool "...and the donation step moves NO replenishment on either core"
+        (match applyReceiveRendezvousDonation stRecv donServer donClient with
+         | .ok stDon =>
+             (replenishEntriesOn stDon (determineTargetCore stRecv donClient)
+                == replenishEntriesOn stRecv (determineTargetCore stRecv donClient))
+             && (replenishEntriesOn stDon (determineTargetCore stRecv donServer)
+                == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
+         | .error _ => false)
 
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
@@ -3059,11 +3777,15 @@ def runSmpIpcChecks : IO Unit := do
   runDonationChainStructureChecks
   runDonationReturnPopChecks
   runDonationPushChecks
-  runMiddleCallerDetachChecks
+  runMiddleCallerRemovalChecks
   runReplyFrameRemovalChecks
   runReplyRecvLoopCompletionChecks
   runMiddleRemovalDepthThreeChecks
+  runMiddleRemovalDepthFourChecks
+  runDonationOriginIdReuseChecks
+  runDonationOriginRedirectChecks
   runReceivePriorityHandoffChecks
+  runReceiveReplenishSegmentChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

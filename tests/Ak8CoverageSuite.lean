@@ -186,7 +186,6 @@ private def emptyFrozenState : FrozenSystemState :=
         configDefaultTimeSlice := 5
         replenishQueue := { entries := [], size := 0 } }
     objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    capabilityRefs := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     machine := default
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)

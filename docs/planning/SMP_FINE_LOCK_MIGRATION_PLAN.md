@@ -508,9 +508,10 @@ writes.
   — `lockWritesOnly` is about lock *words* — so define the coverage relation and
   the agreement it induces (`agreeOnFootprint S st₁ st₂`).  **Keep the abstract
   question separate from the representation one**, which is what conflating them
-  cost §5: `lifecycle.objectTypes` is keyed by `ObjId` and
-  `lifecycle.capabilityRefs` by `SlotRef = {cnode, slot}`, so both decompose by
-  object *abstractly* and are covered by the per-object locks; `objectIndex`
+  cost §5: `lifecycle.objectTypes` is keyed by `ObjId`, so it decomposes by
+  object *abstractly* and is covered by the per-object locks (so did
+  `lifecycle.capabilityRefs`, keyed by `SlotRef = {cnode, slot}`, until
+  `v0.35.78` retired that table); `objectIndex`
   (a `List`), the CDT maps, `scThreadIndex` and `scheduler` do not, and are
   `stateLevelLock`'s or the scheduler domain's.  Whether the **runtime** can
   realise the per-object covers is a different question, and it is PR 11's.
@@ -547,11 +548,11 @@ rather than beside it.
 - *Step 1:* classify every field in `storeObject_modifiedFields ++
   ipcEndpointOp_modifiedFields ++ capabilityOp_modifiedFields` as **per-key
   realisable** or **whole-structure**, with the classification *derived* from
-  the operation's own definition rather than asserted.  The four already known:
-  `lifecycle.capabilityRefs` is rebuilt by a `filter` over every entry on
-  **every** `storeObject`, of every kind; `objectIndex` is a `List` whose head
-  is shared; the CDT maps and `scThreadIndex` are the `stateLevelLock`
-  precedent (RR7.9, WS-OD OD3.5).
+  the operation's own definition rather than asserted.  The three already
+  known: `objectIndex` is a `List` whose head is shared; the CDT maps and
+  `scThreadIndex` are the `stateLevelLock` precedent (RR7.9, WS-OD OD3.5).
+  (`lifecycle.capabilityRefs`, rebuilt by a `filter` over every entry on
+  **every** `storeObject`, was the fourth until `v0.35.78` retired the table.)
 - *Step 2:* **the `RHTable` locality theorem, with its real side condition.**
   `insertLoop`'s key-match arm is one `Array.set` of the value alone and returns
   at once, so two updates at distinct **resident** keys are slot-disjoint and
@@ -633,11 +634,11 @@ gated on BP6, validated at BP8).**  Consumes PR 12.
   a field.  It is derived in Track D PR 11 from the write-set lists themselves
   (`storeObject_modifiedFields` is five fields, `ipcEndpointOp_modifiedFields`
   seven), because naming one is the enumeration-standing-in-for-a-derivation
-  shape: `lifecycle.capabilityRefs` is rebuilt by a `filter` over every entry on
-  **every** `storeObject` of every kind, `objectIndex` is a `List` with a shared
-  head, and `RHTable.insert` tests the load factor before it knows whether the
-  key is resident — so even a store at a resident key rebuilds the table at
-  three-quarters load.  This note previously read "the runtime realises
+  shape: `objectIndex` is a `List` with a shared head, and `RHTable.insert`
+  tests the load factor before it knows whether the key is resident — so even
+  a store at a resident key rebuilds the table at three-quarters load
+  (`lifecycle.capabilityRefs`, which every `storeObject` of every kind rebuilt
+  by a whole-table `filter`, is retired at `v0.35.78`).  This note previously read "the runtime realises
   `SystemState.objects` as per-object storage … discharged at SM10.1", which
   named one of the seven and a phase that no longer exists.
 - **Caps-presence gating, not receiver-presence.** The capless-rendezvous

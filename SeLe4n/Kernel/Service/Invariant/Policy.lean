@@ -15,11 +15,20 @@ import SeLe4n.Kernel.Capability.Invariant
 
 **This module is a seLe4n-specific extension with no analogue in real seL4.**
 
-Defines the service policy surface: invariants over backing-object typing,
-owner-authority references, and cross-subsystem bundle composition with the
-capability and lifecycle invariant surfaces. These predicates enable
-machine-checked verification that service operations preserve structural
-properties across subsystem boundaries.
+Defines the service policy surface: the invariant that every registered
+service's backing object is lifecycle-typed, and the cross-subsystem bundle
+composition with the capability and lifecycle invariant surfaces.  These
+predicates enable machine-checked verification that service operations
+preserve structural properties across subsystem boundaries.
+
+`v0.35.78`: the surface used to carry a second component, an implication
+from an *owner-authority reference recorded in lifecycle metadata* to the
+owner CNode holding concrete authority.  Its antecedent was stated through
+`SystemState.lookupCapabilityRefMeta`, which read `lookupSlotCap` — so the
+implication was `∃ slot, lookupSlotCap … = some cap ∧ cap.target = … →
+∃ slot cap, lookupSlotCap … = some cap ∧ cap.target = …`, a tautology with
+no consumer in the tree.  It is retired with the reader (see
+`Model/State.lean`), and the surface is the typing invariant alone.
 
 See `Service/Operations.lean` for the full seLe4n extension rationale. -/
 
@@ -34,26 +43,12 @@ abbrev ServicePolicyPredicate := SystemState → ServiceGraphEntry → Prop
 def policyBackingObjectTyped : ServicePolicyPredicate :=
   fun st svc => ∃ ty, SystemState.lookupObjectTypeMeta st svc.identity.backingObject = some ty
 
-/-- Policy component: lifecycle metadata records an owner-slot reference to the backing object. -/
-def policyOwnerAuthorityRefRecorded : ServicePolicyPredicate :=
-  fun st svc =>
-    ∃ slot,
-      SystemState.lookupCapabilityRefMeta st { cnode := svc.identity.owner, slot := slot } =
-        some (.object svc.identity.backingObject)
-
-/-- Policy component: owner CNode contains concrete authority to the backing object. -/
-def policyOwnerAuthoritySlotPresent : ServicePolicyPredicate :=
-  fun st svc =>
-    ∃ slot cap,
-      SystemState.lookupSlotCap st { cnode := svc.identity.owner, slot := slot } = some cap ∧
-      cap.target = .object svc.identity.backingObject
-
-/-- M5 policy bundle entrypoint (WS-M5-C): reusable, mutation-free policy assumptions. -/
+/-- M5 policy bundle entrypoint (WS-M5-C): reusable, mutation-free policy assumptions.
+Since `v0.35.78` it is the typing component alone (see the module docstring). -/
 def servicePolicySurfaceInvariant (st : SystemState) : Prop :=
   ∀ sid svc,
     lookupService st sid = some svc →
-      policyBackingObjectTyped st svc ∧
-      (policyOwnerAuthorityRefRecorded st svc → policyOwnerAuthoritySlotPresent st svc)
+      policyBackingObjectTyped st svc
 
 /-- Cross-subsystem M5/Q1 proof-package bundle over service policy + lifecycle + capability
 + registry surfaces. WS-Q1-C: `registryInvariant` added for capability-indexed registry. -/
@@ -79,40 +74,11 @@ theorem policyBackingObjectTyped_of_lifecycleInvariant
     (hObj : st.objects[svc.identity.backingObject]? = some obj) :
     policyBackingObjectTyped st svc := by
   -- AN4-B (H-03): the identity/aliasing bundle collapsed to its single exact
-  -- conjunct, so we project directly.
-  rcases hLifecycle with ⟨hTypeExact, _⟩
+  -- conjunct; since `v0.35.78` the lifecycle bundle *is* that conjunct.
+  have hTypeExact : lifecycleIdentityTypeExact st := hLifecycle
   refine ⟨obj.objectType, ?_⟩
   simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
     SystemState.lookupObjectTypeMeta, hObj] using hTypeExact svc.identity.backingObject
-
-/-- Bridge lemma: lifecycle capability-reference backing implies concrete slot authority. -/
-theorem policyOwnerAuthoritySlotPresent_of_lifecycleInvariant
-    (st : SystemState)
-    (svc : ServiceGraphEntry)
-    (hLifecycle : lifecycleInvariantBundle st)
-    (hRef : policyOwnerAuthorityRefRecorded st svc) :
-    policyOwnerAuthoritySlotPresent st svc := by
-  rcases hLifecycle with ⟨_, hCapRefBundle⟩
-  rcases hCapRefBundle with ⟨_hExact, hBacked⟩
-  rcases hRef with ⟨slot, hMeta⟩
-  rcases hBacked { cnode := svc.identity.owner, slot := slot } svc.identity.backingObject hMeta with
-    ⟨cap, hLookup, hTarget⟩
-  exact ⟨slot, cap, hLookup, hTarget⟩
-
-/-- Bridge lemma: capability lookup-soundness assumptions imply owner-slot witness facts.
-    W5-F: Removed unused `_hCap : capabilityInvariantBundle st` parameter — the proof
-    only requires the lookup equivalence, not the full capability invariant bundle. -/
-theorem policyOwnerAuthoritySlotPresent_of_capabilityLookup
-    (st : SystemState)
-    (svc : ServiceGraphEntry)
-    (slot : SeLe4n.Slot)
-    (cap : Capability)
-    (hLookup : cspaceLookupSlot { cnode := svc.identity.owner, slot := slot } st = .ok (cap, st))
-    (hTarget : cap.target = .object svc.identity.backingObject) :
-    policyOwnerAuthoritySlotPresent st svc := by
-  have hSlotCap : SystemState.lookupSlotCap st { cnode := svc.identity.owner, slot := slot } = some cap :=
-    (cspaceLookupSlot_ok_iff_lookupSlotCap st { cnode := svc.identity.owner, slot := slot } cap).1 hLookup
-  exact ⟨slot, cap, hSlotCap, hTarget⟩
 
 /-- Composed bridge theorem from lifecycle contracts to the service policy surface.
 
@@ -128,14 +94,12 @@ theorem servicePolicySurfaceInvariant_of_lifecycleInvariant
     servicePolicySurfaceInvariant st := by
   intro sid svc hSvc
   rcases hBackingObjects sid svc hSvc with ⟨obj, hObj⟩
-  refine ⟨policyBackingObjectTyped_of_lifecycleInvariant st svc obj hLifecycle hObj, ?_⟩
-  intro hRef
-  exact policyOwnerAuthoritySlotPresent_of_lifecycleInvariant st svc hLifecycle hRef
+  exact policyBackingObjectTyped_of_lifecycleInvariant st svc obj hLifecycle hObj
 
 /-- `storeServiceState` preserves the service policy surface invariant.
 
-`storeServiceState` only modifies the `services` field. Identity, backing object,
-and owner references are preserved when updating a service entry. -/
+`storeServiceState` only modifies the `services` field. The identity — and with
+it the backing object — is preserved when updating a service entry. -/
 theorem storeServiceState_preserves_servicePolicySurfaceInvariant
     (st : SystemState)
     (sid : ServiceId)
@@ -154,14 +118,8 @@ theorem storeServiceState_preserves_servicePolicySurfaceInvariant
     | none => exact absurd hOld hSvc
     | some svc =>
       have hIdEq := hIdentityEq svc hOld
-      rcases hPolicy sid svc hOld with ⟨hTyped, hBridge⟩
-      refine ⟨?_, ?_⟩
-      · simpa [policyBackingObjectTyped, hIdEq] using hTyped
-      · intro hRef
-        have hRefOld : policyOwnerAuthorityRefRecorded st svc := by
-          simpa [policyOwnerAuthorityRefRecorded, hIdEq] using hRef
-        have hPresentOld : policyOwnerAuthoritySlotPresent st svc := hBridge hRefOld
-        simpa [policyOwnerAuthoritySlotPresent, hIdEq] using hPresentOld
+      have hTyped := hPolicy sid svc hOld
+      simpa [policyBackingObjectTyped, hIdEq] using hTyped
   · have hLookupNe := storeServiceState_lookup_ne st sid sid' entry hSid hSvcInv
     have hLookupOld : lookupService st sid' = some svc' := by simpa [hLookupNe] using hLookup
     exact hPolicy sid' svc' hLookupOld
@@ -176,15 +134,12 @@ theorem storeServiceState_preserves_lifecycleInvariantBundle
     (entry : ServiceGraphEntry)
     (hLifecycle : lifecycleInvariantBundle st) :
     lifecycleInvariantBundle (storeServiceState sid entry st) := by
-  -- AN4-B (H-03): `lifecycleIdentityNoTypeAliasConflict` was removed from the
-  -- bundle (redundant with `lifecycleIdentityTypeExact`), so the simpa list no
-  -- longer unfolds it.
+  -- AN4-B (H-03) removed `lifecycleIdentityNoTypeAliasConflict` from the bundle
+  -- and `v0.35.78` the capability-reference layer, so the bundle is the typing
+  -- invariant and the simpa list unfolds exactly that.
   simpa [lifecycleInvariantBundle, lifecycleIdentityAliasingInvariant, lifecycleIdentityTypeExact,
-    lifecycleCapabilityReferenceInvariant,
-    lifecycleCapabilityRefExact, lifecycleCapabilityRefObjectTargetBacked, storeServiceState,
-    SystemState.objectTypeMetadataConsistent, SystemState.capabilityRefMetadataConsistent,
-    SystemState.lookupObjectTypeMeta, SystemState.lookupCapabilityRefMeta,
-    SystemState.lookupSlotCap, SystemState.lookupCNode] using hLifecycle
+    storeServiceState, SystemState.objectTypeMetadataConsistent,
+    SystemState.lookupObjectTypeMeta] using hLifecycle
 
 /-- `storeServiceState` preserves the capability invariant bundle compositionally.
 

@@ -2,6 +2,23 @@
 
 > **Status**: OPEN — the register of what is *not* finished in WS-SM.
 > **Audited cut**: `v0.34.2` (HEAD `1d44001`).
+> **Re-read at `v0.35.89`** (WS-RR RR8.13): every one of the **26** findings now
+> carries a status marker with the version it closed at — **23 CLOSED**, **2
+> PARTIALLY CLOSED** with the residual named, **1 REGISTRATION CLOSED** with the
+> residual owned by WS-SL.  The re-read was done by checking each finding's own
+> artefact against the tree rather than against memory, and it found three things
+> no row had: §4 finding 11 was **still live** (its comment named a deleted export
+> *and* the ABI v1 status convention, two revisions stale) and is fixed in this
+> cut; §4 finding 2's stated closure target — endpoint/notification queue label
+> uniformity — was **retracted** at `v0.35.83` as unestablishable, so the target
+> the finding names would have sent its closer after a premise the admission gate
+> refutes; and §4 findings 3 and 4 read as unregistered debt because they are
+> absent from `docs/REGISTERED_DEBT.md`, when in fact they closed at `v0.34.57` —
+> absence from the register meant *done*, not *forgotten*, which is worth knowing
+> before reading any other row's silence as a gap.
+> **The findings themselves are left as the audit wrote them**; a status marker is
+> appended to each.  This register is a record of what was found, not a status
+> board — the status board is `docs/REGISTERED_DEBT.md`.
 > **Scope**: every plan in `docs/planning/` **except**
 > [`HARDWARE_PARTITION_ISOLATION_PLAN.md`](HARDWARE_PARTITION_ISOLATION_PLAN.md),
 > which was explicitly excluded from this audit.
@@ -179,6 +196,18 @@ register is a record of what was found rather than a status board.
 
 **Remediation.** Before SM10.2.6/A.4 write any claim: add a row for this workstream to `docs/REGISTERED_DEBT.md` (the project's declared single canonical source for workstream status) with its real state (D0/D2/D2′/D3/D4/D5/D7 closed; D1, D6, D8 open), add it to `SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies, and add a bullet to CLAUDE.md's "Standing constraints and registered debt" naming the two still-threaded conjuncts so new code does not assume `ipcInvariantFull` is end-to-end machine-checked. Give each open slice an explicit closure target version.
 
+**CLOSED at `v0.34.26` (registration, WS-RR RR0.9) and `v0.34.43` (the debt
+itself, WS-RR RR3).**  RR0.9 gave the de-threading workstream a row in
+`docs/REGISTERED_DEBT.md` as **WS-DT**, an entry in
+`SMP_RELEASE_CLOSURE_PLAN.md` §2 Dependencies and a standing-constraints bullet
+in `CLAUDE.md` / `AGENTS.md` — which is the registration this finding asked for.
+RR3 then closed WS-DT itself: the bundle family is de-threaded end to end, held
+so by `scripts/check_ipc_invariant_dethreading.py` in Tier 0, and the dispatch
+payoff exists in three tiers.  So the finding's own remediation ("give each open
+slice an explicit closure target version") was superseded by there being no open
+slice.  The standing-constraints bullet it created was compressed at **RR8.14**
+(`v0.35.88`) once its narrative outgrew its obligations.
+
 #### 2. Cross-core SchedContext donation never migrates the CBS replenish queue, breaking the SM5.H affinity invariant on a live path
 
 - **Severity**: high · **Kind**: `unclosed-work` · **Blocks SM10 start**: yes
@@ -290,6 +319,18 @@ early because the send bundle could not honestly compose over them.
 
 **Remediation.** Implement fault handling rather than documenting the placeholder. At minimum the abort arms must take the faulting thread out of the run queue - suspend it and deliver a fault message to its registered fault handler, matching seL4's fault-IPC model - so that a faulting thread cannot livelock its core. Per CLAUDE.md's rule that deferred items must never live in source comments, lift this into the debt register (docs/audits/ or docs/REGISTERED_DEBT.md) with an explicit closure target in the same PR, and either widen SM10's scope to include it or add a preceding phase; a kernel declared bootable at v1.0.0 in which any unprivileged unmapped-memory access wedges a core is not release-ready.
 
+**CLOSED at `v0.34.44` (WS-RR RR4).**  A fault is delivered, never returned:
+the abort arms compose the live `.call` chain with a kernel-built fault message,
+the transition is *total* (no handler, an unresolvable one, one lacking the
+rights, a denied flow and an unlinkable reply all converge on a fail-closed
+suspend), and the answering reply is the ordinary one — `replyTransferOnCore`
+branches on the answered thread's `pendingFault`, which is what makes the
+reply-based restart reachable.  What the finding asked for as a minimum (take
+the faulting thread out of the run queue, deliver a fault message) is the
+fail-closed arm alone; the cut delivered the whole path.  See CLAUDE.md's "A
+fault is delivered, never returned" standing constraint for what new code must
+respect.
+
 #### 2. "Cancellation non-interference - LANDED" rests on an unproven hypothesis whose closure form returns its own premise
 
 - **Severity**: medium · **Kind**: `soundness` · **Blocks SM10 start**: no
@@ -318,7 +359,11 @@ queue:
   new frames — `restoreToReady_preserves_projection_high`,
   `clearTcbReplyObject_preserves_projection_high`,
   `clearReplyObjectCaller_preserves_projection` and
-  `consumeReplyLink_preserves_projection_high` — and feeds
+  `consumeReplyLink_preserves_projection_high` (since WS-RR RR8.5, `v0.35.63`,
+  the middle two are deleted with the raw-insert teardown they were about, and
+  the last is a corollary of the reply path's own
+  `consumeCallerReply_preserves_projection` through the bridge
+  `consumeCallerReply_eq_link`) — and feeds
   `cancelIpcBlockingOnCore_reply_cancellation_NI`, which takes **no**
   `hTeardownProj`.  This arm reaches no queue: it walks the Reply object's
   caller link, which is precisely why it does not need the missing invariant.
@@ -338,6 +383,44 @@ as landing with the clause open rather than as closing it.  Closure target
 unchanged and still returns its own premise; replacing it belongs to the same
 RR3 slice, since it is the same obligation stated one level up.
 
+**CLOSURE TARGET RETRACTED at `v0.35.83` (WS-RR RR8.8); the residual is OPEN
+under a different remedy.**  The invariant this finding names as the closure —
+endpoint/notification queue label uniformity — is **unestablishable**, not merely
+unstated, and RR8.8 measured why: the live admission gate is
+`endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)`, an
+**order** and not an equality, so a lower- and a higher-labelled sender are both
+admitted onto one higher-labelled endpoint —
+`endpointAdmissionAdmitsMixedObservability` is that admission as a
+`decide`-checked theorem, with an observer that sees exactly one of the two.  So
+the target named here, and in the register rows that cited it for
+`abortHolderProjectionStable` and `abortHolderWakeHigh`, is retracted: a proof
+that reaches for it is asking for a premise the gate refutes.
+
+What the gate *does* give is the other direction, and `v0.35.84`'s
+`LabelingContextValid.endpointObjectCoherence` supplies the conjunct that makes
+it usable — an endpoint's flow label flows to its own object's label, which
+`v0.35.83` had asserted without it being derivable.  With that,
+`endpointObjectHigh_of_admittedThreadHigh` covers the endpoint's own queue
+boundaries and `donationHolderHigh_of_donorHigh` the aborted holder's TCB, so
+`abortHolderWakeHigh` is **discharged** and `abortHolderProjectionStable` and the
+three queue arms' `hTeardownProj` reduce to the **queue-neighbour** class and no
+further: a neighbour's label is constrained only against the endpoint's.
+
+The residue is **representational**, which is why no invariant closes it.
+`queuePrev` / `queuePPrev` / `queueNext` survive `projectKernelObject`, so an
+observable thread's projection already names a non-observable one's identity with
+no operation having run, and a splice then rewrites an observable field.
+*Stripping* the links is unsound rather than coarse — the projection would stop
+determining the next dequeue, so two low-equivalent states would step to states
+differing in the endpoint's visible `head` and the step-level NI theorems would
+become false.  A queue's content must live in an object whose label **dominates**
+every member's, which the endpoint is and a member's own TCB is not, so the
+closure is **non-intrusive endpoint queues**, registered in
+`docs/REGISTERED_DEBT.md` table C with its measurement.  Until it lands, v1.0.0
+must not claim that a low observer cannot learn a high thread's identity from
+endpoint queue state — and `suspendThread_preserves_projection` still returns its
+own premise, as this finding says.
+
 #### 3. Platform/FFI.lean asserts an unqualified boot identity-map that the boot page tables do not provide above 3 GiB
 
 - **Status**: **CLOSED at v0.34.57** (WS-RR RR7.2, with RR7.1).  The tables were extended, not the claim qualified: `mmu::boot_mapping_for` maps every RAM frame the board reports and `cache::apply_icache_invalidation` (plus the sibling `cache_clean_pagetable_range` seam) refuses an operand outside that window at the extent it maintains.
@@ -351,6 +434,14 @@ RR3 slice, since it is the same obligation stated one level up.
 **Independent verification.** TECHNICAL SUBSTANCE: CONFIRMED. Every cited fact verified verbatim, and one independent check strengthens it. - SeLe4n/Platform/FFI.lean (ffiIcMaintenance) reads exactly "the boot tables identity-map RAM, so a RAM frame's kernel VA equals its PA and `ICacheInvalidation.toPaddr` is the correct operand"; repeats it for `.unifyPage` ("the same operand under the same identity-map argument"). No qualifier anywhere in the file (grep for Device/3 GiB/0xC000/kernel VA over FFI.lean: zero hits in that docstring's scope). - rust/sele4n-hal/src/mmu.rs (build_identity_tables) populates exactly four L1 block descriptors: entries 0..2 = `addr | BLOCK_NORMAL` (0x0–0xBFFF_FFFF), entry 3 = `(3u64 << 30) | BLOCK_DEVICE`. Nothing above 4 GiB. rust/sele4n-hal/src/mmu.rs (BLOCK_NORMAL)/54 confirm BLOCK_NORMAL carries SH_INNER + ATTR_IDX_NORMAL while BLOCK_DEVICE carries PXN|UXN|ATTR_IDX_DEVICE and no SH_INNER; rust/sele4n-hal/src/mmu.rs (block_device_has_pxn_and_uxn) asserts that (`assert_eq!(BLOCK_DEVICE & SH_INNER, 0)`). - SeLe4n/Platform/RPi5/Board.lean (rpi5MachineConfig) `physicalAddressWidth := 44`. - No PA→ker…
 
 **Remediation.** Implement the improvement the deferred item already specifies: add a PA→kernel-VA translation for the whole ICacheInvalidation operand family (iallu / ivauPage / unifyPage / cleanRangeIallu) with a fail-closed reject for frames outside the cacheable window, and pin the window against mmu.rs's L1 population so the two cannot drift. If the full translation cannot land in one cut, the minimal closure is the fail-closed reject on its own: refusing operands outside the cacheable window makes the docstring's identity-map claim true within an enforced bound, which is the implement-the-improvement direction. Qualifying the docstring to describe the narrower behaviour is NOT an acceptable interim step — the project forbids rewriting a description to match inferior code, and where the implementation is genuinely out of scope the correct outcome is to defer the release as tracked debt, never to ship a documentation-only patch.
+
+**CLOSED at `v0.34.57` (WS-RR RR7.2).**  The cache-maintenance operand family
+is bounded by the window the boot tables actually map, so the unqualified
+identity-map assertion this finding read is no longer the premise: RR7.1 rebuilt
+those tables in the same cut (finding 4 below) and RR7.2 made the operand window
+the kernel enforces agree with them.  Closed in the
+implement-the-improvement direction — the code was extended to support the
+claim, not the claim narrowed to describe the code.
 
 #### 4. The boot MMU maps 960 MiB that link.ld declares as RAM as Device memory, and maps nothing above 4 GiB
 
@@ -366,6 +457,21 @@ RR3 slice, since it is the same obligation stated one level up.
 
 **Remediation.** Reconcile the two before SM10.1 places any heap: either narrow link.ld's RAM LENGTH to 0xBFF80000 so the linker cannot hand out Device-typed addresses, or extend build_identity_tables to map RAM up to the true peripheral base (0xFE000000) as Normal with a finer split for the 0xFE000000+ device window, and populate L1 entries beyond 3 for larger boards. Add the resulting bound to check_physical_address_width.sh's remit so it cannot drift again.
 
+**CLOSED at `v0.34.57` (WS-RR RR7.1), and the cut found a worse defect while
+reading this one.**  The boot tables are a real structure now: an L0 table whose
+entry 0 is a Table descriptor to an L1 table, four L2 tables describing the low
+4 GiB at 2 MiB granularity, 1 GiB L1 blocks above that, `TTBR1_EL1 = 0` and
+`TCR_EL1.EPD1` set so the upper half faults rather than identity-aliasing low
+physical memory.  The finding neither audit had: `build_identity_tables` wrote
+`addr | BLOCK_NORMAL` — a level-**1** block — into a table installed at level
+**0**, which `TCR_EL1.T0SZ = 16` with the 4 KiB granule makes the initial lookup
+level, and a level-0 block needs FEAT_LPA2 that the Cortex-A76 does not
+implement.  Every walk would have taken a translation fault the instant
+`SCTLR_EL1.M` was set: a boot denial of service, latent only because no bootable
+image exists yet.  Reported before it was fixed, per the vulnerability rule.
+**WS-BP BP2.6** then removed the reason the map was derived from a firmware blob
+at all.
+
 #### 5. The flagship 'syscall entry implies capability held' theorem covers only the legacy dispatch path, not the live checked path the hardware invokes
 
 - **Status**: **CLOSED at v0.34.57** (WS-RR RR7.3).  `dispatchSyscallChecked_requires_right` and `syscallEntryChecked_implies_capability_held` state the guarantee on the live path over the *executing* core, through both gate shapes; `…_of_pre_state` restates it on the trapped-in state (via `resolveCapAddress_congr_objects`), and `Platform.FFI.syscallDispatchFromAbi_implies_capability_held` carries it to the exported seam.  The GitBook and `CLAIM_EVIDENCE_INDEX.md` citations name the live-path theorems.
@@ -380,6 +486,13 @@ RR3 slice, since it is the same obligation stated one level up.
 
 **Remediation.** Prove the analogue on the live path - do not restate the claim more narrowly. Add `dispatchSyscallChecked_requires_right` and `syscallEntryChecked_implies_capability_held`, mirroring the existing proofs but parameterized over `executingCore` rather than `bootCoreId`, and handling the two `syscallChecksTargetFirst` arms via the existing `dispatchWithCapChecked_audit_insufficient_right_denied`. Then extend the chain through `syscallDispatchFromAbi` so the guarantee reaches the exported seam. Update the gitbook and CLAIM_EVIDENCE_INDEX citations to name the live-path theorems once they exist. This belongs in SM10's theorem catalogue (§10) as a release-blocking item, since v1.0.0's headline claim is that every syscall is capability-gated.
 
+**CLOSED at `v0.34.57` (WS-RR RR7.3).**  The guarantee is proved on the path
+the hardware takes: `dispatchSyscallChecked_requires_right`
+(`SeLe4n/Kernel/API.lean`) and
+`syscallEntryChecked_implies_capability_held_of_pre_state`
+(`SeLe4n/Platform/FFI.lean`) are the live-path analogues, added rather than the
+claim restated more narrowly.
+
 #### 6. Fault-return arms use the retired v1 status convention (raw discriminant in x0, x1 untouched), inconsistent with SYSCALL_ABI_VERSION 2
 
 - **Severity**: medium · **Kind**: `soundness` · **Blocks SM10 start**: no
@@ -392,6 +505,15 @@ RR3 slice, since it is the same obligation stated one level up.
 **Independent verification.** CONFIRMED against the tree; every refutation attempt failed. Factual core verified: - rust/sele4n-hal/src/trap.rs (handle_synchronous_exception), 289, 297, 310 — the DABT/IABT/alignment/unknown arms each call `frame.set_x0(error_code::VM_FAULT)` (44) or `set_x0(error_code::USER_EXCEPTION)` (45) and write nothing else; x1 is left untouched. Constants at trap.rs. - Contrast in the same match: trap.rs, 272, 274 — the SVC arm writes all six registers via `set_return_frame` (SvcOutcome::Frame, `blocked_resume_sentinel_regs`, `error_frame_regs(disc)`). `error_frame_regs` at rust/sele4n-hal/src/svc_dispatch.rs (error_frame_regs) = `[0, (disc+1)<<9, 0,0,0,0]`. - The v1 shape is explicitly retired: rust/sele4n-abi/src/decode.rs "The pre-WS-RA convention — `regs[0] != 0` *is* the error discriminant … is retired."; rust/sele4n-abi/src/decode.rs (decode_response) derives status solely from x1's 20-bit label, label 0 => Ok with regs[0] as badge/value. trap.rs (`set_x1` docstring) states x1's label carries the error status. - The project already adjudicated this…
 
 **Remediation.** Make the fault paths speak ABI v2: replace each `frame.set_x0(error_code::X)` with `frame.set_return_frame(crate::svc_dispatch::error_frame_regs(disc))` for the corresponding KernelError discriminant (44 VmFault, 45 UserException), so no exception return can decode as success. Delete the now-unused `error_code` constants, or keep them only as the discriminants fed to `error_frame_regs`. Add a Rust test asserting that no exception-class arm leaves x1 unwritten, mirroring `error_frame_regs_offsets_every_discriminant`. Fold this into the same cut as the fault-delivery work, since both touch the same arms.
+
+**CLOSED at `v0.34.44` (WS-RR RR4), by removing the question.**  The fault
+arms no longer *return* a status at all — they deliver a fault through the live
+`.call` chain — so there is no `set_x0(error_code::…)` left in `trap.rs` to be
+inconsistent with anything.  Where a fault label does cross the ABI it is the v3
+encoding, `ERROR_LABEL_BASE + discriminant` in the `x1` `MessageInfo` label; the
+v2 convention this finding measured against (`d + 1` as the label) was itself
+retired in the same cut, because a delivered fault message's own
+`seL4_Fault_tag` decoded in userspace as a kernel error.
 
 #### 7. The _atomic_under_lockSet family is a rfl instance of a body-agnostic lemma, so the atomicity half of two acceptance-gate items carries no operation-specific content
 
@@ -406,6 +528,14 @@ RR3 slice, since it is the same obligation stated one level up.
 **Independent verification.** CONFIRMED IN SUBSTANCE, BUT OVERSTATED IN SCOPE AND MISCLASSIFIED IN KIND. Corrected medium -> low. WHAT THE TREE CONFIRMS. - SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean (lockSet_atomic_under_2pl): `lockSet_atomic_under_2pl` is universally quantified over `action : SystemState -> SystemState x alpha` and closed `by rfl`. It is a definitional unfolding of `withLockSet`, true for any action and any LockSet. - Every CrossCore `_atomic_under_lockSet` theorem is the one-line instance `lockSet_atomic_under_2pl _ executingCore _ s`: SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean (endpointCallOnCore_atomic_under_lockSet) (thm at (withLockSet_invariant_preserved)), SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean (notificationWaitOnCore_atomic_under_lockSet) and (lockAcquireSequence_distinct_objId_of_resolves) (thms at (acquireLockOnObject_objStore_release_roundtrip)/ (lockId_eq_of_components)), SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean (endpointReplyOnCore_atomic_under_lockSet) (thm at ) plus the replyRecv companion (thm at ), SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean (cancelIpcBlocking_atomic_under_lockSet)/// (thms at ///). - `lockSet_observer_atomic_on` (SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean (lockSet_observer_atomic_on)) is instantiated exactly twice, both cancellation: SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean (cancelIpcBlockingOnCore_observer_atomic) and. The unguarded `lockSet_observer_atomic` (SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean (lockSet_observer_atomic)) has one instantiation, the G…
 
 **Remediation.** Instantiate `lockSet_observer_atomic_on` at the decisive observer of each of the five remaining SM6 transitions (the receiver's ipcState for call, the caller's for reply, the notification's pendingBadge/waitQ for signal and wait), mirroring `cancelIpcBlockingOnCore_observer_atomic`. That is the improvement the codebase's own section 4b comment points at; do not soften the gate wording in its place.
+
+**CLOSED at `v0.34.57` (WS-RR RR7.4).**  `lockSet_observer_atomic_on` is
+instantiated at a decisive observer of each cross-core transition, not five but
+**seven**: `endpointCallOnCore`, `endpointReplyOnCore`,
+`endpointReplyRecvOnCore`, `notificationSignalOnCore`,
+`notificationWaitOnCore`, `cancelIpcBlockingOnCore` and
+`cancelDonationOnCore`, each carrying operation-specific content rather than the
+body-agnostic `rfl` this finding named.
 
 #### 8. Nothing in the tree connects the Lean RwLock spec to the deployed Rust `rw_lock.rs` — D-4's main theorem assumes its own per-step conclusion
 
@@ -456,6 +586,12 @@ correspondence hypothesis is used rather than bound as `_h_corresponds`.
 
 **Remediation.** Retire the @[export] (WS-RA already removed its twin syscall_dispatch_inner, SeLe4n/Platform/FFI.lean (icMaintenanceBroadcast_cleanRangeIallu_encoding)) keeping the Lean definition for the test suites, or route it through the same bracket as sele4n_suspend_thread. Do not leave a committing C symbol in the shipped image whose only protection is that nothing currently calls it.
 
+**CLOSED at `v0.34.48` (WS-RR RR5).**  The `@[export suspend_thread_inner]` is
+retired; the only occurrences left in the tree are prose recording that it and
+`syscall_dispatch_inner` *were* the legacy symbols.  The surviving raw entry,
+`suspend_thread_cross_core`, runs inside the kernel-entry bracket and refuses a
+reserved idle id itself.
+
 #### 10. Two lock- and vector-safety tripwires are debug_assert! and vanish from the release image
 
 - **Severity**: low · **Kind**: `soundness` · **Blocks SM10 start**: no
@@ -469,6 +605,16 @@ correspondence hypothesis is used rather than bound as `_h_corresponds`.
 
 **Remediation.** Promote both to unconditional checks that fail closed via gic::halt_all (the pattern acquire_kernel_entry already uses at rust/sele4n-hal/src/kernel_entry.rs (acquire_kernel_entry)). Both are off the hot path - one runs once per kernel entry, one once per core at boot - so the cost is negligible relative to the failure mode each describes.
 
+**CLOSED at `v0.34.48` (WS-RR RR5.18).**  Both are unconditional and
+fail closed, and the pair is *pinned*: `RELEASE_SURVIVING_TRIPWIRES` in
+`rust/sele4n-hal/build.rs` names each tripwire with the operation it protects and
+requires it among the statements that **dominate** every occurrence of that
+operation, so a branch that halts but is no longer reached before the acquire or
+the VBAR write is refused.  PR #889's review rounds 6–9 then sharpened what
+"dominates" means — the branch must end in `fatal_halt` itself, must be a
+top-level statement of the helper or sit under an unconditionally-executed
+block, and nothing may `return` or panic before it.
+
 #### 11. trap.rs SVC comment cites the deleted `syscall_dispatch_inner` export
 
 - **Severity**: low · **Kind**: `doc-drift` · **Blocks SM10 start**: no
@@ -481,6 +627,23 @@ correspondence hypothesis is used rather than bound as `_h_corresponds`.
 **Independent verification.** CONFIRMED as doc-drift, low, non-blocking. Tried and failed to refute on every axis. 1. The stale citation is real and present-tense. rust/sele4n-hal/src/trap.rs (handle_synchronous_exception) states the dispatcher "forwards via the `syscall_dispatch_inner` `extern \"C\"` symbol (Lean-emitted by `@[export syscall_dispatch_inner]` in `SeLe4n/Platform/FFI.lean`)". That symbol does not exist: `grep -rn "@\[export" SeLe4n/ --include='*.lean'` returns exactly one export declaration site, SeLe4n/Platform/FFI.lean (ffiSuspendThread) `@[export suspend_thread_inner]`. SeLe4n/Platform/FFI.lean (icMaintenanceBroadcast_cleanRangeIallu_encoding) is an explicit tombstone block ("WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED... the Rust `svc_dispatch` extern was flipped to `lean_syscall_dispatch_cross_core` at v0.31.67 (SM6.A)"), and SeLe4n/Platform/FFI.lean names the live seam. A Tier-3 negative anchor prevents its return (scripts/test_tier3_invariant_surface.sh (_rg_shim_cleanup), `@\[export syscall_dispatch_inner\]` must not match FFI.lean). The live seam is declared at rust/sele4n-hal/src/sv…
 
 **Remediation.** Update the comment to name `lean_syscall_dispatch_cross_core` and `SeLe4n/Kernel/SyscallDispatchEntry.lean` as the seam, matching rust/sele4n-hal/src/svc_dispatch.rs (blocked_resume_sentinel_regs). Sweep the file for the other retired-symbol references in the same block (the `DispatchError::Kernel(disc)` raw-discriminant narrative is also pre-WS-RA). Suitable for SM10.2 documentation sync.
+
+**CLOSED at `v0.35.89` (WS-RR RR8.13) — this was still live when the row came
+due, and it was worse than the heading says.**  The comment named the deleted
+export *and* described the ABI **v1** status convention ("errors are surfaced via
+x0 with the canonical KernelError discriminant, wrapped as
+`DispatchError::Kernel(disc)`"), which two ABI revisions had retired: WS-RA's
+`SYSCALL_ABI_VERSION = 3` puts the status in the `x1` `MessageInfo` label at
+`errorLabelBase + d` and leaves `x0` carrying the badge or primary result at full
+width, with the scalar export return being the *outcome tag* and the six-word
+frame travelling through `ffiSyscallReturnFrame`.  A reader following that
+comment would have looked for a symbol that does not exist and then decoded the
+wrong register.  Both halves are corrected at the seam
+(`rust/sele4n-hal/src/trap.rs`, the SVC arm), naming
+`lean_syscall_dispatch_cross_core` and
+`SeLe4n/Kernel/SyscallDispatchEntry.lean`.  This is the one finding of the
+sixteen RR8.13 re-read that had not been closed by another row — which is the
+argument for the row existing.
 
 ## 5. High-severity findings
 
@@ -622,6 +785,19 @@ rejection of an already-inactive victim.
 
 **Remediation.** Register in SM10.1 an explicit obligation that the `lean_kernel_main` install uses `bootFromPlatformWithIdleThreads`, and land the connecting theorem `∀ c, idleDispatchableOnCore (bootFromPlatformWithIdleThreads config).state c = true` so the live no-stall mechanism is proven reachable from the real boot state rather than assumed. Add it to SMP_RELEASE_CLOSURE_PLAN.md §SM10.1 as a first-class row next to the existing install-ordering obligation.
 
+**CLOSED at `v0.34.48` (WS-RR RR5.11–RR5.14).**
+`bootFromPlatformCheckedWithIdleThreads` folds a per-core idle **enqueue** over
+the declared cores, so `∀ c, idleThreadEnqueuedOnCore st c` holds of the live
+boot state and `chooseThreadOnCore_always_succeeds`'s premise is discharged
+rather than hypothesised.  Two things the cut settled that this finding did not
+ask for: the boot enqueues without setting any current slot (a current slot
+pointing at a queued thread violates `queueCurrentConsistent` from the first
+instruction), and it stores the **queued** idle form, since storing the
+dispatched form while queuing it made every successful boot violate
+`threadStateConsistent`.  `v0.35.68` then derived the enqueue from the kernel
+model's own `enqueueIdleThreadOnCore` rather than a builder-side copy of its
+body.
+
 #### 4. Idle threads are never installed on the production boot path; SM4.G's deferral to SM5 is orphaned and blocks a bootable v1.0.0
 
 - **Severity**: high · **Kind**: `sm10-prerequisite` · **Blocks SM10 start**: no
@@ -635,6 +811,11 @@ rejection of an already-inactive victim.
 
 **Remediation.** Implement the improvement the plan already describes: wire the per-core idle install into `bootFromPlatformChecked` (or add a checked idle variant that `bootAndInitialiseFromPlatform` uses), and enqueue each core's idle thread so `idleThreadEnqueuedOnCore` holds at boot, discharging `schedulerNoStall_smp`'s `hIdle` from the real boot state rather than by hypothesis. Add it as an explicit SM10.1.1 sub-task in `SMP_RELEASE_CLOSURE_PLAN.md` (the plan already presumes it — "the secondaries' bring-up reschedule observe the real boot state — with per-core idle threads installed") and register it in the CLAUDE.md standing-constraints block until it lands. Do not soften the §3.7 claim.
 
+**CLOSED at `v0.34.48` (WS-RR RR5.11–RR5.14)** — the same cut as finding 3
+above, which is the same defect seen from the plan's side rather than the boot
+state's.  The improvement the plan described was implemented (the idle install is
+in the *checked* boot), not documented.
+
 #### 5. SM4.C.11's registration is stale and its closure target is circular — the phase that owns it is marked LANDED
 
 - **Severity**: high · **Kind**: `unregistered-debt` · **Blocks SM10 start**: no
@@ -647,6 +828,19 @@ rejection of an already-inactive victim.
 **Independent verification.** CONFIRMED on both halves; the finding is if anything understated. MIGRATED HALF (docs stale-pessimistic — confirmed). The plan's OPEN note (docs/planning/SMP_PER_CORE_STATE_PLAN.md) says the ~15 named Liveness decls "were not delivered" and "remain bootCoreId-pinned". False for most of the list. All present in PRODUCTION code with genuine per-core bodies (`currentOnCore c` / `runQueueOnCore c`, not bootCoreId), each with an `rfl` boot-core bridge: eventuallyExitsOnCore (SeLe4n/Kernel/Scheduler/Liveness/BandExhaustion.lean (eventuallyExitsOnCore)), higherBandExhaustedOnCore ( (traceStateAt)), CanonicalDeploymentProgressOnCore (SeLe4n/Kernel/Scheduler/Liveness/RPi5CanonicalConfig.lean (CanonicalDeploymentProgressOnCore)), rpi5_canonicalConfig_eventuallyExitsOnCore, rpi5_higherBandExhausted_from_progressesOnCore, WCRTHypothesesOnCore (SeLe4n/Kernel/Scheduler/Liveness/WCRT.lean (WCRTHypothesesOnCore)), wcrtBound_unfold_onCore ( (maxBudgetInBand_eq_onCore_bootCore)), selectedAtOnCore (SeLe4n/Kernel/Scheduler/Liveness/TraceModel.lean (selectedAtOnCore)), runnableAtOnCore ( (runnableAtOnCore)), countHigherOrEqualEffectivePriorityOnCore ( (countHigherOrEqualEffectivePriorityOnCore)), maxBudgetInBandOnCore ( (maxBudgetInBandOnCore)), maxPeriod…
 
 **Remediation.** Re-register SM4.C.11 accurately and give it a real owner: update the plan's OPEN note and the CLAUDE.md/AGENTS.md standing-constraints line to record what SM5.J actually landed, restate the residual as the `stepPrecondition`/`stepPost`/`ValidTrace` step relation, and name a live closure target (an SM10 sub-task or an explicit Scheduler-subsystem follow-on phase) rather than a sub-task ID inside a LANDED plan. The correction to the migrated half is the legitimate doc direction (docs describe a worse state than the code); the residual half must be implemented, not written down and left.
+
+**REGISTRATION CLOSED; the residual is OPEN and owned.**  The finding's
+registration half is done: the stale pessimistic wording is corrected, and the
+residual has a live owner — **WS-SL** in `docs/REGISTERED_DEBT.md`, closure
+target post-v1.0.0 — rather than a sub-task ID inside a plan marked LANDED,
+which is exactly what the remediation asked for.  The residual itself is
+unchanged and visible in `CLAUDE.md`'s standing constraints: SM5.J lifted the
+per-core Liveness *predicates* at `v0.31.64`, but `stepPrecondition`, `stepPost`
+and `ValidTrace` (`Scheduler/Liveness/TraceModel.lean`) still read `bootCoreId`,
+so **no `ValidTrace` exhibits a step taken on a secondary core** and an SMP
+liveness result may not be read off a trace.  That is the half the finding said
+must be implemented rather than written down, and it is neither closed here nor
+claimed to be.
 
 #### 6. The Tier-0 grep gate enforcing the non-IS TLBI ban does not exist; §4.4's "private helpers" claim is false
 
@@ -750,6 +944,14 @@ merely fail to use `applyOp`, they did not agree with it — cannot recur.
 
 **Remediation.** Implement the improvement the tree already documents: promote `SeLe4n.Kernel.SecondaryEntry`, `SeLe4n.Kernel.PerCoreTimerEntry` and `SeLe4n.Kernel.PerCoreRescheduleEntry` into `SeLe4n.lean`'s import closure exactly as `SyscallDispatchEntry` was promoted, and drop their `staged_module_allowlist.txt` entries in the same cut (the allowlist header already documents this promotion pattern for `Locks.RwLock` / `MemoryModel`). Then add a gate that reads the five-entry table in `kernel_entry.rs` and asserts, for each `lean_*` symbol, both that its defining module is production-reachable from `SeLe4n.lean` and that a compiled `.o.export` carrying the symbol exists — so the link contract is verified by object code rather than by a Tier-3 text anchor. Do NOT resolve this by relaxing the staged/production partition rule or by softening the "LIVE seam" language in the module docstrings.
 
+**CLOSED at `v0.34.48` (WS-RR RR5.15).**  `SeLe4n.Kernel.SecondaryEntry`,
+`PerCoreTimerEntry` and `PerCoreRescheduleEntry` are imported by `SeLe4n.lean`,
+so their `@[export]`s emit into the static archive.  The cut also built the gate
+this finding's evidence needed: `scripts/check_kernel_entry_exports.py` verifies
+each symbol against the built archive's **object code** over a requirement
+*derived* from every HAL `extern "C"` declaration, rather than against a text
+anchor.
+
 #### 10. `IPC_INVARIANT_DETHREADING_PLAN.md` is an in-flight verification plan with five open slices, orphaned from every index
 
 - **Severity**: high · **Kind**: `unclosed-work` · **Blocks SM10 start**: no
@@ -763,6 +965,11 @@ merely fail to use `applyOp`, they did not agree with it — cannot recur.
 
 **Remediation.** Add the de-threading workstream to CLAUDE.md's "Active workstream context" status index and to REGISTERED_DEBT.md's portfolio table with a real status line, so it stops being invisible to anyone reading the index. Then decide its disposition explicitly before v1.0.0: either finish D1/D3/D4/D6/D8 so the payoff theorem lands (the difference between "if the post-state already satisfies the structural invariant" and "the transition establishes it" is load-bearing for any end-to-end IPC safety claim the release makes), or register the residue with an owner and closure target. Do not resolve this by weakening the plan's goal statement or by quietly archiving the plan — the 15 remaining threaded hypotheses are the real state and must be visible in the register.
 
+**CLOSED at `v0.34.26` (WS-RR RR0.9) and `v0.34.43` (WS-RR RR3)** — the same
+pair that closed §3's blocker 1, which this finding is the high-severity reading
+of.  The workstream was registered as **WS-DT** and then closed; its plan is
+retired to `docs/dev_history/planning/`.
+
 #### 11. The SVC and suspend seams call into Lean without the lean_ready gate that kernel_entry.rs claims every seam consults
 
 - **Severity**: high · **Kind**: `false-completeness-claim` · **Blocks SM10 start**: no
@@ -775,6 +982,20 @@ merely fail to use `applyOp`, they did not agree with it — cannot recur.
 **Independent verification.** CONFIRMED on the facts, downgraded critical -> high on exposure. What the tree says: - rust/sele4n-hal/src/kernel_entry.rs claims, over the five-entry table there: "Every hardware seam above therefore also consults the per-core readiness gate ([crate::lean_ready]) before its Lean call". Only three do: rust/sele4n-hal/src/timer.rs (per_core_timer_tick_isr) (`if crate::lean_ready::lean_ready(core_id as usize)` before `lean_per_core_timer_tick` at 434), trap.rs (before `lean_per_core_reschedule` at 510), rust/sele4n-hal/src/smp.rs (rust_secondary_main) (before `lean_secondary_kernel_main` at 735). - `grep -n lean_ready rust/sele4n-hal/src/svc_dispatch.rs rust/sele4n-hal/src/ffi.rs` returns ZERO hits. rust/sele4n-hal/src/svc_dispatch.rs (dispatch_svc) `dispatch_svc` enters `crate::kernel_entry::with_kernel_entry(core,...)` at 595 and calls `lean_syscall_dispatch_cross_core` (extern declared at 655-657 under plain `#[cfg(not(test))]`) with no readiness check. rust/sele4n-hal/src/ffi.rs (sele4n_suspend_thread) `sele4n_suspend_thread` brackets at 1238 and calls `suspend_thread_cross_core` (extern at rust/sele4n-hal/src/ffi.rs (cache_ic_maintenance), a…
 
 **Remediation.** Implement the gate on both seams so the claim becomes true: in dispatch_svc, check lean_ready(core) before entering the bracket and return a fail-closed label-encoded frame (error_frame_regs) when the core is not ready; in sele4n_suspend_thread, return a nonzero KernelError status. Gate both externs on hw_target for symmetry with the other three. Do not weaken the kernel_entry.rs sentence - the syscall path is the highest-traffic route into the Lean runtime and is exactly what the gate exists to protect.
+
+**CLOSED at `v0.34.48` (WS-RR RR5.6–RR5.9), and the two seams degrade
+differently because what they can safely do differs.**  `sele4n_suspend_thread`
+returns `KernelError::IllegalState` — a C-callable API with an error channel.
+`dispatch_svc` **halts the core** (`halt_syscall_before_lean_ready`): an `SVC`
+advanced the PC so a fail-closed frame would be architecturally coherent, but
+the timer seam consults the same mask, so a thread on a not-ready core would
+never be preempted, charged budget or rescheduled again — returning an error
+hands it the CPU forever.  The gate precedes *every* SVC outcome, before the id
+and argument-count prefilters, and `build.rs` pins that order structurally.
+RR5.8/RR5.9 closed the compile-time half the finding did not reach: a Lean
+`extern` may be declared, defined or exported only under
+`feature = "hw_target"`, which the readiness gate cannot decide because it
+governs whether a call *executes*, not whether it is *compiled*.
 
 #### 12. No aarch64 target is compiled anywhere in the tree or CI - 67 cfg-gated blocks, 59 asm! sites and all three.S files have zero compile coverage
 
@@ -1435,7 +1656,7 @@ RR3.24/RR3.25 composed them: `dispatchCapabilityOnly_preserves_ipcInvariantFull`
 surface they compose), all under pre-state quiescence packs.  The pending
 register [`ipc_dethreading_pending.txt`](ipc_dethreading_pending.txt) is empty
 and the gate, which checks it in both directions, reports **zero** conjuncts
-bound on a post-state across all **176** statements in the family, with the
+bound on a post-state across all **186** statements in the family, with the
 conjunct set and the bundle family both derived from the sources, and prints its
 end-to-end PASS line.  The family grew from sixty-five with the per-arm and
 checked tiers, and later cuts.  (`syscallDispatch` named
@@ -1721,7 +1942,7 @@ The sweep found the proof surface, capability gating, ABI design and Rust unsafe
 
 > **This sequence is now planned in full.** Every item below, plus the
 > security findings of §4 and the medium sweep of §6, is decomposed into
-> 187 PR-sized sub-tasks across nine phases in
+> 198 PR-sized sub-tasks across nine phases in
 > [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) (WS-RR).
 > The §7 low-severity table is not enumerated in that plan; RR0.11 triages it
 > by remedy, sending prose fixes to SM10.2's documentation sweep and anything

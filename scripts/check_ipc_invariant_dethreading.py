@@ -121,6 +121,11 @@ PRE_STATE_PREDICATES = (
     # the first form that fits, and a shorter prefix placed first would claim
     # the longer name's occurrences.
     "ipcInvariantFullExceptMembership",
+    # WS-RR RR8.7: the bundle with the *reply linkage* relaxed at a woken
+    # caller, which is the honest post-state of the unblock-and-stage rewrite
+    # and the honest pre-state of the reply-link teardown.  Listed for the same
+    # reason as its two siblings, and ahead of the bare spelling it extends.
+    "ipcInvariantFullExceptReplyLinkage",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )
@@ -318,11 +323,21 @@ MACHINERY_PINS = {
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.
     ("SeLe4n/Testing/BootEntryContract.lean", "run_cmd"): 1,
+    # v0.35.114: the owner of "does this declaration carry a body", shared by the
+    # four censuses below.  One `run_cmd`, which looks its three planted
+    # witnesses up in the environment and throws when `bodyBearing` answers the
+    # wrong arm for one of them.  It mints no declaration.
+    ("SeLe4n/Testing/DeclarationKind.lean", "run_cmd"): 1,
     # The elaborator-backed de-threading census itself: one `run_cmd`
     # running the witnesses and the environment walk.  The census is this
     # pin's own payoff -- the machinery it rides is reviewed here like any
     # other.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "run_cmd"): 1,
+    # WS-RR RR8.12 (third cut): the kernel-transition reachability census.
+    # One `run_cmd`, which derives the state-transformer domain, partitions it
+    # by reachability from the committing exports and reconciles the
+    # unreachable half against its pin.  It mints no declaration.
+    ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 1,
     # The census's own loop witness: a `local macro` minting a hygienic
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.

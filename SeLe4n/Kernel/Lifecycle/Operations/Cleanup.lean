@@ -131,11 +131,32 @@ theorem threadCurrentOnSomeCore_iff (st : SystemState) (tid : SeLe4n.ThreadId) :
     cross-subsystem composition once `dualQueueSystemInvariant` is threaded
     through every caller. -/
 def removeThreadFromQueue (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) : IntrusiveQueue :=
-  let advance := match lookupTcb st tid with
-    | some tcb => (tcb.queueNext, tcb.queuePrev)
-    | none => (none, none)  -- defensive: see W6-A / AN4-G.1 doc above
-  { head := if q.head = some tid then advance.1 else q.head,
-    tail := if q.tail = some tid then advance.2 else q.tail }
+  match lookupTcb st tid with
+  -- **WS-RR RR8.4**: `queueRemoveBoundary` (`Model/Object/Types.lean`), the one
+  -- definition of what a removal writes to a queue's boundaries, shared with
+  -- `endpointQueueRemove` and `endpointQueueRemoveDual`.  This was the **fourth**
+  -- asker of that question: RR8.4's plan row said "the two endpoint-queue
+  -- removals", WS-OD OD3.9 had already established there are *three*, and the
+  -- third asks it here rather than in `spliceOutMidQueueNode`, which writes only
+  -- the two neighbour TCBs.  Unifying two of four would have left the class open
+  -- and read as closed.
+  --
+  -- It already asked the **fact** (`q.tail = some tid`) rather than the proxy
+  -- (`queueNext = none`) the dual removal used, so this is a de-duplication and
+  -- not a behaviour change: `removeThreadFromQueue_tcb_present` is the
+  -- definitional reading, and the boundary it writes is byte-for-byte what it
+  -- wrote before.
+  | some tcb => queueRemoveBoundary q tid tcb
+  -- Defensive (see W6-A / AN4-G.1 doc above): with no TCB there is no removed
+  -- thread whose links a boundary could inherit, so a boundary naming `tid` is
+  -- cleared rather than advanced.  Deliberately *not* spelled through
+  -- `queueRemoveBoundary`: that definition is "the boundary a removal writes"
+  -- and this branch is the absence of one, so routing it through a synthetic
+  -- link-free TCB would make the shared definition describe a case it is not
+  -- about.
+  | none =>
+    { head := if q.head = some tid then none else q.head,
+      tail := if q.tail = some tid then none else q.tail }
 
 /-- AN4-G.1 (LIF-M01): When `lookupTcb st tid = some tcb` (the cleanup-ordering
 invariant guarantees this at every call site), `removeThreadFromQueue`
@@ -149,6 +170,17 @@ theorem removeThreadFromQueue_tcb_present
     removeThreadFromQueue st q tid =
       { head := if q.head = some tid then tcb.queueNext else q.head,
         tail := if q.tail = some tid then tcb.queuePrev else q.tail } := by
+  simp [removeThreadFromQueue, queueRemoveBoundary, hTcb]
+
+/-- **WS-RR RR8.4**: and the same fact stated over the shared definition — the
+relation that keeps this removal's boundary write and the other two's from
+drifting.  The two theorems are not a duplication: this one names the definition
+and the one above unfolds it, and a consumer that needs the record form should
+not have to know which module the definition lives in. -/
+theorem removeThreadFromQueue_eq_queueRemoveBoundary
+    (st : SystemState) (q : IntrusiveQueue) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : lookupTcb st tid = some tcb) :
+    removeThreadFromQueue st q tid = queueRemoveBoundary q tid tcb := by
   simp [removeThreadFromQueue, hTcb]
 
 /-- T5-E (M-LCS-1): Splice a mid-queue node out of the intrusive doubly-linked list.
@@ -216,21 +248,30 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
   let stSpliced := spliceOutMidQueueNode st tid
   stSpliced.objects.fold stSpliced fun acc oid obj =>
     match obj with
-    | .endpoint ep =>
-      -- PR #831 review 4 (write-set honesty): rewrite ONLY the endpoints the
-      -- victim's removal actually changes — `removeThreadFromQueue` is the
-      -- identity unless a head/tail slot holds the victim, so re-inserting an
-      -- untouched endpoint was a spurious store write outside the declared
-      -- cancellation footprint (the interior links are the separate
-      -- `spliceOutMidQueueNode` step, which writes only the two neighbour
-      -- TCBs).
-      if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
-          || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
-        let ep' : Endpoint := {
-          sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
-          receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
-        { acc with objects := acc.objects.insert oid (.endpoint ep') }
-      else acc
+    | .endpoint _ =>
+      -- `v0.35.74`: the enumeration selects the kind; the record is read from
+      -- the accumulator through the witnessed lookup, so the guard and the
+      -- rewrite decide on ONE record and the write is `rewriteObject` under
+      -- the store's own proof.  The accumulator's record at a key the fold
+      -- reaches is the enumerated one -- each key is visited once and only
+      -- its own key is written -- so the fold computes what it always did.
+      match acc.getEndpointWitnessed? oid with
+      | some ⟨ep, hEp⟩ =>
+        -- PR #831 review 4 (write-set honesty): rewrite ONLY the endpoints the
+        -- victim's removal actually changes — `removeThreadFromQueue` is the
+        -- identity unless a head/tail slot holds the victim, so re-inserting an
+        -- untouched endpoint was a spurious store write outside the declared
+        -- cancellation footprint (the interior links are the separate
+        -- `spliceOutMidQueueNode` step, which writes only the two neighbour
+        -- TCBs).
+        if ep.sendQ.head == some tid || ep.sendQ.tail == some tid
+            || ep.receiveQ.head == some tid || ep.receiveQ.tail == some tid then
+          let ep' : Endpoint := {
+            sendQ := removeThreadFromQueue stSpliced ep.sendQ tid,
+            receiveQ := removeThreadFromQueue stSpliced ep.receiveQ tid }
+          acc.rewriteObject oid (.endpoint ep') (SystemState.rewriteAdmissible_endpoint hEp ep')
+        else acc
+      | none => acc
     | _ => acc
 
 /-- R4-A.2 (M-12): Remove a ThreadId from all notification waiting lists.
@@ -252,21 +293,29 @@ def removeFromAllEndpointQueues (st : SystemState) (tid : SeLe4n.ThreadId) : Sys
 def removeFromAllNotificationWaitLists (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
   st.objects.fold st fun acc oid obj =>
     match obj with
-    | .notification notif =>
-      -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
-      -- the victim actually waits on — the filter (and the sole-waiter state
-      -- correction) is the identity for every other notification, so
-      -- re-inserting it was a spurious store write outside the declared
-      -- cancellation footprint.
-      if notif.waitingThreads.val.contains tid then
-        let wt' := notif.waitingThreads.filter (· != tid)
-        let notif' : Notification := {
-          notif with
-            waitingThreads := wt'
-            state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
-                     else notif.state }
-        { acc with objects := acc.objects.insert oid (.notification notif') }
-      else acc
+    | .notification _ =>
+      -- `v0.35.74`: the enumeration selects the kind, the accumulator's record
+      -- is read through the witnessed lookup, and the write is `rewriteObject`
+      -- under the store's own proof -- the endpoint sweep's shape, for the
+      -- same reason.
+      match acc.getNotificationWitnessed? oid with
+      | some ⟨notif, hN⟩ =>
+        -- PR #831 review 4 (write-set honesty): rewrite ONLY the notifications
+        -- the victim actually waits on — the filter (and the sole-waiter state
+        -- correction) is the identity for every other notification, so
+        -- re-inserting it was a spurious store write outside the declared
+        -- cancellation footprint.
+        if notif.waitingThreads.val.contains tid then
+          let wt' := notif.waitingThreads.filter (· != tid)
+          let notif' : Notification := {
+            notif with
+              waitingThreads := wt'
+              state := if notif.state = .waiting ∧ wt'.val.isEmpty then .idle
+                       else notif.state }
+          acc.rewriteObject oid (.notification notif')
+            (SystemState.rewriteAdmissible_notification hN notif')
+        else acc
+      | none => acc
     | _ => acc
 
 /-- Z7-P / AJ1-A (M-14): Return donated SchedContext before destroying a thread.
@@ -303,6 +352,29 @@ theorem cleanupDonatedSchedContext_scheduler_eq
       | exact returnDonatedSchedContextResolved_lift h
           (fun n s hs => returnDonatedSchedContext_scheduler_eq st s tid _ _ n hs)
 
+/-- **WS-RR RR8.12 (Cut 4)**: `cleanupDonatedSchedContext` destroys no TCB.  Its
+only non-identity arm is the donation pop, whose every TCB write is an in-place
+binding rewrite (`returnDonatedSchedContext_tcb_rewrite`), so a thread that
+resolved before resolves after — which is what the suspend pipeline's placement
+payoff needs of its G3 donated arm. -/
+theorem cleanupDonatedSchedContext_getTcb?_isSome
+    (st st' : SystemState) (tid u : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (h : cleanupDonatedSchedContext st tid = .ok st') (hu : (st.getTcb? u).isSome) :
+    (st'.getTcb? u).isSome := by
+  simp only [cleanupDonatedSchedContext] at h
+  split at h
+  · rw [← Except.ok.inj h]; exact hu
+  · split at h
+    · rename_i scId owner _
+      obtain ⟨t0, ht0⟩ := Option.isSome_iff_exists.mp hu
+      refine returnDonatedSchedContextResolved_lift
+        (P := fun s => (s.getTcb? u).isSome = true) h (fun n s hs => ?_)
+      obtain ⟨t', ht', _⟩ := returnDonatedSchedContext_tcb_rewrite st s tid scId owner hInv n hs
+        u.toObjId t0 ((SystemState.getTcb?_eq_some_iff st u t0).mp ht0)
+      rw [(SystemState.getTcb?_eq_some_iff s u t').mpr ht']
+      rfl
+    · rw [← Except.ok.inj h]; exact hu
+
 /-- WS-SM SM8.B: `cleanupDonatedSchedContext` never touches the machine state
 either — the register banks included.  Added beside the scheduler frame for the
 SM8.B per-core confinement consumer: per-core confinement reads each core's
@@ -338,6 +410,43 @@ theorem cleanupDonatedSchedContext_tlbShootdown_eq
           (fun n s hs => returnDonatedSchedContext_tlbShootdown_eq st s tid _ _ n hs)
 
 
+/-- **WS-HP HP10.5: clear the recorded reservation ORIGIN of every SchedContext
+naming this thread.**
+
+`SchedContext.donationOrigin` is *history the kernel validates* rather than an
+invariant — no `donationChainWellFormed` clause relates it to the store, because
+"the origin is the bottom frame's thread, **or** a thread whose frame was removed"
+has an unstateable second disjunct.  That is sound because the pop guards what it
+reads (`donationRecipientAcceptable`), and it is sound **only** while the id the
+field holds still means the thread that owned the reservation.
+
+Thread-id reuse is the one way that fails: a `ThreadId` is an index, so destroying
+the origin thread and allocating another object at its id would leave a later pop
+handing a reservation to an unrelated thread — across a domain boundary, with the
+recipient guard satisfied, because the guard asks whether the *recipient* may take
+a context and not whether the recorded origin is still the thread that lent it.
+
+So this runs on the destroy path, from `lifecyclePreRetypeCleanup`, **before**
+anything reads the field (WS-HP HP10.5 is ordered ahead of the arm that does).  It
+is the same posture as that function's refusal of a context still heading a reply
+stack, one field over: a dangling reference is cleared rather than reasoned about.
+
+Only contexts whose origin *is* this thread are rewritten, so the sweep is a
+write-set-honest fold in the shape `removeFromAllEndpointQueues` uses. -/
+def clearDonationOriginReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  st.objects.fold st fun acc oid obj =>
+    match obj with
+    | .schedContext sc =>
+      if sc.donationOrigin == some tid then
+        -- `v0.35.72`: the typed in-place rewrite of the accumulator's record,
+        -- which is the enumerated one -- the fold visits each key once and
+        -- writes only its own.  The guard stays outside the rewrite, so a
+        -- context that names no origin is no write at all.
+        acc.updateSchedContext (SchedContextId.ofObjId oid) fun s =>
+          { s with donationOrigin := none }
+      else acc
+    | _ => acc
+
 /-- WS-H2/H-05, R4-A.3 (M-12): Clean up external references to a TCB being retyped away.
     Removes the ThreadId from:
     1. The scheduler run queue (`removeRunnable`)
@@ -356,7 +465,13 @@ def cleanupTcbReferences (st : SystemState) (tid : SeLe4n.ThreadId) : SystemStat
   -- `chooseBestRunnableBy` failed that core's entire selection scan forever.
   let st := removeRunnableFromAllCores st tid
   let st := removeFromAllEndpointQueues st tid
-  removeFromAllNotificationWaitLists st tid
+  let st := removeFromAllNotificationWaitLists st tid
+  -- **WS-HP HP10.5**: and the recorded reservation origins that name this thread.
+  -- Placed here, in the reference sweep, rather than beside the donation return in
+  -- `lifecyclePreRetypeCleanup`: a *stale origin* is a dangling reference to a
+  -- destroyed thread, which is exactly what this function is for, and unlike the
+  -- donation return it needs no error channel — there is nothing to refuse.
+  clearDonationOriginReferences st tid
 
 
 end SeLe4n.Kernel

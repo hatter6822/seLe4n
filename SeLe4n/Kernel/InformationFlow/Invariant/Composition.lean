@@ -502,20 +502,11 @@ theorem step_preserves_projection
       · simp [hNull] at hOp
       simp only [hNull, Bool.false_eq_true, ↓reduceIte] at hOp
       split at hOp
-      · -- rights subset: storeObject + storeCapabilityRef
+      · -- rights subset: the store of the mutated CNode
         split at hOp
         · -- some (.cnode cn)
           next cn =>
-          split at hOp
-          · -- storeObject error
-            next e hStore => simp at hOp
-          · -- storeObject ok
-            next stMid hStore =>
-            have hProjMid := storeObject_preserves_projection ctx observer st stMid
-                addr.cnode _ hAH hObjInv hStore
-            have hProjFinal := storeCapabilityRef_preserves_projection ctx observer stMid st'
-                addr (some _) hOp
-            rw [hProjFinal, hProjMid]
+          exact storeObject_preserves_projection ctx observer st st' addr.cnode _ hAH hObjInv hOp
         · -- not a cnode
           simp at hOp
       · -- rights not subset: error
@@ -764,6 +755,34 @@ structure LabelingContextValid (ctx : LabelingContext) : Prop where
       See `defaultLabelingContext_fails_validity` for the concrete failure. -/
   labelNonTriviality : ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
     ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂
+  /-- **WS-RR RR8.8**: endpoint-object coherence — an endpoint's *flow* label
+      flows to its own kernel object's label.
+
+      The kernel asks "how sensitive is this endpoint?" in two places and read
+      two different fields for the answer: the live IPC gates compare
+      `endpointLabelOf` (`endpointFlowGate`) while the projection decides
+      visibility from `objectLabelOf`.  `LabelingContext` carries them as
+      independent functions and nothing related them, so a deployment could
+      label an endpoint high for flow purposes and low for visibility with no
+      gate or obligation refusing it — *one question, two answers*.
+
+      With this conjunct the inference the cancellation path's projection
+      results need becomes available: a thread blocked sending or calling on an
+      endpoint satisfies `threadLabelOf ⊑ endpointLabelOf`
+      (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so composing
+      gives `threadLabelOf ⊑ objectLabelOf`, and the endpoint **object** is
+      non-observable whenever any of its waiters is
+      (`endpointObjectHigh_of_admittedThreadHigh` below).  Without it that step
+      does not exist, which is what `v0.35.83` asserted and could not have
+      proved.
+
+      A flow rather than an equality, exactly as `threadObjectCoherence` above
+      is, and discharged structurally for every constructed context
+      (`deploymentLabelingContext_valid`) from `DeploymentLabeling`'s own
+      `hEndpointObjectCoherence` field — which the one base constructor meets by
+      reflexivity, its two label functions being the same partition. -/
+  endpointObjectCoherence : ∀ oid : SeLe4n.ObjId,
+    securityFlowsTo (ctx.endpointLabelOf oid) (ctx.objectLabelOf oid) = true
 
 /-- V6-D / AK6-H (NI-M02): The default labeling context is **no longer**
     `LabelingContextValid`. It satisfies the first two conjuncts (coherence
@@ -824,6 +843,11 @@ theorem labelingContextValid_is_deployment_requirement
       two observability gates, which read exactly those two labels.
     * `labelNonTriviality` — the `DeploymentLabeling.hSeparated` field, which
       the structure demands at construction.
+    * `endpointObjectCoherence` (WS-RR RR8.8) — the
+      `DeploymentLabeling.hEndpointObjectCoherence` field, likewise demanded at
+      construction and met by reflexivity in the one base constructor, whose
+      `endpointLabelOf` and `entityLabelOf` are the same partition read at the
+      same index.
 
     A deployment therefore discharges all three by choosing a partition, and the
     non-triviality half is additionally *checked at runtime* by
@@ -839,6 +863,7 @@ theorem deploymentLabelingContext_valid (d : DeploymentLabeling) :
       deploymentLabelingContext_thread_object_label_eq d tid] using h
   labelNonTriviality :=
     ⟨d.separatedLower, d.separatedUpper, d.hSeparated⟩
+  endpointObjectCoherence := d.hEndpointObjectCoherence
 
 /-- **WS-RR RR5.1**: the production two-domain context is `LabelingContextValid`
     — the corollary a platform binding cites when it installs
@@ -857,6 +882,132 @@ theorem confinedLabelingContext_valid (upperDomainBase lowerWitness : Nat)
 theorem harnessLabelingContext_valid :
     LabelingContextValid harnessLabelingContext :=
   deploymentLabelingContext_valid _
+
+-- ============================================================================
+-- WS-RR RR8.8 -- the two labelling facts the cancellation path's projection
+-- obligations reduce to
+-- ============================================================================
+
+/-- **WS-RR RR8.8**: an endpoint's *object* is non-observable whenever a thread
+the endpoint admitted is.
+
+`endpointFlowGate_implies_securityFlowsTo` gives `threadLabelOf tid ⊑
+endpointLabelOf epId` with no hypothesis at all — every thread the live send /
+call gate admitted onto an endpoint satisfies it — and
+`LabelingContextValid.endpointObjectCoherence` carries that on to
+`objectLabelOf epId`.  So an observer that cannot see the thread cannot see the
+endpoint object either, which is what makes the endpoint half of a queue
+teardown's write set invisible.
+
+**Only the endpoint half.**  The same order says *nothing* relating two threads
+admitted onto one endpoint: both satisfy `⊑ endpointLabelOf epId` and neither
+bounds the other, which is exactly the admission
+`endpointAdmissionAdmitsMixedObservability` exhibits.  So a teardown's writes to
+the victim's queue **neighbours** are not covered by this and cannot be \-- see
+`docs/REGISTERED_DEBT.md` for why the residue is representational. -/
+theorem endpointObjectHigh_of_admittedThreadHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hValid : LabelingContextValid ctx)
+    (hAdmitted : securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer epId = false := by
+  by_cases hEp : objectObservable ctx observer epId = true
+  · exfalso
+    unfold objectObservable at hEp
+    unfold threadObservable at hThreadHigh
+    rw [securityFlowsTo_trans _ _ _ hAdmitted
+      (securityFlowsTo_trans _ _ _ (hValid.endpointObjectCoherence epId) hEp)] at hThreadHigh
+    exact Bool.noConfusion hThreadHigh
+  · simp only [Bool.not_eq_true] at hEp
+    exact hEp
+
+/-- **WS-RR RR8.8**: a donated scheduling context's holder is at least as high as
+its donor — the labelling fact the cancellation reclaim's two projection
+obligations rest on, and the one the register had scheduled against no sub-task.
+
+Stated over `replyDonationReturn?`, which is this tree's single reader of "does
+this thread hold a donated context, and from whom": a second spelling of that
+question is the duplication this project spends its length retiring, and it is
+also exactly what the cancellation resolver's own
+`cancelledCallerDonation?_holder_holds_victim_donation` concludes.
+
+**A deployment establishes it, and it is not an assumption pulled from the air.**
+A `.donated scId owner` binding is minted only by `donateSchedContext`, reached
+through a `Call` rendezvous whose two gates both passed: the caller's own
+`endpointFlowGate ctx ep (threadLabelOf owner) (endpointLabelOf ep)` on the way
+in, and the server's `endpointFlowGate ctx ep (endpointLabelOf ep)
+(threadLabelOf holder)` when it received.  Composed, those give exactly
+`threadLabelOf owner ⊑ threadLabelOf holder`.  What this predicate does *not* do
+is re-derive that from the store — the gates are transition-time checks and the
+state records no trace of them — so it is carried as a state predicate,
+established where the donation is minted and preserved by everything that does
+not mint one. -/
+def donationOwnerFlowsToHolder (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId),
+    replyDonationReturn? st holder = some (scId, owner) →
+      securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true
+
+/-- **WS-RR RR8.8**: a non-observable donor's holder is non-observable too.
+
+The whole content of `abortHolderWakeHigh`, and the first of
+`abortHolderProjectionStable`'s three write classes: a run-queue insert is
+filtered by the inserted thread's own observability, and the holder's own TCB is
+projected away exactly when the holder is. -/
+theorem donationHolderHigh_of_donorHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hRes : replyDonationReturn? st holder = some (scId, owner))
+    (hOwnerHigh : threadObservable ctx observer owner = false) :
+    threadObservable ctx observer holder = false := by
+  by_cases hH : threadObservable ctx observer holder = true
+  · exfalso
+    unfold threadObservable at hH hOwnerHigh
+    rw [securityFlowsTo_trans _ _ _ (hFlow holder owner scId hRes) hH] at hOwnerHigh
+    exact Bool.noConfusion hOwnerHigh
+  · simp only [Bool.not_eq_true] at hH
+    exact hH
+
+/-- **WS-RR RR8.8**: a thread blocked sending or calling on an endpoint has a
+label that flows to that endpoint's.
+
+The second labelling fact, and the one that reaches the *endpoint object* a queue
+teardown rewrites.  Like `donationOwnerFlowsToHolder` it is what the live gate
+checked at the transition and the state does not record: a thread reaches
+`.blockedOnSend epId` / `.blockedOnCall epId` only through
+`endpointSendCrossCoreDispatchChecked` / `endpointCallCrossCoreDispatchChecked`,
+whose gate is `endpointFlowGate ctx epId (threadLabelOf tid) (endpointLabelOf
+epId)`, so `endpointFlowGate_implies_securityFlowsTo` gives the conclusion at the
+instant the thread blocks.
+
+The two blocked states are the ones that name a *send* queue, which is the queue
+`abortPendingIpcOnEndpoint` splices and the one `cancelHolderBlockedEndpoint?`
+resolves; `.blockedOnReceive` is deliberately absent, its gate running in the
+other direction (`endpointLabelOf ⊑ threadLabelOf`). -/
+def blockedSenderFlowsToEndpoint (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st tid = some t →
+    (t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t.ipcState = ThreadIpcState.blockedOnCall epId) →
+      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
+
+/-- **WS-RR RR8.8**: the endpoint a non-observable thread is blocked sending or
+calling on is itself non-observable — the second of
+`abortHolderProjectionStable`'s three write classes, composed from the two facts
+above. -/
+theorem blockedSenderEndpointObjectHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId)
+    (hValid : LabelingContextValid ctx)
+    (hFlow : blockedSenderFlowsToEndpoint ctx st)
+    (hLookup : lookupTcb st tid = some t)
+    (hBlocked : t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer epId = false :=
+  endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
+    (hFlow tid t epId hLookup hBlocked) hThreadHigh
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification non-interference (C.10)

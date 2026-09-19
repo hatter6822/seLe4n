@@ -27,7 +27,6 @@ structure BootstrapBuilder where
   current : Option SeLe4n.ThreadId := none
   irqHandlers : List (SeLe4n.Irq × SeLe4n.ObjId) := []
   lifecycleObjectTypes : List (SeLe4n.ObjId × KernelObjectType) := []
-  lifecycleCapabilityRefs : List (SeLe4n.Model.SlotRef × CapTarget) := []
   -- AN11-F (LOW): `panic!` in `withObject` requires `Inhabited
   -- BootstrapBuilder` for the return type.  Every field above carries a
   -- default, so the derivation is total.
@@ -73,12 +72,6 @@ def withLifecycleObjectType
     (objTy : KernelObjectType) : BootstrapBuilder :=
   { builder with lifecycleObjectTypes := (oid, objTy) :: builder.lifecycleObjectTypes }
 
-def withLifecycleCapabilityRef
-    (builder : BootstrapBuilder)
-    (ref : SeLe4n.Model.SlotRef)
-    (target : CapTarget) : BootstrapBuilder :=
-  { builder with lifecycleCapabilityRefs := (ref, target) :: builder.lifecycleCapabilityRefs }
-
 /-- Extract the actual TCB priority for a thread from the builder's object list.
     Falls back to Priority 0 if the thread has no TCB entry. -/
 private def lookupThreadPriority (objects : List (SeLe4n.ObjId × KernelObject)) (tid : SeLe4n.ThreadId) : SeLe4n.Priority :=
@@ -102,7 +95,6 @@ def build (builder : BootstrapBuilder) : SystemState :=
     irqHandlers := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.irqHandlers
     lifecycle := {
       objectTypes := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleObjectTypes
-      capabilityRefs := SeLe4n.Kernel.RobinHood.RHTable.ofList builder.lifecycleCapabilityRefs
     }
     -- WS-G3/F-P06: Populate ASID table from VSpaceRoot objects
     asidTable := SeLe4n.Kernel.RobinHood.RHTable.ofList (builder.objects.filterMap fun (oid, obj) =>
@@ -119,9 +111,8 @@ def build (builder : BootstrapBuilder) : SystemState :=
     3. Scheduler runnable threads reference existing TCB objects
     4. CNode slot table capacity bounds (4 ≤ capacity, size < capacity)
     5. IRQ handlers reference existing objects
-    6. Lifecycle capabilityRefs reference existing CNode objects
-    7. VSpaceRoot ASID uniqueness (no two VSpaceRoots share an ASID)
-    8. Current thread (if set) is in the runnable list -/
+    6. VSpaceRoot ASID uniqueness (no two VSpaceRoots share an ASID)
+    7. Current thread (if set) is in the runnable list -/
 def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   let st := builder.build
   let oids := builder.objects.map Prod.fst
@@ -156,26 +147,21 @@ def buildValidated (builder : BootstrapBuilder) : Except String SystemState :=
   -- Check 5: IRQ handlers reference existing objects
   else if builder.irqHandlers.any (fun (_, oid) => !oids.contains oid) then
     .error "BuilderTestState check 5 failed: IRQ handler references non-existent object"
-  -- Check 6: Lifecycle capabilityRefs reference existing CNode objects
-  else if builder.lifecycleCapabilityRefs.any (fun (ref, _) =>
-    !builder.objects.any (fun (oid, obj) =>
-      oid == ref.cnode && match obj with | .cnode _ => true | _ => false)) then
-    .error "BuilderTestState check 6 failed: capabilityRef references non-existent CNode"
-  -- Check 7: VSpaceRoot ASID uniqueness
+  -- Check 6: VSpaceRoot ASID uniqueness
   else
     let asids := builder.objects.filterMap (fun (_, obj) =>
       match obj with | .vspaceRoot vs => some vs.asid | _ => none)
     let uniqueAsids := asids.eraseDups
     if asids.length ≠ uniqueAsids.length then
-      .error "BuilderTestState check 7 failed: duplicate ASIDs across VSpaceRoot objects"
-    -- Check 8: Dequeue-on-dispatch (WS-H12b) — current thread must NOT be in
+      .error "BuilderTestState check 6 failed: duplicate ASIDs across VSpaceRoot objects"
+    -- Check 7: Dequeue-on-dispatch (WS-H12b) — current thread must NOT be in
     -- the runnable list. The scheduler removes the dispatched thread from the
     -- run queue before setting it as current. If current is set AND also in
     -- runnable, the state violates queueCurrentConsistent.
     else match builder.current with
     | some tid =>
       if builder.runnable.any (fun t => t.toNat == tid.toNat) then
-        .error s!"BuilderTestState check 8 failed: current thread {tid.toNat} must not be in runnable list (dequeue-on-dispatch, WS-H12b)"
+        .error s!"BuilderTestState check 7 failed: current thread {tid.toNat} must not be in runnable list (dequeue-on-dispatch, WS-H12b)"
       else .ok st
     | none => .ok st
 
@@ -236,7 +222,6 @@ def emptyFrozenSystemState : FrozenSystemState :=
         configDefaultTimeSlice := 5
         replenishQueue := { entries := [], size := 0 } }
     objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    capabilityRefs := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     machine := default
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)

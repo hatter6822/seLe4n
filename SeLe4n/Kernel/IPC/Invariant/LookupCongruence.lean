@@ -120,6 +120,13 @@ theorem tcbQueueChainAcyclic_of_getElem_eq {s1 s2 : SystemState}
     (h : tcbQueueChainAcyclic s1) : tcbQueueChainAcyclic s2 :=
   fun tid hp => h tid (QueueNextPath_of_getElem_eq hEq hp)
 
+/-- **WS-RR RR8.3**: pointwise-lookup transport of the `queuePPrev`/`queuePrev`
+pairing — the `getElem_eq` sibling, for the lookup-congruence family. -/
+theorem queuePPrevAgreesWithPrev_of_getElem_eq {s1 s2 : SystemState}
+    (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
+    (h : queuePPrevAgreesWithPrev s1) : queuePPrevAgreesWithPrev s2 :=
+  fun tid tcb hTcb => h tid tcb (by rw [← hEq]; exact hTcb)
+
 /-- Pointwise-lookup transport of doubly-linked TCB-queue link integrity. -/
 theorem tcbQueueLinkIntegrity_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
@@ -167,10 +174,13 @@ congruences above. -/
 theorem dualQueueSystemInvariant_of_getElem_eq {s1 s2 : SystemState}
     (hEq : ∀ oid : SeLe4n.ObjId, s2.objects[oid]? = s1.objects[oid]?)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP, hHD⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_getElem_eq hEq hLink,
-          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc⟩
+          tcbQueueChainAcyclic_of_getElem_eq hEq hAcyc,
+          queuePPrevAgreesWithPrev_of_getElem_eq hEq hPP,
+          -- **PR #897 review**: the fifth conjunct reads endpoints, which agree.
+          endpointQueueHeadDisjoint_of_getElem_eq hEq hHD⟩
   rw [hEq] at hObj
   exact dualQueueEndpointWellFormed_of_getElem_eq hEq (hEp epId ep hObj)
 
@@ -619,7 +629,7 @@ theorem enqueueRunnableOnCore_offSchedulerAgrees_of_ready
     OffSchedulerAgrees st (enqueueRunnableOnCore st c tid) := by
   refine ⟨fun oid => enqueueRunnableOnCore_objects_getElem_eq_of_ready st c tid tcb hTcb hReady hInv oid,
     ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  all_goals simp only [enqueueRunnableOnCore, hTcb]
+  all_goals simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
   all_goals split <;> rfl
 
 /-- SM6.D: the cross-core `wakeThread` of an already-`.ready` thread agrees
@@ -665,7 +675,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     hRel.declassificationRefusals, hRel.declassificationTaint⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
   · simp only [hRel.objectIndexSet]
-  · simp only [hRel.lifecycle]
+  · simp only [hRel.objects id, hRel.lifecycle]
   · simp only [hRel.objects id, hRel.asidTable]
 
 open SeLe4n.Model.SystemState in
@@ -718,34 +728,73 @@ theorem consumeReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
       exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 h1 h2
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** step congruence: the removal's *detach* leg maps
+/-- **WS-HP HP6.4** step congruence for the removal's composed store step: two
+states agreeing off the scheduler take the same branch of `spliceFrameBelow?` —
+it reads `getReply?` and nothing else — and each of the one or three `storeObject`
+writes carries the relation. -/
+theorem spliceReplyFrameStores_offSchedulerAgrees {s1 s2 t1 t2 : SystemState}
+    {rid above : SeLe4n.ReplyId} {r a : Reply}
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h1 : spliceReplyFrameStores s1 rid above r a = .ok t1)
+    (h2 : spliceReplyFrameStores s2 rid above r a = .ok t2) :
+    OffSchedulerAgrees t1 t2 := by
+  have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
+    fun q => getReply?_congr_getElem hRel.objects q
+  have hBelow : spliceFrameBelow? s2 rid r above = spliceFrameBelow? s1 rid r above := by
+    unfold spliceFrameBelow?
+    cases hP : r.prev with
+    | none => rfl
+    | some below => simp only []; rw [hGR below]
+  rcases spliceReplyFrameStores_cases h1 with ⟨hB1, hSa1⟩ |
+    ⟨below, b, m1, n1, hB1, hSa1, hSb1, hSc1⟩
+  · rcases spliceReplyFrameStores_cases h2 with ⟨_, hSa2⟩ | ⟨_, _, _, _, hB2, _, _, _⟩
+    · exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+    · rw [hBelow, hB1] at hB2; cases hB2
+  · rcases spliceReplyFrameStores_cases h2 with ⟨hB2, _⟩ |
+      ⟨below', b', m2, n2, hB2, hSa2, hSb2, hSc2⟩
+    · rw [hBelow] at hB2; rw [hB1] at hB2; cases hB2
+    · rw [hBelow, hB1, Option.some.injEq, Prod.mk.injEq] at hB2
+      obtain ⟨rfl, rfl⟩ := hB2
+      have hRelA : OffSchedulerAgrees m1 m2 :=
+        storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSa1 hSa2
+      have hInvA1 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 m1 _ _ hInv1 hSa1
+      have hInvA2 := SeLe4n.Model.storeObject_preserves_objects_invExt s2 m2 _ _ hInv2 hSa2
+      exact storeObject_offSchedulerAgrees _ _
+        (storeObject_offSchedulerAgrees _ _ hRelA hInvA1 hInvA2 hSb1 hSb2)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt m1 n1 _ _ hInvA1 hSb1)
+        (SeLe4n.Model.storeObject_preserves_objects_invExt m2 n2 _ _ hInvA2 hSb2) hSc1 hSc2
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RM (`v0.35.6`)** step congruence: the removal's *splice* leg maps
 off-scheduler-agreeing inputs to off-scheduler-agreeing outputs.  Its decision is
-read off `getReply?` alone (`detachReplyFrameAboveOrSelf_decision`), so agreeing
-object stores take the same branch; the one write is a `storeObject`, whose
+read off `getReply?` alone (`spliceReplyFrameOutOrSelf_decision`), so agreeing
+object stores take the same branch; its writes are `storeObject`s, whose
 congruence carries every other field. -/
-theorem detachReplyFrameAboveOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
+theorem spliceReplyFrameOutOrSelf_offSchedulerAgrees {s1 s2 : SystemState}
     (rid : SeLe4n.ReplyId)
     (hRel : OffSchedulerAgrees s1 s2)
     (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt) :
-    OffSchedulerAgrees (detachReplyFrameAboveOrSelf s1 rid)
-      (detachReplyFrameAboveOrSelf s2 rid) := by
+    OffSchedulerAgrees (spliceReplyFrameOutOrSelf s1 rid)
+      (spliceReplyFrameOutOrSelf s2 rid) := by
   have hGR : ∀ q, s2.getReply? q = s1.getReply? q :=
     fun q => getReply?_congr_getElem hRel.objects q
-  have hFA : replyFrameAbove? s2 rid = replyFrameAbove? s1 rid := by
-    unfold replyFrameAbove?; rw [hGR rid]
-  rcases detachReplyFrameAboveOrSelf_decision s1 rid with
-    ⟨above, a, hFA1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
-  · rcases detachReplyFrameAboveOrSelf_decision s2 rid with
-      ⟨above', a', hFA2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
-    · have hAb : above = above' := Option.some.inj (hFA1.symm.trans (hFA.symm.trans hFA2))
+  rcases spliceReplyFrameOutOrSelf_decision s1 rid with
+    ⟨r1, above, a, hR1, hN1, hA1, hP1, hS1⟩ | ⟨hId1, hNo1⟩
+  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+      ⟨r2, above', a', hR2, hN2, hA2, _hP2, hS2⟩ | ⟨_, hNo2⟩
+    · have hRe : r2 = r1 := Option.some.inj (hR2.symm.trans ((hGR rid).trans hR1))
+      subst hRe
+      have hAb : above = above' := ReplyStackLink.frame.inj (Option.some.inj (hN1.symm.trans hN2))
       subst hAb
       have hAe : a' = a := Option.some.inj (hA2.symm.trans ((hGR above).trans hA1))
       subst hAe
-      exact storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hS1 hS2
-    · exact absurd hP1 (hNo2 above a (hFA.trans hFA1) ((hGR above).trans hA1))
-  · rcases detachReplyFrameAboveOrSelf_decision s2 rid with
-      ⟨above, a, hFA2, hA2, hP2, _⟩ | ⟨hId2, _⟩
-    · exact absurd hP2 (hNo1 above a (hFA.symm.trans hFA2) ((hGR above).symm.trans hA2))
+      exact spliceReplyFrameStores_offSchedulerAgrees hRel hInv1 hInv2 hS1 hS2
+    · exact absurd hP1 (hNo2 r1 above a ((hGR rid).trans hR1) hN1 ((hGR above).trans hA1))
+  · rcases spliceReplyFrameOutOrSelf_decision s2 rid with
+      ⟨r2, above, a, hR2, hN2, hA2, hP2, _⟩ | ⟨hId2, _⟩
+    · exact absurd hP2 (hNo1 r2 above a ((hGR rid).symm.trans hR2) hN2
+        ((hGR above).symm.trans hA2))
     · rw [hId1, hId2]; exact hRel
 
 open SeLe4n.Model.SystemState in
@@ -798,9 +847,9 @@ theorem consumeCallerReply_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`)** step congruence: the removal (total) maps
-off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the detach,
+off-scheduler-agreeing inputs to off-scheduler-agreeing outputs — the splice,
 then the consume.  This is what lets the cross-core reply's post-state be
-compared with the single-core spine's now that both detach. -/
+compared with the single-core spine's now that both splice. -/
 theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hRel : OffSchedulerAgrees s1 s2)
@@ -810,9 +859,9 @@ theorem removeCallerReplyFrame_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     OffSchedulerAgrees r1 r2 := by
   rw [removeCallerReplyFrame_eq] at h1 h2
   exact consumeCallerReply_offSchedulerAgrees caller rid
-    (detachReplyFrameAboveOrSelf_offSchedulerAgrees rid hRel hInv1 hInv2)
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt s1 rid hInv1)
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt s2 rid hInv2) h1 h2
+    (spliceReplyFrameOutOrSelf_offSchedulerAgrees rid hRel hInv1 hInv2)
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt s1 rid hInv1)
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt s2 rid hInv2) h1 h2
 
 -- ============================================================================
 -- §5  Read-view agreement: transports for transitions that rewrite only
@@ -1033,6 +1082,13 @@ theorem QueueNextPath_of_readViewAgreement {s1 s2 : SystemState}
   | single x y tcbA hObj hNext => exact .single x y tcbA ((hView.tcb _ _).mp hObj) hNext
   | cons x y z tcbA hObj hNext _ ih => exact .cons x y z tcbA ((hView.tcb _ _).mp hObj) hNext ih
 
+/-- **WS-RR RR8.3**: read-view transport of the pairing.  The view's `tcb`
+clause is full-record agreement, so the pair travels with the record. -/
+theorem queuePPrevAgreesWithPrev_of_readViewAgreement {s1 s2 : SystemState}
+    (hView : ipcReadViewAgreement s1 s2) (h : queuePPrevAgreesWithPrev s1) :
+    queuePPrevAgreesWithPrev s2 :=
+  fun tid tcb hTcb => h tid tcb ((hView.tcb tid.toObjId tcb).mp hTcb)
+
 /-- Read-view transport of TCB-queue chain acyclicity. -/
 theorem tcbQueueChainAcyclic_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
@@ -1083,10 +1139,15 @@ theorem dualQueueEndpointWellFormed_of_readViewAgreement {s1 s2 : SystemState}
 theorem dualQueueSystemInvariant_of_readViewAgreement {s1 s2 : SystemState}
     (hView : ipcReadViewAgreement s1 s2)
     (h : dualQueueSystemInvariant s1) : dualQueueSystemInvariant s2 := by
-  obtain ⟨hEp, hLink, hAcyc⟩ := h
+  obtain ⟨hEp, hLink, hAcyc, hPP, hHD⟩ := h
   refine ⟨fun epId ep hObj => ?_,
           tcbQueueLinkIntegrity_of_readViewAgreement hView hLink,
-          tcbQueueChainAcyclic_of_readViewAgreement hView hAcyc⟩
+          tcbQueueChainAcyclic_of_readViewAgreement hView hAcyc,
+          queuePPrevAgreesWithPrev_of_readViewAgreement hView hPP,
+          -- **PR #897 review**: the read view agrees on endpoints, which is all the
+          -- fifth conjunct reads.
+          endpointQueueHeadDisjoint_of_endpointBackward
+            (fun epId ep hEp' => by rw [hView.endpoint] at hEp'; exact hEp') hHD⟩
   rw [hView.endpoint] at hObj
   exact dualQueueEndpointWellFormed_of_readViewAgreement hView (hEp epId ep hObj)
 

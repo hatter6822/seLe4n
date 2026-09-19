@@ -251,7 +251,11 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- caller's SchedContext under a lock the footprint never named.  So the choice
   -- was never "declare the delegated case or not"; it was "declare a footprint
   -- that covers this arm's writes, or keep one that does not".  Both members are
-  -- declared now (`lockSet_endpointReplyRecvOnCore`), `maxLockSetSize` is 11, and
+  -- declared now (`lockSet_endpointReplyRecvOnCore`), the ceiling moved to eleven
+  -- **at that cut** (its live value is `maxLockSetSize`, and the figures derived
+  -- from it live in the canonical sentence `check_lock_ceiling_figures.py`
+  -- enforces — a number written here would be a hand-kept copy that goes stale
+  -- the next time a footprint widens, as this one had), and
   -- the arm declares unconditionally — a passive server answering through a
   -- delegated reply capability is an ordinary seL4 pattern and no longer falls
   -- back to the coarse serialisation.

@@ -279,11 +279,13 @@ def setMCPriorityOnCore (st : SystemState) (vCallerTid vTargetTid : SeLe4n.Valid
     match validatePriorityAuthority callerTcb newMCP with
     | .error e => .error e
     | .ok () =>
-      match st.getTcb? vTargetTid.val with
-      | some targetTcb =>
+      match st.getTcbWitnessed? vTargetTid.val with
+      | some ⟨targetTcb, hTarget⟩ =>
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
-        let stMcp := { st with
-          objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
+        -- `v0.35.71`: the ceiling write is the typed rewrite under the witness
+        -- the lookup carries, as in `setMCPriorityOp`.
+        let stMcp := st.rewriteObject vTargetTid.val.toObjId (.tcb targetTcb')
+          (SystemState.rewriteAdmissible_tcb hTarget targetTcb')
         let currentPrio := getCurrentPriority stMcp targetTcb'
         if currentPrio.val > newMCP.val then
           applyPriorityChangeOnCore stMcp vTargetTid.val targetTcb' newMCP executingCore true

@@ -78,10 +78,16 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
     match timerTick st with
     | .ok ((), st') => .ok st'
     | .error e => .error e
-  | .timerTickBudget tid tcb =>
-    match timerTickBudget st tid tcb with
-    | .ok (st', _preempted) => .ok st'
-    | .error e => .error e
+  | .timerTickBudget tid _ =>
+    -- The step's `tcb` is what `stepPrecondition` pins the stored TCB to; the
+    -- transition runs on the STORED one, whose witness the lookup carries
+    -- (`timerTickBudget` takes it since `v0.35.67`).
+    match st.getTcbWitnessed? tid with
+    | some ⟨tcb, hTcb⟩ =>
+      match timerTickBudget st tid tcb hTcb with
+      | .ok (st', _preempted) => .ok st'
+      | .error e => .error e
+    | none => .error .schedulerInvariantViolation
   | .schedule =>
     match schedule st with
     | .ok ((), st') => .ok st'
@@ -104,13 +110,12 @@ def stepPost (step : SchedulerStep) (st : SystemState) : Except KernelError Syst
     | .error e => .error e
   | .processReplenishmentsDue currentTime =>
     let (rq', dueIds) := (st.scheduler.replenishQueueOnCore bootCoreId).popDue currentTime
+    -- Each due SchedContext's replenishments are processed through the typed
+    -- update (raw-write migration Cut B2); a due id that resolves to no
+    -- SchedContext is the update's own `none` arm, i.e. left alone.
     let st' := dueIds.foldl (fun acc scId =>
-      match acc.getSchedContext? scId with
-      | some sc =>
-        let sc' := processReplenishments sc currentTime
-        { acc with objects := acc.objects.insert scId.toObjId (.schedContext sc') }
-      | none => acc
-    ) { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
+        acc.updateSchedContext scId fun sc => processReplenishments sc currentTime)
+      { st with scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq' }
     .ok st'
   | .ipcTimeoutTick scId =>
     -- The trace model is `bootCoreId`-pinned (SM4.C.11); the round-8

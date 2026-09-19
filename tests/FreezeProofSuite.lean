@@ -256,7 +256,6 @@ private def fp019_freezeEmptyInvariant : IO Unit := do
   -- All frozen maps have consistent empty state
   expect "objects empty" (fss.objects.data.size == 0)
   expect "objectTypes empty" (fss.objectTypes.data.size == 0)
-  expect "capabilityRefs empty" (fss.capabilityRefs.data.size == 0)
 
 /-- FP-020: freeze preserves field parity — all SystemState fields represented -/
 private def fp020_fieldParity : IO Unit := do

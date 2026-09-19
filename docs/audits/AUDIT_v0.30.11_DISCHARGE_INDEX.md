@@ -284,7 +284,7 @@ R5.D, R5.C, R5.F, R5.G:
 | H.8 | DEEP-SCH-02 (R5.C) | `effectiveSchedParams_priority_deadline_eq_resolve` | `Scheduler/Operations/Selection.lean` | LANDED |
 | H.9 | DEEP-SCH-02 (R5.C.1 — retired) | ~~`effectivePriority_some_eq_effectiveSchedParams`~~ | `Scheduler/Operations/Selection.lean` | RETIRED at R5.C.1 (full deprecation) |
 | H.10 | DEEP-SCH-03 (R5.D) | `restoreToReady_scheduler_eq` / `restoreToReady_serviceRegistry_eq` / `restoreToReady_lifecycle_eq` | `Kernel/Lifecycle/Suspend.lean` | LANDED |
-| H.11 | DEEP-SCH-03 (R5.D) | `clearTcbIpcFields_eq_restoreToReady` (back-compat bridge) | `Kernel/Lifecycle/Suspend.lean` | LANDED |
+| H.11 | DEEP-SCH-03 (R5.D — bridge retired) | ~~`clearTcbIpcFields_eq_restoreToReady`~~ | `Kernel/Lifecycle/Suspend.lean` | RETIRED at v0.35.64 (the back-compat shim and its bridge were deleted with no consumer; `restoreToReady` is the one spelling, H.10 carries the discharge) |
 | H.12 | DEEP-SCH-05 (R5.F) | `rotateToBack_requires_membership` | `Scheduler/RunQueue.lean` | LANDED |
 | H.13 | DEEP-SCH-05 (R5.F) | `rotateToBack_priority_eq_threadPriority` | `Scheduler/RunQueue.lean` | LANDED |
 | H.14 | DEEP-SCH-06 (R5.G) | `schedContextConfigure_bound_tcb_domain_eq` | `SchedContext/Invariant/Preservation.lean` | LANDED |

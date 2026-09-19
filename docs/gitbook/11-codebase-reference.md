@@ -47,7 +47,7 @@ Docs-sync checks compare only the stable subset so branch/merge-only churn does 
     WS-RC R4.A `UniqueSlotMap` structural promotion), KernelObject union, CDT helpers.
 - `SeLe4n/Model/State.lean`
   - global system-state composition and update helpers (including
-    `SchedulerState.runQueue : RunQueue` priority-bucketed run queue, WS-G4, and the service/IRQ/capabilityRef/CDT state stores — HashMap-backed at WS-H7, `RHTable`-backed since WS-Q2).
+    `SchedulerState.runQueue : RunQueue` priority-bucketed run queue, WS-G4, and the service/IRQ/CDT state stores — HashMap-backed at WS-H7, `RHTable`-backed since WS-Q2).
 
 ### Kernel transition/invariant families
 

@@ -461,14 +461,32 @@ def SchedulerState.domainScheduleAllPositive (schedule : List DomainScheduleEntr
 
 /-- Lifecycle metadata required by the first M4-A transition story.
 
-`objectTypes` keeps object-store identity explicit, while `capabilityRefs` records the target
-named by each populated capability slot reference.
+`objectTypes` keeps object-store identity explicit: the retype path reads it
+(`Lifecycle/Operations/RetypeWrappers.lean` refuses a retype whose target's
+recorded type disagrees with the stored object) and
+`objectTypeMetadataConsistent` is the relation it is held to.
+
+`v0.35.78`: the capability-reference table — `capabilityRefs : RHTable SlotRef
+CapTarget`, "the target named by each populated capability slot reference" —
+is **retired**, together with its two slot-level writers (`storeCapabilityRef`,
+`revokeAndClearRefsState`), its reader (`lookupCapabilityRefMeta`) and the
+conjunct named for it (`capabilityRefMetadataConsistent`).  Measured before
+deciding: no executable code read the table; every consumer of a slot's
+target reads the slot itself through `SystemState.lookupSlotCap`, which
+resolves in `O(1)` and yields the whole capability, and a target-to-slots
+query has no answer in a forward table at all; the reader was defined over
+the object store, so the invariant was definitionally true and every
+lifecycle-layer predicate built on it was a tautology; the boot builder never
+populated the table while installing populated CNodes; and every CNode store
+paid a fold over the CNode's slots to maintain it, twice.  A cache of a
+projection that is already `O(1)`-addressable at its source buys no reader
+anything.  `docs/REGISTERED_DEBT.md` records the measurement and the
+decision.
 
 WS-G2/WS-H7: metadata maps are HashMap-backed for O(1) amortized lookup,
 eliminating closure-chain growth from repeated updates. -/
 structure LifecycleMetadata where
   objectTypes : RHTable SeLe4n.ObjId KernelObjectType
-  capabilityRefs : RHTable SlotRef CapTarget
 
 /-- R7-A.1/M-17: A single TLB entry caching an address translation.
 
@@ -1173,7 +1191,6 @@ instance : Inhabited SystemState where
     irqHandlers := {}
     lifecycle := {
       objectTypes := {}
-      capabilityRefs := {}
     }
     asidTable := {}
     interfaceRegistry := {}
@@ -1255,7 +1272,7 @@ satisfies the Robin Hood invariant extension (WF ∧ distCorrect ∧ noDupKeys �
 probeChainDominant). This is the global well-formedness condition for the
 builder-phase state representation.
 
-AI6-D (L-02): This predicate uses a 17-deep conjunction (∧-chain) over all
+AI6-D (L-02): This predicate uses a 16-deep conjunction (∧-chain) over all
 RHTable/RHSet instances in the state. Tuple projection (e.g., `h.2.2.1`) is
 structurally fragile — adding a new table field shifts all subsequent
 projection indices. Named extractors (Builder.lean:30-116) provide
@@ -1273,7 +1290,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
   st.cdtNodeSlot.invExtK ∧
   -- LifecycleMetadata
   st.lifecycle.objectTypes.invExtK ∧
-  st.lifecycle.capabilityRefs.invExtK ∧
   -- CDT
   st.cdt.childMap.invExtK ∧
   st.cdt.parentMap.invExtK ∧
@@ -1293,7 +1309,6 @@ def SystemState.allTablesInvExtK (st : SystemState) : Prop :=
 /-- The default SystemState satisfies `allTablesInvExtK` because all tables are
 empty, and empty RHTables with capacity 16 trivially satisfy `invExtK`. -/
 theorem default_allTablesInvExtK : (default : SystemState).allTablesInvExtK := by
-  constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
   constructor; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExtK 16 (by omega)
@@ -1737,7 +1752,7 @@ theorem allObjectLocksUnheld_of_pointwise (st : SystemState)
 -- they reference its definitional reduction.
 
 /-- U2-M: Compile-time completeness witness for `allTablesInvExtK`.
-    This theorem destructures `allTablesInvExtK` into exactly 17 named conjuncts.
+    This theorem destructures `allTablesInvExtK` into exactly 16 named conjuncts.
     If a new RHTable field is added to `SystemState` and included in
     `allTablesInvExtK` without updating this witness, the proof fails. -/
 theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
@@ -1747,7 +1762,6 @@ theorem allTablesInvExtK_witness (st : SystemState) (h : st.allTablesInvExtK) :
     st.cdtSlotNode.invExtK ∧
     st.cdtNodeSlot.invExtK ∧
     st.lifecycle.objectTypes.invExtK ∧
-    st.lifecycle.capabilityRefs.invExtK ∧
     st.cdt.childMap.invExtK ∧
     st.cdt.parentMap.invExtK ∧
     st.services.invExtK ∧
@@ -1856,6 +1870,13 @@ of O(n) list membership scan.
 WS-G3/F-P06: Maintains `asidTable` — erases old ASID when overwriting a
 VSpaceRoot, inserts new ASID when storing a VSpaceRoot.
 
+`v0.35.78`: the store maintains **one** lifecycle table, `objectTypes`.  Up to
+`v0.35.77` it also maintained the capability-reference table — a whole-table
+filter on every store until D2, then an erase over the displaced CNode's slots
+plus an insert over the stored CNode's — and that table is retired (see
+`LifecycleMetadata`): a CNode store is `O(1)` in the CNode's slot count now,
+which is what a capability insert, delete, mutate, or revoke should cost.
+
 S4-B/U2-L: Capacity enforcement is performed at the allocation boundary
 (`retypeFromUntyped` in Lifecycle/Operations.lean), not here. The
 `objectCount_le_maxObjects` invariant (alias for `objectIndexBounded`,
@@ -1896,13 +1917,6 @@ def storeObject (id : SeLe4n.ObjId) (obj : KernelObject) : Kernel Unit :=
         objectIndexSet := st.objectIndexSet.insert id
         lifecycle := {
           objectTypes := st.lifecycle.objectTypes.insert id obj.objectType
-          capabilityRefs :=
-            let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)
-            match obj with
-            | .cnode cn =>
-                cn.slots.fold (init := cleared) fun refs slot cap =>
-                  refs.insert { cnode := id, slot := slot } cap.target
-            | _ => cleared
         }
         asidTable :=
           let cleared := match st.objects[id]? with
@@ -2050,18 +2064,32 @@ theorem storeObject_preserves_allObjectLocksUnheld (st : SystemState)
       rw [hOff] at hLookup
       exact hInv.2 id' o hLookup
 
-/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
-    existing object does not increase the object index length, and inserting
-    a new object increments it by at most 1 (which is bounded by the
-    allocation-time capacity check in `retypeFromUntyped`). -/
-theorem storeObject_preserves_objectIndexBounded
+/-- The store adds at most one index entry: a key already in the index leaves
+    it alone, a new key is consed onto it.  Hypothesis-free — the bound is a
+    fact about the write, not about the pre-state's capacity — so a pure
+    transition built on `withObjectStored` (the boot's idle enqueue, through
+    `withObjectStored_objectIndex_length_le`) can read it without carrying
+    `objectIndexBounded`, which it neither has nor needs. -/
+theorem storeObject_objectIndex_length_le
     (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
-    (_hBound : objectIndexBounded st)
     (hStore : storeObject id obj st = .ok ((), st')) :
     st'.objectIndex.length ≤ st.objectIndex.length + 1 := by
   unfold storeObject at hStore; cases hStore
   simp only
   split <;> simp [List.length] <;> omega
+
+/-- S4-B: `storeObject` preserves `objectCount_le_maxObjects` — overwriting an
+    existing object does not increase the object index length, and inserting
+    a new object increments it by at most 1 (which is bounded by the
+    allocation-time capacity check in `retypeFromUntyped`).  The bound itself
+    is `storeObject_objectIndex_length_le`; this is its instance at a bounded
+    pre-state, kept under the name its consumers cite. -/
+theorem storeObject_preserves_objectIndexBounded
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (_hBound : objectIndexBounded st)
+    (hStore : storeObject id obj st = .ok ((), st')) :
+    st'.objectIndex.length ≤ st.objectIndex.length + 1 :=
+  storeObject_objectIndex_length_le st st' id obj hStore
 
 /-- AC3-E / F-03: Capacity-checked variant of `storeObject`. Rejects new object
     insertions that would exceed `maxObjects`. Updates to existing objects are
@@ -2266,184 +2294,6 @@ theorem storeObject_capacity_safe_of_existing
 -- - `storeObject_capacity_safe_of_existing` (composition)
 -- for the machine-checked assurance that capacity is always gated.
 
-/-- Record or clear a slot-to-target lifecycle reference mapping. -/
-def storeCapabilityRef (ref : SlotRef) (target : Option CapTarget) : Kernel Unit :=
-  fun st =>
-    let lifecycle' : LifecycleMetadata :=
-      {
-        st.lifecycle with
-          capabilityRefs :=
-            match target with
-            | some t => st.lifecycle.capabilityRefs.insert ref t
-            | none => st.lifecycle.capabilityRefs.erase ref
-      }
-    .ok ((), { st with lifecycle := lifecycle' })
-
-/-- M-P01: Fused revoke — filter CNode slots matching the revoke target and clear
-their capability refs in a single `RHTable.fold` pass, eliminating the intermediate
-refs-list allocation and second traversal of the legacy two-pass revoke path. -/
-def revokeAndClearRefsState
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) : SystemState :=
-  cn.slots.fold st (fun stAcc s c =>
-    if s != sourceSlot && c.target == target then
-      { stAcc with lifecycle := { stAcc.lifecycle with
-          capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-            { cnode := cnodeId, slot := s } } }
-    else stAcc)
-
-/-- M-P01: Fold body for `revokeAndClearRefsState` preserves objects. -/
-private theorem revokeAndClearRefsFoldBody_preserves_objects
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).objects = st.objects := by
-  induction pairs generalizing st with
-  | nil => rfl
-  | cons p rest ih => simp only [List.foldl_cons]; split <;> exact ih _
-
-/-- M-P01: `revokeAndClearRefsState` preserves `objects` (only modifies `lifecycle`). -/
-theorem revokeAndClearRefsState_preserves_objects
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _ (fun acc => acc.objects = st.objects)
-    rfl (fun acc s c hAcc => by simp only []; split <;> exact hAcc)
-
-private theorem revokeAndClearRefsFoldBody_preserves_cdt
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdt = st.cdt ∧
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdtNodeSlot = st.cdtNodeSlot ∧
-    (pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st).cdtSlotNode = st.cdtSlotNode := by
-  induction pairs generalizing st with
-  | nil => exact ⟨rfl, rfl, rfl⟩
-  | cons p rest ih =>
-      simp only [List.foldl_cons]
-      split
-      · exact ih _
-      · exact ih _
-
-/-- M-P01: `revokeAndClearRefsState` preserves CDT fields and objects. -/
-theorem revokeAndClearRefsState_cdt_eq
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdt = st.cdt ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtNodeSlot = st.cdtNodeSlot ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).cdtSlotNode = st.cdtSlotNode ∧
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objects = st.objects := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
-    (fun acc => acc.cdt = st.cdt ∧ acc.cdtNodeSlot = st.cdtNodeSlot ∧
-      acc.cdtSlotNode = st.cdtSlotNode ∧ acc.objects = st.objects)
-    ⟨rfl, rfl, rfl, rfl⟩
-    (fun acc s c ⟨h1, h2, h3, h4⟩ => by simp only []; split <;> exact ⟨h1, h2, h3, h4⟩)
-
-/-- M-P01: Fold body preserves scheduler, machine, services, irqHandlers, objectIndex fields. -/
-private theorem revokeAndClearRefsFoldBody_preserves_fields
-    (pairs : List (SeLe4n.Slot × Capability))
-    (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    let r := pairs.foldl (fun stAcc (p : SeLe4n.Slot × Capability) =>
-      if p.1 != sourceSlot && p.2.target == target then
-        { stAcc with lifecycle := { stAcc.lifecycle with
-            capabilityRefs := stAcc.lifecycle.capabilityRefs.erase
-              { cnode := cnodeId, slot := p.1 } } }
-      else stAcc) st
-    r.scheduler = st.scheduler ∧
-    r.machine = st.machine ∧
-    r.services = st.services ∧
-    r.irqHandlers = st.irqHandlers ∧
-    r.objectIndex = st.objectIndex ∧
-    r.objectIndexSet = st.objectIndexSet ∧
-    r.asidTable = st.asidTable := by
-  induction pairs generalizing st with
-  | nil => exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
-  | cons p rest ih =>
-      simp only [List.foldl_cons]
-      split <;> exact ih _
-
-/-- Helper tactic macro: uses `RHTable.fold_preserves` to show fold body preserves fields. -/
-private theorem revokeAndClearRefsState_preserves_allFields
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    let r := revokeAndClearRefsState cn sourceSlot target cnodeId st
-    r.scheduler = st.scheduler ∧ r.machine = st.machine ∧
-    r.services = st.services ∧ r.irqHandlers = st.irqHandlers ∧
-    r.objectIndex = st.objectIndex ∧ r.objectIndexSet = st.objectIndexSet := by
-  unfold revokeAndClearRefsState
-  exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves cn.slots.table st _
-    (fun acc => acc.scheduler = st.scheduler ∧ acc.machine = st.machine ∧
-      acc.services = st.services ∧ acc.irqHandlers = st.irqHandlers ∧
-      acc.objectIndex = st.objectIndex ∧ acc.objectIndexSet = st.objectIndexSet)
-    ⟨rfl, rfl, rfl, rfl, rfl, rfl⟩
-    (fun acc s c ⟨h1, h2, h3, h4, h5, h6⟩ => by
-      simp only []; split <;> exact ⟨h1, h2, h3, h4, h5, h6⟩)
-
-/-- M-P01: `revokeAndClearRefsState` preserves scheduler. -/
-theorem revokeAndClearRefsState_preserves_scheduler
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).scheduler = st.scheduler :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).1
-
-/-- M-P01: `revokeAndClearRefsState` preserves machine state. -/
-theorem revokeAndClearRefsState_preserves_machine
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).machine = st.machine :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves services. -/
-theorem revokeAndClearRefsState_preserves_services
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).services = st.services :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves irqHandlers. -/
-theorem revokeAndClearRefsState_preserves_irqHandlers
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).irqHandlers = st.irqHandlers :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves objectIndex. -/
-theorem revokeAndClearRefsState_preserves_objectIndex
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndex = st.objectIndex :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.1
-
-/-- M-P01: `revokeAndClearRefsState` preserves objectIndexSet. -/
-theorem revokeAndClearRefsState_preserves_objectIndexSet
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    (revokeAndClearRefsState cn sourceSlot target cnodeId st).objectIndexSet = st.objectIndexSet :=
-  (revokeAndClearRefsState_preserves_allFields cn sourceSlot target cnodeId st).2.2.2.2.2
-
 def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
   fun st =>
     let sched := st.scheduler.setCurrentOnCore bootCoreId tid
@@ -2452,15 +2302,6 @@ def setCurrentThread (tid : Option SeLe4n.ThreadId) : Kernel Unit :=
 /-- Read one service graph entry. -/
 def lookupService (st : SystemState) (sid : ServiceId) : Option ServiceGraphEntry :=
   st.services[sid]?
-
-/-- M-P01: `revokeAndClearRefsState` preserves lookupService. -/
-theorem revokeAndClearRefsState_lookupService
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) (sid : ServiceId) :
-    lookupService (revokeAndClearRefsState cn sourceSlot target cnodeId st) sid =
-    lookupService st sid := by
-  unfold lookupService
-  rw [revokeAndClearRefsState_preserves_services]
 
 /-- Determine whether `sid` lists `dependency` as a declared dependency edge. -/
 def hasServiceDependency (st : SystemState) (sid dependency : ServiceId) : Bool :=
@@ -2510,82 +2351,6 @@ theorem storeObject_preserves_services
     st'.services = st.services := by
   unfold storeObject at hStore; cases hStore
   rfl
-
-theorem storeCapabilityRef_preserves_scheduler
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.scheduler = st.scheduler := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_preserves_services
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.services = st.services := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_preserves_objects
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.objects = st.objects := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- WS-F3: storeCapabilityRef preserves IRQ handler mappings. -/
-theorem storeCapabilityRef_preserves_irqHandlers
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.irqHandlers = st.irqHandlers := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- WS-F3: storeCapabilityRef preserves the object index. -/
-theorem storeCapabilityRef_preserves_objectIndex
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.objectIndex = st.objectIndex := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-/-- storeCapabilityRef preserves machine state. -/
-theorem storeCapabilityRef_preserves_machine
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.machine = st.machine := by
-  unfold storeCapabilityRef at hStep
-  simp at hStep; cases hStep; rfl
-
-theorem storeCapabilityRef_lookup_eq
-    (st st' : SystemState)
-    (ref : SlotRef)
-    (target : Option CapTarget)
-    (hCapRefsInv : st.lifecycle.capabilityRefs.invExt)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    st'.lifecycle.capabilityRefs[ref]? = target := by
-  unfold storeCapabilityRef at hStep
-  cases hTarget : target with
-  | none =>
-      simp [hTarget] at hStep
-      cases hStep
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_erase_self _ _ hCapRefsInv
-  | some t =>
-      simp [hTarget] at hStep
-      cases hStep
-      simp only [RHTable_getElem?_eq_get?]; exact RHTable.getElem?_insert_self _ _ _ hCapRefsInv
-
 
 theorem storeObject_objects_eq'
     (st : SystemState)
@@ -3412,7 +3177,7 @@ original thread's scheduling context to an unrelated thread, in another domain,
 driven by object reuse.
 
 Since `v0.35.4` the stack is doubly linked (seL4's `replyPrev` / `replyNext`), a
-cancelled caller's frame is taken off its stack in `O(1)` by the detach, and a
+cancelled caller's frame is taken off its stack in `O(1)` by the splice, and a
 consumed frame leaves the structure as it is consumed (`Reply.consumed`) — so
 under `donationChainWellFormed` a Reply with no caller carries no link and this
 barrier reduces to the single-use one.  It stays a conjunction because that is
@@ -3439,8 +3204,8 @@ the dynamic half of single-use.  No-op if the reply is absent.
 cleared, and the stack links cleared too unless the frame heads a stack (the
 donation pop that follows the reply leg in the same transition takes a head
 off).  One store, as before; what changed is the record, so a frame that no pop
-will ever reach — the top of a part the detach cut off — leaves the structure
-here rather than pinning its object forever.  See `Reply.consumed`. -/
+will ever reach — the cut frame the splice has already taken out from between its
+neighbours — leaves the structure here rather than pinning its object forever.  See `Reply.consumed`. -/
 def consumeReply (rid : SeLe4n.ReplyId) : Kernel Unit :=
   fun st =>
     match st.getReply? rid with
@@ -3882,6 +3647,156 @@ theorem consumeCallerReply_isOk (st : SystemState) (caller : SeLe4n.ThreadId)
   cases hT : st1.getTcb? caller with
   | none => exact ⟨st1, rfl⟩
   | some tcb => exact ⟨_, rfl⟩
+
+/-- **WS-RR RR8.5: the teardown as a pure, total function — the one state
+`consumeCallerReply` leaves.**
+
+The tree carried two spellings of "tear down the caller↔Reply link": this
+monadic one on the reply paths, and a pure two-helper one
+(`clearTcbReplyObject` then `clearReplyObjectCaller`) on the cancellation path,
+which existed only because `cancelIpcBlocking` is a pure composition and could
+not run a `Kernel` step.  Two bodies for one question drift, and these two had
+already parted on write **order** and on whether the writes went through
+`storeObject`'s lifecycle bookkeeping — so the cancellation spelling is deleted
+and its teardown is this projection: `consumeReplyLink`
+(`Lifecycle/Suspend.lean`) is `st.consumeCallerReplyLink tid rid` under the
+victim's own `replyObject`, and every fact proved of the monadic step transfers to
+the cancellation path through `consumeCallerReply_eq_link` rather than being
+proved a second time.
+
+The `.error` arm is **eliminated, not defaulted**: both legs are `storeObject`s
+behind no-op guards (`consumeCallerReply_isOk`), so an "on error, the identity"
+fallback here would read as a decision the operation never takes.  The definition
+carries the infallibility instead; computationally the arm is unreachable
+(`False.elim` erases), so the executable is the `.ok` projection and nothing
+else. -/
+def consumeCallerReplyLink (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) : SystemState :=
+  match h : consumeCallerReply caller rid st with
+  | .ok ((), st') => st'
+  | .error _ =>
+      False.elim (by
+        obtain ⟨st', hOk⟩ := consumeCallerReply_isOk st caller rid
+        rw [hOk] at h
+        cases h)
+
+/-- **WS-RR RR8.5: the bridge.**  The monadic teardown *is* `.ok` at the pure
+one, so a result stated over `consumeCallerReply caller rid st = .ok ((), st')`
+instantiates to the pure spelling with this equation as its step hypothesis —
+which is how every `consumeReplyLink_*` theorem on the cancellation path is a
+corollary of its reply-path twin. -/
+theorem consumeCallerReply_eq_link (st : SystemState) (caller : SeLe4n.ThreadId)
+    (rid : SeLe4n.ReplyId) :
+    consumeCallerReply caller rid st = .ok ((), st.consumeCallerReplyLink caller rid) := by
+  unfold consumeCallerReplyLink
+  split
+  · next _ h => exact h
+  · next _ h =>
+    exfalso
+    obtain ⟨st', hOk⟩ := consumeCallerReply_isOk st caller rid
+    rw [hOk] at h
+    cases h
+
+/-- WS-RR RR8.5: `consumeCallerReply` leaves the service registry untouched —
+both legs are object-store writes.  The cancellation path's
+`consumeReplyLink_serviceRegistry_eq` reads it through the bridge. -/
+theorem consumeCallerReply_serviceRegistry_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    st'.serviceRegistry = st.serviceRegistry := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have h1 : st1.serviceRegistry = st.serviceRegistry := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; rfl
+      | some r => rw [hGet] at hCons; unfold storeObject at hCons; cases hCons; rfl
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      unfold storeObject at hStep; cases hStep; exact h1
+
+/-- **WS-RR RR8.5: the sharp pointwise reading of the consume at a TCB-holding
+key other than the caller's** — untouched.  The Reply leg writes a `.reply`
+value, whose key can never be one that holds a TCB, and the TCB leg writes the
+caller's key alone.  Stated with no `rid`-distinctness hypothesis, because
+`ReplyId.toObjId` and `ThreadId.toObjId` are two wrappers over one `ObjId` and a
+collision is representable: the distinctness is derived from the store's
+contents instead (a key holding a TCB holds no Reply). -/
+theorem consumeCallerReply_tcb_other (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st'))
+    (k : SeLe4n.ObjId) (t0 : TCB) (hNe : k ≠ caller.toObjId)
+    (hPre : st.objects[k]? = some (.tcb t0)) :
+    st'.objects[k]? = some (.tcb t0) := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : st1.objects[k]? = some (.tcb t0) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hPre
+      | some r =>
+        rw [hGet] at hCons
+        have hkr : k ≠ rid.toObjId := by
+          intro hk
+          rw [hk, (getReply?_eq_some_iff st rid r).mp hGet] at hPre
+          cases hPre
+        rw [storeObject_objects_ne st st1 rid.toObjId k _ hkr hObjInv hCons]
+        exact hPre
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      rw [storeObject_objects_ne st1 st' caller.toObjId k _ hNe hInv1 hStep]
+      exact h1
+
+/-- **WS-RR RR8.5: the sharp pointwise reading at the caller's own key** — the
+record stored is the pre-state TCB with `replyObject` cleared and nothing else
+moved.  Together with `consumeCallerReply_tcb_other` this is the whole of what
+the consume does to TCBs, stated exactly rather than as field lists. -/
+theorem consumeCallerReply_tcb_caller (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st'))
+    (t0 : TCB) (hPre : st.objects[caller.toObjId]? = some (.tcb t0)) :
+    st'.objects[caller.toObjId]? = some (.tcb { t0 with replyObject := none }) := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : st1.objects[caller.toObjId]? = some (.tcb t0) := by
+      unfold consumeReply at hCons
+      cases hGet : st.getReply? rid with
+      | none => rw [hGet] at hCons; cases hCons; exact hPre
+      | some r =>
+        rw [hGet] at hCons
+        have hkr : caller.toObjId ≠ rid.toObjId := by
+          intro hk
+          rw [hk, (getReply?_eq_some_iff st rid r).mp hGet] at hPre
+          cases hPre
+        rw [storeObject_objects_ne st st1 rid.toObjId caller.toObjId _ hkr hObjInv hCons]
+        exact hPre
+    have hT : st1.getTcb? caller = some t0 := (getTcb?_eq_some_iff st1 caller t0).mpr h1
+    simp only [hT] at hStep
+    exact storeObject_objects_eq st1 st' caller.toObjId _ hInv1 hStep
 
 /-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
 (object-store writes only). -/
@@ -4424,11 +4339,6 @@ def ownedSlots (st : SystemState) (owner : CSpaceOwner) : List (SeLe4n.Slot × C
 def lookupObjectTypeMeta (st : SystemState) (id : SeLe4n.ObjId) : Option KernelObjectType :=
   st.lifecycle.objectTypes[id]?
 
-/-- Lifecycle metadata view of capability slot reference mapping. -/
-def lookupCapabilityRefMeta (st : SystemState) (ref : SlotRef) : Option CapTarget :=
-  (lookupSlotCap st ref).map Capability.target
-
-
 /-- Read the stable CDT node currently referenced by a CSpace slot, if any. -/
 def lookupCdtNodeOfSlot (st : SystemState) (ref : SlotRef) : Option CdtNodeId :=
   st.cdtSlotNode[ref]?
@@ -4609,17 +4519,16 @@ theorem lookupSlotCap_eq_of_objects_eq
     lookupSlotCap st₁ ref = lookupSlotCap st₂ ref := by
   simp [lookupSlotCap, lookupCNode, hObj]
 
-/-- Object-type lifecycle metadata is exact for every object-store id. -/
+/-- Object-type lifecycle metadata is exact for every object-store id.
+
+This is the whole of the M4-A metadata-consistency surface.  `v0.35.78`
+retired its second conjunct, `capabilityRefMetadataConsistent`, and the bundle
+`lifecycleMetadataConsistent` that carried the two: the reader that conjunct
+was stated over read the object store rather than the capability-reference
+table, so the conjunct was definitionally true, and a bundle of one conjunct
+is the conjunct.  See `LifecycleMetadata`. -/
 def objectTypeMetadataConsistent (st : SystemState) : Prop :=
   ∀ oid, lookupObjectTypeMeta st oid = (st.objects[oid]?).map KernelObject.objectType
-
-/-- Capability-reference lifecycle metadata is exact for every slot reference. -/
-def capabilityRefMetadataConsistent (st : SystemState) : Prop :=
-  ∀ ref, lookupCapabilityRefMeta st ref = (lookupSlotCap st ref).map Capability.target
-
-/-- M4-A state-model metadata consistency bundle. -/
-def lifecycleMetadataConsistent (st : SystemState) : Prop :=
-  objectTypeMetadataConsistent st ∧ capabilityRefMetadataConsistent st
 
 theorem lookupSlotCap_eq_none_of_lookupCNode_eq_none
     (st : SystemState)
@@ -4668,81 +4577,15 @@ theorem storeObject_preserves_objectTypeMetadataConsistent
         RHTable.getElem?_insert_ne _ _ _ _ h1 hObjInv]
     exact hConsistent oid'
 
-theorem storeObject_preserves_capabilityRefMetadataConsistent
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (_hConsistent : SystemState.capabilityRefMetadataConsistent st)
-    (_hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.capabilityRefMetadataConsistent st' := by
-  intro ref
-  simp [SystemState.lookupCapabilityRefMeta]
-
-theorem storeObject_preserves_lifecycleMetadataConsistent
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (hConsistent : SystemState.lifecycleMetadataConsistent st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.lifecycleMetadataConsistent st' := by
-  rcases hConsistent with ⟨hObjType, hCapRef⟩
-  exact ⟨storeObject_preserves_objectTypeMetadataConsistent st st' oid obj hObjType hObjInv hObjTypesInv hStep,
-    storeObject_preserves_capabilityRefMetadataConsistent st st' oid obj hCapRef hStep⟩
-
--- ============================================================================
--- T2-H (M-NEW-3): capabilityRefs filter preserves invExt
--- ============================================================================
-
-/-- T2-H (M-NEW-3): When `storeObject` filters out old CNode references via
-    `RHTable.filter`, the resulting table's `invExt` is preserved. This follows
-    directly from `RHTable.filter_preserves_invExt`. -/
-theorem capabilityRefs_filter_preserves_invExt
-    (capRefs : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInv : capRefs.invExt) :
-    (capRefs.filter (fun ref _ => ref.cnode ≠ id)).invExt :=
-  RHTable.filter_preserves_invExt capRefs _ hInv
-
--- ============================================================================
--- T2-I (M-NEW-3): capabilityRefs fold insert preserves invExt
--- ============================================================================
-
-/-- T2-I (M-NEW-3): When `storeObject` inserts new CNode references via `fold`,
-    the resulting table's `invExt` is preserved. Each sequential `insert`
-    preserves `invExt` by `RHTable.insert_preserves_invExt`, and the fold
-    composes these preservations via `RHTable.fold_preserves`. -/
-theorem capabilityRefs_fold_preserves_invExt
-    (cn : CNode)
-    (cleared : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInv : cleared.invExt) :
-    (cn.slots.fold (init := cleared) fun refs slot cap =>
-      refs.insert { cnode := id, slot := slot } cap.target).invExt :=
-  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExt) hInv
-    (fun acc _ _ hAcc => RHTable.insert_preserves_invExt acc _ _ hAcc)
-
-/-- V3-B: capabilityRefs fold insert preserves invExtK. -/
-theorem capabilityRefs_fold_preserves_invExtK
-    (cn : CNode)
-    (cleared : RHTable SlotRef CapTarget)
-    (id : SeLe4n.ObjId)
-    (hInvK : cleared.invExtK) :
-    (cn.slots.fold (init := cleared) fun refs slot cap =>
-      refs.insert { cnode := id, slot := slot } cap.target).invExtK :=
-  RHTable.fold_preserves cn.slots.table cleared _ (fun t => t.invExtK) hInvK
-    (fun acc _ _ hAcc => RHTable.insert_preserves_invExtK acc _ _ hAcc)
-
 -- ============================================================================
 -- T2-G (M-NEW-2): Bundled storeObject preserves allTablesInvExt
 -- ============================================================================
 
 /-- T2-G (M-NEW-2): Bundled preservation theorem for `storeObject`.
 
-    Composes the 17 component preservation proofs (objects, objectIndex,
-    objectIndexSet, lifecycle.objectTypes, lifecycle.capabilityRefs, asidTable,
-    scThreadIndex, etc.) into a single theorem. Callers can invoke this instead
+    Composes the 16 component preservation proofs (objects, objectIndex,
+    objectIndexSet, lifecycle.objectTypes, asidTable, scThreadIndex, etc.) into
+    a single theorem. Callers can invoke this instead
     of manually composing each component.
 
     The proof works by showing that `storeObject` only modifies fields via
@@ -4766,30 +4609,20 @@ theorem storeObject_preserves_allTablesInvExtK
   have hCdtSN := hAll.2.2.2.1
   have hCdtNS := hAll.2.2.2.2.1
   have hObjTypes := hAll.2.2.2.2.2.1
-  have hCapRefs := hAll.2.2.2.2.2.2.1
-  have hChildMap := hAll.2.2.2.2.2.2.2.1
-  have hParentMap := hAll.2.2.2.2.2.2.2.2.1
-  have hServices := hAll.2.2.2.2.2.2.2.2.2.1
-  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.2.1
-  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.2.1
-  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
-  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+  have hChildMap := hAll.2.2.2.2.2.2.1
+  have hParentMap := hAll.2.2.2.2.2.2.2.1
+  have hServices := hAll.2.2.2.2.2.2.2.2.1
+  have hIfaceReg := hAll.2.2.2.2.2.2.2.2.2.1
+  have hSvcReg := hAll.2.2.2.2.2.2.2.2.2.2.1
+  have hByPri := hAll.2.2.2.2.2.2.2.2.2.2.2.1
+  have hThreadPri := hAll.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hObjIdxSet := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hMembership := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+  have hScThreadIdx := hAll.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
   -- Prove objects insert preserves invExtK
   have hObj' := RHTable.insert_preserves_invExtK st.objects id obj hObj
   -- Prove objectTypes insert preserves invExtK
   have hObjTypes' := RHTable.insert_preserves_invExtK st.lifecycle.objectTypes id obj.objectType hObjTypes
-  -- Prove capabilityRefs filter+fold preserves invExtK
-  have hFiltered := RHTable.filter_preserves_invExtK st.lifecycle.capabilityRefs (fun ref _ => ref.cnode ≠ id) hCapRefs
-  have hCapRefs' : (match obj with
-      | .cnode cn => cn.slots.fold (init := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id))
-          fun refs slot cap => refs.insert { cnode := id, slot := slot } cap.target
-      | _ => st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ id)).invExtK := by
-    cases obj with
-    | cnode cn => exact capabilityRefs_fold_preserves_invExtK cn _ id hFiltered
-    | _ => exact hFiltered
   -- Prove objectIndexSet insert preserves invExtK
   have hObjIdxSet' := RHSet.insert_preserves_invExtK st.objectIndexSet id hObjIdxSet
   -- Prove asidTable preserves invExtK (erase + insert depending on obj type)
@@ -4809,8 +4642,8 @@ theorem storeObject_preserves_allTablesInvExtK
     cases obj with
     | vspaceRoot vs => exact RHTable.insert_preserves_invExtK _ _ _ hCleared
     | _ => exact hCleared
-  -- Compose all 17 components (S-05/PERF-O1: scThreadIndex added)
-  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes', hCapRefs',
+  -- Compose all 16 components (S-05/PERF-O1: scThreadIndex added)
+  exact ⟨hObj', hIrq, hAsid', hCdtSN, hCdtNS, hObjTypes',
          hChildMap, hParentMap, hServices, hIfaceReg, hSvcReg,
          hByPri, hThreadPri, hObjIdxSet', hMembership, hScThreadIdx⟩
 
@@ -4818,24 +4651,20 @@ theorem storeObject_preserves_allTablesInvExtK
 -- L-06/WS-E3: Default SystemState initialization proof
 -- ============================================================================
 
-/-- L-06/WS-E3: The default (empty) `SystemState` satisfies `lifecycleMetadataConsistent`.
-Both metadata maps return `none` for all inputs, and `objects` returns `none`
-for all IDs, so the consistency conditions hold trivially. This provides the
-base case for invariant induction — the system starts in a valid state. -/
-theorem default_systemState_lifecycleConsistent :
-    SystemState.lifecycleMetadataConsistent (default : SystemState) := by
-  constructor
-  · -- objectTypeMetadataConsistent: both HashMaps are empty → both get? return none
-    intro oid
-    simp only [SystemState.lookupObjectTypeMeta]
-    have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
-      RHTable.getElem?_empty _ _ _
-    have h₂ : (default : SystemState).objects[oid]? = none :=
-      RHTable.getElem?_empty _ _ _
-    rw [h₁, h₂]; rfl
-  · -- capabilityRefMetadataConsistent: `lookupCapabilityRefMeta` is definitionally exact.
-    intro ref
-    simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap, SystemState.lookupCNode]
+/-- L-06/WS-E3: The default (empty) `SystemState` satisfies
+`objectTypeMetadataConsistent`.  The metadata map returns `none` for all
+inputs, and `objects` returns `none` for all IDs, so the consistency condition
+holds trivially. This provides the base case for invariant induction — the
+system starts in a valid state. -/
+theorem default_systemState_objectTypeMetadataConsistent :
+    SystemState.objectTypeMetadataConsistent (default : SystemState) := by
+  intro oid
+  simp only [SystemState.lookupObjectTypeMeta]
+  have h₁ : (default : SystemState).lifecycle.objectTypes[oid]? = none :=
+    RHTable.getElem?_empty _ _ _
+  have h₂ : (default : SystemState).objects[oid]? = none :=
+    RHTable.getElem?_empty _ _ _
+  rw [h₁, h₂]; rfl
 
 -- ============================================================================
 -- M-09/WS-E3: storeObject metadata sync correctness for type-changing stores
@@ -4852,31 +4681,6 @@ theorem storeObject_metadata_sync_type_change
     (hStep : storeObject oid obj st = .ok ((), st')) :
     st'.lifecycle.objectTypes[oid]? = some obj.objectType :=
   storeObject_updates_objectTypeMeta st st' oid obj hObjTypesInv hStep
-
-/-- M-09/WS-E3: `storeObject` correctly synchronizes capability-reference metadata
-when the stored object changes from a CNode to a non-CNode (or vice versa).
-After storing a non-CNode, all capability references pointing into `oid` are
-cleared; after storing a CNode, they reflect the new CNode's slot contents.
-
-This closes the metadata sync hazard: for type-changing stores (e.g., replacing
-a CNode with a TCB), `storeObject` correctly clears all capability-reference
-metadata for the replaced CNode's slots (the `| _ => none` branch), maintaining
-the invariant that metadata reflects the actual object store. -/
-theorem storeObject_metadata_sync_capref_at_stored
-    (st st' : SystemState)
-    (oid : SeLe4n.ObjId)
-    (obj : KernelObject)
-    (slot : SeLe4n.Slot)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeObject oid obj st = .ok ((), st')) :
-    SystemState.lookupCapabilityRefMeta st' { cnode := oid, slot := slot } =
-      match obj with
-      | .cnode cn => (cn.lookup slot).map Capability.target
-      | _ => none := by
-  unfold SystemState.lookupCapabilityRefMeta SystemState.lookupSlotCap SystemState.lookupCNode
-  unfold storeObject at hStep; cases hStep
-  simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]
-  cases obj <;> simp [CNode.lookup]
 
 -- ============================================================================
 -- L-05/WS-E6: objectIndex monotonicity
@@ -4955,5 +4759,952 @@ theorem storeObject_preserves_objectIndexLive
       simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_self _ _ _ hObjInv]; simp
     · simp only [RHTable_getElem?_eq_get?]; rw [RHTable.getElem?_insert_ne _ _ _ _ hEq hObjInv]
       exact hLive id hMem
+
+-- ============================================================================
+-- The in-place rewrite — a store write that carries no bookkeeping, by proof
+-- ============================================================================
+
+/-- The object kinds whose only *derived* bookkeeping is the kind itself.
+
+`storeObject` maintains three things beside the object table: the object index
+(`objectIndex` / `objectIndexSet`), the kind table (`lifecycle.objectTypes`)
+and the ASID table (`asidTable`, derived from a VSpace root's **ASID**).
+Rewriting an existing object of an unchanged kind leaves the first two exactly
+as they are, and the ASID table depends on the object's *contents* for VSpace
+roots and on nothing for the rest.  So VSpace roots are written through
+`storeObject` only, and every neutral kind may be rewritten in place
+(`SystemState.rewriteObject`) with the lookup the site already performed
+standing as the proof that no bookkeeping moves.  CNodes are not neutral
+either, and since `v0.35.78` not for a bookkeeping reason — the
+capability-reference table their slots used to feed is retired — but because
+no writer needs the rewrite: every capability operation stores the CNode it
+looked up, and that store is `O(1)` now.  Admitting the kind would add a second
+CNode write path with no consumer.
+
+Enumerated constructor by constructor rather than with a wildcard: a kind added
+to `KernelObjectType` fails to elaborate here until it is classified, where a
+wildcard would classify it neutral by default — the fail-open direction. -/
+def KernelObjectType.rewriteNeutral : KernelObjectType → Bool
+  | .tcb => true
+  | .endpoint => true
+  | .notification => true
+  | .cnode => false
+  | .vspaceRoot => false
+  | .untyped => true
+  | .schedContext => true
+  | .reply => true
+
+/-- `storeObject` never refuses: it is `.ok` at the bookkeeping-carrying record
+by definition.  Stated so a pure spelling of the store can *eliminate* its error
+arm rather than default it (`SystemState.withObjectStored`). -/
+theorem storeObject_isOk (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) :
+    ∃ st', storeObject id obj st = .ok ((), st') :=
+  ⟨_, rfl⟩
+
+namespace SystemState
+
+/-- `new` may be written over key `id` **in place**: the key already holds an
+object of the same kind, and that kind is bookkeeping-neutral
+(`KernelObjectType.rewriteNeutral`).
+
+This is the precondition every raw `objects.insert` in the kernel relied on
+without stating it: a site that looked an object up, record-updated it and
+wrote it back was performing exactly this rewrite, and the lookup it performed
+is the witness.  Stated as a proposition so that `rewriteObject` can *take*
+it — a rewrite with no witness is a store, and a store maintains the
+bookkeeping. -/
+def rewriteAdmissible (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject) : Prop :=
+  ∃ old, st.objects[id]? = some old ∧
+    old.objectType = new.objectType ∧ new.objectType.rewriteNeutral = true
+
+/-- Rewrite the object at `id` in place.
+
+The body is the record update every raw writer spelled, and nothing more: the
+proof argument is erased at code generation, so the executable is one table
+insert — which is what makes this the primitive the hot scheduler and IPC paths
+can afford where `storeObject`'s bookkeeping (a filter over every capability
+reference, a second table insert, an index membership test) is not.  What the
+argument buys is that *every* in-place rewrite in the kernel is one of these,
+so the facts stated below of the primitive — the object index, the kind table,
+the capability references and the ASID table are all **unchanged**,
+unconditionally — are proved once rather than site by site, or (as before this
+primitive existed) not at all.
+
+A key that holds nothing, or an object of another kind, cannot be rewritten:
+that is a store, and `withObjectStored` is its pure spelling.  A CNode or a
+VSpace root cannot be rewritten either — their contents *are* bookkeeping. -/
+@[inline] def rewriteObject (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (_h : st.rewriteAdmissible id new) : SystemState :=
+  { st with objects := st.objects.insert id new }
+
+-- The six neutral kinds: the typed lookup the site performed is the witness.
+
+theorem rewriteAdmissible_tcb {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (h : st.getTcb? tid = some t) (t' : TCB) :
+    st.rewriteAdmissible tid.toObjId (.tcb t') :=
+  ⟨.tcb t, (getTcb?_eq_some_iff st tid t).mp h, rfl, rfl⟩
+
+theorem rewriteAdmissible_schedContext {st : SystemState} {scId : SeLe4n.SchedContextId}
+    {sc : SeLe4n.Kernel.SchedContext}
+    (h : st.getSchedContext? scId = some sc) (sc' : SeLe4n.Kernel.SchedContext) :
+    st.rewriteAdmissible scId.toObjId (.schedContext sc') :=
+  ⟨.schedContext sc, (getSchedContext?_eq_some_iff st scId sc).mp h, rfl, rfl⟩
+
+theorem rewriteAdmissible_reply {st : SystemState} {rid : SeLe4n.ReplyId}
+    {r : SeLe4n.Kernel.Reply}
+    (h : st.getReply? rid = some r) (r' : SeLe4n.Kernel.Reply) :
+    st.rewriteAdmissible rid.toObjId (.reply r') :=
+  ⟨.reply r, (getReply?_eq_some_iff st rid r).mp h, rfl, rfl⟩
+
+theorem rewriteAdmissible_endpoint {st : SystemState} {id : SeLe4n.ObjId} {ep : Endpoint}
+    (h : st.getEndpoint? id = some ep) (ep' : Endpoint) :
+    st.rewriteAdmissible id (.endpoint ep') :=
+  ⟨.endpoint ep, (getEndpoint?_eq_some_iff st id ep).mp h, rfl, rfl⟩
+
+theorem rewriteAdmissible_notification {st : SystemState} {id : SeLe4n.ObjId}
+    {n : Notification}
+    (h : st.getNotification? id = some n) (n' : Notification) :
+    st.rewriteAdmissible id (.notification n') :=
+  ⟨.notification n, (getNotification?_eq_some_iff st id n).mp h, rfl, rfl⟩
+
+theorem rewriteAdmissible_untyped {st : SystemState} {id : SeLe4n.ObjId} {ut : UntypedObject}
+    (h : st.getUntyped? id = some ut) (ut' : UntypedObject) :
+    st.rewriteAdmissible id (.untyped ut') :=
+  ⟨.untyped ut, (getUntyped?_eq_some_iff st id ut).mp h, rfl, rfl⟩
+
+-- What the rewrite writes, and what it leaves alone (definitional).
+
+theorem rewriteObject_objects (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).objects = st.objects.insert id new := rfl
+
+/-- The rewrite is the object table and nothing else — every other field of the
+state is the pre-state's, stated once for all of them.  A consumer that needs a
+field this file gives no named frame for rewrites with this and reads the field
+off the record. -/
+theorem rewriteObject_eq_objects_update (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) :
+    st.rewriteObject id new h = { st with objects := (st.rewriteObject id new h).objects } := rfl
+
+theorem rewriteObject_scheduler (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).scheduler = st.scheduler := rfl
+
+theorem rewriteObject_machine (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).machine = st.machine := rfl
+
+theorem rewriteObject_lifecycle (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).lifecycle = st.lifecycle := rfl
+
+theorem rewriteObject_objectIndex (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).objectIndex = st.objectIndex := rfl
+
+theorem rewriteObject_objectIndexSet (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).objectIndexSet = st.objectIndexSet := rfl
+
+theorem rewriteObject_asidTable (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).asidTable = st.asidTable := rfl
+
+theorem rewriteObject_serviceRegistry (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).serviceRegistry = st.serviceRegistry := rfl
+
+theorem rewriteObject_scThreadIndex (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) :
+    (st.rewriteObject id new h).scThreadIndex = st.scThreadIndex := rfl
+
+-- The table after the rewrite.
+
+theorem rewriteObject_preserves_objects_invExt (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) :
+    (st.rewriteObject id new h).objects.invExt :=
+  RHTable_insert_preserves_invExt st.objects id new hInv
+
+theorem rewriteObject_objects_self (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) :
+    (st.rewriteObject id new h).objects[id]? = some new := by
+  unfold rewriteObject
+  simp only [RHTable_getElem?_eq_get?]
+  exact RHTable.getElem?_insert_self st.objects id new hInv
+
+theorem rewriteObject_objects_ne (st : SystemState) (id k : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) (hNe : id ≠ k) (hInv : st.objects.invExt) :
+    (st.rewriteObject id new h).objects[k]? = st.objects[k]? := by
+  unfold rewriteObject
+  simp only [RHTable_getElem?_eq_get?]
+  exact RHTable.getElem?_insert_ne st.objects id k new (fun hb => hNe (eq_of_beq hb)) hInv
+
+-- The bookkeeping, unconditionally.
+
+theorem rewriteObject_preserves_objectIndexBounded (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hB : objectIndexBounded st) :
+    objectIndexBounded (st.rewriteObject id new h) :=
+  hB
+
+theorem rewriteObject_preserves_objectIndexSetSync (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hS : objectIndexSetSync st) :
+    objectIndexSetSync (st.rewriteObject id new h) :=
+  hS
+
+theorem rewriteObject_preserves_objectIndexSetComplete (st : SystemState)
+    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) (hC : objectIndexSetComplete st) :
+    objectIndexSetComplete (st.rewriteObject id new h) := by
+  intro oid hNe
+  show st.objectIndexSet.contains oid = true
+  by_cases hEq : id = oid
+  · subst hEq
+    obtain ⟨old, hOld, -, -⟩ := h
+    exact hC id (by rw [hOld]; simp)
+  · exact hC oid (by rwa [rewriteObject_objects_ne st id oid new h hEq hInv] at hNe)
+
+theorem rewriteObject_preserves_objectIndexLive (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) (hL : objectIndexLive st) :
+    objectIndexLive (st.rewriteObject id new h) := by
+  intro k hMem
+  have hMem' : k ∈ st.objectIndex := hMem
+  by_cases hEq : id = k
+  · subst hEq
+    rw [rewriteObject_objects_self st id new h hInv]
+    simp
+  · rw [rewriteObject_objects_ne st id k new h hEq hInv]
+    exact hL k hMem'
+
+theorem rewriteObject_preserves_objectTypeMetadataConsistent (st : SystemState)
+    (id : SeLe4n.ObjId) (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (hInv : st.objects.invExt) (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.rewriteObject id new h) := by
+  intro oid
+  have hC' := hC oid
+  simp only [lookupObjectTypeMeta] at hC' ⊢
+  show st.lifecycle.objectTypes[oid]? = ((st.rewriteObject id new h).objects[oid]?).map _
+  by_cases hEq : id = oid
+  · subst hEq
+    obtain ⟨old, hOld, hKind, -⟩ := h
+    rw [rewriteObject_objects_self st id new ⟨old, hOld, hKind, by assumption⟩ hInv, hC', hOld]
+    simp only [Option.map_some, hKind]
+  · rw [rewriteObject_objects_ne st id oid new h hEq hInv]
+    exact hC'
+
+
+-- ----------------------------------------------------------------------------
+-- The witnessed lookups: the typed read with its own equation
+-- ----------------------------------------------------------------------------
+
+/-- `getTcb?` with its own equation: `some ⟨t, h⟩` where `h : st.getTcb? tid = some t`,
+`none` where `getTcb?` is `none` (`getTcbWitnessed?_val`).  Matched on the store
+rather than on `getTcb?`, because the expected type names `getTcb? tid` and a
+`match h : st.getTcb? tid with` would generalise it in the arms; and erased to
+the value at code generation, so it costs exactly what `getTcb?` costs.
+
+This is the lookup a site that rewrites what it read should perform: it matches
+on **this**, hands `h` to `rewriteObject`, and stays a *plain* `match` — which
+`simp only [site, getTcbWitnessed?_eq_some hT]` reduces.  A `match h : st.getTcb?
+tid with` written at the site instead is a dependent matcher, and `simp` cannot
+rewrite a discriminant that also occurs in the motive, so every consumer proof
+would need a per-site equation lemma.  Among the sites that rewrite what they
+read, the dependent match is confined to this one definition per kind, with one
+equation lemma each; a theorem may still case on a lookup that way. -/
+@[inline] def getTcbWitnessed? (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option { t : TCB // st.getTcb? tid = some t } :=
+  match hx : st.objects[tid.toObjId]? with
+  | some (.tcb t) => some ⟨t, (getTcb?_eq_some_iff st tid t).mpr hx⟩
+  | _ => none
+
+theorem getTcbWitnessed?_eq_some {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (h : st.getTcb? tid = some t) :
+    st.getTcbWitnessed? tid = some ⟨t, h⟩ := by
+  have hx := (getTcb?_eq_some_iff st tid t).mp h
+  unfold getTcbWitnessed?
+  split
+  · next t' hx' =>
+      obtain rfl : t = t' := KernelObject.tcb.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne t)
+
+theorem getTcbWitnessed?_eq_none {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : st.getTcb? tid = none) :
+    st.getTcbWitnessed? tid = none := by
+  unfold getTcbWitnessed?
+  split
+  · next t hx => exact absurd ((getTcb?_eq_some_iff st tid t).mpr hx) (by rw [h]; simp)
+  · rfl
+
+/-- The witnessed lookup IS the typed lookup, value for value. -/
+theorem getTcbWitnessed?_val (st : SystemState) (tid : SeLe4n.ThreadId) :
+    (st.getTcbWitnessed? tid).map Subtype.val = st.getTcb? tid := by
+  unfold getTcbWitnessed?
+  split
+  · next t hx =>
+      simp only [Option.map_some]
+      exact ((getTcb?_eq_some_iff st tid t).mpr hx).symm
+  · next hne =>
+      simp only [Option.map_none]
+      cases hG : st.getTcb? tid with
+      | none => rfl
+      | some t => exact absurd ((getTcb?_eq_some_iff st tid t).mp hG) (hne t)
+
+/-- `getSchedContext?` with its own equation — `getTcbWitnessed?`'s twin, for the
+same reason. -/
+@[inline] def getSchedContextWitnessed? (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option { sc : SeLe4n.Kernel.SchedContext // st.getSchedContext? scId = some sc } :=
+  match hx : st.objects[scId.toObjId]? with
+  | some (.schedContext sc) => some ⟨sc, (getSchedContext?_eq_some_iff st scId sc).mpr hx⟩
+  | _ => none
+
+theorem getSchedContextWitnessed?_eq_some {st : SystemState} {scId : SeLe4n.SchedContextId}
+    {sc : SeLe4n.Kernel.SchedContext} (h : st.getSchedContext? scId = some sc) :
+    st.getSchedContextWitnessed? scId = some ⟨sc, h⟩ := by
+  have hx := (getSchedContext?_eq_some_iff st scId sc).mp h
+  unfold getSchedContextWitnessed?
+  split
+  · next sc' hx' =>
+      obtain rfl : sc = sc' :=
+        KernelObject.schedContext.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne sc)
+
+theorem getSchedContextWitnessed?_eq_none {st : SystemState} {scId : SeLe4n.SchedContextId}
+    (h : st.getSchedContext? scId = none) :
+    st.getSchedContextWitnessed? scId = none := by
+  unfold getSchedContextWitnessed?
+  split
+  · next sc hx =>
+      exact absurd ((getSchedContext?_eq_some_iff st scId sc).mpr hx) (by rw [h]; simp)
+  · rfl
+
+theorem getSchedContextWitnessed?_val (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    (st.getSchedContextWitnessed? scId).map Subtype.val = st.getSchedContext? scId := by
+  unfold getSchedContextWitnessed?
+  split
+  · next sc hx =>
+      simp only [Option.map_some]
+      exact ((getSchedContext?_eq_some_iff st scId sc).mpr hx).symm
+  · next hne =>
+      simp only [Option.map_none]
+      cases hG : st.getSchedContext? scId with
+      | none => rfl
+      | some sc => exact absurd ((getSchedContext?_eq_some_iff st scId sc).mp hG) (hne sc)
+
+-- ----------------------------------------------------------------------------
+-- The typed read-modify-write over a rewrite: the lookup is the witness
+-- ----------------------------------------------------------------------------
+
+/-- Rewrite the TCB at `tid` in place through `f`; the identity when `tid`
+resolves to no TCB.  The witnessed lookup is performed once and is the
+rewrite's own witness — the shape every scheduler and IPC site spelled as a
+`match` on `getTcb?` around a raw insert, and computationally the same code.
+A site whose looked-up value is used for more than the write matches on
+`getTcbWitnessed?` itself and calls `rewriteObject` directly. -/
+@[inline] def updateTcb (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    SystemState :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨t, h⟩ => st.rewriteObject tid.toObjId (.tcb (f t)) (rewriteAdmissible_tcb h (f t))
+  | none => st
+
+theorem updateTcb_eq_of_some {st : SystemState} {tid : SeLe4n.ThreadId} {t : TCB}
+    (h : st.getTcb? tid = some t) (f : TCB → TCB) :
+    st.updateTcb tid f = { st with objects := st.objects.insert tid.toObjId (.tcb (f t)) } := by
+  unfold updateTcb
+  rw [getTcbWitnessed?_eq_some h]
+  rfl
+
+theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
+    (h : st.getTcb? tid = none) (f : TCB → TCB) :
+    st.updateTcb tid f = st := by
+  unfold updateTcb
+  rw [getTcbWitnessed?_eq_none h]
+
+/-- `updateTcb` writes the object table and nothing else (see
+`rewriteObject_eq_objects_update`). -/
+theorem updateTcb_eq_objects_update (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    st.updateTcb tid f = { st with objects := (st.updateTcb tid f).objects } := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).scheduler = st.scheduler := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_machine (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).machine = st.machine := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_lifecycle (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).lifecycle = st.lifecycle := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_objectIndex (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).objectIndex = st.objectIndex := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_objectIndexSet (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).objectIndexSet = st.objectIndexSet := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_asidTable (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).asidTable = st.asidTable := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_serviceRegistry (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).serviceRegistry = st.serviceRegistry := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_scThreadIndex (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).scThreadIndex = st.scThreadIndex := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) :
+    (st.updateTcb tid f).objects.invExt := by
+  unfold updateTcb; split
+  · exact rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+  · exact hInv
+
+/-- The rewritten TCB reads back through `f`, and an absent one stays absent. -/
+theorem updateTcb_getTcb?_self (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) :
+    (st.updateTcb tid f).getTcb? tid = (st.getTcb? tid).map f := by
+  cases hT : st.getTcb? tid with
+  | none => rw [updateTcb_eq_self_of_none hT, hT]; rfl
+  | some t =>
+      rw [updateTcb_eq_of_some hT]
+      simp only [getTcb?, RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
+      rfl
+
+theorem updateTcb_objects_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (k : SeLe4n.ObjId) (hNe : tid.toObjId ≠ k) (hInv : st.objects.invExt) :
+    (st.updateTcb tid f).objects[k]? = st.objects[k]? := by
+  unfold updateTcb; split
+  · exact rewriteObject_objects_ne _ _ _ _ _ hNe hInv
+  · rfl
+
+theorem updateTcb_preserves_objectIndexSetComplete (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) (hC : objectIndexSetComplete st) :
+    objectIndexSetComplete (st.updateTcb tid f) := by
+  unfold updateTcb; split
+  · exact rewriteObject_preserves_objectIndexSetComplete _ _ _ _ hInv hC
+  · exact hC
+
+theorem updateTcb_preserves_objectIndexLive (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) (hL : objectIndexLive st) :
+    objectIndexLive (st.updateTcb tid f) := by
+  unfold updateTcb; split
+  · exact rewriteObject_preserves_objectIndexLive _ _ _ _ hInv hL
+  · exact hL
+
+theorem updateTcb_preserves_objectTypeMetadataConsistent (st : SystemState)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) (hInv : st.objects.invExt)
+    (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.updateTcb tid f) := by
+  unfold updateTcb; split
+  · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
+  · exact hC
+
+/-- Rewrite the SchedContext at `scId` in place through `f`; the identity when
+`scId` resolves to no SchedContext.  `updateTcb`'s twin, for the same reason. -/
+@[inline] def updateSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) : SystemState :=
+  match st.getSchedContextWitnessed? scId with
+  | some ⟨sc, h⟩ =>
+      st.rewriteObject scId.toObjId (.schedContext (f sc)) (rewriteAdmissible_schedContext h (f sc))
+  | none => st
+
+theorem updateSchedContext_eq_of_some {st : SystemState} {scId : SeLe4n.SchedContextId}
+    {sc : SeLe4n.Kernel.SchedContext} (h : st.getSchedContext? scId = some sc)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    st.updateSchedContext scId f =
+      { st with objects := st.objects.insert scId.toObjId (.schedContext (f sc)) } := by
+  unfold updateSchedContext
+  rw [getSchedContextWitnessed?_eq_some h]
+  rfl
+
+theorem updateSchedContext_eq_self_of_none {st : SystemState} {scId : SeLe4n.SchedContextId}
+    (h : st.getSchedContext? scId = none)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    st.updateSchedContext scId f = st := by
+  unfold updateSchedContext
+  rw [getSchedContextWitnessed?_eq_none h]
+
+/-- `updateSchedContext` writes the object table and nothing else (see
+`rewriteObject_eq_objects_update`). -/
+theorem updateSchedContext_eq_objects_update (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    st.updateSchedContext scId f =
+      { st with objects := (st.updateSchedContext scId f).objects } := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_scheduler (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).scheduler = st.scheduler := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_machine (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).machine = st.machine := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_lifecycle (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).lifecycle = st.lifecycle := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_scThreadIndex (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).scThreadIndex = st.scThreadIndex := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_objectIndex (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).objectIndex = st.objectIndex := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_objectIndexSet (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).objectIndexSet = st.objectIndexSet := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_asidTable (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).asidTable = st.asidTable := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_serviceRegistry (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    (st.updateSchedContext scId f).serviceRegistry = st.serviceRegistry := by
+  unfold updateSchedContext; split <;> rfl
+
+theorem updateSchedContext_preserves_objects_invExt (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    (st.updateSchedContext scId f).objects.invExt := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_preserves_objects_invExt _ _ _ _ hInv
+  · exact hInv
+
+theorem updateSchedContext_objects_ne (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (k : SeLe4n.ObjId)
+    (hNe : scId.toObjId ≠ k) (hInv : st.objects.invExt) :
+    (st.updateSchedContext scId f).objects[k]? = st.objects[k]? := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_objects_ne _ _ _ _ _ hNe hInv
+  · rfl
+
+theorem updateSchedContext_preserves_objectIndexSetComplete (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (hC : objectIndexSetComplete st) :
+    objectIndexSetComplete (st.updateSchedContext scId f) := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_preserves_objectIndexSetComplete _ _ _ _ hInv hC
+  · exact hC
+
+theorem updateSchedContext_preserves_objectTypeMetadataConsistent (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.updateSchedContext scId f) := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_preserves_objectTypeMetadataConsistent _ _ _ _ hInv hC
+  · exact hC
+
+
+-- ============================================================================
+-- The endpoint and notification twins of the witnessed lookup (`v0.35.74`) —
+-- what the two queue sweeps read before they rewrite
+-- ============================================================================
+
+/-- `getEndpoint?` with its own equation — `getTcbWitnessed?`'s twin for the
+endpoint kind, keyed by the object id the endpoint sits under (there is no typed
+endpoint id in this model).  Matched on the store and erased to the value, for
+exactly the reasons `getTcbWitnessed?` records. -/
+@[inline] def getEndpointWitnessed? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option { ep : Endpoint // st.getEndpoint? id = some ep } :=
+  match hx : st.objects[id]? with
+  | some (.endpoint ep) => some ⟨ep, (getEndpoint?_eq_some_iff st id ep).mpr hx⟩
+  | _ => none
+
+theorem getEndpointWitnessed?_eq_some {st : SystemState} {id : SeLe4n.ObjId} {ep : Endpoint}
+    (h : st.getEndpoint? id = some ep) :
+    st.getEndpointWitnessed? id = some ⟨ep, h⟩ := by
+  have hx := (getEndpoint?_eq_some_iff st id ep).mp h
+  unfold getEndpointWitnessed?
+  split
+  · next ep' hx' =>
+      obtain rfl : ep = ep' := KernelObject.endpoint.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne ep)
+
+theorem getEndpointWitnessed?_eq_none {st : SystemState} {id : SeLe4n.ObjId}
+    (h : st.getEndpoint? id = none) :
+    st.getEndpointWitnessed? id = none := by
+  unfold getEndpointWitnessed?
+  split
+  · next ep hx => exact absurd ((getEndpoint?_eq_some_iff st id ep).mpr hx) (by rw [h]; simp)
+  · rfl
+
+/-- `getNotification?` with its own equation — the notification twin. -/
+@[inline] def getNotificationWitnessed? (st : SystemState) (id : SeLe4n.ObjId) :
+    Option { n : Notification // st.getNotification? id = some n } :=
+  match hx : st.objects[id]? with
+  | some (.notification n) => some ⟨n, (getNotification?_eq_some_iff st id n).mpr hx⟩
+  | _ => none
+
+theorem getNotificationWitnessed?_eq_some {st : SystemState} {id : SeLe4n.ObjId}
+    {n : Notification} (h : st.getNotification? id = some n) :
+    st.getNotificationWitnessed? id = some ⟨n, h⟩ := by
+  have hx := (getNotification?_eq_some_iff st id n).mp h
+  unfold getNotificationWitnessed?
+  split
+  · next n' hx' =>
+      obtain rfl : n = n' :=
+        KernelObject.notification.inj (Option.some.inj (hx.symm.trans hx'))
+      rfl
+  · next hne => exact absurd hx (hne n)
+
+theorem getNotificationWitnessed?_eq_none {st : SystemState} {id : SeLe4n.ObjId}
+    (h : st.getNotification? id = none) :
+    st.getNotificationWitnessed? id = none := by
+  unfold getNotificationWitnessed?
+  split
+  · next n hx =>
+      exact absurd ((getNotification?_eq_some_iff st id n).mpr hx) (by rw [h]; simp)
+  · rfl
+
+-- ----------------------------------------------------------------------------
+-- What a rewrite of one kind does to the typed lookups (`v0.35.71`)
+-- ----------------------------------------------------------------------------
+
+/-- One key holds one object: the two typed witnesses a multi-object transition
+carries put their keys apart, with no invariant consulted — `objects[k]?` is a
+function.  The kind-disjointness of the store on a reachable state, read off the
+witnesses a site already holds rather than assumed of the state. -/
+theorem getTcb?_getSchedContext?_keys_distinct {st : SystemState} {tid : SeLe4n.ThreadId}
+    {t : TCB} {scId : SeLe4n.SchedContextId} {sc : SeLe4n.Kernel.SchedContext}
+    (hT : st.getTcb? tid = some t) (hS : st.getSchedContext? scId = some sc) :
+    tid.toObjId ≠ scId.toObjId := by
+  intro hEq
+  have hT' := (getTcb?_eq_some_iff st tid t).mp hT
+  have hS' := (getSchedContext?_eq_some_iff st scId sc).mp hS
+  rw [hEq, hS'] at hT'
+  exact absurd (Option.some.inj hT') (fun hx => KernelObject.noConfusion hx)
+
+/-- Rewriting a SchedContext in place is invisible to every TCB lookup: at another
+key by the frame, and at the key itself because the admissibility witness says
+the key held a SchedContext before the rewrite, so no TCB lookup read it. -/
+theorem rewriteObject_schedContext_getTcb? (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SeLe4n.Kernel.SchedContext) (h : st.rewriteAdmissible id (.schedContext sc'))
+    (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId) :
+    (st.rewriteObject id (.schedContext sc') h).getTcb? tid = st.getTcb? tid := by
+  by_cases hEq : id = tid.toObjId
+  · subst hEq
+    obtain ⟨old, hOld, hKind, -⟩ := h
+    unfold getTcb?
+    rw [rewriteObject_objects_self st _ _ _ hInv, hOld]
+    cases old <;> simp [KernelObject.objectType] at hKind <;> rfl
+  · unfold getTcb?
+    rw [rewriteObject_objects_ne st _ _ _ _ hEq hInv]
+
+/-- The twin: a TCB rewritten in place is invisible to every SchedContext lookup. -/
+theorem rewriteObject_tcb_getSchedContext? (st : SystemState) (id : SeLe4n.ObjId)
+    (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (st.rewriteObject id (.tcb t') h).getSchedContext? scId = st.getSchedContext? scId := by
+  by_cases hEq : id = scId.toObjId
+  · subst hEq
+    obtain ⟨old, hOld, hKind, -⟩ := h
+    unfold getSchedContext?
+    rw [rewriteObject_objects_self st _ _ _ hInv, hOld]
+    cases old <;> simp [KernelObject.objectType] at hKind <;> rfl
+  · unfold getSchedContext?
+    rw [rewriteObject_objects_ne st _ _ _ _ hEq hInv]
+
+/-- A rewrite at another key leaves a TCB lookup alone, whatever it wrote. -/
+theorem rewriteObject_getTcb?_ne (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) (tid : SeLe4n.ThreadId)
+    (hNe : id ≠ tid.toObjId) :
+    (st.rewriteObject id new h).getTcb? tid = st.getTcb? tid := by
+  unfold getTcb?
+  rw [rewriteObject_objects_ne st _ _ _ h hNe hInv]
+
+theorem rewriteObject_getSchedContext?_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (scId : SeLe4n.SchedContextId) (hNe : id ≠ scId.toObjId) :
+    (st.rewriteObject id new h).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold getSchedContext?
+  rw [rewriteObject_objects_ne st _ _ _ h hNe hInv]
+
+/-- The rewritten TCB reads back. -/
+theorem rewriteObject_tcb_getTcb?_self (st : SystemState) (tid : SeLe4n.ThreadId) (t' : TCB)
+    (h : st.rewriteAdmissible tid.toObjId (.tcb t')) (hInv : st.objects.invExt) :
+    (st.rewriteObject tid.toObjId (.tcb t') h).getTcb? tid = some t' := by
+  unfold getTcb?
+  rw [rewriteObject_objects_self st _ _ h hInv]
+
+theorem rewriteObject_schedContext_getSchedContext?_self (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc' : SeLe4n.Kernel.SchedContext)
+    (h : st.rewriteAdmissible scId.toObjId (.schedContext sc')) (hInv : st.objects.invExt) :
+    (st.rewriteObject scId.toObjId (.schedContext sc') h).getSchedContext? scId = some sc' := by
+  unfold getSchedContext?
+  rw [rewriteObject_objects_self st _ _ h hInv]
+
+-- The same four facts of the typed read-modify-writes.
+
+theorem updateTcb_getSchedContext? (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (st.updateTcb tid f).getSchedContext? scId = st.getSchedContext? scId := by
+  unfold updateTcb; split
+  · exact rewriteObject_tcb_getSchedContext? st _ _ _ hInv scId
+  · rfl
+
+theorem updateTcb_getTcb?_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (tid' : SeLe4n.ThreadId) (hNe : tid.toObjId ≠ tid'.toObjId) :
+    (st.updateTcb tid f).getTcb? tid' = st.getTcb? tid' := by
+  unfold updateTcb; split
+  · exact rewriteObject_getTcb?_ne st _ _ _ hInv tid' hNe
+  · rfl
+
+/-- **WS-RR RR8.12 (Cut 4)**: the typed read-modify-write rewrites a TCB **in
+place**, so a thread that resolved before resolves after — at the written key and
+at every other.  The suspend pipeline's placement payoff needs exactly this of
+its `clearPendingState` and `threadState := .Inactive` stages: a scheduling point
+can strand a thread whose TCB does not resolve, so the chain has to carry the
+resolvability forward rather than assume it. -/
+theorem updateTcb_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId)
+    (h : (st.getTcb? x).isSome) : ((st.updateTcb tid f).getTcb? x).isSome := by
+  by_cases hEq : tid.toObjId = x.toObjId
+  · obtain rfl : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hEq
+    rw [updateTcb_getTcb?_self st tid f hInv]
+    simpa using h
+  · rw [updateTcb_getTcb?_ne st tid f hInv x hEq]; exact h
+
+theorem updateSchedContext_getTcb? (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (tid : SeLe4n.ThreadId) :
+    (st.updateSchedContext scId f).getTcb? tid = st.getTcb? tid := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_schedContext_getTcb? st _ _ _ hInv tid
+  · rfl
+
+theorem updateSchedContext_getSchedContext?_ne (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)
+    (scId' : SeLe4n.SchedContextId) (hNe : scId.toObjId ≠ scId'.toObjId) :
+    (st.updateSchedContext scId f).getSchedContext? scId' = st.getSchedContext? scId' := by
+  unfold updateSchedContext; split
+  · exact rewriteObject_getSchedContext?_ne st _ _ _ hInv scId' hNe
+  · rfl
+
+/-- The rewritten SchedContext reads back through `f`, and an absent one stays
+absent — `updateTcb_getTcb?_self`'s twin. -/
+theorem updateSchedContext_getSchedContext?_self (st : SystemState)
+    (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt) :
+    (st.updateSchedContext scId f).getSchedContext? scId = (st.getSchedContext? scId).map f := by
+  cases hS : st.getSchedContext? scId with
+  | none => rw [updateSchedContext_eq_self_of_none hS, hS]; rfl
+  | some sc =>
+      rw [updateSchedContext_eq_of_some hS]
+      simp only [getSchedContext?, RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_self st.objects scId.toObjId _ hInv]
+      rfl
+
+-- ----------------------------------------------------------------------------
+-- Two writes at two keys, reduced to the double insert
+-- ----------------------------------------------------------------------------
+--
+-- A transition that rewrites two objects performs the first under the witness
+-- its own lookup carries and the second through the typed read-modify-write
+-- over the rewritten state: a witness resolved at the pre-state does not carry
+-- across a rewrite without `invExt`, which executable code has no proof of.
+-- The proofs do, so each reduction below takes the pre-state's witness and
+-- `invExt` and hands back the literal double insert the invariant surface is
+-- stated over.
+
+/-- The typed TCB rewrite over a state whose SchedContext at `id` was just
+rewritten in place — a bind, an unbind, a donation hand-off. -/
+theorem updateTcb_after_rewriteObject_schedContext (st : SystemState) (id : SeLe4n.ObjId)
+    (sc' : SeLe4n.Kernel.SchedContext) (h : st.rewriteAdmissible id (.schedContext sc'))
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) :
+    (st.rewriteObject id (.schedContext sc') h).updateTcb tid f
+      = { st with objects :=
+            (st.objects.insert id (.schedContext sc')).insert tid.toObjId (.tcb (f t)) } := by
+  have hT' : (st.rewriteObject id (.schedContext sc') h).getTcb? tid = some t := by
+    rw [rewriteObject_schedContext_getTcb? st id sc' h hInv tid]; exact hT
+  rw [updateTcb_eq_of_some hT']
+  rfl
+
+theorem updateTcb_after_rewriteObject_schedContext_objects (st : SystemState)
+    (id : SeLe4n.ObjId) (sc' : SeLe4n.Kernel.SchedContext)
+    (h : st.rewriteAdmissible id (.schedContext sc'))
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hT : st.getTcb? tid = some t) :
+    ((st.rewriteObject id (.schedContext sc') h).updateTcb tid f).objects
+      = (st.objects.insert id (.schedContext sc')).insert tid.toObjId (.tcb (f t)) := by
+  rw [updateTcb_after_rewriteObject_schedContext st id sc' h tid t f hInv hT]
+
+/-- The typed SchedContext rewrite over a state whose TCB at `id` was just
+rewritten in place. -/
+theorem updateSchedContext_after_rewriteObject_tcb (st : SystemState) (id : SeLe4n.ObjId)
+    (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hS : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject id (.tcb t') h).updateSchedContext scId f
+      = { st with objects :=
+            (st.objects.insert id (.tcb t')).insert scId.toObjId (.schedContext (f sc)) } := by
+  have hS' : (st.rewriteObject id (.tcb t') h).getSchedContext? scId = some sc := by
+    rw [rewriteObject_tcb_getSchedContext? st id t' h hInv scId]; exact hS
+  rw [updateSchedContext_eq_of_some hS']
+  rfl
+
+theorem updateSchedContext_after_rewriteObject_tcb_objects (st : SystemState)
+    (id : SeLe4n.ObjId) (t' : TCB) (h : st.rewriteAdmissible id (.tcb t'))
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hS : st.getSchedContext? scId = some sc) :
+    ((st.rewriteObject id (.tcb t') h).updateSchedContext scId f).objects
+      = (st.objects.insert id (.tcb t')).insert scId.toObjId (.schedContext (f sc)) := by
+  rw [updateSchedContext_after_rewriteObject_tcb st id t' h scId sc f hInv hS]
+
+/-- The typed SchedContext rewrite over a state rewritten at a *different* key,
+whatever that key holds — a budget transfer between two reservations. -/
+theorem updateSchedContext_after_rewriteObject_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) (hNe : id ≠ scId.toObjId)
+    (hS : st.getSchedContext? scId = some sc) :
+    (st.rewriteObject id new h).updateSchedContext scId f
+      = { st with objects :=
+            (st.objects.insert id new).insert scId.toObjId (.schedContext (f sc)) } := by
+  have hS' : (st.rewriteObject id new h).getSchedContext? scId = some sc := by
+    rw [rewriteObject_getSchedContext?_ne st id new h hInv scId hNe]; exact hS
+  rw [updateSchedContext_eq_of_some hS']
+  rfl
+
+theorem updateTcb_after_rewriteObject_ne (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new)
+    (tid : SeLe4n.ThreadId) (t : TCB) (f : TCB → TCB)
+    (hInv : st.objects.invExt) (hNe : id ≠ tid.toObjId) (hT : st.getTcb? tid = some t) :
+    (st.rewriteObject id new h).updateTcb tid f
+      = { st with objects := (st.objects.insert id new).insert tid.toObjId (.tcb (f t)) } := by
+  have hT' : (st.rewriteObject id new h).getTcb? tid = some t := by
+    rw [rewriteObject_getTcb?_ne st id new h hInv tid hNe]; exact hT
+  rw [updateTcb_eq_of_some hT']
+  rfl
+
+-- ----------------------------------------------------------------------------
+-- The pure spelling of the store — for a key that may hold nothing
+-- ----------------------------------------------------------------------------
+
+/-- The state `storeObject id obj` leaves: the object written **with** its
+bookkeeping — the index, the kind table, the capability references and the ASID
+table — for a pure transition that must write a key it did not find, or an
+object of another kind, where `rewriteObject` has no witness to take.
+
+The `.error` arm is **eliminated, not defaulted** (`storeObject_isOk`), so the
+executable is the `.ok` projection and nothing else; the bridge is
+`storeObject_eq_withObjectStored`, through which every `storeObject_*` theorem
+is a theorem about this spelling. -/
+def withObjectStored (st : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject) :
+    SystemState :=
+  match h : storeObject id obj st with
+  | .ok ((), st') => st'
+  | .error _ =>
+      False.elim (by
+        obtain ⟨st', hOk⟩ := storeObject_isOk st id obj
+        rw [hOk] at h
+        cases h)
+
+/-- The bridge: the monadic store *is* `.ok` at the pure one. -/
+theorem storeObject_eq_withObjectStored (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    storeObject id obj st = .ok ((), st.withObjectStored id obj) := by
+  unfold withObjectStored
+  split
+  · next _ h => exact h
+  · next _ h =>
+      exfalso
+      obtain ⟨st', hOk⟩ := storeObject_isOk st id obj
+      rw [hOk] at h
+      cases h
+
+theorem withObjectStored_objects_self (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hInv : st.objects.invExt) :
+    (st.withObjectStored id obj).objects[id]? = some obj :=
+  storeObject_objects_eq st _ id obj hInv (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_objects_invExt (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hInv : st.objects.invExt) :
+    (st.withObjectStored id obj).objects.invExt :=
+  storeObject_preserves_objects_invExt st _ id obj hInv (storeObject_eq_withObjectStored st id obj)
+
+/-- The pure store's object table **is** the insert — the equation a
+state-building consumer reads the table back through (`v0.35.73`: the dispatch
+payoff's and the reachability pack's inhabitation witnesses, which used to be
+the raw insert *by definition* and are the store now, so their per-key
+characterisations go through this rather than through `show`). -/
+theorem withObjectStored_objects (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).objects = st.objects.insert id obj := by
+  have h := storeObject_eq_withObjectStored st id obj
+  generalize st.withObjectStored id obj = st' at h ⊢
+  unfold storeObject at h; cases h; rfl
+
+/-- The store writes no scheduler field — the retype lever's `hSched`, which a
+witness spelled as a raw insert discharged by `rfl`. -/
+theorem withObjectStored_scheduler (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).scheduler = st.scheduler :=
+  storeObject_scheduler_eq st _ id obj (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_objectIndexSet_invExt (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hSetInv : st.objectIndexSet.table.invExt) :
+    (st.withObjectStored id obj).objectIndexSet.table.invExt :=
+  storeObject_preserves_objectIndexSet_invExt st _ id obj hSetInv
+    (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_objectIndexSetComplete (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hInv : st.objects.invExt) (hSetInv : st.objectIndexSet.table.invExt)
+    (hC : objectIndexSetComplete st) :
+    objectIndexSetComplete (st.withObjectStored id obj) :=
+  storeObject_preserves_objectIndexSetComplete st _ id obj hInv hSetInv hC
+    (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_objectIndexLive (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hInv : st.objects.invExt) (hL : objectIndexLive st) :
+    objectIndexLive (st.withObjectStored id obj) :=
+  storeObject_preserves_objectIndexLive st _ id obj hL hInv
+    (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_objectTypeMetadataConsistent (st : SystemState)
+    (id : SeLe4n.ObjId) (obj : KernelObject) (hInv : st.objects.invExt)
+    (hObjTypesInv : st.lifecycle.objectTypes.invExt) (hC : objectTypeMetadataConsistent st) :
+    objectTypeMetadataConsistent (st.withObjectStored id obj) :=
+  storeObject_preserves_objectTypeMetadataConsistent st _ id obj hC hInv hObjTypesInv
+    (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_preserves_allTablesInvExtK (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) (hAll : st.allTablesInvExtK) :
+    (st.withObjectStored id obj).allTablesInvExtK :=
+  storeObject_preserves_allTablesInvExtK st _ id obj hAll (storeObject_eq_withObjectStored st id obj)
+
+theorem withObjectStored_objectIndex_length_le (st : SystemState) (id : SeLe4n.ObjId)
+    (obj : KernelObject) :
+    (st.withObjectStored id obj).objectIndex.length ≤ st.objectIndex.length + 1 :=
+  storeObject_objectIndex_length_le st _ id obj (storeObject_eq_withObjectStored st id obj)
+
+end SystemState
 
 end SeLe4n.Model

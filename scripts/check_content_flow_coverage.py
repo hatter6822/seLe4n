@@ -106,6 +106,34 @@ DECLARED_TAINT_WRITERS = {
     "SeLe4n.Kernel.applySyscallTaint",
 }
 
+# **`v0.35.60`: the FROZEN propagation surface, as mirrors.**
+#
+# `FrozenSystemState.declassificationTaint` is the **same `TaintTable`** as the
+# live field, so the frozen mirror's propagation primitives name the same API and
+# check (C) reports them.  They are not part of the live surface — nothing here
+# can move `SystemState.declassificationTaint`, which is what (C2) decides
+# type-resolved — so folding them into `DECLARED_TAINT_WRITERS` would dilute the
+# live one-writer fact into "one live writer and some others".
+#
+# They are declared as **mirrors** instead, each naming the live counterpart it
+# reproduces — the shape `ReplyStackWriteCensus`'s `.mirrors` constructor already
+# uses for exactly this question, and `frozenBranchLiveOperation` for its own.  A
+# counterpart named in a comment is a claim nothing reconciles, so the map is
+# reconciled in **both** directions: a key the probe no longer reports is stale,
+# and a value outside `DECLARED_TAINT_WRITERS` names a live surface that does not
+# exist.
+#
+# Surfaced by promoting `SeLe4n/Kernel/FrozenOps/` into the library root at
+# `v0.35.60`.  Before that it was in neither root and in no staged allowlist, so
+# it sat outside this gate's derived domain along with five of the six Tier 1
+# censuses — which is why `DECLARED_TAINT_CONSUMERS`'s own note below records a
+# "frozen/live taint-layer mismatch" that survived until a differential scenario
+# could start from a tagged state.  This is that gap given a declaration.
+DECLARED_FROZEN_TAINT_WRITERS = {
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintFlow": "SeLe4n.Kernel.TaintTable.joinAt",
+    "private@SeLe4n.Kernel.FrozenOps.frozenTaintClear": "SeLe4n.Kernel.TaintTable.clearAt",
+}
+
 # The two content channels, as (structure, field) pairs.  Named because they are
 # the *subject* the gate is about; the gate then checks that the domain it
 # quantifies over — every live arm — is exhaustive of what it polices.
@@ -696,16 +724,26 @@ run_cmd do
   -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
   -- is exactly that distinction, decided by the elaborator rather than by a
   -- name pattern.
-  let writers : List Name :=
+  --
+  -- **PR #897 review**: and *which* member of the API each one names.  The frozen
+  -- mirror map declares one live counterpart per mirror, and reconciling its keys
+  -- against this set and its values against the live surface is a presence check
+  -- on both sides -- swapping two mirrors' bodies keeps every key reported and
+  -- every value declared.  The caller-to-API edge is the relation, so the map is
+  -- checked against it rather than against two memberships.
+  let writers : List (Name × List Name) :=
     env.constants.fold (init := []) fun acc n ci =>
       if !cfInspectable n then acc
       else match ci with
         | .defnInfo di =>
-            if cfTaintApi.any (fun a => di.value.getUsedConstants.contains a) then n :: acc
-            else acc
+            let used := di.value.getUsedConstants
+            let apis := cfTaintApi.filter (fun a => used.contains a)
+            if apis.isEmpty then acc else (n, apis) :: acc
         | _ => acc
-  for w in writers do
+  for (w, apis) in writers do
     logInfo m!"CF_TAINT_WRITER {cfReportName w}"
+    for a in apis do
+      logInfo m!"CF_TAINT_EDGE {cfReportName w} {a}"
   -- (C3) WS-SM SM9.D.13a: **who can append to the audit trail.**
   --
   -- `applySyscallTaint` skips the origination diff for every arm
@@ -1018,6 +1056,11 @@ def parse(out: str):
     for arm, name in re.findall(r"CF_HIT (\S+) (\S+)", out):
         detail.setdefault(arm, []).append(name)
     writers = set(re.findall(r"CF_TAINT_WRITER (\S+)", out))
+    # PR #897 review: caller -> API edges, so a declared mirror's counterpart can be
+    # checked as a RELATION rather than as two independent memberships.
+    taint_edges: dict[str, set[str]] = {}
+    for caller, api in re.findall(r"CF_TAINT_EDGE (\S+) (\S+)", out):
+        taint_edges.setdefault(caller, set()).add(api)
     field_writers = set(re.findall(r"CF_FIELD_WRITER (\S+)", out))
     field_unresolved = bool(re.search(r"CF_FIELD_UNRESOLVED", out))
     noroot = set(re.findall(r"CF_NO_ROOT (\S+)", out))
@@ -1028,8 +1071,8 @@ def parse(out: str):
     audit_detail: dict[str, list[str]] = {}
     for arm, name in re.findall(r"CF_AUDIT_HIT (\S+) (\S+)", out):
         audit_detail.setdefault(arm, []).append(name)
-    return (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-            audit_hits, audit_detail, justified, state_ctors)
+    return (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
+            truncated, audit_hits, audit_detail, justified, state_ctors)
 
 
 def main() -> int:
@@ -1081,8 +1124,8 @@ def main() -> int:
         cls[SELF_TEST_ROOT_ARM] = "inert"
 
     out = run_probe(roots, args.depth, channels, plant_rogue=args.self_test)
-    (hits, detail, writers, field_writers, field_unresolved, noroot, truncated,
-     audit_hits, audit_detail, justified, state_ctors) = parse(out)
+    (hits, detail, writers, taint_edges, field_writers, field_unresolved, noroot,
+     truncated, audit_hits, audit_detail, justified, state_ctors) = parse(out)
 
     failures: list[str] = []
 
@@ -1383,11 +1426,46 @@ def main() -> int:
     unexpected = sorted(w for w in writers
                         if w not in DECLARED_TAINT_WRITERS
                         and not is_auxiliary(w)
-                        and w not in DECLARED_TAINT_CONSUMERS)
+                        and w not in DECLARED_TAINT_CONSUMERS
+                        and w not in DECLARED_FROZEN_TAINT_WRITERS)
     if unexpected:
         failures.append(
             "  constants outside the declared propagation surface name the taint-writing "
             "API:\n      " + "\n      ".join(unexpected[:12]))
+
+    # `v0.35.60`: the frozen mirrors are reconciled in BOTH directions.  A key the
+    # probe no longer reports is a stale exemption reading exactly like coverage;
+    # a value outside the live surface names a counterpart that does not exist.
+    stale_frozen = sorted(k for k in DECLARED_FROZEN_TAINT_WRITERS if k not in writers)
+    if stale_frozen:
+        failures.append(
+            "  declared frozen taint mirrors that no longer name the taint-writing API "
+            "(stale — delete them, or the exemption reads as coverage):\n      "
+            + "\n      ".join(stale_frozen))
+    unknown_counterpart = sorted(
+        f"{k} -> {v}" for k, v in DECLARED_FROZEN_TAINT_WRITERS.items()
+        if v not in DECLARED_TAINT_WRITERS)
+    if unknown_counterpart:
+        failures.append(
+            "  declared frozen taint mirrors naming a live counterpart outside "
+            "`DECLARED_TAINT_WRITERS`:\n      " + "\n      ".join(unknown_counterpart))
+    # ...and the RELATION, which neither of the two above asks (PR #897 review).  A
+    # key is reported for naming *some* member of the taint API and a value is
+    # accepted for being *some* member of the live surface, so exchanging two
+    # mirrors' bodies -- `frozenTaintFlow` clearing and `frozenTaintClear`
+    # joining -- keeps both memberships true and inverts what every frozen content
+    # move does to provenance.  *A presence check is not a relation check*: the
+    # declared counterpart must be among the edges the mirror itself carries.
+    misdirected = sorted(
+        f"{k} -> {v} (it names: "
+        + (", ".join(sorted(taint_edges.get(k, set()))) or "nothing") + ")"
+        for k, v in DECLARED_FROZEN_TAINT_WRITERS.items()
+        if k in writers and v not in taint_edges.get(k, set()))
+    if misdirected:
+        failures.append(
+            "  declared frozen taint mirrors whose recorded live counterpart is not an "
+            "API the mirror actually names (the edge is the relation; two memberships "
+            "are not):\n      " + "\n      ".join(misdirected))
 
     # (C2) one field writer.  Check (C) sees only constants that NAME the taint
     # API; a definition writing `SystemState.declassificationTaint` directly in

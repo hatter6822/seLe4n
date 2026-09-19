@@ -1411,7 +1411,7 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
                   exact removeRunnableOnCore_preserves_dualQueueSystemInvariant _ receiver executingCore
                     (storeObject_tcb_preserves_dualQueueSystemInvariant_of_queueAgree
                       st2 stStashed receiver.toObjId rTcb
-                      { rTcb with pendingReceiveReply := replyId } rfl rfl
+                      { rTcb with pendingReceiveReply := replyId } rfl rfl rfl
                       hTcbPre hObjInv2 hStash hInv2)
               · exact hInv
 
@@ -1703,7 +1703,7 @@ theorem endpointCallOnCore_preserves_ipcStateQueueMembershipConsistent
                     intro h
                     have hPrevEq := ThreadId.toObjId_injective prev caller h
                     rw [hPrevEq] at hP
-                    exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.2.2 caller prevTcb hP)
+                    exact absurd hQN (tcbQueueChainAcyclic_no_self_loop hDQSI1.chainAcyclic caller prevTcb hP)
                   rw [storeTcbIpcStateAndMessage_preserves_objects_ne
                     st1 st2 caller (.blockedOnCall endpointId) (some msg)
                     prev.toObjId hNePrev hObjInv1 hMsg]

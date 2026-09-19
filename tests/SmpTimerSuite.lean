@@ -200,7 +200,7 @@ example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) (st3
     (tsgis : List (CoreId × SgiKind))
     (hCur : (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid)
     (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb)
-    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, true, tsgis))
+    (hBud : timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, true, tsgis))
     (hSched : scheduleEffectiveOnCore st3 c = .ok st') :
     timerTickOnCore st c = .ok (st', (timerTickOnCorePrepared st c).2.1 ++ tsgis) :=
   timerTickOnCore_preempts_local st c tid tcb st3 st' hCur hTcb hBud hSched
@@ -253,8 +253,8 @@ example (st : SystemState) (c : CoreId) (st' : SystemState) (sgis : List (CoreId
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed)
     (hBudgetRqWf : ∀ tid tcb st3 b sgis3,
        (timerTickOnCorePrepared st c).1.scheduler.currentOnCore c = some tid →
-       (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb →
-       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb = .ok (st3, b, sgis3) →
+       ∀ (hTcb : (timerTickOnCorePrepared st c).1.getTcb? tid = some tcb),
+       timerTickBudgetOnCore (timerTickOnCorePrepared st c).1 c tid tcb hTcb = .ok (st3, b, sgis3) →
        (st3.scheduler.runQueueOnCore c).wellFormed)
     (hStep : timerTickOnCore st c = .ok (st', sgis)) :
     (st'.scheduler.runQueueOnCore c).wellFormed :=
@@ -299,10 +299,38 @@ private def stDomain : SystemState :=
   { st with scheduler :=
       ({ st.scheduler with domainSchedule := [dom0, dom1] }).setDomainTimeRemainingOnCore bootCoreId 1 }
 
-private def budgetPreempts (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
-  match timerTickBudgetOnCore st c tid tcb with
-  | .ok (_, b, _) => b
-  | .error _ => false
+/-- A state holding one unbound thread `300` whose time-slice is `ts`, **stored**, so
+the witnessed lookup the budget tick consumes can find it: since the raw-write
+migration (Cut B2) the tick charges a thread the store holds, never a TCB handed in
+beside the state. -/
+private def stUnbound (ts : Nat) : SystemState :=
+  (BootstrapBuilder.empty.withObject (ThreadId.ofNat 300).toObjId
+    (.tcb (mkUnboundTcb ts))).build
+
+/-- The budget tick's `wasPreempted` flag for `tid`, resolved from the store;
+`false` when the thread does not resolve (the lookup declines before any charge). -/
+private def budgetPreempts (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, hTcb⟩ =>
+    match timerTickBudgetOnCore st c tid tcb hTcb with
+    | .ok (_, b, _) => b
+    | .error _ => false
+  | none => false
+
+/-- The decidable predicate `timerTickBudgetOnCorePreempts`, resolved the same way. -/
+private def budgetPreemptsDecided (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, hTcb⟩ => decide (timerTickBudgetOnCorePreempts st c tid tcb hTcb)
+  | none => false
+
+/-- Does the budget tick leave `machine.timer` where it found it? -/
+private def budgetTickKeepsTimer (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) : Bool :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, hTcb⟩ =>
+    match timerTickBudgetOnCore st c tid tcb hTcb with
+    | .ok (s, _) => s.machine.timer == st.machine.timer
+    | .error _ => false
+  | none => false
 
 private def tickOk (st : SystemState) (c : CoreId) : Bool :=
   match timerTickOnCore st c with
@@ -403,20 +431,22 @@ private def runDomainRotateChecks : IO Unit := do
 private def runBudgetPreemptChecks : IO Unit := do
   IO.println "--- §3.5 SM5.D.5 budget-tick preemption ---"
   let tid := ThreadId.ofNat 300
+  -- The fixture's thread resolves: every `budgetPreempts` verdict below is a
+  -- verdict about a charge that ran, not a lookup that declined.
+  assertBool "the unbound fixture stores thread 300 (the charges below run)"
+    (((stUnbound 1).getTcbWitnessed? tid).isSome && ((stUnbound 5).getTcbWitnessed? tid).isSome)
   assertBool "unbound thread with expired time-slice (1) IS preempted"
-    (budgetPreempts stIdle bootCoreId tid (mkUnboundTcb 1))
+    (budgetPreempts (stUnbound 1) bootCoreId tid)
   assertBool "unbound thread with running time-slice (5) is NOT preempted"
-    (! budgetPreempts stIdle bootCoreId tid (mkUnboundTcb 5))
+    (! budgetPreempts (stUnbound 5) bootCoreId tid)
   -- the decidable predicate agrees.
   assertBool "timerTickBudgetOnCorePreempts decides the expired case true"
-    (decide (timerTickBudgetOnCorePreempts stIdle bootCoreId tid (mkUnboundTcb 1)))
+    (budgetPreemptsDecided (stUnbound 1) bootCoreId tid)
   assertBool "timerTickBudgetOnCorePreempts decides the running case false"
-    (! decide (timerTickBudgetOnCorePreempts stIdle bootCoreId tid (mkUnboundTcb 5)))
+    (! budgetPreemptsDecided (stUnbound 5) bootCoreId tid)
   -- the budget tick reads but does not advance the machine timer.
   assertBool "budget tick does not advance machine.timer"
-    (match timerTickBudgetOnCore stIdle bootCoreId tid (mkUnboundTcb 5) with
-     | .ok (s, _) => s.machine.timer == stIdle.machine.timer
-     | .error _ => false)
+    (budgetTickKeepsTimer (stUnbound 5) bootCoreId tid)
 
 /-- §3.6 SM5.D.2 / .9: the idle tick succeeds, preserves the global timer, and
 clears the timeout-error diagnostic. -/

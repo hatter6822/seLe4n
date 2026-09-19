@@ -29,9 +29,9 @@ private theorem updatePipBoost_frame {F : Type}
     (h_insert_sched : ∀ objs rq,
       extract { st with objects := objs, scheduler := { st.scheduler with runQueue := rq } } = extract st) :
     extract (updatePipBoost st tid) = extract st := by
-  simp only [updatePipBoost, SystemState.getTcb?]
+  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
   split
-  · rename_i tcb hObj
+  · rename_i tcb hObj _
     split
     · rfl
     · split
@@ -170,9 +170,9 @@ theorem updatePipBoost_preserves_domainScheduleIndex (st : SystemState) (tid : T
 theorem updatePipBoost_preserves_objects_invExt (st : SystemState) (tid : ThreadId)
     (hInv : st.objects.invExt) :
     (updatePipBoost st tid).objects.invExt := by
-  simp only [updatePipBoost, SystemState.getTcb?]
+  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
   split
-  · rename_i tcb _
+  · rename_i tcb _ _
     split
     · exact hInv
     · split
@@ -186,7 +186,7 @@ theorem updatePipBoost_preserves_objects_invExt (st : SystemState) (tid : Thread
 theorem updatePipBoost_objects_ne (st : SystemState) (tid : ThreadId) (oid : ObjId)
     (hNe : ¬(tid.toObjId == oid) = true) (hInv : st.objects.invExt) :
     (updatePipBoost st tid).objects[oid]? = st.objects[oid]? := by
-  simp only [updatePipBoost, SystemState.getTcb?]
+  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
   split
   · split
     · rfl
@@ -206,7 +206,7 @@ theorem updatePipBoost_toList_filter_neg (st : SystemState) (tid : ThreadId)
     (p : ThreadId → Bool) (hp : p tid = false) :
     ((updatePipBoost st tid).scheduler.runQueueOnCore bootCoreId).toList.filter p =
     (st.scheduler.runQueueOnCore bootCoreId).toList.filter p := by
-  simp only [updatePipBoost, SystemState.getTcb?]
+  simp only [updatePipBoost, updatePipBoostOnCore, SystemState.rewriteObject]
   split
   · split
     · rfl

@@ -450,8 +450,8 @@ theorem endpointQueueNoDup_of_endpointAgree_of_tcbQueueNext (st st' : SystemStat
   exact hSelf tid ty hSt
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the detach writes a
-Reply, which is neither an endpoint nor a TCB. -/
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it too — the splice writes
+only Reply objects, which are neither endpoints nor TCBs. -/
 theorem removeCallerReplyFrame_preserves_endpointQueueNoDup
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt) (hInv : endpointQueueNoDup st)
@@ -556,7 +556,7 @@ theorem endpointQueueEnqueue_preserves_endpointQueueNoDup
   intro oid ep' hEp'
   constructor
   · -- K-1: no self-loops from tcbQueueChainAcyclic
-    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.2.2 tid' tcb hTcb
+    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.chainAcyclic tid' tcb hTcb
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: opposite queue head is none
@@ -647,7 +647,7 @@ theorem endpointQueuePopHead_preserves_endpointQueueNoDup
   intro oid ep' hEp'
   constructor
   · -- K-1: no self-loops
-    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.2.2 tid' tcb hTcb
+    exact fun tid' tcb hTcb => tcbQueueChainAcyclic_no_self_loop hDQSI'.chainAcyclic tid' tcb hTcb
   · -- K-2: head disjointness
     by_cases hEq : oid = endpointId
     · -- Target endpoint: unfold PopHead with revert pattern to track stored endpoint

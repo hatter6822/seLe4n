@@ -760,7 +760,12 @@ theorem donationChainWitness_pop_wellFormed
   donationHeadPop_preserves_donationChainWellFormed
     (head? := some (donationChainWitnessInner, witnessChainInnerReply))
     donationChainWitness_objects_invExt donationChainWitness_wellFormed
-    witnessChainContextObject witnessChainValidatedHead hS1 hPop
+    -- **WS-RR RR8 (`v0.35.100`)**: the read-set hypothesis.  This witness is why
+    -- the lemma states the read set rather than the pop's own record: the record
+    -- it stores KEEPS its `donationOrigin`, which no value of the pop's arm
+    -- selector produces, so a lemma stated over that record refuses a witness
+    -- whose only job is to exercise the store surface it is stated over.
+    witnessChainContextObject witnessChainValidatedHead (by rfl) hS1 hPop
 
 /-- WS-OD OD3.8: ...and the stack the popped context heads is **exactly the tail**
 of the one it headed before — computed on the post-state's own object store, not
@@ -854,21 +859,34 @@ example (st : SystemState) (endpointId : SeLe4n.ObjId) (hInv : ipcInvariantFull 
 /-- WS-RR RR3.12 (payoff): the **live** cross-core `.reply` dispatch preserves the
 whole twenty-conjunct bundle on the *donating* path — the seL4-MCS path the previous
 statement was vacuous on. Nothing about the result is assumed: `hDonationReturned`
-says only that whatever the answered caller donated is what the recorded reply server
-returns, a fact about the pre-state and the operation's arguments. -/
+says only that whatever the answered caller donated is what this reply's answered
+*frame* heads, a fact about the pre-state and the operation's arguments.
+
+**WS-HP HP4.4**: the three pop-side conditions are stated at the state the pop
+runs on — the reply leg's committed store, a pre-state-computable expression —
+for the reason the payoff's own docstring gives: the reply leg has already
+unlinked the answered caller from its frame, so the frame is named on the genuine
+pre-state and everything decided *about* it is read where the pop reads it. -/
 example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     (st : SystemState)
     (hInv : ipcInvariantFull st) (hObjInv : st.objects.invExt)
-    (hDonationReturned : ∀ (expected : SeLe4n.ThreadId),
-      recordedReplyServer? st target = some expected →
-      ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
-        st.objects[s.toObjId]? = some (.tcb sTcb) →
+    (hDonationReturned : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+        (endpointReplyOnCore replier target msg ec st).1.objects[s.toObjId]?
+            = some (.tcb sTcb) →
         sTcb.schedContextBinding = .donated sc target →
-        replyDonationReturn? st expected = some (sc, target))
+        ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid ∧
+          replyFrameHeadHolder? (endpointReplyOnCore replier target msg ec st).1 rid
+            = some (sc, s))
+    (hHolderDonation : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
+      replyFrameHeadHolderDonation (endpointReplyOnCore replier target msg ec st).1 rid target)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    (hServerIdleAllowed : ∀ (expected : SeLe4n.ThreadId), recordedReplyServer? st target
-        = some expected →
-      ∀ tcb, st.getTcb? expected = some tcb → passiveServerIdleAllowed tcb.ipcState)
+    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+        (holder : SeLe4n.ThreadId),
+      answeredReplyObject? st target = some rid →
+      replyFrameHeadHolder? (endpointReplyOnCore replier target msg ec st).1 rid
+          = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore replier target msg ec st).1.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the donation return resolves its new owner off the
     -- context's reply stack, so the chain's shape at the state that return runs
     -- on — the post-reply-leg store — is an obligation of the composite.  Stated
@@ -879,7 +897,7 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
         scId serverTid originalOwner) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
-    hObjInv hDonationReturned hAllBudgetsNone hServerIdleAllowed hStackValid
+    hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hHolderIdleAllowed hStackValid
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the

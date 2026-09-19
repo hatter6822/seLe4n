@@ -7,8 +7,19 @@
   under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 -/
 
--- WS-RR RR7.41: PRODUCTION.  The multi-level CSpace resolution's footprint —
--- a read lock on every CNode the walk passes through, not just the root.
+-- WS-RR RR7.41: the multi-level CSpace resolution's footprint — a read lock on
+-- every CNode the walk passes through, not just the root.
+--
+-- STATUS: staged for the fine-lock migration's Track C (SMP_FINE_LOCK_MIGRATION_PLAN.md)
+--
+-- Staged, not production, and the header said PRODUCTION from `v0.34.90` to
+-- `v0.35.75` while no library root imported the module at all (found by the
+-- store-access census's domain reconciliation, `v0.35.76`).  It cannot be
+-- production as it stands: `cspaceWalk_conflicts_with_delete` is stated
+-- against SM3.E's `ktiSharesConflictingLock`, so the chain runs through
+-- `Locks/Serializability` → `Locks/Deadlock`, which the RR7.18 decision keeps
+-- out of the kernel image.  A proof links into no image; `Platform/Staged.lean`
+-- builds it on every PR, and the live seam consumes it nowhere (`v0.34.91`).
 
 import SeLe4n.Kernel.Capability.Operations
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions

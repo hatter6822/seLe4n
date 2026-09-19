@@ -42,7 +42,7 @@ Each component has a clear semantic meaning. Bundle composition is explicit and 
 
 ### 1.4 Executable evidence as a contract
 
-`Main.lean` is not a demo — it is a regression surface. The trace harness constructs a realistic kernel state, exercises scheduler/capability/IPC/lifecycle/VSpace/service operations, and produces deterministic output. Tier 2 checks compare this output against `tests/fixtures/main_trace_smoke.expected`.
+`Main.lean` is not a demo — it is a regression surface. The trace harness constructs a realistic kernel state, exercises scheduler/capability/IPC/lifecycle/VSpace/service operations, and produces deterministic output. Tier 2 checks compare this output against `tests/fixtures/main_trace_smoke.expected` as a sequence — line for line, in order, so a duplicated or reordered line fails the gate.
 
 Every claimed semantic property has both a theorem (machine-checked) and a runtime witness (fixture-checked). If a refactor changes behavior, the fixture breaks before the PR lands.
 
@@ -211,13 +211,14 @@ execution phase (future Q5) freezes the state into dense arrays.
 `IntermediateState` (defined in `Model/IntermediateState.lean`) is a
 dependently-typed wrapper around `SystemState` carrying four invariant witnesses:
 
-1. **`hAllTables`** — all 16 `RHTable` and 2 `RHSet` fields satisfy `invExt`
+1. **`hAllTables`** — all 14 `RHTable` and 2 `RHSet` fields (the 16 conjuncts of `allTablesInvExtK`) satisfy `invExt`
    (WF + distCorrect + noDupKeys + probeChainDominant).
 2. **`hPerObjectSlots`** — every CNode in the object store has `slotsUnique`
    (invExt + size < capacity + 4 ≤ capacity).
 3. **`hPerObjectMappings`** — every VSpaceRoot's `mappings` satisfies `invExt`.
-4. **`hLifecycleConsistent`** — lifecycle metadata (objectTypes, capabilityRefs)
-   is consistent with the object store.
+4. **`hLifecycleConsistent`** — lifecycle metadata (`objectTypes`; the
+   capability-reference table beside it was retired at v0.35.78) is consistent
+   with the object store (`objectTypeMetadataConsistent`).
 
 Because Lean erases proofs at runtime, `IntermediateState` has exactly the same
 runtime representation as `SystemState` — the witnesses exist only for the

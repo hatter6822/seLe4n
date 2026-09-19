@@ -312,7 +312,8 @@ example (st : SystemState) (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId)
 example (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st' : SystemState) (b : Bool) {sgis3 : List (CoreId × SgiKind)} (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis3)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis3)) :
     replenishQueueValidOnCore st' c' :=
   timerTickBudgetOnCore_preserves_replenishQueueValidOnCore st c tid tcb st' b c' hValid hStep
 
@@ -631,29 +632,42 @@ private def runLiveTickScenarios : IO Unit := do
   let scExhausted : SchedContext := { sc0 with budgetRemaining := ⟨1⟩ }
   let stExhausted : SystemState :=
     { stCbs with objects := stCbs.objects.insert scId0.toObjId (.schedContext scExhausted) }
-  match timerTickBudgetOnCore stExhausted core1 tid0 tcb0 with
-  | .ok (st', preempted, _tsgis) =>
-      assertBool "bound-exhausted budget tick preempts (returns true)"
-        (preempted == true)
-      -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the
-      -- abstract `replenishOnCore` primitive's (scheduling scId0 at now + period).
-      assertBool "A2: live bound-exhausted tick's core-1 replenish queue == replenishOnCore's"
-        ((st'.scheduler.replenishQueueOnCore core1).entries ==
-          ((replenishOnCore stExhausted core1 scId0
-            (stExhausted.machine.timer + scExhausted.period.val)).scheduler.replenishQueueOnCore core1).entries)
-      -- A2 (concretely): the new replenishment (scId0, 0 + 1000) was scheduled.
-      assertBool "A2: the tick scheduled (scId0, now + period = 1000) on core 1"
-        ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 1000))
-      -- A4: the post-tick core-1 replenish queue is still valid (size-consistent).
-      assertBool "A4: live bound-exhausted tick keeps core 1's replenish queue size-consistent"
-        (sizeConsistentB (st'.scheduler.replenishQueueOnCore core1))
-      -- A non-exhausted / unbound tick leaves the replenish queue untouched (A4 other branches).
-      assertBool "A4: an UNBOUND time-slice tick leaves core 1's replenish queue untouched"
-        (match timerTickBudgetOnCore stCbs core1 tid0
-            { tcb0 with schedContextBinding := .unbound, timeSlice := 3 } with
-         | .ok (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
-         | .error _ => false)
-  | .error _ => assertBool "bound-exhausted budget tick succeeds" false
+  -- Cut B2: the tick charges the thread the store holds, resolved through the
+  -- witnessed lookup that supplies the proof its in-place rewrite consumes.
+  match stExhausted.getTcbWitnessed? tid0 with
+  | none => assertBool "the CBS fixture stores tid0 (the exhausted charge runs)" false
+  | some ⟨tcbX, hX⟩ =>
+      match timerTickBudgetOnCore stExhausted core1 tid0 tcbX hX with
+      | .ok (st', preempted, _tsgis) =>
+          assertBool "bound-exhausted budget tick preempts (returns true)"
+            (preempted == true)
+          -- A2: the LIVE tick's replenish-queue write on core 1 is exactly the
+          -- abstract `replenishOnCore` primitive's (scheduling scId0 at now + period).
+          assertBool "A2: live bound-exhausted tick's core-1 replenish queue == replenishOnCore's"
+            ((st'.scheduler.replenishQueueOnCore core1).entries ==
+              ((replenishOnCore stExhausted core1 scId0
+                (stExhausted.machine.timer + scExhausted.period.val)).scheduler.replenishQueueOnCore core1).entries)
+          -- A2 (concretely): the new replenishment (scId0, 0 + 1000) was scheduled.
+          assertBool "A2: the tick scheduled (scId0, now + period = 1000) on core 1"
+            ((st'.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 1000))
+          -- A4: the post-tick core-1 replenish queue is still valid (size-consistent).
+          assertBool "A4: live bound-exhausted tick keeps core 1's replenish queue size-consistent"
+            (sizeConsistentB (st'.scheduler.replenishQueueOnCore core1))
+          -- A non-exhausted / unbound tick leaves the replenish queue untouched (A4 other
+          -- branches) — on a state that STORES the unbound thread, since the tick charges
+          -- what the store holds.
+          let stUnboundThread : SystemState :=
+            { stCbs with
+                objects := stCbs.objects.insert tid0.toObjId
+                  (.tcb { tcb0 with schedContextBinding := .unbound, timeSlice := 3 }) }
+          assertBool "A4: an UNBOUND time-slice tick leaves core 1's replenish queue untouched"
+            (match stUnboundThread.getTcbWitnessed? tid0 with
+             | some ⟨tcbU, hU⟩ =>
+               match timerTickBudgetOnCore stUnboundThread core1 tid0 tcbU hU with
+               | .ok (stU, _) => (stU.scheduler.replenishQueueOnCore core1).entries == [(scId0, 5000)]
+               | .error _ => false
+             | none => false)
+      | .error _ => assertBool "bound-exhausted budget tick succeeds" false
 
 /-- §3.8: the SM5.H theorem-inventory partition counts (compiled-`decide` guards). -/
 private def runInventoryChecks : IO Unit := do

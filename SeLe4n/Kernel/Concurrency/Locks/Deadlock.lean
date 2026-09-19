@@ -862,6 +862,31 @@ theorem size_le_18 (L : List (LockId × AccessMode))
     (Nat.add_le_add_right (size_le_17 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇) 1) ?_
   omega
 
+/-- **WS-HP HP3.1**: nineteen optionals -- `lockSet_replyRecv`'s full arity once
+the frame **below** the answered caller's reply object joins the frame above it.
+`4 + 19 = 23`, which is the footprint `maxLockSetSize` is measured against now. -/
+theorem size_le_19 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉ :
+      Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇) o₁₈) o₁₉).size
+      ≤ L.length + 19 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans
+    (Nat.add_le_add_right (size_le_18 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈) 1) ?_
+  omega
+
+/-- **WS-HP HP10.6**: twenty, the arity `.replyRecv` reaches once the origin a
+bottom-of-stack pop redirects the reservation to is declared. -/
+theorem size_le_20 (L : List (LockId × AccessMode))
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉ o₂₀ :
+      Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇) o₁₈) o₁₉) o₂₀).size
+      ≤ L.length + 20 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  refine Nat.le_trans
+    (Nat.add_le_add_right (size_le_19 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉) 1) ?_
+  omega
+
 /-- WS-OD OD3.7: six optional extensions over an **arbitrary** `LockSet`, not
 over a `lockSetOfList`.  The `size_le_k` family above all bottom out in a literal
 base list, which cannot express "the base is whatever this merge left" — the
@@ -960,6 +985,15 @@ theorem size_le_15_over (S : LockSet)
   refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
   exact Nat.add_le_add_right (size_le_14_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄) 1
 
+/-- **WS-HP HP3.1**: sixteen extensions over a set -- the arity the sharp
+`.replyRecv` bound reaches once the frame **below** the answered reply joins the
+frame above it. -/
+theorem size_le_16_over (S : LockSet)
+    (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ : Option (LockId × AccessMode)) :
+    (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt S o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆).size ≤ S.size + 16 := by
+  refine Nat.le_trans (lockSetExtendOpt_size_le _ _) ?_
+  exact Nat.add_le_add_right (size_le_15_over S o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅) 1
+
 /-- Local tactic shorthand: reduce a concrete `[…].length (+k)` to a numeral
 and discharge the `≤ maxLockSetSize` goal. -/
 local macro "size_bound" : tactic =>
@@ -1043,8 +1077,12 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : Option SchedContextId) (e : Option ThreadId) (f : Option ReplyId)
     (g : Option ReplyId) (h : Option ThreadId) (i : Option ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (j : Option ReplyId) :
-    (lockSet_endpointReply a b c d e f g h i j).size ≤ maxLockSetSize := by
+    (j : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (k : Option ReplyId)
+    -- **WS-HP HP10.6**: and at the origin-recipient arity.
+    (l : Option ThreadId) :
+    (lockSet_endpointReply a b c d e f g h i j k l).size ≤ maxLockSetSize := by
   unfold lockSet_endpointReply maxLockSetSize
   -- WS-OD OD3.5: a fourth optional — the state-level lock the donation
   -- return's `scThreadIndex` write takes.  **WS-OD OD3.7**: a fifth and a
@@ -1052,96 +1090,42 @@ theorem lockSet_endpointReply_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
   -- two objects the pop reaches at call depth ≥ 2.  **WS-OD (`v0.35.4`)**: a
   -- seventh -- the stack head the pop clears, declared on its own account.
   -- **WS-RM (`v0.35.6`)**: an eighth -- the frame above the answered caller's
-  -- reply object, which the removal's detach rewrites.
-  -- `3 + 8 = 11`, comfortably inside the ceiling; only `.replyRecv` needed the
-  -- raise.
-  exact Nat.le_trans (size_le_8 _ _ _ _ _ _ _ _ _) (by size_bound)
+  -- reply object, which the removal's splice rewrites.
+  -- **WS-HP HP10.6**: a tenth -- the origin a bottom-of-stack pop redirects the
+  -- reservation to.  `3 + 10 = 13`, comfortably inside the ceiling; only
+  -- `.replyRecv` has ever needed the raise.
+  exact Nat.le_trans (size_le_10 _ _ _ _ _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-RR RR7.11: and over the state-level member the capability install needs.
 -- Five optionals over a four-member base is `4 + 5 = 9`, which is
 -- `maxLockSetSize` exactly — this is the footprint that constant is measured
 -- against, and the reason it moved from 8 (see its docstring).
-/-- **WS-OD OD3.7 (the sharp bound): a `.replyRecv` whose returned donation is
-owned by the thread it answers declares one lock fewer than the ceiling —
-FIFTEEN since WS-OD `v0.35.4` (twelve when this was written, thirteen at
-OD3.13).**
-
-The parametric ceiling is sixteen because a bound is the union over *all*
-argument values, and at `donatedOriginalOwnerTid = some replyTargetTid` two
-arguments name one key — `insertOrMerge` lubs the modes and the cardinality does
-not move (`LockSet.size_insertOrMerge_of_containsKey`).
-
-That equality is a fact about *reachable* states, not one `ipcInvariantFull`
-entails: the bundle admits `.blockedOnReply epId rt` for any `rt` and relates
-`rt` to no donation, which is the same gap WS-RR RR7.22 met from the cancellation
-end and had to close with a stated `donationHolderIsReplyTarget`.  So the
-resolved bound in `ResolvedFootprintBounds` supplies it as a hypothesis rather
-than deriving it, and this parametric form takes the equality directly.
-
-**One member is the whole of the available sharpening.**  The other candidate
-merge — the recorded server with the invoking thread — holds exactly on a
-*non-delegated* reply, which is a case split rather than an invariant, and the
-delegated case is precisely the one WS-OD OD3.5 exists to declare.  So this
-does not move `maxLockSetSize`; it gives the WCRT surface a smaller number where
-the state permits, the way `lockSet_cancelIpcBlockingOnCore_size_le_ten` does. -/
-theorem lockSet_replyRecv_size_le_twentyone_of_owner_eq_target
-    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (e : Option ThreadId) (f : Option SchedContextId)
-    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
-    (l : Option ReplyId) (m : Option ThreadId)
-    -- **WS-OD OD3.13**: at the queue-structure-neighbour arity.
-    (n : Option ThreadId)
-    -- **WS-OD (`v0.35.4`)**: and at the old-head and head arity.
-    (o : Option ReplyId) (p : Option ReplyId)
-    -- **PR #894 review**: and at the invoker's pre-receive-return arity.
-    (q : Option SchedContextId) (r : Option ThreadId)
-    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
-    -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d e f (some c) h i j k l m n o p q r s t u v).size
-      ≤ 21 := by
-  unfold lockSet_replyRecv
-  simp only [Option.map_some, lockSetExtendOpt]
-  -- The answered caller's TCB write lock is already in the set the owner
-  -- extension is applied to — it is the third member of the base list — so that
-  -- extension is a mode merge and costs nothing.
-  have hMem : (tcbLock c, AccessMode.write) ∈
-      (lockSetExtendOpt (lockSetExtendOpt
-        (lockSetOfList [(tcbLock a, AccessMode.write),
-                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                        (tcbLock c, AccessMode.write),
-                        (endpointLock d, AccessMode.write)])
-        (e.map (fun st => (tcbLock st, AccessMode.write))))
-        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
-    unfold lockSetOfList
-    simp only [List.foldl]
-    repeat apply mem_write_lockSetExtendOpt
-    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _)
-  have hOwnerFree :
-      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
-        (lockSetExtendOpt (lockSetExtendOpt
-          (lockSetOfList [(tcbLock a, AccessMode.write),
-                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                          (tcbLock c, AccessMode.write),
-                          (endpointLock d, AccessMode.write)])
-          (e.map (fun st => (tcbLock st, AccessMode.write))))
-          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
-        ≤ 6 :=
-    by
-      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
-        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
-      refine Nat.le_trans (size_le_2 _ _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  -- Fifteen extensions remain above it — the reply object, the recorded server,
-  -- the re-donated context, WS-OD `v0.35.4`'s old head and head, WS-OD OD3.7's
-  -- two below-head members, PR #894's five pre-receive-return members, the
-  -- state-level lock, WS-OD OD3.13's queue-structure neighbour and WS-RM's frame
-  -- above the answered reply — so the whole set is `6 + 15 = 21`, one inside the
-  -- ceiling.
-  exact Nat.le_trans (size_le_15_over _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-    (by exact Nat.add_le_add_right hOwnerFree 15)
+-- ----------------------------------------------------------------------------
+-- WS-HP HP10.6 (`v0.35.49`): the retired owner-merge sharp bounds
+-- ----------------------------------------------------------------------------
+--
+-- Seven parametric `.replyRecv` bounds lived here and are **deleted**, not left
+-- beside the four the resolved bounds consume.  Five were the `_of_owner_eq_target`
+-- family -- `_size_le_twentytwo_of_owner_eq_target` and its four corners -- whose
+-- merge hypothesis is that the returned donation's holder *is* the thread the reply
+-- answers.  WS-HP HP6.2 (`v0.35.44`) established that this is **false** on every
+-- state the arm reaches, not merely unproved: under the head-driven trigger the
+-- pair's second component is the thread the pop sets `.unbound` -- `sc.boundThread`,
+-- the thread *running on* the context -- while the answered caller is
+-- `.blockedOnReply`.  That cut retired the resolved
+-- `lockSet_endpointReplyRecvOnCore_size_le_seventeen` they fed and left the feeders
+-- orphaned; the remaining two (`_of_no_preReturn_of_no_donation`,
+-- `_of_no_sender_of_no_donation`) were corners of the same retired figure.  All
+-- seven had no consumer in the tree at HEAD.
+--
+-- A superseded bound kept "for reference" reads in a search result exactly like a
+-- live one, and a sharp figure resting on a refuted hypothesis is worse than no
+-- figure at all.  What replaces them is the exclusion this row adds: the origin
+-- member is live only where the two below-head members are not
+-- (`replyStackBelowHead?_of_originRecipient`), so the *reachable* `.replyRecv`
+-- figures stay at twenty and eighteen with the declared ceiling at twenty-four.
+-- Tier 3's positive anchor on `_size_le_twentytwo_of_owner_eq_target` is now a
+-- negative: the symbol must not come back.
 
 /-- **PR #894 review: the sender branch of the reachable bound, with no
 invariant at all — sixteen.**
@@ -1150,137 +1134,23 @@ invariant at all — sixteen.**
 sender rendezvouses rather than blocking, so the invoking thread's own
 pre-receive return does not run and the five members it contributes are absent.
 `4 + 12 = 16`, which is what this arm declared before PR #894's review. -/
-theorem lockSet_replyRecv_size_le_seventeen_of_no_preReturn
+theorem lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
     (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
     (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
     (o : Option ReplyId) (p : Option ReplyId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
+    (v : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (w : Option ReplyId) :
     (lockSet_replyRecv a b c d e f g h i j k l m n o p
-        none none none none none v).size ≤ 17 := by
+        none none none none none v w none).size ≤ 18 := by
   unfold lockSet_replyRecv
   simp only [Option.map_none, lockSetExtendOpt_none]
-  refine Nat.le_trans (size_le_13 _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_14 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
-
-/-- **PR #894 review: a blocking receive on a reply that returns no donation —
-thirteen.**
-
-The corner of the reachable bound where both groups of state-resolved members
-are absent: no queued sender means no re-donation, and no recorded donation to
-return means no context, no previous owner, no stack head and no frame below it.
-Nine members survive, so `4 + 9 = 13`. -/
-theorem lockSet_replyRecv_size_le_fourteen_of_no_sender_of_no_donation
-    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (n : Option ThreadId)
-    (q : Option SchedContextId) (r : Option ThreadId)
-    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
-    -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d none none none h i j none none none n none none
-        q r s t u v).size ≤ 14 := by
-  unfold lockSet_replyRecv
-  simp only [Option.map_none, lockSetExtendOpt_none]
-  refine Nat.le_trans (size_le_10 _ _ _ _ _ _ _ _ _ _ _) ?_
-  simp only [List.length_cons, List.length_nil]
-  omega
-
-/-- **WS-RM (`v0.35.6`)**: the owner merge and no frame above — seventeen, the
-figure WS-OD OD3.7 established and PR #894's review carried. -/
-theorem lockSet_replyRecv_size_le_seventeen_of_owner_eq_target_of_no_sender_of_no_frameAbove
-    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (f : Option SchedContextId)
-    (h : Option ReplyId) (i : Bool) (j : Option ThreadId)
-    (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
-    (p : Option ReplyId)
-    (q : Option SchedContextId) (r : Option ThreadId)
-    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId) :
-    (lockSet_replyRecv a b c d none f (some c) h i j none l m n none p
-        q r s t u none).size ≤ 17 := by
-  unfold lockSet_replyRecv
-  simp only [Option.map_none, Option.map_some, lockSetExtendOpt]
-  have hMem : (tcbLock c, AccessMode.write) ∈
-      (lockSetExtendOpt
-        (lockSetOfList [(tcbLock a, AccessMode.write),
-                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                        (tcbLock c, AccessMode.write),
-                        (endpointLock d, AccessMode.write)])
-        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
-    unfold lockSetOfList
-    simp only [List.foldl]
-    repeat apply mem_write_lockSetExtendOpt
-    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _)
-  have hOwnerFree :
-      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
-        (lockSetExtendOpt
-          (lockSetOfList [(tcbLock a, AccessMode.write),
-                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                          (tcbLock c, AccessMode.write),
-                          (endpointLock d, AccessMode.write)])
-          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
-        ≤ 5 :=
-    by
-      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
-        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
-      refine Nat.le_trans (size_le_1 _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  -- Twelve extensions remain above it: the reply object, the recorded server,
-  -- the returned context's head, the two below-head members, the five
-  -- pre-receive-return members, the state-level lock and the queue-structure
-  -- neighbour.
-  exact Nat.le_trans (size_le_12_over _ _ _ _ _ _ _ _ _ _ _ _ _)
-    (by exact Nat.add_le_add_right hOwnerFree 12)
-
-/-- **WS-RM (`v0.35.6`)**: the owner merge on the branch that detaches — fifteen,
-two below the figure it replaces, for the exclusion the sibling above states. -/
-theorem lockSet_replyRecv_size_le_fifteen_of_owner_eq_target_of_no_sender_of_no_head
-    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (f : Option SchedContextId)
-    (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (n : Option ThreadId)
-    (q : Option SchedContextId) (r : Option ThreadId)
-    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d none f (some c) h i j none none none n none none
-        q r s t u v).size ≤ 15 := by
-  unfold lockSet_replyRecv
-  simp only [Option.map_none, Option.map_some, lockSetExtendOpt]
-  have hMem : (tcbLock c, AccessMode.write) ∈
-      (lockSetExtendOpt
-        (lockSetOfList [(tcbLock a, AccessMode.write),
-                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                        (tcbLock c, AccessMode.write),
-                        (endpointLock d, AccessMode.write)])
-        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
-    unfold lockSetOfList
-    simp only [List.foldl]
-    repeat apply mem_write_lockSetExtendOpt
-    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _)
-  have hOwnerFree :
-      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
-        (lockSetExtendOpt
-          (lockSetOfList [(tcbLock a, AccessMode.write),
-                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                          (tcbLock c, AccessMode.write),
-                          (endpointLock d, AccessMode.write)])
-          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
-        ≤ 5 :=
-    by
-      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
-        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
-      refine Nat.le_trans (size_le_1 _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  -- Ten extensions remain above it: the reply object, the recorded server, the
-  -- five pre-receive-return members, the state-level lock, the queue-structure
-  -- neighbour and WS-RM's frame above the answered reply.
-  exact Nat.le_trans (size_le_10_over _ _ _ _ _ _ _ _ _ _ _)
-    (by exact Nat.add_le_add_right hOwnerFree 10)
 
 /-- **PR #894 review: the blocking branch of the reachable bound, with no
 invariant at all — eighteen.**
@@ -1293,7 +1163,7 @@ return is the group that *is* live.  `4 + 14 = 18`.
 With the sender branch above, eighteen bounds **every** state: the two groups are
 mutually exclusive, so three of the ceiling's twenty-one are slack no state can
 take up. -/
-theorem lockSet_replyRecv_size_le_nineteen_of_no_sender
+theorem lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
     (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId)
@@ -1302,12 +1172,14 @@ theorem lockSet_replyRecv_size_le_nineteen_of_no_sender
     (q : Option SchedContextId) (r : Option ThreadId)
     (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
+    (v : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (w : Option ReplyId) :
     (lockSet_replyRecv a b c d none f g h i j none l m n none p
-        q r s t u v).size ≤ 19 := by
+        q r s t u v w none).size ≤ 20 := by
   unfold lockSet_replyRecv
   simp only [Option.map_none, lockSetExtendOpt_none]
-  refine Nat.le_trans (size_le_15 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_16 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
@@ -1316,9 +1188,9 @@ reply — eighteen, the figure PR #894's review established.**
 
 `answeredReplyFrameAbove?` is `none` on every reply of the nested Call pattern,
 which is every reply the tree could make before `v0.35.6`: the answered frame is
-the stack head and nothing links down to it.  So the member the removal's detach
+the stack head and nothing links down to it.  So the member the removal's splice
 declares is absent and this is PR #894's `4 + 14 = 18` verbatim. -/
-theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
+theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
     (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId)
@@ -1327,7 +1199,7 @@ theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
     (q : Option SchedContextId) (r : Option ThreadId)
     (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId) :
     (lockSet_replyRecv a b c d none f g h i j none l m n none p
-        q r s t u none).size ≤ 18 := by
+        q r s t u none none none).size ≤ 18 := by
   unfold lockSet_replyRecv
   simp only [Option.map_none, lockSetExtendOpt_none]
   refine Nat.le_trans (size_le_14 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
@@ -1335,149 +1207,124 @@ theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove
   omega
 
 /-- **WS-RM (`v0.35.6`): and the branch in which the frame above *is* live —
-sixteen, two **below** the figure it replaces.**
+seventeen since WS-HP HP3.1, one **below** the eighteen the popping branch
+declares (sixteen, two below, until the splice's second member landed).**
 
 The two groups are mutually exclusive on a coherent state: the answered frame has
 a frame above it exactly when it is **not** a stack head, and the three members
 the donation return contributes — the head the pop clears, the frame below it and
-that frame's caller — are live only when it **is**.  So the detach's member is
-never paid for on top of them; it is paid for *instead* of them, and a reachable
-`.replyRecv` that detaches declares two locks fewer than one that pops.  `4 + 12 =
-16`. -/
-theorem lockSet_replyRecv_size_le_sixteen_of_no_sender_of_no_head
+that frame's caller — are live only when it **is**.  So the splice's two members
+(the frame above the cut and the frame below it) are never paid for on top of
+them; they are paid for *instead* of them, and a reachable `.replyRecv` that
+splices declares one lock fewer than one that pops.  `4 + 13 = 17`. -/
+theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
     (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (n : Option ThreadId)
     (q : Option SchedContextId) (r : Option ThreadId)
     (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
-    (v : Option ReplyId) :
+    (v : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (w : Option ReplyId) :
     (lockSet_replyRecv a b c d none f g h i j none none none n none none
-        q r s t u v).size ≤ 16 := by
+        q r s t u v w none).size ≤ 17 := by
   unfold lockSet_replyRecv
   simp only [Option.map_none, lockSetExtendOpt_none]
-  refine Nat.le_trans (size_le_12 _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  refine Nat.le_trans (size_le_13 _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
   simp only [List.length_cons, List.length_nil]
   omega
 
-/-- **PR #894 review: the sender branch of the reachable bound — fifteen.**
 
-The invoker's pre-receive return fires only when the endpoint has **no** queued
-sender (`receivePreReturn?_of_sender`), so on a rendezvous the five members it
-contributes are all absent and the owner merge leaves `6 + 9 = 15`.  Stated
-parametrically here so the resolved bound can case-split on the send queue
-without re-running the merge argument. -/
-theorem lockSet_replyRecv_size_le_sixteen_of_owner_eq_target_of_no_preReturn
+/-! ### WS-HP HP10.6: the branches on which the origin member *is* live
+
+The origin the pop redirects a bottom-of-stack return to is `some` only where the
+pop is at the bottom of its stack, and there the two below-head members — the
+Reply one frame down and that frame's caller's TCB — are both absent
+(`replyStackBelowHead?_of_originRecipient`).  So the reachable `.replyRecv`
+figures trade two members for one and stay where they were, while the *declared*
+ceiling rises: the three bounds below are the branches the resolved bounds take
+when the redirect fires, each stated with the origin **free** and the two
+below-head arguments at `none`.
+
+They are the counterpart of the four `_of_no_origin` bounds above, not a
+replacement for them: a pop whose stack has a frame below its head declares the
+below-head pair and no origin, and one at the bottom declares the origin and no
+pair.  Neither bound covers the other's branch, which is why both exist. -/
+
+/-- **WS-HP HP10.6: the rendezvous branch with the redirect live — seventeen.**
+
+On a rendezvous the invoking receiver's pre-receive return is absent
+(`receivePreReturn?_of_sender`), and a redirected pop is at the bottom of its
+stack, so the two below-head members are absent too.  Seven of the twenty
+optionals drop, leaving `4 + 13 = 17` with the origin itself counted — one *below*
+the eighteen the same branch declares with no redirect. -/
+theorem lockSet_replyRecv_size_le_seventeen_of_no_preReturn_of_no_belowHead
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (e : Option ThreadId) (f : Option SchedContextId)
+    (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId) (k : Option SchedContextId)
-    (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
-    (o : Option ReplyId) (p : Option ReplyId)
-    -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d e f (some c) h i j k l m n o p
-        none none none none none v).size ≤ 16 := by
+    (n : Option ThreadId) (o : Option ReplyId) (p : Option ReplyId)
+    (v : Option ReplyId) (w : Option ReplyId)
+    (x : Option ThreadId) :
+    (lockSet_replyRecv a b c d e f g h i j k none none n o p
+        none none none none none v w x).size ≤ 17 := by
   unfold lockSet_replyRecv
-  simp only [Option.map_some, lockSetExtendOpt]
-  have hMem : (tcbLock c, AccessMode.write) ∈
-      (lockSetExtendOpt (lockSetExtendOpt
-        (lockSetOfList [(tcbLock a, AccessMode.write),
-                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                        (tcbLock c, AccessMode.write),
-                        (endpointLock d, AccessMode.write)])
-        (e.map (fun st => (tcbLock st, AccessMode.write))))
-        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
-    unfold lockSetOfList
-    simp only [List.foldl]
-    repeat apply mem_write_lockSetExtendOpt
-    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _)
-  have hOwnerFree :
-      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
-        (lockSetExtendOpt (lockSetExtendOpt
-          (lockSetOfList [(tcbLock a, AccessMode.write),
-                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                          (tcbLock c, AccessMode.write),
-                          (endpointLock d, AccessMode.write)])
-          (e.map (fun st => (tcbLock st, AccessMode.write))))
-          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
-        ≤ 6 :=
-    by
-      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
-        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
-      refine Nat.le_trans (size_le_2 _ _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  -- Ten extensions remain above it: the reply object, the recorded server, the
-  -- re-donated context, the old head and head, the two below-head members, the
-  -- state-level lock, the queue-structure neighbour and WS-RM's frame above.
-  exact Nat.le_trans (size_le_10_over _ _ _ _ _ _ _ _ _ _ _)
-    (by exact Nat.add_le_add_right hOwnerFree 10)
+  simp only [Option.map_none, lockSetExtendOpt_none]
+  refine Nat.le_trans (size_le_13 _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  simp only [List.length_cons, List.length_nil]
+  omega
 
-/-- **PR #894 review: the blocking branch of the reachable bound — seventeen.**
+/-- **WS-HP HP10.6: the blocking branch with the redirect live — nineteen.**
 
-With no queued sender the receive leg rendezvouses with nobody, so the new
-sender, the re-donated context and the frame its push would rewrite are all
-absent (`receiveRendezvousDonatedSc?_of_no_sender`) — and the invoker's own
-pre-receive return is exactly the member that *is* live there.  The owner merge
-then leaves `5 + 12 = 17`, four inside the ceiling.
-
-Together with the sender branch above this is the whole of the slack: no
-reachable `.replyRecv` declares more than seventeen, while the definition can
-produce twenty-one over all argument values, which is what the WCRT surface
-must consume. -/
-theorem lockSet_replyRecv_size_le_eighteen_of_owner_eq_target_of_no_sender
+No queued sender means no new sender, no re-donation and no frame for its push to
+rewrite; a redirected pop adds the two below-head absences.  `4 + 15 = 19`, one
+below the twenty the same branch declares with no redirect. -/
+theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_belowHead
     (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
-    (f : Option SchedContextId)
+    (f : Option SchedContextId) (g : Option ThreadId)
     (h : Option ReplyId) (i : Bool) (j : Option ThreadId)
-    (l : Option ReplyId) (m : Option ThreadId) (n : Option ThreadId)
-    (p : Option ReplyId)
+    (n : Option ThreadId) (p : Option ReplyId)
     (q : Option SchedContextId) (r : Option ThreadId)
     (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
-    -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d none f (some c) h i j none l m n none p
-        q r s t u v).size ≤ 18 := by
+    (v : Option ReplyId) (w : Option ReplyId)
+    (x : Option ThreadId) :
+    (lockSet_replyRecv a b c d none f g h i j none none none n none p
+        q r s t u v w x).size ≤ 19 := by
   unfold lockSet_replyRecv
-  simp only [Option.map_none, Option.map_some, lockSetExtendOpt]
-  have hMem : (tcbLock c, AccessMode.write) ∈
-      (lockSetExtendOpt
-        (lockSetOfList [(tcbLock a, AccessMode.write),
-                        (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                        (tcbLock c, AccessMode.write),
-                        (endpointLock d, AccessMode.write)])
-        (f.map (fun sc => (schedContextLock sc, AccessMode.write)))).pairs := by
-    unfold lockSetOfList
-    simp only [List.foldl]
-    repeat apply mem_write_lockSetExtendOpt
-    exact LockSet.mem_insertOrMerge_write_of_mem_write _ _ _ _
-      (LockSet.mem_insertOrMerge_write_self _ _)
-  have hOwnerFree :
-      (LockSet.insertOrMerge (tcbLock c) AccessMode.write
-        (lockSetExtendOpt
-          (lockSetOfList [(tcbLock a, AccessMode.write),
-                          (cnodeLock b, if i then AccessMode.write else AccessMode.read),
-                          (tcbLock c, AccessMode.write),
-                          (endpointLock d, AccessMode.write)])
-          (f.map (fun sc => (schedContextLock sc, AccessMode.write))))).size
-        ≤ 5 :=
-    by
-      rw [LockSet.size_insertOrMerge_of_containsKey _ _ _
-        ((LockSet.containsKey_iff (tcbLock c) _).mpr ⟨AccessMode.write, hMem⟩)]
-      refine Nat.le_trans (size_le_1 _ _) ?_
-      simp only [List.length_cons, List.length_nil]
-      omega
-  -- Thirteen extensions remain above it: the reply object, the recorded server,
-  -- the returned context's head, the two below-head members, the five
-  -- pre-receive-return members, the state-level lock, the queue-structure
-  -- neighbour and WS-RM's frame above the answered reply.
-  exact Nat.le_trans (size_le_13_over _ _ _ _ _ _ _ _ _ _ _ _ _ _)
-    (by exact Nat.add_le_add_right hOwnerFree 13)
+  simp only [Option.map_none, lockSetExtendOpt_none]
+  refine Nat.le_trans (size_le_15 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  simp only [List.length_cons, List.length_nil]
+  omega
+
+/-- **WS-HP HP10.6: the blocking branch that pops, with the redirect live —
+seventeen.**
+
+The corner the reachable eighteen needs.  A frame that heads a context has no
+frame above it and none below it, so the removal's two members are absent
+(HP6.2's structural exclusion); a redirected pop is at the bottom of its stack, so
+the two below-head members are absent as well.  `4 + 13 = 17`. -/
+theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_frameAbove_of_no_belowHead
+    (a : ThreadId) (b : ObjId) (c : ThreadId) (d : ObjId)
+    (f : Option SchedContextId) (g : Option ThreadId)
+    (h : Option ReplyId) (i : Bool) (j : Option ThreadId)
+    (n : Option ThreadId) (p : Option ReplyId)
+    (q : Option SchedContextId) (r : Option ThreadId)
+    (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
+    (x : Option ThreadId) :
+    (lockSet_replyRecv a b c d none f g h i j none none none n none p
+        q r s t u none none x).size ≤ 17 := by
+  unfold lockSet_replyRecv
+  simp only [Option.map_none, lockSetExtendOpt_none]
+  refine Nat.le_trans (size_le_13 _ _ _ _ _ _ _ _ _ _ _ _ _ _) ?_
+  simp only [List.length_cons, List.length_nil]
+  omega
 
 -- **WS-OD OD3.13**: and over the queue-structure neighbour the receive leg
 -- writes.  `4 + 10 = 14` — the footprint `maxLockSetSize` was measured against
 -- at that cut.  **WS-OD (`v0.35.4`)**: and over the re-donation's old head and
--- the returned context's head: `4 + 12 = 16`, which is the footprint the
--- constant is measured against now, and the reason it moved from 14 (see its
+-- the returned context's head, `4 + 12 = 16`; PR #894's review, WS-RM and
+-- WS-HP HP3.1 then took it to twenty-one, twenty-two and twenty-three, and
+-- **WS-HP HP10.6**'s origin member to `4 + 20 = 24` — which is the footprint the
+-- constant is measured against now, and the reason it stands at 24 (see its
 -- docstring).
 theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (d : ObjId) (e : Option ThreadId) (f : Option SchedContextId) (g : Option ThreadId)
@@ -1487,11 +1334,17 @@ theorem lockSet_replyRecv_size_le (a : ThreadId) (b : ObjId) (c : ThreadId)
     (q : Option SchedContextId) (r : Option ThreadId)
     (s : Option ReplyId) (t : Option ReplyId) (u : Option ThreadId)
     -- **WS-RM (`v0.35.6`)**: and at the frame-above arity.
-    (v : Option ReplyId) :
-    (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v).size
+    (v : Option ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (w : Option ReplyId)
+    -- **WS-HP HP10.6**: and at the origin-recipient arity -- the twentieth
+    -- optional, and the member `maxLockSetSize` moved from twenty-three to
+    -- twenty-four for.
+    (x : Option ThreadId) :
+    (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x).size
       ≤ maxLockSetSize := by
   unfold lockSet_replyRecv maxLockSetSize
-  exact Nat.le_trans (size_le_18 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by size_bound)
+  exact Nat.le_trans (size_le_20 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _) (by size_bound)
 
 -- WS-SM SM9.C.8: stated over **all six** arguments, including the SM6.B
 -- bound-delivery optionals.  Before this cut the theorem fixed those two at
@@ -1524,7 +1377,7 @@ Slack remains, which is the honest reading: this is the largest
 notification-side footprint the kernel declares, and it is *not* at the bound
 the way the widest IPC footprints are (`lockSet_replyRecv` reached the ceiling
 at WS-OD OD3.5; since WS-OD `v0.35.4` the footprint that defines the ceiling is
-the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_sixteen`
+the state-resolved suspend footprint, `lockSet_tcbSuspendOnCore_size_le_seventeen`
 in `ResolvedFootprintBounds.lean`). -/
 theorem lockSet_declassifySignal_size_le (a : ThreadId) (b c : ObjId)
     (d : Option ThreadId) (e : Option ObjId) (f : Option ThreadId) :
@@ -1748,13 +1601,17 @@ theorem lockSetTransitions_within_bound :
       (lockSet_endpointReceive a b c d e f g h i j k l m n).size ≤ maxLockSetSize) ∧
     (∀ a b c d e f g h i, (lockSet_endpointCall a b c d e f g h i).size ≤ maxLockSetSize) ∧
     -- WS-RM (`v0.35.6`): and at the frame-above arity.
-    (∀ a b c d e f g h i j,
-      (lockSet_endpointReply a b c d e f g h i j).size ≤ maxLockSetSize) ∧
+    -- WS-HP HP3.1: and at the frame-below arity.
+    -- WS-HP HP10.6: and at the origin-recipient arity.
+    (∀ a b c d e f g h i j k l,
+      (lockSet_endpointReply a b c d e f g h i j k l).size ≤ maxLockSetSize) ∧
     -- WS-OD OD3.13: at the queue-structure-neighbour arity.
     -- PR #894 review: and at the invoker's pre-receive-return arity.
     -- WS-RM (`v0.35.6`): and at the frame-above arity.
-    (∀ a b c d e f g h i j k l m n o p q r s t u v,
-      (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v).size
+    -- WS-HP HP3.1: and at the frame-below arity.
+    -- WS-HP HP10.6: and at the origin-recipient arity.
+    (∀ a b c d e f g h i j k l m n o p q r s t u v w x,
+      (lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x).size
         ≤ maxLockSetSize) ∧
     -- WS-OD OD3.10: at the splice-neighbour arity, not at its default.
     (∀ a b c d e f g, (lockSet_notificationSignal a b c d e f g).size ≤ maxLockSetSize) ∧
@@ -1880,12 +1737,17 @@ def KernelOperation.ofReplyRecv (a : ThreadId) (b : ObjId) (c : ThreadId)
     (s : Option ReplyId := none) (t : Option ReplyId := none)
     (u : Option ThreadId := none)
     -- WS-RM (`v0.35.6`): the frame above the answered caller's reply object,
-    -- which the reply leg's removal detaches.  No default, for the reason the
+    -- which the reply leg's removal splices out.  No default, for the reason the
     -- footprint gives.
-    (v : Option ReplyId) :
+    (v : Option ReplyId)
+    -- **WS-HP HP3.1**: and the frame below it, which the splice re-links upward.
+    (w : Option ReplyId)
+    -- **WS-HP HP10.6**: and the origin a bottom-of-stack pop redirects to.  No
+    -- default, for the reason the footprint gives.
+    (x : Option ThreadId) :
     KernelOperation :=
-  ⟨lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v,
-   lockSet_replyRecv_size_le a b c d e f g h i j k l m n o p q r s t u v⟩
+  ⟨lockSet_replyRecv a b c d e f g h i j k l m n o p q r s t u v w x,
+   lockSet_replyRecv_size_le a b c d e f g h i j k l m n o p q r s t u v w x⟩
 
 -- WS-OD (`v0.35.4`): `KernelOperation.ofTcbSuspend` retired with the parametric
 -- suspend footprint; the operation the `.tcbSuspend` seam runs is

@@ -74,27 +74,26 @@ theorem removeFromAllNotificationWaitLists_nonNotification (st : SystemState)
       | notification n =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k' = some o := hx
-              rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hx'
-              exact absurd (Option.some.inj hx').symm (hNotN _)
-            · intro hx
-              have hx2 : st.objects.get? k' = some o := hx
-              rw [hGet] at hx2
-              exact absurd (Option.some.inj hx2).symm (hNotN n)
-          · constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k = some o := hx
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hx'
-              exact hA.mp hx'
-            · intro hx
-              show (acc.objects.insert k' _).get? k = some o
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-              exact hA.mpr hx
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hx
+                exact absurd (Option.some.inj hx').symm (hNotN _)
+              · intro hx
+                have hx2 : st.objects.get? k' = some o := hx
+                rw [hGet] at hx2
+                exact absurd (Option.some.inj hx2).symm (hNotN n)
+            · constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hx
+                exact hA.mp hx'
+              · intro hx
+                rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+                exact hA.mpr hx
+          · exact ⟨hE, hA⟩
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
@@ -114,20 +113,25 @@ theorem removeFromAllNotificationWaitLists_notification_badge (st : SystemState)
   rintro acc k' v' hGet ⟨hE, hA⟩
   unfold notificationPurgeBody
   cases v' with
-  | notification n' =>
+  | notification _ =>
     simp only
     split
-    · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-      intro m hm
-      by_cases hK : k' = k
-      · subst hK
-        have hm' : (acc.objects.insert k' _).get? k' = some (KernelObject.notification m) := hm
-        rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hm'
-        have hx := KernelObject.notification.inj (Option.some.inj hm')
-        exact ⟨n', hGet, by rw [← hx]⟩
-      · have hm' : (acc.objects.insert k' _).get? k = some (KernelObject.notification m) := hm
-        rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hm'
-        exact hA m hm'
+    · rename_i n' hN' _
+      split
+      · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+        intro m hm
+        by_cases hK : k' = k
+        · subst hK
+          -- The rewritten record is the ACCUMULATOR's, so its origin is what the
+          -- accumulator's own reading already traces back to.
+          have hm' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hm
+          have hx := KernelObject.notification.inj (Option.some.inj hm')
+          obtain ⟨m0, hm0, hb⟩ :=
+            hA n' ((SystemState.getNotification?_eq_some_iff acc k' n').mp hN')
+          exact ⟨m0, hm0, by rw [← hx]; exact hb⟩
+        · have hm' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hm
+          exact hA m hm'
+      · exact ⟨hE, hA⟩
     · exact ⟨hE, hA⟩
   | _ => exact ⟨hE, hA⟩
 
@@ -330,36 +334,57 @@ theorem purgedAndRestored_dualQueueSystemInvariant
     (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
     (hInv : st.objects.invExt) (hLookup : lookupTcb st v = some tcbV)
     (hOff : sweptThreadOffQueueChains st v)
+    -- **PR #897 review (`v0.35.106`)**: the strengthened head boundary carries the
+    -- head's back-pointer, and the restore clears the swept thread's — so a queue
+    -- that still named it as head would be left with a head that has none.  The
+    -- swept thread is blocked on a *notification*, so it bounds no endpoint queue
+    -- (`purgedAndRestored_victim_off_endpoint_boundaries`), but that is
+    -- `queueHeadBlockedConsistent`'s fact rather than this bundle's, so it is stated
+    -- here and supplied by the composite.
+    (hOffEp : ∀ (k : SeLe4n.ObjId) (e : Endpoint), st.objects[k]? = some (.endpoint e) →
+      e.sendQ.head ≠ some v ∧ e.receiveQ.head ≠ some v)
     (hDual : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant (purgedAndRestored st v frame) := by
-  obtain ⟨hEps, hLink, hAcyc⟩ := hDual
+  obtain ⟨hEps, hLink, hAcyc, hPPair, hHD⟩ := hDual
   have hEpIff : ∀ (k : SeLe4n.ObjId) (ep : Endpoint),
       ((purgedAndRestored st v frame).objects[k]? = some (.endpoint ep)) ↔
         (st.objects[k]? = some (.endpoint ep)) :=
     fun k ep => purgedAndRestored_nonNotification st v frame tcbV hInv hLookup k (.endpoint ep)
       (by simp) (by simp)
-  have hWF : ∀ (q : IntrusiveQueue), intrusiveQueueWellFormed q st →
+  have hWF : ∀ (q : IntrusiveQueue), intrusiveQueueWellFormed q st → q.head ≠ some v →
       intrusiveQueueWellFormed q (purgedAndRestored st v frame) := by
-    intro q hq
+    intro q hq hqHead
     refine ⟨hq.1, ?_, ?_⟩
     · intro hd hHd
-      obtain ⟨t0, h0, hp⟩ := hq.2.1 hd hHd
+      obtain ⟨t0, h0, hp, hpp⟩ := hq.2.1 hd hHd
+      have hNeV : hd.toObjId ≠ v.toObjId := by
+        intro hEq
+        rw [threadId_toObjId_injective hEq] at hHd
+        exact absurd hHd hqHead
       obtain ⟨tA, hA, hpA, _⟩ :=
         purgedAndRestored_tcb_links_forward st v frame tcbV hInv hLookup hOff hd.toObjId t0 h0
-      exact ⟨tA, hA, by rw [hpA]; exact hp⟩
+      -- Away from the swept thread the record is the pre-state's **verbatim**, so
+      -- the head's back-pointer carries with the rest of it.
+      rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup hd.toObjId tA hA with
+        ⟨-, h0'⟩ | ⟨hv, -⟩
+      · rw [h0] at h0'
+        obtain rfl : tA = t0 := (KernelObject.tcb.inj (Option.some.inj h0')).symm
+        exact ⟨tA, hA, hp, hpp⟩
+      · exact absurd hv hNeV
     · intro tl hTl
       obtain ⟨t0, h0, hn⟩ := hq.2.2 tl hTl
       obtain ⟨tA, hA, _, hnA⟩ :=
         purgedAndRestored_tcb_links_forward st v frame tcbV hInv hLookup hOff tl.toObjId t0 h0
       exact ⟨tA, hA, by rw [hnA]; exact hn⟩
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · intro epId ep hEp
     have hEp0 : st.objects[epId]? = some (.endpoint ep) := (hEpIff epId ep).mp hEp
     have h0 := hEps epId ep hEp0
     unfold dualQueueEndpointWellFormed at h0 ⊢
     rw [hEp0] at h0
     rw [hEp]
-    exact ⟨hWF ep.sendQ h0.1, hWF ep.receiveQ h0.2⟩
+    obtain ⟨hNeS, hNeR⟩ := hOffEp epId ep hEp0
+    exact ⟨hWF ep.sendQ h0.1 hNeS, hWF ep.receiveQ h0.2 hNeR⟩
   · refine ⟨?_, ?_⟩
     · intro a tcbA hA b hNext
       obtain ⟨t0a, h0a, _, hnA⟩ :=
@@ -377,6 +402,20 @@ theorem purgedAndRestored_dualQueueSystemInvariant
       exact ⟨tA, hA, by rw [hnAA]; exact hnA⟩
   · exact fun x hPath => hAcyc x
       (purgedAndRestored_path_transport st v frame tcbV hInv hLookup hOff hPath)
+  · -- WS-RR RR8.3: the pairing.  The pullback is exact here -- away from the
+    -- swept thread the record is the pre-state's verbatim, and the swept thread
+    -- has BOTH back-pointers cleared by the restore (`v0.35.99`: the `none` arm
+    -- claims the thread is on no queue, so `queuePrev` is part of the claim).
+    intro tid tcb hTcb
+    rcases purgedAndRestored_tcb_pullback st v frame tcbV hInv hLookup tid.toObjId tcb hTcb with
+      ⟨_, h0⟩ | ⟨_, rfl⟩
+    · exact hPPair tid tcb h0
+    · exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+        (restoredTcb_queuePrev tcbV frame)
+  · -- **PR #897 review**: the notification purge writes notifications and the
+    -- restore a TCB; neither writes an endpoint, so the fifth conjunct transports.
+    exact endpointQueueHeadDisjoint_of_endpointBackward
+      (fun epId ep hEp => (hEpIff epId ep).mp hEp) hHD
 
 -- ============================================================================
 -- §5  The reusable frames
@@ -628,7 +667,12 @@ theorem purgedAndRestored_replyCallerLinkage
       cases hBlk
 
 /-- The swept thread bounds no endpoint queue: both boundary conjuncts demand a
-blocking state the notification-blocked thread does not have. -/
+blocking state the notification-blocked thread does not have.
+
+**WS-RR RR8.7**: this arm's instance of `notQueueBlocked_bounds_no_endpoint_queue`,
+which is where the argument now lives — the reply arm asks the identical question
+of a `.blockedOnReply` victim, and the discriminating fact is a parameter there so
+that the two cannot answer it differently. -/
 theorem purgedAndRestored_victim_off_endpoint_boundaries
     (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB) (nId : SeLe4n.ObjId)
     (hLookup : lookupTcb st v = some tcbV)
@@ -636,15 +680,12 @@ theorem purgedAndRestored_victim_off_endpoint_boundaries
     (hHead : queueHeadBlockedConsistent st) (hTail : endpointQueueTailBlockedConsistent st)
     (epId : SeLe4n.ObjId) (ep : Endpoint) (hEp : st.objects[epId]? = some (.endpoint ep)) :
     ep.sendQ.head ≠ some v ∧ ep.receiveQ.head ≠ some v ∧
-    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v := by
-  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
-  refine ⟨fun hx => ?_, fun hx => ?_, fun hx => ?_, fun hx => ?_⟩
-  · rcases (hHead epId ep v tcbV hEp hVObj).2 hx with h | h <;> rw [hBlocked] at h <;> cases h
-  · have h := (hHead epId ep v tcbV hEp hVObj).1 hx
-    rw [hBlocked] at h; cases h
-  · rcases (hTail epId ep v tcbV hEp hVObj).2 hx with h | h <;> rw [hBlocked] at h <;> cases h
-  · have h := (hTail epId ep v tcbV hEp hVObj).1 hx
-    rw [hBlocked] at h; cases h
+    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v :=
+  notQueueBlocked_bounds_no_endpoint_queue st v tcbV hLookup
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    (fun _ h => by rw [hBlocked] at h; cases h)
+    hHead hTail epId ep hEp
 
 theorem purgedAndRestored_queueHeadBlockedConsistent
     (st : SystemState) (v : SeLe4n.ThreadId)
@@ -875,7 +916,11 @@ theorem purgedAndRestored_preserves_ipcInvariantFull
     cases hEq
   have hBind := purgedAndRestored_sameSchedContextBindings st v frame tcbV hInv hLookup
   exact ⟨purgedAndRestored_ipcInvariant st v frame tcbV hInv hLookup hIpc,
-    purgedAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hLookup hOff hDual,
+    purgedAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hLookup hOff
+      (fun k e hE =>
+        let o := purgedAndRestored_victim_off_endpoint_boundaries st v tcbV nId hLookup hBlocked
+          hQHB hTailBlk k e hE
+        ⟨o.1, o.2.1⟩) hDual,
     purgedAndRestored_allPendingMessagesBounded st v frame tcbV hInv hLookup hBnd,
     purgedAndRestored_badgeWellFormed st v frame tcbV hInv hLookup hBadge,
     purgedAndRestored_blockedThreadsPendingMessageConsistent st v frame tcbV hInv hLookup hBlkMsg,

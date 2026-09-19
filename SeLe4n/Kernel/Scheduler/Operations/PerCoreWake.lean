@@ -271,9 +271,9 @@ theorem enqueueRunnableOnCore_preserves_objects_invExt (st : SystemState)
     (c : CoreId) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (enqueueRunnableOnCore st c tid).objects.invExt := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hInv
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hInv
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · exact hInv
       · exact RHTable_insert_preserves_invExt st.objects _ _ hInv
@@ -287,9 +287,9 @@ theorem enqueueRunnableOnCore_preserves_runQueueOnCore_wellFormed (st : SystemSt
     (hwf : (st.scheduler.runQueueOnCore c).wellFormed) :
     ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).wellFormed := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hwf
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hwf
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · exact hwf
       · simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -302,7 +302,7 @@ theorem enqueueRunnableOnCore_mem_runQueueOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
     (hFresh : runnableOnSomeCore st tid = false) :
     tid ∈ ((enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c).toList := by
-  simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+  simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
     SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
   rw [RunQueue.mem_toList_iff_mem]
   exact (RunQueue.mem_insert _ _ _ _).mpr (Or.inr rfl)
@@ -317,8 +317,8 @@ theorem enqueueRunnableOnCore_makes_ready (st : SystemState) (c : CoreId)
     (hTcb : st.getTcb? tid = some tcb) (hInv : st.objects.invExt)
     (hFresh : runnableOnSomeCore st tid = false) :
     (enqueueRunnableOnCore st c tid).getTcb? tid = some { tcb with ipcState := .ready } := by
-  simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
-    SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+  simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
+    SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
   exact RHTable_get?_insert_self st.objects tid.toObjId _ hInv
 
 /-- WS-SM SM5.C.1 (audit-pass-2, woken-thread field frame): `enqueueRunnableOnCore`
@@ -353,9 +353,9 @@ theorem enqueueRunnableOnCore_runQueueOnCore_ne (st : SystemState) (c c' : CoreI
     (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c'
       = st.scheduler.runQueueOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
       · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne st.scheduler c c' _ h
@@ -369,9 +369,9 @@ theorem enqueueRunnableOnCore_currentOnCore (st : SystemState) (c : CoreId)
     (enqueueRunnableOnCore st c tid).scheduler.currentOnCore c'
       = st.scheduler.currentOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
       · simp only [SchedulerState.setRunQueueOnCore_currentOnCore]
@@ -385,7 +385,7 @@ theorem enqueueRunnableOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
     (tid other : SeLe4n.ThreadId) (hInv : st.objects.invExt) (hNe : other ≠ tid) :
     (enqueueRunnableOnCore st c tid).getTcb? other = st.getTcb? other := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
       have hNeT : tid ≠ other := fun he => hNe he.symm
       have hNeO : ¬ (tid.toObjId == other.toObjId) = true := fun he =>
@@ -394,10 +394,10 @@ theorem enqueueRunnableOnCore_getTcb?_ne (st : SystemState) (c : CoreId)
       -- `getTcb?` — unfolding `getTcb?` in one combined `simp` would also rewrite
       -- the `st.getTcb? tid` discriminant inside `enqueueRunnableOnCore`, so
       -- `hTcb` could not fire on it.
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
-      · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      · simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects tid.toObjId other.toObjId
           _ hNeO hInv]
 
@@ -407,7 +407,7 @@ invented. -/
 theorem enqueueRunnableOnCore_no_tcb_noop (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hTcb : st.getTcb? tid = none) :
     enqueueRunnableOnCore st c tid = st := by
-  simp only [enqueueRunnableOnCore, hTcb]
+  simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
 
 /-- WS-SM SM5.C.1 (audit-pass-3 / Codex-P2): when `tid` is *already* runnable on
 some core, the single-placement guard makes `enqueueRunnableOnCore` the identity
@@ -418,8 +418,8 @@ theorem enqueueRunnableOnCore_eq_self_of_runnable (st : SystemState) (c : CoreId
     (tid : SeLe4n.ThreadId) (hRun : runnableOnSomeCore st tid = true) :
     enqueueRunnableOnCore st c tid = st := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
-  | some tcb => simp [enqueueRunnableOnCore, hTcb, hRun]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb => simp [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hRun]
 
 
 -- ============================================================================
@@ -546,7 +546,7 @@ theorem enqueueRunnableOnCore_objects_getElem_eq_of_ready
   have hObjTcb := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
   have hVal : (KernelObject.tcb { tcb with ipcState := .ready }) = .tcb tcb := by rw [← hReady]
   unfold enqueueRunnableOnCore
-  simp only [hTcb]
+  simp only [SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · rfl
   · show (st.objects.insert tid.toObjId (.tcb { tcb with ipcState := .ready }))[oid]?
@@ -608,10 +608,14 @@ index/lifecycle update (the `{ st with objects, scheduler }` record-update keeps
 theorem enqueueRunnableOnCore_objectIndexSet_eq (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) :
     (enqueueRunnableOnCore st c tid).objectIndexSet = st.objectIndexSet := by
-  unfold enqueueRunnableOnCore
-  cases st.getTcb? tid with
-  | none => rfl
-  | some tcb => by_cases h : runnableOnSomeCore st tid <;> simp [h]
+  -- The case split precedes the unfold: the witnessed lookup's type mentions
+  -- `st.getTcb? tid`, so a `cases` over the unfolded match cannot generalise it.
+  cases hTcb : st.getTcb? tid with
+  | none => rw [enqueueRunnableOnCore_no_tcb_noop st c tid hTcb]
+  | some tcb =>
+    unfold enqueueRunnableOnCore
+    rw [SystemState.getTcbWitnessed?_eq_some hTcb]
+    by_cases h : runnableOnSomeCore st tid <;> simp [h, SystemState.rewriteObject_objectIndexSet]
 
 /-- WS-SM SM6.D (#7.3b): `wakeThread` leaves `objectIndexSet` untouched. -/
 theorem wakeThread_objectIndexSet_eq (st : SystemState) (tid : SeLe4n.ThreadId) (ec : CoreId) :
@@ -851,6 +855,32 @@ theorem handleRescheduleSgiOnCore_independent_of_other_core (st : SystemState)
 --   supply for the preempted arm.  Each wrapper: the choose-error arm is
 --   unreachable under `.ok`, the two identity arms inherit the pre-state fact,
 --   and the dispatch arm cites the SM5.B switch lemma.
+
+/-- WS-SM SM5.H, relocated to production at **WS-RR RR8.12**: a cross-core wake
+never touches any core's replenish queue.
+
+A wake is `enqueueRunnableOnCore` at the woken thread's home core: it writes that
+core's run queue and nothing in the replenishment domain.  This is what lets an
+IPC arm that wakes a partner declare an **empty** replenish segment in its
+scheduler-domain footprint, and a footprint that declared one it does not write
+would be wider than its operation.
+
+It was `wakeThread_replenishQueueOnCore_local` in `PerCoreCbs.lean`, which is
+staged — so the production footprints below it could not reach it, and the `_local`
+suffix was the signal.  *When a question has one owner and an asker that cannot
+see it, the owner is in the wrong layer.* -/
+theorem wakeThread_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (c : CoreId) :
+    (wakeThread st tid ec).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c
+  unfold enqueueRunnableOnCore
+  split
+  · split
+    · rfl
+    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+  · rfl
 
 /-- WS-SM (PR #880 round 7): the SGI handler never touches any core's replenish
 queue — the CBS frame that lets `timerTickOnCore`'s local replenish-wake
@@ -1192,7 +1222,7 @@ TCB. -/
 theorem setThreadCpuAffinity_ok_of_tcb (st : SystemState) (targetTid : SeLe4n.ThreadId)
     (affinity : Option CoreId) (tcb : TCB) (hTcb : st.getTcb? targetTid = some tcb) :
     ∃ st', setThreadCpuAffinity st targetTid affinity = .ok st' := by
-  simp only [setThreadCpuAffinity, hTcb]
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_some hTcb]
   exact ⟨_, rfl⟩
 
 /-- WS-SM SM5.C.8 (fail-closed): `setThreadCpuAffinity` rejects a non-TCB target
@@ -1201,7 +1231,7 @@ theorem setThreadCpuAffinity_error_of_no_tcb (st : SystemState)
     (targetTid : SeLe4n.ThreadId) (affinity : Option CoreId)
     (hTcb : st.getTcb? targetTid = none) :
     setThreadCpuAffinity st targetTid affinity = .error .invalidArgument := by
-  simp only [setThreadCpuAffinity, hTcb]
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_none hTcb]
 
 /-- WS-SM SM5.C.8: after a successful `setThreadCpuAffinity`, the target's
 `cpuAffinity` is the new value (every other field unchanged). -/
@@ -1210,9 +1240,10 @@ theorem setThreadCpuAffinity_sets_affinity (st : SystemState)
     (tcb : TCB) (hTcb : st.getTcb? targetTid = some tcb) (hInv : st.objects.invExt)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
     st'.getTcb? targetTid = some { tcb with cpuAffinity := affinity } := by
-  simp only [setThreadCpuAffinity, hTcb, Except.ok.injEq] at h
+  simp only [setThreadCpuAffinity, SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
   subst h
-  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?]
+  simp only [SystemState.getTcb?_eq_some_iff, RHTable_getElem?_eq_get?,
+    SystemState.rewriteObject_objects]
   exact RHTable_get?_insert_self st.objects targetTid.toObjId _ hInv
 
 /-- WS-SM SM5.C.8 (preservation): `setThreadCpuAffinity` preserves the RobinHood
@@ -1224,11 +1255,11 @@ theorem setThreadCpuAffinity_preserves_objects_invExt (st : SystemState)
     st'.objects.invExt := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
-      exact RHTable_insert_preserves_invExt st.objects _ _ hInv
+      exact SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hInv
 
 /-- WS-SM SM5.C.8: `setThreadCpuAffinity` leaves the scheduler state untouched —
 it writes only the target TCB.  So no run queue / current thread is disturbed
@@ -1240,11 +1271,11 @@ theorem setThreadCpuAffinity_preserves_scheduler (st : SystemState)
     st'.scheduler = st.scheduler := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
-      rfl
+      exact SystemState.rewriteObject_scheduler _ _ _ _
 
 /-- WS-SM SM5.C.8 (per-thread frame): `setThreadCpuAffinity targetTid` leaves
 every *other* thread's `getTcb?` lookup unchanged — its only write is at key
@@ -1256,14 +1287,14 @@ theorem setThreadCpuAffinity_getTcb?_ne (st : SystemState)
     st'.getTcb? other = st.getTcb? other := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
   | some tcb =>
-      simp only [hTcb, Except.ok.injEq] at h
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
       subst h
       have hNeT : targetTid ≠ other := fun he => hNe he.symm
       have hNeO : ¬ (targetTid.toObjId == other.toObjId) = true := fun he =>
         hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
-      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+      simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
       rw [RobinHood.RHTable.getElem?_insert_ne st.objects targetTid.toObjId
         other.toObjId _ hNeO hInv]
 
@@ -1428,7 +1459,7 @@ theorem enqueueRunnableOnCore_preserves_queueCurrentConsistentOnCore_self
               -- Single-placement reject: the wake is the identity, run queue unchanged.
               rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hcons
           | false =>
-              simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+              simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
                 SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
               -- Goal: `cur ∉ ((rq).insert tid prio).toList`.  Reduce both the goal
               -- and `hcons` to `RunQueue`-membership and use `mem_insert`.
@@ -1507,7 +1538,7 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadIpcReady (st : SystemState
         | none =>
             rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
         | some origTcb =>
-            simp only [enqueueRunnableOnCore, hOrig, hFresh, Bool.false_eq_true, if_false,
+            simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hOrig, hFresh, Bool.false_eq_true, if_false,
               SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
             rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
             rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
@@ -1557,7 +1588,7 @@ private theorem enqueueRunnableOnCore_preserves_blockedNotRunnable_aux
         | none =>
             rw [enqueueRunnableOnCore_no_tcb_noop st c wtid hOrig] at hMem; exact hMem
         | some origTcb =>
-            simp only [enqueueRunnableOnCore, hOrig, hFresh, Bool.false_eq_true, if_false,
+            simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hOrig, hFresh, Bool.false_eq_true, if_false,
               SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at hMem
             rw [RunQueue.mem_toList_iff_mem] at hMem ⊢
             rcases (RunQueue.mem_insert _ wtid _ t).mp hMem with hOld | hEqW
@@ -1715,7 +1746,7 @@ theorem enqueueRunnableOnCore_preserves_runQueueUniqueOnCore (st : SystemState)
       cases hFresh : runnableOnSomeCore st tid with
       | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact hnd
       | false =>
-        simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
         exact RunQueue.insert_preserves_toList_nodup _ _ _ hnd
   · rw [enqueueRunnableOnCore_runQueueOnCore_ne st c c' tid hcc]; exact hnd
@@ -1746,7 +1777,7 @@ theorem enqueueRunnableOnCore_preserves_runnableThreadsAreTCBsOnCore_anyCore (st
       | true => rw [enqueueRunnableOnCore_eq_self_of_runnable st c tid hFresh]; exact h
       | false =>
         intro t ht
-        simp only [enqueueRunnableOnCore, hTcb, hFresh, Bool.false_eq_true, if_false,
+        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb, hFresh, Bool.false_eq_true, if_false,
           SchedulerState.setRunQueueOnCore_runQueueOnCore_self] at ht
         rw [RunQueue.mem_toList_iff_mem] at ht
         rcases (RunQueue.mem_insert _ _ _ _).mp ht with hold | heq
@@ -1797,6 +1828,47 @@ theorem wakeThread_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
 -- `MemoryEvent` / `MemoryTrace` / `synchronizesWith`).  The file's outer
 -- `namespace SeLe4n.Kernel` is still open here, so the relative `namespace
 -- Concurrency` resolves to `SeLe4n.Kernel.Concurrency` (not a doubly-nested one).
+/-- **WS-RR RR8.12: a wake is not a migration.**
+
+`enqueueRunnableOnCore` writes exactly one TCB field (`ipcState := .ready`,
+`enqueueRunnableOnCore_makes_ready`) and the run queue, while
+`determineTargetCore` reads `cpuAffinity` alone.  So the core *any* thread would
+be woken onto is the same before and after *any* wake.
+
+This is what lets a **pre-state** scheduler footprint name the cores a transition
+writes several wake-shaped steps later: a footprint resolved before the operation
+runs and a write performed after it name the same core, rather than the footprint
+merely hoping they coincide.  Unconditional in `tid` and `x` -- the woken thread
+and the thread being located need not be distinct, and the reject arm
+(`runnableOnSomeCore`) and the unresolvable arm are the identity. -/
+theorem enqueueRunnableOnCore_determineTargetCore_eq (st : SystemState) (c : CoreId)
+    (tid x : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (enqueueRunnableOnCore st c tid) x = determineTargetCore st x := by
+  refine determineTargetCore_congr st (enqueueRunnableOnCore st c tid) x ?_
+  by_cases hEq : x = tid
+  · subst hEq
+    cases hTcb : st.getTcb? x with
+    | none =>
+        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb, hTcb]
+    | some tcb =>
+        cases hFresh : runnableOnSomeCore st x with
+        | true =>
+            rw [enqueueRunnableOnCore_eq_self_of_runnable st c x hFresh, hTcb]
+        | false =>
+            rw [enqueueRunnableOnCore_makes_ready st c x tcb hTcb hInv hFresh]
+            simp
+  · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]
+
+/-- **WS-RR RR8.12**: and neither is the cross-core wake that wraps it.
+
+`wakeThread` is `enqueueRunnableOnCore` at the thread's own target core plus an
+SGI decision that writes nothing, so the whole wake leaves every thread's home
+where it was. -/
+theorem wakeThread_determineTargetCore_eq (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (executingCore : CoreId) (hInv : st.objects.invExt) :
+    determineTargetCore (wakeThread st tid executingCore).1 x = determineTargetCore st x :=
+  enqueueRunnableOnCore_determineTargetCore_eq st (determineTargetCore st tid) tid x hInv
+
 namespace Concurrency
 
 /-- WS-SM SM5.C.4 (memory-model): the executing core's **release-store** event of

@@ -208,7 +208,7 @@ theorem preemptCurrentOnCore_runQueueOnCore_self_active (st : SystemState) (c : 
     (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
       = (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority) := by
   unfold preemptCurrentOnCore
-  simp [hCur, hNe, hTcb]
+  simp [hCur, hNe, SystemState.getTcbWitnessed?_eq_some hTcb]
 
 -- ── §2b  preempt preservation + unreachability of the non-TCB fallback ──
 
@@ -287,12 +287,12 @@ theorem preemptCurrentOnCore_getTcb?_incoming (st : SystemState) (c : CoreId)
     · rfl
     · next hBeq =>
       split
-      · next prevTcb _ =>
+      · next prevTcb _ _ =>
         have hNeT : prevTid ≠ incoming := by
           intro he; subst he; simp at hBeq
         have hNeO : ¬ (prevTid.toObjId == incoming.toObjId) = true := fun he =>
           hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
-        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId
           incoming.toObjId _ hNeO hInv]
       · rfl
@@ -319,17 +319,17 @@ theorem preemptCurrentOnCore_getTcb?_regContext (st : SystemState) (c : CoreId)
     · exact ⟨tcb, ht, Or.inl rfl⟩
     · next _ =>
       split
-      · next prevTcb _ =>
+      · next prevTcb _ _ =>
         by_cases hEq : tid = prevTid
         · subst hEq
           refine ⟨{ prevTcb with registerContext := st.machine.regsOnCore c }, ?_,
             Or.inr ⟨by first | rfl | exact hcur, rfl⟩⟩
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
           rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
         · refine ⟨tcb, ?_, Or.inl rfl⟩
           have hNeO : ¬ (prevTid.toObjId == tid.toObjId) = true := fun he =>
             (fun h => hEq h.symm) (ThreadId.toObjId_injective _ _ (by simpa using he))
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
           rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId tid.toObjId
             _ hNeO hInv]
           simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using ht
@@ -617,12 +617,12 @@ theorem preemptCurrentOnCore_getTcb?_ne_current (st : SystemState) (c : CoreId)
     · rfl
     · next _ =>
       split
-      · next prevTcb _ =>
+      · next prevTcb _ _ =>
         have hNeT : prevTid ≠ tid := by
           intro he; subst he; exact hNe hCur
         have hNeO : ¬ (prevTid.toObjId == tid.toObjId) = true := fun he =>
           hNeT (ThreadId.toObjId_injective _ _ (by simpa using he))
-        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+        simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
         rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId
           tid.toObjId _ hNeO hInv]
       · rfl
@@ -645,9 +645,9 @@ theorem preemptCurrentOnCore_notification_backward (st : SystemState) (c : CoreI
     · exact id
     · next _ =>
       split
-      · next prevTcb _ =>
+      · next prevTcb _ _ =>
         intro h
-        simp only [RHTable_getElem?_eq_get?] at h ⊢
+        simp only [RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects] at h ⊢
         by_cases hEq : (prevTid.toObjId == oid) = true
         · exfalso
           obtain rfl : prevTid.toObjId = oid := eq_of_beq hEq
@@ -942,22 +942,25 @@ theorem preemptCurrentOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
           cases hPrev : st.getTcb? prevTid with
           | none =>
               rw [show preemptCurrentOnCore st c incoming = st from by
-                simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]]
+                simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_none hPrev,
+                  Bool.false_eq_true, if_false]]
               exact h
           | some prevTcb =>
               -- active branch: `objects := insert prevTid (.tcb { prevTcb with regs })`.
               by_cases hT : t = prevTid
               · subst hT
                 refine ⟨{ prevTcb with registerContext := st.machine.regsOnCore c }, ?_⟩
-                simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
-                simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+                simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_some hPrev,
+                  Bool.false_eq_true, if_false]
+                simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
                 rw [RobinHood.RHTable.getElem?_insert_self st.objects t.toObjId _ hInv]
               · obtain ⟨x, hx⟩ := h
                 refine ⟨x, ?_⟩
                 have hNeO : ¬ (prevTid.toObjId == t.toObjId) = true := fun he =>
                   hT (ThreadId.toObjId_injective _ _ (by simpa using he)).symm
-                simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
-                simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+                simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_some hPrev,
+                  Bool.false_eq_true, if_false]
+                simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
                 rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId t.toObjId
                   _ hNeO hInv]
                 simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using hx
@@ -989,7 +992,7 @@ theorem preemptCurrentOnCore_runQueue_resolves (st : SystemState) (c : CoreId)
           | none =>
               rw [show (preemptCurrentOnCore st c incoming).scheduler.runQueueOnCore c
                     = st.scheduler.runQueueOnCore c from by
-                simp [preemptCurrentOnCore, hCur, hEqb, hPrev]] at hx
+                simp [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_none hPrev]] at hx
               exact hRAT x hx
           | some prevTcb =>
               rw [preemptCurrentOnCore_runQueueOnCore_self_active st c incoming prevTid prevTcb
@@ -1147,18 +1150,17 @@ theorem preemptCurrentOnCore_getTcb?_domain (st : SystemState) (c : CoreId)
     · exact ⟨tcb, ht, rfl⟩
     · next _ =>
       split
-      · next prevTcb hPrevEq =>
+      · next prevTcb hPrev _ =>
         by_cases hEq : tid = prevTid
         · subst hEq
-          rw [ht] at hPrevEq
-          have he : tcb = prevTcb := by simpa using hPrevEq
+          have he : tcb = prevTcb := Option.some.inj (ht.symm.trans hPrev)
           refine ⟨{ prevTcb with registerContext := st.machine.regsOnCore c }, ?_, by rw [he]⟩
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
           rw [RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hInv]
         · have hNeO : ¬ (prevTid.toObjId == tid.toObjId) = true := fun heb =>
             hEq (ThreadId.toObjId_injective _ _ (by simpa using heb)).symm
           refine ⟨tcb, ?_, rfl⟩
-          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+          simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
           rw [RobinHood.RHTable.getElem?_insert_ne st.objects prevTid.toObjId tid.toObjId
             _ hNeO hInv]
           simpa only [SystemState.getTcb?, RHTable_getElem?_eq_get?] using ht
@@ -1345,13 +1347,15 @@ theorem preemptCurrentOnCore_determineTargetCore (st : SystemState) (c : CoreId)
     | false =>
       cases hPrev : st.getTcb? prevTid with
       | none => rw [show preemptCurrentOnCore st c incoming = st from by
-          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]]
+          simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_none hPrev,
+            Bool.false_eq_true, if_false]]
       | some prevTcb =>
         have hRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev
         have hObj : (preemptCurrentOnCore st c incoming).objects
             = st.objects.insert prevTid.toObjId
                 (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }) := by
-          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
+          simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_some hPrev,
+            Bool.false_eq_true, if_false, SystemState.rewriteObject_objects]
         exact determineTargetCore_insert_tcb st _ prevTid prevTcb
           { prevTcb with registerContext := st.machine.regsOnCore c } hInv hRaw rfl hObj t
 
@@ -1371,13 +1375,15 @@ theorem preemptCurrentOnCore_boundThread (st : SystemState) (c : CoreId)
     | false =>
       cases hPrev : st.getTcb? prevTid with
       | none => rw [show preemptCurrentOnCore st c incoming = st from by
-          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]]
+          simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_none hPrev,
+            Bool.false_eq_true, if_false]]
       | some prevTcb =>
         have hRaw := (SystemState.getTcb?_eq_some_iff st prevTid prevTcb).mp hPrev
         have hObj : (preemptCurrentOnCore st c incoming).objects
             = st.objects.insert prevTid.toObjId
                 (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }) := by
-          simp only [preemptCurrentOnCore, hCur, hEqb, hPrev, Bool.false_eq_true, if_false]
+          simp only [preemptCurrentOnCore, hCur, hEqb, SystemState.getTcbWitnessed?_eq_some hPrev,
+            Bool.false_eq_true, if_false, SystemState.rewriteObject_objects]
         rw [getSchedContext?_insert_tcb_eq st _ prevTid prevTcb
           { prevTcb with registerContext := st.machine.regsOnCore c } hInv hRaw hObj scId]
 

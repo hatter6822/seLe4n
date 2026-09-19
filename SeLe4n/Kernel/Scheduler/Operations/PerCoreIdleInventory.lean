@@ -127,7 +127,7 @@ def perCoreIdleTheorems : List PerCoreIdleTheorem :=
     pcit! "idleThreadId: the per-core idle thread id (SM5.E.1)"
       SeLe4n.Kernel.idleThreadId .field,
     pcit! "createIdleThread: the per-core idle TCB with cpuAffinity := some c (SM5.E.2)"
-      SeLe4n.Platform.Boot.createIdleThread .field,
+      SeLe4n.Kernel.createIdleThread .field,
     pcit! "idleThread_priority_zero: idle is priority 0, never starves a higher thread (SM5.E.5)"
       idleThread_priority_zero .field,
     pcit! "createIdleThread_domain_zero: idle is in the boot active domain 0"

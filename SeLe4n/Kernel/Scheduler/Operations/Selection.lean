@@ -104,7 +104,7 @@ theorem isBetterCandidate_transitive
   · have hLe31 : p3.toNat ≤ p1.toNat := Nat.le_of_not_gt h31
     by_cases h13 : p1.toNat < p3.toNat
     · omega
-    · have hp12 : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
+    · have hSecondAtLeastFirst : p2.toNat > p1.toNat ∨ p2.toNat = p1.toNat := by
         by_cases hp : p2.toNat > p1.toNat
         · exact Or.inl hp
         · have : p2.toNat = p1.toNat := by
@@ -113,7 +113,7 @@ theorem isBetterCandidate_transitive
               simp [Nat.not_lt.mpr (Nat.le_of_lt hlt), hlt] at h12
             omega
           exact Or.inr this
-      have hp23 : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
+      have hThirdAtLeastSecond : p3.toNat > p2.toNat ∨ p3.toNat = p2.toNat := by
         by_cases hp : p3.toNat > p2.toNat
         · exact Or.inl hp
         · have : p3.toNat = p2.toNat := by
@@ -788,11 +788,8 @@ def saveOutgoingContext (st : SystemState) : SystemState :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => st
   | some outTid =>
-      match st.getTcb? outTid with
-      | some outTcb =>
-          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
-          { st with objects := st.objects.insert outTid.toObjId obj }
-      | none => st
+      -- One TCB rewritten in place through the lookup that is its own witness.
+      st.updateTcb outTid fun outTcb => { outTcb with registerContext := st.machine.regs }
 
 /-- V5-D (M-DEF-4): Checked variant of `saveOutgoingContext` that returns a
     success indicator. Returns `(state, true)` on successful save (or no current
@@ -805,10 +802,12 @@ def saveOutgoingContextChecked (st : SystemState) : SystemState × Bool :=
   match (st.scheduler.currentOnCore bootCoreId) with
   | none => (st, true)
   | some outTid =>
-      match st.getTcb? outTid with
-      | some outTcb =>
-          let obj := KernelObject.tcb { outTcb with registerContext := st.machine.regs }
-          ({ st with objects := st.objects.insert outTid.toObjId obj }, true)
+      match st.getTcbWitnessed? outTid with
+      | some ⟨outTcb, h⟩ =>
+          (st.rewriteObject outTid.toObjId
+              (.tcb { outTcb with registerContext := st.machine.regs })
+              (SystemState.rewriteAdmissible_tcb h _),
+           true)
       | none => (st, false)
 
 /-- AI3-C (L-09): Under `currentThreadValid`, `saveOutgoingContext` always succeeds.
@@ -837,8 +836,10 @@ theorem saveOutgoingContext_always_succeeds_under_currentThreadValid
     simp only [hCur] at hCTV
     obtain ⟨tcb, hTcb⟩ := hCTV
     -- `currentThreadValid` is stated over the store; the transition reads
-    -- through `getTcb?`, so the witness crosses by the accessor's own iff.
-    simp only [(SystemState.getTcb?_eq_some_iff st outTid tcb).mpr hTcb]
+    -- through the witnessed `getTcb?`, so the witness crosses by the accessor's
+    -- own iff and the witnessed lookup's equation.
+    simp only [SystemState.getTcbWitnessed?_eq_some
+      ((SystemState.getTcb?_eq_some_iff st outTid tcb).mpr hTcb)]
 
 /-- V5-D: The checked variant agrees with the unchecked variant on the state component. -/
 theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
@@ -847,11 +848,14 @@ theorem saveOutgoingContextChecked_fst_eq (st : SystemState) :
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      -- Two-way on the accessor both sides read: the seven non-TCB store arms
-      -- are all its `none`.
+      -- Two-way on the accessor both sides read, through the witnessed lookup's
+      -- two equations and the typed update's two.
       cases h : st.getTcb? outTid with
-      | none => simp_all
-      | some _ => simp_all
+      | none =>
+          simp only [SystemState.getTcbWitnessed?_eq_none h, SystemState.updateTcb_eq_self_of_none h]
+      | some t =>
+          simp only [SystemState.getTcbWitnessed?_eq_some h, SystemState.updateTcb_eq_of_some h]
+          rfl
 
 /-- WS-H12c/H-03/V5-E: Restore the incoming thread's register context into the
 machine register file. If the incoming TCB is not found, returns the state
@@ -1146,13 +1150,15 @@ def preemptCurrentOnCore (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreI
   | some prevTid =>
     if prevTid == incoming then st
     else
-      match st.getTcb? prevTid with
-      | some prevTcb =>
-        let savedTcb : KernelObject := .tcb { prevTcb with registerContext := st.machine.regsOnCore c }
+      match st.getTcbWitnessed? prevTid with
+      | some ⟨prevTcb, h⟩ =>
         let reenqueuedRq := (st.scheduler.runQueueOnCore c).insert prevTid (prevTcb.boostedPriority)
-        { st with
-            objects := st.objects.insert prevTid.toObjId savedTcb,
-            scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
+        -- The context save is an in-place rewrite (the lookup is its witness);
+        -- the re-enqueue is the scheduler write beside it.
+        { st.rewriteObject prevTid.toObjId
+            (.tcb { prevTcb with registerContext := st.machine.regsOnCore c })
+            (SystemState.rewriteAdmissible_tcb h _) with
+          scheduler := st.scheduler.setRunQueueOnCore c reenqueuedRq }
       | none => st
 
 /-- WS-SM SM5.B.3 (frame): `preemptCurrentOnCore` never writes *any* core's
@@ -1377,8 +1383,11 @@ could otherwise dispatch concurrently (the same thread running on two cores).
 Fail-closed: a `tid` that does not resolve to a TCB is a no-op (identity),
 mirroring `IPC.ensureRunnable`'s `none => st` discipline.
 
-Footprint: WRITES core `c`'s run-queue slot and `tid`'s TCB; the single-placement
-guard additionally READS every per-core run queue.  `wakeThreadLockSet` declares
+Footprint: WRITES core `c`'s run-queue slot and `tid`'s TCB — the TCB through
+`SystemState.rewriteObject` under the witnessed lookup (`getTcbWitnessed?`), so
+the wake's object-store write is one in-place table insert whose admissibility
+proof is erased; the single-placement guard additionally READS every per-core
+run queue.  `wakeThreadLockSet` declares
 the write footprint; the guard's all-core read coverage is formalised when the
 wake is wired under `withLockSet` at SM5.D (the lock set's runtime consumption is
 SM5.D+).  Every other thread's TCB and every other core's `current` slot are
@@ -1386,13 +1395,12 @@ framed out (the cross-core-independence + per-thread frame lemmas in
 `PerCoreWake`). -/
 def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, h⟩ =>
       if runnableOnSomeCore st tid then st
       else
-        let readyTcb : KernelObject := .tcb { tcb with ipcState := .ready }
-        { st with
-            objects := st.objects.insert tid.toObjId readyTcb,
+        { st.rewriteObject tid.toObjId (.tcb { tcb with ipcState := .ready })
+            (SystemState.rewriteAdmissible_tcb h _) with
             scheduler := st.scheduler.setRunQueueOnCore c
               ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
   | none => st
@@ -1711,10 +1719,9 @@ on the thread's next wake (`determineTargetCore`) and the next reject-remote
 check (`affinityAdmitsCore`). -/
 def setThreadCpuAffinity (st : SystemState) (targetTid : SeLe4n.ThreadId)
     (affinity : Option CoreId) : Except KernelError SystemState :=
-  match st.getTcb? targetTid with
-  | some tcb =>
-      .ok { st with
-              objects := st.objects.insert targetTid.toObjId
-                (.tcb { tcb with cpuAffinity := affinity }) }
+  match st.getTcbWitnessed? targetTid with
+  | some ⟨tcb, h⟩ =>
+      .ok (st.rewriteObject targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity })
+        (SystemState.rewriteAdmissible_tcb h _))
   | none => .error .invalidArgument
 

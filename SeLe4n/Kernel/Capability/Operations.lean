@@ -503,9 +503,7 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
         | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
         | none =>
             let cn' := cn.insert addr.slot cap
-            match storeObject addr.cnode (.cnode cn') st with
-            | .error e => .error e
-            | .ok (_, st') => storeCapabilityRef addr (some cap.target) st'
+            storeObject addr.cnode (.cnode cn') st
     | none => .error .objectNotFound
 
 theorem cspaceInsertSlot_preserves_scheduler
@@ -527,16 +525,7 @@ theorem cspaceInsertSlot_preserves_scheduler
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              have hSchedStore : ∀ st₁ st₂, storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st₁ = .ok ((), st₂) → st₂.scheduler = st₁.scheduler :=
-                fun _ _ h => storeObject_scheduler_eq _ _ _ _ h
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hSchedMid := hSchedStore st stMid hStore
-                  have hSchedRef := storeCapabilityRef_preserves_scheduler stMid st' addr (some cap.target) hStep
-                  rw [hSchedRef, hSchedMid]
+              exact storeObject_scheduler_eq _ _ _ _ hStep
 
 theorem cspaceInsertSlot_preserves_services
     (st st' : SystemState)
@@ -557,14 +546,7 @@ theorem cspaceInsertSlot_preserves_services
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hSvcMid := storeObject_preserves_services st stMid addr.cnode (.cnode (cn.insert addr.slot cap)) hStore
-                  have hSvcRef := storeCapabilityRef_preserves_services stMid st' addr (some cap.target) hStep
-                  rw [hSvcRef, hSvcMid]
+              exact storeObject_preserves_services _ _ _ _ hStep
 
 theorem cspaceInsertSlot_preserves_objects_ne
     (st st' : SystemState)
@@ -588,14 +570,7 @@ theorem cspaceInsertSlot_preserves_objects_ne
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨⟨⟩, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hObjMid := storeObject_objects_ne st stMid addr.cnode oid (.cnode (cn.insert addr.slot cap)) hNe hObjInv hStore
-                  have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-                  rw [← hObjMid, show st'.objects[oid]? = stMid.objects[oid]? from congrArg (·.get? oid) hObjRef]
+              exact storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStep
 
 /-- `cspaceInsertSlot` preserves `objects.invExt`. -/
 theorem cspaceInsertSlot_preserves_objects_invExt
@@ -616,14 +591,7 @@ theorem cspaceInsertSlot_preserves_objects_invExt
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨⟨⟩, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hInvMid := storeObject_preserves_objects_invExt st stMid addr.cnode _ hObjInv hStore
-                  have hObjRef := storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
-                  rw [show st'.objects = stMid.objects from hObjRef]; exact hInvMid
+              exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep
 
 /-- `cspaceInsertSlot` preserves machine state. -/
 theorem cspaceInsertSlot_preserves_machine
@@ -643,14 +611,7 @@ theorem cspaceInsertSlot_preserves_machine
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hMachMid := storeObject_machine_eq st stMid addr.cnode _ hStore
-                  have hMachRef := storeCapabilityRef_preserves_machine stMid st' addr (some cap.target) hStep
-                  rw [hMachRef, hMachMid]
+              exact storeObject_machine_eq _ _ _ _ hStep
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
 theorem cspaceInsertSlot_preserves_irqHandlers
@@ -670,14 +631,7 @@ theorem cspaceInsertSlot_preserves_irqHandlers
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hIrqMid := storeObject_irqHandlers_eq st stMid addr.cnode _ hStore
-                  have hIrqRef := storeCapabilityRef_preserves_irqHandlers stMid st' addr (some cap.target) hStep
-                  rw [hIrqRef, hIrqMid]
+              exact storeObject_irqHandlers_eq _ _ _ _ hStep
 
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
@@ -1015,8 +969,10 @@ private def revokePendingTransfersStep (nodes : List CdtNodeId)
   -- frame lemma below compose: each step establishes for itself that the key it
   -- writes already held a TCB, instead of resting on the enumeration being
   -- faithful to the store it came from.
-  match stAcc.getTcb? (SeLe4n.ThreadId.ofNat oid.toNat) with
-  | some tcb =>
+  -- ...through the witnessed lookup (`v0.35.72`), so the write below is the
+  -- typed in-place rewrite under the store's own proof for the record it read.
+  match stAcc.getTcbWitnessed? (SeLe4n.ThreadId.ofNat oid.toNat) with
+  | some ⟨tcb, hTcb⟩ =>
       match tcb.ipcState with
       | .blockedOnSend _ | .blockedOnCall _ =>
           match tcb.pendingMessage with
@@ -1026,8 +982,8 @@ private def revokePendingTransfersStep (nodes : List CdtNodeId)
                 let msg' : IpcMessage :=
                   { msg with caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) }
                 let tcb' : TCB := { tcb with pendingMessage := some msg' }
-                { stAcc with objects :=
-                    stAcc.objects.insert (SeLe4n.ThreadId.ofNat oid.toNat).toObjId (.tcb tcb') }
+                stAcc.rewriteObject (SeLe4n.ThreadId.ofNat oid.toNat).toObjId (.tcb tcb')
+                  (SystemState.rewriteAdmissible_tcb hTcb tcb')
               else stAcc
       | _ => stAcc
   | none => stAcc
@@ -1168,12 +1124,7 @@ def cspaceDeleteSlotCore (addr : CSpaceAddr) : Kernel Unit :=
         let cn' := cn.remove addr.slot
         match storeObject addr.cnode (.cnode cn') st with
         | .error e => .error e
-        | .ok (_, st') =>
-            match storeCapabilityRef addr none st' with
-            | .error e => .error e
-            | .ok ((), st'') =>
-                let stDetached := SystemState.detachSlotFromCdt st'' addr
-                .ok ((), stDetached)
+        | .ok (_, st') => .ok ((), SystemState.detachSlotFromCdt st' addr)
     | none => .error .objectNotFound
 
 /-- Delete the capability currently stored in `addr`.
@@ -1272,12 +1223,7 @@ def cspaceRevoke (addr : CSpaceAddr) : Kernel Unit :=
         match st'.getCNode? addr.cnode with
         | some cn =>
             let cn' := cn.revokeTargetLocal addr.slot parent.target
-            match storeObject addr.cnode (.cnode cn') st' with
-            | .error e => .error e
-            | .ok (_, st'') =>
-                -- M-P01: Fused single-pass revoke — clear capability refs inline
-                -- during the slot scan instead of building an intermediate list.
-                .ok ((), revokeAndClearRefsState cn addr.slot parent.target addr.cnode st'')
+            storeObject addr.cnode (.cnode cn') st'
         | none => .error .objectNotFound
 
 -- ============================================================================
@@ -1447,9 +1393,7 @@ def cspaceMutate (addr : CSpaceAddr) (rights : AccessRightSet)
           match st'.getCNode? addr.cnode with
           | some cn =>
               let cn' := cn.insert addr.slot mutatedCap
-              match storeObject addr.cnode (.cnode cn') st' with
-              | .error e => .error e
-              | .ok (_, st'') => storeCapabilityRef addr (some mutatedCap.target) st''
+              storeObject addr.cnode (.cnode cn') st'
           | none => .error .objectNotFound
         else .error .invalidCapability
 
@@ -2012,8 +1956,8 @@ capability installed beneath it is authority nothing can destroy.
 The first version of this check asked only whether the node still *mapped* to a
 slot address.  That is a weaker question, and the local sibling sweep went
 straight through it: `cspaceRevoke` empties every sibling naming the revoked
-target (`revokeTargetLocal` filters them out of the CNode) while
-`revokeAndClearRefsState` deliberately preserves `cdtNodeSlot`.  The mapping
+target (`revokeTargetLocal` filters them out of the CNode) and touches no CDT
+map, so `cdtNodeSlot` keeps every swept sibling's entry.  The mapping
 outlived the capability, so a transfer parked against a swept sibling passed the
 check and installed under a node `cspaceRevokeCdt` cannot enter.  The swept
 sibling is neither the revoked root nor one of its descendants, so the in-flight
@@ -2111,9 +2055,9 @@ def ipcTransferSingleCap
             -- precondition rather than a restatement of it.  Round 18: this
             -- asked only whether `cdtSlotNode` still mapped the node, on the
             -- premise that every destroyer severs that mapping.  The first three
-            -- do; the sibling sweep does not, because `revokeAndClearRefsState`
-            -- deliberately preserves the CDT maps — so the mapping outlived the
-            -- capability and the check passed on an empty slot.
+            -- do; the sibling sweep does not, because the local revoke writes
+            -- only the CNode and touches no CDT map — so the mapping outlived
+            -- the capability and the check passed on an empty slot.
             --
             -- Checking here rather than at each destroyer is deliberate.  The
             -- destroyers are open-ended — delete, CNode retype and revoke
@@ -2503,15 +2447,13 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
             { cnode := receiverRoot, slot := emptySlot }
           -- Need: pair.2.objects[receiverRoot]? = some (.cnode _)
           -- cspaceInsertSlot stores via storeObject receiverRoot (.cnode cn')
-          -- then storeCapabilityRef which only modifies lifecycle
           intro ntfn h
           -- h is about the final state after ensureCdtNodeForSlot and with-cdt
           -- Simplify: final objects = pair.2.objects (ensureCdtNodeForSlot preserves objects)
           simp only [hObjSrc] at h
           -- Now h : pair.2.objects[receiverRoot]? = some (.notification ntfn)
-          -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject
-          -- then storeCapabilityRef only modifies lifecycle
-          -- So pair.2.objects[receiverRoot]? should be some (.cnode cn')
+          -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject,
+          -- so pair.2.objects[receiverRoot]? should be some (.cnode cn')
           -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
           unfold cspaceInsertSlot SystemState.getCNode? at hIns
           simp [hObj] at hIns
@@ -2519,22 +2461,9 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           | some _ => simp [hLookup] at hIns
           | none =>
             simp [hLookup] at hIns
-            cases hStore : storeObject receiverRoot (.cnode (cn.insert emptySlot cap)) st with
-            | error e => simp [hStore] at hIns
-            | ok storePair =>
-              simp [hStore] at hIns
-              have hStoreEq : storeObject receiverRoot (.cnode (cn.insert emptySlot cap)) st
-                  = .ok ((), storePair.2) := by
-                rw [hStore]
-              have hStoreObj := storeObject_objects_eq st storePair.2 receiverRoot
-                (.cnode (cn.insert emptySlot cap)) hObjInv hStoreEq
-              -- storeCapabilityRef only modifies lifecycle, not objects
-              unfold storeCapabilityRef at hIns
-              cases hIns
-              -- pair.2.objects = storePair.2.objects (storeCapabilityRef doesn't change objects)
-              simp at h
-              rw [hStoreObj] at h
-              exact absurd h (by simp)
+            have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
+            rw [hStoreObj] at h
+            exact absurd h (by simp)
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all endpoint objects.
 When `oid = receiverRoot` and the object is an endpoint, the function
@@ -2696,19 +2625,9 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
       | some _ => simp [hLookup] at hIns
       | none =>
         simp [hLookup] at hIns
-        cases hStore : storeObject receiverRoot (.cnode (cn.insert emptySlot cap)) st with
-        | error e => simp [hStore] at hIns
-        | ok storePair =>
-          simp [hStore] at hIns
-          have hStoreEq : storeObject receiverRoot (.cnode (cn.insert emptySlot cap)) st
-              = .ok ((), storePair.2) := by
-            rw [hStore]
-          have hStoreObj := storeObject_objects_eq st storePair.2 receiverRoot
-            (.cnode (cn.insert emptySlot cap)) hObjInv hStoreEq
-          unfold storeCapabilityRef at hIns
-          cases hIns
-          refine ⟨cn.insert emptySlot cap, ?_⟩
-          simp only [hObjSrc]
-          exact hStoreObj
+        have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
+        refine ⟨cn.insert emptySlot cap, ?_⟩
+        simp only [hObjSrc]
+        exact hStoreObj
 
 end SeLe4n.Kernel

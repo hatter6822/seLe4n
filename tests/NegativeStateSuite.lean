@@ -123,7 +123,6 @@ private def baseState : SystemState :=
     |>.withLifecycleObjectType ⟨9⟩ .tcb
     |>.withLifecycleObjectType notificationId .notification
     |>.withLifecycleObjectType ⟨20⟩ .vspaceRoot
-    |>.withLifecycleCapabilityRef slot0 (.object endpointId)
     |>.withRunnable [⟨6⟩, ⟨7⟩, ⟨8⟩, ⟨9⟩]
     |>.buildChecked)
 
@@ -182,6 +181,30 @@ private def corruptThreadQueueLinks
       }
   | _ => .error .objectNotFound
 
+/-- **PR #897 review (`v0.35.108`)**: the sibling of `corruptThreadQueueLinks`, one
+level up — write an endpoint's two queue boundaries directly.
+
+Needed because the fifth `dualQueueSystemInvariant` conjunct is *cross*-endpoint, so
+no sequence of live operations can reach a violating state: every kernel queue
+writer maintains disjointness by construction, which is exactly why the conjunct is
+provable.  A witness for it therefore has to write the second endpoint by hand, as
+the pairing witnesses write a corrupted back-pointer by hand. -/
+private def corruptEndpointQueueHeads
+    (st : SystemState)
+    (epId : SeLe4n.ObjId)
+    (sendHead recvHead : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
+  match (st.objects[epId]? : Option KernelObject) with
+  | some (.endpoint ep) =>
+      .ok {
+        st with
+        objects := st.objects.insert epId (.endpoint {
+          ep with
+          sendQ := { head := sendHead, tail := sendHead }
+          receiveQ := { head := recvHead, tail := recvHead }
+        })
+      }
+  | _ => .error .objectNotFound
+
 -- WS-F2 untyped memory test constants and states
 private def f2UntypedObjId : SeLe4n.ObjId := ⟨80⟩
 private def f2UntypedChildId : SeLe4n.ObjId := ⟨81⟩
@@ -213,7 +236,6 @@ private def f2UntypedState : SystemState :=
     })
     |>.withLifecycleObjectType f2UntypedObjId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
     |>.buildChecked)
 
 private def f2DeviceUntypedId : SeLe4n.ObjId := ⟨83⟩
@@ -242,7 +264,6 @@ private def f2DeviceState : SystemState :=
     })
     |>.withLifecycleObjectType f2DeviceUntypedId .untyped
     |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-    |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2DeviceUntypedId)
     |>.buildChecked)
 
 /-- Baseline `cspaceLookup*` negative checks (wrong type, depth/guard mismatch).
@@ -1193,7 +1214,6 @@ private def runUntypedF2NegativeChecks : IO Unit := do
       })
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.buildChecked)
   expectErr "misaligned base for VSpace root"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId f2UntypedChildId
@@ -1203,6 +1223,429 @@ private def runUntypedF2NegativeChecks : IO Unit := do
   IO.println "untyped memory negative checks passed (incl. S5-G alignment)"
 
 
+-- WS-RR RR8.3: the surface the pairing invariant exists for.  The two removal
+-- guards are elaborated here because `runDualQueuePPrevPairingChecks` below can
+-- exercise the guard's *value* but not the theorem that discharges it, and a
+-- discharge nothing elaborates is indistinguishable from one that is wrong.  The
+-- bundle form is the shape `endpointQueueRemoveDual`'s callers actually hold, and
+-- is what WS-RR RR8.4's collapse of the two removals consumes.
+#check @SeLe4n.Kernel.dualQueueRemovalGuardHolds
+#check @SeLe4n.Kernel.dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant
+#check @SeLe4n.Model.dualQueueRemovalGuard_eq_position_and_pair
+#check @SeLe4n.Kernel.spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev
+#check @SeLe4n.Kernel.sweptAndRestored_queuePPrevAgreesWithPrev
+#check @SeLe4n.Kernel.QueueNextPath.lastEdge
+
+/-- The reading the pairing had until `v0.35.99`: a `queuePPrev` of `none`
+constrained nothing.  It lives here, `private`, and nowhere else — the stranding
+witness below computes it beside the live predicate, so the assertion is known to
+discriminate rather than merely to pass. -/
+private def retiredPairingAcceptingAnyMissingBackPointer (st : SystemState) : Bool :=
+  st.objectIndex.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        (match tcb.queuePPrev with
+         | none => true
+         | some .endpointHead => tcb.queuePrev.isNone
+         | some (.tcbNext p) => tcb.queuePrev == some p) && acc
+    | none => acc) true
+
+/-- **WS-RR RR8.3**: the `queuePPrev`/`queuePrev` pairing invariant, and the split
+that makes `endpointQueueRemoveDual`'s guard discharge from it.
+
+Four assertions the tree could not make before this cut (the fourth added at
+`v0.35.99`, when the `none` arm stopped being vacuous).
+
+1. A queue the **live** operations built satisfies the pairing, and
+   `dualQueueRemovalGuard` is `true` at both the head and an interior node — so
+   `dualQueueRemovalGuardHolds` is not vacuous.
+2. Corrupting a back-pointer to disagree with `queuePrev` makes
+   `queuePPrevAgreesWithPrevBool` **false** while every queue and every
+   `queueNext` chain stays exactly as it was.  That is the mutation that decides:
+   before RR8.3 no conjunct and no runtime check read `queuePPrev`, so these two
+   states were indistinguishable from the good one, which is how two removals
+   came to write `queuePrev` without its partner (WS-OD OD1.1, OD3.9).
+3. A **detached** thread carrying `(none, .endpointHead, none)` *satisfies* the
+   pairing and still fails the guard, on the position half.  That is the honest
+   measurement of what the invariant does **not** buy: membership is a separate
+   hypothesis, which is why `dualQueueRemovalGuardHolds` takes one.
+4. A queue's **head** carrying no back-pointer at all *satisfies* the pairing —
+   `queuePrev = none` is what a head legitimately has — so the pointwise arm
+   cannot reach it.  Case (5) below is that state, and the assertion added at
+   `v0.35.106` is that `intrusiveQueueWellFormed`'s **P2** now refuses it, which
+   is where a fact about a queue's head belongs. -/
+private def runDualQueuePPrevPairingChecks : IO Unit := do
+  let (_, stPair1) ← expectOkSt "pprev pairing enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let (_, stPair2) ← expectOkSt "pprev pairing enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stPair1)
+  let (_, stPair3) ← expectOkSt "pprev pairing enqueue sender 9"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 9) .empty stPair2)
+
+  -- (1) the live queue satisfies the invariant, and the guard holds on it.
+  let sendQOf (st : SystemState) : IO IntrusiveQueue :=
+    match st.getEndpoint? endpointId with
+    | some ep => pure ep.sendQ
+    | none => throw <| IO.userError "pprev pairing: endpoint missing"
+  let tcbOf (st : SystemState) (tid : SeLe4n.ThreadId) : IO TCB :=
+    match st.getTcb? tid with
+    | some tcb => pure tcb
+    | none => throw <| IO.userError s!"pprev pairing: TCB {tid.toNat} missing"
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+
+  let q3 ← sendQOf stPair3
+  let tcb7 ← tcbOf stPair3 (SeLe4n.ThreadId.ofNat 7)
+  let tcb8 ← tcbOf stPair3 (SeLe4n.ThreadId.ofNat 8)
+  expectBool "pprev pairing holds on the live three-member queue"
+    (queuePPrevAgreesWithPrevBool stPair3) true
+  expectBool "removal guard holds at the head (endpointHead arm)"
+    (SeLe4n.Model.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 7) tcb7 .endpointHead) true
+  expectBool "removal guard holds at an interior node (tcbNext arm)"
+    (SeLe4n.Model.dualQueueRemovalGuard q3 (SeLe4n.ThreadId.ofNat 8) tcb8
+      (.tcbNext (SeLe4n.ThreadId.ofNat 7))) true
+
+  -- (2) breaking the pairing alone: every queue and every `queueNext` unchanged.
+  let stHeadPPrev ← expectOkVal "pprev pairing corrupt the head's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 7) none
+      (some (.tcbNext (SeLe4n.ThreadId.ofNat 8))) (some (SeLe4n.ThreadId.ofNat 8)))
+  expectBool "a head whose back-pointer names a predecessor fails the pairing"
+    (queuePPrevAgreesWithPrevBool stHeadPPrev) false
+  expectErr "...and the removal refuses it"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stHeadPPrev)
+    .illegalState
+
+  let stStalePrev ← expectOkVal "pprev pairing corrupt an interior node's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 7))
+      (some .endpointHead) (some (SeLe4n.ThreadId.ofNat 9)))
+  expectBool "an interior node claiming to be the head fails the pairing"
+    (queuePPrevAgreesWithPrevBool stStalePrev) false
+
+  -- (3) the position half is genuinely separate: a detached thread satisfies the
+  -- pairing and still fails the guard.
+  let stDetached ← expectOkVal "pprev pairing detached thread marked as queued"
+    (corruptThreadQueueLinks baseState (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
+  expectBool "a detached thread carrying (none, endpointHead, none) SATISFIES the pairing"
+    (queuePPrevAgreesWithPrevBool stDetached) true
+  let qEmpty ← sendQOf stDetached
+  let tcbDet ← tcbOf stDetached (SeLe4n.ThreadId.ofNat 7)
+  expectBool "...and still fails the guard, on the position half"
+    (SeLe4n.Model.dualQueueRemovalGuard qEmpty (SeLe4n.ThreadId.ofNat 7) tcbDet .endpointHead)
+    false
+  expectBool "...which is exactly the position factor"
+    (SeLe4n.Model.queuePPrevHeadPositionAgrees qEmpty (SeLe4n.ThreadId.ofNat 7) .endpointHead)
+    false
+
+  -- (4) `v0.35.99`: the shape the `none` arm used to admit — a QUEUED interior
+  -- node carrying no back-pointer at all.  Reported on PR #897 and confirmed by
+  -- reading the conjuncts: `tcbQueueLinkIntegrity`, which the pairing's docstring
+  -- delegated this case to, forbids a *dangling* `queuePrev` (one whose target
+  -- does not point back) and says nothing about `queuePPrev`.  So this state
+  -- satisfied every conjunct of `dualQueueSystemInvariant` while the dual removal
+  -- — whose guard takes a `QueuePPrev`, not an `Option` — refuses it outright.
+  -- That thread could never leave its queue: the OD1.1/OD3.9 stranding class, at
+  -- the one spot RR8.3's own pairing left open.
+  let stNoBackPointer ← expectOkVal "pprev pairing clear an interior node's back-pointer"
+    (corruptThreadQueueLinks stPair3 (SeLe4n.ThreadId.ofNat 8) (some (SeLe4n.ThreadId.ofNat 7))
+      none (some (SeLe4n.ThreadId.ofNat 9)))
+  expectBool "the RETIRED reading ACCEPTED a queued node with no back-pointer"
+    (retiredPairingAcceptingAnyMissingBackPointer stNoBackPointer) true
+  expectBool "...and the strengthened pairing REFUSES it"
+    (queuePPrevAgreesWithPrevBool stNoBackPointer) false
+  -- The refusal is `.endpointQueueEmpty` on a queue that is *not* empty: the
+  -- removal reaches for a `QueuePPrev` and finds `none`, so it reports the shape
+  -- it expects a missing back-pointer to mean.  The misleading code is the
+  -- smaller half of the finding; the strand is that the thread can never leave.
+  expectErr "...which is the state whose removal was refused, stranding the thread"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8)
+      stNoBackPointer)
+    .endpointQueueEmpty
+  -- ...and the control: the same queue with the back-pointer intact is accepted by
+  -- both readings and its removal succeeds, so the three assertions above are
+  -- about the cleared field and not about the fixture.
+  expectBool "control: the untouched queue satisfies the RETIRED reading too"
+    (retiredPairingAcceptingAnyMissingBackPointer stPair3) true
+  let (_, _) ← expectOkSt "control: the untouched interior node CAN be removed"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 8) stPair3)
+
+  -- (5) **PR #897 review (`v0.35.106`): the HEAD, which `v0.35.99` did not reach.**
+  -- Case (4) above closed *present but wrong* for an interior node.  A queue's
+  -- **head** has `queuePrev = none` legitimately, so the strengthened `none` arm's
+  -- obligation (`queuePrev = none`) is *satisfied* by a head carrying no
+  -- back-pointer at all — a pointwise predicate over one TCB structurally cannot
+  -- say "on no queue", whatever it is strengthened to.  So the clause moved to
+  -- where it can be said: `intrusiveQueueWellFormed`'s **P2**, a fact about a
+  -- queue's head, which this case is the witness for.
+  let (_, stSingle) ← expectOkSt "pprev pairing enqueue a single sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let stHeadNoBackPointer ← expectOkVal "pprev pairing clear the SOLE member's back-pointer"
+    (corruptThreadQueueLinks stSingle (SeLe4n.ThreadId.ofNat 7) none none none)
+  let qSingle ← sendQOf stHeadNoBackPointer
+  expectBool "control: the queue names that thread as BOTH head and tail"
+    (qSingle.head == some (SeLe4n.ThreadId.ofNat 7)
+      && qSingle.tail == some (SeLe4n.ThreadId.ofNat 7)) true
+  -- The clause P2 now carries, read off both states directly: the corrupted head
+  -- carries no back-pointer and the control's carries `.endpointHead`.  Asserting
+  -- the *field* rather than only a predicate's verdict is what makes this witness
+  -- about P2's own strengthening rather than about the pairing beside it.
+  expectBool "the corrupted head carries NO back-pointer — the clause P2 requires"
+    (match stHeadNoBackPointer.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == none
+     | none => false) true
+  expectBool "control: the untouched head carries `some .endpointHead`"
+    (match stSingle.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == some .endpointHead
+     | none => false) true
+  -- The **pairing** still accepts it, and that is not a defect: the head really has
+  -- no predecessor, so this arm's obligation is met.  It is why the clause could
+  -- not live here.
+  expectBool "the pairing ACCEPTS a queue head carrying no back-pointer"
+    (queuePPrevAgreesWithPrevBool stHeadNoBackPointer) true
+  -- ...and the removal refuses its sole member — the strand this closes.
+  expectErr "...and the removal refuses the queue's SOLE member, stranding it"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7)
+      stHeadNoBackPointer)
+    .endpointQueueEmpty
+  -- **Both artefacts refuse it now, and until `v0.35.106` only one did.**
+  -- `intrusiveQueueWellFormedB` has required `headTcb.queuePPrev = some
+  -- .endpointHead` since it was written, while `intrusiveQueueWellFormed`'s P2
+  -- constrained only `queuePrev` — two artefacts answering "is this queue
+  -- well-formed" with the **proved** one the weaker, at exactly the clause that
+  -- strands a thread.  Folding it in cost `dualQueueSystemInvariant` a fifth
+  -- conjunct (`endpointQueueHeadDisjoint`); see P2's docstring for that
+  -- measurement.
+  expectBool "the RUNTIME check refuses it — and P2 refuses it too since v0.35.106"
+    ((stateInvariantChecksFor stHeadNoBackPointer.objectIndex stHeadNoBackPointer).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) true
+  -- ...and the control: with the back-pointer intact, the runtime check passes and
+  -- the sole member can be removed, so the assertions above are about the cleared
+  -- field and not about a fixture the harness dislikes for other reasons.
+  expectBool "control: with the back-pointer intact the runtime check passes"
+    ((stateInvariantChecksFor stSingle.objectIndex stSingle).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive sendQ invariant")) false
+  let (_, _) ← expectOkSt "control: ...and the SOLE member CAN be removed"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stSingle)
+  -- The payoff, elaborated because a run cannot exercise a theorem: with both
+  -- halves in place a queue **member**'s back-pointer is derived rather than
+  -- hypothesised, at the head from P2 and at an interior node from the pairing.
+  let _ := @SeLe4n.Kernel.queuePPrev_tcbNext_of_reachable
+  let _ := @SeLe4n.Kernel.queuePPrev_of_queueMember
+  let _ := @SeLe4n.Kernel.dualQueueRemovalGuardHolds_of_member
+  -- And the fifth conjunct that made P2's strengthening preservable: exclusivity
+  -- is a *consequence* of `ipcInvariantCore`, not a new assumption, and the two
+  -- local facts every queue writer discharges it with.
+  let _ := @SeLe4n.Kernel.queueHeadExclusive
+  let _ := @SeLe4n.Kernel.queueHeadKindExclusive
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_singleQueueUpdate
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint_of_freshHeads
+  let _ := @SeLe4n.Kernel.not_queueHead_of_queuePrev_some
+  let _ := @SeLe4n.Kernel.not_queueHead_of_queuePPrev_none
+  let _ := @SeLe4n.Kernel.spliceOutMidQueueNode_queuePPrev_frame
+  pure ()
+
+-- WS-RR RR8.4: the four shapes a guarded removal writes, and the two removals'
+-- boundary pins.  Elaborated here because `runDualQueueTailPairingChecks` below
+-- exercises the guard's and the boundary's *values* but not the theorems that
+-- state what each removal writes, and the whole content of the collapse is that
+-- the two write one definition.
+#check @SeLe4n.Model.queueTailPairAgrees_iff
+#check @SeLe4n.Kernel.queueTailPairAgrees_of_wellFormed
+#check @SeLe4n.Model.queueRemoveBoundary_headLast
+#check @SeLe4n.Model.queueRemoveBoundary_headMore
+#check @SeLe4n.Model.queueRemoveBoundary_midLast
+#check @SeLe4n.Model.queueRemoveBoundary_midMore
+#check @SeLe4n.Kernel.endpointQueueRemoveDual_writes_queueRemoveBoundary
+#check @SeLe4n.Model.dualQueueRemovalGuard_tail_half
+
+/-- **WS-RR RR8.4**: the tail question has one answer, and the removal refuses the
+state on which its two readings part.
+
+The two endpoint-queue removals agreed on the head and differed on the tail:
+`endpointQueueRemove` asked `q.tail = some tid` — the **fact** — and
+`endpointQueueRemoveDual` asked `removed.queueNext = none`, a **proxy** for it,
+deriving the new tail from `queuePPrev`.  Under a connected queue the two
+coincide, and `ipcInvariantFull` joins a queue's boundaries nowhere, so this
+measures both halves of that gap.
+
+Four assertions.
+
+1. On a queue the **live** operations built, the fact and the proxy agree at every
+   member, so `queueTailPairAgrees` is `true` and the guard is not made vacuous by
+   the new factor.
+2. `queueRemoveBoundary` computes the four shapes the branch facts predict — the
+   boundary both removals now write, so the comparison is of one definition
+   rather than of two authors' readings.
+3. On a state the bundle admits and connectivity refutes — a queued thread with
+   **no successor that is not the tail** — the fact and the proxy **disagree**, so
+   `queueTailPairAgrees` is `false` and the dual removal **refuses** with
+   `.illegalState`.  That is the fail-closed direction: the inferring form cleared
+   the tail here and stranded the queue's real tail, a thread that could then
+   never be dequeued.
+4. The refusal is attributable to the **tail** factor and not to the others: the
+   position and pairing factors are both `true` on that same state.  Without this
+   the third assertion would pass for a guard that refused everything. -/
+private def runDualQueueTailPairingChecks : IO Unit := do
+  let (_, stTail1) ← expectOkSt "tail pairing enqueue sender 7"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let (_, stTail2) ← expectOkSt "tail pairing enqueue sender 8"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 8) .empty stTail1)
+
+  let sendQOf (st : SystemState) : IO IntrusiveQueue :=
+    match st.getEndpoint? endpointId with
+    | some ep => pure ep.sendQ
+    | none => throw <| IO.userError "tail pairing: endpoint missing"
+  let tcbOf (st : SystemState) (tid : SeLe4n.ThreadId) : IO TCB :=
+    match st.getTcb? tid with
+    | some tcb => pure tcb
+    | none => throw <| IO.userError s!"tail pairing: TCB {tid.toNat} missing"
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  let expectQueue (label : String) (actual expected : IntrusiveQueue) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {repr expected}, got {repr actual}"
+
+  let q2 ← sendQOf stTail2
+  let tcb7 ← tcbOf stTail2 (SeLe4n.ThreadId.ofNat 7)
+  let tcb8 ← tcbOf stTail2 (SeLe4n.ThreadId.ofNat 8)
+
+  -- (1) the fact and the proxy agree at both members of a live queue.
+  expectBool "tail pairing holds at the head of the live queue"
+    (SeLe4n.Model.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 7) tcb7) true
+  expectBool "tail pairing holds at the tail of the live queue"
+    (SeLe4n.Model.queueTailPairAgrees q2 (SeLe4n.ThreadId.ofNat 8) tcb8) true
+
+  -- (2) the shared boundary computes the shapes the branch facts predict.
+  expectQueue "boundary: removing the head with a successor moves the head only"
+    (SeLe4n.Model.queueRemoveBoundary q2 (SeLe4n.ThreadId.ofNat 7) tcb7)
+    { head := some (SeLe4n.ThreadId.ofNat 8), tail := some (SeLe4n.ThreadId.ofNat 8) }
+  expectQueue "boundary: removing the tail moves the tail to its predecessor"
+    (SeLe4n.Model.queueRemoveBoundary q2 (SeLe4n.ThreadId.ofNat 8) tcb8)
+    { head := some (SeLe4n.ThreadId.ofNat 7), tail := some (SeLe4n.ThreadId.ofNat 7) }
+
+  -- (3) the fact and the proxy part on a state the bundle admits: thread 7 is the
+  -- head, is given no successor, and is not the tail.  Every `queueNext` chain and
+  -- both boundaries are left exactly as the live operations wrote them.
+  let stStranded ← expectOkVal "tail pairing: a head with no successor that is not the tail"
+    (corruptThreadQueueLinks stTail2 (SeLe4n.ThreadId.ofNat 7) none (some .endpointHead) none)
+  let qS ← sendQOf stStranded
+  let tcbS ← tcbOf stStranded (SeLe4n.ThreadId.ofNat 7)
+  expectBool "...the queue's tail still names thread 8"
+    (qS.tail == some (SeLe4n.ThreadId.ofNat 8)) true
+  expectBool "...so the fact and the proxy DISAGREE"
+    (SeLe4n.Model.queueTailPairAgrees qS (SeLe4n.ThreadId.ofNat 7) tcbS) false
+  expectErr "...and the removal refuses it rather than stranding thread 8"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stStranded)
+    .illegalState
+
+  -- (4) the refusal is the tail factor's: the other two are true on that state.
+  expectBool "...the position factor is TRUE there"
+    (SeLe4n.Model.queuePPrevHeadPositionAgrees qS (SeLe4n.ThreadId.ofNat 7) .endpointHead) true
+  expectBool "...the pairing factor is TRUE there"
+    (SeLe4n.Model.queueLinkPairAgrees tcbS.queuePrev (some .endpointHead)) true
+  expectBool "...so the whole guard is false, and only because of the tail"
+    (SeLe4n.Model.dualQueueRemovalGuard qS (SeLe4n.ThreadId.ofNat 7) tcbS .endpointHead) false
+
+/-- **PR #897 review (`v0.35.108`)**: the FIFTH `dualQueueSystemInvariant`
+conjunct's runtime check, and the state that shows the surface was silent about it.
+
+`v0.35.106` added `endpointQueueHeadDisjoint` and added no runtime check, one cut
+after WS-RR RR8.3 had recorded the rule that a conjunct is *checked at runtime, not
+only proved*.  The gap ran wider than one omitted call: **nothing** in
+`stateInvariantChecksFor` was cross-endpoint — `endpointDualQueueWellFormedB` is
+literally the two per-queue checks of one endpoint — and nothing tied an endpoint
+queue's head to its own `ipcState`.  So a state the proof bundle refuses passed
+every check the harness runs, and `assertStateInvariantsFor` would have accepted a
+fixture on which popping either queue clears the shared TCB's links and strands the
+other queue: the OD1.1 / OD3.9 stranding class a fourth time, on a queue that is
+not even empty.
+
+Four assertions, and the third and fourth are what make the first two about the
+*cross-endpoint* fact rather than about queue well-formedness. -/
+private def runEndpointQueueHeadDisjointChecks : IO Unit := do
+  let expectBool (label : String) (actual expected : Bool) : IO Unit :=
+    if actual == expected then IO.println s!"positive check passed [{label}]"
+    else throw <| IO.userError s!"{label}: expected {expected}, got {actual}"
+  -- `wrongTypeId` is a second, genuine `.endpoint` installed in `baseState` for an
+  -- unrelated wrong-kind lookup test.  It is used here because it is already in
+  -- `objectIndex`, which a raw insert of a fresh object would not maintain — and
+  -- the check reads `st.objectIndex`, so an object outside it is invisible.
+  let otherEndpointId := wrongTypeId
+  -- The shared head is installed by the LIVE operation on one endpoint, so its TCB
+  -- links are exactly what the kernel writes; only the second endpoint's boundary
+  -- is written by hand.
+  let (_, stSingle) ← expectOkSt "head disjoint: enqueue the sole sender"
+    (SeLe4n.Kernel.endpointSendDual endpointId (SeLe4n.ThreadId.ofNat 7) .empty baseState)
+  let stShared ← expectOkVal "head disjoint: a SECOND endpoint claims the same head"
+    (corruptEndpointQueueHeads stSingle otherEndpointId none (some (SeLe4n.ThreadId.ofNat 7)))
+
+  -- (1) the state the bundle refuses is refused by the runtime check too.
+  expectBool "two queues sharing one head FAIL the head-disjointness check"
+    (endpointQueueHeadDisjointBool stShared) false
+  expectBool "...and `stateInvariantChecksFor` reports it"
+    ((stateInvariantChecksFor stShared.objectIndex stShared).any
+      (fun c => !c.2 && c.1.startsWith "endpoint queue heads disjoint")) true
+
+  -- (2) the control: the same state before the second endpoint claimed the head.
+  expectBool "control: one queue, one head — the check passes"
+    (endpointQueueHeadDisjointBool stSingle) true
+
+  -- (3) **the decisive half.**  Every OTHER check in the surface accepts the
+  -- violating state: both queues are well formed (the hand-written one is
+  -- `{head := some 7, tail := some 7}` over a TCB the live enqueue left with
+  -- `queuePrev = none`, `queuePPrev = some .endpointHead`, `queueNext = none`), and
+  -- the RR8.3 pairing is untouched because no TCB was written at all.  So before
+  -- this cut the harness's verdict on `stShared` was *clean*.
+  expectBool "the RR8.3 pairing ACCEPTS it — no TCB was written"
+    (queuePPrevAgreesWithPrevBool stShared) true
+  expectBool "both endpoints' queues are individually WELL FORMED"
+    ((stateInvariantChecksFor stShared.objectIndex stShared).all
+      (fun c => c.2 || !(c.1.startsWith "endpoint intrusive"
+        || c.1.startsWith "endpoint dual-queue"))) true
+  -- ...and the claim stated as a DIFFERENTIAL against the control, which is what
+  -- "the surface was silent" means.  A plain "the only failing check is the new
+  -- one" would be false for a reason that has nothing to do with the shared head:
+  -- `baseState`'s TCBs carry `threadState := .Inactive` and were never synced, so
+  -- `threadStateConsistentChecks` and `threadInactiveFlagConsistentChecks` fail on
+  -- BOTH states.  That is the documented behaviour of those two — they validate
+  -- inference self-consistency, not operational drift, which is why
+  -- `assertStateInvariantsFor` syncs before it checks.  Subtracting the control's
+  -- failures leaves exactly the two rows the new check reports, one per colliding
+  -- queue.
+  let failing (st : SystemState) : List String :=
+    ((stateInvariantChecksFor st.objectIndex st).filter (fun c => !c.2)).map (·.1)
+  let sharedOnly := (failing stShared).filter (fun l => !((failing stSingle).contains l))
+  expectBool "the shared head adds EXACTLY the new check's rows and nothing else"
+    (sharedOnly.all (fun l => l.startsWith "endpoint queue heads disjoint")) true
+  expectBool "...and it adds one row per colliding queue, so the pair is named"
+    (sharedOnly.length == 2) true
+
+  -- (4) and the strand itself: popping one queue clears the shared TCB's links, so
+  -- the other queue's head is left unlinked and its own removal is then refused —
+  -- which is what a state the bundle refuses buys an attacker who can reach it.
+  -- `expectOkVal`, not `expectOkSt`: the latter asserts the invariant surface on the
+  -- post-state, and this post-state is the corrupt one the finding is ABOUT — the
+  -- pop succeeds and leaves the other endpoint's receive queue malformed, which is
+  -- the two rows it would report.  Asserting them away would delete the payoff.
+  let (_, stPopped) ← expectOkVal "head disjoint: pop the shared head from ONE queue"
+    (SeLe4n.Kernel.endpointQueueRemoveDual endpointId false (SeLe4n.ThreadId.ofNat 7) stShared)
+  expectBool "the pop leaves the OTHER endpoint's queue malformed"
+    ((stateInvariantChecksFor stPopped.objectIndex stPopped).any
+      (fun c => !c.2 && c.1.startsWith "endpoint intrusive receiveQ invariant")) true
+  expectBool "the shared TCB's links are cleared by that pop"
+    (match stPopped.getTcb? (SeLe4n.ThreadId.ofNat 7) with
+     | some tcb => tcb.queuePPrev == none && tcb.queuePrev == none && tcb.queueNext == none
+     | none => false) true
+  expectErr "...and the OTHER queue can now never dequeue its own head"
+    (SeLe4n.Kernel.endpointQueueRemoveDual otherEndpointId true (SeLe4n.ThreadId.ofNat 7)
+      stPopped)
+    .endpointQueueEmpty
+  -- The conjunct, elaborated because a run cannot exercise a theorem.
+  let _ := @SeLe4n.Kernel.endpointQueueHeadDisjoint
+  pure ()
+
 private def runNegativeChecks : IO Unit := do
   runBaselineLookupNegativeChecks                       -- [was 248-262]
   runCspaceMutationAndRevokeNegativeChecks              -- [was 263-461; sections 2+3 combined for strictSeed/strictRootSlot reuse]
@@ -1210,6 +1653,9 @@ private def runNegativeChecks : IO Unit := do
   runBadgeTruncationNegativeChecks                      -- [was 567-607]
   runIpcPayloadBoundsNegativeChecks                     -- [was 608-700]
   runDualQueueEndpointFifoNegativeChecks                -- [was 702-1034]
+  runDualQueuePPrevPairingChecks                        -- WS-RR RR8.3
+  runDualQueueTailPairingChecks                         -- WS-RR RR8.4
+  runEndpointQueueHeadDisjointChecks                    -- PR #897 review (v0.35.108)
 
   -- ==========================================================================
   -- WS-D4 F-12: Double-wait prevention in notificationWait (was 1036-1043).
@@ -1263,7 +1709,6 @@ private def runH2NegativeChecks : IO Unit := do
       })
       |>.withLifecycleObjectType f2UntypedObjId .untyped
       |>.withLifecycleObjectType f2UntypedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef f2UntypedAuthSlot (.object f2UntypedObjId)
       |>.buildChecked)
   expectErr "H2 childId collision with untyped child"
     (SeLe4n.Kernel.retypeFromUntyped f2UntypedAuthSlot f2UntypedObjId ⟨60⟩
@@ -1427,10 +1872,12 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (cnode phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterCnode { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = some capA.target then
-    IO.println "positive check passed [WS-H7 storeObject syncs capabilityRef metadata for stored CNode slot]"
+  -- `v0.35.78`: stated over `lookupSlotCap`, the one slot-target reader — the
+  -- retired `lookupCapabilityRefMeta` was that lookup's target projection.
+  if (SystemState.lookupSlotCap stAfterCnode { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 }).map Capability.target = some capA.target then
+    IO.println "positive check passed [WS-H7 storeObject makes a stored CNode's slot resolve to its capability]"
   else
-    throw <| IO.userError "storeObject syncs capabilityRef metadata for stored CNode slot: expected some target"
+    throw <| IO.userError "storeObject makes a stored CNode's slot resolve to its capability: expected some target"
 
   let stAfterOverwrite :=
     match storeObject ⟨500⟩ lifecycleEndpoint stAfterCnode with
@@ -1438,10 +1885,10 @@ private def runWSH7Checks : IO Unit := do
     | .error err =>
         panic! s!"unexpected storeObject failure in WS-H7 check (overwrite phase): {toString err}"
 
-  if SystemState.lookupCapabilityRefMeta stAfterOverwrite { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 } = none then
-    IO.println "positive check passed [WS-H7 storeObject clears capabilityRef metadata when overwriting CNode]"
+  if (SystemState.lookupSlotCap stAfterOverwrite { cnode := ⟨500⟩, slot := SeLe4n.Slot.ofNat 0 }).map Capability.target = none then
+    IO.println "positive check passed [WS-H7 storeObject overwriting a CNode leaves its slots unresolvable]"
   else
-    throw <| IO.userError "storeObject clears capabilityRef metadata when overwriting CNode: expected none"
+    throw <| IO.userError "storeObject overwriting a CNode leaves its slots unresolvable: expected none"
 
   IO.println "regression checks passed"
 
@@ -1822,12 +2269,6 @@ def runWSH15PlatformChecks : IO Unit := do
   else
     throw <| IO.userError "H15 rpi5BootContract objectTypeMetadataConsistent should hold"
 
-  -- H15-PLAT-07: RPi5 boot contract — capabilityRefMetadata verified by theorem
-  if ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size == 0 then
-    IO.println "positive check passed [H15 rpi5BootContract capabilityRefMetadata]"
-  else
-    throw <| IO.userError "H15 rpi5BootContract capabilityRefMetadataConsistent should hold"
-
   IO.println "all WS-H15 platform contract checks passed"
 
 /-- WS-H16/M-18: Lifecycle operations negative tests.
@@ -1876,8 +2317,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       |>.withLifecycleObjectType h16TargetId .endpoint
       |>.withLifecycleObjectType h16CnodeId .cnode
       |>.withLifecycleObjectType h16TcbId .tcb
-      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
-      |>.withLifecycleCapabilityRef h16CleanupSlot (.object h16TargetId)
       |>.buildChecked)
 
   -- H16-NEG-01: lifecycleRetypeObject with non-existent target → objectNotFound
@@ -1907,7 +2346,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       -- (check 2b would reject). Tests kernel handling of metadata mismatch.
       |>.withLifecycleObjectType h16TargetId .tcb  -- mismatch: object is endpoint but metadata says tcb
       |>.withLifecycleObjectType h16CnodeId .cnode
-      |>.withLifecycleCapabilityRef h16AuthSlot (.object h16TargetId)
       |>.build)
   expectErr "H16 lifecycleRetypeObject metadata mismatch"
     (SeLe4n.Kernel.Internal.lifecycleRetypeObject h16AuthSlot h16TargetId (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }) h16MismatchState)
@@ -1964,7 +2402,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       })
       |>.withLifecycleObjectType h16ExhaustedUntypedId .untyped
       |>.withLifecycleObjectType h16ExhaustedCnodeId .cnode
-      |>.withLifecycleCapabilityRef h16ExhaustedAuthSlot (.object h16ExhaustedUntypedId)
       |>.buildChecked)
   expectErr "H16 retypeFromUntyped exhausted untyped"
     (SeLe4n.Kernel.retypeFromUntyped h16ExhaustedAuthSlot h16ExhaustedUntypedId ⟨162⟩
@@ -2008,7 +2445,6 @@ def runWSH16LifecycleChecks : IO Unit := do
       })
       |>.withLifecycleObjectType h16DeviceUntypedId .untyped
       |>.withLifecycleObjectType h16DeviceCnodeId .cnode
-      |>.withLifecycleCapabilityRef h16DeviceAuthSlot (.object h16DeviceUntypedId)
       |>.buildChecked)
   expectErr "H16 retypeFromUntyped device untyped restriction"
     (SeLe4n.Kernel.retypeFromUntyped h16DeviceAuthSlot h16DeviceUntypedId ⟨165⟩
@@ -2055,7 +2491,6 @@ def runAN4A5LifecycleVisibilityChecks : IO Unit := do
         ] })
       |>.withLifecycleObjectType a5RetypeTcbId .tcb
       |>.withLifecycleObjectType a5CnodeId .cnode
-      |>.withLifecycleCapabilityRef a5AuthSlot (.object a5RetypeTcbId)
       |>.withRunnable [a5Tcb.tid]
       |>.buildChecked)
 
@@ -3578,7 +4013,6 @@ private def runS2HLifecycleErrorTests : IO Unit := do
       })
       |>.withLifecycleObjectType exhaustedUntypedId .untyped
       |>.withLifecycleObjectType exhaustedAuthCnode .cnode
-      |>.withLifecycleCapabilityRef exhaustedAuthSlot (.object exhaustedUntypedId)
       |>.buildChecked)
   expectErr "retypeFromUntyped region exhausted"
     (SeLe4n.Kernel.retypeFromUntyped exhaustedAuthSlot exhaustedUntypedId ⟨93⟩
@@ -4053,20 +4487,16 @@ private def r5eOrphanedBoundState : SystemState :=
 construction is broken (the stub triggers the runtime-failure
 `.invalidArgument` rather than `.missingSchedContext`, which would surface
 the misconstructed fixture rather than silently masking it). -/
-private def r5eOrphanedTcb : TCB :=
-  match r5eOrphanedBoundState.objects[r5eOrphanedTid.toObjId]? with
-  | some (.tcb t) => t
-  | _ =>
-    -- Fallback stub — fixture broken; the resulting test will see this
-    -- shape and surface a meaningful error rather than panic at compile.
-    { tid := r5eOrphanedTid, priority := ⟨0⟩, domain := ⟨0⟩,
-      cspaceRoot := ⟨0⟩, vspaceRoot := ⟨0⟩,
-      ipcBuffer := (SeLe4n.VAddr.ofNat 0) }
-
 private def runR5EOrphanedSchedContextChecks : IO Unit := do
   IO.println "\n=== WS-RC R5.E (DEEP-SCH-04): missingSchedContext surface ==="
-  let result := SeLe4n.Kernel.timerTickBudget
-    r5eOrphanedBoundState r5eOrphanedTid r5eOrphanedTcb
+  -- `timerTickBudget` takes the witness that its TCB is the stored one
+  -- (`v0.35.67`), so the fixture's TCB is read through the witnessed lookup; a
+  -- fixture that resolves no TCB is reported as such rather than run on a stub.
+  let result : Except KernelError (SystemState × Bool) :=
+    match r5eOrphanedBoundState.getTcbWitnessed? r5eOrphanedTid with
+    | some ⟨tcb, hTcb⟩ =>
+        SeLe4n.Kernel.timerTickBudget r5eOrphanedBoundState r5eOrphanedTid tcb hTcb
+    | none => .error .invalidArgument
   match result with
   | .ok _ =>
       throw <| IO.userError

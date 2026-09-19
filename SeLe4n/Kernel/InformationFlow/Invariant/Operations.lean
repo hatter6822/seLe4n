@@ -59,8 +59,8 @@ The six closure-form arms, in stabilising-recipe order:
      cancel + TCB-state transition + optional schedule.
   6. `lifecycleRetype_preserves_projection` = composite at
      `lifecycleRetypeDirectWithCleanup_preserves_projection` (AK6F.16)
-     — cross-subsystem retype touches objects, CDT, lifecycle,
-     capabilityRefs, and optionally scheduler.
+     — cross-subsystem retype touches objects, CDT, lifecycle
+     object-type metadata, and optionally scheduler.
 
 **Shared proof-sketch template** (apply per arm):
 
@@ -495,43 +495,31 @@ private theorem insert_rq_preserves_projection
 fields are identical to the original. -/
 private theorem saveOutgoingContext_machine (st : SystemState) :
     (saveOutgoingContext st).machine = st.machine := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · exact SystemState.updateTcb_machine _ _ _
 
 private theorem saveOutgoingContext_services (st : SystemState) :
     (saveOutgoingContext st).services = st.services := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · rw [SystemState.updateTcb_eq_objects_update]
 
 private theorem saveOutgoingContext_irqHandlers (st : SystemState) :
     (saveOutgoingContext st).irqHandlers = st.irqHandlers := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · rw [SystemState.updateTcb_eq_objects_update]
 
 private theorem saveOutgoingContext_objectIndex (st : SystemState) :
     (saveOutgoingContext st).objectIndex = st.objectIndex := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
-  cases (st.scheduler.currentOnCore bootCoreId) with
-  | none => rfl
-  | some outTid =>
-      cases h : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some obj => cases obj <;> simp_all
+  unfold saveOutgoingContext
+  split
+  · rfl
+  · exact SystemState.updateTcb_objectIndex _ _ _
 
 /-- WS-H12c: saveOutgoingContext preserves projectObjects because
 projectKernelObject strips registerContext from TCBs. -/
@@ -543,30 +531,27 @@ private theorem saveOutgoingContext_preserves_projectObjects
   simp only [projectObjects, SystemState.getObject?]
   split
   · next hObs =>
-      simp only [saveOutgoingContext, SystemState.getTcb?]
+      unfold saveOutgoingContext
       cases hCur : (st.scheduler.currentOnCore bootCoreId) with
       | none => rfl
       | some outTid =>
-          cases hOut : st.objects[outTid.toObjId]? with
-          | none => simp_all
-          | some outObj =>
-              cases outObj with
-              | tcb outTcb =>
-                  simp only [hOut, Option.map]
-                  simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                  by_cases hEq : outTid.toObjId == oid
-                  · simp only [hEq, ↓reduceIte, projectKernelObject]
-                    have hEq' := beq_iff_eq.mp hEq
-                    subst hEq'
-                    have : st.objects.get? outTid.toObjId = st.objects[outTid.toObjId]? := (RHTable_getElem?_eq_get? st.objects outTid.toObjId).symm
-                    rw [this]; simp only [hOut]
-                  · simp [hEq]
-              | endpoint _ => simp_all
-              | notification _ => simp_all
-              | cnode _ => simp_all
-              | vspaceRoot _ => simp_all
-              | untyped _ => simp_all
-              | schedContext _ | reply _ => simp_all
+          simp only []
+          cases hOutT : st.getTcb? outTid with
+          | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+          | some outTcb =>
+              have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+                (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+              rw [SystemState.updateTcb_eq_of_some hOutT]
+              dsimp only
+              simp only [Option.map]
+              simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+              by_cases hEq : outTid.toObjId == oid
+              · simp only [hEq, ↓reduceIte, projectKernelObject]
+                have hEq' := beq_iff_eq.mp hEq
+                subst hEq'
+                have : st.objects.get? outTid.toObjId = st.objects[outTid.toObjId]? := (RHTable_getElem?_eq_get? st.objects outTid.toObjId).symm
+                rw [this]; simp only [hOut]
+              · simp [hEq]
   · rfl
 
 /-- WS-H12c: saveOutgoingContext preserves the information-flow projection.
@@ -577,37 +562,32 @@ private theorem saveOutgoingContext_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (saveOutgoingContext st) = projectState ctx observer st := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              simp only [hOut]
-              -- Now: projectState ctx observer { st with objects := st.objects.insert ... } = projectState ctx observer st
-              simp only [projectState]
-              congr 1
-              · -- objects field
-                exact funext (fun oid => by
-                  simp only [projectObjects, SystemState.getObject?]
-                  split
-                  · simp only [Option.map]
-                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                    by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, projectKernelObject]
-                      have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
-                    · simp [hEq]
-                  · rfl)
-          | endpoint _ => simp_all
-          | notification _ => simp_all
-          | cnode _ => simp_all
-          | vspaceRoot _ => simp_all
-          | untyped _ => simp_all
-          | schedContext _ | reply _ => simp_all
+      simp only []
+      cases hOutT : st.getTcb? outTid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+      | some outTcb =>
+          have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+            (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+          rw [SystemState.updateTcb_eq_of_some hOutT]
+          -- Now: projectState ctx observer { st with objects := st.objects.insert ... } = projectState ctx observer st
+          simp only [projectState]
+          congr 1
+          · -- objects field
+            exact funext (fun oid => by
+              simp only [projectObjects, SystemState.getObject?]
+              split
+              · simp only [Option.map]
+                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+                by_cases hEq : outTid.toObjId == oid
+                · simp only [hEq, ↓reduceIte, projectKernelObject]
+                  have hEq' := beq_iff_eq.mp hEq
+                  subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
+                · simp [hEq]
+              · rfl)
 
 /-- WS-RA RA.B.10 — **the blanket return-frame projection preservation, for
 every observer.**
@@ -634,12 +614,13 @@ theorem writeReturnFrameToTcb_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer (Architecture.writeReturnFrameToTcb st tid frame)
       = projectState ctx observer st := by
-  simp only [Architecture.writeReturnFrameToTcb]
   cases hTcb : st.getTcb? tid with
-  | none => rfl
+  | none => rw [Architecture.writeReturnFrameToTcb_id_when_not_tcb st tid frame hTcb]
   | some tcb =>
       have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb
+      unfold Architecture.writeReturnFrameToTcb
+      rw [SystemState.updateTcb_eq_of_some hTcb]
       simp only [projectState]
       congr 1
       · exact funext (fun oid => by
@@ -762,39 +743,34 @@ private theorem saveOutgoingContext_with_sched_preserves_projection
     (hObjInv : st.objects.invExt) :
     projectState ctx observer { (saveOutgoingContext st) with scheduler := sched }
     = projectState ctx observer { st with scheduler := sched } := by
-  simp only [saveOutgoingContext, SystemState.getTcb?]
+  unfold saveOutgoingContext
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
   | some outTid =>
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none => simp_all
-      | some outObj =>
-          cases outObj with
-          | tcb outTcb =>
-              simp only [hOut]
-              -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
-              -- = projectState ctx observer { st with scheduler := sched }
-              -- The LHS has objects changed, everything else (incl. scheduler override) same
-              simp only [projectState]
-              congr 1
-              · -- objects field: same proof as saveOutgoingContext_preserves_projection
-                exact funext (fun oid => by
-                  simp only [projectObjects, SystemState.getObject?]
-                  split
-                  · simp only [Option.map]
-                    simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-                    by_cases hEq : outTid.toObjId == oid
-                    · simp only [hEq, ↓reduceIte, projectKernelObject]
-                      have hEq' := beq_iff_eq.mp hEq
-                      subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
-                    · simp [hEq]
-                  · rfl)
-          | endpoint _ => simp_all
-          | notification _ => simp_all
-          | cnode _ => simp_all
-          | vspaceRoot _ => simp_all
-          | untyped _ => simp_all
-          | schedContext _ | reply _ => simp_all
+      simp only []
+      cases hOutT : st.getTcb? outTid with
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOutT]
+      | some outTcb =>
+          have hOut : st.objects[outTid.toObjId]? = some (.tcb outTcb) :=
+            (SystemState.getTcb?_eq_some_iff st outTid outTcb).mp hOutT
+          rw [SystemState.updateTcb_eq_of_some hOutT]
+          -- Goal: projectState ctx observer { { st with objects := st.objects.insert ... } with scheduler := sched }
+          -- = projectState ctx observer { st with scheduler := sched }
+          -- The LHS has objects changed, everything else (incl. scheduler override) same
+          simp only [projectState]
+          congr 1
+          · -- objects field: same proof as saveOutgoingContext_preserves_projection
+            exact funext (fun oid => by
+              simp only [projectObjects, SystemState.getObject?]
+              split
+              · simp only [Option.map]
+                simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+                by_cases hEq : outTid.toObjId == oid
+                · simp only [hEq, ↓reduceIte, projectKernelObject]
+                  have hEq' := beq_iff_eq.mp hEq
+                  subst hEq'; rw [← RHTable_getElem?_eq_get?]; simp only [hOut]
+                · simp [hEq]
+              · rfl)
 
 /-- WS-H9/H12c: schedule when all schedulable threads are non-observable preserves projection.
 schedule = chooseThread >> save >> dequeue >> restore >> setCurrentThread.
@@ -1141,17 +1117,6 @@ theorem vspaceLookup_preserves_lowEquivalent
 -- WS-H9: CSpace NI proofs (Part C)
 -- ============================================================================
 
-/-- WS-H9: storeCapabilityRef preserves projection (modifies only lifecycle). -/
-theorem storeCapabilityRef_preserves_projection
-    (ctx : LabelingContext) (observer : IfObserver)
-    (st st' : SystemState) (ref : SlotRef) (target : Option CapTarget)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    projectState ctx observer st' = projectState ctx observer st := by
-  unfold storeCapabilityRef at hStep
-  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-  have hEq := hStep.2.symm; subst hEq
-  simp only [projectState]; congr 1
-
 /-- Core: cspaceDeleteSlotCore at a non-observable CNode preserves projection. -/
 theorem cspaceDeleteSlotCore_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
@@ -1171,21 +1136,16 @@ theorem cspaceDeleteSlotCore_preserves_projection
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
       | error e => simp [hStore] at hStep
       | ok pair₁ =>
-        simp only [hStore] at hStep
-        cases hRef : storeCapabilityRef addr none pair₁.2 with
-        | error e => simp [hRef] at hStep
-        | ok pair₂ =>
-          simp only [hRef] at hStep; cases hStep
-          -- detachSlotFromCdt only modifies CDT (not in projection)
-          have hDetach : projectState ctx observer (SystemState.detachSlotFromCdt pair₂.2 addr) =
-              projectState ctx observer pair₂.2 := by
-            simp only [projectState, SystemState.detachSlotFromCdt]
-            split
-            · rfl
-            · congr 1
-          rw [hDetach,
-              storeCapabilityRef_preserves_projection ctx observer pair₁.2 pair₂.2 addr none hRef,
-              storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
+        simp only [hStore] at hStep; cases hStep
+        -- detachSlotFromCdt only modifies CDT (not in projection)
+        have hDetach : projectState ctx observer (SystemState.detachSlotFromCdt pair₁.2 addr) =
+            projectState ctx observer pair₁.2 := by
+          simp only [projectState, SystemState.detachSlotFromCdt]
+          split
+          · rfl
+          · congr 1
+        rw [hDetach,
+            storeObject_preserves_projection ctx observer st pair₁.2 addr.cnode _ hAddrHigh hObjInv hStore]
 
 /-- WS-H9: cspaceDeleteSlot at a non-observable CNode preserves projection (guarded wrapper). -/
 theorem cspaceDeleteSlot_preserves_projection
@@ -1240,7 +1200,6 @@ theorem cspaceRevoke_preserves_projection
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hStep
       | cnode cn =>
         simp [hL, hC, storeObject] at hStep; cases hStep
-        rw [revokeAndClearRefsState_preserves_projectState]
         simp only [projectState]; congr 1
         · funext oid; by_cases hObs : objectObservable ctx observer oid
           · simp [projectObjects, hObs, SystemState.getObject?]
@@ -1758,7 +1717,7 @@ private theorem returnDonatedSchedContext_preserves_projection
   -- it was never needed, and demanding it made the result unusable wherever the
   -- server is low.
   obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
-    hSc, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hReturn
   have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
   have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
@@ -1773,7 +1732,7 @@ private theorem returnDonatedSchedContext_preserves_projection
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     scId.toObjId _ (.schedContext sc) hSc
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
     (hIdxComplete scId.toObjId (by rw [hSc]; intro hx; cases hx))
     hObjInv hS1
   have hP2 := storeDonationHeadPop_preserves_projection ctx observer hC1 hSet1 hInv1 hClear
@@ -2460,9 +2419,11 @@ theorem consumeCallerReply_preserves_objectIndexSetComplete_and_invExt
           hObjInv1 hMid.2 hMid.1 hStep,
         storeObject_preserves_objectIndexSet_invExt st1 st' caller.toObjId _ hMid.2 hStep⟩
 
-/-- **WS-RM (`v0.35.6`)**: the *removal* preserves the pair.  Its extra leg is a
-`.reply` store at a key that already held a Reply, so `objectIndexSet.contains`
-is monotone across it for the same reason the consume's two legs are. -/
+/-- **WS-RM (`v0.35.6`)**, restated for the splice at **WS-HP HP6.4**: the
+*removal* preserves the pair.  Its extra leg is at most three `.reply` stores, each
+at a key that already held a Reply, so `objectIndexSet.contains` is monotone across
+every one of them for the same reason the consume's two legs are — the removal
+gaining a write costs this an iteration and no new argument. -/
 theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
@@ -2472,12 +2433,21 @@ theorem removeCallerReplyFrame_preserves_objectIndexSetComplete_and_invExt
     objectIndexSetComplete st' ∧ st'.objectIndexSet.table.invExt := by
   rw [removeCallerReplyFrame_eq] at hStep
   refine consumeCallerReply_preserves_objectIndexSetComplete_and_invExt _ st' caller rid
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) ?_
-    (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) ?_
+    (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
       hComplete) hStep
-  rcases detachReplyFrameAboveOrSelf_store_cases st rid with h | ⟨above, a, _, hS⟩
-  · rw [h]; exact hObjSetInv
-  · exact storeObject_preserves_objectIndexSet_invExt st _ above.toObjId _ hObjSetInv hS
+  obtain ⟨m1, m2, h1, h2, h3⟩ := spliceReplyFrameOutOrSelf_store_cases st rid hObjInv
+  have hM1 : m1.objectIndexSet.table.invExt := by
+    rcases h1 with rfl | ⟨k, _, _, _, hS⟩
+    · exact hObjSetInv
+    · exact storeObject_preserves_objectIndexSet_invExt st _ k.toObjId _ hObjSetInv hS
+  have hM2 : m2.objectIndexSet.table.invExt := by
+    rcases h2 with rfl | ⟨k, _, _, _, hS⟩
+    · exact hM1
+    · exact storeObject_preserves_objectIndexSet_invExt m1 _ k.toObjId _ hM1 hS
+  rcases h3 with h | ⟨k, _, _, _, hS⟩
+  · rw [h]; exact hM2
+  · exact storeObject_preserves_objectIndexSet_invExt m2 _ k.toObjId _ hM2 hS
 
 /-- U4-C: endpointReplyRecv at non-observable targets preserves projection.
 
@@ -2907,7 +2877,7 @@ theorem timerTick_preserves_projection
     (hObjInv : st.objects.invExt)
     (hStep : timerTick st = .ok ((), st')) :
     projectState ctx observer st' = projectState ctx observer st := by
-  unfold timerTick SystemState.getTcb? at hStep
+  unfold timerTick at hStep
   cases hCur : (st.scheduler.currentOnCore bootCoreId) with
   | none =>
     simp [hCur] at hStep; subst hStep
@@ -2916,10 +2886,12 @@ theorem timerTick_preserves_projection
     simp only [hCur] at hStep
     have hTidHigh := hCurrentHigh tid hCur
     have hTidObjHigh := hCurrentObjHigh tid hCur
-    -- Split on the match st.objects[tid.toObjId]?
+    -- Split on the witnessed lookup (value, witness, equation), then unfold the
+    -- rewrite so the intermediate states below are the literals they name.
     split at hStep
-    · -- Case: some (.tcb tcb)
-      next tcb hTcbEq =>
+    · -- Case: some ⟨tcb, _⟩
+      next tcb _ hTcbEq =>
+      dsimp only [SystemState.rewriteObject] at hStep
       -- Split on timeSlice ≤ 1
       split at hStep
       · -- Time-slice expired: insert back into runQueue + schedule
@@ -3063,7 +3035,7 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
   rcases lifecycleRetypeObject_ok_as_storeObject stDeleted st' authority target newObj hRetype with
     ⟨_, _, _, _, _, _, hStore⟩
   -- Propagate invExt through cspaceRevoke: cspaceRevoke does cspaceLookupSlot (preserves state)
-  -- + storeObject (preserves invExt) + revokeAndClearRefsState (preserves objects)
+  -- + storeObject (preserves invExt)
   have hObjInvRevoked : stRevoked.objects.invExt := by
     unfold cspaceRevoke SystemState.getCNode? at hRevoke
     cases hL : cspaceLookupSlot cleanup st with
@@ -3079,9 +3051,8 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
         | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hL, hC] at hRevoke
         | cnode cn =>
           simp [hL, hC, storeObject] at hRevoke; cases hRevoke
-          rw [revokeAndClearRefsState_preserves_objects]
           exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
-  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + storeCapabilityRef + detachSlotFromCdt
+  -- Propagate invExt through cspaceDeleteSlot: cspaceDeleteSlot does storeObject + detachSlotFromCdt
   have hObjInvDeleted : stDeleted.objects.invExt := by
     unfold cspaceDeleteSlot at hDelete
     -- U-H03: Discharge CDT children guard
@@ -3100,15 +3071,11 @@ theorem lifecycleRevokeDeleteRetype_preserves_projection
           | ok pair₁ =>
             simp only [hSt] at hDelete
             have hInvPair := storeObject_preserves_objects_invExt stRevoked pair₁.2 cleanup.cnode _ hObjInvRevoked hSt
-            cases hRef : storeCapabilityRef cleanup none pair₁.2 with
-            | error e => simp [hRef] at hDelete
-            | ok pair₂ =>
-              simp only [hRef] at hDelete; cases hDelete
-              -- detachSlotFromCdt only modifies CDT, storeCapabilityRef preserves objects
-              have hRefObjs := storeCapabilityRef_preserves_objects pair₁.2 pair₂.2 cleanup none hRef
-              simp only [SystemState.detachSlotFromCdt]; split
-              · exact hRefObjs ▸ hInvPair
-              · exact hRefObjs ▸ hInvPair
+            cases hDelete
+            -- detachSlotFromCdt only modifies CDT
+            simp only [SystemState.detachSlotFromCdt]; split
+            · exact hInvPair
+            · exact hInvPair
   rw [storeObject_preserves_projection ctx observer stDeleted st' target newObj hTargetHigh hObjInvDeleted hStore,
       cspaceDeleteSlot_preserves_projection ctx observer cleanup stRevoked stDeleted hCleanupHigh hObjInvRevoked hDelete,
       cspaceRevoke_preserves_projection ctx observer cleanup st stRevoked hCleanupHigh hObjInv hRevoke]
@@ -3319,7 +3286,8 @@ private theorem donateSchedContext_preserves_projection
     hSet2 hC2 hS3
   have hP1 := storeObject_projectionStable_preserves_projection ctx observer st s1
     clientScId.toObjId _ (.schedContext sc) hScRaw
-    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _)
+    -- **WS-HP HP10.4**: a donation step writes three SchedContext fields now.
+    (projectKernelObject_schedContext_donationWrite_invariant ctx observer sc _ _ _)
     (hIdxComplete clientScId.toObjId (by rw [hScRaw]; intro hx; cases hx))
     hObjInv hS1
   -- `v0.35.4`: the push is two Reply writes now (the pushed frame and the old
@@ -3579,6 +3547,33 @@ theorem setIPCBufferOp_preserves_projection
 -- AK6-F Step A: Universal direct-insert frame lemma
 -- ============================================================================
 
+/-- **WS-RR RR7.22**: the label hypothesis an endpoint splice needs.
+
+**WS-RR RR8.8** relocated it here from `IPC/CrossCore/NotificationSignalNI.lean`:
+the cancellation reclaim's abort prefix (`abortHolderPendingIpc`) removes a
+thread from an endpoint queue too, and asks this same question of the same four
+objects -- but its own module is not in that one's import closure, so the
+predicate had one owner that one of its two askers could not reach.  Here both
+reach it, beside `objects_insert_preserves_projection_high`, which is the lemma
+every clause of it is consumed by.
+
+`endpointQueueRemoveDual` writes exactly four objects: the endpoint (twice on
+the head path), the removed thread's own TCB, and the two queue neighbours
+whose links it patches.  This names all four, and names the neighbours *through
+the pre-state lookup* rather than as extra arguments — so a caller supplies one
+hypothesis instead of remembering which two threads the splice will touch,
+which is the shape that makes an under-stated hypothesis possible. -/
+def endpointSpliceHigh (ctx : LabelingContext) (observer : IfObserver)
+    (st : SystemState) (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Prop :=
+  objectObservable ctx observer endpointId = false
+    ∧ objectObservable ctx observer tid.toObjId = false
+    ∧ ∀ tcb : TCB, lookupTcb st tid = some tcb →
+        (∀ p : SeLe4n.ThreadId, tcb.queuePPrev = some (.tcbNext p) →
+            objectObservable ctx observer p.toObjId = false)
+          ∧ (∀ n : SeLe4n.ThreadId, tcb.queueNext = some n →
+              objectObservable ctx observer n.toObjId = false)
+
+
 /-- AK6-F (Step A): Direct `objects.insert` at a non-observable ID preserves
     projection. This is the direct-insert analog of
     `storeObject_preserves_projection` — used by ops that manipulate `.objects`
@@ -3652,19 +3647,40 @@ theorem updatePrioritySource_preserves_projection
     projectState ctx observer
       (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) =
     projectState ctx observer st := by
+  -- `v0.35.98`: the `.bound` arm writes **both** homes of the base priority, so
+  -- it is two applications of one frame, each at its own non-observability
+  -- hypothesis -- and `hTcbHigh`, which that arm did not consume before, is
+  -- what discharges the second.  The thread half is shared, since both arms
+  -- perform it (the `.bound` arm over the reservation-written state).
+  have hTcbStep : ∀ (s : SystemState), s.objects.invExt →
+      projectState ctx observer
+        (s.updateTcb tid fun t => { t with priority := newPriority })
+        = projectState ctx observer s := by
+    intro s hs
+    cases hT : s.getTcb? tid with
+    | some t =>
+        rw [SystemState.updateTcb_eq_of_some hT]
+        exact objects_insert_preserves_projection_high ctx observer s tid.toObjId _
+          hTcbHigh hs
+    | none =>
+        rw [SystemState.updateTcb_eq_self_of_none hT]
   unfold SchedContext.PriorityManagement.updatePrioritySource
   split
-  · -- the priority source resolves (`.bound scId`)
+  · -- the priority source resolves (`.bound scId`): the reservation, then the thread
     rename_i scId hSrc
-    split
-    · -- some (.schedContext sc) — apply frame lemma
-      exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
-        (hScHigh scId hSrc) hObjInv
-    · -- absent: state unchanged
-      rfl
+    rw [hTcbStep _
+      (SystemState.updateSchedContext_preserves_objects_invExt st scId _ hObjInv)]
+    cases hSc : st.getSchedContext? scId with
+    | some sc =>
+        -- present: the typed rewrite is the insert, and the frame lemma applies
+        rw [SystemState.updateSchedContext_eq_of_some hSc]
+        exact objects_insert_preserves_projection_high ctx observer st scId.toObjId _
+          (hScHigh scId hSrc) hObjInv
+    | none =>
+        -- absent: the typed rewrite is the identity
+        rw [SystemState.updateSchedContext_eq_self_of_none hSc]
   · -- no priority source (`.unbound` / `.donated`): the target's own TCB
-    exact objects_insert_preserves_projection_high ctx observer st tid.toObjId _
-      hTcbHigh hObjInv
+    exact hTcbStep st hObjInv
 
 -- ============================================================================
 -- AK6-F.2h/i: VSpace checked+flush wrappers preservation
@@ -4167,7 +4183,7 @@ theorem setThreadCpuAffinity_preserves_projection_unconditional
     projectState ctx observer stSet = projectState ctx observer st := by
   unfold setThreadCpuAffinity at hSet
   split at hSet
-  · rename_i tcb hTcb
+  · rename_i tcb hTcb _
     simp only [Except.ok.injEq] at hSet
     subst hSet
     refine objects_insert_preserves_projection_of_proj_eq ctx observer st targetTid.toObjId
@@ -4515,7 +4531,7 @@ theorem setMCPriorityOp_preserves_projection
     split at hStep
     · simp at hStep -- validation error
     · split at hStep
-      · rename_i targetTcb hTarget
+      · rename_i targetTcb hTarget _
         -- AN10-B: post-migration `setMCPriorityOp` reads via `getTcb?`;
         -- bridge from the typed-helper hypothesis to the raw lookup
         -- expected by `hScHighForUpdated`.
@@ -4531,7 +4547,7 @@ theorem setMCPriorityOp_preserves_projection
             hTargetObjHigh hObjInv
         have hObjInvMCP : stAfterMCP.objects.invExt :=
           SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-        simp only at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         split at hStep
         · -- MCP cap branch: updatePrioritySource + migrate + optional schedule
           have hProj1 :
@@ -4599,7 +4615,7 @@ theorem setMCPriorityOnCore_preserves_projection
   · split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · next targetTcb hTarget =>
+      · next targetTcb hTarget _ =>
         let targetTcb' : TCB := { targetTcb with maxControlledPriority := newMCP }
         let stAfterMCP : SystemState :=
           { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
@@ -4608,7 +4624,7 @@ theorem setMCPriorityOnCore_preserves_projection
             hTargetObjHigh hObjInv
         have hObjInvMCP : stAfterMCP.objects.invExt :=
           SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hObjInv
-        simp only [] at hStep
+        dsimp only [SystemState.rewriteObject] at hStep
         split at hStep
         · have hProj1 :
               projectState ctx observer
@@ -4948,10 +4964,23 @@ theorem cancelDonatedDonation_preserves_projection
       rewrites the victim's queue-NEIGHBOUR TCBs' `queuePrev`/`queueNext`,
       and queue-link fields survive projection — so a high victim spliced
       out from between low-observable neighbours changes the low projection.
-      Discharging this needs the dual-queue endpoint-label invariant already
-      tracked as SM6.B debt (a queue's members share the endpoint's label);
-      the SM6.E cancellation-NI module consumes exactly this obligation as
-      its `hTeardownProj` hypothesis.
+      **WS-RR RR8.8 correction**: the invariant this was tracked against —
+      "a queue's members share the endpoint's label", SM6.B debt — is
+      **unestablishable**.  The live admission gate is
+      `label sender ⊑ label endpoint`, an order rather than an equality, so a
+      low and a high waiter on one high endpoint are both admitted by design
+      (`endpointAdmissionAdmitsMixedObservability`); establishing uniformity
+      would mean narrowing the gate to equality and refusing the one-way flow
+      the lattice exists to permit.  The gate's own direction, composed with
+      `LabelingContextValid.endpointObjectCoherence` (which carries the
+      endpoint's *flow* label on to the *object* label the projection reads),
+      closes the *endpoint object* — non-observable whenever any waiter is,
+      `endpointObjectHigh_of_admittedThreadHigh` — and closes nothing about the
+      neighbours, so the residue is representational: a
+      queue's content must live in an object whose label dominates every
+      member's, which the endpoint is and a member's own TCB is not.  The
+      SM6.E cancellation-NI module consumes this obligation as its
+      `hTeardownProj` hypothesis; see `docs/REGISTERED_DEBT.md`.
     - **G4 re-lookup**: no state change.
     - **G5 `cancelDonation` (WS-RC R5.A split)**: post-R5.A the G5 step
       dispatches explicitly on `schedContextBinding`:
@@ -5054,14 +5083,15 @@ theorem setThreadFaultHandlerOp_preserves_projection
     (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
   cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
           cases hStep
-          simp only [installFaultHandler]
+          unfold installFaultHandler SystemState.rewriteObject
           exact objects_insert_preserves_projection_high ctx observer st
             vTargetTid.val.toObjId (.tcb { tcb with faultHandler := some cptr })
             hTargetObjHigh hObjInv

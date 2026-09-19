@@ -82,8 +82,8 @@ theorem consumeCallerReply_preserves_ipcSchedulerContractPredicates
     (SystemState.consumeCallerReply_scheduler_eq st st' caller rid hStep)
     (SystemState.consumeCallerReply_tcb_forward st st' caller rid hObjInv hStep) hContract
 
-/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the detach it runs
-first writes a Reply, touching neither the scheduler nor a TCB. -/
+/-- **WS-RM (`v0.35.6`)**: and the removal preserves it — the splice it runs
+first writes only Reply objects, touching neither the scheduler nor a TCB. -/
 theorem removeCallerReplyFrame_preserves_ipcSchedulerContractPredicates
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hContract : ipcSchedulerContractPredicates st)

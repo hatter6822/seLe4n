@@ -269,23 +269,67 @@ unrelated object.
 **Invariant dependency**: for a `.bound` thread, requires
 `schedContextBindingConsistent` to guarantee the SchedContext exists.
 If it does not (invariant violation), the function defensively returns
-the state unchanged. This no-op path is dead code when invariants hold. -/
+the state unchanged. This no-op path is dead code when invariants hold.
+
+**Both arms are the typed in-place rewrite** (`v0.35.71`): the reservation
+through `SystemState.updateSchedContext`, whose identity-on-absent arm *is*
+the defensive no-op above, and the thread through `SystemState.updateTcb`.
+The record handed in classifies the binding; the write rewrites the record
+the store holds, so a caller that resolved `tcb` at an earlier state cannot
+write a stale copy of it back. -/
 def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
   match tcb.schedContextBinding.ownScId? with
   | some scId =>
-    -- `.bound`: the reservation is the thread's own, so its priority field is
-    -- the scheduling source.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    match st.getSchedContext? scId with
-    | some sc =>
-      let sc' := { sc with priority := newPriority }
-      { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
-    | none => st  -- SchedContext missing — no-op (consistency violation)
+    -- `.bound`: the base priority has **two homes** and this writes both.
+    --
+    -- `SystemState.threadBasePriority` reads `sc.priority` here, while
+    -- `TCB.boostedPriority` -- the bucket every run-queue *insert* is keyed by
+    -- (`enqueueRunnableOnCore`, `preemptCurrentOnCore`) -- reads
+    -- `tcb.priority`.  `boundThreadPriorityConsistent` is the agreement between
+    -- them, `schedContextBind` establishes it and
+    -- `schedContextConfigureBoundPropagate` maintains it; until `v0.35.98` this
+    -- arm wrote the reservation alone, so the syscall whose entire job is to
+    -- change a priority was the one writer that broke it.  Measured on the
+    -- live per-core path: `.tcbSetPriority` demoted a bound thread from 50 to
+    -- 10, `migrateRunQueueBucketOnCore` re-bucketed it at 10, and its first
+    -- wake re-inserted it at `tcb.boostedPriority` -- **50**, the band the
+    -- demotion had just removed -- permanently, since every later wake reads
+    -- the same stale field.  A demotion that does not stick is a
+    -- temporal-isolation break in the mixed-criticality deployments MCS exists
+    -- for; a promotion that does not stick is the latency failure in the other
+    -- direction.
+    --
+    -- The SchedContext first and the thread second, mirroring
+    -- `schedContextBind`'s order, so the two establish the same agreement the
+    -- same way round.  Each half is an identity where its object is absent, so
+    -- the arm is total and a dangling `.bound` (an invariant violation) still
+    -- gets the TCB write rather than being silently dropped whole.
+    (st.updateSchedContext scId fun sc => { sc with priority := newPriority }).updateTcb tid
+      fun t => { t with priority := newPriority }
   | none =>
-    -- `.unbound` and `.donated`: update the TCB priority directly.
-    let tcb' := { tcb with priority := newPriority }
-    { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+    -- `.unbound` and `.donated`: the thread's own TCB, which is its only home.
+    st.updateTcb tid fun t => { t with priority := newPriority }
+
+/-- **The frame belongs to the write** (`v0.35.98`).  `updatePrioritySource`
+moves objects and nothing else, at either binding — stated once here rather than
+re-derived per field, because the `.bound` arm became a *pair* of writes in this
+cut and six consumers were each running their own two-branch case analysis over
+its shape.  Every `_scheduler_eq` / `_lifecycle_eq` / … transport lemma in
+`SchedContext/Invariant/PriorityPreservation.lean` is now one application of
+this, so a third write added to either arm costs them nothing. -/
+theorem updatePrioritySource_only_modifies_objects
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (newPriority : SeLe4n.Priority) :
+    ∃ objects', updatePrioritySource st tid tcb newPriority
+      = { st with objects := objects' } := by
+  unfold updatePrioritySource
+  split
+  · rw [SystemState.updateTcb_eq_objects_update,
+      SystemState.updateSchedContext_eq_objects_update]
+    exact ⟨_, rfl⟩
+  · rw [SystemState.updateTcb_eq_objects_update]
+    exact ⟨_, rfl⟩
 
 /-- WS-OD (v0.35.3): the payoff — a priority update on a **donated** thread
 writes that thread's own TCB and nothing else, so the donor's reservation is
@@ -296,33 +340,34 @@ object is written. -/
 theorem updatePrioritySource_donated (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority)
     {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (h : tcb.schedContextBinding = .donated scId owner) :
+    (h : tcb.schedContextBinding = .donated scId owner)
+    (hTcb : st.getTcb? tid = some tcb) :
     updatePrioritySource st tid tcb newPriority =
       { st with objects :=
           st.objects.insert tid.toObjId (.tcb { tcb with priority := newPriority }) } := by
-  simp [updatePrioritySource, h]
+  unfold updatePrioritySource
+  rw [show tcb.schedContextBinding.ownScId? = none by simp [h]]
+  exact SystemState.updateTcb_eq_of_some hTcb _
 
 /-- WS-OD (v0.35.3): the security statement, in the form the finding was
 reported in — a priority update on a donee leaves the **donor's** scheduling
-context byte-for-byte unchanged.  Requires only that the donee's TCB is not
-stored at the donated context's key, which `objectIndexBounded` and the
-kind-disjointness of the object store give for any reachable state; the
-hypothesis is stated rather than assumed so the theorem is checkable in
-isolation. -/
+context byte-for-byte unchanged.  Requires only `invExt` on the object store
+(`v0.35.71`): the typed rewrite fires only at a key holding a TCB, so it can
+reach no SchedContext at any key — the key-distinctness hypothesis the raw
+insert needed (`tid.toObjId ≠ scId.toObjId`, which `objectIndexBounded` gave on
+a reachable state) is gone, and with it the one way this statement could have
+been vacuous. -/
 theorem updatePrioritySource_donated_preserves_donor_schedContext
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority)
     {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
     (h : tcb.schedContextBinding = .donated scId owner)
-    (hNe : tid.toObjId ≠ scId.toObjId)
     (hExt : st.objects.invExt) :
     (updatePrioritySource st tid tcb newPriority).getSchedContext? scId =
       st.getSchedContext? scId := by
-  rw [updatePrioritySource_donated st tid tcb newPriority h]
-  unfold SystemState.getSchedContext?
-  simp only [RHTable_getElem?_eq_get?]
-  rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne st.objects
-    tid.toObjId scId.toObjId _ (by simpa using hNe) hExt]
+  unfold updatePrioritySource
+  rw [show tcb.schedContextBinding.ownScId? = none by simp [h]]
+  exact SystemState.updateTcb_getSchedContext? st tid _ hExt scId
 
 /-- Helper: if a thread is in the run queue, remove it and re-insert at
 the effective priority (new base priority with PIP boost applied). This
@@ -456,10 +501,14 @@ def setMCPriorityOp (st : SystemState) (vCallerTid vTargetTid : SeLe4n.ValidThre
     | .error e => .error e
     | .ok () =>
       -- F2: Target TCB lookup + MCP update
-      match st.getTcb? vTargetTid.val with
-      | some targetTcb =>
+      match st.getTcbWitnessed? vTargetTid.val with
+      | some ⟨targetTcb, hTarget⟩ =>
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
-        let st := { st with objects := st.objects.insert vTargetTid.val.toObjId (.tcb targetTcb') }
+        -- `v0.35.71`: the looked-up record is read again below (the capping
+        -- rule and the priority-source update), so the lookup is the witnessed
+        -- one and the ceiling write is the typed rewrite under its proof.
+        let st := st.rewriteObject vTargetTid.val.toObjId (.tcb targetTcb')
+          (SystemState.rewriteAdmissible_tcb hTarget targetTcb')
         -- F3: Priority capping — if current priority exceeds new MCP, cap it
         let currentPrio := getCurrentPriority st targetTcb'
         if currentPrio.val > newMCP.val then

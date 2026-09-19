@@ -212,9 +212,9 @@ theorem enqueueRunnableOnCore_projectRunnableOnCore_high (ctx : LabelingContext)
   by_cases hcc : c' = c
   · subst hcc
     cases hTcb : st.getTcb? tid with
-    | none => simp only [enqueueRunnableOnCore, hTcb]
+    | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
     | some tcb =>
-      simp only [enqueueRunnableOnCore, hTcb]
+      simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
       split
       · rfl
       · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
@@ -267,9 +267,9 @@ theorem enqueueRunnableOnCore_activeDomainOnCore (st : SystemState) (c : CoreId)
     (enqueueRunnableOnCore st c tid).scheduler.activeDomainOnCore c'
       = st.scheduler.activeDomainOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_activeDomainOnCore]
@@ -280,9 +280,9 @@ theorem enqueueRunnableOnCore_domainTimeRemainingOnCore (st : SystemState) (c : 
     (enqueueRunnableOnCore st c tid).scheduler.domainTimeRemainingOnCore c'
       = st.scheduler.domainTimeRemainingOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore]
@@ -293,9 +293,9 @@ theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : 
     (enqueueRunnableOnCore st c tid).scheduler.domainScheduleIndexOnCore c'
       = st.scheduler.domainScheduleIndexOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore]
@@ -304,8 +304,8 @@ theorem enqueueRunnableOnCore_domainScheduleIndexOnCore (st : SystemState) (c : 
 theorem enqueueRunnableOnCore_machineEq (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) : (enqueueRunnableOnCore st c tid).machine = st.machine := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]
-  | some tcb => simp only [enqueueRunnableOnCore, hTcb]; split <;> rfl
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  | some tcb => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]; split <;> rfl
 
 /-- `removeRunnableOnCore` leaves every core's machine registers untouched. -/
 theorem removeRunnableOnCore_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -508,8 +508,8 @@ theorem consumeCallerReply_preserves_projectionOnCore (ctx : LabelingContext)
     (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hSched]) (by rw [hMach])
 
 /-- WS-RM (`v0.35.6`): the per-core form of
-`removeCallerReplyFrame_preserves_projection`.  The detach the removal adds ahead
-of the consume writes one Reply's `prev`, which `projectKernelObject` strips, and
+`removeCallerReplyFrame_preserves_projection`.  The splice the removal adds ahead
+of the consume writes only Reply stack links, which `projectKernelObject` strips, and
 neither leg touches the scheduler or the machine registers, so the per-core
 congruence applies on every core under exactly the consume's own hypotheses. -/
 theorem removeCallerReplyFrame_preserves_projectionOnCore (ctx : LabelingContext)

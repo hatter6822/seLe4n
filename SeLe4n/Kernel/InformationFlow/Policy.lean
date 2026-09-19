@@ -212,6 +212,26 @@ def securityFlowsTo (src dst : SecurityLabel) : Bool :=
   confidentialityFlowsTo src.confidentiality dst.confidentiality &&
     integrityFlowsTo dst.integrity src.integrity
 
+theorem confidentialityFlowsTo_refl (c : Confidentiality) :
+    confidentialityFlowsTo c c = true := by
+  cases c <;> rfl
+
+theorem integrityFlowsTo_refl (i : Integrity) :
+    integrityFlowsTo i i = true := by
+  cases i <;> rfl
+
+theorem securityFlowsTo_refl (l : SecurityLabel) :
+    securityFlowsTo l l = true := by
+  cases l with
+  | mk c i =>
+      simp [securityFlowsTo, confidentialityFlowsTo_refl, integrityFlowsTo_refl]
+
+-- WS-RR RR8.8: the three reflexivity facts above sit here, beside the
+-- definitions they are about, rather than a thousand lines below.
+-- `DeploymentLabeling`'s endpoint/object coherence obligation is discharged by
+-- `securityFlowsTo_refl`, and a lemma a definition's own constructor needs
+-- cannot be declared after it.
+
 /-- X3-E (M-1): The combined `securityFlowsTo` prevents confidential data
     leakage: a `kernelTrusted` entity (high confidentiality, trusted integrity)
     cannot flow information to a `publicLabel` entity (low confidentiality,
@@ -874,6 +894,35 @@ structure DeploymentLabeling where
   hUpperReal : separationWitnessAdmissible separatedUpper = true
   /-- The witness really is separated: the two threads carry different labels. -/
   hSeparated : entityLabelOf separatedLower.toNat ≠ entityLabelOf separatedUpper.toNat
+  /-- **WS-RR RR8.8**: an endpoint's *flow* label flows to its own kernel
+      object's label — the endpoint object is at least as sensitive as the flows
+      the endpoint admits.
+
+      `endpointLabelOf` and `entityLabelOf` are two independent fields, and the
+      kernel reads them through two different questions: the live IPC gates
+      compare `endpointLabelOf` (`endpointFlowGate`) while the projection decides
+      visibility from `objectLabelOf`, which `deploymentLabelingContext` derives
+      from `entityLabelOf`.  Nothing related them, so *one question had two
+      answers* — a deployment could label an endpoint high for flow purposes and
+      low for visibility, and no gate or obligation refused it.
+
+      What the relation buys is the inference the cancellation path's projection
+      results need: every thread blocked sending or calling on an endpoint has
+      `threadLabelOf ⊑ endpointLabelOf` (`endpointFlowGate_implies_securityFlowsTo`,
+      no hypothesis), so with this field the *endpoint object* is non-observable
+      whenever any of its waiters is.  Without it that step is unavailable, and
+      the projection and the gate are free to disagree about how sensitive an
+      endpoint is.
+
+      A **flow** rather than an equality, mirroring
+      `LabelingContextValid.threadObjectCoherence`, which is also stated as a
+      flow although every constructed context satisfies it with equality.  The
+      one base constructor discharges it by reflexivity
+      (`indexPartitionedDeploymentLabeling`, whose two functions *are* the same
+      partition), so it costs a deployment nothing that chooses its labels by
+      index. -/
+  hEndpointObjectCoherence : ∀ oid : SeLe4n.ObjId,
+    securityFlowsTo (endpointLabelOf oid) (entityLabelOf oid.toNat) = true
 
 /-- WS-RR RR5.1: build the deployment's `LabelingContext` from its
     `DeploymentLabeling`.
@@ -1036,7 +1085,10 @@ def indexPartitionedDeploymentLabeling
     hSeparated      := by
       simp only [SeLe4n.ThreadId.toNat, indexPartitionedLabel, if_pos hLowerBelow,
         if_neg (Nat.not_lt.mpr (separationBoundary_le_upperWitnessIndex upperDomainBase))]
-      exact hLabels }
+      exact hLabels
+    -- WS-RR RR8.8: the family's endpoint label and entity label are the *same*
+    -- partition read at the same index, so the coherence flow is reflexive.
+    hEndpointObjectCoherence := fun _ => securityFlowsTo_refl _ }
 
 /-- PR #889 review round 5: the family's witnesses are the ones it was given —
     the lower one verbatim, the upper one at `upperWitnessIndex`.  Definitional;
@@ -1322,20 +1374,6 @@ theorem harnessLabelingContext_threadLabel_public
     simp only [separationBoundary, harnessSeparationBoundary] at *
     omega
   exact indexPartitionedLabelingContext_threadLabel_below _ _ _ _ _ _ _ tid hb
-
-theorem confidentialityFlowsTo_refl (c : Confidentiality) :
-    confidentialityFlowsTo c c = true := by
-  cases c <;> rfl
-
-theorem integrityFlowsTo_refl (i : Integrity) :
-    integrityFlowsTo i i = true := by
-  cases i <;> rfl
-
-theorem securityFlowsTo_refl (l : SecurityLabel) :
-    securityFlowsTo l l = true := by
-  cases l with
-  | mk c i =>
-      simp [securityFlowsTo, confidentialityFlowsTo_refl, integrityFlowsTo_refl]
 
 theorem confidentialityFlowsTo_trans
     (a b c : Confidentiality)

@@ -1,5 +1,10 @@
 # Q9-A: Two-Phase Architecture Integration Suite — expected output fragments
-# Each line is a scenario ID | subsystem | expected fragment
+# Format: SCENARIO_ID | SUBSYSTEM | expected_trace_fragment
+# Suite: two_phase_arch_suite
+# ID column validated by: scripts/scenario_catalog.py validate-registry
+#   --extra-fixtures (Tier 0, against tests/fixtures/scenario_registry.yaml)
+# Fragment column validated by: scripts/scenario_catalog.py check-fragments
+#   (Tier 2, against this suite's real stdout)
 TPH-001 | TwoPhaseArch | TPH-001a empty builder valid
 TPH-003 | TwoPhaseArch | TPH-003a frozen objects size 2
 TPH-005 | TwoPhaseArch | TPH-005a sender blocked

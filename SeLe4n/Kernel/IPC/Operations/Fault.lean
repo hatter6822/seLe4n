@@ -397,14 +397,11 @@ inductive FaultDisposition where
 
 /-- WS-RR RR4: record the fault a thread is blocked on — seL4's
 `tptr->tcbFault = current_fault`, set before the fault IPC is sent so the
-reply that answers it can find it.  Total: a non-TCB target is unchanged. -/
+reply that answers it can find it.  Total: a non-TCB target is unchanged.
+The write is the typed in-place rewrite `SystemState.updateTcb` (`v0.35.70`). -/
 def recordPendingFault (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      let updated : KernelObject := .tcb { tcb with pendingFault := some tf }
-      { st with objects := st.objects.insert tid.toObjId updated }
-  | none => st
+  st.updateTcb tid fun tcb => { tcb with pendingFault := some tf }
 
 /-- WS-RR RR4.17 (frame): recording a fault is a single TCB write — the
 scheduler is untouched, so a delivery's runnability statement reads through
@@ -412,8 +409,8 @@ it. -/
 @[simp] theorem recordPendingFault_scheduler_eq (st : SystemState)
     (tid : SeLe4n.ThreadId) (tf : ThreadFault) :
     (recordPendingFault st tid tf).scheduler = st.scheduler := by
-  simp only [recordPendingFault]
-  cases st.getTcb? tid <;> simp
+  unfold recordPendingFault
+  exact SystemState.updateTcb_scheduler st tid _
 
 /-- WS-RR RR4.9 (**the no-handler policy**): deschedule the thread and mark
 it `.Inactive`.
@@ -438,14 +435,13 @@ answered.
 `ipcState` is deliberately **not** touched, which is what keeps this cheap to
 verify: every `ipcInvariantFull` conjunct reads `ipcState`, the endpoint
 queues, the donation chain or the reply links, and this writes none of them
-(`threadState` is read by the scheduler's invariants, not the IPC bundle). -/
+(`threadState` is read by the scheduler's invariants, not the IPC bundle).
+
+The `.Inactive` store is the typed in-place rewrite `SystemState.updateTcb`
+over the descheduled state (`v0.35.70`): the identity on a miss, which is the
+totality this transition must keep. -/
 def faultSuspend (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  let st1 := removeRunnable st tid
-  match st1.getTcb? tid with
-  | some tcb =>
-      let updated : KernelObject := .tcb { tcb with threadState := .Inactive }
-      { st1 with objects := st1.objects.insert tid.toObjId updated }
-  | none => st1
+  (removeRunnable st tid).updateTcb tid fun tcb => { tcb with threadState := .Inactive }
 
 /-- WS-RR RR4.15: the reply-declined disposition — deschedule, mark
 `.Inactive`, and **retire the answered fault**.
@@ -466,13 +462,8 @@ state-dependent guard, since a `.blockedOnSend` or `.blockedOnCall` thread
 must *keep* its message
 (`blockedThreadsPendingMessageConsistent`), and would buy no behaviour. -/
 def faultAbandon (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  let st1 := removeRunnable st tid
-  match st1.getTcb? tid with
-  | some tcb =>
-      let updated : KernelObject :=
-        .tcb { tcb with threadState := .Inactive, pendingFault := none }
-      { st1 with objects := st1.objects.insert tid.toObjId updated }
-  | none => st1
+  (removeRunnable st tid).updateTcb tid fun tcb =>
+    { tcb with threadState := .Inactive, pendingFault := none }
 
 /-- WS-RR RR4.9: a suspended thread is `.Inactive` — the state the scheduler
 never dispatches. -/
@@ -481,25 +472,22 @@ theorem faultSuspend_threadState (st : SystemState) (tid : SeLe4n.ThreadId)
     (hObjInv : (removeRunnable st tid).objects.invExt) :
     (faultSuspend st tid).getTcb? tid = some { tcb with threadState := .Inactive } := by
   unfold faultSuspend
-  simp only [hTcb]
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ tid.toObjId
-        (KernelObject.tcb { tcb with threadState := .Inactive }) hObjInv]
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hObjInv, hTcb]
+  rfl
 
 /-- WS-RR RR4.9 (frame): descheduling and marking a thread `.Inactive` writes
 the run queue and the current slot and nothing else in the scheduler — the
 `.Inactive` store is an object write. -/
 theorem faultSuspend_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (faultSuspend st tid).scheduler = (removeRunnable st tid).scheduler := by
-  simp only [faultSuspend]
-  cases (removeRunnable st tid).getTcb? tid <;> simp
+  unfold faultSuspend
+  exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-RR RR4.15 (frame): the same for the reply-declined disposition. -/
 theorem faultAbandon_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId) :
     (faultAbandon st tid).scheduler = (removeRunnable st tid).scheduler := by
-  simp only [faultAbandon]
-  cases (removeRunnable st tid).getTcb? tid <;> simp
+  unfold faultAbandon
+  exact SystemState.updateTcb_scheduler _ _ _
 
 /-- `removeRunnable` writes the boot core's run-queue slot to `remove tid`. -/
 @[simp] theorem removeRunnable_runQueueOnCore_self (st : SystemState)
@@ -563,15 +551,11 @@ Both are fields no `ipcInvariantFull` conjunct reads, which is why the whole
 bundle transports across a restart by the one-TCB-rewrite lever rather than by
 a case analysis.  The `pendingMessage` the reply delivered is left as
 delivered — see `faultAbandon` for why that is right rather than merely
-convenient. -/
+convenient.  The store is the typed in-place rewrite `SystemState.updateTcb`
+(`v0.35.70`). -/
 def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) : SystemState :=
-  match st.getTcb? faulted with
-  | some tcb =>
-      let updated : KernelObject :=
-        .tcb { tcb.withRestartFrame frame with pendingFault := none }
-      { st with objects := st.objects.insert faulted.toObjId updated }
-  | none => st
+  st.updateTcb faulted fun tcb => { tcb.withRestartFrame frame with pendingFault := none }
 
 /-- WS-RR RR4.15 (frame): installing a restart frame never touches the
 scheduler — it decides *where the thread resumes*, not *whether* it is
@@ -579,8 +563,8 @@ scheduled. -/
 @[simp] theorem applyFaultRestart_scheduler_eq (st : SystemState)
     (faulted : SeLe4n.ThreadId) (frame : Architecture.FaultRestartFrame) :
     (applyFaultRestart st faulted frame).scheduler = st.scheduler := by
-  simp only [applyFaultRestart]
-  cases st.getTcb? faulted <;> simp
+  unfold applyFaultRestart
+  exact SystemState.updateTcb_scheduler st faulted _
 
 /-- WS-RR RR4.15: the restarted thread's saved `pc` is the frame's — the
 statement RR4.19's progress argument consumes, since "the thread does not
@@ -591,11 +575,9 @@ theorem applyFaultRestart_pc (st : SystemState) (faulted : SeLe4n.ThreadId)
     (hTcb : st.getTcb? faulted = some tcb) (hObjInv : st.objects.invExt) :
     (applyFaultRestart st faulted frame).getTcb? faulted
       = some { tcb.withRestartFrame frame with pendingFault := none } := by
-  simp only [applyFaultRestart, hTcb]
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects faulted.toObjId
-        (KernelObject.tcb { tcb.withRestartFrame frame with pendingFault := none }) hObjInv]
+  unfold applyFaultRestart
+  rw [SystemState.updateTcb_getTcb?_self _ _ _ hObjInv, hTcb]
+  rfl
 
 /-- WS-RR RR4.15: and a restart **retires the fault** — the thread comes out of
 it carrying no outstanding fault, so a second reply cannot re-answer the one
@@ -617,11 +599,17 @@ theorem applyFaultRestart_clears_pendingFault (st : SystemState)
 
 /-- The post-state of a successful `setThreadFaultHandlerOp`: the target's TCB
 with its `faultHandler` rewritten and nothing else touched — the shape every
-preservation proof below reads off. -/
+preservation proof below reads off.
+
+The TCB it is handed is the one the store holds, and it takes the store's
+witness for that (`hTcb`, `v0.35.70`): the operation resolves the thread once,
+through `getTcbWitnessed?`, uses the record to validate the handler and then
+hands it here with its proof, so the write is `rewriteObject` under that proof
+rather than a raw insert of a record nothing tied to the store. -/
 def installFaultHandler (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (cptr : SeLe4n.CPtr) : SystemState :=
-  { st with
-      objects := st.objects.insert tid.toObjId (.tcb { tcb with faultHandler := some cptr }) }
+    (hTcb : st.getTcb? tid = some tcb) (cptr : SeLe4n.CPtr) : SystemState :=
+  st.rewriteObject tid.toObjId (.tcb { tcb with faultHandler := some cptr })
+    (SystemState.rewriteAdmissible_tcb hTcb _)
 
 /-- **`seL4_TCB_SetSpace`'s fault endpoint, as a kernel operation.**  Install
 `cptr` as the target thread's fault handler.
@@ -649,12 +637,12 @@ other thread-configuration syscall.  The write itself is a one-TCB field
 rewrite; it touches no scheduler or IPC state. -/
 def setThreadFaultHandlerOp (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
     (cptr : SeLe4n.CPtr) : Except KernelError SystemState :=
-  match st.getTcb? vTargetTid.val with
+  match st.getTcbWitnessed? vTargetTid.val with
   | none => .error .objectNotFound
-  | some tcb =>
+  | some ⟨tcb, hTcb⟩ =>
       match resolveFaultHandlerCPtr st tcb cptr with
       | .error e => .error e
-      | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb cptr)
+      | .ok _ => .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr)
 
 /-- On the success path the step *is* the one-field rewrite. -/
 theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.ValidThreadId)
@@ -662,8 +650,8 @@ theorem setThreadFaultHandlerOp_ok_eq (st : SystemState) (vTargetTid : SeLe4n.Va
     (hTcb : st.getTcb? vTargetTid.val = some tcb)
     (hR : resolveFaultHandlerCPtr st tcb cptr = .ok tgt) :
     setThreadFaultHandlerOp st vTargetTid cptr
-      = .ok (installFaultHandler st vTargetTid.val tcb cptr) := by
-  simp only [setThreadFaultHandlerOp, hTcb, hR]
+      = .ok (installFaultHandler st vTargetTid.val tcb hTcb cptr) := by
+  simp only [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR]
 
 /-- A handler is installed only if it resolved, through the target's CSpace,
 to an authorised endpoint capability in the pre-state — the set-time
@@ -676,10 +664,11 @@ theorem setThreadFaultHandlerOp_validated (st st' : SystemState)
       faultHandlerCapAuthorized tgt.cap = true ∧
       (st.getEndpoint? tgt.endpoint).isSome := by
   cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           have hInv := resolveFaultHandlerCPtr_ok_inv st tcb cptr tgt hR
           exact ⟨tcb, tgt, rfl, hR, hInv.1, hInv.2.2.1⟩
@@ -693,15 +682,14 @@ theorem setThreadFaultHandlerOp_faultHandler (st st' : SystemState)
     (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
     st'.getTcb? vTargetTid.val = some { tcb with faultHandler := some cptr } := by
   cases hR : resolveFaultHandlerCPtr st tcb cptr with
-  | error e => simp [setThreadFaultHandlerOp, hTcb, hR] at hStep
+  | error e =>
+      simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR] at hStep
   | ok tgt =>
       rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hTcb hR] at hStep
       cases hStep
-      simp only [installFaultHandler]
-      unfold SystemState.getTcb?
-      rw [RHTable_getElem?_eq_get?,
-        SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects vTargetTid.val.toObjId
-          (KernelObject.tcb { tcb with faultHandler := some cptr }) hObjInv]
+      unfold installFaultHandler
+      exact (SystemState.getTcb?_eq_some_iff _ _ _).mpr
+        (SystemState.rewriteObject_objects_self st _ _ _ hObjInv)
 
 /-- Configuring a handler touches no scheduler state. -/
 theorem setThreadFaultHandlerOp_scheduler_eq (st st' : SystemState)
@@ -709,10 +697,11 @@ theorem setThreadFaultHandlerOp_scheduler_eq (st st' : SystemState)
     (hStep : setThreadFaultHandlerOp st vTargetTid cptr = .ok st') :
     st'.scheduler = st.scheduler := by
   cases hT : st.getTcb? vTargetTid.val with
-  | none => simp [setThreadFaultHandlerOp, hT] at hStep
+  | none => simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_none hT] at hStep
   | some tcb =>
       cases hR : resolveFaultHandlerCPtr st tcb cptr with
-      | error e => simp [setThreadFaultHandlerOp, hT, hR] at hStep
+      | error e =>
+          simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hT, hR] at hStep
       | ok tgt =>
           rw [setThreadFaultHandlerOp_ok_eq st vTargetTid cptr tcb tgt hT hR] at hStep
           cases hStep
@@ -725,7 +714,7 @@ theorem setThreadFaultHandlerOp_rejects (st : SystemState)
     (hTcb : st.getTcb? vTargetTid.val = some tcb)
     (hR : resolveFaultHandlerCPtr st tcb cptr = .error e) :
     setThreadFaultHandlerOp st vTargetTid cptr = .error e := by
-  simp [setThreadFaultHandlerOp, hTcb, hR]
+  simp [setThreadFaultHandlerOp, SystemState.getTcbWitnessed?_eq_some hTcb, hR]
 
 /-- **Resuming a thread that carries a fault retires the fault** — seL4's
 `restart` semantics for a double-faulted thread, closing a misclassification
@@ -813,27 +802,25 @@ syscalls, holds the *last syscall's* arguments; the fault context has to be
 built from what the thread held **at the trap**, because the unknown-syscall
 message reports that window and a resume reinstalls it
 (`applyFaultRestart`).  Total: a target that is not a TCB returns the state
-unchanged, and the delivery then fails closed on its own lookup. -/
+unchanged, and the delivery then fails closed on its own lookup.  The write is
+the typed in-place rewrite `SystemState.updateTcb` (`v0.35.69`), as the SVC
+seam's spill and the return-frame staging are. -/
 def writeFaultRegistersToTcb (st : SystemState) (tid : SeLe4n.ThreadId)
     (w : FaultRegisterWindow) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      let tcb' : TCB := { tcb with registerContext := w.spill tcb.registerContext }
-      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | none => st
+  st.updateTcb tid fun tcb => { tcb with registerContext := w.spill tcb.registerContext }
 
 /-- The spill touches no scheduler state — it is a register write, and the
 delivery it precedes is what deschedules the thread. -/
 @[simp] theorem writeFaultRegistersToTcb_scheduler (st : SystemState)
     (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) :
     (writeFaultRegistersToTcb st tid w).scheduler = st.scheduler := by
-  unfold writeFaultRegistersToTcb; cases st.getTcb? tid <;> rfl
+  unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_scheduler st tid _
 
 /-- A target that is not a TCB is left alone. -/
 theorem writeFaultRegistersToTcb_id_when_not_tcb (st : SystemState)
     (tid : SeLe4n.ThreadId) (w : FaultRegisterWindow) (hNone : st.getTcb? tid = none) :
     writeFaultRegistersToTcb st tid w = st := by
-  unfold writeFaultRegistersToTcb; simp [hNone]
+  unfold writeFaultRegistersToTcb; exact SystemState.updateTcb_eq_self_of_none hNone _
 
 /-- The spilled thread's saved context is the spill of what it was. -/
 theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -842,12 +829,8 @@ theorem writeFaultRegistersToTcb_getTcb? (st : SystemState) (tid : SeLe4n.Thread
     (writeFaultRegistersToTcb st tid w).getTcb? tid
       = some { tcb with registerContext := w.spill tcb.registerContext } := by
   unfold writeFaultRegistersToTcb
-  rw [hTcb]
-  simp only
-  unfold SystemState.getTcb?
-  rw [RHTable_getElem?_eq_get?,
-      SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId
-        (KernelObject.tcb { tcb with registerContext := w.spill tcb.registerContext }) hObjInv]
+  rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+  rfl
 
 /-- **The fault context the entry delivers is the trap frame's**, word for
 word: `sp` and `lr` are the saved `SP_EL0` and `x30`, and `x0`-`x7` are the

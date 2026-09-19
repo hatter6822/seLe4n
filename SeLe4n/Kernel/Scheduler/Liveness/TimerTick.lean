@@ -20,8 +20,8 @@ open SeLe4n.Model
 /-- D5-D (Z4-F1): For unbound threads, `timerTickBudget` always succeeds. -/
 theorem timerTickBudget_F1_succeeds
     (st : SystemState) (tid : ThreadId) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
-    ∃ st' preempted, timerTickBudget st tid tcb = .ok (st', preempted) := by
+    (hUnbound : tcb.schedContextBinding = .unbound) (hTcb : st.getTcb? tid = some tcb) :
+    ∃ st' preempted, timerTickBudget st tid tcb hTcb = .ok (st', preempted) := by
   simp only [timerTickBudget, hUnbound]
   by_cases h : tcb.timeSlice ≤ 1 <;> simp [h]
 
@@ -31,12 +31,13 @@ theorem timerTickBudget_bound_succeeds
     (st : SystemState) (tid : ThreadId) (tcb : TCB)
     (scId : SchedContextId) (sc : SchedContext)
     (hBound : tcb.schedContextBinding = .bound scId)
-    (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc)) :
+    (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hTcb : st.getTcb? tid = some tcb) :
     ∃ st' preempted,
-      timerTickBudget st tid tcb = .ok (st', preempted) ∧
+      timerTickBudget st tid tcb hTcb = .ok (st', preempted) ∧
       (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
-  simp only [timerTickBudget, hBound,
-    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup]
+  simp only [timerTickBudget, hBound, SystemState.getSchedContextWitnessed?_eq_some
+    ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup)]
   by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
 
 /-- D5-D (Z4-F2/F3 donated variant): Same for donated SchedContexts. -/
@@ -44,12 +45,13 @@ theorem timerTickBudget_donated_succeeds
     (st : SystemState) (tid : ThreadId) (tcb : TCB)
     (scId : SchedContextId) (owner : ThreadId) (sc : SchedContext)
     (hDonated : tcb.schedContextBinding = .donated scId owner)
-    (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc)) :
+    (hLookup : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hTcb : st.getTcb? tid = some tcb) :
     ∃ st' preempted,
-      timerTickBudget st tid tcb = .ok (st', preempted) ∧
+      timerTickBudget st tid tcb hTcb = .ok (st', preempted) ∧
       (preempted = true ↔ sc.budgetRemaining.val ≤ 1) := by
-  simp only [timerTickBudget, hDonated,
-    (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup]
+  simp only [timerTickBudget, hDonated, SystemState.getSchedContextWitnessed?_eq_some
+    ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hLookup)]
   by_cases h : sc.budgetRemaining.val ≤ 1 <;> simp [h]
 
 /-- D5-D: `consumeBudget` decreases budget by the specified tick count

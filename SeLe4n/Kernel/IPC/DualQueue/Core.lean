@@ -17,12 +17,6 @@ open SeLe4n.Model
 -- WS-E4/M-01: Dual-queue endpoint operations (send/receive queue separation)
 -- ============================================================================
 
-def tcbWithQueueLinks
-    (tcb : TCB)
-    (prev : Option SeLe4n.ThreadId)
-    (pprev : Option QueuePPrev)
-    (next : Option SeLe4n.ThreadId) : TCB :=
-  { tcb with queuePrev := prev, queuePPrev := pprev, queueNext := next }
 
 def storeTcbQueueLinks
     (st : SystemState)
@@ -36,6 +30,8 @@ def storeTcbQueueLinks
       match storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
       | .error e => .error e
       | .ok ((), st') => .ok st'
+
+
 
 
 /-- WS-SM SM8.B.2: `storeTcbQueueLinks` leaves the machine registers untouched,
@@ -471,6 +467,52 @@ theorem endpointQueuePopHead_popped_eq_head
             simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
             exact hPop.1.symm
 
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and the TCB a successful
+`endpointQueuePopHead` returns **is** that head's pre-state lookup.
+
+The twin of `endpointQueuePopHead_popped_eq_head`, and needed for the same reason
+one level over.  The pop reads the head's TCB once and hands that record back
+beside the post-state; `endpointReceiveDual` then branches on *its* `ipcState` to
+decide whether the rendezvous dequeued a `Call`.  Without this, that branch
+condition is a fact about a record only the pop's own body can name, so a
+pre-state resolver asking `lookupTcb` the same question would be a **second**
+reading of it rather than the same one — and two readings of one question is what
+this tree spends its length retiring.
+
+Stated at `head` rather than at `popped` for the reason the sibling is: a caller
+that inspected the endpoint holds `hHead`, not the operation's own output. -/
+theorem endpointQueuePopHead_popped_tcb_eq_lookup
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (st st' : SystemState)
+    (ep : Endpoint) (popped head : SeLe4n.ThreadId) (poppedTcb : TCB)
+    (hEp : st.objects[endpointId]? = some (.endpoint ep))
+    (hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some head)
+    (hPop : endpointQueuePopHead endpointId isReceiveQ st = .ok (popped, poppedTcb, st')) :
+    lookupTcb st head = some poppedTcb := by
+  revert hPop
+  unfold endpointQueuePopHead SystemState.getObject?
+  rw [hEp]
+  simp only []
+  rw [hHead]
+  simp only []
+  cases hTcb : lookupTcb st head with
+  | none => intro hPop; cases hPop
+  | some headTcb =>
+    simp only []
+    split
+    · intro hPop; cases hPop
+    · split
+      · intro hPop; cases hPop
+      · split
+        · intro hPop; cases hPop
+        · split
+          · intro hPop; cases hPop
+          · intro hPop
+            simp only [Except.ok.injEq, Prod.mk.injEq] at hPop
+            -- `cases hTcb :` has already replaced the goal's `lookupTcb st head`
+            -- with `some headTcb`, so only the record identity is left.
+            exact congrArg some hPop.2.1
+
+
 def endpointQueueEnqueue
     (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool)
@@ -710,15 +752,20 @@ def endpointQueueRemove
           | some (.tcb nextTcb) =>
             objs.insert nextTid.toObjId (.tcb (queueUnlinkSuccessor tcb nextTcb))
           | _ => objs
-      -- Step 3: Update endpoint head/tail pointers
-      let q' : IntrusiveQueue := {
-        head := if q.head = some tid then tcb.queueNext else q.head,
-        tail := if q.tail = some tid then tcb.queuePrev else q.tail }
+      -- Step 3: Update endpoint head/tail pointers.
+      -- WS-RR RR8.4: `queueRemoveBoundary` (`Model/Object/Types.lean`), which is
+      -- this expression named, so `endpointQueueRemoveDual` writes the same
+      -- boundaries by construction rather than by two authors agreeing.  It did
+      -- not: its tail was inferred from the removed thread's `queuePPrev`, which
+      -- needs a connectivity fact the bundle does not carry.  See the definition.
+      let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
       let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
       let objs := objs.insert endpointId (.endpoint ep')
-      -- Step 4: Clear removed thread's queue links
-      let objs := objs.insert tid.toObjId (.tcb { tcb with
-        queuePrev := none, queuePPrev := none, queueNext := none })
+      -- Step 4: Clear removed thread's queue links.  WS-RR RR8.4: spelled through
+      -- `tcbWithQueueLinks`, the record update the dual removal's own clear goes
+      -- through, so the *value* written is one definition and only the store
+      -- primitive differs (a raw insert here, `storeObject` there).
+      let objs := objs.insert tid.toObjId (.tcb (tcbWithQueueLinks tcb none none none))
       .ok { st with objects := objs }
   | some _ => .error .invalidCapability
   | none => .error .objectNotFound

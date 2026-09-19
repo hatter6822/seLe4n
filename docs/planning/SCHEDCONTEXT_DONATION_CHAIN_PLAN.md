@@ -33,10 +33,10 @@
 > (`Reply.next : ReplyStackLink` replaces `donatedSc`), which is why rows below
 > that name `donatedSc`, `storeDonationHeadClear` or
 > `not_mem_donationChainFrom_of_not_donating` describe the structure as it stood
-> when they landed rather than as it stands now.  The residual — the **reply**
-> path does not yet detach — is **WS-RM**
-> ([`REPLY_FRAME_REMOVAL_PLAN.md`](REPLY_FRAME_REMOVAL_PLAN.md)).  See
-> `CHANGELOG.md` at `v0.35.4`.
+> when they landed rather than as it stands now.  The residual at that version — the
+> **reply** path did not yet take the answered frame off its stack — was **WS-RM**
+> ([`REPLY_FRAME_REMOVAL_PLAN.md`](REPLY_FRAME_REMOVAL_PLAN.md)), closed at
+> `v0.35.6`.  See `CHANGELOG.md` at `v0.35.4`.
 
 ## 1. Phase goal
 
@@ -169,8 +169,11 @@ pre-state resolver that computes it.
 
 ### 3.4 A stale `prev` over a reusable Reply is a confused deputy
 
-`Reply` has `prev` but no `next`, so a cancelled middle caller cannot be spliced
-out by a backward scan the way seL4's doubly-linked `reply_remove` does.  Reply
+`Reply` has `prev` but no `next`, so a cancelled middle caller cannot be taken out
+of the middle by a backward scan the way seL4's doubly-linked `reply_remove` can.
+(*Can*, not *does*: upstream's non-head branch writes zero into both neighbours —
+"break the chain" — rather than splicing; corrected at `v0.35.40`.  What the second
+link buys is the `O(1)` repair, whichever value is written.)  Reply
 objects are then **re-linked to new callers** — that is what `replyIdEstablishFresh`
 exists for.  A stale `prev` naming a reused Reply would make the pop read the new
 caller and hand the original thread's SchedContext to an unrelated thread, in
@@ -606,6 +609,17 @@ The workstream closes when **all nine** hold and each is checkable:
    `linkCallerReply_donationChainFrame`, `consumeCallerReply_donationChainFrame`,
    `clearReplyObjectCaller_donationChainFrame`, `clearTcbReplyObject_…`,
    `consumeReplyLink_…`).  No theorem takes it on a post-state.
+   *Lifecycle of that list, recorded so the box reads as the history it is:*
+   `v0.35.4` made the reply stack doubly linked, so the two consumes write
+   chain data and their frames became preservation theorems
+   (`consumeCallerReply_preserves_donationChainWellFormed`,
+   `consumeReplyLink_preserves_donationChainWellFormed`; Tier 3 refuses the
+   retired `consumeReply_donationChainFrame` / `consumeCallerReply_donationChainFrame`
+   names tree-wide), and WS-RR RR8.5 (`v0.35.63`) deleted the cancellation path's
+   raw-insert twins `clearTcbReplyObject` / `clearReplyObjectCaller` with every
+   theorem over them — `consumeReplyLink` is the reply path's own consume now,
+   and its chain result is a corollary through `consumeCallerReply_eq_link`.
+   The two `link*` frames are live.
 4. **MET.**  Unchanged by this phase and re-checked: `ipcInvariantFull` has
    exactly **twenty** conjuncts, `passiveServerIdle` among them, preserved by
    `cancelIpcBlocking` on every arm since OD1.5.

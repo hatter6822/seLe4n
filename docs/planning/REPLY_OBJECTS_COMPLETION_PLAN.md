@@ -118,7 +118,7 @@ seL4-MCS reply caps are **rights-less**, so `mintReplyCap` now mints
 ## #1 — `replyCapPointsToValidReply`  ✅ LANDED (v0.31.144–146, lifecycle-coverage follow-on v0.31.149)
 
 **Problem (closed).** The step-preserved `capabilityInvariantBundle` (and
-`lifecycleStaleReferenceExclusionInvariant`) only constrained `.object` cap targets; a
+`lifecycleStaleReferenceExclusionInvariant`, retired at v0.35.78) only constrained `.object` cap targets; a
 `.replyCap rid` slot pointing at an absent/non-Reply object satisfied them while live
 `.reply` rejects it. The model admitted a dangling reply cap. (The runtime check
 `cspaceSlotCoherencyChecks` in `Testing/InvariantChecks.lean` already validated
@@ -169,7 +169,9 @@ named-projection idiom: tuple + `structure CapabilityInvariantBundle` field
   `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`: the Lifecycle-layer
   stale-reference family (whose `.replyCap` metadata is *derived* from the slot cap) is
   **implied** by the step-preserved #1 conjunct, closing the review residual without a
-  parallel lifecycle predicate.
+  parallel lifecycle predicate.  (Both the family and this bridge were retired at
+  v0.35.78: the metadata reader they were stated over was `lookupSlotCap`'s target
+  projection, so the implication was an instance of #1 itself.)
 
 **Residual debt — ✅ RESOLVED.** The `capabilityInvariantBundle` doc-comment
 (`Capability/Invariant/Defs.lean`) now correctly reads "the bundle now has **7** conjuncts"
@@ -367,7 +369,15 @@ any producer still emits an unlinked `.blockedOnReply`). #7.5 closes after #7.4.
   re-based on the honest intermediate-state preconditions (`ipcInvariantCore` + `reciprocal` +
   `hThirdExc` — full `ipcInvariantFull st` would be *vacuous* at a link site); and
   `consumeCallerReply_preserves_ipcInvariantFull` threads `replyCallerLinkage st'` like every
-  live transition.  The 16-conjunct threading architecture is otherwise unchanged — the live
+  live transition.  *(WS-RR RR8.7, `v0.35.80`: that last theorem is **retired**.  The
+  parenthesis two clauses above names the class this entry then walked past — the link
+  side was re-based because the full bundle "would be *vacuous* at a link site", and the
+  consume side, one clause away and with the same contradiction available, was left
+  threading the post-state.  RR8.5 later turned its post-state threading into a
+  *pre*-state hypothesis, which moved the vacuity from the conclusion to the premises
+  rather than removing it.  It is now
+  `consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage`, over the
+  relaxed pre-state `ipcInvariantFullExceptReplyLinkage`.)*  The 16-conjunct threading architecture is otherwise unchanged — the live
   `_preserves_ipcInvariantFull` theorems carry the strengthened conjunct as a hypothesis (no
   signature change).  **Verified:** `test_full.sh` (Tier 0–3, invariant surface anchors);
   trace byte-identical; AK7 re-anchored (third-clause `objects[tid.toObjId]?` +3).

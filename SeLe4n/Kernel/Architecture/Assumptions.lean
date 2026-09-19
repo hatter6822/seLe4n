@@ -63,7 +63,6 @@ inductive ArchAssumption where
     name inverted the semantic meaning and was a readability/spec hazard. -/
 structure BootBoundaryContract where
   objectTypeMetadataConsistent : Prop
-  capabilityRefMetadataConsistent : Prop
   /-- V4-G/AJ3-D/AK9-B: Object store state at boot. Platform-specific
       assertion about initial object store size (typically empty: the boot
       pipeline populates the store from `PlatformConfig.initialObjects`). -/

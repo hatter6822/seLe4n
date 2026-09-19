@@ -195,6 +195,17 @@ theorem sweptQueue_wellFormed
     intro k t0 hk hNe
     obtain ⟨t1, h1, hp⟩ := spliceOutMidQueueNode_queuePrev_frame st v tcbV k t0 hInv hLookup hk hNe
     exact ⟨t1, removeFromAllEndpointQueues_tcb_frame st v hExt1 k t1 h1, hp⟩
+  -- **PR #897 review (`v0.35.106`)**: the head boundary carries the *pair*, so the
+  -- carrier does too — `queueUnlinkPredecessor` writes `queueNext` alone.
+  have carryPPrev : ∀ (k : SeLe4n.ObjId) (t0 : TCB), st.objects[k]? = some (.tcb t0) →
+      (∀ n, tcbV.queueNext = some n → n.toObjId ≠ k) →
+      ∃ t', (removeFromAllEndpointQueues st v).objects[k]? = some (.tcb t') ∧
+        t'.queuePrev = t0.queuePrev ∧ t'.queuePPrev = t0.queuePPrev := by
+    intro k t0 hk hNe
+    obtain ⟨t1, h1, hp⟩ := spliceOutMidQueueNode_queuePrev_frame st v tcbV k t0 hInv hLookup hk hNe
+    obtain ⟨t2, h2, hpp⟩ := spliceOutMidQueueNode_queuePPrev_frame st v tcbV k t0 hInv hLookup hk hNe
+    obtain rfl : t1 = t2 := KernelObject.tcb.inj (Option.some.inj (h1.symm.trans h2))
+    exact ⟨t1, removeFromAllEndpointQueues_tcb_frame st v hExt1 k t1 h1, hp, hpp⟩
   have carryNext : ∀ (k : SeLe4n.ObjId) (t0 : TCB), st.objects[k]? = some (.tcb t0) →
       (∀ p, tcbV.queuePrev = some p → p.toObjId ≠ k) →
       ∃ t', (removeFromAllEndpointQueues st v).objects[k]? = some (.tcb t') ∧
@@ -205,10 +216,16 @@ theorem sweptQueue_wellFormed
   -- The victim's own boundary facts, when it occupies one.
   have hVPrevNone : q.head = some v → tcbV.queuePrev = none := by
     intro hh
-    obtain ⟨t, ht, hp⟩ := hWF.2.1 v hh
+    obtain ⟨t, ht, hp, _⟩ := hWF.2.1 v hh
     rw [hVObj] at ht
     obtain rfl : t = tcbV := (KernelObject.tcb.inj (Option.some.inj ht)).symm
     exact hp
+  have hVPPrevHead : q.head = some v → tcbV.queuePPrev = some .endpointHead := by
+    intro hh
+    obtain ⟨t, ht, _, hpp⟩ := hWF.2.1 v hh
+    rw [hVObj] at ht
+    obtain rfl : t = tcbV := (KernelObject.tcb.inj (Option.some.inj ht)).symm
+    exact hpp
   have hVNextNone : q.tail = some v → tcbV.queueNext = none := by
     intro ht
     obtain ⟨t, ht', hn⟩ := hWF.2.2 v ht
@@ -242,16 +259,23 @@ theorem sweptQueue_wellFormed
       obtain ⟨tHd, hHd, hHdPrev⟩ := hLink.1 v tcbV hVObj hd hhd
       obtain ⟨t1, h1, hp⟩ :=
         spliceOutMidQueueNode_next_queuePrev st v tcbV hd tHd hInv hLookup hhd hHd
+      obtain ⟨t2, h2, hpp⟩ :=
+        spliceOutMidQueueNode_next_queuePPrev st v tcbV hd tHd hInv hLookup hhd
+          ((SystemState.getTcb?_eq_some_iff st hd tHd).mpr hHd)
+      obtain rfl : t1 = t2 := by
+        have hEqT := h1.symm.trans ((SystemState.getTcb?_eq_some_iff _ hd t2).mp h2)
+        exact KernelObject.tcb.inj (Option.some.inj hEqT)
       exact ⟨t1, removeFromAllEndpointQueues_tcb_frame st v hExt1 hd.toObjId t1 h1,
-        by rw [hp]; exact hVPrevNone hh⟩
+        by rw [hp]; exact hVPrevNone hh, by rw [hpp]; exact hVPPrevHead hh⟩
     · rw [if_neg hh] at hhd
-      obtain ⟨t0, h0, hp0⟩ := hWF.2.1 hd hhd
-      refine carryPrev hd.toObjId t0 h0 ?_ |>.imp (fun t' h => ⟨h.1, by rw [h.2]; exact hp0⟩)
+      obtain ⟨t0, h0, hPrevEq, hPPEq⟩ := hWF.2.1 hd hhd
+      refine carryPPrev hd.toObjId t0 h0 ?_ |>.imp
+        (fun t' h => ⟨h.1, by rw [h.2.1]; exact hPrevEq, by rw [h.2.2]; exact hPPEq⟩)
       intro n hn hEq
       obtain ⟨tN, hN, hNPrev⟩ := hLink.1 v tcbV hVObj n hn
       rw [hEq, h0] at hN
       have hEqT : tN = t0 := (KernelObject.tcb.inj (Option.some.inj hN)).symm
-      rw [hEqT, hp0] at hNPrev
+      rw [hEqT, hPrevEq] at hNPrev
       cases hNPrev
   · -- P3: the tail has no successor
     intro tl htl
@@ -289,14 +313,20 @@ def restoredTcb (tcb : TCB) (frame : Option Architecture.SyscallReturnFrame) : T
   | some f => cleared.withReturnFrame f
   | none => cleared
 
-/-- The restore *is* that store.  `rfl`, the pin. -/
+/-- The restore *is* that store — the lookup-then-write reading of the in-place
+rewrite `SystemState.updateTcb` the restore is spelled with (the rewrite's
+proof argument is what the raw spelling lacks, and it is erased here). -/
 theorem restoreToReadyStaging_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) :
     Lifecycle.Suspend.restoreToReadyStaging st tid frame =
       (match st.getTcb? tid with
        | some tcb =>
          { st with objects := st.objects.insert tid.toObjId (.tcb (restoredTcb tcb frame)) }
-       | none => st) := rfl
+       | none => st) := by
+  unfold Lifecycle.Suspend.restoreToReadyStaging
+  cases hT : st.getTcb? tid with
+  | some tcb => rw [SystemState.updateTcb_eq_of_some hT]; try rfl
+  | none => rw [SystemState.updateTcb_eq_self_of_none hT]
 
 /-- **The complete description**: the restored TCB is the original with exactly
 six fields rewritten — the five the clear names, and `registerContext`, which the
@@ -339,6 +369,14 @@ theorem restoredTcb_eq (tcb : TCB) (frame : Option Architecture.SyscallReturnFra
     (restoredTcb tcb frame).pendingReceiveReply = none := by
   unfold restoredTcb; cases frame <;> rfl
 
+/-- **WS-RR RR8.7**: the restore leaves the reply link alone.  The sibling of the
+five clears above, for the one field of the six the restore does *not* write and
+that the reply-linkage conjunct reads. -/
+@[simp] theorem restoredTcb_replyObject (tcb : TCB)
+    (frame : Option Architecture.SyscallReturnFrame) :
+    (restoredTcb tcb frame).replyObject = tcb.replyObject := by
+  unfold restoredTcb; cases frame <;> rfl
+
 theorem restoreToReadyStaging_objects_self (st : SystemState) (tid : SeLe4n.ThreadId)
     (frame : Option Architecture.SyscallReturnFrame) (tcb : TCB)
     (hInv : st.objects.invExt) (hTcb : st.getTcb? tid = some tcb) :
@@ -359,6 +397,42 @@ theorem restoreToReadyStaging_objects_ne (st : SystemState) (tid : SeLe4n.Thread
         = st.objects[k]?
     exact RHTable.getElem?_insert_ne st.objects tid.toObjId k _
       (by simpa using fun h => hNe h.symm) hInv
+
+/-- **WS-RR RR8.7: a thread that is not blocked on an endpoint queue bounds no
+endpoint queue** — it heads neither queue of any endpoint and tails neither.
+
+Both boundary conjuncts read a boundary thread's `ipcState` and demand a blocking
+state naming that very endpoint, so a thread in any other state is excluded from
+all four boundaries at once.
+
+Two of the three cancellation arms need this, of victims in different states: the
+notification arm's is `.blockedOnNotification` and the reply arm's
+`.blockedOnReply`, and both are cancelled by a step that clears the victim's queue
+links with nothing to repair a neighbour.  The discriminating fact is therefore a
+parameter rather than a blocking state, so the two ask the question once.  The
+endpoint arm does not consume it: its victim *is* queue-blocked, and its engine
+splices the boundary rather than establishing that there is none. -/
+theorem notQueueBlocked_bounds_no_endpoint_queue
+    (st : SystemState) (v : SeLe4n.ThreadId) (tcbV : TCB)
+    (hLookup : lookupTcb st v = some tcbV)
+    (hNotRecv : ∀ ep, tcbV.ipcState ≠ .blockedOnReceive ep)
+    (hNotSend : ∀ ep, tcbV.ipcState ≠ .blockedOnSend ep)
+    (hNotCall : ∀ ep, tcbV.ipcState ≠ .blockedOnCall ep)
+    (hHead : queueHeadBlockedConsistent st) (hTail : endpointQueueTailBlockedConsistent st)
+    (epId : SeLe4n.ObjId) (ep : Endpoint) (hEp : st.objects[epId]? = some (.endpoint ep)) :
+    ep.sendQ.head ≠ some v ∧ ep.receiveQ.head ≠ some v ∧
+    ep.sendQ.tail ≠ some v ∧ ep.receiveQ.tail ≠ some v := by
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
+    lookupTcb_some_objects st v tcbV hLookup
+  refine ⟨fun hx => ?_, fun hx => ?_, fun hx => ?_, fun hx => ?_⟩
+  · rcases (hHead epId ep v tcbV hEp hVObj).2 hx with h | h
+    · exact hNotSend epId h
+    · exact hNotCall epId h
+  · exact hNotRecv epId ((hHead epId ep v tcbV hEp hVObj).1 hx)
+  · rcases (hTail epId ep v tcbV hEp hVObj).2 hx with h | h
+    · exact hNotSend epId h
+    · exact hNotCall epId h
+  · exact hNotRecv epId ((hTail epId ep v tcbV hEp hVObj).1 hx)
 
 -- ============================================================================
 -- §4  The composite, and its TCB readings
@@ -668,6 +742,40 @@ theorem intrusiveQueueWellFormed_transfer_off_boundary
         rw [htl]; exact congrArg some (SeLe4n.ThreadId.toObjId_injective _ _ hEq)))]
       exact ht, hn⟩
 
+/-- **WS-RR RR8.3**: the swept-and-restored composite preserves the
+`queuePPrev`/`queuePrev` pairing.
+
+Two branches and no case analysis of its own.  Away from the swept thread the
+composite's TCB view **is** the splice's (§4), so the splice's own preservation
+carries it — which is where the two link fields are shown to travel together, in
+`queueUnlinkSuccessor` (WS-OD OD1.1 and OD3.9 each found a removal writing
+`queuePrev` alone).  At the swept thread it is vacuous: `restoredTcb` clears all
+three link fields, and a `queuePPrev` of `none` constrains nothing. -/
+theorem sweptAndRestored_queuePPrevAgreesWithPrev
+    (st : SystemState) (v : SeLe4n.ThreadId)
+    (frame : Option Architecture.SyscallReturnFrame) (tcbV : TCB)
+    (hInv : st.objects.invExt) (hLink : tcbQueueLinkIntegrity st)
+    (hAcyc : tcbQueueChainAcyclic st) (hLookup : lookupTcb st v = some tcbV)
+    (hPP : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev (sweptAndRestored st v frame) := by
+  intro a t hT
+  have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) :=
+    lookupTcb_some_objects st v tcbV hLookup
+  by_cases hav : a = v
+  · rw [hav, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hT
+    have hEq : restoredTcb tcbV frame = t := by injection hT with hObj; injection hObj
+    subst hEq
+    -- `v0.35.99`: the restored victim claims BOTH back-pointers cleared — with
+    -- the pairing's `none` arm strengthened, carrying no `queuePPrev` is the
+    -- claim that the thread is on no queue, so `queuePrev` must be gone too.
+    exact TCB.queuePPrevAgreesWithPrev_of_pprev_none (restoredTcb_queuePPrev tcbV frame)
+      (restoredTcb_queuePrev tcbV frame)
+  · -- Away from the swept thread the composite's TCB view is the splice's.
+    have hNeObj : a.toObjId ≠ v.toObjId :=
+      fun hEq => hav (SeLe4n.ThreadId.toObjId_injective _ _ hEq)
+    exact spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev st v hInv hPP a t
+      ((sweptAndRestored_tcb_iff st v frame hInv a.toObjId t hNeObj).mp hT)
+
 /-- **WS-RR RR7.22 (residual)**: the composite preserves the whole dual-queue
 system invariant.
 
@@ -685,7 +793,7 @@ theorem sweptAndRestored_dualQueueSystemInvariant
     (hLookup : lookupTcb st v = some tcbV)
     (hCoh : sweptThreadBoundaryCoherent st v) :
     dualQueueSystemInvariant (sweptAndRestored st v frame) := by
-  obtain ⟨hEps, hLink, hAcyc⟩ := hDual
+  obtain ⟨hEps, hLink, hAcyc, hPPair, hHD⟩ := hDual
   have hVObj : st.objects[v.toObjId]? = some (.tcb tcbV) := lookupTcb_some_objects st v tcbV hLookup
   have hExt1 : (spliceOutMidQueueNode st v).objects.invExt :=
     spliceOutMidQueueNode_preserves_objects_invExt st v hInv
@@ -718,8 +826,61 @@ theorem sweptAndRestored_dualQueueSystemInvariant
   have hAgree : ∀ k : SeLe4n.ObjId, k ≠ v.toObjId →
       (sweptAndRestored st v frame).objects[k]? = (removeFromAllEndpointQueues st v).objects[k]? :=
     fun k hk => restoreToReadyStaging_objects_ne _ v frame k hExt2 hk
+  -- **PR #897 review (`v0.35.106`)**: the fifth conjunct.  The sweep may rewrite
+  -- *every* endpoint, so this is the general shape: each post-state head is either
+  -- the head that queue already had, or the swept thread's successor — and the
+  -- successor has a predecessor in the pre-state, so it headed nothing there.
+  have hHDPost : endpointQueueHeadDisjoint (sweptAndRestored st v frame) := by
+    refine endpointQueueHeadDisjoint_of_freshHeads
+      (freshAt := fun k r hd => (∃ e, st.objects[k]? = some (.endpoint e) ∧
+        (if r then e.receiveQ else e.sendQ).head = some v) ∧ tcbV.queueNext = some hd)
+      ?_ ?_ ?_ hHD
+    · rintro k r hd ⟨-, hVN⟩ k2 e2 r2 hE2
+      obtain ⟨tHd, hHd, hHdPrev⟩ := hLink.1 v tcbV hVObj hd hVN
+      exact not_queueHead_of_queuePrev_some hEps hHd hHdPrev r2 hE2
+    · rintro kA kB rA rB hd ⟨⟨eA, hEA, hHA⟩, -⟩ ⟨⟨eB, hEB, hHB⟩, -⟩
+      exact hHD kA kB eA eB v rA rB hEA hEB hHA hHB
+    · intro k ep r hd hEp hHead
+      have hEpNe : k ≠ v.toObjId := by
+        intro hEq
+        rw [hEq, sweptAndRestored_victim_tcb st v frame tcbV hInv hLink hAcyc hLookup] at hEp
+        cases hEp
+      have hEp2 : (removeFromAllEndpointQueues st v).objects[k]? = some (.endpoint ep) := by
+        rw [← hAgree k hEpNe]; exact hEp
+      obtain ⟨ep0, hEp0⟩ :=
+        removeFromAllEndpointQueues_endpoint_source st v hExt1 k ep hEp2
+      have hEp0St : st.objects[k]? = some (.endpoint ep0) :=
+        (spliceOutMidQueueNode_nonTcb st v hInv k (.endpoint ep0) (by simp)).mp hEp0
+      obtain ⟨_, hVal⟩ := removeFromAllEndpointQueues_endpoint_value st v hExt1 k ep0 hEp0
+      obtain ⟨hS, hR⟩ := hVal ep hEp2
+      -- The swept queue's head is the pre-state head, or the victim's successor.
+      have hQS : ep.sendQ.head = if ep0.sendQ.head = some v then tcbV.queueNext
+          else ep0.sendQ.head := by
+        rw [hS, removeThreadFromQueue_tcb_present _ ep0.sendQ v tcbV hVSplice]
+      have hQR : ep.receiveQ.head = if ep0.receiveQ.head = some v then tcbV.queueNext
+          else ep0.receiveQ.head := by
+        rw [hR, removeThreadFromQueue_tcb_present _ ep0.receiveQ v tcbV hVSplice]
+      cases r with
+      | false =>
+        simp only [Bool.false_eq_true, ↓reduceIte] at hHead
+        rw [hQS] at hHead
+        by_cases hv : ep0.sendQ.head = some v
+        · rw [if_pos hv] at hHead
+          exact Or.inr ⟨⟨ep0, hEp0St, by simpa using hv⟩, hHead⟩
+        · rw [if_neg hv] at hHead
+          exact Or.inl ⟨ep0, hEp0St, by simpa using hHead⟩
+      | true =>
+        simp only [↓reduceIte] at hHead
+        rw [hQR] at hHead
+        by_cases hv : ep0.receiveQ.head = some v
+        · rw [if_pos hv] at hHead
+          exact Or.inr ⟨⟨ep0, hEp0St, by simpa using hv⟩, hHead⟩
+        · rw [if_neg hv] at hHead
+          exact Or.inl ⟨ep0, hEp0St, by simpa using hHead⟩
   refine ⟨?_, sweptAndRestored_tcbQueueLinkIntegrity st v frame tcbV hInv hLink hAcyc hLookup,
-    sweptAndRestored_tcbQueueChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup⟩
+    sweptAndRestored_tcbQueueChainAcyclic st v frame tcbV hInv hLink hAcyc hLookup,
+    sweptAndRestored_queuePPrevAgreesWithPrev st v frame tcbV hInv hLink hAcyc hLookup hPPair,
+    hHDPost⟩
   intro epId ep hEp
   -- The endpoint key is not the swept thread's.
   have hEpNe : epId ≠ v.toObjId := by
@@ -806,27 +967,26 @@ theorem removeFromAllEndpointQueues_nonEndpoint (st : SystemState) (tid : SeLe4n
       | endpoint ep =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k' = some o := hx
-              rw [RHTable.getElem?_insert_self acc.objects k' _ hE] at hx'
-              exact absurd (Option.some.inj hx').symm (hNotEp _)
-            · intro hx
-              have hx2 : (spliceOutMidQueueNode st tid).objects.get? k' = some o := hx
-              rw [hGet] at hx2
-              exact absurd (Option.some.inj hx2).symm (hNotEp ep)
-          · constructor
-            · intro hx
-              have hx' : (acc.objects.insert k' _).get? k = some o := hx
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE] at hx'
-              exact hA.mp hx'
-            · intro hx
-              show (acc.objects.insert k' _).get? k = some o
-              rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-              exact hA.mpr hx
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_self acc k' _ _ hE).symm.trans hx
+                exact absurd (Option.some.inj hx').symm (hNotEp _)
+              · intro hx
+                have hx2 : (spliceOutMidQueueNode st tid).objects.get? k' = some o := hx
+                rw [hGet] at hx2
+                exact absurd (Option.some.inj hx2).symm (hNotEp ep)
+            · constructor
+              · intro hx
+                have hx' := (SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE).symm.trans hx
+                exact hA.mp hx'
+              · intro hx
+                rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+                exact hA.mpr hx
+          · exact ⟨hE, hA⟩
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
@@ -1059,7 +1219,6 @@ theorem sweptAndRestored_endpoint_queues
   · rw [hS]; exact removeThreadFromQueue_tcb_present _ ep0.sendQ v tcbV hVSplice
   · rw [hR]; exact removeThreadFromQueue_tcb_present _ ep0.receiveQ v tcbV hVSplice
 
-
 -- ============================================================================
 -- §10  The sharp pointwise reading, and the transports the conjuncts consume
 -- ============================================================================
@@ -1222,14 +1381,16 @@ theorem removeFromAllEndpointQueues_endpoint_forward (st : SystemState) (tid : S
       | endpoint ep =>
         simp only
         split
-        · refine ⟨RHTable.insert_preserves_invExt _ _ _ hE, ?_⟩
-          by_cases hK : k' = k
-          · subst hK
-            exact ⟨_, RHTable.getElem?_insert_self acc.objects k' _ hE⟩
-          · refine ⟨e, ?_⟩
-            show (acc.objects.insert k' _).get? k = _
-            rw [RHTable.getElem?_insert_ne acc.objects k' k _ (by simpa using hK) hE]
-            exact hA
+        · split
+          · refine ⟨SystemState.rewriteObject_preserves_objects_invExt _ _ _ _ hE, ?_⟩
+            by_cases hK : k' = k
+            · subst hK
+              exact ⟨_, SystemState.rewriteObject_objects_self acc k' _ _ hE⟩
+            · refine ⟨e, ?_⟩
+              show (acc.rewriteObject k' _ _).objects[k]? = _
+              rw [SystemState.rewriteObject_objects_ne acc k' k _ _ hK hE]
+              exact hA
+          · exact ⟨hE, e, hA⟩
         · exact ⟨hE, e, hA⟩
       | _ => exact ⟨hE, e, hA⟩)).2
 
@@ -1889,7 +2050,7 @@ theorem sweptAndRestored_preserves_ipcInvariantFull
     hDonAcyc, hDonOwner, hPassive, hDonBudget, hBlkReply, hReplyLink, hStash,
     hDonUnique, hTailBlk, hTgt⟩ := hBundle
   have hLink : tcbQueueLinkIntegrity st := hDual.2.1
-  have hAcyc : tcbQueueChainAcyclic st := hDual.2.2
+  have hAcyc : tcbQueueChainAcyclic st := hDual.chainAcyclic
   have hBind := sweptAndRestored_sameSchedContextBindings st v frame tcbV hInv hLink hAcyc hLookup
   refine ⟨sweptAndRestored_ipcInvariant st v frame tcbV hInv hLink hAcyc hLookup hIpc,
     sweptAndRestored_dualQueueSystemInvariant st v frame tcbV hInv hDual hLookup hCoh.boundary,

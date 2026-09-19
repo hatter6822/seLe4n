@@ -9,6 +9,7 @@
 import Lean.Elab.Command
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 
 /-!
 # WS-RR RR7.18 — every declared lock footprint has a size bound, at its full arity
@@ -104,11 +105,12 @@ def isFootprintDecl (env : Environment) (n : Name) : MetaM Bool := do
     if !s.startsWith "lockSet_" then return false
     if s.endsWith boundSuffix then return false
     match env.find? n with
-    | some (.defnInfo info) =>
-        forallTelescopeReducing info.type fun _ result => do
+    | some ci =>
+        if !SeLe4n.Testing.DeclarationKind.bodyBearing ci then return false
+        forallTelescopeReducing ci.type fun _ result => do
           let result ← whnf result
           return result.isConstOf ``SeLe4n.Kernel.Concurrency.LockSet
-    | _ => return false
+    | none => return false
   | _ => return false
 
 /-- The statement `<name>_size_le` is required to have: the footprint's own
@@ -127,7 +129,10 @@ def requiredBoundType (n : Name) (declType : Expr) : MetaM Expr :=
 reason it is not. -/
 def boundViolation (env : Environment) (n : Name) : MetaM (Option String) := do
   if boundExemptions.any (fun p => p.1 == n) then return none
-  let some (.defnInfo info) := env.find? n | return some "not a definition"
+  let some ci := env.find? n
+    | return some "is not a constant this environment knows"
+  if !SeLe4n.Testing.DeclarationKind.bodyBearing ci then
+    return some "is not a declaration with a body — a footprint is a `def` or an `opaque`"
   let boundName :=
     match n with
     | .str p s => Name.str p (s ++ boundSuffix)
@@ -135,7 +140,7 @@ def boundViolation (env : Environment) (n : Name) : MetaM (Option String) := do
   let some boundInfo := env.find? boundName
     | return some s!"has no {boundName} — a footprint with no size bound is a \
          transition the bounded-wait and WCRT reasoning is SILENT about"
-  let required ← requiredBoundType n info.type
+  let required ← requiredBoundType n ci.type
   if ← isDefEq boundInfo.type required then
     return none
   else

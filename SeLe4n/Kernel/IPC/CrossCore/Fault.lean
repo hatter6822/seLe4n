@@ -89,12 +89,7 @@ The `bootCoreId` instance is exactly the single-core form
 (`faultSuspendOnCore_bootCoreId`), the SM5.A backward-compatibility bridge. -/
 def faultSuspendOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     SystemState :=
-  let st1 := removeRunnableOnCore st tid c
-  match st1.getTcb? tid with
-  | some tcb =>
-      let updated : KernelObject := .tcb { tcb with threadState := .Inactive }
-      { st1 with objects := st1.objects.insert tid.toObjId updated }
-  | none => st1
+  (removeRunnableOnCore st tid c).updateTcb tid fun tcb => { tcb with threadState := .Inactive }
 
 /-- WS-RR RR4.12: at the boot core this is the single-core `faultSuspend`. -/
 @[simp] theorem faultSuspendOnCore_bootCoreId (st : SystemState)
@@ -105,13 +100,8 @@ def faultSuspendOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
 reply-declined disposition, retiring the answered fault. -/
 def faultAbandonOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
     SystemState :=
-  let st1 := removeRunnableOnCore st tid c
-  match st1.getTcb? tid with
-  | some tcb =>
-      let updated : KernelObject :=
-        .tcb { tcb with threadState := .Inactive, pendingFault := none }
-      { st1 with objects := st1.objects.insert tid.toObjId updated }
-  | none => st1
+  (removeRunnableOnCore st tid c).updateTcb tid fun tcb =>
+    { tcb with threadState := .Inactive, pendingFault := none }
 
 /-- WS-RR RR4.12: and at the boot core, the single-core form. -/
 @[simp] theorem faultAbandonOnCore_bootCoreId (st : SystemState)
@@ -123,15 +113,15 @@ scheduler is exactly the deschedule's. -/
 theorem faultSuspendOnCore_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) :
     (faultSuspendOnCore st tid c).scheduler = (removeRunnableOnCore st tid c).scheduler := by
-  simp only [faultSuspendOnCore]
-  cases (removeRunnableOnCore st tid c).getTcb? tid <;> simp
+  unfold faultSuspendOnCore
+  exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-RR RR4.12 (frame): the same for the reply-declined disposition. -/
 theorem faultAbandonOnCore_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadId)
     (c : CoreId) :
     (faultAbandonOnCore st tid c).scheduler = (removeRunnableOnCore st tid c).scheduler := by
-  simp only [faultAbandonOnCore]
-  cases (removeRunnableOnCore st tid c).getTcb? tid <;> simp
+  unfold faultAbandonOnCore
+  exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-RR RR4.12: a suspended thread is out of **its own** core's run queue
 and is not its current thread. -/

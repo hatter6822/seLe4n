@@ -232,6 +232,11 @@ inventory was written:
   - `SystemState` (machine + object store + scheduler + IRQ handlers),
   - `SchedulerState.runQueue : RunQueue` — priority-bucketed run queue with O(1) bucket-precomputed `remove` (WS-G4),
   - `lookupObject` / `storeObject` / `setCurrentThread`,
+  - `rewriteObject` / `updateTcb` / `updateSchedContext` / `withObjectStored` — the
+    proof-carrying in-place rewrite (bookkeeping-neutral by theorem) and the pure
+    store (v0.35.64),
+  - `getTcbWitnessed?` / `getSchedContextWitnessed?` — the typed lookups carrying
+    their own equation, the witness every in-place rewrite consumes (v0.35.65),
   - typed CSpace lookup/ownership helpers and supporting lemmas.
 
 - `SeLe4n/Model/Fault.lean` (WS-RR RR4, v0.34.44)
@@ -250,7 +255,7 @@ inventory was written:
 - `SeLe4n/Model/IntermediateState.lean` (Q3-A)
   - `IntermediateState` — builder-phase state wrapping `SystemState` with four
     invariant witnesses (`allTablesInvExt`, `perObjectSlotsInvariant`,
-    `perObjectMappingsInvariant`, `lifecycleMetadataConsistent`).
+    `perObjectMappingsInvariant`, `objectTypeMetadataConsistent`).
   - `mkEmptyIntermediateState` — empty state constructor.
 
 - `SeLe4n/Model/Builder.lean` (Q3-B)
@@ -269,7 +274,7 @@ inventory was written:
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/` — D4: Priority Inheritance Protocol (WS-AB, v0.24.8–v0.25.0):
   - `BlockingGraph.lean` — blocking relation, chain walk, `blockingAcyclic`, chain depth bounded by `objectIndex.length`.
   - `Compute.lean` — `computeMaxWaiterPriority`.
-  - `Propagate.lean` — `updatePipBoost`, `propagatePriorityInheritance`, `revertPriorityInheritance`.
+  - `Propagate.lean` — `updatePipBoostOnCore` (and `updatePipBoost`, its boot-core instance since v0.35.66), `propagatePriorityInheritance`, `revertPriorityInheritance`.
   - `Preservation.lean` — 16 frame lemmas (scheduler, IPC, cross-subsystem).
   - `BoundedInversion.lean` — `pip_bounded_inversion`, `wcrt_parametric_bound`, determinism.
 - `SeLe4n/Kernel/Scheduler/Liveness/` — D5: Bounded Latency Theorem (WS-AB, v0.25.0–v0.25.1):
@@ -411,7 +416,7 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` — D1: `suspendThread`/`resumeThread` with run-queue cleanup and state transitions.
 - `SeLe4n/Kernel/Lifecycle/Invariant.lean`
   - step-3 lifecycle invariant components and bundle layering,
-  - AN4-B (H-03): the redundant `lifecycleIdentityNoTypeAliasConflict` conjunct (derivable in one step from `lifecycleIdentityTypeExact` via lookup determinism) was removed; `lifecycleIdentityAliasingInvariant` is now an `abbrev` for the exactness witness. The capability-reference side of the bundle remains a distinct conjunct.
+  - AN4-B (H-03): the redundant `lifecycleIdentityNoTypeAliasConflict` conjunct (derivable in one step from `lifecycleIdentityTypeExact` via lookup determinism) was removed; `lifecycleIdentityAliasingInvariant` is now an `abbrev` for the exactness witness. The capability-reference side of the bundle was retired at v0.35.78 — every predicate in it was stated over a reader that read the object store, so each was a tautology — and `lifecycleInvariantBundle` is the exactness witness alone.
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` — D1: transport lemmas for suspend/resume across all subsystem invariants.
 
 ### Service subsystem *(seLe4n extension — not present in seL4)*

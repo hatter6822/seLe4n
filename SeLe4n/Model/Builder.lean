@@ -39,27 +39,23 @@ private theorem allTablesInvExtK_irqHandlers {st : SystemState}
 
 /-- Extract services invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_services {st : SystemState}
-    (h : st.allTablesInvExtK) : st.services.invExtK := h.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.services.invExtK := h.2.2.2.2.2.2.2.2.1
 
 /-- Extract serviceRegistry invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_serviceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.serviceRegistry.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.serviceRegistry.invExtK := h.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Extract interfaceRegistry invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_interfaceRegistry {st : SystemState}
-    (h : st.allTablesInvExtK) : st.interfaceRegistry.invExtK := h.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.interfaceRegistry.invExtK := h.2.2.2.2.2.2.2.2.2.1
 
 /-- Extract objectTypes invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_objectTypes {st : SystemState}
     (h : st.allTablesInvExtK) : st.lifecycle.objectTypes.invExtK := h.2.2.2.2.2.1
 
-/-- Extract capabilityRefs invExtK from allTablesInvExtK. -/
-private theorem allTablesInvExtK_capabilityRefs {st : SystemState}
-    (h : st.allTablesInvExtK) : st.lifecycle.capabilityRefs.invExtK := h.2.2.2.2.2.2.1
-
 /-- Extract objectIndexSet invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_objectIndexSet {st : SystemState}
-    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.objectIndexSet.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Extract asidTable invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_asidTable {st : SystemState}
@@ -75,47 +71,48 @@ private theorem allTablesInvExtK_cdtNodeSlot {st : SystemState}
 
 /-- Y1-F: Extract cdt.childMap invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_cdtChildMap {st : SystemState}
-    (h : st.allTablesInvExtK) : st.cdt.childMap.invExtK := h.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.cdt.childMap.invExtK := h.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract cdt.parentMap invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_cdtParentMap {st : SystemState}
-    (h : st.allTablesInvExtK) : st.cdt.parentMap.invExtK := h.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : st.cdt.parentMap.invExtK := h.2.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract scheduler.runQueue.byPriority invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_byPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).byPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract scheduler.runQueue.threadPriority invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_threadPriority {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).threadPriority.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- Y1-F: Extract scheduler.runQueue.membership.table invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_membership {st : SystemState}
-    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+    (h : st.allTablesInvExtK) : (st.scheduler.runQueueOnCore bootCoreId).membership.table.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
 
 /-- S-05/PERF-O1: Extract scThreadIndex invExtK from allTablesInvExtK. -/
 private theorem allTablesInvExtK_scThreadIndex {st : SystemState}
-    (h : st.allTablesInvExtK) : st.scThreadIndex.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
+    (h : st.allTablesInvExtK) : st.scThreadIndex.invExtK := h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
--- Y1-G: Completeness note — all 17 conjuncts of `allTablesInvExtK` have named
--- accessors. The full list (matching the definition order in State.lean):
+-- Y1-G: Completeness note — all 16 conjuncts of `allTablesInvExtK` have named
+-- accessors. The full list (matching the definition order in State.lean;
+-- `v0.35.78` retired the capability-reference table's conjunct, which sat
+-- seventh):
 --  1. allTablesInvExtK_objects         (objects)
 --  2. allTablesInvExtK_irqHandlers     (irqHandlers)
 --  3. allTablesInvExtK_asidTable       (asidTable)
 --  4. allTablesInvExtK_cdtSlotNode     (cdtSlotNode)
 --  5. allTablesInvExtK_cdtNodeSlot     (cdtNodeSlot)
 --  6. allTablesInvExtK_objectTypes     (lifecycle.objectTypes)
---  7. allTablesInvExtK_capabilityRefs  (lifecycle.capabilityRefs)
---  8. allTablesInvExtK_cdtChildMap     (cdt.childMap)
---  9. allTablesInvExtK_cdtParentMap    (cdt.parentMap)
--- 10. allTablesInvExtK_services       (services)
--- 11. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
--- 12. allTablesInvExtK_serviceRegistry (serviceRegistry)
--- 13. allTablesInvExtK_byPriority     (scheduler.runQueue.byPriority)
--- 14. allTablesInvExtK_threadPriority (scheduler.runQueue.threadPriority)
--- 15. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
--- 16. allTablesInvExtK_membership     (scheduler.runQueue.membership.table)
--- 17. allTablesInvExtK_scThreadIndex  (scThreadIndex)
+--  7. allTablesInvExtK_cdtChildMap     (cdt.childMap)
+--  8. allTablesInvExtK_cdtParentMap    (cdt.parentMap)
+--  9. allTablesInvExtK_services       (services)
+-- 10. allTablesInvExtK_interfaceRegistry (interfaceRegistry)
+-- 11. allTablesInvExtK_serviceRegistry (serviceRegistry)
+-- 12. allTablesInvExtK_byPriority     (scheduler.runQueue.byPriority)
+-- 13. allTablesInvExtK_threadPriority (scheduler.runQueue.threadPriority)
+-- 14. allTablesInvExtK_objectIndexSet (objectIndexSet.table)
+-- 15. allTablesInvExtK_membership     (scheduler.runQueue.membership.table)
+-- 16. allTablesInvExtK_scThreadIndex  (scThreadIndex)
 -- WARNING: Do not use raw tuple projections (.2.2.2...) on allTablesInvExtK.
 -- Use the named accessors above instead. Raw projections are fragile and break
 -- silently when fields are added or reordered.
@@ -149,9 +146,7 @@ def registerIrq (ist : IntermediateState) (irq : SeLe4n.Irq) (handler : SeLe4n.O
   hPerObjectMappings := by
     intro id vs hObj
     exact ist.hPerObjectMappings id vs hObj
-  hLifecycleConsistent := by
-    rcases ist.hLifecycleConsistent with ⟨hObjType, hCapRef⟩
-    exact ⟨hObjType, hCapRef⟩
+  hLifecycleConsistent := ist.hLifecycleConsistent
 
 -- ============================================================================
 -- Q3-B.2: registerService — insert into serviceRegistry
@@ -166,20 +161,18 @@ def registerService (ist : IntermediateState) (sid : ServiceId)
     have h := ist.hAllTables
     unfold SystemState.allTablesInvExtK at h ⊢
     exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
-           h.2.2.2.2.2.1, h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.1,
-           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+           h.2.2.2.2.2.1, h.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.1,
+           RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
   hPerObjectSlots := by
     intro id cn hObj; exact ist.hPerObjectSlots id cn hObj
   hPerObjectMappings := by
     intro id vs hObj; exact ist.hPerObjectMappings id vs hObj
-  hLifecycleConsistent := by
-    rcases ist.hLifecycleConsistent with ⟨hObjType, hCapRef⟩
-    exact ⟨hObjType, hCapRef⟩
+  hLifecycleConsistent := ist.hLifecycleConsistent
 
 -- ============================================================================
 -- Q3-B.4: createObject — simplified boot-time object creation
@@ -191,9 +184,8 @@ during boot.
 This is a simplified builder-phase operation that inserts the object into the
 store, updates lifecycle `objectTypes` metadata, and maintains `objectIndex`
 and `objectIndexSet` for consistency with runtime `storeObject` semantics.
-Unlike the full runtime `storeObject`, this does NOT update `capabilityRefs`
-(which is empty during boot) and does NOT update `asidTable` (VSpace ASID
-registration is separate).
+Unlike the full runtime `storeObject`, this does NOT update `asidTable`
+(VSpace ASID registration is separate).
 
 Precondition: the inserted CNode (if any) must have `slotsUnique`, and the
 inserted VSpaceRoot (if any) must have `mappings.invExt`. -/
@@ -220,13 +212,13 @@ def createObject (ist : IntermediateState)
     refine ⟨RHTable.insert_preserves_invExtK _ _ _ h.1,
            h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1,
            RHTable.insert_preserves_invExtK _ _ _ h.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+           h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           ?_, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+           h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    exact RHSet.insert_preserves_invExtK ist.state.objectIndexSet id h.2.2.2.2.2.2.2.2.2.2.2.2.2.1
   hPerObjectSlots := by
     unfold perObjectSlotsInvariant
     intro oid cn hObj
@@ -252,24 +244,20 @@ def createObject (ist : IntermediateState)
       rw [RHTable.getElem?_insert_ne ist.state.objects id oid obj hNe hObjK.1] at hObj
       exact ist.hPerObjectMappings oid vs (by simp only [RHTable_getElem?_eq_get?]; exact hObj)
   hLifecycleConsistent := by
-    constructor
-    · intro oid
-      simp only [SystemState.lookupObjectTypeMeta]
-      have hObjK := allTablesInvExtK_objects ist.hAllTables
-      have hTypesK := allTablesInvExtK_objectTypes ist.hAllTables
-      by_cases hEq : id = oid
-      · subst hEq
-        simp only [RHTable_getElem?_eq_get?]
-        rw [RHTable.getElem?_insert_self _ _ _ hTypesK.1,
-            RHTable.getElem?_insert_self _ _ _ hObjK.1]; simp
-      · have hNe : ¬((id == oid) = true) := by intro heq; exact hEq (eq_of_beq heq)
-        simp only [RHTable_getElem?_eq_get?]
-        rw [RHTable.getElem?_insert_ne _ _ _ _ hNe hTypesK.1,
-            RHTable.getElem?_insert_ne _ _ _ _ hNe hObjK.1]
-        exact ist.hLifecycleConsistent.1 oid
-    · intro ref
-      simp [SystemState.lookupCapabilityRefMeta, SystemState.lookupSlotCap,
-            SystemState.lookupCNode]
+    intro oid
+    simp only [SystemState.lookupObjectTypeMeta]
+    have hObjK := allTablesInvExtK_objects ist.hAllTables
+    have hTypesK := allTablesInvExtK_objectTypes ist.hAllTables
+    by_cases hEq : id = oid
+    · subst hEq
+      simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_self _ _ _ hTypesK.1,
+          RHTable.getElem?_insert_self _ _ _ hObjK.1]; simp
+    · have hNe : ¬((id == oid) = true) := by intro heq; exact hEq (eq_of_beq heq)
+      simp only [RHTable_getElem?_eq_get?]
+      rw [RHTable.getElem?_insert_ne _ _ _ _ hNe hTypesK.1,
+          RHTable.getElem?_insert_ne _ _ _ _ hNe hObjK.1]
+      exact ist.hLifecycleConsistent oid
 
 -- ============================================================================
 -- Q3-B.6: insertCap — insert a capability into a CNode's slots
@@ -323,14 +311,14 @@ def markRunnable (ist : IntermediateState) (tid : SeLe4n.ThreadId)
     unfold SystemState.allTablesInvExtK at h ⊢
     simp only [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
     exact ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
-      h.2.2.2.2.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.2.2.2.2.1,
       ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).byPrio_invExtK,
       ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).threadPrio_invExtK,
-      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+      h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
       ((ist.state.scheduler.runQueueOnCore bootCoreId).insert tid prio).mem_invExtK,
-      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+      h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
   hPerObjectSlots := ist.hPerObjectSlots
   hPerObjectMappings := ist.hPerObjectMappings
   hLifecycleConsistent := ist.hLifecycleConsistent

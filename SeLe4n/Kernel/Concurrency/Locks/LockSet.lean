@@ -932,11 +932,12 @@ the honest constant is the one the definition can produce.
 **The cost, stated rather than implied.**  This constant is the WCRT headline's
 first factor (`maxLockSetSize · (numCores − 1) · tCs`), so each raise narrows the
 per-lock critical section the 1 ms budget allows: 37 µs at nine, 30 µs at eleven,
-25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen and 15 µs at twenty-one
+25 µs at thirteen, 23 µs at fourteen, 20 µs at sixteen, 15 µs at twenty-one and
+twenty-two, 14 µs at twenty-three and 13 µs at twenty-four
 (`admissibleCriticalSection_rpi5Tick`), widening the CC-5 contention bound in
 proportion each time.
 
-At the value above, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs** —
+At the value above, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs** —
 the canonical spelling `scripts/check_lock_ceiling_figures.py` holds to the Lean
 sources, so a raise that leaves a copy of any of the three behind is a build
 failure on the cut that makes it stale rather than on the cut that notices.  The figure is *derived* from this constant and must be
@@ -1015,14 +1016,16 @@ most-travelled IPC path.  The five members are the same five
 (the OD3.7 precedent).  The pre-receive return fires exactly when the endpoint
 has **no** queued sender, and the re-donation members fire exactly when it has
 one, so no reachable state carries both groups:
-`lockSet_endpointReplyRecvOnCore_size_le_nineteen` bounds every state at
-**nineteen** with no hypothesis at all, and under the two local coherence facts
-the invariants supply — the returned donation's owner is the answered caller,
+`lockSet_endpointReplyRecvOnCore_size_le_nineteen` bounded every state at
+**nineteen** with no hypothesis at all (it is `…_size_le_twenty` since WS-HP
+HP3.2, for the frame below the cut), and under the two local coherence facts the
+invariants then supplied — the returned donation's owner is the answered caller,
 and the returned context's stack head is that caller's own reply object — a
-reachable `.replyRecv` is back to **eighteen** and **seventeen**, exactly where
-PR #894's review left them.  Twenty-two is what the *definition* can produce over
-all argument values, which is what `boundedWait_under_2pl` and the WCRT surface
-must consume.
+reachable `.replyRecv` was back to **eighteen** and **seventeen**, exactly where
+PR #894's review left them.  (WS-HP HP6.2 made the eighteen unconditional and
+retired the seventeen, and HP7 deleted both facts: see the HP paragraphs below.)
+Twenty-two was what the *definition* could then produce over all argument values,
+which is what `boundedWait_under_2pl` and the WCRT surface must consume.
 
 **WS-RM (`v0.35.6`): 21 → 22**, on that same arm for the sixth time, and again
 for a member the arm writes.  seL4's `reply_remove` takes the answered frame off
@@ -1035,15 +1038,47 @@ pop of that stack refused, fail-closed, forever.  The removal
 *The cost is parametric only.*  The new member is `some` exactly when the
 answered frame is **not** a stack head, and the three members the donation return
 contributes — the head the pop clears, the frame below it and that frame's
-caller — are `some` only when it **is** (under
-`replyStackHeadIsAnsweredReply`, the local coherence fact the invariants supply
-and `lockSet_endpointReplyRecvOnCore_size_le_eighteen` now states).  So a
+caller — are `some` only when it **is**.  (That exclusion needed a *stated*
+coherence fact until WS-HP HP6.2 repointed the footprints onto the pop's own
+trigger, under which a frame heading a context provably has no frame above it
+(`answeredReplyFrameAbove?_none_of_headContext`), so
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` states it with no hypothesis at
+all; HP7 then deleted the fact, which by then had no consumer.)  So a
 reachable footprint trades three members for one and the reachable figures do not
 move; twenty-two is the union over argument values no state realises together.
 `admissibleCriticalSection` is unchanged at **15 µs** — `1000 / (22 · 3) = 15`,
 the same floor twenty-one gives — so this raise is the first that costs the
 admissible critical section nothing; the uniform 60 µs envelope moves
-3780 → 3960 µs. -/
-def maxLockSetSize : Nat := 22
+3780 → 3960 µs.
+
+**WS-HP HP3.2 takes it to twenty-three**, for the second half of the same
+removal: HP6 makes the removal patch the frame **below** the cut to point past it
+rather than leaving the frames below off the stack.  (Not parity with upstream —
+`reply_remove` *breaks the chain* there too, re-verified at `v0.35.40`; the splice
+is an improvement on it.  See `IPC/Invariant/Defs.lean`'s
+`CancelledMiddleCallerPolicy` for the C and the revisions read.)  The member is
+declared one phase before the code that writes it, which is the plan's own
+numbering rule — a footprint that omits a written object is false, and a
+transition goes live only after the proofs that cover it.  It is resolved
+*through* the frame-above member (`answeredReplyFrameBelow?` asks
+`answeredReplyFrameAbove?` first), so a frame with nothing above it declares no
+below-member with no invariant at all, and the two reachable `.replyRecv` figures
+are unmoved at eighteen and seventeen; what absorbs it is the unconditional
+`lockSet_endpointReplyRecvOnCore_size_le_twenty`.  This raise *does* cost the
+admissible section: `1000 / (23 · 3) = 14` µs, and the uniform 60 µs envelope
+moves 3960 → 4140 µs.
+
+**WS-HP HP10.6 takes it to twenty-four**, for the TCB a bottom-of-stack pop
+redirects the reservation to (`donationOriginRecipient?`): HP10.7 hands a
+reservation back to its recorded *origin* rather than to the thread stack
+reachability names, which is a different TCB exactly on the out-of-order removal
+that phase exists for, so the pop writes an object no member covered.  Declared
+one phase ahead of the arm, as HP3.2 was.  The reachable figures do not move —
+the origin member is live only at the bottom of a stack, where the two below-head
+members are absent (`replyStackBelowHead?_of_originRecipient`), so a reachable
+footprint trades two members for one — and the cost is the admissible section
+again: `1000 / (24 · 3) = 13` µs, with the uniform 60 µs envelope moving
+4140 → 4320 µs. -/
+def maxLockSetSize : Nat := 24
 
 end SeLe4n.Kernel.Concurrency

@@ -393,10 +393,32 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_no_orphan_fields.sh"
 
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
+# v0.35.109: witnesses for the scenario-traceability manifest machinery — the
+# row-shape classifier, the fail-closed producer declaration, and the fragment
+# relation `scripts/test_tier2_trace.sh` checks.  A gate whose own mechanism is
+# unpinned fails silently, which is how 19 of 19 manifest fragments came to name
+# lines no suite printed.
+run_check "HYGIENE" python3 -m unittest scripts.tests.test_scenario_catalog
+
 # WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry \
   --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
   tests/fixtures/two_phase_arch_smoke.expected
+
+# v0.35.111: every `tests/fixtures/*.expected` file that DECLARES manifest
+# intent is a well-formed scenario-traceability manifest — every non-comment line
+# a row, every row's fragment naming its own scenario, a producer declared.  That
+# question needs no build, so it is asked here rather than waiting for Tier 2:
+# `check_fixture_index`'s sibling defect was a silent `continue` over a file that
+# declares a producer and does not parse, which was swept as golden output while
+# the gate reported PASS.  Tier 2 runs the same discovery again, for the list.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
+
+# v0.35.109: every file under `tests/fixtures/` is a row of that directory's
+# README table, naming the gate that compares it — or is classified with a
+# reason.  The table is the only place a reader learns which gate compares a
+# given fixture, it is hand-written, and it had two omissions.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" check-fixture-index
 
 # AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
 # The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and

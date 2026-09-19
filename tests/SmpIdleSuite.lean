@@ -40,9 +40,9 @@ open SeLe4n.Model
 open SeLe4n.Kernel
 open SeLe4n.Kernel.Concurrency
 open SeLe4n.Testing
--- WS-SM SM5.E: `idleThreadId` now lives in `SeLe4n.Kernel.Scheduler.IdleThread`
--- (resolved via `open SeLe4n.Kernel`); only `createIdleThread` is still in `Boot`.
-open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
+-- WS-SM SM5.E / v0.35.68: `idleThreadId`, `createIdleThread` and `queuedIdleThread`
+-- all live in `SeLe4n.Kernel.Scheduler.IdleThread` (resolved via `open SeLe4n.Kernel`);
+-- the enqueue primitive lives in `SeLe4n.Kernel.Scheduler.Operations.IdleEnqueue`.
 
 -- ============================================================================
 -- §1  Surface anchors (Tier-3): every SM5.E public symbol resolves
@@ -80,6 +80,19 @@ open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 -- WS-RR RR5.11/RR5.12: the boot-level idle enqueue, its fold, and the
 -- production boot state's discharge of the no-stall premise.
 #check @SeLe4n.Platform.Boot.enqueueIdleThread
+-- v0.35.68: the boot's idle install IS the kernel model's enqueue -- one body.
+-- `enqueueIdleThread_state` is definitional, and decisive: a second body in the
+-- boot, however faithfully it mirrored `enqueueIdleThreadOnCore`, is not `rfl`
+-- to it.  The four `IntermediateState` witnesses are the operation's own.
+#check @SeLe4n.Platform.Boot.enqueueIdleThread_state
+#check @enqueueIdleThreadOnCore_preserves_allTablesInvExtK
+#check @enqueueIdleThreadOnCore_preserves_perObjectSlotsInvariant
+#check @enqueueIdleThreadOnCore_preserves_perObjectMappingsInvariant
+#check @enqueueIdleThreadOnCore_preserves_objectTypeMetadataConsistent
+#check @enqueueIdleThreadOnCore_objectIndex_length_le
+example (ist : SeLe4n.Model.IntermediateState) (c : CoreId) :
+    (SeLe4n.Platform.Boot.enqueueIdleThread ist c).state = enqueueIdleThreadOnCore ist.state c :=
+  SeLe4n.Platform.Boot.enqueueIdleThread_state ist c
 #check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_self
 #check @SeLe4n.Platform.Boot.enqueueIdleThread_runQueueOnCore_ne
 #check @SeLe4n.Platform.Boot.enqueueIdleThread_currentOnCore
@@ -103,8 +116,8 @@ open SeLe4n.Platform.Boot (createIdleThread queuedIdleThread)
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_runnable_resolve
 -- PR #889 review: the enqueued idle TCB is the queued form, the boot state is
 -- threadStateConsistent, and the checked boot reserves the idle slots.
-#check @SeLe4n.Platform.Boot.queuedIdleThread
-#check @SeLe4n.Platform.Boot.queuedIdleThread_threadState
+#check @SeLe4n.Kernel.queuedIdleThread
+#check @SeLe4n.Kernel.queuedIdleThread_threadState
 #check @queuedIdleThread_ne_createIdleThread
 #check @SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState
 #check @SeLe4n.Platform.Boot.bootFromPlatformChecked_ok_tcb_inactive

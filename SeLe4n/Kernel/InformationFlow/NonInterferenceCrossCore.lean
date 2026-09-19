@@ -178,6 +178,28 @@ theorem removeRunnableOnCore_confinedToCores (st : SystemState)
    fun c _ => removeRunnableOnCore_domainScheduleIndexOnCore st tid cc c,
    fun _ _ => by rw [removeRunnableOnCore_machine_eq]⟩
 
+/-- WS-RR RR8.6: a removal at a pre-resolved placement writes that core's
+run-queue and current slots when there is one, and nothing per-core when the
+placement is `none`. -/
+theorem descheduleAt_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (placed : Option CoreId) :
+    observableSlotsConfinedToCores st (descheduleAt st tid placed) placed.toList := by
+  unfold descheduleAt
+  cases placed with
+  | none => exact observableSlotsConfinedToCores_refl st []
+  | some c => exact removeRunnableOnCore_confinedToCores st tid c
+
+/-- The state-resolved step's own confinement, stated once where every consumer
+— the reply path's donation return, the cancellation composite, the live
+suspend's write set — can reach it: the cores it may write are read off the
+SAME resolver the step itself uses. -/
+theorem descheduleAtPlacement_confinedToCores (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
+      (descheduleAtPlacementCores st tid) := by
+  rw [descheduleAtPlacementCores_eq_toList]
+  exact descheduleAt_confinedToCores st tid (placedCoreOf? st tid)
+
 /-- SM8.B.2: **the cross-core wake writes exactly the woken thread's home
 core.** The write set is `[determineTargetCore st tid]` — read off the
 pre-state, and *not* the executing core, which is the whole point of SM5.C: a
@@ -190,14 +212,15 @@ theorem wakeThread_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
   rw [wakeThread_state_eq_enqueue]
   exact enqueueRunnableOnCore_confinedToCores st (determineTargetCore st tid) tid
 
-/-- SM8.B.2: the wake's dual — `descheduleThread` writes exactly the victim's
-home core. -/
+/-- SM8.B.2: the wake's dual — `descheduleThread` writes exactly the core the
+state **places** the victim on (WS-RR RR8.6; its home core until then, which
+an unpinned thread preempted off its home is not on). -/
 theorem descheduleThread_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
-      [determineTargetCore st tid] := by
+      (descheduleAtPlacementCores st tid) := by
   rw [descheduleThread_state_eq]
-  exact removeRunnableOnCore_confinedToCores st tid (determineTargetCore st tid)
+  exact descheduleAtPlacement_confinedToCores st tid
 
 /-- SM8.B.2: a successful `storeObject` is per-core silent — it writes the
 object store and neither the scheduler nor any register bank, so it is confined
@@ -271,7 +294,7 @@ theorem consumeCallerReply_confinedToCores (st st' : SystemState)
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
 /-- **WS-RM (`v0.35.6`)**: the removal touches neither the scheduler nor the
-machine — the detach writes one Reply and the consume two objects. -/
+machine — the splice writes only Reply objects and the consume two objects. -/
 theorem removeCallerReplyFrame_confinedToCores (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
@@ -327,272 +350,29 @@ theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCores (st st' : SystemState
     exact storeObject_confinedToCores st st1 _ _ hStore
 
 -- ============================================================================
--- §1a The home-core frame layer
+-- §1a The home-core frame layer -- RELOCATED
 -- ============================================================================
 --
--- Every write set below names `determineTargetCore st _` at the **pre-state**,
--- but the wake it describes happens several object stores later. Pushing the
--- target back across those stores is the affinity-stability argument SM6.B makes
--- for one pipeline (`notificationSignalOnCore_remote_wake_preState`); the
--- cross-core IPC transitions need it for four more, so it is factored here into
--- a reusable layer rather than repeated.
---
--- The general fact: a home core is `getTcb?` composed with `cpuAffinity`, so a
--- store preserves it whenever the store preserves that composite — which every
--- IPC-pipeline store does, since none of them is a *migration*.
+-- The eight `*_determineTargetCore_eq` facts that stood here moved to
+-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` at `v0.35.104`.  They are about
+-- **production** primitives and answer the question every production scheduler
+-- footprint must ask before naming a core at the pre-state (*is this step a
+-- migration?*), and this module is staged -- so the answer sat where its asker
+-- could not reach it.  Same names, same `SeLe4n.Kernel` namespace: every use
+-- below is unchanged.
 
-/-- SM8.B.2: storing a TCB that agrees with the current one on `cpuAffinity`
-preserves **every** thread's home core. The generic form behind the
-IPC-pipeline frames: an IPC store rewrites `ipcState`, `pendingMessage` or the
-queue links, never the affinity, so it is never a migration. -/
-theorem storeObject_tcb_determineTargetCore_eq (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb newTcb : TCB) (x : SeLe4n.ThreadId)
-    (hOld : st.getTcb? tid = some tcb)
-    (hAff : newTcb.cpuAffinity = tcb.cpuAffinity)
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject tid.toObjId (.tcb newTcb) st = .ok ((), st')) :
-    determineTargetCore st' x = determineTargetCore st x := by
-  -- Stated over the typed accessor (AK7 cascade discipline): the raw store form
-  -- is recovered inside the proof, so no caller has to name it.
-  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hOld
-  refine determineTargetCore_congr st st' x ?_
-  by_cases hEq : x.toObjId = tid.toObjId
-  · simp [SystemState.getTcb?, hEq, hRaw,
-      storeObject_objects_eq st st' tid.toObjId (.tcb newTcb) hObjInv hStore, hAff]
-  · simp only [SystemState.getTcb?,
-      storeObject_objects_ne st st' tid.toObjId x.toObjId (.tcb newTcb) hEq hObjInv hStore]
-
-/-- SM8.B.2: storing an **endpoint** over an object that is already an endpoint
-preserves every thread's home core. Note there is no disjointness hypothesis
-and none is needed: at a *different* id the TCB lookup is framed, and at the
-*same* id the lookup fails both before and after (an endpoint is not a TCB), so
-both sides read the unbound default. -/
-theorem storeObject_endpoint_determineTargetCore_eq (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep ep' : Endpoint) (x : SeLe4n.ThreadId)
-    (hPre : st.objects[endpointId]? = some (.endpoint ep))
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st')) :
-    determineTargetCore st' x = determineTargetCore st x := by
-  refine determineTargetCore_congr st st' x ?_
-  by_cases hEq : x.toObjId = endpointId
-  · simp only [SystemState.getTcb?, hEq, hPre,
-      storeObject_objects_eq st st' endpointId (.endpoint ep') hObjInv hStore]
-  · simp only [SystemState.getTcb?,
-      storeObject_objects_ne st st' endpointId x.toObjId (.endpoint ep') hEq hObjInv hStore]
-
-/-- SM8.B.2: storing a **SchedContext** preserves every thread's home core.
-
-The `storeObject_endpoint_determineTargetCore_eq` argument verbatim, and for the
-same reason it needs no disjointness hypothesis: at a different id the TCB
-lookup is framed, and at the *same* id `getTcb?` fails both before and after
-(`SystemState.getTcb?` matches only `some (.tcb _)`, and a SchedContext is not a
-TCB), so both sides read the unbound default.
-
-Added in PR #861 review round 14 for the SchedContext arms: the reroute through
-`determineTargetCore` made them remote writers, and their write sets name the
-home core at the *pre*-state while the transitions compute it after this
-store. -/
-theorem storeObject_schedContext_determineTargetCore_eq (st st' : SystemState)
-    (scObjId : SeLe4n.ObjId) (sc sc' : SchedContext) (x : SeLe4n.ThreadId)
-    (hPre : st.objects[scObjId]? = some (.schedContext sc))
-    (hObjInv : st.objects.invExt)
-    (hStore : storeObject scObjId (.schedContext sc') st = .ok ((), st')) :
-    determineTargetCore st' x = determineTargetCore st x := by
-  refine determineTargetCore_congr st st' x ?_
-  by_cases hEq : x.toObjId = scObjId
-  · simp only [SystemState.getTcb?, hEq, hPre,
-      storeObject_objects_eq st st' scObjId (.schedContext sc') hObjInv hStore]
-  · simp only [SystemState.getTcb?,
-      storeObject_objects_ne st st' scObjId x.toObjId (.schedContext sc') hEq hObjInv hStore]
-
--- The raw-`objects.insert` frames these operations need already exist as SM5.I
--- atoms in `Scheduler/Operations/PerCoreTickCbsAffinity.lean`, imported above:
--- `determineTargetCore_insert_tcb` (a TCB insert with unchanged `cpuAffinity`) and
--- `getTcb?_insert_schedContext_eq` (a SchedContext insert leaves every TCB lookup
--- alone). They are used rather than re-proved here.
-
-/-- SM8.B.2: the `_fromTcb` IPC store is not a migration either. -/
-theorem storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (x : SeLe4n.ThreadId)
-    (hOld : st.getTcb? tid = some tcb)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
-    determineTargetCore st' x = determineTargetCore st x := by
-  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · next st1 hStore =>
-    simp only [Except.ok.injEq] at hStep
-    subst hStep
-    exact storeObject_tcb_determineTargetCore_eq st st1 tid tcb
-      { tcb with ipcState := ipc, pendingMessage := msg } x hOld rfl hObjInv hStore
-
-/-- SM8.B.2: a queue-link store is not a migration. -/
-theorem storeTcbQueueLinks_determineTargetCore_eq (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
-    (next : Option SeLe4n.ThreadId) (x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
-    determineTargetCore st' x = determineTargetCore st x := by
-  unfold storeTcbQueueLinks at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · next tcb hLk =>
-    split at hStep
-    · exact absurd hStep (by simp)
-    · next st1 hStore =>
-      simp only [Except.ok.injEq] at hStep
-      subst hStep
-      exact storeObject_tcb_determineTargetCore_eq st st1 tid tcb
-        (tcbWithQueueLinks tcb prev pprev next) x
-        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
-          (lookupTcb_some_objects st tid tcb hLk)) rfl hObjInv hStore
-
-/-- SM8.B.2: `endpointQueueRemoveDual` is not a migration — the mid-queue splice
-rewrites the endpoint, the removed thread's links and its neighbours', never an
-affinity. Composed from the two directions of the transition's own TCB
-transport: backward gives affinity agreement where the post-state has a TCB,
-forward rules out a TCB appearing or vanishing. -/
-theorem endpointQueueRemoveDual_determineTargetCore_eq (st st' : SystemState)
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    determineTargetCore st' x = determineTargetCore st x := by
-  refine determineTargetCore_congr st st' x ?_
-  cases hPost : st'.getTcb? x with
-  | none =>
-    cases hPre : st.getTcb? x with
-    | none => simp
-    | some tcb =>
-      -- A TCB cannot vanish: the forward transport produces one at the same key.
-      obtain ⟨tcb', hTcb'⟩ := endpointQueueRemoveDual_tcb_forward st st' endpointId
-        isReceiveQ tid x.toObjId tcb hObjInv hStep
-        ((SystemState.getTcb?_eq_some_iff st x tcb).mp hPre)
-      rw [(SystemState.getTcb?_eq_some_iff st' x tcb').mpr hTcb'] at hPost
-      exact absurd hPost (by simp)
-  | some tcb' =>
-    obtain ⟨tcb, hPreRaw, hAff⟩ := endpointQueueRemoveDual_tcb_cpuAffinity_backward st st'
-      endpointId isReceiveQ tid x tcb' hObjInv hStep
-      ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hPost)
-    rw [(SystemState.getTcb?_eq_some_iff st x tcb).mpr hPreRaw]
-    simp [hAff]
-
-/-- SM8.B.2: `storeTcbReceiveComplete` is not a migration — it rewrites the
-receiver's `ipcState`, `pendingMessage` and reply stash, never its affinity. -/
-theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
-    (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
-    determineTargetCore st' x = determineTargetCore st x := by
-  unfold storeTcbReceiveComplete at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
-        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } x
-        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
-          (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
-
-/-- SM8.B.2: `endpointQueuePopHead` is not a migration either — it rewrites the
-endpoint's queue and two threads' link fields, and nothing's affinity. -/
-theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
-    (x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
-    determineTargetCore st' x = determineTargetCore st x := by
-  unfold endpointQueuePopHead SystemState.getObject? at hStep
-  cases hObj : st.objects[endpointId]? with
-  | none => simp [hObj] at hStep
-  | some obj => cases obj with
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-    | reply _ => simp [hObj] at hStep
-    | endpoint ep =>
-      simp only [hObj] at hStep; revert hStep
-      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
-      | none => simp
-      | some headTid =>
-        simp only []
-        cases hLookup : lookupTcb st headTid with
-        | none => simp
-        | some headTcb =>
-          simp only []
-          -- PR #873 round 11: the send-queue message-presence guard --
-          -- a head that fails it errors, so it is not this `.ok`.
-          split
-          · simp
-          cases hStore : storeObject endpointId
-              (.endpoint (if isReceiveQ
-                then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
-          | error e => simp
-          | ok pair =>
-            have hInv1 : pair.2.objects.invExt :=
-              storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
-            have hT1 : determineTargetCore pair.2 x = determineTargetCore st x :=
-              storeObject_endpoint_determineTargetCore_eq st pair.2 endpointId ep _ x hObj
-                hObjInv (by rw [hStore])
-            simp only []
-            cases hNext : headTcb.queueNext with
-            | none =>
-              simp only []
-              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
-              | error e => simp
-              | ok st3 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, _, hEq⟩; subst hEq
-                rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st3 headTid none none none
-                      x hInv1 hFinal, hT1]
-            | some nextTid =>
-              simp only []
-              cases hLookupNext : lookupTcb pair.2 nextTid with
-              | none => simp
-              | some nextTcb =>
-                simp only []
-                cases hLink : storeTcbQueueLinks pair.2 nextTid none
-                    (some QueuePPrev.endpointHead) nextTcb.queueNext with
-                | error e => simp
-                | ok st2 =>
-                  have hInv2 : st2.objects.invExt :=
-                    storeTcbQueueLinks_preserves_objects_invExt pair.2 st2 nextTid none
-                      (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hLink
-                  have hT2 : determineTargetCore st2 x = determineTargetCore st x := by
-                    rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st2 nextTid none
-                          (some QueuePPrev.endpointHead) nextTcb.queueNext x hInv1 hLink, hT1]
-                  simp only []
-                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
-                  | error e => simp
-                  | ok st3 =>
-                    simp only [Except.ok.injEq, Prod.mk.injEq]
-                    intro ⟨_, _, hEq⟩; subst hEq
-                    rw [storeTcbQueueLinks_determineTargetCore_eq st2 st3 headTid none none
-                          none x hInv2 hFinal, hT2]
 
 -- ============================================================================
 -- §2 SM6.B — the notification transitions
 -- ============================================================================
 
-/-- SM8.B.2: **the cores a cross-core notification signal may write.**
-Read off the pre-state: the head waiter's home core if the notification has a
-waiter, nothing otherwise (the badge-accumulation path and every fail-closed arm
-touch no scheduler slot at all).
-
-`notificationSignalWriteSet_eq_lockSet_waiter` ties this to the *same*
-pre-resolution the SM6.B lock set uses, so the declared information-flow write
-set and the declared 2PL footprint cannot name different threads. -/
-def notificationSignalWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List CoreId :=
-  match st.getNotification? notificationId with
-  | some ntfn =>
-      match ntfn.waitingThreads.tail? with
-      | some (waiter, _) => [determineTargetCore st waiter]
-      | none => []
-  | none => []
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `notificationSignalWriteSet` is declared
+-- in `IPC/CrossCore/NotificationSignal.lean`, beside the transition it is about.
+-- This module is **staged** and imports `Kernel.API`, so the production
+-- scheduler-domain footprint `schedLockSet_notificationSignalOnCore` could not
+-- read a core list declared here and would have grown a second one; *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  The confinement theorem below, which consumes it, stays here.
 
 /-- SM8.B.2 (coherence with the SM6.B lock set): the write set names the home
 core of exactly the thread `notificationSignalWaiter?` pre-resolves — the thread
@@ -730,17 +510,10 @@ theorem notificationWaitOnCore_confinedToCores (notificationId : SeLe4n.ObjId)
                     (storeTcbIpcStateAndMessage_fromTcb_confinedToCores st1 st2 waiter tcb _ _ hIpc))
                   (removeRunnableOnCore_confinedToCores st2 waiter executingCore)
 
-/-- SM8.B.2: **the cores a bound-aware cross-core signal may write** — the bound
-TCB's home core when the badge is delivered directly, otherwise the plain
-signal's set.
-
-`boundDeliveryTarget?` is the transition's own pre-state resolution, so the
-declared set and the transition name the same TCB. -/
-def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
-    List CoreId :=
-  match boundDeliveryTarget? st notificationId with
-  | some (t, _) => [determineTargetCore st t]
-  | none => notificationSignalWriteSet st notificationId
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `notificationSignalBoundWriteSet` is
+-- declared in `IPC/CrossCore/NotificationBind.lean`, beside
+-- `notificationSignalBoundOnCore` and beside the production scheduler-domain
+-- footprint `schedLockSet_notificationSignalBoundOnCore` that reads it.
 
 /-- SM8.B.2 (**SM6.B, cross-core** — the *bound* signal, the live `.signal` arm):
 a bound-aware signal's per-core writes stay inside
@@ -967,21 +740,12 @@ theorem endpointReplyOnCore_confinedToCores (replier target : SeLe4n.ThreadId)
 -- §4a SM6.C — the receive leg, and the composed `replyRecv`
 -- ============================================================================
 
-/-- SM8.B.2: **the cores a cross-core endpoint receive may write** — the woken
-sender's home core on a rendezvous, the receiver's own core when it blocks.
-
-Read from the pre-state through the same `sendQ.head` the transition resolves,
-so the declared set and the transition name the same sender. The two arms are
-genuinely exclusive: a receive that rendezvouses does not block, and a receive
-that blocks wakes nobody. -/
-def endpointReceiveDualWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  match st.getEndpoint? endpointId with
-  | some ep =>
-      match ep.sendQ.head with
-      | some sender => [determineTargetCore st sender]
-      | none => [executingCore]
-  | none => []
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointReceiveDualWriteSet` is
+-- declared in `IPC/CrossCore/EndpointReply.lean`, beside `endpointReceiveDualOnCore`
+-- and beside the production scheduler-domain footprint
+-- `schedLockSet_endpointReceiveOnCore` that reads it.  This module is staged and
+-- imports `Kernel.API`, so a core list declared here is unreachable from the
+-- footprint the syscall seam brackets over.
 
 /-- SM8.B.2 (**SM6.C, cross-core** — the `replyRecv` receive leg): a cross-core
 endpoint receive's per-core writes stay inside `endpointReceiveDualWriteSet`.
@@ -1171,15 +935,15 @@ theorem endpointReplyRecvOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
 -- ============================================================================
 
 /-- SM8.B.2 (**SM6.E, cross-core**): the cancellation mechanism is
-`descheduleThread`, whose confinement §1 proves — it writes only the victim's
-**home** core, not the core running the cancellation. This restates that at the
-SM6.E name so the coverage list below reads off one theorem per sub-phase: a
-`tcbSuspend` issued on core 0 against a victim homed on core 2 is invisible to
-observers on cores 1 and 3 outright. -/
+`descheduleThread`, whose confinement §1 proves — it writes only the core the
+state **places** the victim on (WS-RR RR8.6), not the core running the
+cancellation. This restates that at the SM6.E name so the coverage list below
+reads off one theorem per sub-phase: a `tcbSuspend` issued on core 0 against a
+victim placed on core 2 is invisible to observers on cores 1 and 3 outright. -/
 theorem cancellationCrossCore_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
     (executingCore : CoreId) :
     observableSlotsConfinedToCores st (descheduleThread st tid executingCore).1
-      [determineTargetCore st tid] :=
+      (descheduleAtPlacementCores st tid) :=
   descheduleThread_confinedToCores st tid executingCore
 
 /-- SM8.B.2: the SM6.E object-level teardown is per-core **silent** — it rewrites
@@ -1318,53 +1082,85 @@ theorem wakeAbortedDonationHolder_confinedToCores (stPre stPost : SystemState)
       fun c _ => enqueueAbortedHolderOnCore_domainScheduleIndexOnCore stPost _ holder c,
       fun _ _ => by rw [enqueueAbortedHolderOnCore_machineEq]⟩
 
-/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
-writes the victim's **home** core, and — since WS-OD OD1.7 — the home core of the
-holder its reclaim unblocked, when there is one.  Not the core running the
-cancellation, and not any core the victim's endpoint or notification neighbours
-are homed on.
+/-- **WS-RR RR8.12**: the teardown with its reclaim completed writes exactly the
+woken holder's home core — the migration contributing nothing observable and the
+teardown itself nothing per-core.
 
-`[] ++ [] ++ wake ++ [home]`: the teardown contributes nothing per-core, WS-RR
+Derived once here, because both consumers need it: the composite below, and the
+live suspend pipeline's G2 (`suspendThreadOnCoreWriteSet`), which until RR8.12
+took the bare teardown and so declared no core for a wake it did not perform. -/
+theorem cancelIpcBlockingReclaimed_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (st : SystemState) :
+    observableSlotsConfinedToCores st (cancelIpcBlockingReclaimed victim tcb st)
+      (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+        victim tcb).toList := by
+  have h := observableSlotsConfinedToCores_trans
+    (observableSlotsConfinedToCores_trans
+      (cancelIpcBlocking_confinedToCores st victim tcb)
+      (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
+    (wakeAbortedDonationHolder_confinedToCores st
+      (cancelIpcBlockingMigrated victim tcb st) victim tcb)
+  simpa only [List.nil_append, cancelIpcBlockingReclaimed] using h
+
+/-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
+writes the core the pre-state **places** the victim on (WS-RR RR8.6), and —
+since WS-OD OD1.7 — the home core of the holder its reclaim unblocked, when
+there is one.  Not the core running the cancellation, and not any core the
+victim's endpoint or notification neighbours are homed on.
+
+`[] ++ [] ++ wake ++ placed`: the teardown contributes nothing per-core, WS-RR
 RR7.22's replenishment migration contributes nothing either (it writes a
 replenish queue, which is not an observable slot), OD1.7's holder wake
-contributes the holder's home core exactly when it fires, and the home-core
-removal contributes one core.  Unlike the wake pipelines this needs no pushback
-through the §1a frame layer, because `cancelIpcBlockingOnCore` reads both cores
-from the pre-state itself.
+contributes the holder's home core exactly when it fires, and the placement
+removal contributes at most one core.  The removal resolves its core on the
+post-wake state and this list is stated on the **pre**-state, which is the only
+state a caller holds; `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the
+pushback, and it is why the list is stated as a superset rather than an
+equality: on the degenerate insert the wake could perform on the victim itself
+the removal's core is the wake core, already listed.
 
 **The second core is the point of OD1.7, not a regression.**  The list read
-`[determineTargetCore st victim]` before, and that was true only because the
-reclaim's abort left the holder on no run queue at all — the stranding defect.
-Placing it necessarily writes its home core, which is neither the victim's nor
-the executing core, so the honest statement names it.  Where no donation is
-resolved the wake list is empty and this is the old statement verbatim
-(`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
+`[determineTargetCore st victim]` before OD1.7, and that was true only because
+the reclaim's abort left the holder on no run queue at all — the stranding
+defect.  Placing it necessarily writes its home core, which is neither the
+victim's nor the executing core, so the honest statement names it.  Where no
+donation is resolved the wake list is empty and this is the pre-OD1.7 statement
+at the placed core (`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
-          victim tcb).toList ++ [determineTargetCore st victim]) :=
-  observableSlotsConfinedToCores_trans
-    (observableSlotsConfinedToCores_trans
-      (observableSlotsConfinedToCores_trans
-        (cancelIpcBlocking_confinedToCores st victim tcb)
-        (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
-      (wakeAbortedDonationHolder_confinedToCores st
-        (cancelIpcBlockingMigrated victim tcb st) victim tcb))
-    (removeRunnableOnCore_confinedToCores
-      (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb)
-      victim (determineTargetCore st victim))
+          victim tcb).toList ++ descheduleAtPlacementCores st victim) := by
+  have hStep := observableSlotsConfinedToCores_trans
+    (cancelIpcBlockingReclaimed_confinedToCores victim tcb st)
+    (descheduleAtPlacement_confinedToCores (cancelIpcBlockingReclaimed victim tcb st) victim)
+  refine observableSlotsConfinedToCores_mono ?_ hStep
+  intro c hc
+  simp only [List.mem_append] at hc ⊢
+  rcases hc with hw | hd
+  · exact Or.inl hw
+  · -- `cancelIpcBlockingReclaimed` is the post-wake state by definition, which is
+    -- the vocabulary `…_placedCoreOf?_cases` is stated in.
+    rw [show cancelIpcBlockingReclaimed victim tcb st
+          = wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb
+        from rfl] at hd
+    rw [descheduleAtPlacementCores_eq_toList] at hd ⊢
+    rcases cancelIpcBlockingOnCore_placedCoreOf?_cases victim tcb st with hEq | ⟨hPre, hPost⟩
+    · rw [hEq] at hd
+      exact Or.inr hd
+    · rw [hPost] at hd
+      exact Or.inl hd
 
 /-- WS-OD OD1.7: with no donation resolved the reclaim wakes nobody, so the
-composite is confined to the victim's home core exactly as it was before OD1.7 —
-which is every arm but a reply arm whose caller had donated. -/
+composite is confined to the victim's placed core exactly as it was before
+OD1.7 — which is every arm but a reply arm whose caller had donated. -/
 theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
     (tcb : TCB) (executingCore : CoreId) (st : SystemState)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      [determineTargetCore st victim] := by
+      (descheduleAtPlacementCores st victim) := by
   have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
   rwa [cancelAbortedHolderWakeCore?_of_no_donation _ _ victim tcb h, Option.toList,
     List.nil_append] at hW
@@ -1852,35 +1648,81 @@ theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingCo
 -- Legs two and three can each name a core the reply's own write set does not, so
 -- §4's theorem never bounded the live arm (PR #861 review round 4).
 
-/-- SM8.B.2 / WS-RR RR2.8: the cross-core donation **return** writes at most the
-core it is handed. Unlike the call-side `applyCallDonationOnCore` this is *not*
-per-core silent: the now-passive server is descheduled on its own core, which is
-precisely why `endpointReplyCrossCoreDispatch` resolves `determineExecutingCore
-st expected` instead of reusing the (possibly delegated) replier's syscall core.
+/-- **WS-HP HP4.4: the cores the head-driven pop's deschedule may write.**
+
+The thread the pop deschedules is the *holder* the trigger resolves, not the
+operation's argument, so the core list is resolved through that same trigger.
+Naming the argument's placement would typecheck and describe a different thread
+entirely -- the answered caller, which this leg does not deschedule at all -- and
+that is the plan's SS3.8.2 hazard reaching an information-flow claim.
+
+Empty when the frame heads nothing, which is exact: there the step is the
+identity. -/
+def replyDonationDescheduleCores (st : SystemState) (rid : SeLe4n.ReplyId) : List CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | none => []
+  | some (_, holder) => descheduleAtPlacementCores st holder
+
+/-- SM8.B.2 / WS-RR RR2.8, corrected at `v0.35.37`: the cross-core donation
+**return** writes at most the core the state **places** the returning server on.
+Unlike the call-side `applyCallDonationOnCore` this is *not* per-core silent: the
+now-passive server is descheduled where it actually sits, and the core list is
+read off `descheduleAtPlacementCores` — the *same* resolver the step itself uses,
+so the confinement claim and the transition cannot name different cores.
+
+What this docstring said before is the finding this cut fixes.  It claimed the
+server "is descheduled on its own core, which is precisely why
+`endpointReplyCrossCoreDispatch` resolves `determineExecutingCore st expected`".
+The first half was the intent and the second half did not deliver it:
+`determineExecutingCore` finds a core the thread is *current* on and otherwise
+answers `bootCoreId`, so a server that was **queued** — preempted, which is the
+ordinary fate of a thread that is not running — was descheduled on a core it is
+not on, and the step wrote nothing.  A justification that holds only when the
+thread happens to be running is not a justification for a step whose whole
+purpose is to stop it running.
 
 The other two legs are silent — `returnDonatedSchedContext` moves `boundThread`
 in the object store and leaves the scheduler and every register bank alone, and
 the RR2.8 replenishment migration writes a queue SM8.A's
-`onCore_perCore_independence` puts outside the observer's read set — so the
-whole leg still collapses to the one `removeRunnableOnCore`. -/
+`onCore_perCore_independence` puts outside the observer's read set — so the whole
+leg still collapses to the one deschedule, and at a replier the state places
+nowhere the core list is empty because the step is the identity. -/
 theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
-    (replierVtid : SeLe4n.ValidThreadId) (serverCore replierHome ownerHome : CoreId)
-    (hStep : applyReplyDonationOnCore st replierVtid serverCore replierHome ownerHome = .ok st') :
-    observableSlotsConfinedToCores st st' [serverCore] := by
-  rcases applyReplyDonationOnCore_ok_decompose st st' replierVtid serverCore replierHome
-    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, owner, n, stRet, _, _, hRet, hEq⟩
+    (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st') :
+    observableSlotsConfinedToCores st st' (replyDonationDescheduleCores st rid) := by
+  rcases applyReplyDonationOnCore_ok_decompose st st' rid targetVtid holderHome
+    ownerHome hStep with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, stRet, hHead, _, hRet, hEq⟩
   · exact observableSlotsConfinedToCores_of_eq _ hEq
-  · rw [hEq]
-    exact observableSlotsConfinedToCores_widen_cons
+  · -- The core list is stated on the **pre**-state, which is the only state a
+    -- caller holds.  That is sound because neither step before the deschedule
+    -- moves a thread: the return writes objects alone and the migration writes
+    -- replenish queues alone, so the two slices `placedCoreOf?` reads are fixed.
+    let stMig : SystemState := migrateSchedContextReplenishment stRet scId holderHome ownerHome
+    have hMig : ∀ c : CoreId,
+        stMig.scheduler.runQueueOnCore c = stRet.scheduler.runQueueOnCore c
+        ∧ stMig.scheduler.currentOnCore c = stRet.scheduler.currentOnCore c :=
+      fun c => migrateSchedContextReplenishment_runQueue_current_eq stRet scId
+        holderHome ownerHome c
+    have hRetSched : stRet.scheduler = st.scheduler :=
+      returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet
+    have hList : replyDonationDescheduleCores st rid
+        = descheduleAtPlacementCores st holderVtid.val := by
+      unfold replyDonationDescheduleCores; rw [hHead]
+    have hCores : descheduleAtPlacementCores stMig holderVtid.val
+        = descheduleAtPlacementCores st holderVtid.val := by
+      rw [descheduleAtPlacementCores_congr_of_runQueue_current_eq _ hMig]
+      unfold descheduleAtPlacementCores
+      rw [placedCoreOf?_congr_of_scheduler_eq _ hRetSched]
+    rw [hEq, hList, ← hCores]
+    exact observableSlotsConfinedToCores_trans
       (by
         simpa using observableSlotsConfinedToCores_trans
-          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-            (returnDonatedSchedContext_scheduler_eq st stRet _ _ _ n hRet)
+          (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hRetSched
             (returnDonatedSchedContext_machine_eq st stRet _ _ _ n hRet))
-          (migrateSchedContextReplenishment_confinedToCores stRet scId replierHome ownerHome))
-      (removeRunnableOnCore_confinedToCores
-        (migrateSchedContextReplenishment stRet scId replierHome ownerHome)
-        replierVtid.val serverCore)
+          (migrateSchedContextReplenishment_confinedToCores stRet scId holderHome ownerHome))
+      (descheduleAtPlacement_confinedToCores stMig holderVtid.val)
 
 /-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
 the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
@@ -1900,16 +1742,41 @@ def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcM
       match recordedReplyServer? st target with
       | some expected =>
           match SeLe4n.ThreadId.toValid? expected with
-          | some expectedV =>
-              match applyReplyDonationOnCore st1 expectedV
-                  (determineExecutingCore st expected)
-                  (determineTargetCore st expected)
-                  (replyDonationOwnerHome st expected) with
-              | .error _ => []
-              | .ok st2 =>
-                  (determineTargetCore st target
-                    :: determineExecutingCore st expected
-                    :: pipChainWriteSet st2 expected executingCore st2.objectIndex.length)
+          | some _expectedV =>
+              -- **WS-HP HP4.4**: the mirror follows the dispatch onto the answered
+              -- frame and the answered caller, including the arm where there is no
+              -- frame to pop and only the reply leg and the chain walk run.
+              match answeredReplyObject? st target with
+              | none =>
+                  ([determineTargetCore st target]
+                    ++ pipChainWriteSet st1 expected executingCore st1.objectIndex.length)
+              | some rid =>
+                match SeLe4n.ThreadId.toValid? target with
+                | none => []
+                | some targetV =>
+                  -- **WS-HP HP10.7**: the destination home is the redirected
+                  -- recipient's, as the live dispatch passes it -- the write set
+                  -- mirrors the dispatch's control flow, so it has to mirror the
+                  -- same resolver or the two name different cores.
+                  match applyReplyDonationOnCore st1 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) with
+                  | .error _ => []
+                  | .ok st2 =>
+                      -- `v0.35.37`: the donation return's leg is the descheduled
+                      -- thread's **placement**, read off the same resolver the step
+                      -- uses, so the write set and the transition cannot name
+                      -- different cores.  It was `determineExecutingCore st
+                      -- expected`, which answers `bootCoreId` for a queued server —
+                      -- a core the step does not write and, worse, one it would have
+                      -- written had the proxy been the fact.  It is resolved at
+                      -- `st1` because that is the state the donation return runs on,
+                      -- and through the trigger because the thread it deschedules is
+                      -- the trigger's holder.
+                      ([determineTargetCore st target]
+                        ++ replyDonationDescheduleCores st1 rid
+                        ++ pipChainWriteSet st2 expected executingCore
+                             st2.objectIndex.length)
           | none => []
       | none => []
 
@@ -1944,23 +1811,33 @@ theorem endpointReplyCrossCoreDispatch_confinedToCores (replier target : SeLe4n.
         simp only []
         cases hEV : SeLe4n.ThreadId.toValid? expected with
         | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-        | some expectedV =>
+        | some _expectedV =>
           simp only []
-          cases hDon : applyReplyDonationOnCore st1 expectedV
-              (determineExecutingCore st expected)
-              (determineTargetCore st expected)
-              (replyDonationOwnerHome st expected) with
-          | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
-          | ok st2 =>
+          cases hRid : answeredReplyObject? st target with
+          | none =>
             simp only []
-            exact observableSlotsConfinedToCores_trans
-              (observableSlotsConfinedToCores_trans hReply
-                (applyReplyDonationOnCore_confinedToCores st1 st2 expectedV
-                  (determineExecutingCore st expected)
-                  (determineTargetCore st expected)
-                  (replyDonationOwnerHome st expected) hDon))
+            exact observableSlotsConfinedToCores_trans hReply
               (propagatePipChainCrossCore_confinedToCores executingCore
-                st2.objectIndex.length st2 expected)
+                st1.objectIndex.length st1 expected)
+          | some rid =>
+            simp only []
+            cases hTV : SeLe4n.ThreadId.toValid? target with
+            | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+            | some targetV =>
+              simp only []
+              cases hDon : applyReplyDonationOnCore st1 rid targetV
+                  (replyDonationHolderHome st1 rid target)
+                  (replyDonationRecipientHome st1 rid target) with
+              | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+              | ok st2 =>
+                simp only []
+                exact observableSlotsConfinedToCores_trans
+                  (observableSlotsConfinedToCores_trans hReply
+                    (applyReplyDonationOnCore_confinedToCores st1 st2 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) hDon))
+                  (propagatePipChainCrossCore_confinedToCores executingCore
+                    st2.objectIndex.length st2 expected)
 
 /-- SM8.B.2 (**the live `.reply` non-interference**): the syscall arm the kernel
 really runs on a cross-core `Reply` is invisible to any core outside its write
@@ -1999,16 +1876,6 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
 
-/-- The step's own confinement, stated once where both consumers can reach it. -/
-theorem descheduleAtPlacement_confinedToCores (st : SystemState)
-    (tid : SeLe4n.ThreadId) :
-    observableSlotsConfinedToCores st (descheduleAtPlacement st tid)
-      (descheduleAtPlacementCores st tid) := by
-  unfold descheduleAtPlacement descheduleAtPlacementCores
-  cases hp : placedCoreOf? st tid with
-  | none => exact observableSlotsConfinedToCores_refl st []
-  | some c => exact removeRunnableOnCore_confinedToCores st tid c
-
 /-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
 deschedule the now-passive recorded server on its own core, then revert its chain
 from the post-deschedule state. -/
@@ -2042,39 +1909,46 @@ machine, and SM8.A's `onCore_perCore_independence` puts the replenish queue
 outside the observer's read set — so every core the fused resolution names comes
 from its post-receive half.  That is what lets `replyRecvBody` move the pop to
 the other side of the receive leg without its declared set changing. -/
-theorem replyRecvPopDonation_confinedToCores (recordedServer : SeLe4n.ThreadId)
+theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
     (st st' : SystemState) (returned? : Option SeLe4n.SchedContextId)
-    (hStep : replyRecvPopDonation recordedServer st = .ok (returned?, st')) :
+    (hStep : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     observableSlotsConfinedToCores st st' [] := by
   unfold replyRecvPopDonation at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · next srvTcb _ =>
-    split at hStep
-    · next oldScId owner _ =>
-      split at hStep
-      · next srvV ownerV _ _ =>
-        split at hStep
-        · exact absurd hStep (by simp)
-        · next st1' hRet =>
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at hStep
+      have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
+      rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at hStep
+    simp only [] at hStep
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at hStep; simp only [] at hStep; cases hStep
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at hStep; simp only [] at hStep; cases hStep
+      | some targetV =>
+        rw [hHV, hTV] at hStep
+        simp only [] at hStep
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
+        | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
+        | ok st1' =>
+          rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hReturn : observableSlotsConfinedToCores st st1' [] :=
             observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
               (returnDonatedSchedContext_scheduler_eq st st1' _ _ _ n hPopN)
               (returnDonatedSchedContext_machine_eq st st1' _ _ _ n hPopN)
           have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st recordedServer) (determineTargetCore st owner) = st' :=
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
             (by simpa using hStep : some oldScId = returned? ∧ _).2
           rw [← hEq]
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
-      · next hNo =>
-        exfalso
-        revert hStep
-        rcases hSV : recordedServer.toValid? with _ | srvV <;>
-          rcases hOV : owner.toValid? with _ | ownerV <;> simp_all
-    · have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
-      rw [← hEq]; exact observableSlotsConfinedToCores_refl st []
 
 /-- **PR #895 review round 8**: the cores `replyRecvServerDeschedule` may write.
 
@@ -2237,33 +2111,13 @@ theorem observableSlotsConfinedToCores_of_framed_suffix {st stMid st' : SystemSt
      (h.domainScheduleIndex c hc),
    fun c hc => (by rw [hMach] : st'.machine.regsOnCore c = _).trans (h.regs c hc)⟩
 
-/-- SM8.B.2 (PR #873 round 7): the WithCaps per-core **receive** leaves the
-scheduler where the bare receive left it.
-
-The same shape as `endpointSendDualWithCapsOnCore_scheduler_eq` one section over,
-and for the same reason: the extra leg is an `ipcUnwrapCaps`, which installs
-capabilities into a CNode and writes no run queue. Every other branch — a
-receiver that enqueued, a delivered message with no caps, a sender with no CSpace
-root — returns the bare receive's own post-state. -/
-theorem endpointReceiveDualWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
-    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
-        receiverSlotBase executingCore st).1.scheduler
-      = (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.scheduler := by
-  unfold endpointReceiveDualWithCapsOnCore
-  cases hRecv : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
-  | mk stRecv res =>
-    cases res with
-    | error e => rfl
-    | ok pair =>
-      obtain ⟨senderId, sgi⟩ := pair
-      simp only []
-      repeat' split
-      all_goals first
-        | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+-- SM8.B.2, relocated at **WS-RR RR8.12**:
+-- `endpointReceiveDualWithCapsOnCore_scheduler_eq` is declared in
+-- `IPC/CrossCore/EndpointReply.lean`, beside the transition it frames — the
+-- production replenish-queue frame the `.receive` scheduler footprint owes reads
+-- it, and this module is staged.  A frame lemma about a production transition
+-- belongs beside that transition, not in the staged surface that first happened
+-- to need it.
 
 /-- SM8.B.2 (PR #873 round 7): and the register banks, by the same case
 analysis. -/
@@ -2334,7 +2188,9 @@ def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadI
         -- (`replyRecvPopDonation_confinedToCores`), so it contributes nothing here
         -- — but the states the later legs branch on are its post-state, and a
         -- write set that mirrors a transition has to read the states it reads.
-        (match replyRecvPopDonation ((recordedReplyServer? st prevCaller).getD receiver) st1 with
+        -- **WS-HP HP4.5**: keyed on the frame and the answered caller, as the
+        -- transition is.
+        (match replyRecvPopDonation replyId prevCaller st1 with
          | .error _ => []
          | .ok (returnedSc?, st1p) =>
             endpointReceiveDualWriteSet st1p endpointId executingCore ++
@@ -2388,18 +2244,17 @@ theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)
     | ok replySgi =>
       simp only [] at hStep ⊢
       -- **WS-RM (`v0.35.6`)**: the pop, between the legs.
-      cases hPop : replyRecvPopDonation ((recordedReplyServer? st prevCaller).getD receiver)
-          st1 with
+      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
       | error e => rw [hPop] at hStep; exact absurd hStep (by simp)
       | ok popPair =>
         obtain ⟨returnedSc?, st1p⟩ := popPair
         rw [hPop] at hStep
         simp only [] at hStep ⊢
         have hPopConf := replyRecvPopDonation_confinedToCores
-          ((recordedReplyServer? st prevCaller).getD receiver) st1 st1p returnedSc? hPop
+          replyId prevCaller st1 st1p returnedSc? hPop
         have hInv1p : st1p.objects.invExt :=
           replyRecvPopDonation_preserves_objects_invExt
-            ((recordedReplyServer? st prevCaller).getD receiver) st1 st1p returnedSc? hInv1 hPop
+            replyId prevCaller st1 st1p returnedSc? hInv1 hPop
         have hRecv := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver
           (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1p hInv1p
         cases hRcv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
@@ -2706,8 +2561,10 @@ it rewrites one TCB and touches neither the scheduler nor a register bank. -/
 theorem clearPendingState_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCores st (clearPendingState st tid) [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by unfold clearPendingState; split <;> rfl)
-    (by unfold clearPendingState; split <;> rfl)
+    (by unfold clearPendingState
+        first | exact SystemState.updateTcb_scheduler _ _ _ | exact SystemState.updateTcb_machine _ _ _)
+    (by unfold clearPendingState
+        first | exact SystemState.updateTcb_machine _ _ _ | exact SystemState.updateTcb_scheduler _ _ _)
 
 /-- SM8.B.2: the bound-SchedContext cancellation arm is per-core silent. It
 unbinds the SC, purges the victim's replenishments from its home core's
@@ -2724,10 +2581,12 @@ theorem cancelBoundDonationOnCore_confinedToCores (st st' : SystemState)
   all_goals intro c _
   all_goals (
     simp only [cancelBoundDonationOnCore] at h
-    repeat' split at h
-    all_goals first
-      | (rw [Except.ok.injEq] at h; subst h; simp)
-      | exact absurd h (by simp))
+    split at h
+    · rw [Except.ok.injEq] at h
+      subst h
+      rw [SystemState.updateTcb_eq_objects_update, SystemState.updateSchedContext_eq_objects_update]
+      try simp
+    · exact absurd h (by simp))
 
 -- WS-RR RR2.7: `migrateSchedContextReplenishment_confinedToCores` moved up to
 -- §5, beside the donation legs that now compose it.
@@ -2793,14 +2652,16 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
 
 * the reverted priority-inheritance chain's home cores, walked from the
   captured `blockingServer` at the post-teardown state;
-* the victim's `home` (`determineTargetCore`), where it is dequeued;
-* the core actually **running** the victim, when `runningCoreOf?` diverges from
-  the home — the PR #831 review-4 case of an unbound victim current on a
-  secondary core;
+* the core the pre-state **places** the victim on (`descheduleAtPlacementCores`,
+  WS-RR RR8.6 — queued or current; its home and its running core until then,
+  two proxies that between them missed a victim queued off its home), where it
+  is dequeued;
 * the **executing** core, where G7 may run a local preemption point.
 
-The teardown, both donation arms, `clearPendingState` and the `.Inactive` store
-are per-core silent and contribute nothing. -/
+Both donation arms, `clearPendingState` and the `.Inactive` store are per-core
+silent and contribute nothing.  The teardown was too until **WS-RR RR8.12** gave
+G2 the reclaim's holder wake; it now contributes that holder's home core, and no
+other (`cancelIpcBlockingReclaimed_confinedToCores`). -/
 def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) : List CoreId :=
   match st.getTcb? vtid.val with
@@ -2810,55 +2671,33 @@ def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     else
       -- One entry per pipeline step, in execution order; `[]` marks a step that
       -- writes no core at all, so this reads as the transition's own shape.
-      (match PriorityInheritance.blockingServer st vtid.val with
+      --
+      -- **WS-RR RR8.12**: G2 is the teardown with its reclaim COMPLETED, so the
+      -- first entry is no longer `[]`: the reclaim's holder wake places the
+      -- aborted donation holder on the holder's **own** home core, which is
+      -- neither the victim's placement nor the executing core.  A write set that
+      -- omits a written core is as false as a footprint that does, and until
+      -- RR8.12 this one named none because the live pipeline performed no wake.
+      (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+        vtid.val tcb).toList -- the reclaim's holder wake
+      ++ (match PriorityInheritance.blockingServer st vtid.val with
        | some serverId =>
-           pipChainWriteSet (cancelIpcBlockingValid st vtid tcb) serverId executingCore
-             (cancelIpcBlockingValid st vtid tcb).objectIndex.length
-       | none => []) -- teardown, then chain reversion
+           pipChainWriteSet (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore
+             (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length
+       | none => []) -- the chain reversion, on the post-teardown state
       ++ [] -- donation cancellation
-      ++ (determineTargetCore st vtid.val
-          :: (match runningCoreOf? st vtid.val with
-              | some c => [c]
-              | none => [])) -- home dequeue, running dequeue
+      ++ descheduleAtPlacementCores st vtid.val -- the placement dequeue
       ++ [] -- clearPendingState
       ++ [] -- the `.Inactive` store
       ++ [executingCore] -- the G7 scheduling point
-
-/-- SM8.B.2: the suspend pipeline's two dequeues — the victim leaves its
-**home** core's queue always, and the core actually **running** it as well when
-`runningCoreOf?` diverges from the home (the PR #831 review-4 case). -/
-theorem suspendDequeues_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId)
-    (home : CoreId) (rc : Option CoreId) :
-    observableSlotsConfinedToCores s
-      (match rc with
-       | some c =>
-         if (c == home) = true then removeRunnableOnCore s tid home
-         else removeRunnableOnCore (removeRunnableOnCore s tid home) tid c
-       | none => removeRunnableOnCore s tid home)
-      (home :: (match rc with | some c => [c] | none => [])) := by
-  cases rc with
-  | none => exact removeRunnableOnCore_confinedToCores s tid home
-  | some c =>
-    simp only []
-    split
-    · exact observableSlotsConfinedToCores_mono
-        (fun _ hm => by simp only [List.mem_singleton] at hm; simp [hm])
-        (removeRunnableOnCore_confinedToCores s tid home)
-    · exact observableSlotsConfinedToCores_trans
-        (removeRunnableOnCore_confinedToCores s tid home)
-        (removeRunnableOnCore_confinedToCores _ tid c)
 
 /-- SM8.B.2: marking the victim `.Inactive` is per-core silent — one object
 store write. -/
 theorem suspendInactiveStore_confinedToCores (s : SystemState) (tid : SeLe4n.ThreadId) :
     observableSlotsConfinedToCores s
-      (match s.getTcb? tid with
-       | some t =>
-         { s with objects := s.objects.insert tid.toObjId (.tcb { t with
-             threadState := .Inactive }) }
-       | none => s) [] :=
+      (s.updateTcb tid fun t => { t with threadState := .Inactive }) [] :=
   observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by split <;> rfl) (by split <;> rfl)
+    (SystemState.updateTcb_scheduler _ _ _) (SystemState.updateTcb_machine _ _ _)
 
 /-- SM8.B.2: whichever donation-cancellation arm the victim's binding selects,
 the step is per-core silent. -/
@@ -2878,12 +2717,12 @@ theorem suspendDonationArms_confinedToCores (s sD : SystemState) (tid : SeLe4n.T
 function `API.dispatchCapabilityOnly`'s `.tcbSuspend` arm routes through —
 writes no core outside `suspendThreadOnCoreWriteSet`.
 
-Six of its steps are per-core silent (the IPC teardown, both donation arms,
-`clearPendingState`, the `.Inactive` store); the three that are not are the
-priority-inheritance reversion, the two dequeues and the G7 scheduling point,
-and all three are named. The closing `mono` is only re-ordering — the
-composition produces the cores in execution order, the declared set lists them
-in reading order. -/
+Four of its steps are per-core silent (both donation arms, `clearPendingState`,
+the `.Inactive` store); the four that are not are the teardown's own reclaim
+wake (**WS-RR RR8.12**), the priority-inheritance reversion, the placement
+dequeue and the G7 scheduling point, and all four are named. The closing `mono`
+is only re-ordering — the composition produces the cores in execution order, the
+declared set lists them in reading order. -/
 theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
     (vtid : SeLe4n.ValidThreadId) (executingCore : CoreId)
     (sgi : Option (CoreId × Concurrency.SgiKind))
@@ -2901,23 +2740,29 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
     · next hInact => simp only [hInact] at hStep; exact absurd hStep (by simp)
     · next hInact =>
       rw [if_neg hInact] at hStep
-      have hCancel : observableSlotsConfinedToCores st (cancelIpcBlockingValid st vtid tcb) [] :=
-        cancelIpcBlocking_confinedToCores st vtid.val tcb
+      have hCancel : observableSlotsConfinedToCores st
+          (cancelIpcBlockingReclaimed vtid.val tcb st)
+          (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+            vtid.val tcb).toList :=
+        cancelIpcBlockingReclaimed_confinedToCores vtid.val tcb st
       -- The chain reversion, stated over the same `blockingServer` scrutinee the
       -- transition and the write set both read, so the two stay in step.
       have hPre : observableSlotsConfinedToCores st
           (match PriorityInheritance.blockingServer st vtid.val with
            | some serverId =>
              (PriorityInheritance.propagatePipChainCrossCore
-               (cancelIpcBlockingValid st vtid tcb) serverId executingCore).1
-           | none => cancelIpcBlockingValid st vtid tcb)
-          (match PriorityInheritance.blockingServer st vtid.val with
-           | some serverId =>
-             pipChainWriteSet (cancelIpcBlockingValid st vtid tcb) serverId executingCore
-               (cancelIpcBlockingValid st vtid tcb).objectIndex.length
-           | none => []) := by
+               (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
+           | none => cancelIpcBlockingReclaimed vtid.val tcb st)
+          ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+              vtid.val tcb).toList
+            ++ match PriorityInheritance.blockingServer st vtid.val with
+               | some serverId =>
+                 pipChainWriteSet (cancelIpcBlockingReclaimed vtid.val tcb st) serverId
+                   executingCore
+                   (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length
+               | none => []) := by
         cases hSrv : PriorityInheritance.blockingServer st vtid.val with
-        | none => simp only []; exact hCancel
+        | none => simpa only [List.append_nil] using hCancel
         | some serverId =>
           simp only []
           exact observableSlotsConfinedToCores_trans hCancel
@@ -2931,8 +2776,8 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
                 (observableSlotsConfinedToCores_trans
                   (observableSlotsConfinedToCores_trans hPre
                     (suspendDonationArms_confinedToCores _ stD vtid.val _ _ hDonArm))
-                  (suspendDequeues_confinedToCores stD vtid.val
-                    (determineTargetCore st vtid.val) (runningCoreOf? st vtid.val)))
+                  (descheduleAtPlacementCores_eq_toList st vtid.val ▸
+                    descheduleAt_confinedToCores stD vtid.val (placedCoreOf? st vtid.val)))
                 (clearPendingState_confinedToCores _ vtid.val))
               (suspendInactiveStore_confinedToCores _ vtid.val))
             (suspendRescheduleOnCore_confinedToCores _ st' _ executingCore _ _ sgi hStep))
@@ -3136,25 +2981,11 @@ theorem resumeThreadOnCoreLive_crossCoreNonInterference (ctx : LabelingContext)
 -- arm is rerouted through `endpointSendDualWithCapsOnCore`; this section is the
 -- per-core audit that reroute owes.
 
-/-- SM8.B.2: **the cores a cross-core endpoint send may write.**
-
-Sharper than its `.call` sibling, because a send has *one* scheduling effect
-rather than two:
-
-* **rendezvous** — the receive queue offers a partner, so the send wakes it on
-  **its** home core and returns; the sender keeps running, so the executing core
-  is untouched;
-* **block** — nobody is waiting, so the sender is descheduled on the **executing**
-  core and no other core moves.
-
-The receiver is resolved from the pre-state through SM6.A's own
-`endpointCallReceiver?` — the receive-queue head, which is the same rendezvous
-partner a `.call` would take, so send and call name it once rather than twice. -/
-def endpointSendWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  match endpointCallReceiver? st endpointId with
-  | some receiver => [determineTargetCore st receiver]
-  | none => [executingCore]
+-- SM8.B.2, relocated at **WS-RR RR8.12**: `endpointSendWriteSet` is declared in
+-- `IPC/CrossCore/EndpointSend.lean`, beside `endpointSendDualOnCore` and beside
+-- the production scheduler-domain footprint `schedLockSet_endpointSendOnCore` that
+-- reads it.  This module is staged and imports `Kernel.API`, so a core list
+-- declared here is unreachable from the footprint the syscall seam brackets over.
 
 /-- SM8.B.2 (**the bare cross-core send bound**): `endpointSendDualOnCore` writes
 no core outside `endpointSendWriteSet`.
@@ -3445,7 +3276,7 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
   unfold SchedContextOps.schedContextUnbind schedContextUnbindWriteSet
     schedContextSubject? at *
   split at hStep
-  · next sc hSc =>
+  · next sc hSc _ =>
     simp only [hSc]
     split at hStep
     · exact absurd hStep (by simp)
@@ -3473,7 +3304,9 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
           (repeat' split) <;>
           -- the replenish-queue setters are not in this transition's footprint;
           -- their five frames were carried here and never fired
-          simp_all [SchedulerState.setCurrentOnCore_runQueueOnCore,
+          simp_all [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler,
+            SystemState.updateTcb_machine, SystemState.rewriteObject_machine,
+            SchedulerState.setCurrentOnCore_runQueueOnCore,
             SchedulerState.setRunQueueOnCore_runQueueOnCore_ne,
             SchedulerState.setCurrentOnCore_currentOnCore_ne,
             SchedulerState.setRunQueueOnCore_currentOnCore,
@@ -3537,7 +3370,7 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
     observableSlotsConfinedToCores st st' (schedContextBindWriteSet st vThreadId.val) := by
   unfold SchedContextOps.schedContextBind at hStep
   split at hStep
-  · next sc hSc =>
+  · next sc hSc _ =>
     split at hStep
     · exact absurd hStep (by simp)
     · -- `v0.35.4`: a context heading a reply stack is refused, so a successful
@@ -3562,7 +3395,12 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
             rw [Except.ok.injEq, Prod.mk.injEq] at hStep
             obtain ⟨-, hs⟩ := hStep
             subst hs
-            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val }
+            -- `v0.35.71`: the two typed writes over `st`, reduced to the double
+            -- insert under the pre-state's TCB witness.
+            rw [SystemState.updateTcb_after_rewriteObject_schedContext st vScId.val _ _
+              vThreadId.val tcb _ hObjInv hTcb]
+            let sc1 : SchedContext := { sc with boundThread := some vThreadId.val,
+                                                donationOrigin := none }
             let scObj : KernelObject := .schedContext sc1
             let st1 : SystemState := { st with objects := st.objects.insert vScId.val scObj }
             let tcb1 : TCB :=
@@ -3645,11 +3483,11 @@ theorem setThreadCpuAffinity_determineTargetCore_eq (st stSet : SystemState)
     determineTargetCore stSet tid = affinity.getD Concurrency.bootCoreId := by
   unfold setThreadCpuAffinity at hSet
   split at hSet
-  · next tcb hTcb =>
+  · next tcb hTcb _ =>
     rw [Except.ok.injEq] at hSet
     subst hSet
     unfold determineTargetCore SystemState.getTcb?
-    simp only [RHTable_getElem?_eq_get?]
+    simp only [RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
     rw [RHTable_getElem?_insert st.objects tid.toObjId
       (.tcb { tcb with cpuAffinity := affinity }) hInv tid.toObjId]
     simp only [beq_self_eq_true, if_pos]
@@ -3846,7 +3684,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 (hStore := hStore) (hPre := by exact hScRaw) (hObjInv := by exact hObjInv)
               exact h
             split at hStep
-            · next boundTcb hTcbStored =>
+            · next boundTcb hTcbStored _ =>
               have hTcbStoredRaw :
                   stStored.objects.get? boundTid.toObjId = some (.tcb boundTcb) := by
                 simpa using (SystemState.getTcb?_eq_some_iff stStored boundTid boundTcb).mp
@@ -3881,7 +3719,7 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
                 -- rather than backtracking, so the alternatives below carry no
                 -- tactic blocks of their own.
                 (have hNil : c ∉ ([] : List CoreId) := by simp) <;>
-                ((try dsimp only []); repeat' split) <;>
+                ((try dsimp only [SystemState.rewriteObject]); repeat' split) <;>
                 first
                   -- arms that stop at `stStored` / `stWithTcb` (object writes only)
                   | exact hStoredConf.runQueue c hNil
@@ -3996,20 +3834,21 @@ theorem schedContextUnbindOnCore_crossCoreNonInterference (ctx : LabelingContext
 -- was never rerouted — it has been per-core since SM5.H.4 — and had the same
 -- gap for the same reason.
 
-/-- SM8.B.2: rewriting a thread's priority source is per-core silent — it stores
-one TCB or one SchedContext and touches neither the scheduler nor a register
-bank. -/
+/-- SM8.B.2: rewriting a thread's priority source is per-core silent — it moves
+objects and touches neither the scheduler nor a register bank.
+
+**`v0.35.98`: one application of the frame stated at the write.**  Both halves
+ran their own case analysis over the body, so the cut that made the `.bound` arm
+a *pair* of writes broke both identically; the shared
+`updatePrioritySource_only_modifies_objects` is what a further write on either
+arm now costs nothing. -/
 theorem updatePrioritySource_confinedToCores (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (newPriority : SeLe4n.Priority) :
     observableSlotsConfinedToCores st
-      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] :=
-  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
-    (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        repeat' split
-        all_goals rfl)
-    (by unfold SchedContext.PriorityManagement.updatePrioritySource
-        repeat' split
-        all_goals rfl)
+      (SchedContext.PriorityManagement.updatePrioritySource st tid tcb newPriority) [] := by
+  obtain ⟨_, h⟩ := SchedContext.PriorityManagement.updatePrioritySource_only_modifies_objects
+    st tid tcb newPriority
+  exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq (by rw [h]) (by rw [h])
 
 /-- SM8.B.2: the run-queue bucket migration writes exactly the core it is given.
 
@@ -4144,8 +3983,8 @@ theorem setMCPriorityOnCore_confinedToCores (st st' : SystemState)
     split at hStep
     · exact absurd hStep (by simp)
     · split at hStep
-      · next targetTcb hTarget =>
-        simp only [] at hStep
+      · next targetTcb hTarget _ =>
+        dsimp only [SystemState.rewriteObject] at hStep
         -- The ceiling store: an object write, so per-core silent, and not a
         -- migration — which is what lets the mid-state home core be the
         -- pre-state one. Both facts are stated over a *generic* post-state
@@ -4980,24 +4819,25 @@ theorem notificationSignalBoundOnCore_crossCoreNonInterference (ctx : LabelingCo
     (notificationSignalBoundOnCore_confinedToCores notificationId badge executingCore st hObjInv)
     hShared
 
-/-- SM8.B.2 (SM6.E): a cross-core deschedule is invisible to any core that is not
-the victim's home core. -/
+/-- SM8.B.2 (SM6.E), re-keyed at WS-RR RR8.6: a cross-core deschedule is
+invisible to any core that is not the one the state places the victim on. -/
 theorem descheduleThread_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (tid : SeLe4n.ThreadId) (executingCore : CoreId)
     (st : SystemState) (c : CoreId)
-    (hne : c ≠ determineTargetCore st tid)
+    (hne : c ∉ descheduleAtPlacementCores st tid)
     (hShared : sharedViewUnchanged ctx observer st (descheduleThread st tid executingCore).1) :
     projectStateOnCore ctx observer (descheduleThread st tid executingCore).1 c
       = projectStateOnCore ctx observer st c :=
-  crossCoreNonInterference_ofCores ctx observer (by simpa using hne)
+  crossCoreNonInterference_ofCores ctx observer hne
     (descheduleThread_confinedToCores st tid executingCore) hShared
 
-/-- SM8.B.2 (SM6.E, composed): a cross-core IPC-blocking cancellation is
-invisible to any core that is not the victim's home core. -/
+/-- SM8.B.2 (SM6.E, composed), re-keyed at WS-RR RR8.6: a cross-core
+IPC-blocking cancellation is invisible to any core that is neither the one the
+pre-state places the victim on nor the one the reclaim's holder wake writes. -/
 theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
-    (hne : c ≠ determineTargetCore st victim)
+    (hne : c ∉ descheduleAtPlacementCores st victim)
     (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
       victim tcb ≠ some c)
     (hShared : sharedViewUnchanged ctx observer st
@@ -5007,16 +4847,18 @@ theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer
     (by
-      -- WS-OD OD1.7: `c` is neither the victim's home core nor the core the
+      -- WS-OD OD1.7: `c` is neither the victim's placed core nor the core the
       -- reclaim's holder wake writes.
-      cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
-          victim tcb with
-      | none => simpa using hne
-      | some w =>
-        rw [hW] at hWake
-        simp only [Option.toList, List.cons_append, List.nil_append, List.mem_cons,
-          List.not_mem_nil, or_false]
-        exact fun h => h.elim (fun hw => hWake (by rw [hw])) (fun hh => hne hh))
+      intro hMem
+      rcases List.mem_append.mp hMem with hw | hd
+      · cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+            victim tcb with
+        | none => rw [hW] at hw; simp at hw
+        | some w =>
+          rw [hW] at hw
+          simp only [Option.toList, List.mem_singleton] at hw
+          exact hWake (by rw [hw, hW])
+      · exact hne hd)
     (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
 
 /-- SM8.B.2 (**the headline, and the thing SM6 cannot say**): waking a thread on
