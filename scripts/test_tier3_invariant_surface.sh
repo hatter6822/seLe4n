@@ -15918,12 +15918,52 @@ run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_h
 # be computed inside the failure branch, so a passing run never asked it and an
 # ADDED trace line left the fixture silently no longer enumerating the trace.
 run_check "INVARIANT" bash -lc 'rg -U -n "unaccounted_count.. -gt 0[^\n]*(\n([ \t][^\n]*)?)*record_failure" scripts/test_tier2_trace.sh'
-run_check "INVARIANT" bash -lc 'rg -n "matched_count.*expected_count.*unaccounted_count.* -eq 0 \]\]; then" scripts/test_tier2_trace.sh'
 # ...and the verdict must not go back to the forward direction alone, nor may the
 # reverse computation move back inside the failure branch (where `NEW_LINES` was
 # the local it counted into).
 run_negative_check "INVARIANT" bash -lc 'rg -n "expected_count\}. \]\]; then" scripts/test_tier2_trace.sh'
 run_negative_check "INVARIANT" bash -lc 'rg -n "NEW_LINES=" scripts/test_tier2_trace.sh'
+# ===========================================================================
+# v0.35.113 — the main trace comparison is of SEQUENCES.
+#
+# Both of the directions above are substring CONTAINMENT, so the pair decided
+# set membership: a fixture line duplicated or two fixture lines transposed
+# passed, and the duplication passed reporting `240/240` against a 239-line
+# trace.  The fixture is golden output by its own regeneration recipe, so the
+# comparison is of the two sequences -- exact and ordered -- and these anchors
+# pin that RELATION: the diff is between the expectation sequence and the OUTPUT
+# sequence, the output sequence is derived from the trace, and the verdict
+# consumes all three checks.
+# ===========================================================================
+run_check "INVARIANT" bash -lc 'rg -n "TRACE_OUTPUT.* > .*ACTUAL_LINES" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -n "diff -u .*EXPECTED_FRAGMENTS.*ACTUAL_LINES" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "sequence_ok=0[^\n]*(\n([ \t][^\n]*)?)*record_failure" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -n "unaccounted_count.. -eq 0 && .*sequence_ok.. -eq 1 \]\]; then" scripts/test_tier2_trace.sh'
+# ...and the verdict must not fall back to containment alone, which is the
+# superseded reading and keeps every other token in the file.
+run_negative_check "INVARIANT" bash -lc 'rg -n "unaccounted_count.. -eq 0 \]\]; then" scripts/test_tier2_trace.sh'
+# The control that claimed to exercise all of this was refused by the
+# fixture-path guard and never reached the comparison, so each control now
+# asserts WHICH reason fired -- and the two that decide (a transposition and a
+# duplication, whose multiset is unchanged) assert that BOTH containment
+# directions stayed silent.  A shared verdict cannot show that either check
+# decides, which is why the "must not appear" list is the load-bearing half.
+run_check "INVARIANT" bash -lc 'rg -n "cannot show that either one of them decides" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "appended expectation.*CONTROL_REASON_FORWARD" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "deleted expectation.*CONTROL_REASON_REVERSE.*\n.*CONTROL_REASON_FORWARD" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "transposed expectations.*CONTROL_REASON_SEQUENCE.*\n.*CONTROL_REASON_FORWARD.*CONTROL_REASON_REVERSE" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "duplicated expectation.*CONTROL_REASON_SEQUENCE.*\n.*CONTROL_REASON_FORWARD.*CONTROL_REASON_REVERSE" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "untracked fixture path.*CONTROL_REASON_GUARD.*\n.*CONTROL_REASON_FORWARD.*CONTROL_REASON_REVERSE.*\n.*CONTROL_REASON_SEQUENCE" scripts/audit_testing_framework.sh'
+# ...the mutated fixture is restored from the index and the restoration is
+# VERIFIED, since a crashed control that leaves a golden fixture edited is worse
+# than one that never ran...
+run_check "INVARIANT" bash -lc 'rg -n "was not restored to its indexed content" scripts/audit_testing_framework.sh'
+# ...the controls are runnable on their own, which is what makes them re-run
+# after a change to the gate they are about...
+run_check "INVARIANT" bash -lc 'rg -n "..controls-only\) CONTROLS_ONLY=1" scripts/audit_testing_framework.sh'
+# ...and the superseded control -- a copy of the fixture at an UNTRACKED path,
+# which the guard refuses before the gate reads a line -- must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -n "TMP_FIXTURE" scripts/audit_testing_framework.sh'
 # ===========================================================================
 # v0.35.111 — the fixture machinery's OWN three presence-for-relation defects.
 # Each was the class `v0.35.109` built the machinery to close, one level down, so

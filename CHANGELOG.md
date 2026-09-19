@@ -1,3 +1,88 @@
+## v0.35.113 — the trace comparison is a SEQUENCE, and the control that watched it was inert
+
+`v0.35.110` made the golden-trace comparison both-directional after finding that
+the reverse direction — *is every output line accounted for by some fixture
+expectation* — was computed inside the failure branch and so never asked on a
+passing run.  Both directions are substring **containment**, and the pair
+therefore decides **set membership and nothing more**: a *set is not a sequence*,
+which is this tree's oldest rule (*a presence check is not a relation check*) one
+level below the cut that added the second direction.  Three mutations that keep
+every token passed it:
+
+* a fixture line **duplicated** — the forward pass finds it twice, the reverse
+  pass accounts for every output line;
+* two fixture lines **transposed** — identical multiset, and neither direction
+  reads order at all;
+* an output line **duplicated** — both copies independently find the same
+  fragment, so the trace gained a line and the gate reported that both
+  directions held.
+
+The third is the one Codex reported on PR #897.  Measured against the superseded
+gate, the transposition passed and the duplication passed **reporting
+`240/240`** against a 239-line trace: a fixture claiming one more expectation
+than the program prints, called a pass.
+
+**What licenses the strict form is the artefact's own contract, not a
+judgement.**  `tests/fixtures/README.md` regenerates this fixture by redirecting
+`lake exe sele4n`'s stdout over it, so it **is** golden output — and measured at
+this cut the expectation sequence and the output sequence are byte-identical at
+239 lines with no duplicate on either side.  So the exact ordered comparison is
+free, which is the measurement this project requires before taking a strict
+option rather than deferring it.  `scripts/test_tier2_trace.sh` now `diff`s the
+two sequences and that is the verdict; the two containment loops are **kept as
+diagnostics**, because a 239-line diff does not say which scenario id is missing
+and which direction moved is what tells a maintainer whether the code or the
+fixture changed.
+
+**And a gate's own control must be identified by the REASON it fires** — the
+finding this cut made while fixing the one above, and the sharper of the two.
+The single artefact that claimed to exercise this comparison is
+`scripts/audit_testing_framework.sh`, whose header says it "synthesises a
+deliberately-broken trace fixture and asserts that `test_tier2_trace.sh`
+correctly rejects it (catching a class of *fixture compare silently passing*
+bugs)".  It copied the fixture to a `mktemp` path — and `TRACE_FIXTURE_PATH` must
+name a **git-tracked** file, an injection guard that refuses any path outside the
+index, so the control was refused before the gate read a single line and would
+have reported success with the comparison **deleted outright**.  The script
+written to catch "fixture compare silently passing" was passing silently, and the
+class it names is the one the review then found.
+
+*"The gate could not read it"* and *"the gate checked it and it differs"* must
+never produce the same verdict — the rule this tree already states for
+`scripts/check_anchor_consistency.py`, there in the PASS direction and here in
+the FAIL one.  So a control asserts the **message**, never the exit status, and a
+control whose claim is that one check decides asserts that the others stayed
+**silent**.  The five controls mutate the real fixture (with its `.sha256`
+refreshed, since the checksum sweep runs first and the mutation is exactly the
+consistent fixture edit a maintainer makes) and each is decided by its own
+subject: an appended expectation by the forward direction, a deleted one by the
+reverse, a **transposed** and a **duplicated** one by the sequence comparison
+alone with both containment directions silent, and an untracked path by the guard
+and by nothing else.  Two further things the cut decided.  A control that cannot
+be run **on its own** is a control nobody re-runs after touching the gate it is
+about, which is how this one stayed inert behind a tier stack it runs first:
+`--controls-only` is eleven seconds against tens of minutes.  And the mutated
+fixture is restored from the index after every control **and the restoration is
+verified**, because a crashed run that leaves a golden fixture edited is worse
+than a control that never ran.
+
+Twelve Tier 3 anchors pin the relations rather than the tokens — the diff's two
+operands, the output sequence's derivation from the trace, the three-way verdict,
+each control's own reason and its silent siblings, the restore verification and
+the `--controls-only` entry point — with two negatives refusing the superseded
+containment-only verdict and the retired `mktemp` control.  Each was
+mutation-tested: seven token-preserving mutations, every one caught, including
+one that keeps `diff -u` and changes only its second operand and one that
+reinstates the retired control under its own name.
+
+No Lean source changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+**Files**: `scripts/test_tier2_trace.sh`,
+`scripts/audit_testing_framework.sh`, `scripts/test_tier3_invariant_surface.sh`,
+`tests/fixtures/README.md`, `docs/DEVELOPMENT.md`,
+`docs/gitbook/04-project-design-deep-dive.md`, `CLAUDE.md`, `AGENTS.md`.
+
 ## v0.35.112 — the `.receive` replenish segment follows the donation's own guard
 
 WS-RR RR8.12 Cut 8a-ii's docstring rejected over-declaration in as many words —

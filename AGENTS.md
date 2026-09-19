@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.112.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.113.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2744,19 +2744,40 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   conventions, 19 labels with an id and 36 without, in one file.
 
   Four things new code must respect.  (1) **A fixture needs a gate that runs its
-  producer, and the comparison has two directions.**  Which gate it is belongs in
+  producer, and the comparison is of SEQUENCES.**  Which gate it is belongs in
   `tests/fixtures/README.md`'s "Used by" column — where it was *false* for both
   manifests, naming suites that do not read their file.  And the main trace's own
   gate asked only the forward direction (every fixture fragment occurs in the
   output), computing the converse *inside the failure branch*, so a passing run
   never asked whether every output line is accounted for: a trace line **added**
   to the output left the fixture no longer enumerating the trace, while this file
-  said "must match".  Both directions are asserted since `v0.35.110`, and the
+  said "must match".  Both directions were asserted at `v0.35.110`, and the
   measurement is what licensed taking the strict one — 239 fragments, 239
   non-empty output lines, zero unaccounted, so it cost the tree nothing.  The
-  mutation that decides drops **one** fixture line and touches nothing else: the
-  forward direction still passes at 238/238, and the superseded gate reported
-  `Fixture comparison passed` on it.  (2) **The improvement direction is the code, not the
+  mutation that decided there drops **one** fixture line and touches nothing else:
+  the forward direction still passes at 238/238, and the pre-`v0.35.110` gate
+  reported `Fixture comparison passed` on it.
+
+  **And a set is not a sequence** (PR #897 review, `v0.35.113`).  Both of those
+  directions are substring **containment**, so what the pair decides is set
+  membership and nothing more — which is this file's oldest rule one level below
+  the cut that added the second one, and it leaves three token-preserving
+  mutations passing: a fixture line **duplicated** (the forward pass finds it
+  twice, the reverse pass accounts for every output line), two fixture lines
+  **transposed** (identical multiset, and neither direction reads order), and an
+  output line **duplicated** (both copies independently find the same fragment, so
+  the trace gained a line and the gate reported that both directions held).
+  Measured against the superseded gate, the transposition passed and the
+  duplication passed *reporting `240/240`* against a 239-line trace — a fixture
+  claiming one more expectation than the program prints, called a pass.  What
+  licenses the strict form here is the artefact's own contract rather than a
+  judgement: `tests/fixtures/README.md` regenerates this fixture by redirecting
+  the producer's stdout over it, so it **is** golden output, and the expectation
+  sequence and the output sequence are byte-identical at 239 lines with no
+  duplicate on either side.  The two loops are kept as *diagnostics* — a 239-line
+  diff does not say which scenario id is missing, and which direction moved is
+  what tells a maintainer whether the code or the fixture changed — and the
+  sequence equality is the verdict.  (2) **The improvement direction is the code, not the
   fixture.**  The manifests were right and the labels had drifted, so the fix
   relabels 94 assertions rather than rewriting 19 rows — and it costs no fixture
   churn, because a manifest nobody edits keeps its checksum.  Rewriting the rows
@@ -2837,6 +2858,38 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   form this file otherwise warns about, correct here because the claim really is
   about that declaration.  Ask of any negative: *what renames or relocations
   survive it?*
+
+  **And a gate's own control must be identified by the REASON it fires**
+  (`v0.35.113`, found while fixing the paragraph above).  The one artefact that
+  claimed to exercise the comparison above was
+  `scripts/audit_testing_framework.sh`, whose header says in as many words that
+  it "synthesises a deliberately-broken trace fixture and asserts that
+  `test_tier2_trace.sh` correctly rejects it (catching a class of *fixture
+  compare silently passing* bugs)".  It copied the fixture to a `mktemp` path and
+  asserted a non-zero exit — and `TRACE_FIXTURE_PATH` must name a **git-tracked**
+  file, an injection guard that refuses any path outside the index, so the
+  control was refused before the gate read a single line and would have reported
+  success with the comparison deleted outright.  The script written to catch
+  "fixture compare silently passing" was passing silently, and the class it names
+  is the one the review then found.
+
+  **"The gate could not read it" and "the gate checked it and it differs" must
+  never produce the same verdict** — the rule this file already states for
+  `check_anchor_consistency.py`, there in the PASS direction and here in the FAIL
+  one.  So a control asserts the *message*, not the exit status, and a control
+  whose claim is that one check decides asserts the others stayed **silent**: the
+  five now in that script mutate the real fixture (with its `.sha256` refreshed,
+  since the checksum sweep runs first and the mutation is exactly the consistent
+  fixture edit a maintainer makes) and are each decided by their own subject — an
+  appended expectation by the forward direction, a deleted one by the reverse, a
+  **transposed** and a **duplicated** one by the sequence comparison alone, and an
+  untracked path by the guard and by nothing else.  Two further things that cut
+  measured.  A control that cannot be run **on its own** is a control nobody
+  re-runs after touching the gate it is about, which is how this one stayed inert
+  behind a tier stack it runs first: `--controls-only` is eleven seconds against
+  tens of minutes.  And the mutated fixture is restored from the index after every
+  control **and the restoration is verified**, because a crashed run that leaves a
+  golden fixture edited is worse than a control that never ran.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
   `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
   explicit `.toNat`/`.ofNat`.

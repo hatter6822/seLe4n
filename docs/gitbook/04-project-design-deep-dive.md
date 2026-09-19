@@ -42,7 +42,7 @@ Each component has a clear semantic meaning. Bundle composition is explicit and 
 
 ### 1.4 Executable evidence as a contract
 
-`Main.lean` is not a demo — it is a regression surface. The trace harness constructs a realistic kernel state, exercises scheduler/capability/IPC/lifecycle/VSpace/service operations, and produces deterministic output. Tier 2 checks compare this output against `tests/fixtures/main_trace_smoke.expected`.
+`Main.lean` is not a demo — it is a regression surface. The trace harness constructs a realistic kernel state, exercises scheduler/capability/IPC/lifecycle/VSpace/service operations, and produces deterministic output. Tier 2 checks compare this output against `tests/fixtures/main_trace_smoke.expected` as a sequence — line for line, in order, so a duplicated or reordered line fails the gate.
 
 Every claimed semantic property has both a theorem (machine-checked) and a runtime witness (fixture-checked). If a refactor changes behavior, the fixture breaks before the PR lands.
 
