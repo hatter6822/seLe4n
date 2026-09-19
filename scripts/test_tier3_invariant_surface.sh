@@ -8393,7 +8393,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([
 # still defined and still called from the other askers.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1? targetTid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st1 threadId\.toObjId \(\.tcb updatedTcb\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWithObjectStored st. boundTid\.toObjId \(\.tcb boundTcb2\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# `v0.35.105`: the configure's negative is repointed, because the fix retired the
+# binding the old one named (`boundTcb2`, the fused record carrying BOTH
+# parameters) -- a negative on a name a cut deleted passes forever, which is this
+# project's tautological-pin shape.  Two relations replace it.  (a) The PRIORITY
+# half must not become a bare store: it moves the run-queue key, so it goes
+# through the re-bucketing writer.  (b) The fused record must not come back --
+# one gate over both parameters is what made a DOMAIN-only reconfigure re-bucket
+# a queued thread to its bucket's tail.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\(\.tcb \{ boundTcb with priority" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*priority := ⟨priority⟩, domain := ⟨domain⟩" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # A second inlined bucket fold anywhere in that file would be a further answer to
 # the question the owner exists to have one answer to; the owner is in `Core.lean`,
 # so this one is legitimately file-wide.
@@ -8405,9 +8414,26 @@ run_negative_check "INVARIANT" rg -n 'byPriority\.indexMap\.toList\.foldl' SeLe4
 # bound owner falsified `boundThreadPriorityConsistent` AND
 # `boundThreadDomainConsistent`.  The gate is the live predicate's own question --
 # the bound thread must OWN the reservation, so a donee is never propagated to.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st. boundTid boundTcb2" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# **`v0.35.105` (PR #897 review)**: and it propagates them in TWO independently
+# gated halves, because the live operation has two.  The priority half re-buckets
+# (a base priority IS the run-queue key); the domain half re-resolves the record
+# the first may have rewritten and writes it IN PLACE.  Fusing them -- one gate
+# over both parameters feeding the re-bucketing writer -- made a domain-only
+# reconfigure move a queued bound thread to its bucket's tail at an unchanged
+# key, which `frozenChooseThread` reads as a different next thread.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st. boundTid$" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\{ boundTcb with priority := ⟨priority⟩ \}" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*\(\.tcb \{ currentTcb with domain := ⟨domain⟩ \}\)" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*!= some \(⟨scId\.toNat⟩ : SeLe4n\.SchedContextId\) then" SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*(\n([ \t][^\n]*)?)*priority := ⟨priority⟩, domain := ⟨domain⟩" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# ...and the witness that makes the pair a measurement rather than a shape claim:
+# FO-048 drives all four combinations of the two gates against the live operation
+# with `frozenStateAgrees`, on a bucket holding a same-priority PEER -- the
+# shallowest fixture on which "the thread stayed where it was" is a proposition --
+# and computes the RETIRED fused reading beside them.
+run_check "INVARIANT" rg -n 'FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-048 control: a priority-only reconfigure re-buckets on the live side' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureDomainOnlyKeepsOrder' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureDomainOnlyKeepsOrder$' tests/FrozenOpsSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
 # in" has no frozen-specific answer -- the rule `frozenEnsureRunnable` states and
 # the one a second reading here would break.

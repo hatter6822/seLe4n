@@ -1,3 +1,70 @@
+## v0.35.105 — a frozen mirror gave one answer to two live questions
+
+**PR #897 review (Codex P2).**  `frozenSchedContextConfigure` propagates the two
+thread-owned parameters to the reservation's bound thread.  The live
+`schedContextConfigureBoundPropagate` does that in **two independently gated
+halves** — `if boundTcb.priority.val = priority ∨ ¬ propagates`, then, over the
+state the first left, `if currentTcb.domain.val = domain ∨ ¬ propagates` — and
+only the first writes a run-queue key.  `v0.35.101`'s mirror fused them into one
+gate over their union and fed the result to `frozenWriteTcbRebucketed`.
+
+`RunQueue.insert` appends, so on a **domain-only** reconfiguration the queued
+bound thread was removed and re-inserted at an unchanged key, landing at its
+bucket's tail.  Measured on a reservation bound to a queued thread with a
+same-priority peer: the live operation leaves the bucket `[62, 63]` and the fused
+mirror left `[63, 62]`.  `frozenStateAgrees` compares buckets as lists and
+`frozenChooseThread` folds them in order, so the two surfaces named different
+next threads — a FIFO-order divergence on the execute phase, invisible to every
+per-object assertion about the TCB, whose two fields both agreed.
+
+**Two live questions given one frozen answer is the dual of this project's *one
+question, two answers* shape**, and it reads as correct precisely because the
+shared answer is the right one — for the half that asked it.  The fix mirrors the
+structure rather than the outcome: the priority half writes through the
+re-bucketing writer (a base priority **is** `TCB.boostedPriority`, the queue's
+key), the domain half re-resolves the record the first may have rewritten and
+writes it **in place** through `frozenWithObjectStored`.  The ownership gate is
+hoisted above both rather than asked twice, which is exact and not a narrowing:
+the live domain half consults `schedContextConfigurePropagates boundTcb`, the
+pre-write record, exactly as its priority half does.
+
+**What the finding measured about the instruments.**  `.schedContextConfigure` is
+not a `FrozenOpBranch`, so no `frozenRunAgrees` scenario could reach this
+operation at all — the measurement `v0.35.96` recorded for the bind's missing
+refusals, holding again one operation over.
+
+Also in this cut:
+
+- **FO-048**, the witness, driving all four combinations of the two gates against
+  the live operation with `frozenStateAgrees` — neither moved, domain only,
+  priority only, both — on a bucket holding a **same-priority peer**, which is
+  the shallowest fixture on which "the thread stayed where it was" is a
+  proposition at all; every earlier scenario parks its actors at one priority and
+  rarely queues two, so none of them could have seen this.  The retired fused
+  reading is spelled `private` in the suite and computed beside the live one, so
+  the payoff is known to discriminate; the priority-only rows are the control that
+  keeps the fix a **narrowing** rather than a removal, since a mirror that simply
+  stopped re-bucketing passes the payoff and fails them.
+- **The rule at the shared writer.**  `frozenWriteTcbRebucketed` is the only
+  *named* TCB write on the frozen surface, so it is the shape a caller falls
+  into; its docstring now says it does not own which fields a write carries — a
+  non-key field is `frozenWithObjectStored`, and a write that moves both is two
+  halves.
+- **Four Tier 3 anchors repointed and two added.**  The fix retired the binding
+  `boundTcb2`, which two positives and one negative named; a negative on a
+  deleted name passes forever, which is this project's tautological-pin shape.
+  The replacements pin the two halves and refuse both the bare store of the
+  priority record and the fused record's return, each mutation-tested in both
+  directions — and the first draft of the store negative was a **same-line**
+  check that the two-line mutant walked past, caught by running the mutation
+  rather than by reading it.
+
+One mechanical note, and it is a rule `CLAUDE.md` already carries: the first
+mutation run reported PASS because `lake env lean --run` elaborates against
+existing oleans, so a mutation of a *dependency* is invisible until that
+dependency is rebuilt.  Rebuilt, the mutant fails `FO-048` on the assertion it
+was written for.
+
 ## v0.35.104 — the home-core frame layer was staged, so no production footprint could ask it
 
 WS-RR RR8.12 Cut 8a, first half.  Declaring a scheduler footprint for `.receive`

@@ -517,6 +517,19 @@ tail.  Each caller therefore keeps its own subject's guard and this owns the
 mechanics alone.  A caller must also check `frozenQueuedAnywhere` first: an
 unqualified call would *insert* a thread that is in no bucket.
 
+**And it does not own which FIELDS a write carries** (PR #897 review,
+`v0.35.105`).  Reach for this only where the write moves `boostedPriority`.  A
+write of a field that is *not* a run-queue key -- a domain, a binding, an
+`ipcState` -- is the surface's ordinary `frozenWithObjectStored`, and a write
+that moves both is **two halves**, one through each.  This is the only *named*
+TCB write on the frozen surface, so the shape a caller falls into is this one,
+and `frozenSchedContextConfigure` fell into it: it mirrored a live operation with
+two independently gated halves as a single gate over their union, and a
+domain-only reconfiguration then re-bucketed a queued thread to its bucket's tail
+at an unchanged key.  Two live questions given one frozen answer is the dual of
+this project's *one question, two answers* shape, and it reads as correct because
+the shared answer is the right one -- for the half that asked it.
+
 Empty buckets are left behind rather than erased, which is the convention
 `frozenRemoveRunnable` already follows: `frozenRunAgrees` compares
 `(get? prio).getD []` at every key present on either side, so an empty frozen

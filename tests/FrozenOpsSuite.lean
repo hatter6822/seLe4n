@@ -2440,6 +2440,136 @@ private def differentialSchedContextBindRefusalsAgree : IO Unit := do
     ((liveSchedContextBindState istStale.state diffScId diffA).isSome
       && (frozenSchedContextBind diffScId.toObjId diffA (freeze istStale)).toOption.isSome)
 
+/-- **The live `schedContextConfigure`, in the `Option SystemState` shape the
+SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id
+or a refusal -- so every consumer pairs its assertion with a control asserting
+`isSome`, as the bind and unbind drivers above do. -/
+private def liveSchedContextConfigureState (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (budget period priority deadline domain : Nat) :
+    Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period priority
+          deadline domain st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+/-- **The reading `v0.35.105` retired**, spelled here and nowhere else: one gate
+over *both* thread-owned parameters, feeding the re-bucketing writer.  Computed
+beside the live operation in FO-048 so the assertions there are known to
+discriminate rather than merely to pass -- a fixture on which the two readings
+agree would make the whole scenario a statement about the fixture. -/
+private def fusedGateConfigurePropagate (st : FrozenSystemState)
+    (scId : SeLe4n.ObjId) (boundTid : SeLe4n.ThreadId) (priority domain : Nat) :
+    Option FrozenSystemState :=
+  match frozenLookupTcb st boundTid with
+  | none => some st
+  | some boundTcb =>
+    if boundTcb.schedContextBinding.ownScId? != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
+      some st
+    else
+      let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩, domain := ⟨domain⟩ }
+      if boundTcb2.priority == boundTcb.priority && boundTcb2.domain == boundTcb.domain then
+        some st
+      else (frozenWriteTcbRebucketed st boundTid boundTcb2).toOption
+
+/-- FO-048 (PR #897 review, `v0.35.105`): **a DOMAIN-ONLY reconfiguration must not
+move the bound thread within its bucket.**
+
+`schedContextConfigureBoundPropagate` is two independently gated writes -- a
+priority half that re-buckets and a domain half that writes in place -- and
+`v0.35.101`'s mirror fused them into one gate over their union feeding
+`frozenWriteTcbRebucketed`.  `RunQueue.insert` appends, so on a domain-only
+reconfigure the queued bound thread moved to its bucket's **tail** at an unchanged
+key while the live operation left it where it was.
+
+**Why a same-priority PEER is the fixture.**  With one thread in the bucket a
+remove-and-reinsert is the identity, so every earlier scenario -- each of which
+parks its actors at one priority and rarely queues two of them -- structurally
+could not see this.  Two threads in one bucket is the shallowest shape on which
+"the thread stayed where it was" is a proposition at all, and it is what
+`frozenChooseThread` reads: it folds the bucket in order, so the two orders name
+different next threads.
+
+**Four combinations, because the gates are two.**  Neither parameter moved (no
+write at all), domain only (the defect), priority only (the re-bucket that must
+*survive* the fix -- a mirror that simply stopped re-bucketing would pass the
+first two and break this), and both.  Each is compared whole with
+`frozenStateAgrees`, not field by field: the divergence this scenario exists for
+is in the run queue, which no per-object assertion about the TCB would have
+reached -- FO-044's lesson, one operation over.
+
+`.schedContextConfigure` is not a `FrozenOpBranch`, so no `frozenRunAgrees`
+scenario could have reached this operation at all; that is the measurement
+`v0.35.96` recorded for the bind's missing refusals, holding again. -/
+private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := do
+  let cfgScId : SeLe4n.SchedContextId := diffScId
+  let boundTcb : TCB :=
+    { diffTcb 62 with schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound cfgScId }
+  let peerTcb : TCB := diffTcb 63
+  let cfgSc : SeLe4n.Kernel.SchedContext :=
+    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      replenishments := [{ amount := ⟨100⟩, eligibleAt := 1000 }],
+      boundThread := some diffA }
+  let ist := diffAddTcb (diffAddTcb
+    (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb
+  let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
+    (liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom).map
+      (fun st => (st.scheduler.runQueueOnCore bootCoreId).atPriority ⟨at_⟩)
+  let frozenAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
+    (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption.map
+      (fun r => (r.2.scheduler.byPriority.get? ⟨at_⟩).getD [])
+  let agreesAt (prio dom : Nat) : Bool :=
+    match liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption with
+    | some l, some f => frozenStateAgrees f.2 l
+    | _, _ => false
+  -- CONTROLS: both actors really are in one bucket, in this order, before anything
+  -- runs -- and the frozen copy of the pre-state agrees, so a divergence below is
+  -- the operation's and not the freeze's.
+  expect "FO-048 control: the bound thread and its peer share a bucket, in this order"
+    ((ist.state.scheduler.runQueueOnCore bootCoreId).atPriority ⟨0⟩ == [diffA, diffB])
+  expect "FO-048 control: the frozen copy of the pre-state agrees"
+    (frozenStateAgrees (freeze ist) ist.state)
+  expect "FO-048 control: the live domain-only reconfigure runs"
+    ((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).isSome)
+  -- PAYOFF: a domain-only reconfigure leaves the bucket untouched on both sides.
+  expect "FO-048: the live domain-only reconfigure leaves the bucket order alone"
+    (liveAt 0 1 0 == some [diffA, diffB])
+  expect "FO-048: ...and so does the frozen one"
+    (frozenAt 0 1 0 == some [diffA, diffB])
+  expect "FO-048: ...and the two states agree whole"
+    (agreesAt 0 1)
+  -- DECISIVE: the retired fused reading, on this same state, moves the thread to
+  -- the bucket's tail.  Without this the three assertions above would pass on a
+  -- mirror that had never been wrong.
+  expect "FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail"
+    ((fusedGateConfigurePropagate (freeze ist) cfgScId.toObjId diffA 0 1).map
+       (fun st => (st.scheduler.byPriority.get? (⟨0⟩ : SeLe4n.Priority)).getD [])
+       == some [diffB, diffA])
+  -- ...and the domain really did move, so the half that must write still writes.
+  expect "FO-048: the bound thread's domain moved on both surfaces"
+    (((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).bind
+        (fun st => (st.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1)
+      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 1 (freeze ist)).toOption.bind
+        (fun r => (r.2.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1))
+  -- CONTROL on the other gate: a PRIORITY-only reconfigure must still re-bucket.
+  -- A mirror that answered the payoff by never re-bucketing passes everything
+  -- above and fails here, which is what makes the fix a narrowing rather than a
+  -- removal.
+  expect "FO-048 control: a priority-only reconfigure re-buckets on the live side"
+    (liveAt 5 0 5 == some [diffA] && liveAt 5 0 0 == some [diffB])
+  expect "FO-048 control: ...and identically on the frozen side"
+    (frozenAt 5 0 5 == some [diffA] && frozenAt 5 0 0 == some [diffB])
+  expect "FO-048: ...and those two states agree whole"
+    (agreesAt 5 0)
+  -- ...and the two remaining combinations of the two gates.
+  expect "FO-048: neither parameter moved — no write, and the states agree"
+    (liveAt 0 0 0 == some [diffA, diffB] && frozenAt 0 0 0 == some [diffA, diffB]
+      && agreesAt 0 0)
+  expect "FO-048: both parameters moved — both effects, and the states agree"
+    (liveAt 5 1 5 == some [diffA] && frozenAt 5 1 5 == some [diffA] && agreesAt 5 1)
+
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
 On a rendezvous the message goes straight from the argument into the receiver's
@@ -2717,6 +2847,7 @@ def main : IO Unit := do
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextBindRefusalsAgree
+  differentialSchedContextConfigureDomainOnlyKeepsOrder
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner

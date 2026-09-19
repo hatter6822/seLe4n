@@ -1225,17 +1225,38 @@ Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
 frozen (no internal RHTables), so this is a straightforward lookup + store.
 Validates parameters and checks admission control against frozen state.
 
-**And it propagates the two thread-owned parameters to the bound thread, and
-re-buckets it** (`v0.35.101`).  Found by sweeping the *question* rather than the
+**And it propagates the two thread-owned parameters to the bound thread, in two
+independently gated halves, of which only the priority half re-buckets**
+(`v0.35.101`, corrected `v0.35.105`).  Found by sweeping the *question* rather than the
 two sites PR #897 named: the review reported `frozenSchedContextBind` and
 `frozenWriteBasePriority`, and asking "which other frozen writer moves a run-queue
 key?" found this one, which was worse than either.  It wrote the reservation and
 stopped -- no priority propagation, no domain propagation, no re-bucket -- where
-the live `schedContextConfigureBoundPropagate` does all three under one gate.  So
-every frozen post-configure state with a thread bound to the reconfigured
-reservation falsified **two** invariants at once, `boundThreadPriorityConsistent`
-and `boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
+the live `schedContextConfigureBoundPropagate` does all three.  So every frozen
+post-configure state with a thread bound to the reconfigured reservation
+falsified **two** invariants at once, `boundThreadPriorityConsistent` and
+`boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
 operation.
+
+**Two halves, not one gate** (PR #897 review, `v0.35.105`).  The sentence above
+used to end *"does all three under one gate"*, and that reading is what the first
+mirror implemented: one condition over both parameters, feeding
+`frozenWriteTcbRebucketed`.  The live operation has **two** gates -- `if
+boundTcb.priority.val = priority ∨ ¬ propagates` and, over the state the first
+left, `if currentTcb.domain.val = domain ∨ ¬ propagates` -- and only the first
+writes a run-queue key.  Fusing them made a *domain-only* reconfiguration
+re-bucket, and `RunQueue.insert` appends, so a queued bound thread moved to its
+bucket's tail at an unchanged key: measured on a reservation bound to a queued
+thread with a same-priority peer, live leaves the bucket `[62, 63]` and the fused
+mirror left `[63, 62]`.  `frozenStateAgrees` compares buckets as lists and
+`frozenChooseThread` folds them in order, so that is a different next thread.
+
+Two live questions given one frozen answer is the **dual** of this project's *one
+question, two answers* shape, and it is invisible to the same instruments: only
+the priority half's outcome was ever compared, and `.schedContextConfigure` is not
+a `FrozenOpBranch` at all, so no `frozenRunAgrees` scenario could reach it -- the
+measurement `v0.35.96` recorded for the bind's missing refusals, holding again one
+operation over.
 
 The gate is the live one, `schedContextConfigurePropagates`: the bound thread must
 **own** this reservation, so a donee running on it is never propagated to -- its
@@ -1282,8 +1303,11 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | .ok st' =>
             -- The propagation half: the live `schedContextConfigureBoundPropagate`
             -- reads the *stored* state, so this does too.  Each parameter is
-            -- written only when it moved, as the live halves are, so an unchanged
-            -- value is no write at all and the re-bucket is not reached.
+            -- written only when it moved, as the live halves are -- and since
+            -- `v0.35.105` each has its **own** gate, so an unchanged priority is
+            -- no write and no re-bucket even when the domain moved.  This comment
+            -- claimed that before the code did it: the gate was the *disjunction*,
+            -- so a domain-only reconfigure reached the re-bucketing writer.
             match sc.boundThread with
             | none => .ok ((), st')
             | some boundTid =>
@@ -1299,15 +1323,55 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
                     != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
                   .ok ((), st')
                 else
-                  let boundTcb2 : TCB :=
-                    { boundTcb with priority := ⟨priority⟩, domain := ⟨domain⟩ }
-                  if boundTcb2.priority == boundTcb.priority
-                      && boundTcb2.domain == boundTcb.domain then
-                    .ok ((), st')
-                  else
-                    match frozenWriteTcbRebucketed st' boundTid boundTcb2 with
-                    | .ok st'' => .ok ((), st'')
-                    | .error e => .error e
+                  -- **TWO HALVES, one per parameter** (PR #897 review, `v0.35.105`).
+                  -- `schedContextConfigureBoundPropagate` is two independently
+                  -- gated writes -- a priority half that re-buckets and a domain
+                  -- half that writes in place -- and `v0.35.101` mirrored it as
+                  -- **one** gate over their union feeding the re-bucketing
+                  -- writer.  A domain-only reconfiguration then re-bucketed:
+                  -- `RunQueue.insert` appends, so a queued bound thread moved to
+                  -- its bucket's *tail* at an unchanged key while the live
+                  -- operation left it where it was.  Measured on a reservation
+                  -- bound to a queued thread with a same-priority peer: live
+                  -- leaves the bucket `[62, 63]`, the fused mirror left
+                  -- `[63, 62]`, so `frozenChooseThread` selected the other
+                  -- thread.  Two live questions given one frozen answer is the
+                  -- dual of this project's *one question, two answers* shape, and
+                  -- the remedy is the same -- mirror the structure rather than
+                  -- the outcome.
+                  --
+                  -- The ownership gate is hoisted above both halves rather than
+                  -- asked twice, which is exact and not a narrowing: the live
+                  -- domain half consults `schedContextConfigurePropagates
+                  -- boundTcb`, the **pre-write** record, exactly as its priority
+                  -- half does, so the predicate cannot change between them.
+                  --
+                  -- The priority half: the live gate is *the priority moved*, and
+                  -- the write goes through the re-bucketing writer because a base
+                  -- priority **is** the run-queue key (`TCB.boostedPriority`).
+                  let priorityHalf : Except KernelError FrozenSystemState :=
+                    if boundTcb.priority == (⟨priority⟩ : SeLe4n.Priority) then .ok st'
+                    else
+                      frozenWriteTcbRebucketed st' boundTid
+                        { boundTcb with priority := ⟨priority⟩ }
+                  match priorityHalf with
+                  | .error e => .error e
+                  | .ok stPri =>
+                    -- The domain half reads the record the priority half may have
+                    -- rewritten, so it **re-resolves** -- the live half does, for
+                    -- the same reason -- and its write is the surface's ordinary
+                    -- in-place store: a domain is not a run-queue key, so nothing
+                    -- here may move a bucket.
+                    match frozenLookupTcb stPri boundTid with
+                    | none => .ok ((), stPri)
+                    | some currentTcb =>
+                      if currentTcb.domain == (⟨domain⟩ : SeLe4n.DomainId) then
+                        .ok ((), stPri)
+                      else
+                        match frozenWithObjectStored stPri boundTid.toObjId
+                            (.tcb { currentTcb with domain := ⟨domain⟩ }) with
+                        | .ok stDom => .ok ((), stDom)
+                        | .error e => .error e
           | .error e => .error e
         else
           .error .resourceExhausted
