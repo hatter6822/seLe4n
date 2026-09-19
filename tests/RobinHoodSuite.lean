@@ -8,17 +8,30 @@
 -/
 
 import SeLe4n
+import SeLe4n.Testing.Helpers
 
 open SeLe4n.Kernel.RobinHood
 open SeLe4n.Model
 
 namespace SeLe4n.Testing.RobinHoodSuite
 
-private def expect (label : String) (cond : Bool) : IO Unit := do
-  if cond then
-    IO.println s!"robin-hood check passed [{label}]"
-  else
-    throw <| IO.userError s!"robin-hood check failed [{label}]"
+/-- This suite's assertion is `SeLe4n.Testing.expectCond` at this suite's tag.
+
+`SeLe4n/Testing/Helpers.lean` states in as many words that "all test suites
+should import this module rather than defining private copies of these
+functions", and this suite carried a byte-equivalent private copy.  Routing
+through the shared helper is what makes the emitted line one function's output
+rather than two spellings of it.
+
+Every label carries its scenario id and a letter indexing the assertion within
+that scenario (`RH-001a`, `RH-001b`, ...), which is the convention the
+`RH-INT-*` integration checks below already followed and the convention
+`tests/fixtures/robin_hood_smoke.expected` asserts in its
+`expected_trace_fragment` column.  `scripts/test_tier2_trace.sh` checks that
+relation against this suite's real output, so a label edit that strands a
+manifest fragment fails Tier 2 rather than staling the manifest silently. -/
+private def expect (label : String) (cond : Bool) : IO Unit :=
+  SeLe4n.Testing.expectCond "robin-hood" label cond
 
 -- ============================================================================
 -- N5-A: Robin Hood Standalone Test Suite (12 scenarios)
@@ -27,40 +40,40 @@ private def expect (label : String) (cond : Bool) : IO Unit := do
 /-- RH-001: Empty table — get? returns none, size = 0, contains = false -/
 private def rh001_emptyTable : IO Unit := do
   let t : RHTable Nat Nat := RHTable.empty 16
-  expect "empty get? returns none" (t.get? 42 == none)
-  expect "empty size is 0" (t.size == 0)
-  expect "empty contains is false" (!t.contains 42)
+  expect "RH-001a empty get? returns none" (t.get? 42 == none)
+  expect "RH-001b empty size is 0" (t.size == 0)
+  expect "RH-001c empty contains is false" (!t.contains 42)
 
 /-- RH-002: Single insert/get roundtrip -/
 private def rh002_singleInsertGet : IO Unit := do
   let t : RHTable Nat Nat := (RHTable.empty 16).insert 10 100
-  expect "insert then get" (t.get? 10 == some 100)
-  expect "size after insert" (t.size == 1)
-  expect "contains after insert" (t.contains 10)
+  expect "RH-002a insert then get" (t.get? 10 == some 100)
+  expect "RH-002b size after insert" (t.size == 1)
+  expect "RH-002c contains after insert" (t.contains 10)
 
 /-- RH-003: Insert/erase/get — erase then get returns none -/
 private def rh003_insertErase : IO Unit := do
   let t := ((RHTable.empty 16 : RHTable Nat Nat).insert 10 100).erase 10
-  expect "erase then get returns none" (t.get? 10 == none)
-  expect "size after erase" (t.size == 0)
-  expect "contains after erase" (!t.contains 10)
+  expect "RH-003a erase then get returns none" (t.get? 10 == none)
+  expect "RH-003b size after erase" (t.size == 0)
+  expect "RH-003c contains after erase" (!t.contains 10)
 
 /-- RH-004: Overwrite — insert same key twice, get returns latest value -/
 private def rh004_overwrite : IO Unit := do
   let t := ((RHTable.empty 16 : RHTable Nat Nat).insert 5 50).insert 5 99
-  expect "overwrite returns latest" (t.get? 5 == some 99)
-  expect "size unchanged after overwrite" (t.size == 1)
+  expect "RH-004a overwrite returns latest" (t.get? 5 == some 99)
+  expect "RH-004b size unchanged after overwrite" (t.size == 1)
 
 /-- RH-005: Multiple distinct keys — insert 10 keys, verify all retrievable -/
 private def rh005_multipleKeys : IO Unit := do
   let mut t : RHTable Nat Nat := RHTable.empty 16
   for i in List.range 10 do
     t := t.insert i (i * 10)
-  expect "size is 10" (t.size == 10)
+  expect "RH-005a size is 10" (t.size == 10)
   let mut allFound := true
   for i in List.range 10 do
     if t.get? i != some (i * 10) then allFound := false
-  expect "all 10 keys retrievable" allFound
+  expect "RH-005b all 10 keys retrievable" allFound
 
 /-- RH-006: Collision handling — keys with same hash mod capacity -/
 private def rh006_collisionHandling : IO Unit := do
@@ -74,8 +87,8 @@ private def rh006_collisionHandling : IO Unit := do
   let mut allFound := true
   for k in keys do
     if t.get? k != some (k + 1) then allFound := false
-  expect "colliding keys all retrievable" allFound
-  expect "size matches inserted count" (t.size == 4)
+  expect "RH-006a colliding keys all retrievable" allFound
+  expect "RH-006b size matches inserted count" (t.size == 4)
 
 /-- RH-007: Robin Hood swap verification — insert sequence triggering displacement -/
 private def rh007_robinHoodSwap : IO Unit := do
@@ -89,8 +102,8 @@ private def rh007_robinHoodSwap : IO Unit := do
   let mut allFound := true
   for k in keys do
     if t.get? k != some (k * 3) then allFound := false
-  expect "all keys findable after swaps" allFound
-  expect "size correct" (t.size == 5)
+  expect "RH-007a all keys findable after swaps" allFound
+  expect "RH-007b size correct" (t.size == 5)
 
 /-- RH-008: Backward-shift verification — erase from middle of cluster -/
 private def rh008_backwardShift : IO Unit := do
@@ -100,13 +113,13 @@ private def rh008_backwardShift : IO Unit := do
     t := t.insert k (k + 100)
   -- Erase a key from the middle of a likely cluster
   t := t.erase 16
-  expect "erased key gone" (t.get? 16 == none)
+  expect "RH-008a erased key gone" (t.get? 16 == none)
   -- Remaining keys still accessible after backward shift
-  expect "key 0 still present" (t.get? 0 == some 100)
-  expect "key 32 still present" (t.get? 32 == some 132)
-  expect "key 1 still present" (t.get? 1 == some 101)
-  expect "key 17 still present" (t.get? 17 == some 117)
-  expect "size decremented" (t.size == 4)
+  expect "RH-008b key 0 still present" (t.get? 0 == some 100)
+  expect "RH-008c key 32 still present" (t.get? 32 == some 132)
+  expect "RH-008d key 1 still present" (t.get? 1 == some 101)
+  expect "RH-008e key 17 still present" (t.get? 17 == some 117)
+  expect "RH-008f size decremented" (t.size == 4)
 
 /-- RH-009: Resize trigger — insert until 75% load, verify resize doubles capacity -/
 private def rh009_resizeTrigger : IO Unit := do
@@ -118,8 +131,8 @@ private def rh009_resizeTrigger : IO Unit := do
   for i in List.range 7 do
     t := t.insert i (i * 7)
   -- After 7 inserts, the 7th triggered resize: capacity 8→16
-  expect "capacity doubled" (t.capacity == 16)
-  expect "size preserved" (t.size == 7)
+  expect "RH-009a capacity doubled" (t.capacity == 16)
+  expect "RH-009b size preserved" (t.size == 7)
 
 /-- RH-010: Post-resize correctness — all entries accessible after resize -/
 private def rh010_postResizeCorrectness : IO Unit := do
@@ -130,35 +143,35 @@ private def rh010_postResizeCorrectness : IO Unit := do
   let mut allFound := true
   for i in List.range 12 do
     if t.get? i != some (i * 11) then allFound := false
-  expect "all entries accessible after resizes" allFound
-  expect "size correct" (t.size == 12)
-  expect "capacity grew" (t.capacity > 4)
+  expect "RH-010a all entries accessible after resizes" allFound
+  expect "RH-010b size correct" (t.size == 12)
+  expect "RH-010c capacity grew" (t.capacity > 4)
 
 /-- RH-011: Large-scale — insert 200 entries, verify all, erase 100, verify remaining -/
 private def rh011_largeScale : IO Unit := do
   let mut t : RHTable Nat Nat := RHTable.empty 16
   for i in List.range 200 do
     t := t.insert i (i * 13)
-  expect "size is 200" (t.size == 200)
+  expect "RH-011a size is 200" (t.size == 200)
   let mut allInserted := true
   for i in List.range 200 do
     if t.get? i != some (i * 13) then allInserted := false
-  expect "all 200 entries retrievable" allInserted
+  expect "RH-011b all 200 entries retrievable" allInserted
   -- Erase even-numbered keys (0, 2, 4, ..., 198) = 100 keys
   for i in List.range 100 do
     t := t.erase (i * 2)
-  expect "size after 100 erases" (t.size == 100)
+  expect "RH-011c size after 100 erases" (t.size == 100)
   -- Verify erased keys are gone
   let mut erasedGone := true
   for i in List.range 100 do
     if t.get? (i * 2) != none then erasedGone := false
-  expect "erased keys absent" erasedGone
+  expect "RH-011d erased keys absent" erasedGone
   -- Verify remaining (odd) keys still present
   let mut oddPresent := true
   for i in List.range 100 do
     let k := i * 2 + 1
     if t.get? k != some (k * 13) then oddPresent := false
-  expect "remaining keys still present" oddPresent
+  expect "RH-011e remaining keys still present" oddPresent
 
 /-- RH-012: Fold/toList — verify fold visits all entries -/
 private def rh012_foldToList : IO Unit := do
@@ -168,15 +181,15 @@ private def rh012_foldToList : IO Unit := do
   -- Fold: sum all values
   let sum := t.fold 0 fun acc _ v => acc + v
   -- Expected: 0 + 2 + 4 + 6 + 8 = 20
-  expect "fold sums correctly" (sum == 20)
+  expect "RH-012a fold sums correctly" (sum == 20)
   -- toList: verify length
   let lst := t.toList
-  expect "toList length" (lst.length == 5)
+  expect "RH-012b toList length" (lst.length == 5)
   -- Verify all entries in list
   let mut allInList := true
   for i in List.range 5 do
     if !lst.any (fun ⟨k, v⟩ => k == i && v == i * 2) then allInList := false
-  expect "toList contains all entries" allInList
+  expect "RH-012c toList contains all entries" allInList
 
 -- ============================================================================
 -- N5-B: CNode Integration Regression Tests (6 scenarios)
@@ -257,8 +270,8 @@ private def rhInt005_cspaceResolution : IO Unit := do
     expect "RH-INT-005b resolved slot has capability" (cn.lookup slot == some cap)
   | .error _ =>
     -- Resolution depends on guard/radix matching — verify the CNode at least works
-    expect "RH-INT-005a direct lookup works" (cn.lookup (SeLe4n.Slot.ofNat 0) == some cap)
-    expect "RH-INT-005b direct lookup slot 3" (cn.lookup (SeLe4n.Slot.ofNat 3) == some cap)
+    expect "RH-INT-005c direct lookup works" (cn.lookup (SeLe4n.Slot.ofNat 0) == some cap)
+    expect "RH-INT-005d direct lookup slot 3" (cn.lookup (SeLe4n.Slot.ofNat 3) == some cap)
 
 open CNode in
 /-- RH-INT-006: CNode BEq comparison with RHTable slots -/

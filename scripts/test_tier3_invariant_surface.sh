@@ -15817,4 +15817,62 @@ run_negative_check "INVARIANT" rg -n 'dualQueueRemovalGuard_of_reachableMember' 
 # The splice carries the head's field through the same frame its sibling uses for
 # `queuePrev`, which is what lets the cancellation composite transport P2.
 run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_queuePPrev_frame' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+
+# ===========================================================================
+# v0.35.109: the scenario-traceability manifests' fragment column is checked.
+#
+# A `.sha256` companion pins a fixture against itself, so the Tier 2 checksum
+# sweep reported "verified" while 19 of 19 manifest fragments named lines no
+# suite printed.  These anchors pin the RELATION rather than the tokens: the
+# gate's domain is derived, its producer declaration is fail-closed, and the
+# retired destructive recipe must not come back.
+# ===========================================================================
+# The swept set is DERIVED — `list-manifests` classifies by row shape and reads
+# each manifest's own producer — and the sweep CONSUMES it, rather than a list
+# of paths written into the gate.
+run_check "INVARIANT" bash -lc 'rg -U -n "list-manifests --fixture-dir[^\n]*(\n([ \t][^\n]*)?)*check-fragments" scripts/test_tier2_trace.sh'
+# ...and an empty derived domain fails rather than passing over a classifier that
+# has stopped recognising the manifests it is pointed at.
+run_check "INVARIANT" bash -lc 'rg -U -n "manifest_count.. -eq 0[^\n]*(\n([ \t][^\n]*)?)*record_failure" scripts/test_tier2_trace.sh'
+# The producer is read from the manifest, so a manifest added later needs no gate
+# edit; a manifest that declares none is an ERROR, never a skip.
+run_check "INVARIANT" rg -n '^SUITE_DECL = re.compile' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def discover_manifests[^\n]*(\n([ \t][^\n]*)?)*declares no producer" scripts/scenario_catalog.py'
+# Both shipped manifests declare theirs.
+run_prose_check "INVARIANT" rg -n '^# Suite: robin_hood_suite$' tests/fixtures/robin_hood_smoke.expected
+run_prose_check "INVARIANT" rg -n '^# Suite: two_phase_arch_suite$' tests/fixtures/two_phase_arch_smoke.expected
+# One ID parser: `validate-registry` and `generate-registry-stub` asked the same
+# question and had grown two copies of the answer.
+run_check "INVARIANT" rg -n '^def scenario_ids_in' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -n 'bracket_re = re.compile' scripts/scenario_catalog.py
+# The two suites route through the SHARED assertion helper, which is what makes
+# the emitted line one function's output rather than two spellings of it —
+# `SeLe4n/Testing/Helpers.lean` says so in as many words.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def expect \(label : String\) \(cond : Bool\) : IO Unit :=\n *SeLe4n.Testing.expectCond \"robin-hood\" label cond" tests/RobinHoodSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def expect \(label : String\) \(cond : Bool\) : IO Unit :=\n *SeLe4n.Testing.expectCond \"two-phase\" label cond" tests/TwoPhaseArchSuite.lean'
+# ...and neither may re-inline a private copy of the printer it delegates to.
+run_negative_check "INVARIANT" rg -n 'robin-hood check passed' tests/RobinHoodSuite.lean
+run_negative_check "INVARIANT" rg -n 'two-phase check passed' tests/TwoPhaseArchSuite.lean
+# Every label carries its scenario id, which is what the manifests' fragments
+# assert and what makes an emitted line identify the assertion rather than
+# merely occur.
+run_check "INVARIANT" rg -n 'expect "RH-001a empty get\? returns none"' tests/RobinHoodSuite.lean
+run_check "INVARIANT" rg -n 'expect "TPH-001a empty builder valid"' tests/TwoPhaseArchSuite.lean
+# ...and the two assertions that print the same text are distinguishable, which
+# is the whole reason the letter runs across a scenario's sub-functions.
+run_check "INVARIANT" rg -n 'expect "TPH-006a timer advanced"' tests/TwoPhaseArchSuite.lean
+run_check "INVARIANT" rg -n 'expect "TPH-006d timer advanced"' tests/TwoPhaseArchSuite.lean
+# The destructive regeneration recipe must not come back: redirecting a suite's
+# stdout over a manifest replaces an ID table with raw output and breaks Tier 0.
+run_prose_negative_check "INVARIANT" bash -lc 'rg -n "lake exe robin_hood_suite +> +tests/fixtures" tests/fixtures/README.md'
+run_prose_negative_check "INVARIANT" bash -lc 'rg -n "lake exe two_phase_arch_suite +> +tests/fixtures" tests/fixtures/README.md'
+# ...and the README must not claim a consumer that does not read the file: both
+# manifests are named as manifests, with the gate that checks each column.
+run_prose_check "INVARIANT" rg -n 'scenario-traceability manifest\*\*, not golden output' tests/fixtures/README.md
+# ...and the table is held to the directory, since it is the only place a reader
+# learns which gate compares a fixture and it is hand-written.  Membership is a
+# table ROW, not a mention: a prose mention names no gate.
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*lstrip\(\).startswith\(.\|.\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*stale FIXTURE_INDEX_EXEMPT" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_hygiene.sh'
 finalize_report

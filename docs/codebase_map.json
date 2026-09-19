@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "cc007b32d719d71b9d0cea6f974d333655d9be60",
-      "tree_sha": "cc972d260a20a83b79810ae189cedfbd1464304d",
-      "committed_at_utc": "2026-09-19T05:13:37+00:00"
+      "commit_sha": "0cf343cd626086d277afdb64c4a0050a129f6389",
+      "tree_sha": "34a45930a85295a63a36293366d6075b02ed750b",
+      "committed_at_utc": "2026-09-19T06:20:28+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "098e3a81caa97d7d8cebf77a144f05ccc7b306895125cbe795ab14eb3e63d8fe"
+    "source_digest": "65f6557b7f1ec9753ce38cca35a6ab1454b9ea2caba206f15ce63dfef293e418"
   },
   "summary": {
     "module_count": 403,
     "declaration_count": 22003
   },
   "readme_sync": {
-    "version": "0.35.108",
+    "version": "0.35.109",
     "lean_toolchain": "v4.28.0",
     "production_files": 333,
     "production_loc": 394244,
     "test_files": 70,
-    "test_loc": 80108,
+    "test_loc": 80133,
     "proved_theorem_lemma_decls": 13097,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -298030,21 +298030,21 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.RobinHoodSuite",
-          "line": 15,
+          "line": 16,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 17,
+          "line": 33,
           "called": [
-            "throw"
+            "expectCond"
           ]
         },
         {
           "kind": "def",
           "name": "rh001_emptyTable",
-          "line": 28,
+          "line": 41,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298058,7 +298058,7 @@
         {
           "kind": "def",
           "name": "rh002_singleInsertGet",
-          "line": 35,
+          "line": 48,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298072,7 +298072,7 @@
         {
           "kind": "def",
           "name": "rh003_insertErase",
-          "line": 42,
+          "line": 55,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298088,7 +298088,7 @@
         {
           "kind": "def",
           "name": "rh004_overwrite",
-          "line": 49,
+          "line": 62,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298101,7 +298101,7 @@
         {
           "kind": "def",
           "name": "rh005_multipleKeys",
-          "line": 55,
+          "line": 68,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298114,7 +298114,7 @@
         {
           "kind": "def",
           "name": "rh006_collisionHandling",
-          "line": 66,
+          "line": 79,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298127,7 +298127,7 @@
         {
           "kind": "def",
           "name": "rh007_robinHoodSwap",
-          "line": 81,
+          "line": 94,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298140,7 +298140,7 @@
         {
           "kind": "def",
           "name": "rh008_backwardShift",
-          "line": 96,
+          "line": 109,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298155,7 +298155,7 @@
         {
           "kind": "def",
           "name": "rh009_resizeTrigger",
-          "line": 112,
+          "line": 125,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298168,7 +298168,7 @@
         {
           "kind": "def",
           "name": "rh010_postResizeCorrectness",
-          "line": 125,
+          "line": 138,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298182,7 +298182,7 @@
         {
           "kind": "def",
           "name": "rh011_largeScale",
-          "line": 138,
+          "line": 151,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298197,7 +298197,7 @@
         {
           "kind": "def",
           "name": "rh012_foldToList",
-          "line": 164,
+          "line": 177,
           "called": [
             "RHTable",
             "RHTable.empty",
@@ -298212,7 +298212,7 @@
         {
           "kind": "def",
           "name": "rhInt001_cnodeLookupInsertRemove",
-          "line": 187,
+          "line": 200,
           "called": [
             "Capability",
             "badge",
@@ -298229,7 +298229,7 @@
         {
           "kind": "def",
           "name": "rhInt002_revokeTargetLocal",
-          "line": 204,
+          "line": 217,
           "called": [
             "Capability",
             "badge",
@@ -298245,7 +298245,7 @@
         {
           "kind": "def",
           "name": "rhInt003_findFirstEmptySlot",
-          "line": 219,
+          "line": 232,
           "called": [
             "Capability",
             "badge",
@@ -298262,7 +298262,7 @@
         {
           "kind": "def",
           "name": "rhInt004_slotCountBounded",
-          "line": 235,
+          "line": 248,
           "called": [
             "Capability",
             "badge",
@@ -298279,7 +298279,7 @@
         {
           "kind": "def",
           "name": "rhInt005_cspaceResolution",
-          "line": 248,
+          "line": 261,
           "called": [
             "Capability",
             "badge",
@@ -298296,7 +298296,7 @@
         {
           "kind": "def",
           "name": "rhInt006_cnodeBEq",
-          "line": 265,
+          "line": 278,
           "called": [
             "Capability",
             "badge",
@@ -298310,7 +298310,7 @@
         {
           "kind": "def",
           "name": "runRobinHoodSuite",
-          "line": 275,
+          "line": 288,
           "called": [
             "rh001_emptyTable",
             "rh002_singleInsertGet",
@@ -298335,7 +298335,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 304,
+          "line": 317,
           "called": [
             "runRobinHoodSuite"
           ]
@@ -336532,21 +336532,21 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.TwoPhaseArchSuite",
-          "line": 57,
+          "line": 58,
           "called": []
         },
         {
           "kind": "def",
           "name": "expect",
-          "line": 59,
+          "line": 74,
           "called": [
-            "throw"
+            "expectCond"
           ]
         },
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 66,
+          "line": 78,
           "called": [
             "TCB",
             "ofNat"
@@ -336555,7 +336555,7 @@
         {
           "kind": "def",
           "name": "emptyFrozenState",
-          "line": 71,
+          "line": 83,
           "called": [
             "FrozenSystemState",
             "emptyFrozenSystemState"
@@ -336564,7 +336564,7 @@
         {
           "kind": "def",
           "name": "mkFrozenState",
-          "line": 75,
+          "line": 87,
           "called": [
             "FrozenKernelObject",
             "FrozenSystemState",
@@ -336575,7 +336575,7 @@
         {
           "kind": "def",
           "name": "tph001a_emptyBuilder",
-          "line": 84,
+          "line": 96,
           "called": [
             "expect",
             "mkEmptyIntermediateState",
@@ -336585,7 +336585,7 @@
         {
           "kind": "def",
           "name": "tph001b_builderPipeline",
-          "line": 93,
+          "line": 105,
           "called": [
             "ObjId",
             "createObject",
@@ -336598,7 +336598,7 @@
         {
           "kind": "def",
           "name": "tph001c_builderIrq",
-          "line": 110,
+          "line": 122,
           "called": [
             "expect",
             "mkEmptyIntermediateState",
@@ -336610,7 +336610,7 @@
         {
           "kind": "def",
           "name": "tph003_freezePopulated",
-          "line": 121,
+          "line": 133,
           "called": [
             "FrozenKernelObject.objectType",
             "createObject",
@@ -336629,7 +336629,7 @@
         {
           "kind": "def",
           "name": "tph005a_sendBlocks",
-          "line": 155,
+          "line": 167,
           "called": [
             "Endpoint",
             "IpcMessage",
@@ -336647,7 +336647,7 @@
         {
           "kind": "def",
           "name": "tph005b_receiveBlocks",
-          "line": 170,
+          "line": 182,
           "called": [
             "Endpoint",
             "expect",
@@ -336662,7 +336662,7 @@
         {
           "kind": "def",
           "name": "tph005c_callBlocksForReply",
-          "line": 183,
+          "line": 195,
           "called": [
             "Endpoint",
             "IpcMessage",
@@ -336683,7 +336683,7 @@
         {
           "kind": "def",
           "name": "tph006a_timerTickActive",
-          "line": 216,
+          "line": 228,
           "called": [
             "TCB",
             "expect",
@@ -336699,7 +336699,7 @@
         {
           "kind": "def",
           "name": "tph006b_timerTickExpiry",
-          "line": 232,
+          "line": 244,
           "called": [
             "Priority",
             "RHTable",
@@ -336721,7 +336721,7 @@
         {
           "kind": "def",
           "name": "tph006c_timerTickExpiryCustomConfig",
-          "line": 270,
+          "line": 282,
           "called": [
             "Priority",
             "RHTable",
@@ -336744,7 +336744,7 @@
         {
           "kind": "def",
           "name": "tph010_commutativity",
-          "line": 310,
+          "line": 322,
           "called": [
             "FrozenKernelObject",
             "FrozenKernelObject.objectType",
@@ -336762,7 +336762,7 @@
         {
           "kind": "def",
           "name": "tph012_preallocatedSlot",
-          "line": 350,
+          "line": 362,
           "called": [
             "expect",
             "get",
@@ -336776,7 +336776,7 @@
         {
           "kind": "def",
           "name": "tph014a_frozenSchedule",
-          "line": 380,
+          "line": 392,
           "called": [
             "Priority",
             "RHTable",
@@ -336798,7 +336798,7 @@
         {
           "kind": "def",
           "name": "tph014b_frozenYield",
-          "line": 410,
+          "line": 422,
           "called": [
             "Priority",
             "RHTable",
@@ -336818,7 +336818,7 @@
         {
           "kind": "def",
           "name": "tph014c_scheduleNoEligible",
-          "line": 437,
+          "line": 449,
           "called": [
             "Priority",
             "RHTable",
@@ -336839,7 +336839,7 @@
         {
           "kind": "def",
           "name": "tph015BootConfig",
-          "line": 470,
+          "line": 482,
           "called": [
             "PlatformConfig",
             "defaultMachineConfig",
@@ -336849,7 +336849,7 @@
         {
           "kind": "def",
           "name": "tph015a_bootSucceeds",
-          "line": 482,
+          "line": 494,
           "called": [
             "bootFromPlatformChecked",
             "expect",
@@ -336860,7 +336860,7 @@
         {
           "kind": "def",
           "name": "tph015b_postBootHasVSpaceRoot",
-          "line": 492,
+          "line": 504,
           "called": [
             "VSpaceRoot",
             "bootFromPlatformChecked",
@@ -336874,7 +336874,7 @@
         {
           "kind": "def",
           "name": "tph015c_postBootWxInvariantHolds",
-          "line": 511,
+          "line": 523,
           "called": [
             "bootFromPlatformChecked",
             "expect",
@@ -336888,7 +336888,7 @@
         {
           "kind": "def",
           "name": "tph015d_asidTableHasBootRoot",
-          "line": 534,
+          "line": 546,
           "called": [
             "bootFromPlatformChecked",
             "expect",
@@ -336901,7 +336901,7 @@
         {
           "kind": "def",
           "name": "tph015e_noBootVSpaceCompat",
-          "line": 552,
+          "line": 564,
           "called": [
             "PlatformConfig",
             "boot",
@@ -336917,7 +336917,7 @@
         {
           "kind": "def",
           "name": "tph015f_objIdCollisionRejected",
-          "line": 574,
+          "line": 586,
           "called": [
             "KernelObject",
             "ObjectEntry",
@@ -336934,7 +336934,7 @@
         {
           "kind": "def",
           "name": "tph015i_vspaceRootInInitialObjectsRejected",
-          "line": 606,
+          "line": 618,
           "called": [
             "ObjectEntry",
             "PlatformConfig",
@@ -336951,7 +336951,7 @@
         {
           "kind": "def",
           "name": "tph015j_sentinelBootVSpaceObjIdRejected",
-          "line": 631,
+          "line": 643,
           "called": [
             "BootVSpaceRootEntry",
             "PlatformConfig",
@@ -336967,7 +336967,7 @@
         {
           "kind": "def",
           "name": "tph015k_unsafeBootVSpaceRejected",
-          "line": 651,
+          "line": 663,
           "called": [
             "BootVSpaceRootEntry",
             "PlatformConfig",
@@ -336984,7 +336984,7 @@
         {
           "kind": "def",
           "name": "tph015l_nonCanonicalVAddrRejected",
-          "line": 677,
+          "line": 689,
           "called": [
             "BootVSpaceRootEntry",
             "PAddr",
@@ -337007,7 +337007,7 @@
         {
           "kind": "def",
           "name": "tph015g_admissionWitness",
-          "line": 710,
+          "line": 722,
           "called": [
             "bootSafeObjectCheck",
             "expect",
@@ -337017,7 +337017,7 @@
         {
           "kind": "def",
           "name": "tph015h_simBootVSpaceRoot",
-          "line": 719,
+          "line": 731,
           "called": [
             "bootSafeObjectCheck",
             "expect",
@@ -337027,7 +337027,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 731,
+          "line": 743,
           "called": [
             "tph001a_emptyBuilder",
             "tph001b_builderPipeline",

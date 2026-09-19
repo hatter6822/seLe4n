@@ -26,7 +26,10 @@ fi
 TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-tests/fixtures/main_trace_smoke.expected}"
 TRACE_OUTPUT="$(mktemp)"
 MISSING_REPORT="$(mktemp)"
-trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}"' EXIT
+MANIFEST_LIST="$(mktemp)"
+MANIFEST_ERR="$(mktemp)"
+MANIFEST_OUTPUT="$(mktemp)"
+trap 'rm -f "${TRACE_OUTPUT}" "${MISSING_REPORT}" "${MANIFEST_LIST}" "${MANIFEST_ERR}" "${MANIFEST_OUTPUT}"' EXIT
 TRACE_ARTIFACT_DIR="${TRACE_ARTIFACT_DIR:-}"
 
 write_trace_artifacts() {
@@ -76,6 +79,55 @@ if [[ "${#SHA256_COMPANIONS[@]}" -gt 0 ]]; then
     fi
   else
     log_section "TRACE" "Fixture hashes verified (${#SHA256_COMPANIONS[@]} files)."
+  fi
+fi
+
+# ---------------------------------------------------------------------------
+# v0.35.109: the scenario-traceability manifests' FRAGMENT column.
+#
+# A `.sha256` companion pins a fixture against ITSELF, so the sweep above
+# reports "verified" of a fixture that has stopped agreeing with the program.
+# Two fixtures under `tests/fixtures/` are not golden output at all but
+# `SCENARIO_ID | SUBSYSTEM | expected_trace_fragment` manifests, and their
+# fragment column was read by nothing: `validate-registry` (Tier 0) parses the
+# ID column, and Tier 0 runs before any build, so it cannot ask whether a
+# fragment is emitted.  Measured at v0.35.109: 19 of 19 fragments across the two
+# manifests named lines no suite printed, because the suites' `expect` labels
+# had lost the scenario-id prefix the manifests presuppose.
+#
+# The swept set is DERIVED, not listed here: `list-manifests` classifies a
+# fixture by its row shape and reads the producer from the manifest's own
+# `# Suite:` header.  A manifest added later is checked with no edit to this
+# gate, and a manifest that declares no producer fails discovery rather than
+# dropping out of the domain while the gate still prints PASS.
+# ---------------------------------------------------------------------------
+if python3 scripts/scenario_catalog.py list-manifests --fixture-dir "${SHA256_DIR}"      > "${MANIFEST_LIST}" 2> "${MANIFEST_ERR}"; then
+  manifest_count=0
+  while IFS=$'\t' read -r manifest_path manifest_suite; do
+    [[ -z "${manifest_path}" ]] && continue
+    manifest_count=$((manifest_count + 1))
+    run_check_with_timeout "TRACE" bash -lc \
+      "lake exe ${manifest_suite} > '${MANIFEST_OUTPUT}'"
+    run_check "TRACE" python3 scripts/scenario_catalog.py check-fragments \
+      --manifest "${manifest_path}" --output "${MANIFEST_OUTPUT}"
+  done < "${MANIFEST_LIST}"
+  if [[ "${manifest_count}" -eq 0 ]]; then
+    record_failure "TRACE" \
+      "No scenario-traceability manifest found under ${SHA256_DIR}; the tree has two, so the classifier has stopped recognising them."
+    if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+      write_trace_artifacts
+      finalize_report
+    fi
+  else
+    log_section "TRACE" \
+      "Scenario-traceability fragments verified (${manifest_count} manifests)."
+  fi
+else
+  record_failure "TRACE" \
+    "Scenario-traceability manifest discovery failed: $(tr '\n' ' ' < "${MANIFEST_ERR}")"
+  if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
+    write_trace_artifacts
+    finalize_report
   fi
 fi
 

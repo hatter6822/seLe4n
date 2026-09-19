@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.108.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.109.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2715,6 +2715,64 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 - **Fixture-backed evidence**: `Main.lean` output must match
   `tests/fixtures/main_trace_smoke.expected`. Update fixture only with
   rationale.
+
+  **And a checksum is not a comparison** (`v0.35.109`).  Every fixture carries
+  a `.sha256` companion and the Tier 2 gate sweeps all of them, reporting
+  "Fixture hashes verified (14 files)" — which reads as a measurement of
+  agreement with the program and is a measurement of agreement with *itself*.
+  A checksum's job is to force a fixture edit to be paired with a hash refresh
+  in the same commit; it says nothing about whether the fixture still describes
+  what the code does, and it is the fixture's *producer* that must be run to
+  ask that.  This file's oldest rule, arriving at an artefact none of its
+  instances had reached: *a presence check is not a relation check*, where the
+  presence is a hash of the file by itself.
+
+  Measured on the whole directory: **twelve of fourteen** fixtures were also
+  compared against live output — by `test_tier2_trace.sh` for the main trace, by
+  a `fixturePath` read inside the producing suite for ten more, and by
+  `include_str!` in `rust/sele4n-abi/tests/conformance.rs` for the return-shape
+  table, which is asserted on both sides of the ABI — and all twelve matched, so
+  the sweep's value is entirely in the two it could not reach.  Those two are the
+  ones nothing compared, and their drift was **total**: `robin_hood_smoke.expected` and `two_phase_arch_smoke.expected`
+  are not golden output at all but `SCENARIO_ID | SUBSYSTEM |
+  expected_trace_fragment` manifests, and **19 of 19** fragments named lines no
+  suite printed.  The cause is the shape this file keeps recording: the only
+  consumer, `scenario_catalog.py validate-registry`, parses `parts[0]` — the ID
+  column — so the *fragment* column was read by nothing, and when the suites'
+  `expect` labels lost the scenario-id prefix the manifests presuppose, every
+  row went stale in silence.  `RobinHoodSuite.lean` carried **both**
+  conventions, 19 labels with an id and 36 without, in one file.
+
+  Four things new code must respect.  (1) **A fixture needs a gate that runs its
+  producer**, and which gate that is belongs in `tests/fixtures/README.md`'s
+  "Used by" column — where it was *false* for both manifests, naming suites that
+  do not read their file.  (2) **The improvement direction is the code, not the
+  fixture.**  The manifests were right and the labels had drifted, so the fix
+  relabels 94 assertions rather than rewriting 19 rows — and it costs no fixture
+  churn, because a manifest nobody edits keeps its checksum.  Rewriting the rows
+  would also have made them *ambiguous*: `size correct` and `timer advanced` each
+  name two assertions, so a fragment without its id identifies no scenario, which
+  is the presence-versus-relation defect one level down.  (3) **The swept set is
+  derived**: `list-manifests` classifies a fixture as a manifest by its row shape
+  and reads its producer from the manifest's own `# Suite:` header, so a manifest
+  added later is checked with no gate edit, and one that declares no producer
+  **fails discovery** rather than dropping out of the domain while the gate
+  prints PASS.  (4) **A regeneration recipe is a claim too**: the README told you
+  to redirect each suite's stdout over its manifest, which replaces an ID table
+  with raw output and breaks the Tier 0 registry gate (measured: 74 and 79
+  differing lines).  A documented workflow that corrupts the artefact it
+  maintains is worse than none, and a Tier 3 negative refuses its return.
+
+  **And a table that claims to enumerate a directory is an enumeration standing
+  in for a derivation.**  The same README's `## Files` table is where a reader
+  learns which gate compares a given fixture, and it had omitted
+  `syscall_return_shape.expected` and `qemu_boot_expected.txt` — the second found
+  by `check-fixture-index` (Tier 0) on its first run, which is the criterion this
+  file sets for a mechanism worth building.  Membership is a **row**, never a
+  mention: a fixture named in passing in the prose names no gate, so accepting one
+  would be the presence-for-relation substitution one artefact over.  The
+  exemption set is reconciled in both directions, because an exemption nobody
+  reconciles reads exactly like coverage.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
   `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
   explicit `.toNat`/`.ofNat`.

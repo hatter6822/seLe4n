@@ -1,3 +1,105 @@
+## v0.35.109 — a checksum is not a comparison
+
+**The fixture-drift audit.**  A `[TRACE] FAIL: Fixture drift detected` on the
+previous cut prompted a sweep of the whole of `tests/fixtures/`, with both
+questions asked of every fixture: does it match its `.sha256` companion, and
+does it match what its producer prints?  All fourteen checksums were clean.  The
+second question is the one a checksum structurally cannot ask — it pins a fixture
+against *itself*, so `Fixture hashes verified (14 files)` reads as a measurement
+of agreement with the program and is a measurement of agreement with nothing —
+and twelve of the fourteen turned out to have a real comparison somewhere (the
+Tier 2 trace gate for the main trace, a `fixturePath` read inside the producing
+suite for ten more, and `include_str!` in `rust/sele4n-abi/tests/conformance.rs`
+for the return-shape table).  All twelve matched.
+
+**The two that nothing compared had drifted totally: 19 of 19.**
+`robin_hood_smoke.expected` and `two_phase_arch_smoke.expected` are not golden
+output at all but `SCENARIO_ID | SUBSYSTEM | expected_trace_fragment` manifests,
+and every one of their fragments named a line no suite printed.  The cause is
+this project's oldest recorded shape, at an artefact none of its instances had
+reached: the only consumer, `scenario_catalog.py validate-registry`, parses
+`parts[0]` — the ID column — so the *fragment* column was read by nothing, and
+when the suites' `expect` labels lost the scenario-id prefix the manifests
+presuppose, every row went stale in silence.  `RobinHoodSuite.lean` carried
+**both** conventions in one file: 19 labels with an id (its `RH-INT-*`
+integration checks) and 36 without.
+
+**The improvement direction is the code, not the fixture.**  The manifests were
+right, so the fix relabels **94** assertions across the two suites rather than
+rewriting 19 rows — and costs no fixture churn on the fragment column at all,
+because a manifest nobody edits keeps its checksum.  Rewriting the rows would
+also have made them *ambiguous*: `size correct` and `timer advanced` each name
+two assertions, so a fragment without its id identifies no scenario, which is the
+presence-versus-relation defect one level down.  The letter now runs `a, b, c
+...` over a scenario's assertions in declaration order — across its sub-functions
+for `TPH-*`, so `TPH-006a timer advanced` and `TPH-006d timer advanced` are
+distinguishable — which is the convention the `RH-INT-*` checks already followed.
+The same pass found `rhInt005_cspaceResolution` using `RH-INT-005a` and
+`RH-INT-005b` **twice each**; they are now `c` and `d`.
+
+**The relation is checked, and its domain is derived.**
+`scenario_catalog.py list-manifests` classifies a fixture as a manifest by its
+row shape — so no trace fixture is ever swept — and reads its producer from the
+manifest's own `# Suite:` header, so a manifest added later is checked with no
+gate edit and one that declares no producer **fails discovery** rather than
+dropping out of the domain while the gate prints PASS.
+`scenario_catalog.py check-fragments` is the comparison, run per discovered
+manifest from `scripts/test_tier2_trace.sh`, which is where this tree answers
+"does a fixture agree with the program".  Tier 0 cannot ask it: it runs before
+any build, so it has no suite output to read — which is exactly why the ID column
+was the only thing checked.
+
+**Two suites stopped answering a question the shared helper owns.**
+`SeLe4n/Testing/Helpers.lean` states in as many words that "all test suites
+should import this module rather than defining private copies of these
+functions", and both of these carried a private `expect` that is `expectCond` at
+a fixed tag — one byte-equivalent, the other differing only in the capitalisation
+of its failure word.  Both now delegate, so the emitted line is one function's
+output rather than two spellings of it, and a Tier 3 negative refuses a
+re-inlined printer.  (Nineteen suites carry such a copy; the other seventeen are
+outside this cut and are not blocked by it.)  `scenario_catalog.py`'s own ID
+parser had **two** copies — `validate_registry` and `generate-registry-stub` —
+now one `scenario_ids_in`, with a negative refusing the second.
+
+**And the table that claims to enumerate the directory is now derived from it.**
+`check-fixture-index` (Tier 0) requires every file under `tests/fixtures/` to be a
+**row** of that directory's README table — the only place a reader learns which
+gate compares a given fixture — or to be classified in `FIXTURE_INDEX_EXEMPT` with
+a reason, reconciled in both directions so a stale entry fails as loudly as an
+unclassified file.  Membership is a row and not a mention, because a fixture named
+in passing in the prose names no gate, which is the presence-for-relation
+substitution one artefact over.  It found a **third** omission on its first run —
+`qemu_boot_expected.txt`, whose row now also records why it carries no `.sha256`
+companion: its gate SKIPs until the SM10.1 binary target exists, so a hash would
+pin it against itself and nothing else.
+
+**Three further false claims in `tests/fixtures/README.md`, all corrected.**  Its
+"Used by" column named `tests/RobinHoodSuite.lean` and `tests/TwoPhaseArchSuite.lean`
+for the two manifests, and **neither suite reads its file**.  Its regeneration
+recipe told you to redirect each suite's stdout over its manifest, which replaces
+an ID table with raw output and breaks the Tier 0 registry gate — measured at 74
+and 79 differing lines, so a documented workflow corrupted the artefact it
+maintains; a Tier 3 negative refuses its return.  And the table omitted
+`syscall_return_shape.expected` entirely.  Inside the manifests themselves, a
+`# Validated by:` header cited `--fixture2`, a flag `build_parser` has never
+had; both headers now name the two gates and the column each one checks, which
+is the only fixture edit in this cut (two header blocks, two checksums).
+
+**Witnesses.**  `scripts/tests/test_scenario_catalog.py` (20 cases, Tier 0) pins
+the classifier, the fail-closed producer declaration, the fragment relation and
+the fixture index.
+Every rejecting case is a mutation that **keeps the token and breaks the
+relation**, because that is the shape that shipped: the decisive one holds the
+manifest byte-identical and prints the same assertion under a label without its
+scenario id.  All six production mutations — an unrecognised line skipped
+instead of disqualifying the file, a producer-less manifest dropped instead of
+erroring, the fragment relation made vacuous, a prose mention counted as a table
+row, the exemption reconciliation made one-directional, an unlisted file accepted —
+are caught, and the five new Tier 3 negatives each fire on a token-preserving
+mutation.
+
+Refs: tests/fixtures/README.md
+
 ## v0.35.108 — the fifth conjunct is checked at runtime
 
 **PR #897 review (Codex P2).**  `v0.35.106` added `endpointQueueHeadDisjoint` as
