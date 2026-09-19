@@ -5300,8 +5300,18 @@ run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_ofCores' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_singleton_iff' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_mono' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# `v0.35.104`: the five anchors above were repointed from
+# `InformationFlow/NonInterferenceCrossCore.lean` to
+# `IPC/CrossCore/EndpointCall.lean` when the home-core frame layer moved into
+# production.  They were found by Tier 3 failing rather than by the relocation's
+# own sweep -- **a fix retires more than it changes, and a MOVE does too**: the
+# blast radius of relocating a declaration includes every anchor watching where it
+# used to be, and those fail loudly here only because they are positives.  The
+# negative added in the same cut (below) forbade exactly what these five required,
+# so the tree briefly held two answers to *where does this family live* that
+# contradicted each other.
+run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 # WS-RR RR8.12 (seventh cut): `notificationSignalWriteSet` is declared in
 # production now, beside the transition it is about, so the production
 # scheduler-domain footprint can read it; the anchor is repointed rather than
@@ -5619,7 +5629,7 @@ run_check "INVARIANT" rg -n '^theorem schedContextBind_confinedToCores' SeLe4n/K
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem schedContextBind_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_schedContext_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_schedContext_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_negative_check "INVARIANT" rg -n 'def crossCoreRemoteWriterPendingAudit' SeLe4n/
 run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationFlowSuite.lean
@@ -5627,8 +5637,8 @@ run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationF
 # store must be proven non-migrations, or the write sets could not name a
 # pre-state home core at all.
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 
 # PR #861 review round 4 (P2): every covert-channel entry is tied to a projection
 # theorem through a total, compile-time-validated table, so a new channel cannot
@@ -9658,6 +9668,37 @@ run_negative_check "INVARIANT" rg -n '^def notificationSignalWriteSet|^def notif
 run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+
+# ---------------------------------------------------------------------------
+# `v0.35.104` (RR8.12 Cut 8a): the home-core frame layer is PRODUCTION.
+#
+# "Is this step a migration?" is the question every production scheduler
+# footprint must answer before it may name a core read at the PRE-state, and the
+# eight facts answering it for the IPC primitives lived in the staged
+# `InformationFlow/NonInterferenceCrossCore.lean`, which imports `Kernel.API`.
+# The primitives are production; only their frames were staged, so the answer sat
+# where its asker could not reach it -- `v0.35.59`'s layering rule exactly.
+# Measured before moving: all eight had ZERO consumers outside that module.
+run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+# ...and does not come back to the staged module.  Mutation-tested by declaring
+# one of them there again: the tombstone left in its place is a COMMENT, which
+# the code view strips, so a clean tree is silent and a re-declaration fires.
+run_negative_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq|^theorem endpointQueuePopHead_determineTargetCore_eq|^theorem endpointQueueRemoveDual_determineTargetCore_eq|^theorem storeTcbReceiveComplete_determineTargetCore_eq|^theorem storeTcbQueueLinks_determineTargetCore_eq' SeLe4n/Kernel/InformationFlow/
+# The five the same cut ADDS, completing the family over every primitive the
+# receive leg composes.  The `.reply` store was the missing fourth member of the
+# `storeObject_*` group (TCB / endpoint / SchedContext / **Reply**) -- an
+# asymmetric table is how a cell stays uncovered until someone needs it -- and the
+# enqueue is `endpointQueuePopHead`'s dual, so the receive leg's rendezvous arm
+# and its block arm are both framed.  No consumer until Cut 8a-ii's footprint, so
+# they are anchored rather than orphaned.
+run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_determineTargetCore_eq \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_determineTargetCore_eq \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem removeRunnableOnCore_determineTargetCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_reply_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_determineTargetCore_eq \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_check "INVARIANT" rg -n '^theorem endpointSendCrossCoreDispatchChecked_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 # ...and the wake frame they all compose, relocated out of the staged `PerCoreCbs`
 # where the `_local` suffix was the signal that its owner was in the wrong layer.

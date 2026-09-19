@@ -1,3 +1,78 @@
+## v0.35.104 — the home-core frame layer was staged, so no production footprint could ask it
+
+WS-RR RR8.12 Cut 8a, first half.  Declaring a scheduler footprint for `.receive`
+means naming, at the syscall's **pre-state**, cores that the transition writes
+several object stores later — so it rests on a question that has to be answered
+about every primitive in between: *is this step a migration?*  A step that rewrites
+`ipcState`, `pendingMessage` or a queue link is not; one that rewrites
+`cpuAffinity` is.
+
+The tree already answered it, for eight IPC primitives, in
+`SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` — which is **staged**
+and imports `Kernel.API`.  The primitives are production; only their frames were
+staged, so the answer sat where its asker could not reach it.  That is `v0.35.59`'s
+layering rule (*when a question has one owner and an asker that cannot see it, the
+owner is in the wrong layer*), and it is what has kept `.receive` undeclared.
+
+**The eight move to production**, into `IPC/CrossCore/EndpointCall.lean`, which
+already imports both `Scheduler/Operations/Selection.lean` (for
+`determineTargetCore`) and the dual-queue primitives.  Measured before moving: all
+eight had **zero** consumers outside the staged module, so this is a pure layering
+fix rather than a re-homing of live reasoning — and the staged module still consumes
+every one of them, now across the boundary in the right direction, which is what
+makes the relocation transparent rather than merely compiling.  A tombstone names
+the new home.
+
+**And five more complete the family**, because the receive leg composes primitives
+the eight did not cover:
+
+- `enqueueRunnableOnCore_determineTargetCore_eq` and `wakeThread_determineTargetCore_eq`
+  (`Scheduler/Operations/PerCoreWake.lean`) — a wake writes one TCB field
+  (`ipcState := .ready`) and a run queue, so no thread's home moves.
+- `removeRunnableOnCore_determineTargetCore` (`IPC/CrossCore/EndpointCall.lean`) —
+  the deschedule primitive writes only `scheduler`; the sibling of
+  `descheduleAtPlacement_determineTargetCore`, at the primitive that one composes.
+- `storeObject_reply_determineTargetCore_eq` — **the missing fourth member** of the
+  `storeObject_*` group, which covered a TCB, an endpoint and a SchedContext while
+  the receive leg's `linkCallerReply` stores a Reply.  *Keep the tables symmetric*
+  is what says to add it rather than special-case the caller: an asymmetric family
+  is how a cell stays uncovered until somebody needs it.
+- `endpointQueueEnqueue_determineTargetCore_eq` — `endpointQueuePopHead`'s dual, so
+  the receive leg's rendezvous arm and its **block** arm are both framed.
+
+None has a consumer until Cut 8a-ii's footprint, so all five are anchored in Tier 3
+rather than orphaned, as this project prescribes.  The relocation carries a positive
+per representative and a negative refusing the family's return to the staged module,
+mutation-tested in both directions — silent on the clean tree, because the tombstone
+is a comment and the code view strips it, and firing on a re-declaration.
+
+**One correction to this project's own prose, found by running the sweep on it.**
+`CLAUDE.md`'s Cut 7 note said *"`.receive` and `.replyRecv` are deliberately still
+undeclared"*.  Four arms declare a scheduler footprint and the staged module holds
+**24** per-core write sets, so `.call`, `.tcbSuspend`, `.tcbResume`, the three
+SchedContext arms, `.tcbSetPriority`, `.tcbSetAffinity` and the retype are
+undeclared too and were in neither list.  *A recognised set is not a derived set*,
+in the note written one cut earlier to record which arms remain.  The note now says
+to read `UncoveredLockDomain.syscallSeamSchedulerDomain` and the `schedLockSet_`
+inventory instead of itself.
+
+**And the relocation's own sweep was not run, which Tier 3 caught** — worth more
+than the fix.  `CLAUDE.md` records *a fix retires more than it changes — sweep what
+was pinning the thing you deleted*; **a move has the same blast radius**, and
+**six** pre-existing positive anchors named the eight lemmas at their old location.
+Five of them were forbidden by the negative added in the same cut, so for the
+length of one gate run the tree held two answers to *where does this family live*
+that contradicted each other.  They fail loudly only because they are positives: a
+`run_negative_check` on a relocated symbol would have gone on reporting PASS
+forever, which is the tautological pin this project retires.  All five are
+repointed, with the finding recorded beside them.
+
+No transition changed and no footprint moved; the default target (518 jobs) builds
+clean with **zero** warnings in the touched module, and the golden trace is
+byte-identical.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8
+
 ## v0.35.103 — two superseded constants, each retained on a consumer that does not exist
 
 Found while checking, at the maintainer's prompting, whether the README's "24

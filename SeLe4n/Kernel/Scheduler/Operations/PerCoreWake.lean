@@ -1828,6 +1828,47 @@ theorem wakeThread_preserves_runnableThreadsAreTCBsOnCore (st : SystemState)
 -- `MemoryEvent` / `MemoryTrace` / `synchronizesWith`).  The file's outer
 -- `namespace SeLe4n.Kernel` is still open here, so the relative `namespace
 -- Concurrency` resolves to `SeLe4n.Kernel.Concurrency` (not a doubly-nested one).
+/-- **WS-RR RR8.12: a wake is not a migration.**
+
+`enqueueRunnableOnCore` writes exactly one TCB field (`ipcState := .ready`,
+`enqueueRunnableOnCore_makes_ready`) and the run queue, while
+`determineTargetCore` reads `cpuAffinity` alone.  So the core *any* thread would
+be woken onto is the same before and after *any* wake.
+
+This is what lets a **pre-state** scheduler footprint name the cores a transition
+writes several wake-shaped steps later: a footprint resolved before the operation
+runs and a write performed after it name the same core, rather than the footprint
+merely hoping they coincide.  Unconditional in `tid` and `x` -- the woken thread
+and the thread being located need not be distinct, and the reject arm
+(`runnableOnSomeCore`) and the unresolvable arm are the identity. -/
+theorem enqueueRunnableOnCore_determineTargetCore_eq (st : SystemState) (c : CoreId)
+    (tid x : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    determineTargetCore (enqueueRunnableOnCore st c tid) x = determineTargetCore st x := by
+  refine determineTargetCore_congr st (enqueueRunnableOnCore st c tid) x ?_
+  by_cases hEq : x = tid
+  · subst hEq
+    cases hTcb : st.getTcb? x with
+    | none =>
+        simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb, hTcb]
+    | some tcb =>
+        cases hFresh : runnableOnSomeCore st x with
+        | true =>
+            rw [enqueueRunnableOnCore_eq_self_of_runnable st c x hFresh, hTcb]
+        | false =>
+            rw [enqueueRunnableOnCore_makes_ready st c x tcb hTcb hInv hFresh]
+            simp
+  · rw [enqueueRunnableOnCore_getTcb?_ne st c tid x hInv hEq]
+
+/-- **WS-RR RR8.12**: and neither is the cross-core wake that wraps it.
+
+`wakeThread` is `enqueueRunnableOnCore` at the thread's own target core plus an
+SGI decision that writes nothing, so the whole wake leaves every thread's home
+where it was. -/
+theorem wakeThread_determineTargetCore_eq (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (executingCore : CoreId) (hInv : st.objects.invExt) :
+    determineTargetCore (wakeThread st tid executingCore).1 x = determineTargetCore st x :=
+  enqueueRunnableOnCore_determineTargetCore_eq st (determineTargetCore st tid) tid x hInv
+
 namespace Concurrency
 
 /-- WS-SM SM5.C.4 (memory-model): the executing core's **release-store** event of

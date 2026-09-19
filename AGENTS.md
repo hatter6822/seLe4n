@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.103.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.104.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -203,7 +203,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~71254 lines)
+- `CHANGELOG.md` (~71425 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23652 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -212,7 +212,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7456 lines)
 - `docs/spec/SELE4N_SPEC.md` (~6336 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6144 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5910 lines)
 - `SeLe4n/Platform/Boot.lean` (~5793 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
@@ -245,9 +245,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3090 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Model/Object/Types.lean` (~2861 lines)
+- `SeLe4n/Model/Object/Types.lean` (~2862 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2740 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2746 lines)
 - `tests/FrozenOpsSuite.lean` (~2726 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
@@ -286,11 +286,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2024 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2016 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2000 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1981 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
 - `tests/LockSetSuite.lean` (~1951 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1940 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -299,11 +299,12 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1856 lines)
 - `tests/SyscallDispatchSuite.lean` (~1847 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1819 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1808 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
@@ -317,11 +318,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1617 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1538 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1552 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1454 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
@@ -5931,7 +5931,15 @@ code may assume:
   migration rather than from a confinement write set, and `.receive`'s chain leg
   is not pre-state computable at all (`receiveRendezvousHandoffWriteSet` takes the
   post-donation state) — those cores are declared through the dynamic chain
-  extension, as the object domain declares them.
+  extension, as the object domain declares them.  **And that sentence named two arms where the
+  derivation gives many more** (`v0.35.104`, found by running the sweep on this
+  note rather than by a review): four arms declare a scheduler footprint and the
+  staged non-interference module holds **24** per-core write sets, so `.call`,
+  `.tcbSuspend`, `.tcbResume`, the three SchedContext arms, `.tcbSetPriority`,
+  `.tcbSetAffinity` and the retype are undeclared too and were in neither list.
+  *A recognised set is not a derived set*, in the note written one cut earlier to
+  record which arms remain — read `UncoveredLockDomain.syscallSeamSchedulerDomain`
+  and the `schedLockSet_` inventory, never this paragraph, for what is left.
 
 - **`ipcInvariantFull` has its dispatch payoff, under stated packs and
   confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,
