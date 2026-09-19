@@ -13,9 +13,23 @@ renamed an assertion label staled its manifest silently — measured then at
 **19 of 19** fragments absent from live output across the two manifests, because
 an `expect` label's scenario-id prefix had been dropped and the only consumer
 parsed `parts[0]`.  A `.sha256` companion cannot see that: it pins a fixture
-against itself, not against the program.  `list-manifests` and `check-fragments`
-are the relation, run from `scripts/test_tier2_trace.sh`, which is where this
-tree answers "does a fixture agree with the program".
+against itself, not against the program.  `check-fragments` is that relation, run
+from `scripts/test_tier2_trace.sh`, which is where this tree answers "does a
+fixture agree with the program"; `list-manifests` derives its domain and is run
+from Tier 0 as well, because manifest well-formedness needs no build.
+
+`v0.35.111` corrected three presence-for-relation defects in that machinery,
+every one of them the class it was written to close.  `check-fixture-index`
+searched the README table's JOINED text, so an unlisted fixture passed whenever
+any cell quoted a longer name containing it — its own `.sha256` companion, for
+one — and ran only over the directory, so a row naming a deleted file was never
+inspected; the membership question is now over PARSED CELLS of the `## Files`
+section, in both directions.  `discover_manifests` skipped a file it could not
+parse, so one carrying a valid `# Suite:` header and a single malformed row was
+swept as golden output with `manifest_count` still nonzero; manifest INTENT now
+makes that an error.  And the fragment relation bound nothing to its own row, so
+a cross-wired row witnessed a different scenario and passed against real output;
+`fragment_names_scenario` is the binding.
 """
 
 from __future__ import annotations
@@ -53,17 +67,69 @@ class Manifest:
         self.rows = rows
 
 
-def parse_manifest(path: Path) -> Manifest | None:
-    """Parse `path` as a scenario-traceability manifest, or return None.
+class FixtureShape:
+    """Which of the two artefact shapes a `tests/fixtures/*.expected` file is.
 
-    A file is a manifest when it has at least one row and EVERY non-empty,
-    non-comment line is a row — so a trace fixture, whose lines are suite
-    output, is never mistaken for one.  Classification is by content, not by
-    filename: that is what makes the swept set derived.
+    `manifest` is set when the file is a well-formed scenario-traceability
+    manifest; `error` when it DECLARES manifest intent and is not one.  Both
+    unset means a trace fixture: golden suite output, whose lines are not rows
+    and which claims no producer.
+
+    The intent flag is what makes the error case reachable at all.  Classifying
+    by content alone answers "not a manifest" for a file carrying a valid
+    `# Suite:` header and one malformed row, so such a file was swept as a trace
+    fixture -- silently, with `manifest_count` still nonzero and the gate still
+    reporting PASS.  That is a scanner's default branch answering a question it
+    could not read, which this project's rules call a decision: an input a
+    scanner does not recognise fails the gate rather than dropping out of its
+    domain.
+    """
+
+    def __init__(self, path: Path, manifest: Manifest | None = None,
+                 error: str | None = None) -> None:
+        self.path = path
+        self.manifest = manifest
+        self.error = error
+
+    @property
+    def is_trace_fixture(self) -> bool:
+        return self.manifest is None and self.error is None
+
+
+def fragment_names_scenario(scenario_id: str, fragment: str) -> bool:
+    """Does `fragment` carry `scenario_id` as an assertion label's own id?
+
+    A row asserts that ITS scenario is traced, and the fragment is the evidence,
+    so a fragment naming a DIFFERENT scenario witnesses the wrong thing while
+    passing a containment test against the suite's output -- the row's claim and
+    the check's subject come apart, which is a presence check standing in for a
+    relation.
+
+    The id must occur followed by an optional lowercase sub-case letter and then
+    a character that cannot continue an id, so `RH-001` matches `RH-001a insert`
+    and `[RH-001]` and does NOT match `RH-0010a ...`: a bare `in` test would
+    accept a longer id that merely has this one as a prefix, which is the same
+    defect one character down.
+    """
+    pattern = re.compile(re.escape(scenario_id) + r"[a-z]?(?![0-9A-Za-z-])")
+    return pattern.search(fragment) is not None
+
+
+def classify_fixture(path: Path) -> FixtureShape:
+    """Read `path` once and decide which artefact shape it is.
+
+    Manifest INTENT is either signal: a `# Suite:` declaration (the author says
+    so) or content that is entirely rows (the file is one).  Given intent, the
+    file must be a well-formed manifest -- every non-comment line a row, every
+    row's fragment naming its own scenario, at least one row, and a declared
+    producer -- or it is an error.  Absent intent it is a trace fixture, which is
+    the only silent skip and the only correct one.
     """
     rows: list[tuple[str, str, str]] = []
     suite: str | None = None
-    for line in path.read_text(encoding="utf-8").splitlines():
+    malformed: list[str] = []
+    for lineno, line in enumerate(
+            path.read_text(encoding="utf-8").splitlines(), start=1):
         stripped = line.strip()
         if not stripped:
             continue
@@ -74,11 +140,43 @@ def parse_manifest(path: Path) -> Manifest | None:
             continue
         match = MANIFEST_ROW.match(stripped)
         if match is None:
-            return None
-        rows.append((match.group(1), match.group(2), match.group(3)))
+            malformed.append(f"line {lineno} is not a row: {stripped!r}")
+            continue
+        scenario_id, subsystem, fragment = match.groups()
+        if not fragment_names_scenario(scenario_id, fragment):
+            malformed.append(
+                f"line {lineno}: row {scenario_id}'s expected_trace_fragment "
+                f"does not name {scenario_id}: {fragment!r}"
+            )
+            continue
+        rows.append((scenario_id, subsystem, fragment))
+
+    declares = suite is not None
+    content_is_rows = bool(rows) and not malformed
+    if not declares and not content_is_rows:
+        return FixtureShape(path)
+    if not declares:
+        return FixtureShape(path, error=(
+            f"{path}: scenario-traceability manifest declares no producer; "
+            f"add a `# Suite: <lake exe target>` header line so "
+            f"scripts/test_tier2_trace.sh can check its "
+            f"expected_trace_fragment column"
+        ))
+    if malformed:
+        detail = "; ".join(malformed)
+        return FixtureShape(path, error=(
+            f"{path}: declares `# Suite: {suite}` but is not a well-formed "
+            f"scenario-traceability manifest -- {detail}.  Fix the row (or the "
+            f"header, if this is golden trace output); a file that declares a "
+            f"producer is never swept as a trace fixture"
+        ))
     if not rows:
-        return None
-    return Manifest(path, suite, rows)
+        return FixtureShape(path, error=(
+            f"{path}: declares `# Suite: {suite}` but has no "
+            f"`SCENARIO_ID | SUBSYSTEM | expected_trace_fragment` rows, so "
+            f"check-fragments would pass vacuously"
+        ))
+    return FixtureShape(path, manifest=Manifest(path, suite, rows))
 
 
 def scenario_ids_in(path: Path) -> set[str]:
@@ -107,26 +205,20 @@ def scenario_ids_in(path: Path) -> set[str]:
 def discover_manifests(directory: Path) -> tuple[list[Manifest], list[str]]:
     """Every `*.expected` under `directory` that is a manifest, plus errors.
 
-    A manifest carrying no `# Suite:` declaration is an ERROR, not a skip: the
-    gate cannot ask whether its fragments are emitted without knowing what emits
-    them, and silently dropping it would make the swept set smaller than the
-    manifest set while the gate still reported PASS.
+    A file that declares manifest intent and is not a well-formed manifest is an
+    ERROR, not a skip: the gate cannot ask whether its fragments are emitted, and
+    silently dropping it would make the swept set smaller than the manifest set
+    while the gate still reported PASS.  `classify_fixture` decides which case a
+    file is in; this function only routes.
     """
     manifests: list[Manifest] = []
     errors: list[str] = []
     for path in sorted(directory.glob("*.expected")):
-        manifest = parse_manifest(path)
-        if manifest is None:
-            continue
-        if manifest.suite is None:
-            errors.append(
-                f"{path}: scenario-traceability manifest declares no producer; "
-                f"add a `# Suite: <lake exe target>` header line so "
-                f"scripts/test_tier2_trace.sh can check its "
-                f"expected_trace_fragment column"
-            )
-            continue
-        manifests.append(manifest)
+        shape = classify_fixture(path)
+        if shape.error is not None:
+            errors.append(shape.error)
+        elif shape.manifest is not None:
+            manifests.append(shape.manifest)
     return manifests, errors
 
 
@@ -140,6 +232,56 @@ FIXTURE_INDEX_EXEMPT = {
         "not a fixture compared against program output; described in the README's "
         "prose instead",
 }
+
+# The heading whose table `check_fixture_index` reads.  The read is SCOPED to that
+# section, because a second table elsewhere in the README would otherwise widen
+# the declared set: a filename backticked in a table of gates would satisfy a
+# fixture's membership without the `## Files` table ever naming it.
+FIXTURE_TABLE_HEADING = "## Files"
+# A markdown heading, so the scoped read knows where the section ends.
+MD_HEADING = re.compile(r"^#{1,6}\s")
+# A backticked token naming a file: no path separator and at least one dot, so a
+# bare word and a repository path are both excluded.  Applied to the `Fixture`
+# and `Hash` CELLS only -- prose in the `Used by` column contributes nothing
+# whatever it quotes, which is what keeps a mention from standing in for a row.
+TABLE_FILENAME = re.compile(r"`([^`/\s]+\.[^`/\s]+)`")
+
+
+def fixture_table_filenames(readme: Path) -> tuple[set[str], list[str]]:
+    """The filenames the README's `## Files` table declares, plus errors.
+
+    The table's first two columns name a fixture and its hash companion; the
+    third describes the gate that compares it.  Reading CELLS rather than
+    searching the joined table text is the whole point: a substring test over the
+    table accepted a fixture whose own row is absent but whose `.sha256`
+    companion is named in a neighbouring cell, so the file was reported as
+    indexed while no row said which gate reads it.
+    """
+    lines = readme.read_text(encoding="utf-8").splitlines()
+    start: int | None = None
+    for index, line in enumerate(lines):
+        if line.strip() == FIXTURE_TABLE_HEADING:
+            start = index + 1
+            break
+    if start is None:
+        return set(), [
+            f"{readme}: no `{FIXTURE_TABLE_HEADING}` section — that table is "
+            f"what check_fixture_index reconciles the directory against, and "
+            f"the question cannot be answered without it"
+        ]
+    declared: set[str] = set()
+    for line in lines[start:]:
+        if MD_HEADING.match(line):
+            break
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # `| a | b | c |`.split("|") == ['', ' a ', ' b ', ' c ', ''], so the
+        # `Fixture` and `Hash` cells are [1:3].  The header and separator rows
+        # carry no backticks and so declare nothing, with no special case.
+        for cell in stripped.split("|")[1:3]:
+            declared |= set(TABLE_FILENAME.findall(cell))
+    return declared, []
 
 
 def check_fixture_index(directory: Path, readme: Path,
@@ -155,9 +297,14 @@ def check_fixture_index(directory: Path, readme: Path,
     two fixtures, consumers that do not read them at all.  Deriving the set from
     the directory is what makes the next omission fail on the day it is made.
 
-    Membership is a TABLE ROW, not a mention: a fixture named in passing in the
-    prose tells a reader nothing about which gate compares it, so accepting one
-    would be a presence check standing in for the relation the table asserts.
+    Reconciled in BOTH directions, over PARSED CELLS.  Membership is a table row
+    naming the file in its `Fixture` or `Hash` column, never a mention: the first
+    cut joined the table's lines into one blob and asked whether the filename
+    occurred anywhere in it, so an unlisted fixture passed whenever any cell
+    quoted a longer name containing it -- its own `.sha256` companion, for one --
+    and a row naming a DELETED file was never inspected at all, because the loop
+    ran over the directory.  Both halves are the presence-for-relation defect
+    this function was written to close, one level down.
 
     `exempt` defaults to `FIXTURE_INDEX_EXEMPT`, which is this tree's own
     classification; the CLI never passes anything else, and the parameter exists
@@ -166,28 +313,37 @@ def check_fixture_index(directory: Path, readme: Path,
     """
     if exempt is None:
         exempt = FIXTURE_INDEX_EXEMPT
-    errors: list[str] = []
     if not readme.exists():
         return [f"{readme}: not found"]
-    rows = "\n".join(
-        line for line in readme.read_text(encoding="utf-8").splitlines()
-        if line.lstrip().startswith("|")
-    )
+    declared, errors = fixture_table_filenames(readme)
+    if errors:
+        return errors
     present = {p.name for p in directory.iterdir() if p.is_file()}
-    for name in sorted(present):
-        if name == readme.name or name in exempt:
-            continue
-        if name not in rows:
-            errors.append(
-                f"{directory / name}: not a row of {readme}'s `## Files` table; "
-                f"add it with the gate that compares it, or classify it in "
-                f"FIXTURE_INDEX_EXEMPT with a reason"
-            )
+    accounted = declared | set(exempt) | {readme.name}
+    for name in sorted(present - accounted):
+        errors.append(
+            f"{directory / name}: not a row of {readme}'s "
+            f"`{FIXTURE_TABLE_HEADING}` table; add it with the gate that "
+            f"compares it, or classify it in FIXTURE_INDEX_EXEMPT with a reason"
+        )
+    for name in sorted(declared - present):
+        errors.append(
+            f"{directory / name}: named by a row of {readme}'s "
+            f"`{FIXTURE_TABLE_HEADING}` table but absent from the directory — "
+            f"a row nothing backs describes a gate reading a file that is gone"
+        )
     for name, reason in sorted(exempt.items()):
         if name not in present:
             errors.append(
                 f"{directory / name}: stale FIXTURE_INDEX_EXEMPT entry "
                 f"({reason}) — the file is gone"
+            )
+        elif name in declared:
+            errors.append(
+                f"{directory / name}: classified BOTH as a "
+                f"FIXTURE_INDEX_EXEMPT entry ({reason}) and as a row of "
+                f"{readme}'s `{FIXTURE_TABLE_HEADING}` table — one of the two "
+                f"is wrong, and a file with two classifications has none"
             )
     return errors
 
@@ -199,6 +355,10 @@ def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
     fragments at different widths: one carries the whole emitted line
     (`robin-hood check passed [RH-001a ...]`) and the other only the label
     (`TPH-001a ...`).
+
+    That the fragment names its own row's scenario is `classify_fixture`'s
+    question, not this one: a cross-wired row is a malformed manifest rather than
+    a failed comparison, so it fails before any suite is run.
     """
     errors: list[str] = []
     if not manifest.rows:
@@ -435,11 +595,15 @@ def main() -> int:
         if not output_path.exists():
             print(f"error: captured output not found: {output_path}", file=sys.stderr)
             return 1
-        manifest = parse_manifest(manifest_path)
-        if manifest is None:
+        shape = classify_fixture(manifest_path)
+        if shape.error is not None:
+            print(f"error: {shape.error}", file=sys.stderr)
+            return 1
+        if shape.manifest is None:
             print(f"error: not a scenario-traceability manifest: {manifest_path}",
                   file=sys.stderr)
             return 1
+        manifest = shape.manifest
         errors = check_fragments(manifest, output_path.read_text(encoding="utf-8"))
         if errors:
             print("scenario-traceability fragment check failed:", file=sys.stderr)

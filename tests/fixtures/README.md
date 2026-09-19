@@ -51,6 +51,18 @@ own `# Suite:` header — so a new manifest is checked with no edit to any gate,
 and one that declares no producer fails discovery rather than dropping silently
 out of the domain.
 
+At `v0.35.111` three of those gates' own checks turned out to be the presence
+checks they exist to replace.  What that changes for anyone editing this
+directory: a fixture is indexed by a **row of the `## Files` table below** naming
+it in the `Fixture` or `Hash` column — a mention in the `Used by` prose, or in any
+other table, declares nothing — and the reconciliation runs in both directions, so
+a row naming a file you delete fails as loudly as a file you add without a row.  A
+manifest that carries a `# Suite:` header and does not parse is an **error** rather
+than a file quietly treated as golden output; and each row's
+`expected_trace_fragment` must name **that row's own** scenario id, because a
+fragment naming a different one is evidence for the wrong assertion.  Those last
+two are checked in Tier 0, before any build.
+
 ## Regeneration workflow (when a fixture changes intentionally)
 
 1. Run the affected suite locally and confirm the new output is what you

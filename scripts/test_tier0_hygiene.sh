@@ -405,6 +405,15 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registr
   --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
   tests/fixtures/two_phase_arch_smoke.expected
 
+# v0.35.111: every `tests/fixtures/*.expected` file that DECLARES manifest
+# intent is a well-formed scenario-traceability manifest — every non-comment line
+# a row, every row's fragment naming its own scenario, a producer declared.  That
+# question needs no build, so it is asked here rather than waiting for Tier 2:
+# `check_fixture_index`'s sibling defect was a silent `continue` over a file that
+# declares a producer and does not parse, which was swept as golden output while
+# the gate reported PASS.  Tier 2 runs the same discovery again, for the list.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
+
 # v0.35.109: every file under `tests/fixtures/` is a row of that directory's
 # README table, naming the gate that compares it — or is classified with a
 # reason.  The table is the only place a reader learns which gate compares a

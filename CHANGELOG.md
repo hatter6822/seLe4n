@@ -1,3 +1,94 @@
+## v0.35.111 — three presence checks inside the machinery built to close them
+
+`v0.35.109` added the scenario-traceability machinery whose whole subject is that
+a **presence check is not a relation check**.  A review of it found three
+instances of that class *in it*, all fail-open, and the interesting part is not
+the instances but where they were: every one of the twenty witness cases had been
+drawn from the drift that had already happened, so the case lists probed the
+boundary and never asked the property.
+
+**(B) The fixture-index membership test searched the joined table text, and ran
+in one direction.**  `check_fixture_index` concatenated every `|`-prefixed line
+of `tests/fixtures/README.md` and asked whether the filename occurred in the
+blob, so an unlisted fixture passed whenever any cell quoted a longer name
+containing it — *its own `.sha256` companion, which every row in that table
+names*.  And the loop ran over the directory, so a row naming a **deleted** file
+was never inspected; a row is the only place a reader learns which gate compares
+a fixture, so one naming nothing describes a gate reading a file that is gone.
+`fixture_table_filenames` now parses the `Fixture` and `Hash` **cells** of the
+`## Files` section and `check_fixture_index` reconciles that set against the
+directory **both** ways.  Three things the fix decides rather than inherits: the
+read is **scoped to the heading**, so a filename backticked in a second table
+cannot satisfy a fixture's membership (the derived-domain rule applied to *which
+table the claim is about*); only the first two cells declare, so prose in the
+`Used by` column contributes nothing — the real table's third column quotes
+`scenario_registry.yaml`, which would otherwise have declared it; and a file
+classified **both** exempt and as a row now fails, because a file with two
+classifications has none.  A missing `## Files` heading is an error, not zero
+declared files: answering "nothing to check" is a silent pass and answering
+"every fixture is unlisted" names the wrong cause.
+
+**(C) A file that declared a producer and did not parse was swept as golden
+output.**  `parse_manifest` answered "not a manifest" for *two* different reasons
+— a line that is not a row, and no rows at all — and `discover_manifests` did a
+bare `continue` on both.  So a manifest carrying a valid `# Suite:` header and a
+single malformed row dropped out of the swept set with `manifest_count` still
+nonzero and the gate still printing PASS: its fragments were never checked, which
+is the exact silence `v0.35.109` existed to end, arriving through the classifier
+rather than through a stale row.  `classify_fixture` replaces it and decides by
+**intent**: a `# Suite:` declaration *or* content that is entirely rows.  Given
+intent, anything short of a well-formed manifest is an **error**; absent intent it
+is a trace fixture, which is the only silent skip and the only correct one.  The
+control matters as much as the case — the same content with `# Suite:` removed is
+still a trace fixture, because classifying it as a manifest would run golden
+output against a producer it never named.
+
+**(D) A row's fragment was bound to nothing.**  `check_fragments` asked only
+whether the fragment occurs in the suite's output, so a row reading
+`RH-001 | RobinHood | ... [RH-002a insert then get]` **passed** — the fragment is
+emitted, by the wrong assertion.  `RH-001` could then have been deleted from the
+suite outright with the gate green, which is the drift `v0.35.109` measured at 19
+of 19, one column over.  `fragment_names_scenario` is the binding, and it is a
+relation rather than a containment: the id must be followed by an optional
+lowercase sub-case letter and then a character that cannot continue an id, so
+`RH-001` matches `RH-001a insert` and `[RH-001]` and does **not** match
+`RH-0010a ...` — a bare `in` test has the same defect one character down.  The
+verdict is `classify_fixture`'s, because a cross-wired row is a malformed manifest
+and not a failed comparison: it fails before any suite is built.
+
+**And manifest well-formedness moved to Tier 0.**  It needs no build, and the
+defect it catches is a classifier that silently skips — so `list-manifests` runs
+as a hygiene gate as well, where it fails before Tier 1 rather than after.  Tier 2
+runs the same discovery again, for the list it consumes.
+
+Measured on the tree after the fix: both manifests discovered, all **19** rows
+naming their own scenario, **30** files reconciled against the README table in
+both directions, zero errors.  Thirteen witnesses added (33 total), and the six
+mutations that decide each fix — the joined-blob membership, the missing reverse
+direction, the unscoped table read, the content-only classification, the dropped
+binding, and the bare containment reading — were each run and each caught by the
+named case.  The three negative anchors were mutation-tested by reintroducing the
+retired spelling as code; the first of them was **repointed in the course of
+that**, because a negative on one retired variable name is satisfied by a revert
+that renames it, and what the claim is about is *where the README's text is read*.
+
+- `scripts/scenario_catalog.py`: `FixtureShape` / `classify_fixture` (replacing
+  `parse_manifest`), `fragment_names_scenario`, `fixture_table_filenames`,
+  `FIXTURE_TABLE_HEADING` / `MD_HEADING` / `TABLE_FILENAME`; `check_fixture_index`
+  both-directional over parsed cells; `discover_manifests` routes rather than
+  classifies; the `check-fragments` CLI arm reports the classifier's error.
+- `scripts/tests/test_scenario_catalog.py`: 13 new cases — the three decisive
+  token-preserving ones, the four accepting controls, the prefix rejection, the
+  both-ways cell parse, and a real-tree pin that every shipped row names its own
+  scenario.
+- `scripts/test_tier0_hygiene.sh`: `list-manifests` as a hygiene gate.
+- `scripts/test_tier3_invariant_surface.sh`: 18 anchors (15 positive, 3 negative);
+  two `v0.35.109` positives repointed at the declarations that now carry their
+  subject, which is the "sweep what was pinning the thing you deleted" rule
+  failing loudly rather than silently.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md
+
 ## v0.35.110 — the trace comparison is both-directional
 
 The second finding of `v0.35.109`'s fixture-drift audit, and the one that was

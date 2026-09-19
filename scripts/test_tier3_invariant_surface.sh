@@ -15837,7 +15837,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "manifest_count.. -eq 0[^\n]*(\n([ \t][
 # The producer is read from the manifest, so a manifest added later needs no gate
 # edit; a manifest that declares none is an ERROR, never a skip.
 run_check "INVARIANT" rg -n '^SUITE_DECL = re.compile' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def discover_manifests[^\n]*(\n([ \t][^\n]*)?)*declares no producer" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*declares no producer" scripts/scenario_catalog.py'
 # Both shipped manifests declare theirs.
 run_prose_check "INVARIANT" rg -n '^# Suite: robin_hood_suite$' tests/fixtures/robin_hood_smoke.expected
 run_prose_check "INVARIANT" rg -n '^# Suite: two_phase_arch_suite$' tests/fixtures/two_phase_arch_smoke.expected
@@ -15872,7 +15872,7 @@ run_prose_check "INVARIANT" rg -n 'scenario-traceability manifest\*\*, not golde
 # ...and the table is held to the directory, since it is the only place a reader
 # learns which gate compares a fixture and it is hand-written.  Membership is a
 # table ROW, not a mention: a prose mention names no gate.
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*lstrip\(\).startswith\(.\|.\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*startswith\(.\|.\)" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*stale FIXTURE_INDEX_EXEMPT" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_hygiene.sh'
 # v0.35.110: the main trace comparison is BOTH-directional.  The reverse
@@ -15886,4 +15886,46 @@ run_check "INVARIANT" bash -lc 'rg -n "matched_count.*expected_count.*unaccounte
 # the local it counted into).
 run_negative_check "INVARIANT" bash -lc 'rg -n "expected_count\}. \]\]; then" scripts/test_tier2_trace.sh'
 run_negative_check "INVARIANT" bash -lc 'rg -n "NEW_LINES=" scripts/test_tier2_trace.sh'
+# ===========================================================================
+# v0.35.111 — the fixture machinery's OWN three presence-for-relation defects.
+# Each was the class `v0.35.109` built the machinery to close, one level down, so
+# these anchors pin the RELATIONS rather than the tokens the superseded readings
+# also had.
+# ===========================================================================
+# (B) The fixture-index membership question is over PARSED CELLS of the `## Files`
+# section, scoped to that heading — a filename backticked in another table cannot
+# satisfy a fixture's membership — and only the `Fixture` and `Hash` cells declare,
+# so prose in the `Used by` column cannot stand in for a row.
+run_check "INVARIANT" rg -n '^def fixture_table_filenames' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^FIXTURE_TABLE_HEADING = "## Files"' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*split\(.\|.\)\[1:3\]" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*MD_HEADING.match\(line\):\n *break" scripts/scenario_catalog.py'
+# ...and BOTH directions are asked: a file with no row, and a row with no file.
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(present - accounted\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(declared - present\)" scripts/scenario_catalog.py'
+# ...and the door back to the joined-blob reading is shut: `check_fixture_index`
+# does not read the README itself, so the declared set can only come from the cell
+# parse.  A negative on one retired variable name would be satisfied by a revert
+# that renamed it; what the claim is about is WHERE the text is read.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*readme.read_text" scripts/scenario_catalog.py'
+# (C) Manifest INTENT, not content alone: a file that declares a producer and does
+# not parse is an ERROR.  The superseded classifier answered "not a manifest" and
+# the caller did a bare skip, so such a file was swept as golden output with the
+# gate still reporting PASS.
+run_check "INVARIANT" rg -n '^def classify_fixture' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*if not declares and not content_is_rows:" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def discover_manifests[^\n]*(\n([ \t][^\n]*)?)*if shape.error is not None:\n *errors.append" scripts/scenario_catalog.py'
+# ...and the retired content-only skip must not return.
+run_negative_check "INVARIANT" bash -lc 'rg -n "if manifest is None:" scripts/scenario_catalog.py'
+# ...and manifest well-formedness is asked at Tier 0, before any build.
+run_check "INVARIANT" bash -lc 'rg -n "scenario_catalog.py\" list-manifests" scripts/test_tier0_hygiene.sh'
+# (D) A row's fragment must name the row's OWN scenario, so the fragment is
+# evidence for the scenario the row claims rather than for whichever assertion
+# happens to be emitted; and the id must not be satisfied by a longer one that
+# merely has it as a prefix.
+run_check "INVARIANT" rg -n '^def fragment_names_scenario' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def fragment_names_scenario[^\n]*(\n([ \t][^\n]*)?)*\[a-z\]\?\(\?!\[0-9A-Za-z-\]\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*if not fragment_names_scenario\(scenario_id, fragment\):" scripts/scenario_catalog.py'
+# ...and the retired bare containment reading must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -n "return scenario_id in fragment" scripts/scenario_catalog.py'
 finalize_report

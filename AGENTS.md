@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.110.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.111.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2783,6 +2783,60 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   would be the presence-for-relation substitution one artefact over.  The
   exemption set is reconciled in both directions, because an exemption nobody
   reconciles reads exactly like coverage.
+
+  **And the machinery that closes a class is written by the same hands** (`v0.35.111`).
+  The three paragraphs above are one rule — *a presence check is not a relation
+  check* — applied to fixtures.  A review of the code that applies it found **three
+  instances of it inside that code**, all fail-open, and the measurement worth
+  keeping is not the instances but *where the witnesses were*: all twenty cases had
+  been drawn from the drift that had already been observed, so they probed the
+  boundary and never asked the property.  That is this file's own *a witness drawn
+  from a finding tests the finding*, arriving in the cut written to obey it.
+
+  The three, each a presence check standing in for the relation the function's own
+  name asserts.  `check_fixture_index` joined the table's `|` lines into one blob
+  and asked whether the filename occurred in it, so an **unlisted fixture passed
+  whenever any cell quoted a longer name containing it** — its own `.sha256`
+  companion, which every row in that table names — and the loop ran over the
+  *directory*, so a row naming a **deleted** file was never inspected.
+  `discover_manifests` skipped a file it could not parse, so one carrying a valid
+  `# Suite:` header and a single malformed row was swept as golden output with
+  `manifest_count` still nonzero and the gate still printing PASS — the exact
+  silence the machinery exists to end, arriving through the classifier instead of
+  through a stale row.  And `check_fragments` bound a fragment to nothing, so a row
+  reading `RH-001 | … | [RH-002a insert then get]` **passed**: the fragment is
+  emitted, by the wrong assertion, and `RH-001` could have been deleted from the
+  suite outright with the gate green.
+
+  Four things the remedies decide rather than inherit.  **Membership is a parsed
+  CELL of a named section**: `fixture_table_filenames` reads the `Fixture` and
+  `Hash` cells of the `## Files` table, scoped to that heading — so a filename
+  backticked in a second table cannot satisfy a fixture's membership, which is the
+  derived-domain rule applied to *which table the claim is about* — and only those
+  two cells declare, because the real table's third column quotes
+  `scenario_registry.yaml` in prose and would otherwise have declared it.  **Intent
+  is what makes a skip reportable**: `classify_fixture` treats a `# Suite:`
+  declaration *or* all-row content as manifest intent, and given intent anything
+  short of well-formed is an error — with the control mattering as much as the case,
+  since the same content without the declaration must stay a trace fixture or golden
+  output would be run against a producer it never named.  **A binding is a relation,
+  not a containment**: the id must be followed by an optional sub-case letter and
+  then a character that cannot continue an id, so `RH-001` does not match
+  `RH-0010a …`, which is the same defect one character down.  And **two
+  classifications are none**: a file both exempt and named by a row now fails, as a
+  missing `## Files` heading does — answering "nothing to check" is a silent pass
+  and answering "every fixture is unlisted" names the wrong cause.
+
+  One mechanical point that is genuinely new, and it corrected this cut rather than
+  the tree.  **A negative anchor on a retired variable name is satisfied by a revert
+  that renames it.**  The first negative written here forbade the retired membership
+  expression verbatim; the mutation that reintroduces the joined-blob reading under
+  any other local name left it silent, and the mutation run is what said so.  What
+  the claim is about is *where the README's text is read*, so the anchor is scoped
+  to `check_fixture_index` and forbids the read itself — the declaration-bounded
+  form this file otherwise warns about, correct here because the claim really is
+  about that declaration.  Ask of any negative: *what renames or relocations
+  survive it?*
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
   `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
   explicit `.toNat`/`.ofNat`.
