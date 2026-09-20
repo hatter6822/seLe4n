@@ -140,29 +140,22 @@ run_check_with_timeout "TRACE" bash -lc "lake exe sele4n > '${TRACE_OUTPUT}'"
 expected_count=0
 matched_count=0
 
-trim_field() {
-  local value="$1"
-  value="${value#"${value%%[![:space:]]*}"}"
-  value="${value%"${value##*[![:space:]]}"}"
-  printf '%s' "${value}"
-}
-
 while IFS= read -r expected_line || [[ -n "${expected_line}" ]]; do
   [[ -z "${expected_line}" ]] && continue
   [[ "${expected_line}" =~ ^[[:space:]]*# ]] && continue
 
-  scenario_id=""
-  risk_class=""
+  # v0.35.118: VERBATIM.  This fixture is golden output -- `tests/fixtures/README.md`
+  # regenerates it by redirecting the producer's stdout over it, and the comment
+  # block below `v0.35.113` says so -- so a line is an expectation exactly as
+  # emitted.  Column-parsing it as a `ID | CLASS | fragment` manifest row kept only
+  # field 3 onward here while `ACTUAL_LINES` kept the whole line, so the sequence
+  # comparison failed on a legitimate golden line containing `|` against a fixture
+  # byte-identical to stdout.  That is `v0.35.116`'s own distinction -- a manifest
+  # and golden output are different KINDS of fixture -- applied to the wrong one,
+  # and the manifests have their own gate (`scenario_catalog.py check-fragments`).
+  # Measured before taking the strict reading: of 239 golden lines, zero contain
+  # `|`, so it costs the tree nothing.
   expected_fragment="${expected_line}"
-
-  if [[ "${expected_line}" == *"|"* ]]; then
-    IFS='|' read -r raw_scenario raw_risk raw_fragment <<< "${expected_line}"
-    if [[ -n "${raw_fragment:-}" ]]; then
-      scenario_id="$(trim_field "${raw_scenario}")"
-      risk_class="$(trim_field "${raw_risk}")"
-      expected_fragment="$(trim_field "${raw_fragment}")"
-    fi
-  fi
 
   if [[ -z "${expected_fragment}" ]]; then
     record_failure "TRACE" "Fixture expectation line is empty after parsing: ${expected_line}"
@@ -179,13 +172,8 @@ while IFS= read -r expected_line || [[ -n "${expected_line}" ]]; do
     continue
   fi
 
-  if [[ -n "${scenario_id}" || -n "${risk_class}" ]]; then
-    printf '%s\n' "${scenario_id} | ${risk_class} | ${expected_fragment}" >> "${MISSING_REPORT}"
-    record_failure "TRACE" "Missing expected trace line [${scenario_id}] (${risk_class}): ${expected_fragment}"
-  else
-    printf '%s\n' "${expected_fragment}" >> "${MISSING_REPORT}"
-    record_failure "TRACE" "Missing expected trace line: ${expected_fragment}"
-  fi
+  printf '%s\n' "${expected_fragment}" >> "${MISSING_REPORT}"
+  record_failure "TRACE" "Missing expected trace line: ${expected_fragment}"
   if [[ "${CONTINUE_MODE}" -eq 0 ]]; then
     break
   fi
@@ -202,14 +190,10 @@ fi
 while IFS= read -r fline || [[ -n "${fline}" ]]; do
   [[ -z "${fline}" ]] && continue
   [[ "${fline}" =~ ^[[:space:]]*# ]] && continue
-  if [[ "${fline}" == *"|"* ]]; then
-    raw_frag="$(printf '%s' "${fline}" | cut -d'|' -f3-)"
-    raw_frag="${raw_frag#"${raw_frag%%[![:space:]]*}"}"
-    raw_frag="${raw_frag%"${raw_frag##*[![:space:]]}"}"
-    printf '%s\n' "${raw_frag}"
-  else
-    printf '%s\n' "${fline}"
-  fi
+  # VERBATIM, for the reason the forward loop gives.  This is the sequence the
+  # `diff` below reads, so a column parse here is what actually produced the false
+  # failure; the two sites are fixed together because they answer one question.
+  printf '%s\n' "${fline}"
 done < "${TRACE_FIXTURE}" > "${EXPECTED_FRAGMENTS}"
 
 # The output's own line sequence, extracted once beside the expectation

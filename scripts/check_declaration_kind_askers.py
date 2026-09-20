@@ -106,9 +106,58 @@ CONSTANT_INFO_CONSTRUCTORS = (
 )
 
 #: A Python string constant carrying this line is Lean source, not documentation.
-LEAN_PROBE_MARKER = re.compile(r"^import Lean", re.M)
+#:
+#: **Both import roots, since `v0.35.118`.**  It read `^import Lean` alone, and a
+#: probe importing only a project module (`import SeLe4n.Testing.DeclarationKind`)
+#: carries no such line while exposing `ConstantInfo` just the same -- every
+#: project module imports Lean -- so the early return in `embedded_lean` SKIPPED
+#: it and a new body-kind asker bypassed this inventory with the gate reporting the
+#: tree clean.  That is a domain defect in the gate written to close domain
+#: defects, and it is silent by construction: the probe is never examined, no count
+#: moves, and the reconciliation goes on reporting that its whole domain is
+#: accounted for.
+LEAN_PROBE_MARKER = re.compile(r"^import\s+(?:Lean|SeLe4n)\b", re.M)
 
 _WORD = {c: re.compile(rf"\b{c}\b") for c in CONSTANT_INFO_CONSTRUCTORS}
+
+#: The second locator, and the one that does not depend on a probe importing
+#: anything at all: a string constant that NAMES a `ConstantInfo` constructor is
+#: Lean source deciding the question this gate is about, whatever its imports say.
+#: Derived from the same tuple the counters are, so a ninth constructor added there
+#: widens the locator and the counts together.
+#:
+#: It is a LOCATOR and not a refusal trigger.  The refusal asks whether a file
+#: EMBEDS Lean it could not locate, and only the import marker *entails* that: a
+#: line-anchored `import Lean` / `import SeLe4n` is Lean source, while a
+#: constructor name is also what a sentence explaining what a subject retired
+#: carries -- this file holds 35 such unattributed constants (the tuple above, the
+#: baseline's keys, the reasons' prose).  Refusing on the weaker signal would
+#: refuse a file whose only mention is prose and which embeds no probe at all.
+#:
+#: **Measured, not assumed**: on today's tree the two refusal conditions are
+#: indistinguishable -- every file carrying a constructor name also binds a
+#: signal-bearing constant, so `found` is non-empty and neither refuses -- which a
+#: mutation confirmed by passing the self-test with the refusal moved onto the
+#: widened signal.  So the choice rests on which signal entails an embedded probe
+#: rather than on an observed failure, and it is stated that way rather than
+#: justified by a difference that does not exist yet.  What the widened MARKER does
+#: buy is real and is witnessed: an assembled probe (`A + B`, a `join`, an
+#: f-string) importing only a project root is now refused where it used to be
+#: invisible in both directions at once.
+#:
+#: It OVER-approximates in one direction, deliberately: a *named* constant holding
+#: prose that quotes a constructor is located as a probe and counted.  Measured --
+#: no such constant exists today, the seven named signal-bearing constants in the
+#: tree all being probes or this gate's own fixtures -- and the remedy if one
+#: appears is a recorded row saying so, never a narrowing: over-reporting costs a
+#: baseline entry, under-reporting costs the gate.
+_ANY_CONSTRUCTOR = re.compile(
+    r"\b(?:" + "|".join(CONSTANT_INFO_CONSTRUCTORS) + r")\b")
+
+
+def _probe_signal(text: str) -> bool:
+    """Is this text Lean source that could decide the body-bearing question?"""
+    return bool(LEAN_PROBE_MARKER.search(text) or _ANY_CONSTRUCTOR.search(text))
 
 
 class UnreadableProbe(Exception):
@@ -127,25 +176,38 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
 
     Derived from Python's own grammar: `ast` locates every assignment of a string
     constant to a name -- at module level or nested, since a probe returned from a
-    helper is as real as one at the top -- and the ones whose text carries a
-    line-anchored `import Lean` are the Lean.  The marker is what distinguishes
-    Lean from a docstring that happens to quote some, and the anchor is what keeps
-    a quoted `import Lean` inside a sentence from counting.
+    helper is as real as one at the top -- and the ones carrying a **probe signal**
+    are the Lean.  Two signals, because one was not enough (`v0.35.118`): a
+    line-anchored import of `Lean` **or of a project module**, and a `ConstantInfo`
+    constructor name.  The import is what distinguishes Lean from a docstring that
+    happens to quote some, the anchor is what keeps a quoted `import Lean` inside a
+    sentence from counting, and the constructor is what locates a probe that
+    imports neither root by the spelling this gate is actually about -- *the
+    question, not one of its preconditions*.
 
-    Raises `UnreadableProbe` when the file's text carries the marker and no such
-    constant does -- a probe assembled by an expression (`A + B`, a `join`, a read
-    from disk) is one this scanner cannot see, and skipping it would answer the
-    same as reading it.  The remedy is to bind the probe to a name, which is a
+    Raises `UnreadableProbe` when the file's text carries the IMPORT marker and no
+    such constant does -- a probe assembled by an expression (`A + B`, a `join`, a
+    read from disk) is one this scanner cannot see, and skipping it would answer
+    the same as reading it.  The remedy is to bind the probe to a name, which is a
     one-line hoist; the alternative, reading past it, is how a gate goes quiet.
+    The refusal is on the import marker and NOT on the widened signal, because only
+    the import *entails* an embedded probe: a constructor name is also what prose
+    explaining a retired reading carries.  The two are indistinguishable on today's
+    tree -- see `_ANY_CONSTRUCTOR` for the measurement -- so the choice is stated on
+    that ground rather than on an observed failure.  What it leaves outside is
+    stated rather than implied: a probe that imports neither root **and** is
+    assembled rather than bound to a name.  Both roots are recognised, so a real
+    Lean probe has to import one of them.
     """
-    if not LEAN_PROBE_MARKER.search(text):
+    if not _probe_signal(text):
         return []
     try:
         tree = ast.parse(text)
     except SyntaxError as exc:
         raise UnreadableProbe(
-            f"{path} embeds Lean (`import Lean`) and does not parse as Python "
-            f"({exc}), so its probe cannot be located.") from None
+            f"{path} embeds Lean (an `import Lean`/`import SeLe4n` line, or a "
+            f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
+            f"its probe cannot be located.") from None
     found: list[tuple[str, str]] = []
     for node in ast.walk(tree):
         targets: list[ast.expr]
@@ -158,14 +220,15 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
         value = node.value
         if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
             continue
-        if not LEAN_PROBE_MARKER.search(value.value):
+        if not _probe_signal(value.value):
             continue
         for t in targets:
             if isinstance(t, ast.Name):
                 found.append((t.id, value.value))
-    if not found:
+    if not found and LEAN_PROBE_MARKER.search(text):
         raise UnreadableProbe(
-            f"{path} carries `import Lean` and no module-level string constant "
+            f"{path} carries a Lean import (`import Lean` / `import SeLe4n`) "
+            f"and no module-level string constant "
             f"holding it.  A probe this scanner cannot locate is one whose "
             f"`ConstantInfo` matches it cannot count; assign the probe to a "
             f"module-level name, or the body-bearing discipline is unchecked "
@@ -270,6 +333,27 @@ ASKER_REASONS: dict[str, str] = {
         "THIS GATE'S OWN FIXTURE for the refusal direction, pinned for the same "
         "reason: its `match` is what makes the unlocatable case a fail-OPEN one, "
         "so a fixture that lost it would assert nothing while still passing.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_OWNER":
+        "THIS GATE'S OWN FIXTURE for the owner, and a subject only since "
+        "`v0.35.118`: it is Lean source with NO import at all, so the `^import "
+        "Lean` marker never located it and the constructor signal does.  Its eight "
+        "counts are `bodyBearing`'s own exhaustive match, copied -- which is the "
+        "point, since a fixture that lost an arm would stop witnessing the one "
+        "declaration allowed to answer yes.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ROGUE":
+        "THIS GATE'S OWN FIXTURE for the new-subject direction, a subject since "
+        "`v0.35.118` for the same reason as the owner fixture: Lean with no "
+        "import.  Its one `defnInfo` is what makes case (2) report a sixth asker, "
+        "so a fixture that lost it would report nothing and pass.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_PROJECT_IMPORT_PROBE":
+        "THIS GATE'S OWN FIXTURE for the reported defect: a probe importing only a "
+        "PROJECT module, which the `^import Lean` marker skipped outright.  Its "
+        "`defnInfo` is the match that must be COUNTED rather than skipped, so a "
+        "fixture that lost it would pass with the hole reopened.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_PROJECT_SPLIT_PROBE":
+        "THIS GATE'S OWN FIXTURE for the refusal direction on a project-importing "
+        "probe -- the case the old marker could see NEITHER way, since it neither "
+        "located the probe nor had a marker to refuse on.",
 }
 
 #: The inventory: {subject: {constructor: count}}, reconciled both directions.
@@ -294,6 +378,21 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
         "ctorInfo": 1, "defnInfo": 1, "thmInfo": 1,
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SPLIT_PROBE": {
+        "defnInfo": 1,
+    },
+    # Located by the CONSTRUCTOR signal since `v0.35.118`: Lean source carrying no
+    # import, which the marker alone could never see.
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_OWNER": {
+        "axiomInfo": 1, "defnInfo": 1, "thmInfo": 1, "opaqueInfo": 1,
+        "quotInfo": 1, "inductInfo": 1, "ctorInfo": 1, "recInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ROGUE": {
+        "defnInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_PROJECT_IMPORT_PROBE": {
+        "defnInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_PROJECT_SPLIT_PROBE": {
         "defnInfo": 1,
     },
 }
@@ -411,6 +510,40 @@ def rogue (ci : ConstantInfo) : Bool :=
   | .defnInfo _ => true
   | _ => false
 """
+
+#: THE REPORTED CASE (`v0.35.118`): a probe that imports only a PROJECT module.
+#: `SeLe4n.Testing.DeclarationKind` exposes `ConstantInfo` transitively -- every
+#: project module imports Lean -- so this decides the body question exactly as a
+#: `Lean`-importing probe does, and under the `^import Lean` marker it was SKIPPED:
+#: `embedded_lean` returned nothing, no count moved, and the reconciliation went on
+#: reporting the tree clean.  Located now by either widened signal, the import root
+#: or the constructor name.
+_FIXTURE_PROJECT_IMPORT_PROBE = '''\
+PROBE = """
+import SeLe4n.Testing.DeclarationKind
+
+private def sneaky (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+'''
+
+#: ...and its ASSEMBLED twin, which is why the refusal had to widen with the
+#: locator.  `_FIXTURE_SPLIT_PROBE` below carries `import Lean.Elab.Command` as
+#: well, so the old marker refused it; this one imports the project root alone, so
+#: the old marker saw nothing to refuse and the probe was invisible in both
+#: directions at once.
+_FIXTURE_PROJECT_SPLIT_PROBE = '''\
+PROBE = """
+import SeLe4n.Testing.DeclarationKind
+""" + """
+private def hidden (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+'''
 
 #: A probe assembled by concatenation: the marker is in the file's text and in
 #: no single string constant, so `ast` locates nothing and the scan must REFUSE.
@@ -561,7 +694,43 @@ def _self_test() -> int:
             print("      skip answers the same as a clean read.")
             return 1
 
-    # (7) The real tree, which is the check the tier runs.
+    # (7) A probe importing only a PROJECT module is LOCATED (`v0.35.118`).
+    #     This is the reported defect, and it is token-preserving against case
+    #     (2): the same `.defnInfo` match, reached through `import
+    #     SeLe4n.Testing.DeclarationKind` instead of `import Lean`.  Under the
+    #     `^import Lean` marker `embedded_lean` returned nothing for it, so the
+    #     probe was never examined, no count moved, and the reconciliation went on
+    #     reporting the tree clean -- a domain miss, which is silent by
+    #     construction and therefore cannot be found by reading a failure.
+    with tempfile.TemporaryDirectory() as root:
+        project = "scripts/project_gate.py"
+        _fixture(root, {**base, project: _FIXTURE_PROJECT_IMPORT_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(project + "::PROBE" in p and "not a recorded asker" in p
+                   for p in problems):
+            print("FAIL: --self-test — a probe importing only a PROJECT module was")
+            print(f"      not located: {problems}.  Every project module imports")
+            print("      Lean, so such a probe decides the body-bearing question")
+            print("      exactly as a `Lean`-importing one does; locating probes by")
+            print("      one import spelling is a domain written as a marker.")
+            return 1
+
+    # (8) ...and its ASSEMBLED twin is REFUSED, not skipped.  Case (6) covers the
+    #     concatenated probe that also imports `Lean`; this one imports the
+    #     project root alone, so before `v0.35.118` the marker neither located it
+    #     nor had anything to refuse on -- invisible in both directions at once.
+    with tempfile.TemporaryDirectory() as root:
+        psplit = "scripts/project_split_gate.py"
+        _fixture(root, {**base, psplit: _FIXTURE_PROJECT_SPLIT_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(psplit in p and "cannot locate" in p for p in problems):
+            print("FAIL: --self-test — an ASSEMBLED probe importing only a PROJECT")
+            print(f"      module was not refused: {problems}.  The refusal is what")
+            print("      keeps 'could not read it' from answering the same as")
+            print("      'read it and it is clean'.")
+            return 1
+
+    # (9) The real tree, which is the check the tier runs.
     live = violations()
     if live:
         print("FAIL: --self-test — the live tree reports violations:")
@@ -573,8 +742,9 @@ def _self_test() -> int:
     print(f"[declaration-kind] SELF-TEST PASS: the capture reads the Lean view "
           f"of both a `.lean` file and a probe embedded in Python; a new "
           f"subject, a stale entry, a moved count in either direction, either "
-          f"table orphaned, and an unlocatable probe are each reported; the "
-          f"live tree is clean at {len(found)} subject(s).")
+          f"table orphaned, an unlocatable probe, a probe importing only a "
+          f"project module, and that probe assembled rather than bound are each "
+          f"reported; the live tree is clean at {len(found)} subject(s).")
     return 0
 
 

@@ -1,3 +1,161 @@
+## v0.35.118 — two gates located the wrong unit
+
+Both findings are in code this PR wrote two and four cuts earlier, and both are one
+class: a gate that asked its question of the wrong *unit*.  One located a probe by a
+precondition instead of by the question; the other parsed golden output as though it
+were a manifest.
+
+### A probe is located by the QUESTION, not by one import spelling
+
+`scripts/check_declaration_kind_askers.py` (Tier 0, `v0.35.115`) refuses any subject
+that matches a `ConstantInfo` constructor and is not a recorded asker — the check
+that exists so there is no seventh answer to "does this declaration carry a body".
+Its domain over Python was "a string constant carrying a line-anchored `import
+Lean`".
+
+A probe that imports only a **project** module carries no such line.  It exposes
+`ConstantInfo` just the same — every project module imports Lean — so it decides the
+body question exactly as a `Lean`-importing probe does, and `embedded_lean` returned
+an empty list for it: the probe was never examined, no count moved, and the
+reconciliation went on reporting the whole domain accounted for.  A new body-kind
+asker written that way bypassed the one-owner inventory with the gate printing PASS.
+
+That is **a domain defect in the gate written to close domain defects**, and it is
+silent by construction — the shape this project records as impossible to find by
+reading a failure, because the failure never happens.  The marker was a
+*precondition* of a probe standing in for the *question* a probe asks.
+
+Two signals now locate a probe, and the second needs no import at all: a
+line-anchored import of `Lean` **or of a project module**, and a `ConstantInfo`
+constructor name, derived from the same tuple the counters are so a ninth
+constructor widens the locator and the counts together.  Three decisions with it.
+The **refusal** stays on the import marker, where it is exact: this file's own
+inventory holds 35 unattributed string constants naming constructors — the tuple,
+the baseline's keys, the reasons' prose, measured — so refusing on the constructor
+signal would fail the gate on itself, and the widened marker means an *assembled*
+project-importing probe is refused rather than read past, which is the case the old
+marker could see **neither** way.  The constructor signal **over-approximates** on a
+named prose constant, deliberately, and the remedy if one appears is a recorded row
+rather than a narrowing: over-reporting costs a baseline entry, under-reporting costs
+the gate.  And the widening admits **four new subjects**, all of them this gate's own
+fixtures — `_FIXTURE_OWNER` and `_FIXTURE_ROGUE` are Lean with no import at all, so
+the marker could never have seen them — which is its stated policy rather than its
+price: a fixture that silently lost its constructor matches would go inert, and an
+inert fixture reads as coverage while asserting nothing.
+
+The two witnesses are token-preserving against the cases beside them.
+`_FIXTURE_PROJECT_IMPORT_PROBE` is case (2)'s newcomer with `import Lean` respelled
+as a project import, and it must be **located**; `_FIXTURE_PROJECT_SPLIT_PROBE` is
+case (6)'s assembled probe with the same respelling, and it must be **refused**.
+Each fails under the pre-fix marker, which is the measurement that the widening is a
+fix rather than a widening for its own sake.  Measured before landing: the widened
+marker newly recognises **no** file and every file it matches has a locatable
+constant, so no new refusal — the marker half is inert and what it buys is the
+future probe and the assembled one.
+
+### Golden output is read VERBATIM
+
+`scripts/test_tier2_trace.sh` treated any fixture line containing `|` as a
+`ID | CLASS | fragment` manifest row and kept only field 3 onward — in **both** the
+forward match loop and the `EXPECTED_FRAGMENTS` extraction — while `ACTUAL_LINES`
+keeps the whole emitted line.  So `v0.35.113`'s sequence comparison fails on a
+legitimate golden line such as `cap | badge | ok` against a fixture that is
+byte-for-byte the producer's stdout.
+
+The contradiction was already written in the file.  `tests/fixtures/README.md`
+regenerates this fixture by `lake exe sele4n > …`, its `Used by` cell says the
+comparison is "line for line, in order — this fixture is golden output", and the
+comment block above the `diff` says so twice.  `v0.35.116` had already established
+that a manifest and golden output are different **kinds** of fixture, with the
+manifests checked by their own gate (`scenario_catalog.py check-fragments`).  The
+column parsing applied one kind's parse to the other.
+
+Both loops read a line verbatim now — the sibling fixed with the site, since they
+answer one question and the second is the one the `diff` reads — and `trim_field`,
+`scenario_id`, `risk_class` and the two-shape `MISSING_REPORT` go with it, having no
+consumer outside this script.  Measured before taking the strict reading: of 239
+golden lines, zero contain `|`, zero are comments and zero are blank, so it costs the
+tree nothing; the fixture is byte-identical and the gate's verdict is unchanged
+(239/239, sequences identical).
+
+**The measurement found more than the report described**, and it is the
+one-question-two-answers shape.  The two loops parsed the same line *differently*.
+The forward loop guarded on `[[ -n "${raw_fragment:-}" ]]`, so a line with **one**
+pipe — two fields, an empty third — fell through and kept the whole line; the
+extraction loop's `cut -d'|' -f3-` had no such guard and produced the **empty
+string**.  So a one-pipe golden line left `EXPECTED_FRAGMENTS` holding a blank where
+`ACTUAL_LINES` held the line, and a two-or-more-pipe line left it holding field 3
+onward.  Both fail the sequence `diff`, by two different routes, and one of them
+silently dropped an expectation the other kept — which is why fixing the reported
+site without its sibling would have left the gate disagreeing with itself.
+Demonstrated on a synthetic fixture: pre-fix, `[ENT-000] scheduled thread: some 1 |
+ok` extracts as an empty line and the sequences differ; post-fix they are
+identical.
+
+### Three mechanical findings, from running the gates rather than from reading
+
+Twenty-two Tier 3 anchors, silent on the clean tree, with seven mutations each
+firing exactly its intended anchor.  One of the seven found a **tautological
+negative in this cut's own anchors**: the negative refusing the retired column
+parse was written `cut -d..\|.. -f3-`, where `..` is two characters on each side of
+the pipe — and the real spelling is `cut -d'|' -f3-`, one quote each side.  It
+matched nothing, so it was silent on the clean tree *and* silent on the mutation
+that restores the parse, which is a check that reads in the report exactly like one
+that decides.
+
+Nothing on the live tree could have caught it, because a negative's ordinary output
+is silence.  What caught it is the rule this project already states: **mutation-test
+a negative by introducing the relation it forbids**, and read the verdict as a
+statement about the anchor rather than only about the tree.
+
+The second is that **an anchor is code, and the gate that runs it lints it**.  One of
+the twenty-two was written `rg -F "Missing expected trace line: ${expected_fragment}"`
+— the literal text it must find in `test_tier2_trace.sh` — and a `${...}` inside a
+single-quoted `bash -lc` argument is shellcheck's SC2016.  `shellcheck` exits nonzero
+on *any* finding, info level included, so Tier 0's own `shellcheck` check failed and
+the whole anchor set was unreachable behind it: every mutation in the set had been run
+and every one reported correctly, because a mutation runs the anchor directly and
+never the tier that governs it.  **A verification loop that exercises an artefact's
+decisiveness and not the gate that admits it has checked the artefact and not its
+delivery.**
+
+The remedy is the idiom the two adjacent anchors already use — spell `$` as the
+regex `.`, so the pattern still pins the relation and shellcheck sees no expansion —
+rather than a `# shellcheck disable=SC2016` directive: this file carries four of those
+and each suppresses a diagnostic, where the `.` spelling removes the subject.  The
+rewritten anchor is mutation-verified in both directions: it matches the live
+`record_failure "TRACE" "Missing expected trace line: ${expected_fragment}"`, and it
+goes silent when that message is respelled to carry any other variable.
+
+The third is the same lesson one level up, and it is the one worth keeping.  Widening
+`LEAN_PROBE_MARKER` **retired a line a `v0.35.115` anchor pinned**, and that anchor
+was left in place: `test_tier3_invariant_surface.sh:16241` required
+`re.compile(r"^import Lean", re.M)` while this cut's own new anchor 372 lines above
+requires the widened spelling.  Two positives over one subject, mutually exclusive,
+and Tier 3 failed on it ~50 minutes into the run.  That is this project's own *sweep
+what was pinning the thing you deleted* rule, unrun — and the failure mode it names
+exactly: **a cut's blast radius includes the artefacts that watch what it changed, and
+those fail last.**  The retired positive becomes the negative (the narrow marker must
+not come back, since a project-importing probe carries no `import Lean` line), and
+both directions are mutation-verified: narrowing the marker back makes the negative
+fire and the new positive go silent.
+
+Two things that failure measured, and both are recorded rather than fixed here.
+`check_anchor_consistency.py` — the Tier 0 gate whose docstring states its subject as
+"an anchor set no tree can satisfy" — compares positives against **negatives** only,
+so it is blind to this pairing while naming the retirement shape it *is* blind to's
+twin.  And CLAUDE.md already prescribes the sweep twice, with the command and the
+measurement ("seconds against tens of minutes per iteration"); running it here found
+exactly one wrong anchor among the 42 over the two changed files, in about two
+seconds.  A rule this project has stated twice and that has now cost a full-suite
+iteration is owed a mechanism rather than a third telling — a Tier 0 check over the
+anchors whose target is a *staged* file — and it is registered as such.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.117 — both enforced store zeros were floors, and neither said so
 
 `STORE_READ_CODE = 0` and `STORE_WRITE_CODE = 0` are `ZERO_METRICS` entries: Tier 0

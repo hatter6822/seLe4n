@@ -15851,6 +15851,65 @@ run_check "INVARIANT" bash -lc 'rg -n "     .endpointQueueRemove., .alias., .wri
 run_check "INVARIANT" bash -lc 'rg -n "     .spliceOutMidQueueNode., .alias., .write.\): 2," scripts/lean_store_read_census.py'
 run_check "INVARIANT" bash -lc 'rg -n "     .queueNeighbourPatch., .param., .write.\): 1," scripts/lean_store_read_census.py'
 
+
+# ---------------------------------------------------------------------------
+# `v0.35.118`: two gates located the wrong UNIT.
+#
+# (A) `check_declaration_kind_askers.py` located a Lean probe by `^import Lean`
+# -- a PRECONDITION of a probe standing in for the QUESTION a probe asks.  A
+# probe importing only a project module carries no such line while exposing
+# `ConstantInfo` just the same, so `embedded_lean` returned nothing, the probe
+# was never examined, and a new body-kind asker bypassed the one-owner inventory
+# with the gate printing PASS.
+#
+# TWO SIGNALS LOCATE.  The marker recognises both import roots, and a
+# `ConstantInfo` constructor name locates a probe that imports neither -- derived
+# from the same tuple the counters are, so a ninth constructor widens the locator
+# and the counts together.
+run_check "INVARIANT" bash -lc 'rg -n "^LEAN_PROBE_MARKER = re\.compile\(r.\^import\\\\s\+\(\?:Lean\|SeLe4n\)\\\\b., re\.M\)$" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^_ANY_CONSTRUCTOR = re\.compile\(\n    r.\\\\b\(\?:. \+ .\|.\.join\(CONSTANT_INFO_CONSTRUCTORS\) \+ r.\)\\\\b.\)$" scripts/check_declaration_kind_askers.py'
+# ...and BOTH the file-level early return and the per-constant filter read the
+# same predicate, so the two cannot answer differently about what a probe is.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def _probe_signal\(text: str\) -> bool:[^\n]*(\n([ \t][^\n]*)?)*    return bool\(LEAN_PROBE_MARKER\.search\(text\) or _ANY_CONSTRUCTOR\.search\(text\)\)$" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "    if not _probe_signal\(text\):" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "        if not _probe_signal\(value\.value\):" scripts/check_declaration_kind_askers.py'
+# The retired marker-only spellings must not come back at either site.
+run_negative_check "INVARIANT" bash -lc 'rg -n "if not LEAN_PROBE_MARKER\.search\(text\):" scripts/check_declaration_kind_askers.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "if not LEAN_PROBE_MARKER\.search\(value\.value\):" scripts/check_declaration_kind_askers.py'
+# THE REFUSAL STAYS ON THE MARKER, which is the half that can be exact: this
+# file's own inventory names every constructor in a tuple and in the baseline's
+# keys, so a constructor-based refusal would fail the gate on itself.
+run_check "INVARIANT" bash -lc 'rg -n "    if not found and LEAN_PROBE_MARKER\.search\(text\):" scripts/check_declaration_kind_askers.py'
+# THE TWO WITNESSES, each token-preserving against the case beside it: the
+# reported defect must be LOCATED, and its assembled twin REFUSED.
+run_check "INVARIANT" bash -lc 'rg -n "^_FIXTURE_PROJECT_IMPORT_PROBE = " scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "^_FIXTURE_PROJECT_SPLIT_PROBE = " scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "not any\(project \+ .::PROBE. in p and .not a recorded asker. in p" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "not any\(psplit in p and .cannot locate. in p for p in problems\)" scripts/check_declaration_kind_askers.py'
+# ...and all four newly located subjects are RECORDED, since an inert fixture
+# reads as coverage while asserting nothing.
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers.py::_FIXTURE_OWNER" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers.py::_FIXTURE_ROGUE" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers.py::_FIXTURE_PROJECT_IMPORT_PROBE" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers.py::_FIXTURE_PROJECT_SPLIT_PROBE" scripts/check_declaration_kind_askers.py'
+#
+# (B) `test_tier2_trace.sh` parsed the GOLDEN TRACE as a manifest: any line with
+# a `|` kept only field 3 onward while `ACTUAL_LINES` kept the whole line, so
+# `v0.35.113`'s sequence diff fails on a legitimate golden line against a fixture
+# byte-identical to stdout.  The file's own comment block already said the
+# fixture IS golden output, and `v0.35.116` had already established that a
+# manifest and golden output are different KINDS.
+#
+# BOTH LOOPS read a line verbatim -- the sibling fixed with the site, because the
+# extraction loop is the one the `diff` reads.
+run_negative_check "INVARIANT" bash -lc 'rg -n "cut -d.\|." scripts/test_tier2_trace.sh'
+run_negative_check "INVARIANT" bash -lc 'rg -n "trim_field" scripts/test_tier2_trace.sh'
+run_negative_check "INVARIANT" bash -lc 'rg -n "risk_class" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "^  expected_fragment=..\{expected_line\}.$" scripts/test_tier2_trace.sh'
+run_check "INVARIANT" bash -lc 'rg -F -n "  printf " scripts/test_tier2_trace.sh | rg -F "{fline}"'
+# ...and the single-shape missing report that replaces the two the parse produced.
+run_check "INVARIANT" bash -lc 'rg -n "record_failure .TRACE. .Missing expected trace line: .\{expected_fragment\}." scripts/test_tier2_trace.sh'
+
 # ---------------------------------------------------------------------------
 # `v0.35.98`: a bound thread's base priority has TWO homes and the syscall
 # writes both.  `SystemState.threadBasePriority` reads the reservation;
@@ -16179,7 +16238,14 @@ run_check "INVARIANT" bash -lc 'rg -n "routeSelfTestOpaque, .OPAQUE.." scripts/c
 # (D) The derived discipline check: one owner, a domain over both places this
 # tree writes Lean, and a reconciliation in BOTH directions.  A pin nothing
 # reconciles is a list nobody reads.
-run_check "INVARIANT" bash -lc 'rg -n "^LEAN_PROBE_MARKER = re\.compile\(r\"\^import Lean\", re\.M\)" scripts/check_declaration_kind_askers.py'
+# `v0.35.118` widened this marker to recognise a project import as well, so the
+# `v0.35.115` positive over the narrow spelling is RETIRED: its subject is gone, and
+# a positive on text the tree no longer contains is a failing gate rather than a
+# tautology.  It becomes the negative -- the narrow marker must not come back,
+# because a probe importing only a project module carries no `import Lean` line and
+# would silently leave the one-owner inventory.  The positive on the live spelling
+# is the `v0.35.118` block above.
+run_negative_check "INVARIANT" bash -lc 'rg -n "^LEAN_PROBE_MARKER = re\.compile\(r\"\^import Lean\", re\.M\)" scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "CONSTANT_INFO_CONSTRUCTORS = \\(\n    \"axiomInfo\", \"defnInfo\", \"thmInfo\", \"opaqueInfo\",\n    \"quotInfo\", \"inductInfo\", \"ctorInfo\", \"recInfo\",\n\\)" scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def embedded_lean[^\n]*(\n([ \t][^\n]*)?)*for node in ast\.walk\(tree\)" scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -n "not a recorded asker" scripts/check_declaration_kind_askers.py'
