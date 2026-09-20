@@ -1027,15 +1027,34 @@ migration degenerates to its own no-op.  The footprint is unchanged either way �
 both cores it can name were already declared — and
 `cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` needs
 no hypothesis beyond `st.objects.invExt` and the pre-state invariant, because the
-destination obligation becomes `replenishHomeOfSchedContext_spec`. -/
+destination obligation becomes `replenishHomeOfSchedContext_spec`.
+
+**`v0.35.121`: the torn state and the source core are each written ONCE**, and the
+reason is not the one it looks like.  They were spelled twice — as the migration's
+input and again inside the destination resolver — and PR #897's review read that as
+a latency cost, since strict evaluation would run a whole reply-stack reclamation,
+holder abort and several object-table writes twice inside the suspend critical
+section.  Measured against Lean 4.28's IR (`trace.compiler.ir.result`), it is
+**not** a cost: LCNF's CSE pass runs three times in the default pipeline and the
+donation arm compiles to one `cancelIpcBlocking` and one `determineTargetCore`
+either way — the two shapes' IR is identical.
+
+What the duplication really was is a **divergence hazard**, and that is worth more
+than the latency would have been.  Both occurrences are `SystemState`, so a later
+cut that edits one and not the other typechecks and yields a *different transition*:
+the migration would run on one state while its destination was read off another,
+which is `replenishQueueAffinityConsistentOnCore`'s own negation — the WS-RR RR8.11
+defect reachable again, through a copy rather than through a proxy.  Binding makes
+the second occurrence impossible instead of merely equal, and it is definitionally
+the same term (zeta), so every result about this definition carries verbatim. -/
 def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState) :
     SystemState :=
   match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
   | some (scId, holder) =>
-      migrateSchedContextReplenishment (cancelIpcBlocking st victim tcb) scId
-        (determineTargetCore st holder)
-        (replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb) scId
-          (determineTargetCore st holder))
+      let torn := cancelIpcBlocking st victim tcb
+      let fromCore := determineTargetCore st holder
+      migrateSchedContextReplenishment torn scId fromCore
+        (replenishHomeOfSchedContext torn scId fromCore)
   | none => cancelIpcBlocking st victim tcb
 
 /-- The migrated teardown is the plain teardown when nothing was donated — which
@@ -1067,10 +1086,7 @@ plain teardown's. -/
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · rfl
+    exact migrateSchedContextReplenishment_runQueueOnCore _ scId _ _ c
   · rfl
 
 /-- The migration writes no object, so every TCB lookup is the plain teardown's. -/
@@ -1098,10 +1114,7 @@ current thread of every core is the plain teardown's. -/
   unfold cancelIpcBlockingMigrated
   split
   · rename_i scId holder _
-    unfold migrateSchedContextReplenishment
-    split
-    · rfl
-    · rfl
+    exact (migrateSchedContextReplenishment_runQueue_current_eq _ scId _ _ c).2
   · rfl
 
 /-- **WS-OD OD1.5**: the endpoint the reclaim's abort prefix splices — the

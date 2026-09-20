@@ -1,3 +1,92 @@
+## v0.35.121 — the duplication was a divergence hazard, not a latency cost
+
+PR #897's review found `cancelIpcBlockingMigrated`'s donation arm spelling
+`cancelIpcBlocking st victim tcb` twice — as the migration's input and again inside
+the destination resolver — and `determineTargetCore st holder` twice with it.  The
+finding is valid and its **rationale is not**, which is worth more than the fix.
+
+### The measurement that retires the stated cost
+
+The review's reasoning was latency: under strict evaluation a whole reply-stack
+reclamation, holder abort and several object-table writes would run twice inside
+the suspend critical section.  Measured against Lean 4.28's IR
+(`trace.compiler.ir.result`, both shapes compiled side by side), that is **not**
+what happens: LCNF's `cse` pass runs three times in the default pipeline
+(`Lean/Compiler/LCNF/Passes.lean`), and the donation arm compiles to **one**
+`cancelIpcBlocking` and **one** `determineTargetCore` either way.  The two IRs are
+identical instruction for instruction — the `none` arm's own call is the third
+textual occurrence and correctly not shared.
+
+### What the duplication actually was
+
+A **divergence hazard**, and a re-entry to a defect this PR closed 110 cuts ago.
+Both occurrences are `SystemState`, so a cut that edits one and not the other
+typechecks and yields a *different transition*: the migration running on one state
+while its destination is read off another — which is
+`replenishQueueAffinityConsistentOnCore`'s own negation, and precisely what WS-RR
+RR8.11 fixed when the destination was a *proxy* rather than a copy.  Binding makes
+the second occurrence impossible instead of merely equal.
+
+It is definitionally the same term (zeta), verified before touching the tree, so
+every result about this definition carries verbatim.
+
+### Two things the repair found
+
+**Two proofs were re-deriving a lemma the migration's own module states.**  The
+binding leaks a `let` into the goal, which `split` cannot see through, so
+`cancelIpcBlockingMigrated_runQueueOnCore` and `…_currentOnCore` broke.  They were
+`unfold migrateSchedContextReplenishment; split; rfl; rfl` — inline copies of
+`migrateSchedContextReplenishment_runQueueOnCore` and
+`…_runQueue_current_eq`.  They cite those now: shorter, and the answer this tree
+already had.
+
+**And a fail-closed gate defect, registered.**  `test_lib.sh`'s code-view
+classifier answers "not a Lean scan" for any `bash` command whose text contains
+`source ` — so that `bash -lc 'source ~/.elan/env && lake build …'` cannot run
+inside the overlay — and `_run_with_view` then *refuses* such a command outright
+when it also mentions `.lean`.  An anchor whose **pattern** merely quotes the word
+is refused with it, which is what the first spelling of this cut's anchor hit, on a
+Lean binder named `source`.  The binder is `fromCore` now, which is the callee's own
+parameter name and better regardless; the classifier's presence-for-relation
+substitution is `docs/REGISTERED_DEBT.md` table C, owned by the harness, because
+`test_lib.sh` is what every tier routes through and the fix wants witnesses in
+`scripts/test_code_view_wiring.sh`.
+
+### And the derived sweep earned its keep before the gate that will enforce it
+
+Binding the state broke a **`v0.35.86` (WS-RR RR8.11) positive** that pinned the
+inline spelling `replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb) scId`
+in order to assert a relation — *the destination is resolved on the post-teardown
+state*.  The relation is still true and is now **structural** (the same binding in
+both positions, which is stronger than the same text), so the anchor was a spelling
+standing in for a relation, exactly as `v0.35.119`'s `for ns, files` was.  It is
+retired with a tombstone naming what carries the claim, rather than repointed: a
+second anchor over one relation is the duplication this project retires.
+
+Two measurements worth more than the fix.  The **ad-hoc derived sweep found it in
+seconds** — 156 anchors over this cut's changed files — where Tier 3 would have
+reached it forty minutes in, which is the fourth consecutive cut where that is the
+difference and the case for `v0.35.122`.
+
+And `v0.35.120`'s widened satisfiability gate **did not** see the contradiction,
+which is the honest limit of that cut rather than a defect in it.  The retired
+positive and this cut's new negative share their anchored prefix and their bounded
+gap and differ only in the tail — the negative's tail is a literal *prefix* of the
+positive's — so every match of the positive contains a match of the negative and the
+pair is unsatisfiable.  The gate cannot say so: `_literal_runs` refuses a quantifier
+or a class, so a bounded-gap pattern is undecomposable and only the exact-key
+comparison can reach that family, and the two keys differ.  The inference that would
+close it — *same prefix, same gap, one tail containing the other* — is sound and is
+registered; until it lands, a positive over a bounded gap is decided by running it.
+
+Six Tier 3 anchors, two of them `run_prose_check` because the measurement lives in
+a docstring and the code view strips those.  The whole downstream closure builds —
+the cancellation spine, its NI surface, the arm-complete bundle, both library roots
+and the cancellation suite.  No transition changed, so the golden fixture is
+byte-identical and `maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.120 — a third of the tree's absence pins were compared against nothing
 
 `check_anchor_consistency.py` exists so that no two anchors disagree: a cut that

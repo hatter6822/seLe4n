@@ -15491,7 +15491,17 @@ run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_to_home_p
 # Relation, not presence: the destination must be `replenishHomeOfSchedContext`
 # OF THE POST-TEARDOWN STATE.  Resolved on the pre-state it would be the pre-state
 # binding's home, which is the source -- a migration that never moves anything.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*replenishHomeOfSchedContext \(cancelIpcBlocking st victim tcb\) scId" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+#
+# RETIRED at `v0.35.121`, and subsumed rather than weakened.  This pinned the
+# INLINE spelling `replenishHomeOfSchedContext (cancelIpcBlocking st victim tcb)
+# scId`, which is a *text* standing in for the relation; `v0.35.121` bound that
+# state once as `torn`, so the anchor went red while its claim stayed true.  The
+# claim is now carried STRUCTURALLY by the `v0.35.121` block near the end of this
+# file: the positive requires `migrateSchedContextReplenishment torn scId fromCore
+# (replenishHomeOfSchedContext torn scId fromCore)` -- the *same binding* in both
+# positions, which is stronger than the same text -- and the negative refuses the
+# inline spelling coming back.  A second anchor over one relation is the
+# duplication this project retires, so this one is deleted rather than repointed.
 # NEGATIVE: and the retired destination -- the victim's pre-state home -- must not
 # come back.  The source position keeps `determineTargetCore st holder`, so this
 # names `victim` specifically.
@@ -16481,5 +16491,49 @@ run_check "INVARIANT" bash -lc 'rg -n "form 976 of this tree.s anchors take" scr
 run_check "INVARIANT" bash -lc 'rg -n "a piped search was compared rather than " scripts/check_anchor_consistency.py'
 run_check "INVARIANT" bash -lc 'rg -n "an unreducible search inside a shell " scripts/check_anchor_consistency.py'
 run_check "INVARIANT" bash -lc 'rg -n "the .! rg. wrapper stopped being read as " scripts/check_anchor_consistency.py'
+
+# ---------------------------------------------------------------------------
+# `v0.35.121` (PR #897 Codex P2): the torn state and the source core are written
+# ONCE, and the reason is not the one the finding gave.
+#
+# `cancelIpcBlockingMigrated`'s donation arm spelled `cancelIpcBlocking st victim
+# tcb` twice -- as the migration's input and again inside the destination resolver
+# -- and `determineTargetCore st holder` twice with it.  The review read that as a
+# latency cost under strict evaluation.  MEASURED against Lean 4.28's IR
+# (`trace.compiler.ir.result`): it is not one.  LCNF's CSE pass runs three times in
+# the default pipeline and the donation arm compiles to ONE `cancelIpcBlocking` and
+# ONE `determineTargetCore` either way; the two shapes' IR is identical.
+#
+# What the duplication was is a DIVERGENCE HAZARD, which is worth more than the
+# latency would have been: both occurrences are `SystemState`, so a later cut
+# editing one and not the other typechecks and yields a different transition --
+# the migration running on one state with its destination read off another, which
+# is `replenishQueueAffinityConsistentOnCore`'s own negation and the WS-RR RR8.11
+# defect reachable again through a copy rather than through a proxy.
+# ---------------------------------------------------------------------------
+# THE BINDER IS `fromCore`, which is the callee's own parameter name -- and it is
+# not `source` for a second reason worth recording: `test_lib.sh`'s code-view
+# classifier refuses any `bash` check whose text contains `source ` (so that
+# `bash -lc 'source ~/.elan/env && lake build'` cannot run inside the overlay), and
+# an anchor over a Lean binder named `source` is refused with it.  That guard is a
+# presence check standing in for "this script invokes the shell builtin", and it
+# fails CLOSED -- it refuses rather than reading raw text -- so it is a usability
+# defect rather than a hole.  Registered; the rename is an improvement either way.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*      let torn := cancelIpcBlocking st victim tcb\n      let fromCore := determineTargetCore st holder\n      migrateSchedContextReplenishment torn scId fromCore\n        \(replenishHomeOfSchedContext torn scId fromCore\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# ...and the inline spelling must not come back.  DECLARATION-SCOPED, because
+# `CancellationBundle.lean` states the same composition in a `have` where it is the
+# subject of the proof rather than a duplicated evaluation -- a tree-wide negative
+# would fire on a clean tree.  The mutation this refuses keeps every token and puts
+# the call back inside the resolver's argument.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*replenishHomeOfSchedContext \(cancelIpcBlocking" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# ...and the measurement is recorded at the definition, so the next reader re-runs
+# it rather than re-trusting a latency claim this cut retired.
+run_prose_check "INVARIANT" bash -lc 'rg -n "LCNF.s CSE pass runs three times in the default pipeline" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_prose_check "INVARIANT" bash -lc 'rg -n "What the duplication really was is a \*\*divergence hazard\*\*" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+# ...and the two frame proofs the binding broke now CITE the migration module's own
+# lemmas instead of re-deriving them by `unfold` and `split` -- which is the answer
+# this tree already had, and the reason the repair made the proofs shorter.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact migrateSchedContextReplenishment_runQueueOnCore _ scId _ _ c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact \(migrateSchedContextReplenishment_runQueue_current_eq _ scId _ _ c\)\.2" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 
 finalize_report
