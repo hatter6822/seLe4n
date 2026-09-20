@@ -37,9 +37,17 @@ from __future__ import annotations
 import argparse
 import json
 from json import JSONDecodeError
+import os
 from pathlib import Path
 import re
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+import lean_code_view  # noqa: E402  (needs the path insert above)
+
+#: The repository root, so a `Used by` cell's repository-relative path resolves
+#: the same way wherever this script is invoked from.
+REPO_ROOT = Path(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 ALLOWED_TIERS = {"smoke", "nightly"}
 
@@ -105,13 +113,31 @@ def fragment_names_scenario(scenario_id: str, fragment: str) -> bool:
     the check's subject come apart, which is a presence check standing in for a
     relation.
 
-    The id must occur followed by an optional lowercase sub-case letter and then
-    a character that cannot continue an id, so `RH-001` matches `RH-001a insert`
-    and `[RH-001]` and does NOT match `RH-0010a ...`: a bare `in` test would
-    accept a longer id that merely has this one as a prefix, which is the same
-    defect one character down.
+    The id must occur **at a label position** -- the start of the fragment, or
+    immediately inside a `[` -- followed by an optional lowercase sub-case letter
+    and then a character that cannot continue an id.  So `RH-001` matches
+    `RH-001a insert` and `... passed [RH-001a empty get? returns none]`, and does
+    NOT match `RH-0010a ...` (a longer id that merely has this one as a prefix,
+    the same defect one character down) or `[RH-002] insert (covers RH-001)`.
+
+    **A region-scoped presence check is still a presence check** (`v0.35.116`).
+    The first cut of this function searched the WHOLE fragment, so the second
+    example passed: the row claims `RH-001` is traced, the evidence is a line
+    labelled `RH-002`, and `check_fragments` then passed whenever that RH-002 line
+    was emitted -- while `validate-registry` sees only the id SET and the checksum
+    pins the manifest to itself.  Narrowing the id's spelling (the previous fix)
+    made a prefix collision impossible and left the position unasked.
+
+    The two label forms are the ones this tree's manifests use, measured rather
+    than guessed: `TPH-001a empty builder valid` (the label is the fragment) and
+    `robin-hood check passed [RH-001a ...]` (the label is bracketed).  Requiring
+    one of them is this project's *require a canonical spelling and refuse the
+    rest* rule, and it costs the tree nothing -- all 19 live fragments sit at a
+    label position -- so a suite that emits `PASS: TPH-001a ...` spells the
+    fragment as the label rather than the gate widening to a third position.
     """
-    pattern = re.compile(re.escape(scenario_id) + r"[a-z]?(?![0-9A-Za-z-])")
+    pattern = re.compile(r"(?:^|\[)" + re.escape(scenario_id)
+                         + r"[a-z]?(?![0-9A-Za-z-])")
     return pattern.search(fragment) is not None
 
 
@@ -127,6 +153,7 @@ def classify_fixture(path: Path) -> FixtureShape:
     """
     rows: list[tuple[str, str, str]] = []
     suite: str | None = None
+    suite_lineno = 0
     malformed: list[str] = []
     for lineno, line in enumerate(
             path.read_text(encoding="utf-8").splitlines(), start=1):
@@ -136,7 +163,23 @@ def classify_fixture(path: Path) -> FixtureShape:
         if stripped.startswith("#"):
             decl = SUITE_DECL.match(stripped)
             if decl:
+                # A manifest declares ONE producer, and `suite is not None` is a
+                # presence check where the property is "exactly one".  Taking the
+                # last silently redirects every fragment check: a copied or
+                # merge-conflicted header points the gate at another suite, which
+                # passes whenever that suite happens to emit the listed
+                # fragments, while the real producer is never run.  Two
+                # declarations classify the file two ways, and "two
+                # classifications are none".
+                if suite is not None:
+                    malformed.append(
+                        f"line {lineno} is a second `# Suite:` declaration "
+                        f"({decl.group(1)!r}); line {suite_lineno} already "
+                        f"declared {suite!r}, and a manifest has one producer"
+                    )
+                    continue
                 suite = decl.group(1)
+                suite_lineno = lineno
             continue
         match = MANIFEST_ROW.match(stripped)
         if match is None:
@@ -245,6 +288,81 @@ MD_HEADING = re.compile(r"^#{1,6}\s")
 # and `Hash` CELLS only -- prose in the `Used by` column contributes nothing
 # whatever it quotes, which is what keeps a mention from standing in for a row.
 TABLE_FILENAME = re.compile(r"`([^`/\s]+\.[^`/\s]+)`")
+# A backticked repository path in the `Used by` cell.  A slash is required, so a
+# bare filename -- which the `Fixture` and `Hash` columns already declare -- is
+# not a consumer, and a trailing subcommand is allowed because a cell may name
+# `scripts/scenario_catalog.py validate-registry`: the path is the leading
+# whitespace-delimited token.
+TABLE_CONSUMER_PATH = re.compile(r"`([^`\s]*/[^`\s]+)(?:\s[^`]*)?`")
+#: The gate that reads every scenario-traceability manifest.
+#:
+#: A manifest's consumer is DERIVED -- `discover_manifests` globs the fixture
+#: directory and never names a file -- so its `Used by` cell cannot be validated
+#: by looking for the fixture's name in the consumer's source, and this is the
+#: path it must name instead.  The asymmetry is the point: an ordinary fixture is
+#: opened by name, and looking for that name is exactly the relation.
+MANIFEST_CONSUMER = "scripts/scenario_catalog.py"
+
+
+class FixtureRow:
+    """One parsed row of the README's `## Files` table.
+
+    `names` is every filename the `Fixture` and `Hash` cells declare -- the
+    membership question `check_fixture_index` asks -- and `fixture` is the
+    `Fixture` cell's own, which is the file the `Used by` cell is a claim about.
+    """
+
+    def __init__(self, fixture: str | None, names: set[str], used_by: str,
+                 lineno: int) -> None:
+        self.fixture = fixture
+        self.names = names
+        self.used_by = used_by
+        self.lineno = lineno
+
+
+def fixture_table_rows(readme: Path) -> tuple[list[FixtureRow], list[str]]:
+    """Every row of the README's `## Files` table, plus errors.
+
+    The section-scoped read happens HERE and nowhere else: both questions the
+    table answers -- which files it enumerates, and which gate each row claims
+    reads its fixture -- are asked of these rows, so a second parse cannot
+    disagree with this one about where the section ends or what a cell says.
+    """
+    lines = readme.read_text(encoding="utf-8").splitlines()
+    start: int | None = None
+    for index, line in enumerate(lines):
+        if line.strip() == FIXTURE_TABLE_HEADING:
+            start = index + 1
+            break
+    if start is None:
+        return [], [
+            f"{readme}: no `{FIXTURE_TABLE_HEADING}` section — that table is "
+            f"what check_fixture_index reconciles the directory against, and "
+            f"the question cannot be answered without it"
+        ]
+    rows: list[FixtureRow] = []
+    for offset, line in enumerate(lines[start:]):
+        if MD_HEADING.match(line):
+            break
+        stripped = line.strip()
+        if not stripped.startswith("|"):
+            continue
+        # `| a | b | c |`.split("|") == ['', ' a ', ' b ', ' c ', ''], so the
+        # `Fixture` and `Hash` cells are [1:3] and `Used by` is [3].  The header
+        # and separator rows carry no backticks and so declare nothing, with no
+        # special case.
+        cells = stripped.split("|")
+        names: set[str] = set()
+        for cell in cells[1:3]:
+            names |= set(TABLE_FILENAME.findall(cell))
+        fixture_cell = TABLE_FILENAME.findall(cells[1]) if len(cells) > 1 else []
+        rows.append(FixtureRow(
+            fixture=fixture_cell[0] if fixture_cell else None,
+            names=names,
+            used_by=cells[3] if len(cells) > 3 else "",
+            lineno=start + offset + 1,
+        ))
+    return rows, []
 
 
 def fixture_table_filenames(readme: Path) -> tuple[set[str], list[str]]:
@@ -257,31 +375,139 @@ def fixture_table_filenames(readme: Path) -> tuple[set[str], list[str]]:
     companion is named in a neighbouring cell, so the file was reported as
     indexed while no row said which gate reads it.
     """
-    lines = readme.read_text(encoding="utf-8").splitlines()
-    start: int | None = None
-    for index, line in enumerate(lines):
-        if line.strip() == FIXTURE_TABLE_HEADING:
-            start = index + 1
-            break
-    if start is None:
-        return set(), [
-            f"{readme}: no `{FIXTURE_TABLE_HEADING}` section — that table is "
-            f"what check_fixture_index reconciles the directory against, and "
-            f"the question cannot be answered without it"
-        ]
+    rows, errors = fixture_table_rows(readme)
+    if errors:
+        return set(), errors
     declared: set[str] = set()
-    for line in lines[start:]:
-        if MD_HEADING.match(line):
-            break
-        stripped = line.strip()
-        if not stripped.startswith("|"):
-            continue
-        # `| a | b | c |`.split("|") == ['', ' a ', ' b ', ' c ', ''], so the
-        # `Fixture` and `Hash` cells are [1:3].  The header and separator rows
-        # carry no backticks and so declare nothing, with no special case.
-        for cell in stripped.split("|")[1:3]:
-            declared |= set(TABLE_FILENAME.findall(cell))
+    for row in rows:
+        declared |= row.names
     return declared, []
+
+
+def consumer_code_view(consumer: Path) -> str:
+    """`consumer`'s source as the tree's code view for its language reads it.
+
+    **Gates read code, prose reads prose.**  A comment naming a fixture is a
+    reader's note, not a gate opening a file, so the mention that satisfies a
+    consumer claim is looked for in the code view -- `lean_code_view`'s
+    per-suffix table, the same one the whole-repo overlay reads, so there is one
+    answer to "what is this file's code view" rather than two.
+
+    Both views keep string contents, which this question needs: a fixture path
+    IS a string literal.
+
+    A suffix the table has no view for is read RAW, and that is stated rather
+    than implied: a shell gate's `#` comment naming a fixture would satisfy the
+    claim.  Narrowing it would mean a third shell lexer, which this project
+    forbids, and the over-approximation costs only precision on the diagnostic --
+    the property (the row names a path whose text mentions the fixture) is still
+    checked, and a typo or a fabricated consumer fails it either way.
+    """
+    text = consumer.read_text(encoding="utf-8", errors="replace")
+    view = lean_code_view.code_view_for(consumer.suffix)
+    return view(text) if view is not None else text
+
+
+def check_fixture_consumers(directory: Path, readme: Path,
+                            repo_root: Path | None = None
+                            ) -> tuple[list[str], int]:
+    """Every `## Files` row's `Used by` cell names a gate that really reads it.
+
+    `check_fixture_index` answers "is this fixture a row of the table"; this
+    answers "does that row's third column describe reality".  The two are
+    different claims and the second was made by nothing: the README's own prose
+    says the table "is the only place a reader learns which gate compares a given
+    fixture", and at `v0.35.109` it named, for two fixtures, consumers that do not
+    read them at all.  A `.sha256` companion cannot see that -- it pins a fixture
+    against itself -- so a new golden fixture could be listed, hashed, and
+    compared by nothing while every fixture gate was green.
+
+    The relation is per fixture KIND, because what "its consumer" means differs:
+
+    * a **scenario-traceability manifest** is found by `discover_manifests`,
+      which globs the directory and names no file, so its consumer cannot be
+      validated by looking for the fixture's name in the consumer's source.  Its
+      cell must name `MANIFEST_CONSUMER`, the gate that performs that discovery.
+    * every **other** fixture is opened by name, so at least one repository path
+      its cell names must exist AND must mention the fixture in its code view.
+
+    `repo_root` defaults to `REPO_ROOT`; the CLI never passes anything else, and
+    the parameter exists so a witness can exercise the relation on a synthetic
+    tree without inheriting this repository's contents -- the idiom
+    `check_fixture_index`'s `exempt` already uses.
+
+    Returns the errors AND the number of claims it validated, because the caller
+    reports that number: computing it from the ROWS instead would keep printing
+    "15 `Used by` claim(s) name a gate that reads the fixture" with this function
+    no longer called at all -- measured, by deleting the call.  A count the check
+    does not produce is a claim about a check that may not have run.
+
+    Both arms fail closed.  A cell naming no repository path at all is an error,
+    which is what caught `two_phase_arch_smoke.expected`: its cell read "same two
+    gates", a back-reference to the row above that a reader resolves by eye and a
+    check cannot resolve at all.
+    """
+    if repo_root is None:
+        repo_root = REPO_ROOT
+    rows, errors = fixture_table_rows(readme)
+    if errors:
+        return errors, 0
+    validated = 0
+    for row in rows:
+        if row.fixture is None:
+            continue
+        path = directory / row.fixture
+        if not path.exists():
+            # `check_fixture_index` reports the absent file; this check has no
+            # fixture to classify and says nothing, rather than reporting the
+            # same row twice under two headings.
+            continue
+        named = [m.group(1) for m in TABLE_CONSUMER_PATH.finditer(row.used_by)]
+        if not named:
+            errors.append(
+                f"{readme}:{row.lineno}: the `Used by` cell for "
+                f"`{row.fixture}` names no repository path — it is the only "
+                f"place a reader learns which gate compares this fixture, and a "
+                f"back-reference to another row ('same two gates') names nothing "
+                f"a check can resolve"
+            )
+            continue
+        is_manifest = classify_fixture(path).manifest is not None
+        if is_manifest:
+            if MANIFEST_CONSUMER not in named:
+                errors.append(
+                    f"{readme}:{row.lineno}: `{row.fixture}` is a "
+                    f"scenario-traceability manifest, so its consumer is "
+                    f"`{MANIFEST_CONSUMER}`'s own discovery — which globs this "
+                    f"directory and names no file, so no other path can be "
+                    f"checked to read it — but the `Used by` cell names only "
+                    f"{', '.join(sorted(named))}"
+                )
+            else:
+                validated += 1
+            continue
+        missing = [n for n in named if not (repo_root / n).exists()]
+        if missing:
+            errors.append(
+                f"{readme}:{row.lineno}: the `Used by` cell for "
+                f"`{row.fixture}` names {', '.join(sorted(missing))}, which "
+                f"{'do' if len(missing) > 1 else 'does'} not exist — a "
+                f"fabricated or mistyped consumer leaves the fixture compared "
+                f"by nothing while every fixture gate is green"
+            )
+            continue
+        readers = [n for n in named
+                   if row.fixture in consumer_code_view(repo_root / n)]
+        if not readers:
+            errors.append(
+                f"{readme}:{row.lineno}: no path the `Used by` cell for "
+                f"`{row.fixture}` names mentions it in code "
+                f"({', '.join(sorted(named))}) — the row claims a gate compares "
+                f"this fixture and none of them opens it"
+            )
+        else:
+            validated += 1
+    return errors, validated
 
 
 def check_fixture_index(directory: Path, readme: Path,
@@ -570,7 +796,15 @@ def main() -> int:
         if not directory.is_dir():
             print(f"error: fixture directory not found: {directory}", file=sys.stderr)
             return 1
-        errors = check_fixture_index(directory, directory / "README.md")
+        readme = directory / "README.md"
+        # TWO relations, reported separately because they are two claims: the
+        # table enumerates the directory, and each row's third column names a
+        # gate that really reads its fixture.  The second was made by nothing
+        # until `v0.35.116` -- so a new golden fixture could be listed, hashed
+        # and compared by no gate at all with every fixture gate green.
+        errors = check_fixture_index(directory, readme)
+        consumer_errors, claims = check_fixture_consumers(directory, readme)
+        errors += consumer_errors
         if errors:
             print("fixture index check failed:", file=sys.stderr)
             for error in errors:
@@ -578,8 +812,8 @@ def main() -> int:
             return 1
         count = sum(1 for f in directory.iterdir()
                     if f.is_file() and f.name != "README.md")
-        print(f"fixture index check passed ({count} files named in "
-              f"{directory / 'README.md'})")
+        print(f"fixture index check passed ({count} files named in {readme}; "
+              f"{claims} `Used by` claim(s) name a gate that reads the fixture)")
         return 0
 
     if args.command == "check-fragments":

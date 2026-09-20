@@ -22,6 +22,19 @@ while the gate reported PASS); and a fragment relation with no binding to its ow
 row (so a cross-wired row witnessed another scenario and passed).  Each now has a
 case that keeps every token, and the accepting controls beside them are what stop
 the fixes from reading as refusals.
+
+At `v0.35.116` it grew three more of the same kind.  A manifest declares ONE
+producer and `suite is not None` is a presence check where the property is
+"exactly one", so a copied second `# Suite:` header redirected every fragment
+check to another executable.  A fragment's id was searched for anywhere in the
+fragment rather than at a LABEL position, so a row whose evidence is another
+scenario's assertion passed while still carrying its own id as prose.  And the
+README's `Used by` column — which that file calls "the only place a reader learns
+which gate compares a given fixture" — was read by nothing, so a new golden
+fixture could be listed, hashed and compared by no gate at all with every fixture
+gate green.  Each new case keeps every token and moves only the relation: a second
+valid header, an id from the label into the prose beside it, a fixture name from
+code into a comment.
 """
 
 from __future__ import annotations
@@ -142,6 +155,44 @@ class TestManifestClassification(unittest.TestCase):
             self.assertIsNotNone(shape.error)
             assert shape.error is not None
             self.assertIn("no `SCENARIO_ID", shape.error)
+
+    def test_a_second_suite_declaration_is_an_ERROR(self) -> None:
+        """A manifest declares ONE producer, and `suite is not None` is a presence
+        check where the property is "exactly one".
+
+        Preserving: both headers are valid, every row is intact, and the file
+        still parses — only the relation is broken.  Under the superseded
+        last-one-wins reading this classified as a well-formed manifest whose
+        producer was `other_suite`, so every fragment check ran against the wrong
+        executable and passed whenever that one happened to emit the listed
+        fragments, while the real producer was never built.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.expected"
+            p.write_text(MANIFEST + "# Suite: other_suite\n", encoding="utf-8")
+            shape = sc.classify_fixture(p)
+            self.assertIsNone(shape.manifest)
+            self.assertIsNotNone(shape.error)
+            assert shape.error is not None
+            self.assertIn("a second `# Suite:` declaration", shape.error)
+            # The error names BOTH producers and both lines, because which one a
+            # maintainer meant is the whole content of the failure.
+            self.assertIn("other_suite", shape.error)
+            self.assertIn("robin_hood_suite", shape.error)
+
+    def test_a_duplicated_suite_declaration_is_an_ERROR(self) -> None:
+        """Even naming the same suite: a copied header has no effect on which
+        executable runs and is still a malformed manifest, and refusing both is
+        the fail-closed direction — a maintainer deletes the duplicate rather than
+        the gate deciding which of two declarations it prefers."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.expected"
+            p.write_text(MANIFEST + "# Suite: robin_hood_suite\n", encoding="utf-8")
+            shape = sc.classify_fixture(p)
+            self.assertIsNone(shape.manifest)
+            self.assertIsNotNone(shape.error)
+            assert shape.error is not None
+            self.assertIn("a second `# Suite:` declaration", shape.error)
 
     def test_an_undeclared_file_with_one_bad_line_is_still_a_trace_fixture(self) -> None:
         """The control for the case above: intent is what changes the verdict.
@@ -277,6 +328,31 @@ class TestFragmentRelation(unittest.TestCase):
             self.assertIn("does not name RH-001", shape.error)
             # The superseded relation passed this: the fragment is emitted.
             self.assertIn("[RH-002a insert then get]", OUTPUT)
+
+    def test_the_id_must_sit_at_a_label_position(self) -> None:
+        """A region is not a position: the id must be at the start of the fragment
+        or immediately inside a `[`, not anywhere in it.
+
+        Preserving: the row's own id is still IN its fragment and the fragment is
+        still a line the suite emits — what moves is where the id sits, from the
+        label to the prose beside it, so the evidence now witnesses `RH-002`.  The
+        previous fix narrowed the id's SPELLING (no prefix collisions) and left
+        the position unasked.
+
+        The two accepting forms are the ones the shipped manifests use, measured
+        rather than chosen: the label IS the fragment, or the label is bracketed.
+        """
+        # Rejected: the id is present, and not at a label position.
+        self.assertFalse(sc.fragment_names_scenario(
+            "RH-001", "[RH-002a insert then get] (covers RH-001)"))
+        self.assertFalse(sc.fragment_names_scenario(
+            "RH-001", "robin-hood check passed for RH-001"))
+        # Accepted: both live forms, and the bracketed one with prose before it.
+        self.assertTrue(sc.fragment_names_scenario(
+            "RH-001", "robin-hood check passed [RH-001a empty get? returns none]"))
+        self.assertTrue(sc.fragment_names_scenario(
+            "TPH-001", "TPH-001a empty builder valid"))
+        self.assertTrue(sc.fragment_names_scenario("RH-001", "[RH-001] ok"))
 
     def test_an_id_is_not_a_prefix_of_a_longer_one(self) -> None:
         """`RH-001` must not be satisfied by `RH-0010a` — the same defect, one
@@ -476,6 +552,121 @@ class TestFixtureIndex(unittest.TestCase):
 
     def test_the_real_tree_is_complete(self) -> None:
         self.assertEqual(sc.check_fixture_index(FIXTURES, FIXTURES / "README.md"), [])
+
+
+class TestFixtureConsumers(unittest.TestCase):
+    """The README's `Used by` column is a CLAIM, and it was read by nothing.
+
+    The README says that table "is the only place a reader learns which gate
+    compares a given fixture", and `check_fixture_index` parses the first two
+    cells and ignores the third — so a new golden fixture could be listed, hashed
+    and compared by no gate at all with every fixture gate green.  The same cut
+    that wrote the sentence *measured* the column false for two fixtures, which is
+    what makes this a claim rather than a hypothetical.
+
+    The relation is per fixture KIND, because what "its consumer" means differs: a
+    manifest is found by a glob that names no file, so its cell must name that
+    gate; every other fixture is opened by name, so a path its cell names must
+    exist and must mention it in CODE.
+    """
+
+    READER = 'def f : Nat := 0 -- reads\ndef g := "a.expected"\n'
+    SILENT = "def f : Nat := 0\n"
+    COMMENTED = "-- the gate compares a.expected\ndef f : Nat := 0\n"
+    MANIFEST_FIXTURE = (
+        "# Suite: rh_suite\nRH-001 | RobinHood | RH-001a insert\n")
+
+    def _case(self, d: str, fixture: str, content: str, cell: str,
+              consumers: dict[str, str]) -> list[str]:
+        root = Path(d)
+        directory = root / "tests" / "fixtures"
+        directory.mkdir(parents=True)
+        (directory / fixture).write_text(content, encoding="utf-8")
+        for rel, text in consumers.items():
+            path = root / rel
+            path.parent.mkdir(parents=True, exist_ok=True)
+            path.write_text(text, encoding="utf-8")
+        readme = directory / "README.md"
+        readme.write_text(
+            "## Files\n\n| Fixture | Hash | Used by |\n| --- | --- | --- |\n"
+            f"| `{fixture}` | | {cell} |\n", encoding="utf-8")
+        errors, _ = sc.check_fixture_consumers(directory, readme, repo_root=root)
+        return errors
+
+    def test_accepts_a_consumer_that_reads_the_fixture(self) -> None:
+        """The control: without it, every rejecting case below is satisfied by a
+        check that refuses everything."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                           {"gates/r.lean": self.READER}), [])
+
+    def test_rejects_a_consumer_that_does_not_read_the_fixture(self) -> None:
+        """Preserving: the cell names a path that exists and is a real gate-shaped
+        file — it simply never opens this fixture, which is what "a fabricated
+        consumer" looks like once the typo case is ruled out."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                                {"gates/r.lean": self.SILENT})
+            self.assertTrue(errors)
+            self.assertIn("mentions it in code", " ".join(errors))
+
+    def test_rejects_a_consumer_that_does_not_exist(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/typo.lean`", {})
+            self.assertTrue(errors)
+            self.assertIn("does not exist", " ".join(errors))
+
+    def test_rejects_a_cell_naming_no_repository_path(self) -> None:
+        """The `two_phase_arch_smoke.expected` case: its cell read "same two
+        gates", a back-reference to the row above that a reader resolves by eye
+        and a check cannot resolve at all."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "same two gates",
+                                {"gates/r.lean": self.READER})
+            self.assertTrue(errors)
+            self.assertIn("names no repository path", " ".join(errors))
+
+    def test_a_comment_is_not_a_gate_opening_a_file(self) -> None:
+        """Gates read code, prose reads prose.
+
+        Preserving: the fixture's name is still in the named consumer, and the
+        consumer still exists — only its POSITION moves, from code into a comment.
+        A raw-text search passes this.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                                {"gates/r.lean": self.COMMENTED})
+            self.assertTrue(errors)
+            self.assertIn("mentions it in code", " ".join(errors))
+
+    def test_accepts_a_manifest_naming_its_discovery_gate(self) -> None:
+        """A manifest's consumer globs the directory and names no file, so looking
+        for the fixture's name in it would refuse every manifest.  The control for
+        the arm below."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", self.MANIFEST_FIXTURE,
+                           "`scripts/scenario_catalog.py check-fragments`", {}), [])
+
+    def test_rejects_a_manifest_naming_some_other_reader(self) -> None:
+        """Preserving: the cell names a real path that really does mention the
+        fixture — which would satisfy the other arm — while the gate that actually
+        reads every manifest goes unnamed."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", self.MANIFEST_FIXTURE,
+                                "`gates/r.lean`", {"gates/r.lean": self.READER})
+            self.assertTrue(errors)
+            self.assertIn("scenario-traceability manifest", " ".join(errors))
+
+    def test_the_real_tree_names_a_real_reader_for_every_fixture(self) -> None:
+        """The claim holds on the shipped README, so the fix is not a refusal."""
+        errors, claims = sc.check_fixture_consumers(
+            FIXTURES, FIXTURES / "README.md")
+        self.assertEqual(errors, [])
+        # The count is the CHECK's, not the table's: a minimum, so a fixture
+        # added later needs no edit here and losing the population still fails.
+        self.assertGreaterEqual(claims, 15)
 
 
 class TestTreeState(unittest.TestCase):

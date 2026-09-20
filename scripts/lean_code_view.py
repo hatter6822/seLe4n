@@ -634,6 +634,38 @@ def _rust_code(text: str) -> str:
     return rust_code_view.code(text)
 
 
+#: The code view for each language whose files a gate scans, by file suffix.
+#:
+#: **A language absent from this table is read RAW, and that is a decision.**
+#: WS-RR RR7.17 measured what the default costs: the overlay linked `.rs` files
+#: whole, so 215 Tier-3 anchors over Rust matched comments and the first negative
+#: written against a Rust construct was satisfied by the comment explaining what
+#: it forbids.  Adding a language whose files gates scan means adding its
+#: stripper here.
+#:
+#: Both views keep string contents, because a Tier 3 anchor may be about what an
+#: `asm!` template puts in the symbol table and a fixture path is a string
+#: literal.  A question that needs them gone asks `code_no_strings` instead.
+#:
+#: Hoisted to module scope at `v0.35.116`: `overlay` had it as a local, so
+#: `scenario_catalog.py` -- which asks the same question of a fixture consumer's
+#: source -- would have had to spell a second copy.
+_STRIPPERS = {
+    ".lean": strip,
+    ".rs": _rust_code,
+}
+
+
+def code_view_for(suffix: str):
+    """The code view for files with `suffix`, or `None` when the tree has none.
+
+    `None` is not an error and not an omission: it is the statement that a
+    consumer over such a file reads the raw text, comments included, and must
+    say so.  See `_STRIPPERS`.
+    """
+    return _STRIPPERS.get(suffix)
+
+
 def overlay(outdir: str, repo: str | None = None) -> str:
     """Build a whole-repo overlay whose `.lean` files are comment-free.
 
@@ -692,11 +724,6 @@ def overlay(outdir: str, repo: str | None = None) -> str:
     # data, and is a *decision* rather than a default: adding a language whose
     # files gates scan means adding its stripper here, and until it is added the
     # gates over it read comments.
-    _STRIPPERS = {
-        ".lean": strip,
-        ".rs": _rust_code,
-    }
-
     def link(src: str, dest: str) -> None:
         if os.path.islink(dest):
             if os.readlink(dest) == src:

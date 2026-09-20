@@ -107,10 +107,53 @@ CONTROL_LOG="$(mktemp)"
 CONTROL_SCRATCH="$(mktemp)"
 CONTROL_UNTRACKED="$(mktemp)"
 
+# The controls mutate the real fixture in place and restore it from the index
+# between each one, which is the only way to reach the comparison (the fixture-path
+# guard refuses any path outside the index -- see the block above).  That restore
+# DESTROYS an unstaged edit, and a maintainer editing a fixture is exactly who runs
+# `--controls-only`: it is seconds where the tier stack is tens of minutes.
+#
+# So the script takes OWNERSHIP of the two control files before it touches them,
+# and refuses when they are dirty.  Two things make the refusal sound rather than
+# cosmetic.  It is fail-closed: "I could not run" and "I ran and the gate passed"
+# must not produce the same verdict, so the refusal is a non-zero exit with the
+# reason, never a skip.  And the ownership flag is what the trap reads, because the
+# trap is installed before the check can run -- without it, a refusal would fire
+# the very restore it exists to prevent.
+#
+# A STAGED edit is not dirty and is preserved: `git checkout --` restores from the
+# index, so the content the script puts back is the content the maintainer staged.
+# `git diff --quiet` asks precisely the unstaged question, which is the one that
+# loses work.  That is the supported workflow -- regenerate the fixture, stage it,
+# re-run the controls -- and it is also why a STAGED edit is not refused: the
+# controls are measured against the INDEXED fixture, so if that content does not
+# describe the trace a control fails loudly on the first run rather than the
+# harness silently scoring a bad baseline.  A control failure there is the harness
+# reporting the staged fixture, not a defect in the harness.
+CONTROL_FIXTURE_OWNED=0
+
 restore_control_fixture() {
+  if [[ "${CONTROL_FIXTURE_OWNED}" -ne 1 ]]; then
+    return 0
+  fi
   git checkout -- "${CONTROL_FIXTURE}" "${CONTROL_HASH}" 2>/dev/null || true
 }
 trap 'restore_control_fixture; rm -f "${CONTROL_LOG}" "${CONTROL_SCRATCH}" "${CONTROL_UNTRACKED}"' EXIT INT TERM
+
+# Taken BEFORE the tier stack, not before the controls: with the check inside
+# `run_trace_gate_controls` a full run would spend tens of minutes and then
+# discard the edits, which is worse than discarding them at once.  A legitimately
+# regenerated fixture also makes the tier stack PASS, so nothing earlier would
+# have refused.
+take_control_fixture_ownership() {
+  if ! git diff --quiet -- "${CONTROL_FIXTURE}" "${CONTROL_HASH}"; then
+    echo "[AUDIT] ERROR: refusing to run -- the trace-gate controls mutate these files in place and restore them from the git index, which would permanently discard your unstaged edits:" >&2
+    git diff --stat -- "${CONTROL_FIXTURE}" "${CONTROL_HASH}" >&2
+    echo "[AUDIT] Commit or stash them (or \`git add\` them, which this script preserves) and re-run." >&2
+    exit 1
+  fi
+  CONTROL_FIXTURE_OWNED=1
+}
 
 refresh_control_hash() {
   (cd "$(dirname "${CONTROL_FIXTURE}")" \
@@ -223,6 +266,8 @@ run_trace_gate_controls() {
 
   echo "[AUDIT] Trace-gate controls: 5 of 5 rejected, each by its own subject"
 }
+
+take_control_fixture_ownership
 
 if [[ "${CONTROLS_ONLY}" -eq 1 ]]; then
   echo "[AUDIT] Verifying Tier 2 control-data failure behavior (controls only)"

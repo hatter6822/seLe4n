@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.115.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.116.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -88,6 +88,25 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
+
+**A tier stops at its first failing check.**  `run_check` calls
+`finalize_report` unless `--continue` is passed, so one run names *one* broken
+gate and a green run after a fix says nothing about the checks that never ran.
+Pass `--continue` to any tier script to collect every failure in one pass:
+
+```bash
+./scripts/test_tier3_invariant_surface.sh --continue   # every broken anchor, once
+```
+
+That matters most after a **refactor**: moving a definition silently breaks every
+Tier 3 anchor scoped to it, and Tier 3 runs last.  Before running it, sweep the
+anchors over every file the cut touched —
+`rg -n '^run_(check|negative_check|prose_check|prose_negative_check) ' scripts/test_tier3_invariant_surface.sh`
+filtered to those paths — and execute each one directly; that is seconds against
+tens of minutes per iteration.  This is the *sweep what was pinning the thing you
+deleted* rule with a mechanism: `v0.35.116` moved a table parse between two
+functions and three anchors over the old home went silent, of which the run
+reported one.
 
 **Run `test_aarch64_cross_build.sh` after any change under `rust/`.** The
 tier scripts and `test_rust.sh` both compile the *host* target, where every
@@ -3001,6 +3020,49 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   tens of minutes.  And the mutated fixture is restored from the index after every
   control **and the restoration is verified**, because a crashed run that leaves a
   golden fixture edited is worse than a control that never ran.
+  **And a prose COLUMN is a claim nothing reconciles — while a gate that repairs
+  shared state must own it first** (`v0.35.116`).  The rule above says a fixture
+  needs a gate that runs its producer and that *which gate it is belongs in*
+  `tests/fixtures/README.md`'s "Used by" column.  That sentence had two readers
+  and no checker: `check_fixture_index` parses the `Fixture` and `Hash` cells and
+  ignores the third, so the column a reader is told is "the only place a reader
+  learns which gate compares a given fixture" was read by nothing — and the same
+  cut that wrote it *measured* the column false for two fixtures.  A new golden
+  fixture could therefore be listed, hashed and compared by no gate at all with
+  every fixture gate green, which is `v0.35.109`'s own finding one column over,
+  and it is the *a counterpart named in prose* rule (PR #895 round 22) applied to
+  a documentation table rather than to a Lean comment.
+
+  `check_fixture_consumers` validates it per fixture **kind**, because what "its
+  consumer" means differs: a scenario-traceability manifest is found by a glob
+  that names no file, so its cell must name that gate and nothing else is
+  checkable; every other fixture is opened by name, so a repository path its cell
+  names must exist and must mention the fixture in its **code view** — the tree's
+  own per-suffix table, hoisted out of `lean_code_view.overlay`'s local so the
+  question "what is this file's code view" keeps one owner rather than two.  A
+  suffix with no view is read raw and the docstring says so, since narrowing it
+  would mean a third shell lexer.  Its first run caught the row the enumeration
+  could not: `two_phase_arch_smoke.expected`'s cell read *"same two gates"*, a
+  back-reference to the row above that a reader resolves by eye and a check
+  cannot resolve at all.
+
+  The second half is the audit harness, and it is a class this file had not
+  written down.  `audit_testing_framework.sh` mutates the real trace fixture in
+  place — the only way to reach the comparison, since the fixture-path guard
+  refuses anything outside the index — and restores it with `git checkout --`
+  before the first control and again on EXIT.  That **permanently discards an
+  unstaged edit**, and a maintainer editing a fixture is exactly who runs
+  `--controls-only`, which this file advertises as eleven seconds against tens of
+  minutes.  **A gate that repairs shared state takes ownership of it first, and
+  refuses rather than repairing what it does not own**: the check is fail-closed
+  (a non-zero exit naming the files, never a skip), it runs *before* the tier
+  stack rather than before the controls — a full run would otherwise spend tens
+  of minutes and then discard the edits, and a legitimately regenerated fixture
+  makes that stack **pass** — and the restore reads an ownership flag, because the
+  trap is installed before the check can run and would otherwise fire the very
+  restore it exists to prevent.  A *staged* edit is not dirty and is preserved,
+  which is what makes `git diff --quiet` the right question: it asks precisely the
+  unstaged one, and the index is what the restore puts back.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
   `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
   explicit `.toNat`/`.ofNat`.

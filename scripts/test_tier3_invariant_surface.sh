@@ -15909,8 +15909,13 @@ run_prose_negative_check "INVARIANT" bash -lc 'rg -n "lake exe two_phase_arch_su
 run_prose_check "INVARIANT" rg -n 'scenario-traceability manifest\*\*, not golden output' tests/fixtures/README.md
 # ...and the table is held to the directory, since it is the only place a reader
 # learns which gate compares a fixture and it is hand-written.  Membership is a
-# table ROW, not a mention: a prose mention names no gate.
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*startswith\(.\|.\)" scripts/scenario_catalog.py'
+# table ROW, not a mention: a prose mention names no gate.  The parse itself lives
+# in `fixture_table_rows` since `v0.35.116`, because both questions the table
+# answers -- which files it enumerates, and which gate each row claims reads its
+# fixture -- are asked of those rows, so a second parse cannot disagree with this
+# one about where the section ends or what a cell says.
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*startswith\(.\|.\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*rows, errors = fixture_table_rows\(readme\)" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*stale FIXTURE_INDEX_EXEMPT" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -n "check-fixture-index" scripts/test_tier0_hygiene.sh'
 # v0.35.110: the main trace comparison is BOTH-directional.  The reverse
@@ -15964,6 +15969,60 @@ run_check "INVARIANT" bash -lc 'rg -n "..controls-only\) CONTROLS_ONLY=1" script
 # ...and the superseded control -- a copy of the fixture at an UNTRACKED path,
 # which the guard refuses before the gate reads a line -- must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -n "TMP_FIXTURE" scripts/audit_testing_framework.sh'
+# ===========================================================================
+# v0.35.116: the fixture catalogue's claims describe reality, and the audit
+# harness does not destroy a maintainer's work.
+#
+# Three P2 findings, one slice.  (A) A manifest declares ONE producer, and
+# `suite is not None` is a presence check where the property is "exactly one" --
+# so a copied or merge-conflicted second header silently redirected every
+# fragment check to another suite.  (B) The README's `Used by` column is the only
+# place a reader learns which gate compares a fixture, and it was read by
+# nothing: a new golden fixture could be listed, hashed, and compared by no gate
+# at all with every fixture gate green -- and the table already named, for two
+# fixtures, consumers that do not read them.  (C) The Tier 2 controls mutate the
+# real fixture in place and restore it from the index, which permanently
+# discarded a maintainer's unstaged edits -- and a maintainer editing a fixture
+# is exactly who runs `--controls-only`.
+# ===========================================================================
+# (A) The duplicate declaration is refused INSIDE `classify_fixture`, before the
+# assignment it would otherwise overwrite...
+run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*is a second .# Suite:. declaration" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "if suite is not None:[^\n]*(\n([ \t][^\n]*)?)*suite = decl\.group\(1\)" scripts/scenario_catalog.py'
+# ...and a second declaration makes the file MALFORMED rather than reclassifying
+# it, so the error names the producer a reader has to fix.
+run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*a manifest has one producer" scripts/scenario_catalog.py'
+# (B) The `Used by` claim is validated per fixture KIND: a manifest names the
+# gate that DISCOVERS it (its consumer names no file, so nothing else is
+# checkable), everything else names a path that mentions it in code.
+run_check "INVARIANT" bash -lc 'rg -n "^MANIFEST_CONSUMER = \"scripts/scenario_catalog\.py\"$" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_consumers[^\n]*(\n([ \t][^\n]*)?)*MANIFEST_CONSUMER not in named" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_consumers[^\n]*(\n([ \t][^\n]*)?)*row\.fixture in consumer_code_view\(repo_root / n\)" scripts/scenario_catalog.py'
+# ...a consumer path needs a SLASH, so a bare filename the Fixture column
+# already declares is not a consumer...
+run_check "INVARIANT" bash -lc 'rg -n "^TABLE_CONSUMER_PATH = re\.compile\(r\"..\[\^..s\]\*/" scripts/scenario_catalog.py'
+# ...the mention is looked for in the CODE view, so a comment naming a fixture
+# does not stand in for a gate opening it...
+run_check "INVARIANT" bash -lc 'rg -U -n "def consumer_code_view[^\n]*(\n([ \t][^\n]*)?)*lean_code_view\.code_view_for\(consumer\.suffix\)" scripts/scenario_catalog.py'
+# ...and both relations run, reported separately, from the one command whose
+# subject is "does the README describe reality".
+run_check "INVARIANT" bash -lc 'rg -U -n "errors = check_fixture_index\(directory, readme\)\n        consumer_errors, claims = check_fixture_consumers\(directory, readme\)\n        errors \+= consumer_errors" scripts/scenario_catalog.py'
+# The per-suffix code view has ONE owner: `overlay`'s local table is gone and
+# both askers read the module-level one.
+run_check "INVARIANT" bash -lc 'rg -n "^_STRIPPERS = \{$" scripts/lean_code_view.py'
+run_check "INVARIANT" bash -lc 'rg -n "^def code_view_for\(suffix: str\):$" scripts/lean_code_view.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "^    _STRIPPERS = \{" scripts/lean_code_view.py'
+# (C) The controls take OWNERSHIP before they touch the files, the trap reads
+# that flag (it is installed before the check can run), and the refusal is
+# fail-closed rather than a skip.
+run_check "INVARIANT" bash -lc 'rg -U -n "restore_control_fixture\(\) \{\n  if \[\[ .+CONTROL_FIXTURE_OWNED.+ -ne 1 \]\]; then" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "^take_control_fixture_ownership\n\nif \[\[ .+CONTROLS_ONLY.+ -eq 1 \]\]" scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "take_control_fixture_ownership\(\) \{[^\n]*(\n([ \t][^\n]*)?)*git diff --quiet -- " scripts/audit_testing_framework.sh'
+run_check "INVARIANT" bash -lc 'rg -U -n "take_control_fixture_ownership\(\) \{[^\n]*(\n([ \t][^\n]*)?)*CONTROL_FIXTURE_OWNED=1" scripts/audit_testing_framework.sh'
+# (D) The row that named no path at all names its two gates; the back-reference
+# a reader resolves by eye and a check cannot must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -n "same two gates" tests/fixtures/README.md'
+run_check "INVARIANT" bash -lc 'rg -n "two_phase_arch_smoke\.expected.*scenario_catalog\.py check-fragments" tests/fixtures/README.md'
 # ===========================================================================
 # v0.35.115 — the FIFTH and SIXTH askers, and a check so there is no seventh.
 #
@@ -16094,8 +16153,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def nonExecutedTransitionsPri
 # so prose in the `Used by` column cannot stand in for a row.
 run_check "INVARIANT" rg -n '^def fixture_table_filenames' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^FIXTURE_TABLE_HEADING = "## Files"' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*split\(.\|.\)\[1:3\]" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_filenames[^\n]*(\n([ \t][^\n]*)?)*MD_HEADING.match\(line\):\n *break" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*cells\[1:3\]" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*MD_HEADING.match\(line\):\n *break" scripts/scenario_catalog.py'
 # ...and BOTH directions are asked: a file with no row, and a row with no file.
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(present - accounted\)" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(declared - present\)" scripts/scenario_catalog.py'

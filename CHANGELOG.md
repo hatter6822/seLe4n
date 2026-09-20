@@ -1,3 +1,113 @@
+## v0.35.116 — the fixture catalogue's claims, and the audit harness's safety
+
+Four review findings against the scenario-traceability machinery, one slice: each
+is a **claim the gate made and did not check**, and the three new relations join
+the witness suite that already exists for this file rather than a second one.
+
+### A manifest declares one producer
+
+`suite is not None` is a presence check where the property is *exactly one*, and
+each `# Suite:` declaration overwrote the last.  A copied or merge-conflicted
+second header therefore redirected **every** fragment check to another executable,
+which passes whenever that one happens to emit the listed fragments, while the
+real producer is never built.  A second declaration is a malformed manifest now,
+with the error naming both producers and both line numbers — which one a
+maintainer meant is the whole content of the failure.  One naming the *same*
+suite is refused too: the effect is harmless, the file is still malformed, and
+refusing both is the fail-closed direction.
+
+### A fragment sits at its row's label position
+
+`fragment_names_scenario` searched the whole fragment, so
+`[RH-002a insert then get] (covers RH-001)` satisfied an `RH-001` row: the
+evidence names another scenario, the containment test against real output passes
+because that line *is* emitted, and `RH-001` could be deleted from the suite
+outright.  **A region-scoped presence check is still a presence check** — the
+previous cut narrowed the id's *spelling* (no prefix collisions) and left the
+position unasked.  The id must now sit at the start of the fragment or
+immediately inside a `[`, which are the two forms the shipped manifests use,
+measured rather than chosen: all 19 live fragments pass, so requiring the
+canonical label position costs the tree nothing.
+
+### The `Used by` column is a claim, so it is checked
+
+`tests/fixtures/README.md` tells a reader that its `## Files` table "is the only
+place a reader learns which gate compares a given fixture", and
+`check_fixture_index` parsed the `Fixture` and `Hash` cells and ignored the third.
+So a new golden fixture could be **listed, hashed and compared by no gate at
+all** with every fixture gate green — and the same cut that wrote that sentence
+measured the column false for two fixtures, which is what makes this a claim
+rather than a hypothetical.
+
+`check_fixture_consumers` validates it per fixture **kind**, because what "its
+consumer" means differs.  A scenario-traceability manifest is found by a glob that
+names no file, so its cell must name that gate and nothing else about it is
+checkable.  Every other fixture is opened by name, so a repository path its cell
+names must exist *and* must mention the fixture in its **code view** — the tree's
+own per-suffix table, hoisted out of `lean_code_view.overlay`'s local so "what is
+this file's code view" keeps one owner rather than two.  A suffix the table has no
+view for is read raw and the docstring says so, since narrowing it would mean a
+third shell lexer, which this project forbids.
+
+Its first run caught the row the enumeration could not.
+`two_phase_arch_smoke.expected`'s cell read *"same two gates"* — a back-reference
+to the row above that a reader resolves by eye and a check cannot resolve at all.
+It names its two gates now.
+
+### A gate that repairs shared state owns it first
+
+`scripts/audit_testing_framework.sh` mutates the real trace fixture in place (the
+only way to reach the comparison: the fixture-path guard refuses anything outside
+the index) and restores it with `git checkout --` before the first control and
+again on EXIT.  That **permanently discards an unstaged edit** — and a maintainer
+editing a fixture is exactly who runs `--controls-only`, which this project
+advertises as eleven seconds against tens of minutes.
+
+The script takes ownership before it touches the files and refuses when they are
+dirty.  Three things make the refusal sound rather than cosmetic.  It is
+fail-closed: a non-zero exit naming the files, never a skip, because "I could not
+run" and "I ran and the gate passed" must not produce the same verdict.  It runs
+*before the tier stack* rather than before the controls — a full run would
+otherwise spend tens of minutes and then discard the edits, and a legitimately
+regenerated fixture makes that stack **pass**, so nothing earlier would have
+refused.  And the restore reads an ownership flag, because the trap is installed
+before the check can run and would otherwise fire the very restore it exists to
+prevent.  A *staged* edit is not dirty and is preserved, which is what makes
+`git diff --quiet` the right question: it asks precisely the unstaged one, and the
+index is what the restore puts back.
+
+### The witnesses
+
+Eleven cases join `scripts/tests/test_scenario_catalog.py`, each the shape this
+project requires — **keep the token, break the relation** — with a control beside
+every rejecting arm, because a checker that refuses everything reads exactly like
+one that decides: a second *valid* header with every row intact; an id moved from
+the label into the prose beside it; a fixture name moved from code into a comment;
+a consumer path that exists and simply never opens the file; a manifest naming a
+real reader that really does mention it while the gate that reads every manifest
+goes unnamed.  Two real-tree cases assert the shipped README passes both
+relations, so neither fix is a refusal.
+
+### One mechanical lesson, and it cost a full-suite run
+
+**A tier stops at its first failing check**, so one run names *one* broken gate.
+Moving the section-scoped table parse out of `fixture_table_filenames` into
+`fixture_table_rows` silently broke **three** Tier 3 anchors scoped to the old
+home; the run reported the first and exited, and Tier 3 runs last.  That is this
+project's *sweep what was pinning the thing you deleted* rule, arriving as a
+refactor's blast radius rather than a deletion's — and the response is the one it
+prescribes, a mechanism rather than a third telling.  `--continue` (which
+`run_check` has always honoured and nothing documented) collects every failure in
+one pass, and the cheaper practice is to extract the anchors over every file a cut
+touches and execute each one directly, which is seconds against tens of minutes.
+Both are in `CLAUDE.md`'s validation section now; the sweep found all three at
+once, and a fourth anchor was added for the delegation the refactor introduced.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.115 — the fifth and sixth askers, and a check so there is no seventh
 
 `v0.35.114` gave "does this declaration carry a body" one owner
