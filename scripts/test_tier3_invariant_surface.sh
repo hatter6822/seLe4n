@@ -15965,6 +15965,70 @@ run_check "INVARIANT" bash -lc 'rg -n "..controls-only\) CONTROLS_ONLY=1" script
 # which the guard refuses before the gate reads a line -- must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -n "TMP_FIXTURE" scripts/audit_testing_framework.sh'
 # ===========================================================================
+# v0.35.115 — the FIFTH and SIXTH askers, and a check so there is no seventh.
+#
+# `v0.35.114` gave the body question one owner and repointed the four Tier 1
+# censuses; it named the fifth asker (`check_content_flow_coverage.py`'s embedded
+# probe) rather than omitting it.  Sweeping the tree for the eight constructor
+# names then found a SIXTH -- `check_live_arm_per_core_routing.py`'s
+# `routeExecutableValue`, byte-for-byte the function `cfExecutableValue` was -- so
+# the enumeration that opened this cut was one short, which is the whole argument
+# for a derived check rather than a third telling of the rule.
+# ===========================================================================
+# (A) Both probes read the owner and step into an `opaque` body.  The two halves
+# are separate claims: matching on the kind, and `value?` read without the flag,
+# each of which alone hides an `opaque` writer.
+run_check "INVARIANT" bash -lc 'rg -U -n "def cfExecutableValue[^\n]*(\n([ \t][^\n]*)?)*DeclarationKind\.bodyBearing ci then" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def cfExecutableValue[^\n]*(\n([ \t][^\n]*)?)*ci\.value\? \(allowOpaque := true\)" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def routeExecutableValue[^\n]*(\n([ \t][^\n]*)?)*DeclarationKind\.bodyBearing ci then" scripts/check_live_arm_per_core_routing.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def routeExecutableValue[^\n]*(\n([ \t][^\n]*)?)*ci\.value\? \(allowOpaque := true\)" scripts/check_live_arm_per_core_routing.py'
+run_check "INVARIANT" bash -lc 'rg -n "^import SeLe4n\.Testing\.DeclarationKind" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -n "^import SeLe4n\.Testing\.DeclarationKind" scripts/check_live_arm_per_core_routing.py'
+# ...and neither may decide it again.  Declaration-bounded, because the claim is
+# about these declarations: both files still NAME the constructors in prose and in
+# a diagnostic, and a file-wide negative would fire on a clean tree.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def cfExecutableValue[^\n]*(\n([ \t][^\n]*)?)*\| \.thmInfo _ => none" scripts/check_content_flow_coverage.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def routeExecutableValue[^\n]*(\n([ \t][^\n]*)?)*\| \.thmInfo _ => none" scripts/check_live_arm_per_core_routing.py'
+# (B) The four sweeps in the content-flow probe READ that function rather than
+# matching a constructor themselves — which is where four of this cut's five
+# sites were, and the reason the probe already had an owner it bypassed.
+# Each sweep is pinned by the collection it builds, never by a total: two
+# pre-existing readers call the same function, so a count over the file would mix
+# them with the three repointed sweeps and could not see one regress.
+run_check "INVARIANT" bash -lc 'rg -U -n "let fieldWriters : List Name :=[^\n]*(\n([ \t][^\n]*)?)*match cfExecutableValue ci with" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "let writers : List \(Name . List Name\) :=[^\n]*(\n([ \t][^\n]*)?)*match cfExecutableValue ci with" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "let auditWriters : NameSet :=[^\n]*(\n([ \t][^\n]*)?)*match cfExecutableValue ci with" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -n "match \(env\.find\? c\)\.bind cfExecutableValue with" scripts/check_content_flow_coverage.py'
+# (C) The witnesses, which are the first that COULD be witnesses: every plant and
+# every older routing witness is a definition, so each passes a
+# constructor-shaped filter and a flagless `value?`.  Each new one is its
+# neighbour with one keyword changed.
+run_check "INVARIANT" bash -lc 'rg -n "SELF_TEST_ROGUE_OPAQUE = .cfPlantedOpaqueTaintWriter." scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -n "^private opaque \{SELF_TEST_ROGUE_OPAQUE\}" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -n "rogue_opaque not in field_writers" scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" bash -lc 'rg -n "^opaque routeSelfTestOpaque" scripts/check_live_arm_per_core_routing.py'
+run_check "INVARIANT" bash -lc 'rg -n "routeSelfTestOpaque, .OPAQUE.." scripts/check_live_arm_per_core_routing.py'
+# (D) The derived discipline check: one owner, a domain over both places this
+# tree writes Lean, and a reconciliation in BOTH directions.  A pin nothing
+# reconciles is a list nobody reads.
+run_check "INVARIANT" bash -lc 'rg -n "^LEAN_PROBE_MARKER = re\.compile\(r\"\^import Lean\", re\.M\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "CONSTANT_INFO_CONSTRUCTORS = \\(\n    \"axiomInfo\", \"defnInfo\", \"thmInfo\", \"opaqueInfo\",\n    \"quotInfo\", \"inductInfo\", \"ctorInfo\", \"recInfo\",\n\\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def embedded_lean[^\n]*(\n([ \t][^\n]*)?)*for node in ast\.walk\(tree\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "not a recorded asker" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "A stale exemption reads exactly like" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def violations[^\n]*(\n([ \t][^\n]*)?)*ASKER_REASONS\.  An exemption with no stated reason" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "no inventory row" scripts/check_declaration_kind_askers.py'
+# ...a probe it cannot LOCATE is refused rather than skipped, which is the one
+# direction where "could not read" and "read and clean" would otherwise agree...
+run_check "INVARIANT" bash -lc 'rg -n "class UnreadableProbe" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def embedded_lean[^\n]*(\n([ \t][^\n]*)?)*raise UnreadableProbe" scripts/check_declaration_kind_askers.py'
+# ...two assignments binding one name ACCUMULATE, since taking the last would be
+# a cardinality that hides the other...
+run_check "INVARIANT" bash -lc 'rg -n "acc\[c\] = acc\.get\(c, 0\) . n" scripts/check_declaration_kind_askers.py'
+# ...and Tier 0 runs it, self-test first.
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers\.py\" --self-test" scripts/test_tier0_hygiene.sh'
+run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers\.py\"$" scripts/test_tier0_hygiene.sh'
+# ===========================================================================
 # v0.35.114 — "does this declaration carry a body" has ONE answer.
 #
 # Four Tier 1 censuses derive a domain from the environment and each must decide

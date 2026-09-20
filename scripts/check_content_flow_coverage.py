@@ -252,6 +252,16 @@ SELF_TEST_ROOT_ARM = "cfSelfTestPrivateRootArm"
 # with it.
 SELF_TEST_ROGUE_REBUILD = "cfPlantedRebuildTaintWriter"
 
+# A fifth plant, for the declaration KIND the sweeps stopped depending on
+# (PR #897 review, `v0.35.115`).  All four above are `private def`s, so every one
+# of them passes a `.defnInfo`-only sweep once the private-name defect is fixed --
+# which is exactly why none of them could show that an `opaque` writer was
+# invisible.  An `opaque` is executable, its body is reachable through
+# `value? (allowOpaque := true)`, and the pre-fix sweeps reported nothing for this
+# shape at all: a writer spelled this way passed check (C2)'s "one live writer".
+# Same body as the first plant, so the only thing the case varies is the keyword.
+SELF_TEST_ROGUE_OPAQUE = "cfPlantedOpaqueTaintWriter"
+
 # Definitions that build a `SystemState` from nothing rather than rewrite one.
 # See `cfStateConstructors` in the probe for why this is a named list.
 #
@@ -282,6 +292,11 @@ private def {SELF_TEST_ROGUE_MATCH} (st : SeLe4n.Model.SystemState)
 private def {SELF_TEST_ROOT_HELPER} (tcb : SeLe4n.Model.TCB)
     (p : SeLe4n.Priority) : SeLe4n.Model.TCB :=
   {{ tcb with priority := p }}
+
+private opaque {SELF_TEST_ROGUE_OPAQUE} (st : SeLe4n.Model.SystemState) :
+    SeLe4n.Model.SystemState :=
+  {{ st with declassificationTaint :=
+      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
 """
 
 # PR #873 round 10: implementations that deliberately **refuse**.
@@ -350,6 +365,7 @@ private def {SELF_TEST_ROGUE_REBUILD} (st : SeLe4n.Model.SystemState)
 PROBE = r"""
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 import Lean.Elab.Command
 
 open Lean Elab Command
@@ -545,20 +561,33 @@ private def cfStemIndex (env : Environment) (wanted : Std.HashSet String) :
         idx := idx.insert c ((idx.getD c #[]).push n)
   return idx
 
-/-- The value of a constant, **unless it is a proof** -- the same distinction the
-field-writer and taint-writer sweeps below already make, applied to the walk.
+/-- The body of a constant that **carries one and is not a proof** -- the one
+answer every sweep below reads, rather than each deciding it again.
 
-Those sweeps report only `.defnInfo` because "a theorem naming the API states a
-property of it, and a property cannot move a field".  The reach that feeds them
-was reading `value?` uniformly, which is the same claim taken in the other
-direction: a proof term is `Prop`-valued and erased, so it executes nothing and
-cannot be the step by which an arm reaches a write.  Including proofs could only
-widen the reach with constants no arm actually runs -- and they are the majority
-of the environment. -/
+A proof term is `Prop`-valued and erased, so it executes nothing and cannot be
+the step by which an arm reaches a write, nor can it move a field: a theorem
+naming the taint API states a property *of* it.  Including proofs could only
+widen the reach with constants no arm runs, and they are the majority of the
+environment.
+
+**Two things were wrong here until `v0.35.115`, and they are one defect.**  This
+function called `value?` **without** `allowOpaque := true`, which hides an
+`opaque` body by default -- the hazard `CLAUDE.md` records in as many words, and
+which `liveClosure` and `usesDirectly` were both fixed for -- so the reach read
+an `opaque` step as a harmless leaf.  And the four sweeps below did not read this
+function at all: each matched `.defnInfo` directly, so an `opaque` writer of
+`declassificationTaint`, an `opaque` caller of the taint API and an `opaque`
+appender to the audit trail were **invisible** to gates whose claims are "one live
+writer" and "those arms really cannot append".  The exclusion of a proof and the
+exclusion of an `opaque` are two claims and only the first has a reason; the
+docstring that stood here conflated them.  `DeclarationKind.bodyBearing` is the
+owner of the second, shared with the four Tier 1 censuses that had the same
+wildcard (`v0.35.114`). -/
 private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
-  match ci with
-  | .thmInfo _ => none
-  | _ => ci.value?
+  if SeLe4n.Testing.DeclarationKind.bodyBearing ci then
+    ci.value? (allowOpaque := true)
+  else
+    none
 
 /-- Is this a constant whose body belongs to something a human wrote?
 
@@ -658,7 +687,7 @@ write nothing.
 
 Decided on the **owner**, like `cfInspectable`: the constructor carries generated
 auxiliaries of its own (`SystemState.mk._flat_ctor` is a `defn`, not a `ctor`, so
-the sweep's `.defnInfo` filter does not skip it), and each is machinery for the
+the sweeps' body-bearing filter does not skip it), and each is machinery for the
 same reason its owner is. -/
 private def cfStructureMachinery (env : Environment) (structName n : Name) : Bool :=
   let owner := cfOwnerName (cfUserName n)
@@ -699,31 +728,34 @@ run_cmd do
     let fieldWriters : List Name :=
       env.constants.fold (init := []) fun acc n ci =>
         if !cfInspectable n || !cfRewritesState env stateName n then acc
-        else match ci with
-          | .defnInfo di =>
+        else match cfExecutableValue ci with
+          | some value =>
               -- Prefilter on the constructor's presence: an Expr that never
               -- names `SystemState.mk` cannot apply it, and the used-constant
               -- set is cached where a structural walk is not.
-              if di.value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfWritesField stateName `declassificationTaint fieldIdx di.value
+              if value.getUsedConstants.contains (stateName ++ `mk)
+                  && cfWritesField stateName `declassificationTaint fieldIdx value
               then n :: acc
               else acc
-          | _ => acc
+          | none => acc
     for w in fieldWriters do
       logInfo m!"CF_FIELD_WRITER {cfReportName w}"
     -- The exempted constructions, reported so a stale entry is visible: a name
     -- that no longer writes the field (or no longer exists) must leave the list.
     for c in cfStateConstructors do
-      match env.find? c with
-      | some (.defnInfo di) =>
-          if cfWritesField stateName `declassificationTaint fieldIdx di.value then
+      match (env.find? c).bind cfExecutableValue with
+      | some value =>
+          if cfWritesField stateName `declassificationTaint fieldIdx value then
             logInfo m!"CF_STATE_CTOR {c}"
-      | _ => pure ()
+      | none => pure ()
   -- (C) every constant whose value names the taint-writing API.
-  -- Only **definitions** are reported: a theorem naming the API states a
-  -- property of it, and a property cannot move a field.  `ConstantInfo.defnInfo`
-  -- is exactly that distinction, decided by the elaborator rather than by a
-  -- name pattern.
+  -- Only constants with a **body** are reported, and not proofs: a theorem
+  -- naming the API states a property of it, and a property cannot move a field.
+  -- `cfExecutableValue` is that distinction, decided by the elaborator rather
+  -- than by a name pattern -- and it is read here rather than re-decided, which
+  -- is what `v0.35.115` fixed: this sweep matched `.defnInfo` directly, so an
+  -- `opaque` caller of the API was invisible to a check whose claim is "one live
+  -- writer".
   --
   -- **PR #897 review**: and *which* member of the API each one names.  The frozen
   -- mirror map declares one live counterpart per mirror, and reconciling its keys
@@ -734,12 +766,12 @@ run_cmd do
   let writers : List (Name × List Name) :=
     env.constants.fold (init := []) fun acc n ci =>
       if !cfInspectable n then acc
-      else match ci with
-        | .defnInfo di =>
-            let used := di.value.getUsedConstants
+      else match cfExecutableValue ci with
+        | some value =>
+            let used := value.getUsedConstants
             let apis := cfTaintApi.filter (fun a => used.contains a)
             if apis.isEmpty then acc else (n, apis) :: acc
-        | _ => acc
+        | none => acc
   for (w, apis) in writers do
     logInfo m!"CF_TAINT_WRITER {cfReportName w}"
     for a in apis do
@@ -762,13 +794,13 @@ run_cmd do
     | some auditIdx =>
       env.constants.fold (init := ({} : NameSet)) fun acc n ci =>
         if !cfInspectable n || !cfRewritesState env stateName n then acc
-        else match ci with
-          | .defnInfo di =>
-              if di.value.getUsedConstants.contains (stateName ++ `mk)
-                  && cfWritesField stateName `declassificationAuditLog auditIdx di.value
+        else match cfExecutableValue ci with
+          | some value =>
+              if value.getUsedConstants.contains (stateName ++ `mk)
+                  && cfWritesField stateName `declassificationAuditLog auditIdx value
               then acc.insert n
               else acc
-          | _ => acc
+          | none => acc
   for w in auditWriters.toList do
     logInfo m!"CF_AUDIT_WRITER {cfReportName w}"
   -- The theorems the append exemptions below rest on.  An exemption whose
@@ -1269,6 +1301,22 @@ def main() -> int:
             print("      rewrite as a fresh literal — and a second direct writer passes")
             print("      check (C2) by being spelled this way.")
             return 1
+        # …and the `opaque` spelling, which is the declaration KIND the sweeps
+        # used to filter on rather than a body shape.  All four plants above are
+        # `private def`s, so none of them could show this: the sweeps matched
+        # `.defnInfo` directly and `ConstantInfo.value?` hides an `opaque` body by
+        # default, so a writer spelled this way was invisible to a gate whose
+        # claim is "one live writer".
+        rogue_opaque = f"private@{SELF_TEST_ROGUE_OPAQUE}"
+        if rogue_opaque not in field_writers:
+            print("FAIL: --self-test — the direct-field-writer sweep did not detect")
+            print(f"      the planted PRIVATE writer `{SELF_TEST_ROGUE_OPAQUE}`, which")
+            print("      rewrites the field from an `opaque` declaration.  An `opaque` is")
+            print("      executable and its body is reachable through")
+            print("      `value? (allowOpaque := true)`, so a sweep that matches")
+            print("      `.defnInfo` — or reads `value?` without that flag — lets a")
+            print("      second direct writer pass check (C2) by being spelled this way.")
+            return 1
         # …and every named construction must still be one.  The exemption exists
         # because a constructor application counts as a write of every field, so
         # an entry that stops being reported is a name that no longer builds a
@@ -1305,10 +1353,11 @@ def main() -> int:
         print(f"PASS: --self-test — the planted channel was detected on "
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
               f"writer, the planted private rogue writer, the one that hides its "
-              f"rebuild behind a `match` and the one that rebuilds positionally "
-              f"with no projection anywhere; root resolution reached a PRIVATE "
-              f"arm helper; `.receive` was checked in each of its dispatchers "
-              f"separately; the audit-trail reach found the two recording arms.")
+              f"rebuild behind a `match`, the one that rebuilds positionally "
+              f"with no projection anywhere and the one spelled `opaque`; root "
+              f"resolution reached a PRIVATE arm helper; `.receive` was checked "
+              f"in each of its dispatchers separately; the audit-trail reach "
+              f"found the two recording arms.")
         return 0
 
     # (A) no unclassified content movement

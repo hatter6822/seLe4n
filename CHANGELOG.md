@@ -1,3 +1,112 @@
+## v0.35.115 — the fifth and sixth askers, and a check so there is no seventh
+
+`v0.35.114` gave "does this declaration carry a body" one owner
+(`SeLe4n/Testing/DeclarationKind.lean`'s `bodyBearing`, exhaustive over
+`ConstantInfo`'s eight constructors with no `_` arm) and repointed the four Tier 1
+censuses that had been answering it with a `.defnInfo` wildcard.  It **named** a
+fifth asker rather than omitting it: `scripts/check_content_flow_coverage.py`'s
+embedded Lean probe, a different artefact with its own invocation and its own
+`--self-test` harness.
+
+Then the *sweep* — every tracked file, for each of the eight constructor names —
+found a **sixth**, and that is the finding this cut is about.  The enumeration
+that opened it said *five*.
+
+### The two askers
+
+`scripts/check_content_flow_coverage.py` had **five** sites and both halves of the
+defect.  `cfExecutableValue` matched on the declaration kind *and* called
+`ConstantInfo.value?` without `allowOpaque := true`, which hides an `opaque` body
+by default — the hazard `CLAUDE.md` records in as many words, and which
+`liveClosure` and `usesDirectly` were both fixed for — so the arm-reachability
+walk read an `opaque` step as a harmless leaf.  And the four sweeps beside it did
+not read that function at all: each matched `.defnInfo` directly, so an `opaque`
+writer of `SystemState.declassificationTaint`, an `opaque` caller of the taint API
+and an `opaque` appender to the audit trail were **invisible** — to check (C2),
+whose claim is "one live writer"; to the set the frozen-mirror map is reconciled
+against; and to the soundness claim check (C3)'s own comment states, *that skip is
+only sound if those arms really cannot append*.  All four now read
+`cfExecutableValue`, and it reads `bodyBearing` and passes the flag.  **The probe
+already had an owner for "the executable body" and the sweeps bypassed it**, which
+is `v0.35.114`'s shape one artefact over.
+
+`scripts/check_live_arm_per_core_routing.py`'s `routeExecutableValue` was
+**byte-for-byte the function `cfExecutableValue` had been**, with six consumers,
+feeding a *reachability* question — "does this live syscall arm route its per-core
+scheduler access through the per-core form".  An `opaque` helper anywhere in an
+arm's chain made the walk stop there, so the arm beyond it was reported as
+touching no per-core slot and the finding that gate exists to print was never
+printed.  It reads the owner and passes the flag now.
+
+### The plants are the whole measurement
+
+Both widenings admit **nothing** on the live tree: each gate's entire `CF_*` /
+routing inventory and each gate's production verdict are byte-identical before and
+after.  That is the opposite of `v0.35.114`, where the widening admitted one real
+constant (`Platform.FFI.kernelStateRef`), so here the witnesses are the only
+evidence the holes were real — and each is its neighbour with one keyword changed:
+
+* `cfPlantedOpaqueTaintWriter` is the first plant's body spelled `opaque`.  All
+  four existing plants are `private def`s, so every one of them passes a
+  `.defnInfo`-only sweep *and* a flagless `value?`, which is exactly why none of
+  them could show this.  Reverting either half — the kind match, or the flag —
+  makes the self-test report the plant undetected, with the failure naming the
+  cause.
+* `routeSelfTestOpaque` is `routeSelfTestAlias` spelled `opaque`: same `let`, same
+  primitive, same boot core.  The three older routing witnesses are `def`s, so
+  `ROUTE_WITNESS_MISSED OPAQUE` fires **alone** on a revert while ALIAS, ZERO and
+  COMPOSITE all still pass — which is the claim the gate's own failure message now
+  makes.
+
+### The check, so there is no seventh
+
+`scripts/check_declaration_kind_askers.py` (Tier 0) refuses any subject that
+matches a `ConstantInfo` constructor and is not a recorded asker, keyed
+`(subject, constructor)` with a **count** and reconciled in both directions — the
+floor shape `identifier_naming_baseline.json` already has, because a set of keys
+alone cannot see a second occurrence inside a subject that already has one and a
+count alone cannot see the first in a subject that had none.
+
+**Its domain is derived over both places this tree writes Lean.**  A `match` on
+these constructors is Lean, so the question can only be *decided* in Lean: `.lean`
+files, and probe strings a Python gate hands to `lake env lean`, located by `ast`
+as a string constant carrying a line-anchored `import Lean`.  The three such gates
+are found without any of them being named, and a fourth is found the day it is
+written.  A file whose text carries that marker while `ast` locates no such
+constant is **refused** rather than skipped, since "could not read" must not
+answer the same as "read and clean".  Both views are the ones this tree already
+owns (`lean_code_view.strip`, and `rust_code_view`'s Python view for the file
+scan), because several subjects document in their docstrings exactly which
+constructors they retired and a check that counted those would force them to stop
+explaining themselves.
+
+What is outside the domain is stated rather than implied: a Python or shell
+scanner that decided the body question by pattern-matching Lean *source text*.
+None exists, measured over every tracked `.py` and `.sh`, and one would be the
+regex-for-a-Lean-question defect this project already forbids — but it would not
+be seen here, and that is a gap rather than an absence.
+
+**The check earned its keep on its first run, twice.**  Its own both-directions
+reconciliation reported two guessed probe-variable names that do not exist
+(`PROBE`, `SELF_TEST_PROBE`, where `check_module_axioms.py` has one
+`PROBE_TEMPLATE`).  And the mutation set confirms it reports each pre-fix probe as
+an unrecorded subject, a census re-deciding the question as a raised count, a
+stale entry, a moved count in either direction, and an unlocatable probe.  Its own
+two fixtures are recorded subjects **deliberately**: a fixture that silently lost
+its constructor matches would go inert, and an inert fixture reads as coverage
+while asserting nothing.
+
+Tier 0 runs it self-test first.  29 Tier 3 anchors pin both fixes and the check,
+each verified silent-or-firing against a mutation that keeps every other token;
+the two negatives fire only when the retired reading comes back inside the
+declaration they are scoped to.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
+
 ## v0.35.114 — "does this declaration carry a body" has one answer
 
 Four of this tree's Tier 1 censuses derive a **domain** from the elaborated

@@ -227,6 +227,7 @@ PROBE_TEMPLATE = """-- Both roots: `SeLe4n` is the production library; `Platform
 -- how the split was noticed.  Watching the whole tree is the point.
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 import Lean.Elab.Command
 
 open Lean Elab Command
@@ -364,15 +365,29 @@ remediation the gate prints for a finding ("route the arm through the per-core
 form, or allowlist it") is not something a developer can do to a lemma, which is
 the sign such a finding was never in this gate's contract.
 
-The test is `.thmInfo`, not `Prop`-valuedness: a `def` whose type is a
+The test is the declaration KIND, not `Prop`-valuedness: a `def` whose type is a
 proposition is still walked.  That is deliberately more than soundness requires,
-so the skip tracks the `theorem` keyword rather than an inferred property.  The
-three self-test witnesses below are `def`s, so every run still exercises this
-path end to end. -/
+so the skip tracks the keyword rather than an inferred property.
+
+**This read `value?` without `allowOpaque := true` until `v0.35.115`**, which is
+not a narrowing of anything -- it is a hole.  `ConstantInfo.value?` hides an
+`opaque` body by default, so an `opaque` constant came back `none` and became a
+**leaf** of the reach: an arm whose per-core scheduler access sat behind an
+`opaque` helper was classified as reaching no slot, and the finding this gate
+exists to print was never printed.  An `opaque` is executable -- it is the
+spelling this tree's FFI surface uses seventy-odd times -- so the walk must step
+into it, and `routeSelfTestOpaque` below is the witness, which the three older
+witnesses structurally could not be: all three are `def`s, so every one of them
+passes a `.defnInfo`-shaped filter and a `value?` with no flag.
+
+`DeclarationKind.bodyBearing` is the owner of "does this declaration carry a
+body", shared with the Tier 1 censuses (`v0.35.114`) and the content-flow probe
+(`v0.35.115`), which had the same defect in the same two halves. -/
 private def routeExecutableValue (ci : ConstantInfo) : Option Expr :=
-  match ci with
-  | .thmInfo _ => none
-  | _ => ci.value?
+  if SeLe4n.Testing.DeclarationKind.bodyBearing ci then
+    ci.value? (allowOpaque := true)
+  else
+    none
 
 /-- **Does this constant touch a per-core scheduler slot?**  (PR #861 review
 round 37.)
@@ -449,6 +464,26 @@ must not. -/
 def routeSelfTestLiteralZero st tid :=
   SeLe4n.Kernel.removeRunnableOnCore st tid ⟨0, SeLe4n.Kernel.Concurrency.numCores_pos⟩
 
+/-- A fourth witness, for the declaration **kind** (`v0.35.115`).
+
+`routeSelfTestAlias` with one keyword changed: same `let`, same primitive, same
+boot core, so the only thing this case varies is `def` -> `opaque`.  That is
+deliberate, and it is why the three witnesses above could not stand in for it --
+each is a `def`, so each passes both halves of the defect this pins
+(`routeExecutableValue` matching on the kind, and `value?` read without
+`allowOpaque := true`).  An `opaque` carries a body, executes, and is how this
+tree spells its foreign surface; a reach that treats one as a leaf stops at the
+first such helper and reports the arm beyond it as touching nothing.
+
+An explicit signature is required by `opaque`'s own syntax rather than chosen:
+`declSig` is not optional there.  NOT `private`, for the reason
+`routeSelfTestAlias` records: `env.find?` of a mangled name returns `none` and
+the witness would report itself missing for the wrong reason. -/
+opaque routeSelfTestOpaque (st : SeLe4n.Model.SystemState) (tid : SeLe4n.ThreadId) :
+    SeLe4n.Model.SystemState :=
+  let c := SeLe4n.Kernel.Concurrency.bootCoreId
+  SeLe4n.Kernel.removeRunnableOnCore st tid c
+
 run_cmd do
   let env ← getEnv
   let wanted : Std.HashSet String :=
@@ -498,7 +533,8 @@ run_cmd do
   -- gate itself.  All three heads reach a slot, so requiring the conjunction
   -- costs nothing and each witness now checks the same decision the scan makes.
   for (wit, tag) in [(`routeSelfTestAlias, "ALIAS"), (`routeSelfTestLiteralZero, "ZERO"),
-                     (`routeSelfTestComposite, "COMPOSITE")] do
+                     (`routeSelfTestComposite, "COMPOSITE"),
+                     (`routeSelfTestOpaque, "OPAQUE")] do
     let mut ok := false
     if let some ci := env.find? wit then
       if let some v := routeExecutableValue ci then
@@ -691,9 +727,17 @@ def run_probe(roots: list[str], hops: int) -> tuple[dict, str]:
             "setter directly,\n"
             "                  so this one fails when the derived reach "
             "predicate stops reaching.\n"
-            "      All three miss at once when `routeReachesPerCoreSlot` is "
+            "      OPAQUE = ALIAS with one keyword changed, so it is the only "
+            "one of the four\n"
+            "               that fails when `routeExecutableValue` stops "
+            "stepping into an\n"
+            "               `opaque` body — the other three are `def`s and "
+            "pass either way.\n"
+            "      All four miss at once when `routeReachesPerCoreSlot` is "
             "broken, since every\n"
-            "      witness runs the full head-and-argument verdict.")
+            "      witness runs the full head-and-argument verdict; OPAQUE "
+            "alone misses when\n"
+            "      the body-bearing test or `allowOpaque := true` regresses.")
     for tag in ("ROUTE_STEM_UNRESOLVED", "ROUTE_UNRESOLVED",
                 "ROUTE_DISPATCH_UNRESOLVED", "ROUTE_UNNARROWABLE"):
         bad = re.findall(rf"{tag} (\S+)", out)

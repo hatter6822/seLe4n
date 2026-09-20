@@ -529,4 +529,20 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
 
+# "Does this declaration carry a body" had SIX answers across six artefacts
+# (`v0.35.114`, `v0.35.115`), four of them matching the definition constructor
+# alone and wildcarding the rest, so an `opaque` -- executable, and the spelling
+# this tree's foreign surface uses seventy-odd times -- was silently outside four
+# derived domains at once.  `v0.35.114` gave the question one owner and wrote the
+# rule into CLAUDE.md; the fifth and sixth askers were then found by SWEEPING the
+# tree, not by reading the rule, and the enumeration that opened `v0.35.115` said
+# "five".  Neither a fix nor a paragraph reaches the site nobody has written yet,
+# which is this project's own "when a rule has been restated twice, the third
+# response is not prose".  Domain derived over both places this tree writes Lean:
+# `.lean` files, and probe strings a Python gate hands to `lake env lean`.
+# Self-test first, and its decisive case keeps every recorded subject and adds a
+# new one -- the shape each of the six findings had.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_declaration_kind_askers.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_declaration_kind_askers.py"
+
 finalize_report

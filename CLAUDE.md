@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.114.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.115.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1326,23 +1326,32 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
 
-  **And a default branch over a closed inductive is a decision four censuses got
-  wrong** (PR #897 review, `v0.35.114`).  The rule above is about input a scanner
-  cannot *read*; this is the same rule where the scanner reads the input perfectly
-  and answers a wildcard.  `ConstantInfo` has exactly eight constructors, and
-  "which declarations carry a body" is the first question every environment-derived
-  **domain** in this tree has to settle.  It had **five answers**:
-  `ReplyStackWriteCensus` was right (`.defnInfo` *or* `.opaqueInfo`), and four
-  sites across three censuses matched `.defnInfo` alone and wildcarded the rest —
-  so an `opaque`, which is executable, which this tree's FFI surface has
-  seventy-odd of, and whose body `ConstantInfo.value? (allowOpaque := true)` hands
-  back, was silently outside four derived domains at once.  What each one then
-  stopped asking: an unreachable `opaque` transition owed no wire-or-record
-  judgement (`KernelTransitionReachabilityCensus`), an `opaque` lock-set footprint
-  owed no `_size_le` bound — so `boundedWait_under_2pl` and the whole WCRT surface
-  would be **silent** about it — and an `opaque` invariant conjunct dropped out of
-  `measuredConjuncts`, making the de-threading census demand less.  The review
-  reported one of the four.
+  **And a default branch over a closed inductive is a decision five artefacts got
+  wrong** (PR #897 review, `v0.35.114` and `v0.35.115`).  The rule above is about
+  input a scanner cannot *read*; this is the same rule where the scanner reads the
+  input perfectly and answers a wildcard.  `ConstantInfo` has exactly eight
+  constructors, and "which declarations carry a body" is the first question every
+  environment-derived **domain** in this tree has to settle.  It had **six
+  answers** — this paragraph said five for one cut, because `v0.35.114`'s
+  enumeration was of the *censuses* and two embedded Lean probes ask the same
+  question; the sixth was found by sweeping the tree for the eight constructor
+  names, which is the measurement that produced the check below.
+  `ReplyStackWriteCensus` was the one that was right (`.defnInfo` *or*
+  `.opaqueInfo`), and five sites across three censuses and two probes matched
+  `.defnInfo` alone, or read `value?` without `allowOpaque := true`, and
+  wildcarded the rest — so an `opaque`, which is executable, which this tree's FFI
+  surface has seventy-odd of, and whose body
+  `ConstantInfo.value? (allowOpaque := true)` hands back, was silently outside
+  **five** derived domains at once.  What each one then stopped asking: an
+  unreachable `opaque` transition owed no wire-or-record judgement
+  (`KernelTransitionReachabilityCensus`), an `opaque` lock-set footprint owed no
+  `_size_le` bound — so `boundedWait_under_2pl` and the whole WCRT surface would
+  be **silent** about it — an `opaque` invariant conjunct dropped out of
+  `measuredConjuncts`, making the de-threading census demand less, an `opaque`
+  writer of `SystemState.declassificationTaint` passed a check whose claim is "one
+  live writer", and an `opaque` helper in a syscall arm's chain stopped the
+  per-core routing reach there, so the arm beyond it reached no slot at all.  The
+  review reported one of the five.
 
   Three things follow, and the first is why this was not four patches.  **A domain
   miss is silent by construction** — the constant is never examined, the pin never
@@ -1380,6 +1389,53 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the pair pins the domain in both directions, and the first draft's claim that
   the control witnesses "any declaration" was corrected by the mutation that
   refused to produce it.
+
+  **And the answer to "who else asks this" is a SWEEP, and once the sweep has run
+  twice the third response is a check** (PR #897 review, `v0.35.115`).  `v0.35.114`
+  gave the question one owner, repointed four askers and wrote the paragraph above.
+  It named a fifth asker rather than omitting it — `check_content_flow_coverage.py`'s
+  embedded Lean probe, whose `cfExecutableValue` both matched on the kind *and*
+  called `value?` with no flag, with four sweeps beside it that bypassed even that.
+  Then the *sweep* — every tracked file, for each of the eight constructor names —
+  found a **sixth**: `check_live_arm_per_core_routing.py`'s `routeExecutableValue`,
+  byte-for-byte the function `cfExecutableValue` had been, feeding a **reachability**
+  question, so an `opaque` helper anywhere in a syscall arm's chain made the walk
+  stop there and the arm beyond it was reported as touching no per-core slot.  The
+  enumeration that opened this cut said *five*; the count was six, and nothing but
+  running the search over the whole tree would have said so.
+
+  So the response is not a seventh paragraph.
+  `scripts/check_declaration_kind_askers.py` (Tier 0) refuses any subject that
+  matches a `ConstantInfo` constructor and is not a recorded asker, keyed
+  `(subject, constructor)` with a **count** and reconciled in both directions — the
+  floor shape `identifier_naming_baseline.json` already has, because a set of keys
+  alone cannot see a second occurrence inside a subject that already has one and a
+  count alone cannot see the first in a subject that had none.  **Its domain is
+  derived over both places this tree writes Lean**: `.lean` files, and a probe
+  string a Python gate hands to `lake env lean`, located by `ast` as a string
+  constant carrying a line-anchored `import Lean` — so the three such gates are
+  found without any of them being named, and a fourth is found the day it is
+  written.  A file whose text carries that marker while `ast` locates no such
+  constant is **refused** rather than skipped, since "could not read" must not
+  answer the same as "read and clean".  Both views are the ones this tree already
+  owns, because several subjects document in their docstrings exactly which
+  constructors they retired and a check that counted those would force them to stop
+  explaining themselves.
+
+  Three things that cut measured.  **The widening admits nothing on the live tree**
+  — both gates' whole inventories and both production verdicts are byte-identical
+  before and after — which is the opposite of `v0.35.114`, where one real constant
+  (`kernelStateRef`) came in; so here the *plants* are the entire measurement, and
+  each is its neighbour with one keyword changed: `cfPlantedOpaqueTaintWriter` is
+  the first plant's body spelled `opaque`, and `routeSelfTestOpaque` is
+  `routeSelfTestAlias` spelled `opaque`.  **Neither could have been an older
+  witness**: all four existing plants and all three older routing witnesses are
+  definitions, so every one of them passes both halves of the defect, which is
+  exactly why four review rounds and a sweep were needed to see it.  And **the new
+  check earned its keep on its first run**, twice: its own reconciliation reported
+  two guessed probe-variable names that do not exist, and the mutation set confirms
+  it reports each pre-fix probe, a census re-deciding the question, a stale entry, a
+  moved count in either direction and an unlocatable probe.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
