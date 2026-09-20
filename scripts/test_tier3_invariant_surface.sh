@@ -16187,10 +16187,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "if suite is not None:[^\n]*(\n([ \t][^
 run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*a manifest has one producer" scripts/scenario_catalog.py'
 # (B) The `Used by` claim is validated per fixture KIND: a manifest names the
 # gate that DISCOVERS it (its consumer names no file, so nothing else is
-# checkable), everything else names a path that mentions it in code.
+# checkable), everything else names a path that mentions it in code AND consumes
+# the name it binds it to.
 run_check "INVARIANT" bash -lc 'rg -n "^MANIFEST_CONSUMER = \"scripts/scenario_catalog\.py\"$" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_consumers[^\n]*(\n([ \t][^\n]*)?)*MANIFEST_CONSUMER not in named" scripts/scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_consumers[^\n]*(\n([ \t][^\n]*)?)*row\.fixture in consumer_code_view\(repo_root / n\)" scripts/scenario_catalog.py'
+# TOMBSTONE: the positive over `row.fixture in consumer_code_view(repo_root / n)`
+# is RETIRED at `v0.35.123`.  That spelling was a MENTION test -- satisfied by
+# `UNUSED_FIXTURE = "foo.expected"` -- and the relation is now carried by the
+# `fixture_mention_consumed` positive and the negative refusing the retired
+# expression, both in the `v0.35.123` block below.  It was found by the derived
+# changed-file sweep `v0.35.122` added, on that gate's first real use, in seconds.
 # ...a consumer path needs a SLASH, so a bare filename the Fixture column
 # already declares is not a consumer...
 run_check "INVARIANT" bash -lc 'rg -n "^TABLE_CONSUMER_PATH = re\.compile\(r\"..\[\^..s\]\*/" scripts/scenario_catalog.py'
@@ -16693,4 +16699,52 @@ run_check "INVARIANT" bash -lc 'rg -n "an UNSATISFIED positive fails -- the whol
 # sweep itself, in that order.
 run_check "INVARIANT" bash -lc 'rg -n "select_changed_anchors.py\" --self-test" scripts/test_tier0_hygiene.sh'
 run_check "INVARIANT" bash -lc 'rg -n "check_changed_file_anchors.sh\" --controls" scripts/test_tier0_hygiene.sh'
+# ---------------------------------------------------------------------------
+# `v0.35.123`: every fixture question is asked of the right UNIT.  Three PR #897
+# findings over `scripts/scenario_catalog.py`, one principle -- classify, then
+# parse; derive, do not enumerate; and say what the check decides.
+# ---------------------------------------------------------------------------
+# THE ID PARSER CLASSIFIES BEFORE IT PARSES.  It split EVERY line on `|` and took
+# `parts[0]`, so a golden output line `cap | badge | ok` put `cap` in
+# `fixture_ids` and `validate-registry` failed against a registry that correctly
+# has no such scenario -- and Tier 0 passes `main_trace_smoke.expected` through
+# here, so that is a live path.  A manifest's ids come from the rows
+# `classify_fixture` has ALREADY parsed, which is also a de-duplication.
+run_check "INVARIANT" rg -U -n '^def scenario_ids_in[^\n]*(\n([ \t][^\n]*)?)*    shape = classify_fixture\(path\)\n    if shape.error is not None:\n        return set\(\), shape.error\n    if shape.manifest is not None:\n        return \{row\[0\] for row in shape.manifest.rows\}, None' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -U -n '^def scenario_ids_in[^\n]*(\n([ \t][^\n]*)?)*        parts = line.split' scripts/scenario_catalog.py
+# THE REGISTRY'S SECOND INPUT IS DERIVED, and fails closed.  `--extra-fixtures`
+# was a CALLER'S enumeration Tier 0 hand-listed, while `list-manifests` and Tier
+# 2's `check-fragments` both derive theirs -- so a third manifest's ids reached
+# the validator from nowhere and could be absent from the registry with every
+# gate green.  A discovery error yields NO paths, because a partial list that
+# reads as a clean pass is the silence `v0.35.111` found in this same discovery.
+run_check "INVARIANT" rg -U -n '^def manifest_fixture_paths[^\n]*(\n([ \t][^\n]*)?)*    manifests, errors = discover_manifests\(directory\)\n    if errors:\n        return \[\], errors' scripts/scenario_catalog.py
+# ...pinned with an INDENTATION-bounded gap, not the `[ \t]` one this file uses
+# for Lean.  A Lean declaration starts at column 0, so `[ \t]` cannot escape it;
+# inside a Python function EVERY line is indented, so the ordinary gap ran from
+# this branch to the end of `main()` and was satisfied by the OTHER branch's
+# identical line -- caught by a mutation that removed this branch's derivation and
+# left the anchor green.  ` {8,}` stops at the next branch header's four spaces.
+run_check "INVARIANT" rg -U -n 'if args.command == .validate-registry.:[^\n]*(\n( {8,}[^\n]*)?)*        extra_fixtures, discovery_errors = manifest_fixture_paths\(' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -U -n 'if args.command == .generate-registry-stub.:[^\n]*(\n( {8,}[^\n]*)?)*        fixture_ids, id_errors = fixture_ids_and_errors\(' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n 'args.extra_fixtures' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n -- '--extra-fixtures' scripts/test_tier0_hygiene.sh
+# A CONSUMER'S MENTION MUST BE CONSUMED.  `UNUSED_FIXTURE = "foo.expected"`
+# satisfied a mention test while the PASS line said the row names a gate that
+# READS the fixture -- and the unit test's own positive fixture was that shape, so
+# every rejecting case beside it failed for the wrong reason.  Requiring a read AT
+# the mention is refuted by measurement: all five live idioms bind the path and
+# read the name elsewhere.  What is decidable is that a BINDING is consumed.
+run_check "INVARIANT" rg -F -n 'if name is None or word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'if CONSUMER_APPLICATION.search(head[operators[-1]:]):' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scripts/scenario_catalog.py
+# ...and THE CLAIM SAYS WHAT THE CHECK DECIDES.  Resolving a bound path to a read
+# across shell, Lean, Rust and Python is a dataflow question this gate does not
+# answer, so a PASS line saying "reads" implies an authority it does not have --
+# the defect this project keeps recording.  Found by a mutation that changed only
+# the message and was caught by nothing.
+run_check "INVARIANT" rg -F -n 'claim(s) name a path that mentions the fixture ' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n 'name a gate that reads the fixture' scripts/scenario_catalog.py
+
 finalize_report

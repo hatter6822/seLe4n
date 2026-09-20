@@ -222,27 +222,62 @@ def classify_fixture(path: Path) -> FixtureShape:
     return FixtureShape(path, manifest=Manifest(path, suite, rows))
 
 
-def scenario_ids_in(path: Path) -> set[str]:
-    """The scenario ids a fixture declares, in either of the two forms.
+def scenario_ids_in(path: Path) -> tuple[set[str], str | None]:
+    """The scenario ids a fixture declares, DECIDED BY ITS SHAPE.
 
-    Pipe-delimited manifest rows (`ID | SUBSYSTEM | fragment`) and the bracket
-    form a trace fixture uses (`[ID] ...`).  One parser, because
-    `validate-registry` and `generate-registry-stub` ask the same question and
-    had grown two copies of the answer.
+    The two forms are a manifest's pipe-delimited rows (`ID | SUBSYSTEM |
+    fragment`) and the bracket form a trace fixture uses (`[ID] ...`), and which
+    one a file is in is `classify_fixture`'s question.  This asked neither: it
+    split **every** line on `|` and took `parts[0]` whenever there were three or
+    more, so a golden output line such as `cap | badge | ok` put `cap` in
+    `fixture_ids` and `validate-registry` failed against a registry that
+    correctly has no such scenario.  Tier 0 passes `main_trace_smoke.expected`
+    through here, so that is a live path rather than a hypothesis, and the
+    direction -- a spurious failure -- makes a legitimate golden fixture
+    unmaintainable rather than letting a bad one through.
+
+    A manifest's ids come from `shape.manifest.rows`, which `classify_fixture`
+    has **already parsed**, so this is also a de-duplication: re-splitting the
+    rows here was one question with two answers, free to disagree about what a
+    row is.
+
+    Returns `(ids, error)`.  A file that DECLARES manifest intent and is not a
+    well-formed manifest yields no ids and the classifier's own error, because
+    reading it as golden output would silently take its rows' first fields as
+    scenario ids -- the same fail-open one field over, and the reason
+    `discover_manifests` treats that case as an error rather than a skip.
     """
+    shape = classify_fixture(path)
+    if shape.error is not None:
+        return set(), shape.error
+    if shape.manifest is not None:
+        return {row[0] for row in shape.manifest.rows}, None
     ids: set[str] = set()
     for line in path.read_text(encoding="utf-8").splitlines():
-        line = line.strip()
-        if not line or line.startswith("#"):
+        match = BRACKET_ID.match(line.strip())
+        if match:
+            ids.add(match.group(1))
+    return ids, None
+
+
+def fixture_ids_and_errors(paths: list[Path]) -> tuple[set[str], list[str]]:
+    """The union of the scenario ids `paths` declare, and any classification errors.
+
+    One helper because `validate-registry` and `generate-registry-stub` ask the
+    same question and had two copies of the loop; the errors are returned rather
+    than swallowed so both commands fail closed on a file neither shape fits.
+    """
+    ids: set[str] = set()
+    errors: list[str] = []
+    for path in paths:
+        if not path.exists():
             continue
-        parts = line.split("|")
-        if len(parts) >= 3:
-            ids.add(parts[0].strip())
+        found, error = scenario_ids_in(path)
+        if error is not None:
+            errors.append(error)
         else:
-            match = BRACKET_ID.match(line)
-            if match:
-                ids.add(match.group(1))
-    return ids
+            ids |= found
+    return ids, errors
 
 
 def discover_manifests(directory: Path) -> tuple[list[Manifest], list[str]]:
@@ -408,6 +443,123 @@ def consumer_code_view(consumer: Path) -> str:
     return view(text) if view is not None else text
 
 
+#: A Python/Lean/Rust/shell identifier, for the bound-name question below.
+CONSUMER_IDENT = re.compile(r"[A-Za-z_][A-Za-z_0-9]*")
+
+#: An application in the bound value: an identifier followed by a call bracket, a
+#: macro bang, or whitespace and an opening quote.  A parameter expansion
+#: (`${X:-…}`, `${X}`) is deliberately NOT one -- its identifier is followed by
+#: `:` or `}` -- so a shell path binding stays a binding.
+CONSUMER_APPLICATION = re.compile(
+    r"[A-Za-z_][A-Za-z_0-9.:]*(?:!\s*[(\[{]|\s*[(\[]|\s+[\"'])")
+
+#: Tokens that make a line syntactically incomplete, so the NEXT line continues it.
+#: Bounded look-back, because a `-- Suite:` header two lines up is not a binding
+#: and joining unboundedly would attribute one.
+CONSUMER_CONTINUATIONS = (":=", "=", "(", ",", "[", "{", "+", "\\")
+CONSUMER_LOOKBACK = 3
+
+
+def consumer_bound_name(lines: list[str], index: int, at: int) -> str | None:
+    """The name whose value carries the fixture path at `lines[index][:at]`, if any.
+
+    ONE rule for four languages, because the five live consumer idioms are four
+    languages and a per-language table is the enumeration this project retires.
+    The rule: take the text before the fixture (joining preceding lines only while
+    they end in a continuation token, at most `CONSUMER_LOOKBACK` of them), find
+    the last `:=` or `=` in it, drop any trailing type ascription, and take the
+    last identifier.  Measured against every live consumer:
+
+    * `TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-tests/fixtures/…}"` -> `TRACE_FIXTURE`
+    * `private def fixturePath : String := "…"`                 -> `fixturePath`
+    * `const LEAN_TABLE: &str = include_str!("…")`              -> `LEAN_TABLE`
+    * `FIXTURE="${REPO_ROOT}/tests/fixtures/…"`                 -> `FIXTURE`
+    * a `def … : String :=` whose string is on the NEXT line    -> the def's name
+
+    `None` means the mention binds nothing -- an `include_str!` argument, a
+    comparison, a call -- which is a USE by construction and needs no second
+    occurrence.  That is the right default rather than a lenient one: what the
+    caller is ruling out is a *dead binding*, and a mention that binds no name
+    cannot be one.
+    """
+    head = lines[index][:at]
+    taken = 0
+    j = index - 1
+    while taken < CONSUMER_LOOKBACK and j >= 0:
+        previous = lines[j].strip()
+        if not previous:
+            j -= 1
+            continue
+        if not previous.endswith(CONSUMER_CONTINUATIONS):
+            break
+        head = previous + " " + head
+        taken += 1
+        j -= 1
+    operators = [
+        m.start() for m in re.finditer(r":=|=", head)
+        # `==`, `!=`, `<=`, `>=` are comparisons, not bindings; `:=` is caught by
+        # the alternation's first branch and needs no exclusion.
+        if head[m.start():m.start() + 2] == ":="
+        or head[m.start() - 1:m.start()] not in ("=", "!", "<", ">", ":")
+    ]
+    if not operators:
+        return None
+    # The mention may sit INSIDE the bound value as an argument, which is a use
+    # rather than a path binding: `def main := compareAgainst "a.expected"` binds
+    # `main`, an entry point nothing else in the file reads, and refusing it would
+    # be the strict form this rule exists to avoid.  An APPLICATION between the
+    # operator and the fixture is what distinguishes the two, and a parameter
+    # expansion is not one -- `"${REPO_ROOT}/tests/…"` and `"${X:-tests/…}"` are
+    # still path bindings, because their identifier is followed by `}` or `:`
+    # rather than by a call.
+    if CONSUMER_APPLICATION.search(head[operators[-1]:]):
+        return None
+    declaration = head[:operators[-1]]
+    if ":" in declaration:
+        declaration = declaration[:declaration.rfind(":")]
+    identifiers = CONSUMER_IDENT.findall(declaration)
+    return identifiers[-1] if identifiers else None
+
+
+def word_occurrences(text: str, word: str) -> int:
+    """How many times `word` occurs in `text` as a whole word."""
+    return len(re.findall(
+        r"(?<![A-Za-z_0-9])" + re.escape(word) + r"(?![A-Za-z_0-9])", text))
+
+
+def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
+    """Does `view` mention `fixture` somewhere that is not a dead binding?
+
+    `None` -- the view does not mention it at all.  `True` -- at least one mention
+    is a use, or binds a name the view reads again.  `False` -- every mention binds
+    a name nothing else in the file reads, so the path is spelled and never opened.
+
+    The claim `check_fixture_consumers` used to make was satisfied by the mention
+    alone, so `UNUSED_FIXTURE = "foo.expected"` passed while the PASS line said the
+    row names a gate that *reads* the fixture.
+
+    **Why not require a read AT the mention**, measured rather than reasoned: all
+    five live consumer idioms bind the path to a name and read it elsewhere, so the
+    strict form would refuse every valid row -- the opposite of `v0.35.116`, where
+    the strict option was free.  Resolving a binding to a read across shell, Lean,
+    Rust and Python is a dataflow question, which is this project's
+    unbounded-parser trap.  What is decidable is that a *binding* must be consumed,
+    which is the `word_occurrences` shape the tree already uses for the
+    sole-consumption question, and which admits every live row.
+    """
+    lines = view.splitlines()
+    mentioned = False
+    for index, line in enumerate(lines):
+        at = line.find(fixture)
+        if at < 0:
+            continue
+        mentioned = True
+        name = consumer_bound_name(lines, index, at)
+        if name is None or word_occurrences(view, name) > 1:
+            return True
+    return False if mentioned else None
+
+
 def check_fixture_consumers(directory: Path, readme: Path,
                             repo_root: Path | None = None
                             ) -> tuple[list[str], int]:
@@ -429,7 +581,11 @@ def check_fixture_consumers(directory: Path, readme: Path,
       validated by looking for the fixture's name in the consumer's source.  Its
       cell must name `MANIFEST_CONSUMER`, the gate that performs that discovery.
     * every **other** fixture is opened by name, so at least one repository path
-      its cell names must exist AND must mention the fixture in its code view.
+      its cell names must exist, must mention the fixture in its code view, and
+      must not mention it *only* as a dead binding — `UNUSED_FIXTURE =
+      "foo.expected"` satisfied the mention and opened nothing.  See
+      `fixture_mention_consumed` for why the stronger "a read at the mention" is
+      not available and what replaces it.
 
     `repo_root` defaults to `REPO_ROOT`; the CLI never passes anything else, and
     the parameter exists so a witness can exercise the relation on a synthetic
@@ -438,9 +594,9 @@ def check_fixture_consumers(directory: Path, readme: Path,
 
     Returns the errors AND the number of claims it validated, because the caller
     reports that number: computing it from the ROWS instead would keep printing
-    "15 `Used by` claim(s) name a gate that reads the fixture" with this function
-    no longer called at all -- measured, by deleting the call.  A count the check
-    does not produce is a claim about a check that may not have run.
+    "15 `Used by` claim(s) ..." with this function no longer called at all --
+    measured, by deleting the call.  A count the check does not produce is a claim
+    about a check that may not have run.
 
     Both arms fail closed.  A cell naming no repository path at all is an error,
     which is what caught `two_phase_arch_smoke.expected`: its cell read "same two
@@ -496,17 +652,32 @@ def check_fixture_consumers(directory: Path, readme: Path,
                 f"by nothing while every fixture gate is green"
             )
             continue
-        readers = [n for n in named
-                   if row.fixture in consumer_code_view(repo_root / n)]
-        if not readers:
+        readers: list[str] = []
+        bound_but_unread: list[str] = []
+        for n in named:
+            verdict = fixture_mention_consumed(
+                consumer_code_view(repo_root / n), row.fixture)
+            if verdict:
+                readers.append(n)
+            elif verdict is False:
+                bound_but_unread.append(n)
+        if readers:
+            validated += 1
+        elif bound_but_unread:
+            errors.append(
+                f"{readme}:{row.lineno}: every path the `Used by` cell for "
+                f"`{row.fixture}` names binds it to a name nothing else in that "
+                f"file reads ({', '.join(sorted(bound_but_unread))}) — the path "
+                f"is spelled and never opened, so the row claims a comparison "
+                f"that does not happen"
+            )
+        else:
             errors.append(
                 f"{readme}:{row.lineno}: no path the `Used by` cell for "
                 f"`{row.fixture}` names mentions it in code "
                 f"({', '.join(sorted(named))}) — the row claims a gate compares "
                 f"this fixture and none of them opens it"
             )
-        else:
-            validated += 1
     return errors, validated
 
 
@@ -698,6 +869,31 @@ def nightly_seeds(catalog: dict) -> list[int]:
     return sorted(seeds)
 
 
+def manifest_fixture_paths(directory: Path) -> tuple[list[Path], list[str]]:
+    """The scenario-traceability manifests under `directory`, DERIVED.
+
+    The registry gate's second input used to be `--extra-fixtures`, a CALLER'S
+    ENUMERATION, and `scripts/test_tier0_hygiene.sh` hand-listed the two
+    manifests this tree happens to have.  A third one is discovered by
+    `list-manifests` and by Tier 2's `check-fragments` -- both derived from
+    `discover_manifests` -- while its scenario ids reached `validate_registry`
+    from nowhere, so they could be absent from `scenario_registry.yaml` with every
+    gate green.  That is an enumeration standing in for a derivation, with the
+    derivation already written and one function away.
+
+    Measured before taking it: `discover_manifests` returns exactly the two paths
+    Tier 0 hand-listed, so deriving costs the tree nothing and removes the hole.
+
+    **Fails closed.**  A discovery error yields no paths and the errors, because a
+    partial list that reads as a clean pass is the silence `v0.35.111` found in
+    this same discovery.
+    """
+    manifests, errors = discover_manifests(directory)
+    if errors:
+        return [], errors
+    return [m.path for m in manifests], []
+
+
 def validate_registry(fixture_path: Path, registry_path: Path,
                       extra_fixture_paths: list[Path] | None = None) -> list[str]:
     """WS-I1/R-03: Validate that fixture scenario IDs and registry are consistent.
@@ -706,6 +902,10 @@ def validate_registry(fixture_path: Path, registry_path: Path,
     a manifest is a claim about a SUITE'S OUTPUT, which Tier 0 cannot evaluate
     because it runs before any build; `check-fragments`, run from Tier 2, is
     that relation.
+
+    `extra_fixture_paths` is DERIVED by the caller from `manifest_fixture_paths`;
+    the parameter stays so a witness can drive the relation over a synthetic
+    directory, which is the idiom `check_fixture_consumers`' `repo_root` uses.
     """
     errors: list[str] = []
 
@@ -716,10 +916,13 @@ def validate_registry(fixture_path: Path, registry_path: Path,
         errors.append(f"fixture not found: {fixture_path}")
         return errors
 
-    fixture_ids: set[str] = set()
-    for fp in [fixture_path] + (extra_fixture_paths or []):
-        if fp.exists():
-            fixture_ids |= scenario_ids_in(fp)
+    fixture_ids, id_errors = fixture_ids_and_errors(
+        [fixture_path] + (extra_fixture_paths or []))
+    if id_errors:
+        # A file whose SHAPE cannot be decided contributes no ids, so continuing
+        # would report every registry entry as missing from the fixture -- a
+        # hundred errors naming the wrong cause.
+        return id_errors
 
     # Parse scenario IDs from registry (YAML-like: "  ID:" lines)
     registry_ids: set[str] = set()
@@ -762,12 +965,6 @@ def build_parser() -> argparse.ArgumentParser:
         "--registry",
         default="tests/fixtures/scenario_registry.yaml",
         help="Scenario registry path for validate-registry",
-    )
-    parser.add_argument(
-        "--extra-fixtures",
-        nargs="*",
-        default=[],
-        help="Additional fixture files for validate-registry (e.g., suite-specific fixtures)",
     )
     parser.add_argument(
         "--fixture-dir",
@@ -821,9 +1018,11 @@ def main() -> int:
         readme = directory / "README.md"
         # TWO relations, reported separately because they are two claims: the
         # table enumerates the directory, and each row's third column names a
-        # gate that really reads its fixture.  The second was made by nothing
-        # until `v0.35.116` -- so a new golden fixture could be listed, hashed
-        # and compared by no gate at all with every fixture gate green.
+        # path that mentions its fixture in code and consumes the name it binds
+        # it to.  The second was made by nothing until `v0.35.116` -- so a new
+        # golden fixture could be listed, hashed and compared by no gate at all
+        # with every fixture gate green -- and until `v0.35.123` a MENTION alone
+        # satisfied it, so `UNUSED_FIXTURE = "foo.expected"` was a consumer.
         errors = check_fixture_index(directory, readme)
         consumer_errors, claims = check_fixture_consumers(directory, readme)
         errors += consumer_errors
@@ -834,8 +1033,13 @@ def main() -> int:
             return 1
         count = sum(1 for f in directory.iterdir()
                     if f.is_file() and f.name != "README.md")
+        # The claim says what the check DECIDES.  "reads the fixture" over-claimed:
+        # resolving a bound path to a read across four languages is a dataflow
+        # question this gate does not answer, and a number that implies an
+        # authority it does not have is the defect this project keeps recording.
         print(f"fixture index check passed ({count} files named in {readme}; "
-              f"{claims} `Used by` claim(s) name a gate that reads the fixture)")
+              f"{claims} `Used by` claim(s) name a path that mentions the fixture "
+              f"in code and consumes the name it binds it to)")
         return 0
 
     if args.command == "check-fragments":
@@ -902,7 +1106,14 @@ def main() -> int:
 
     if args.command == "validate-registry":
         registry_path = Path(args.registry)
-        extra_fixtures = [Path(p) for p in args.extra_fixtures]
+        # DERIVED, never a caller's list: see `manifest_fixture_paths`.
+        extra_fixtures, discovery_errors = manifest_fixture_paths(
+            Path(args.fixture_dir))
+        if discovery_errors:
+            print("scenario registry validation failed:", file=sys.stderr)
+            for error in discovery_errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
         errors = validate_registry(fixture_path, registry_path, extra_fixtures)
         if errors:
             print("scenario registry validation failed:", file=sys.stderr)
@@ -922,11 +1133,22 @@ def main() -> int:
         # the missing-ID list with default placeholders so a fixture edit
         # cannot land without a registry update.
         registry_path = Path(args.registry)
-        extra_fixtures = [Path(p) for p in args.extra_fixtures]
-        fixture_ids: set[str] = set()
-        for fp in [fixture_path] + extra_fixtures:
-            if fp.exists():
-                fixture_ids |= scenario_ids_in(fp)
+        # The SAME derivation the validator reads, so the stub cannot propose a
+        # different fixture set from the one the gate reconciles.
+        extra_fixtures, discovery_errors = manifest_fixture_paths(
+            Path(args.fixture_dir))
+        if discovery_errors:
+            print("scenario registry stub generation failed:", file=sys.stderr)
+            for error in discovery_errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
+        fixture_ids, id_errors = fixture_ids_and_errors(
+            [fixture_path] + extra_fixtures)
+        if id_errors:
+            print("scenario registry stub generation failed:", file=sys.stderr)
+            for error in id_errors:
+                print(f"- {error}", file=sys.stderr)
+            return 1
         registry_ids: set[str] = set()
         if registry_path.exists():
             for line in registry_path.read_text(encoding="utf-8").splitlines():

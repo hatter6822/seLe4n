@@ -620,7 +620,18 @@ class TestFixtureConsumers(unittest.TestCase):
     exist and must mention it in CODE.
     """
 
-    READER = 'def f : Nat := 0 -- reads\ndef g := "a.expected"\n'
+    # A consumer BINDS the path and reads the name elsewhere, which is what all
+    # five live consumers do.  The previous `READER` bound `g` and read it
+    # nowhere -- a dead binding, and so the CONTROL for every rejecting case
+    # below was itself the defect `v0.35.123` closes.  A witness that is the
+    # defect proves the rejecting cases fail for the wrong reason.
+    READER = ('def fixturePath : String := "a.expected"\n'
+              'def main : IO Unit := IO.FS.readFile fixturePath\n')
+    #: Bound and never read: the path is spelled and the file opens nothing.
+    DEAD_BINDING = 'def unusedFixture := "a.expected"\ndef f : Nat := 0\n'
+    #: A mention that binds NO name -- an argument -- which is a use by
+    #: construction and must not need a second occurrence.
+    INLINE = 'def main : IO Unit := compareAgainst "a.expected"\n'
     SILENT = "def f : Nat := 0\n"
     COMMENTED = "-- the gate compares a.expected\ndef f : Nat := 0\n"
     MANIFEST_FIXTURE = (
@@ -660,6 +671,64 @@ class TestFixtureConsumers(unittest.TestCase):
                                 {"gates/r.lean": self.SILENT})
             self.assertTrue(errors)
             self.assertIn("mentions it in code", " ".join(errors))
+
+    def test_rejects_a_DEAD_BINDING(self) -> None:
+        """`UNUSED_FIXTURE = "foo.expected"` is not a consumer.
+
+        Preserving: the fixture's name is still in the named path, still in its
+        CODE view, and the path still exists -- only the bound name's second
+        occurrence is gone.  A mention-only check passes this, which is what the
+        gate did until `v0.35.123` while its PASS line said the row names a gate
+        that *reads* the fixture.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                                {"gates/r.lean": self.DEAD_BINDING})
+            self.assertTrue(errors)
+            self.assertIn("binds it to a name nothing else", " ".join(errors))
+
+    def test_accepts_a_mention_that_BINDS_NOTHING(self) -> None:
+        """An argument is a use, so it needs no second occurrence.
+
+        Without this the dead-binding rule would be satisfied by refusing every
+        `include_str!`-shaped consumer -- and `conformance.rs` is one.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                           {"gates/r.lean": self.INLINE}), [])
+
+    def test_the_bound_name_is_found_across_a_continuation(self) -> None:
+        """A `def … :=` whose string is on the NEXT line still binds its name.
+
+        `SmpInformationFlowSuite.lean` is exactly this shape, so without the
+        bounded look-back the mention would bind nothing and a dead multi-line
+        binding would pass.  Asserted on BOTH verdicts, because a look-back that
+        always answered `None` would satisfy the acceptance alone.
+        """
+        live = ('def fixturePath : String :=\n  "a.expected"\n'
+                'def main : IO Unit := IO.FS.readFile fixturePath\n')
+        dead = 'def unusedFixture : String :=\n  "a.expected"\ndef f : Nat := 0\n'
+        self.assertIs(sc.fixture_mention_consumed(live, "a.expected"), True)
+        self.assertIs(sc.fixture_mention_consumed(dead, "a.expected"), False)
+        self.assertIsNone(sc.fixture_mention_consumed("def f := 0\n", "a.expected"))
+
+    def test_every_live_consumer_idiom_is_admitted(self) -> None:
+        """The measurement that licensed the rule: all five shipped idioms bind
+        the path and read the name elsewhere, so requiring a read AT the mention
+        would have refused every one of them."""
+        for consumer, fixture in (
+            ("scripts/test_tier2_trace.sh", "main_trace_smoke.expected"),
+            ("tests/SmpSchedulerSuite.lean", "smp_4core_scheduler.expected"),
+            ("rust/sele4n-abi/tests/conformance.rs",
+             "syscall_return_shape.expected"),
+            ("scripts/test_qemu.sh", "qemu_boot_expected.txt"),
+            ("tests/SmpInformationFlowSuite.lean",
+             "declassification_taint.expected"),
+        ):
+            view = sc.consumer_code_view(REPO_ROOT / consumer)
+            self.assertIs(sc.fixture_mention_consumed(view, fixture), True,
+                          f"{consumer} no longer reads {fixture}")
 
     def test_rejects_a_consumer_that_does_not_exist(self) -> None:
         with tempfile.TemporaryDirectory() as d:
@@ -761,11 +830,82 @@ class TestTreeState(unittest.TestCase):
         self.assertNotIn("smp_ipc_4core.expected", names)
 
     def test_registry_gate_is_unchanged_by_the_shared_id_parser(self) -> None:
-        result = run("validate-registry",
-                     "--extra-fixtures",
-                     "tests/fixtures/robin_hood_smoke.expected",
-                     "tests/fixtures/two_phase_arch_smoke.expected")
+        """No `--extra-fixtures`: the manifests are DERIVED since `v0.35.123`."""
+        result = run("validate-registry")
         self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_the_derived_manifest_set_is_what_Tier_0_used_to_hand_list(self) -> None:
+        """The measurement that made deriving free.
+
+        `manifest_fixture_paths` must return exactly the two paths Tier 0 listed
+        by hand, so the derivation is a removal of a hole and not a change of
+        input.  Asserted as an EQUALITY: a superset would silently widen the
+        registry's domain and a subset would narrow it.
+        """
+        paths, errors = sc.manifest_fixture_paths(FIXTURES)
+        self.assertEqual(errors, [])
+        self.assertEqual(
+            sorted(p.name for p in paths),
+            ["robin_hood_smoke.expected", "two_phase_arch_smoke.expected"])
+
+    def test_the_derivation_fails_closed_on_a_discovery_error(self) -> None:
+        """A partial list that reads as a clean pass is the silence `v0.35.111`
+        found in this same discovery, so a directory holding one unparseable
+        declared manifest yields NO paths and the error -- not the good ones."""
+        with tempfile.TemporaryDirectory() as d:
+            directory = Path(d)
+            (directory / "good.expected").write_text(
+                "# Suite: s\nRH-001 | rh | [RH-001] ok\n", encoding="utf-8")
+            (directory / "bad.expected").write_text(
+                "# Suite: s\nRH-002 | rh | [RH-002] ok\nnot a row\n",
+                encoding="utf-8")
+            paths, errors = sc.manifest_fixture_paths(directory)
+            self.assertEqual(paths, [])
+            self.assertTrue(errors)
+
+    def test_a_golden_line_with_pipes_is_not_a_manifest_row(self) -> None:
+        """Tier 0 passes `main_trace_smoke.expected` through the id parser, and a
+        golden line `cap | badge | ok` used to put `cap` in `fixture_ids`.
+
+        Preserving: the pipes stay, the bracketed ids stay, and only the
+        CLASSIFICATION decides -- which is what a shape-blind split cannot do.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            golden = Path(d) / "gold.expected"
+            golden.write_text("[RH-001] insert then get\ncap | badge | ok\n",
+                              encoding="utf-8")
+            ids, error = sc.scenario_ids_in(golden)
+            self.assertIsNone(error)
+            self.assertEqual(ids, {"RH-001"})
+
+    def test_a_declared_manifest_that_does_not_parse_yields_no_ids(self) -> None:
+        """Fail closed: reading it as golden output would take its rows' first
+        fields as scenario ids, which is the same fail-open one field over."""
+        with tempfile.TemporaryDirectory() as d:
+            bad = Path(d) / "b.expected"
+            bad.write_text("# Suite: s\nRH-001 | rh | [RH-001] ok\nnot a row\n",
+                           encoding="utf-8")
+            ids, error = sc.scenario_ids_in(bad)
+            self.assertEqual(ids, set())
+            self.assertIsNotNone(error)
+
+    def test_the_pass_line_says_what_the_check_DECIDES(self) -> None:
+        """`reads the fixture` over-claimed, and nothing asserted the wording.
+
+        Resolving a bound path to a read across shell, Lean, Rust and Python is a
+        dataflow question this gate does not answer; what it decides is that the
+        cell names a path whose code mentions the fixture and whose binding is
+        consumed.  A number that implies an authority it does not have is the
+        defect this project keeps recording, so the sentence is pinned here --
+        found by a mutation that changed only the message and was caught by
+        nothing.
+        """
+        result = run("check-fixture-index")
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertIn(
+            "name a path that mentions the fixture in code and consumes the "
+            "name it binds it to", result.stdout)
+        self.assertNotIn("name a gate that reads the fixture", result.stdout)
 
     def test_cli_requires_both_fragment_arguments(self) -> None:
         self.assertEqual(run("check-fragments").returncode, 1)

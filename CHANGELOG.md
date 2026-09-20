@@ -1,3 +1,129 @@
+## v0.35.123 — every fixture question is asked of the right unit
+
+Three PR #897 findings over `scripts/scenario_catalog.py`, and they are one
+principle: **classify before parsing, derive rather than enumerate, and say what
+the check decides.**
+
+### The id parser classified nothing
+
+`scenario_ids_in` split **every** line on `|` and took `parts[0]` whenever there
+were three or more fields — without asking `classify_fixture`, which exists to
+answer exactly which of the two fixture shapes a file is.  Tier 0 passes
+`main_trace_smoke.expected` through it, so a golden output line `cap | badge | ok`
+puts `cap` in `fixture_ids` and `validate-registry` fails against a registry that
+correctly has no such scenario.  Fail-**closed** — a spurious failure rather than a
+bad id admitted — and still wrong: it makes a legitimate golden fixture
+unmaintainable, which is the direction `v0.35.116` records as a defect in its own
+right.
+
+A manifest's ids now come from `shape.manifest.rows`, which `classify_fixture` has
+**already parsed**, so this is also a de-duplication: re-splitting the rows here
+was one question with two answers, free to disagree about what a row is.  A file
+that *declares* manifest intent and is not one yields **no** ids and the
+classifier's error, because reading it as golden output would take its rows' first
+fields as scenario ids — the same fail-open one field over.
+
+### The registry's second input was a caller's list
+
+`validate-registry` and `generate-registry-stub` read `--extra-fixtures`, which
+`scripts/test_tier0_hygiene.sh` hand-listed, while `list-manifests` and Tier 2's
+`check-fragments` both derive theirs from `discover_manifests`.  A third manifest
+was therefore discovered by two gates and reached the registry validator from
+nowhere, so its scenario ids could be absent from `scenario_registry.yaml` with
+every gate green — an enumeration standing in for a derivation, with the derivation
+already written and one function away.
+
+`manifest_fixture_paths` is that derivation, shared by both commands and **failing
+closed**: a discovery error yields no paths, because a partial list that reads as a
+clean pass is the silence `v0.35.111` found in this same discovery.  Measured
+before taking it — it returns exactly the two paths Tier 0 listed — so deriving
+costs the tree nothing and removes the hole.  The flag is **retired**, not left
+beside the derivation.
+
+### A consumer's mention is not a read
+
+`check_fixture_consumers` accepted `row.fixture in consumer_code_view(path)`, a
+**mention**, so `UNUSED_FIXTURE = "foo.expected"` satisfied it while the PASS line
+said the row names a gate that *reads* the fixture.  Worse, the unit test's own
+positive fixture was that shape — so the control for every rejecting case beside it
+was itself the defect, and each of those cases was failing for the wrong reason.
+
+**Requiring a read at the mention is refuted by measurement, not by argument.**
+All five live consumer idioms bind the path to a name and read it elsewhere:
+
+| consumer | the binding |
+|---|---|
+| `scripts/test_tier2_trace.sh` | `TRACE_FIXTURE="${TRACE_FIXTURE_PATH:-…}"` |
+| `tests/SmpSchedulerSuite.lean` | `private def fixturePath : String := "…"` |
+| `rust/sele4n-abi/tests/conformance.rs` | `const LEAN_TABLE: &str = include_str!("…")` |
+| `scripts/test_qemu.sh` | `FIXTURE="${REPO_ROOT}/…"` |
+| `tests/SmpInformationFlowSuite.lean` | a `def … : String :=` whose string is on the next line |
+
+so the strict form would refuse **five of five** — the opposite of `v0.35.116`,
+where the strict option was free.  Resolving a bound path to a read across shell,
+Lean, Rust and Python is a dataflow question, which is this project's
+unbounded-parser trap.
+
+What is decidable, and admits every live row: **a mention that binds a name must
+consume it.**  `fixture_mention_consumed` answers three ways — not mentioned,
+mentioned as a use, mentioned only as a dead binding — and the bound name is found
+by **one rule for four languages**, because a per-language table is the enumeration
+this project retires: take the text before the fixture, joining preceding lines
+only while they end in a continuation token, find the last `:=` or `=`, drop any
+trailing type ascription, and take the last identifier.  Two things that rule has
+to get right and does.  An **application** between the operator and the string
+means the mention is an argument — `def main := compareAgainst "a.expected"` binds
+an entry point nothing else reads, and refusing it would be the strict form all
+over again — while a parameter expansion is **not** one, so `"${REPO_ROOT}/…"` and
+`"${X:-…}"` stay path bindings.  And the **bounded look-back** is what finds the
+name when the string is on the next line, which one live consumer is.
+
+**And the claim now says what the check decides.**  "name a gate that reads the
+fixture" implied an authority this gate does not have; it names a path that
+mentions the fixture in code and consumes the name it binds it to.  That was found
+by a mutation which changed only the message and was caught by **nothing**, so the
+sentence is pinned by a witness as well as by an anchor.
+
+### Witnesses
+
+Fifty-six cases in `scripts/tests/test_scenario_catalog.py` — up from 47 — with the
+old positive control **rewritten**, because a control that is the defect proves
+nothing about the cases beside it.  New: a dead binding refused, a mention that
+binds nothing accepted, a binding found across a continuation in **both**
+directions, all five live idioms admitted, a fail-closed discovery, a
+golden-with-pipes line contributing only its bracketed ids, a declared manifest
+that does not parse contributing none, the derived manifest set asserted as an
+**equality** against what Tier 0 hand-listed, and the PASS line's wording.
+
+Thirteen Tier 3 anchors (eight positives, five negatives) with all twenty
+mutations firing — nine against the code through the witness suite, eleven against
+the anchor block.
+
+**And two of those anchors were satisfied by the wrong occurrence.**  This tree's
+bounded-gap idiom is `[^\n]*(\n([ \t][^\n]*)?)*`, which cannot escape a **Lean**
+declaration because a Lean declaration starts at column 0.  Inside a Python
+function every line is indented, so the gap ran from one `if args.command == …`
+branch to the end of `main()` and was satisfied by the *other* branch's identical
+line — caught by a mutation that removed the first branch's derivation and left the
+anchor green.  A gap inside a function body is bounded by ` {8,}`, the body's own
+indentation, which stops at the next branch header's four spaces.
+
+**And `v0.35.122`'s sweep earned its keep on its first real use.**  Retiring the
+mention test broke a `v0.35.116` positive that pinned the retired expression —
+`sweep what was pinning the thing you deleted`, the fifth consecutive cut where
+that is the finding — and the derived changed-file sweep reported it in **seconds**,
+in the hygiene lane, where Tier 3 would have reached it forty minutes in.  The
+positive is retired with a tombstone naming what carries the claim, rather than
+repointed: the live relation already has a positive and the retired spelling
+already has a negative, and a second anchor over one relation is the duplication
+this project retires.
+
+No Lean, Rust or fixture content changed: `check-fixture-index` still validates all
+fifteen claims and `validate-registry` still passes, which is the measurement that
+the strengthening is free.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.122 — the sweep `CLAUDE.md` states as a procedure is a gate
 
 `CLAUDE.md` tells a contributor to sweep the anchors over every file a cut touched

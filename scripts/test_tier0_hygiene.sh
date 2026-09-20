@@ -429,10 +429,13 @@ run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 # lines no suite printed.
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_scenario_catalog
 
-# WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry \
-  --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
-  tests/fixtures/two_phase_arch_smoke.expected
+# WS-I1/R-03: Scenario registry validation — every fixture ID must be in the
+# registry and vice versa.  The manifests it reconciles beyond the trace fixture
+# are DERIVED (`manifest_fixture_paths`), not hand-listed here: `list-manifests`
+# and Tier 2's `check-fragments` both derive theirs, so a third manifest reached
+# this gate from nowhere and its ids could be absent from the registry with every
+# gate green.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry
 
 # v0.35.111: every `tests/fixtures/*.expected` file that DECLARES manifest
 # intent is a well-formed scenario-traceability manifest — every non-comment line
