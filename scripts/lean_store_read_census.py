@@ -275,10 +275,53 @@ _TABLE_SOURCES = {
     "FrozenMap": ("SeLe4n/Model/FrozenState.lean",),
 }
 
-#: `def RHTable.foo`, `@[inline] def FrozenMap.bar`, `abbrev`, `private def`.
-_TABLE_DEF = re.compile(
-    r"^(?:@\[[^\]]*\]\s*)?(?:private\s+|protected\s+)?(?:def|abbrev)\s+"
+#: Every line-initial declaration named `RHTable.x` / `FrozenMap.x`, whatever its
+#: KIND: optional attributes, then any run of visibility and definition modifiers,
+#: then the keyword, then the name.  `@[inline] def FrozenMap.bar`,
+#: `protected def RHTable.foo`, `theorem RHTable.insert_eq`, `opaque
+#: RHTable.rawSet` -- all matched, and `_TABLE_OP_KINDS` decides which of them
+#: DEFINE an operation a call site can key through.
+#:
+#: **Keyword-agnostic since `v0.35.119`** (PR #897 Codex review), and the reason is
+#: the one this file states three ways already.  It read `(?:def|abbrev)`, so an
+#: `opaque RHTable.rawSet` -- executable, since Lean requires an inhabitant and
+#: `ConstantInfo.value? (allowOpaque := true)` hands the body back, and this tree's
+#: FFI surface has seventy-odd of them -- was matched by nothing.
+#: `table_op_violations` therefore never demanded its classification, and `READ`,
+#: `WRITE` and `SWEEP` are **built from** that classification, so a keyed access
+#: through the new operation was outside all three patterns and walked around an
+#: enforced zero.  That is `v0.35.114`'s *a default branch over a closed set of
+#: declaration kinds* arriving at a Python regex instead of a `ConstantInfo` match,
+#: and it is silent by construction: the declaration is never examined, no count
+#: moves, and the reconciliation goes on reporting its whole domain accounted for.
+_TABLE_DECL = re.compile(
+    r"^(?:@\[[^\]]*\]\s*)?"
+    r"(?:(?:private|protected|partial|unsafe|noncomputable|scoped|local)\s+)*"
+    r"(?P<kw>[A-Za-z_][A-Za-z_0-9]*)\s+"
     r"(?P<ns>RHTable|FrozenMap)\.(?P<op>[A-Za-z0-9_?'!]+)", re.MULTILINE)
+
+#: A declaration of one of these kinds, named for a table in the table's own
+#: source, DEFINES an operation a call site can key a table access through.
+#:
+#: `instance` is here rather than below deliberately, and the direction is the
+#: argument: this set feeds a **requirements** derivation (what `_TABLE_OPS` must
+#: classify), so an entry admitted in error costs one classification and a *named*
+#: failure, while one omitted in error costs the gate its silence.  A named
+#: `instance RHTable.instGetElem` really can be the operation a `[k]?` resolves to.
+_TABLE_OP_KINDS = frozenset({"def", "abbrev", "opaque", "instance"})
+
+#: ...and the kinds that define something no call site can key THROUGH: a
+#: proposition, or a type.  `structure RHTable.WF : Prop` is the live member; the
+#: 49 `theorem RHTable.*` / `FrozenMap.*` are the bulk.
+#:
+#: Named rather than omitted, because **omission is what produced the defect
+#: above**.  With both sets explicit, a keyword in NEITHER is a gate defect that
+#: `table_op_violations` reports by name, so a Lean declaration form this scanner
+#: has not seen fails Tier 0 on the day it is introduced rather than quietly
+#: shrinking the domain -- *a scanner's default branch is a decision*.
+_TABLE_NON_OP_KINDS = frozenset({
+    "theorem", "lemma", "example", "axiom", "structure", "class", "inductive",
+})
 
 #: ...and the structure's own fields, which are operations too as far as a call
 #: site is concerned: `RHTable.size` is a FIELD and `FrozenMap.size` is a `def`,
@@ -288,25 +331,62 @@ _TABLE_STRUCT = re.compile(
 _STRUCT_FIELD = re.compile(r"^\s{2}(?P<name>[A-Za-z0-9_?'!]+)\s*:")
 
 
-def declared_table_operations() -> set[str]:
-    """Every operation of either object table, derived from the sources."""
+def classify_table_declarations(text: str) -> tuple[set[str], set[tuple[str, str]]]:
+    """One table source's operations, and the declarations it could not classify.
+
+    Returns `(operations, unclassified)`, where `unclassified` holds
+    `(keyword, name)` for a declaration whose kind is in neither
+    `_TABLE_OP_KINDS` nor `_TABLE_NON_OP_KINDS`.
+
+    Pure over the text so a witness can exercise it on a synthetic source: the
+    walker below reads the real tree, and the case that matters -- a declaration
+    kind this tree does not yet contain -- cannot be reached by mutating a
+    classification the way `table_op_violations`' own cases do.
+    """
     ops: set[str] = set()
+    unclassified: set[tuple[str, str]] = set()
+    for m in _TABLE_DECL.finditer(text):
+        kw = m.group("kw")
+        if kw in _TABLE_OP_KINDS:
+            ops.add(m.group("op"))
+        elif kw not in _TABLE_NON_OP_KINDS:
+            unclassified.add((kw, f"{m.group('ns')}.{m.group('op')}"))
+    for m in _TABLE_STRUCT.finditer(text):
+        # Fields run from the `where` to the first line that is not an
+        # indented `name :` binding.
+        for line in text[m.end():].splitlines()[1:]:
+            if not line.strip() or line.lstrip().startswith("--"):
+                continue
+            fm = _STRUCT_FIELD.match(line)
+            if fm is None:
+                break
+            ops.add(fm.group("name"))
+    return ops, unclassified
+
+
+def _walk_table_sources() -> tuple[set[str], set[tuple[str, str, str]]]:
+    """`classify_table_declarations` over every table source's CODE view.
+
+    The **code view**, because *gates read code, prose reads prose*: a `def
+    RHTable.oldOp` written at column 0 inside a docstring is not a declaration,
+    and counting it would demand a `_TABLE_OPS` entry for an operation that does
+    not exist.  Measured at `v0.35.119` -- no such line exists today, so the view
+    costs the derivation nothing and removes a way for it to be wrong.
+    """
+    ops: set[str] = set()
+    unclassified: set[tuple[str, str, str]] = set()
     for _ns, files in _TABLE_SOURCES.items():
         for rel in files:
-            text = (REPO / rel).read_text(encoding="utf-8")
-            for m in _TABLE_DEF.finditer(text):
-                ops.add(m.group("op"))
-            for m in _TABLE_STRUCT.finditer(text):
-                # Fields run from the `where` to the first line that is not an
-                # indented `name :` binding.
-                for line in text[m.end():].splitlines()[1:]:
-                    if not line.strip() or line.lstrip().startswith("--"):
-                        continue
-                    fm = _STRUCT_FIELD.match(line)
-                    if fm is None:
-                        break
-                    ops.add(fm.group("name"))
-    return ops
+            text = lean_code_view.strip((REPO / rel).read_text(encoding="utf-8"))
+            found, unread = classify_table_declarations(text)
+            ops |= found
+            unclassified |= {(rel, kw, name) for kw, name in unread}
+    return ops, unclassified
+
+
+def declared_table_operations() -> set[str]:
+    """Every operation of either object table, derived from the sources."""
+    return _walk_table_sources()[0]
 
 
 def table_op_violations() -> list[str]:
@@ -317,9 +397,21 @@ def table_op_violations() -> list[str]:
     pattern looks for, which is how `set` stayed out of the WRITE method branch.
     A *stale* entry is the other, and is still a failure: a classification that
     no longer describes the tree reads exactly like one that does.
+
+    A declaration kind this scanner cannot classify is the **third** direction
+    (`v0.35.119`), and it is the one the other two cannot see: an unrecognised
+    keyword yields no operation, so the reconciliation finds nothing missing and
+    nothing stale and reports the domain accounted for.  Refusing by name is what
+    makes a new Lean declaration form a Tier 0 failure on the day it appears
+    rather than a silent narrowing of what READ, WRITE and SWEEP look for.
     """
-    declared = declared_table_operations()
+    declared, unclassified = _walk_table_sources()
     out = []
+    for rel, kw, name in sorted(unclassified):
+        out.append(f"{rel}: `{kw} {name}` -- this scanner cannot classify the "
+                   f"declaration kind `{kw}`, so it cannot say whether `{name}` is "
+                   f"an operation a call site keys a table access through; add "
+                   f"`{kw}` to `_TABLE_OP_KINDS` or to `_TABLE_NON_OP_KINDS`")
     for op in sorted(declared - set(_TABLE_OPS)):
         out.append(f"`{op}` is an operation of an object table and `_TABLE_OPS` does not "
                    f"classify it -- classify it `read`, `write`, `sweep` or `other`, or "
@@ -1322,18 +1414,28 @@ def table_primitive_declarations() -> set:
     Deriving it means a primitive added tomorrow is exempt on the day it is
     written, where a hand list would have made it a finding.
 
-    It reads `REPO` rather than the code view, exactly as its sibling
-    `declared_table_operations` does, so the two cannot disagree about what an
-    operation of either table is -- which matters more than the one theoretical
-    case it costs, a synthetic self-test tree holding a file at a `_TABLE_SOURCES`
-    path.  No fixture is at one.
+    It reads the **code view**, exactly as its sibling `declared_table_operations`
+    does -- both go through `_TABLE_DECL` and `_TABLE_OP_KINDS`, so the two cannot
+    disagree about what an operation of either table is, which is the whole reason
+    the classification has one owner.  The view is what stops a `def RHTable.oldOp`
+    written at column 0 inside a docstring from minting a phantom exemption; it
+    costs the one theoretical case a raw read bought, a synthetic self-test tree
+    holding a file at a `_TABLE_SOURCES` path, and no fixture is at one.
+
+    **`v0.35.119`: the kind is classified.**  It matched `def`/`abbrev` with its
+    sibling and so exempted neither an `opaque` nor an `instance` table primitive
+    -- the direction that matters here is the opposite of the sibling's, since a
+    missing exemption reports the primitive's own definition as an indirection,
+    which is loud rather than silent.  Sharing the classification fixes both at
+    once.
     """
     out: set = set()
-    for ns, files in _TABLE_SOURCES.items():
+    for _ns, files in _TABLE_SOURCES.items():
         for rel in files:
-            text = (REPO / rel).read_text(encoding="utf-8")
-            for m in _TABLE_DEF.finditer(text):
-                out.add((rel, f"{m.group('ns')}.{m.group('op')}"))
+            text = lean_code_view.strip((REPO / rel).read_text(encoding="utf-8"))
+            for m in _TABLE_DECL.finditer(text):
+                if m.group("kw") in _TABLE_OP_KINDS:
+                    out.add((rel, f"{m.group('ns')}.{m.group('op')}"))
     return out
 
 
@@ -2284,6 +2386,61 @@ def self_test() -> int:
         failed += 1
     else:
         print("  ok   table-ops 'a QUALIFIED-ONLY write branch is reported'")
+    # `v0.35.119`: the declaration KIND decides, and a kind in NEITHER set is
+    # refused rather than skipped.  Over synthetic text, because the case that
+    # matters -- a declaration form this tree does not yet contain -- cannot be
+    # reached by mutating a classification the way the cases above do, and because
+    # the pre-fix `(?:def|abbrev)` pattern makes the `opaque` row FAIL while every
+    # other row passes: that asymmetry is the measurement.
+    for case, src, want_ops, want_unclassified in [
+        ("a `def` table operation is discovered",
+         "def RHTable.insert (t : RHTable a b) : RHTable a b := t\n",
+         {"insert"}, set()),
+        ("an `opaque` table operation is discovered -- the pre-fix blind spot",
+         "opaque RHTable.rawSet : RHTable a b -> RHTable a b\n",
+         {"rawSet"}, set()),
+        ("...and so is one behind attributes and modifiers",
+         "@[inline] private noncomputable opaque FrozenMap.rawPut : Nat\n",
+         {"rawPut"}, set()),
+        ("a `theorem` ABOUT a table is not an operation",
+         "theorem RHTable.insert_eq : True := trivial\n",
+         set(), set()),
+        ("...nor is a `Prop`-valued dotted structure",
+         "structure RHTable.WF (t : RHTable a b) : Prop where\n  ok : True\n",
+         set(), set()),
+        # The undotted structure is a different path: `_TABLE_DECL` requires the
+        # dot, so the table's own fields still come from `_TABLE_STRUCT`.  Kept
+        # because a widening that broke the field harvest would pass every row
+        # above.
+        ("the table STRUCTURE's own fields are still operations",
+         "structure RHTable (a : Type) (b : Type) where\n  size : Nat\n"
+         "  buckets : Array Nat\n\ndef unrelated := 1\n",
+         {"size", "buckets"}, set()),
+        # `macro` stands for "a declaration form this scanner has not seen": Lean 4
+        # has added several, and the refusal is what makes the NEXT one loud
+        # instead of silently shrinking what READ, WRITE and SWEEP look for.
+        ("a kind in NEITHER set is REFUSED rather than skipped",
+         "macro RHTable.smuggle : Nat := 0\n",
+         set(), {("macro", "RHTable.smuggle")}),
+    ]:
+        got_ops, got_unclassified = classify_table_declarations(src)
+        if got_ops != want_ops or got_unclassified != want_unclassified:
+            print(f"  SELF-TEST FAIL: table-kind '{case}': ops={sorted(got_ops)} "
+                  f"unclassified={sorted(got_unclassified)}, want "
+                  f"ops={sorted(want_ops)} "
+                  f"unclassified={sorted(want_unclassified)}")
+            failed += 1
+        else:
+            print(f"  ok   table-kind '{case}'")
+    # ...and the live sources must hold no unclassifiable declaration, so the
+    # refusal is known to be quiet on this tree rather than merely present.
+    _live_ops, live_unclassified = _walk_table_sources()
+    if live_unclassified:
+        for rel, kw, name in sorted(live_unclassified):
+            print(f"  SELF-TEST FAIL: table-kind live tree: {rel} `{kw} {name}`")
+        failed += len(live_unclassified)
+    else:
+        print("  ok   table-kind 'every live table declaration is classified'")
     # ...and the live registry must agree with the live tree, in both
     # directions, so a stale entry cannot read like coverage.
     live = objects_owner_violations(REPO)

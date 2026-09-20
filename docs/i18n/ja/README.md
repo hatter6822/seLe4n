@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.118-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.35.119-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -91,7 +91,7 @@ seLe4n は Lean 4 で一から構築されたマイクロカーネルです。�
 
 | 属性 | 値 |
 |------|-----|
-| **バージョン** | `0.35.118` |
+| **バージョン** | `0.35.119` |
 | **Lean ツールチェーン** | `v4.28.0` |
 | **本番 Lean コード行数** | 334 ファイルにわたる 394,995 行 |
 | **テスト Lean コード行数** | 70 テストスイートにわたる 80,213 行 |

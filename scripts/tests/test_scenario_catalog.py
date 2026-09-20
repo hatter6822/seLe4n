@@ -291,6 +291,56 @@ class TestFragmentRelation(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("RH-001", errors[0])
 
+    def test_rejects_a_fragment_emitted_under_a_LONGER_scenario_id(self) -> None:
+        """`v0.35.119`: containment credits the row to another scenario's line.
+
+        The row's claim is that ITS scenario was traced.  A bare `fragment in
+        output_text` is satisfied by whichever line happens to carry those bytes,
+        so a fragment short enough to prefix another id — `RH-001` against an
+        emitted `[RH-0010a insert then get]` — passed while scenario `RH-001`
+        emitted nothing and could have been deleted from the suite outright.
+
+        Preserving: the manifest is byte-identical, the row is parsed, and the
+        fragment really does occur in the output.  Only which scenario's line
+        carries it changes, which is exactly what the pre-fix containment could
+        not see.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            manifest = self._manifest(
+                d, "# Suite: robin_hood_suite\nRH-001 | RobinHood | RH-001\n")
+            collision = "robin-hood check passed [RH-0010a insert then get]\n"
+            # The pre-fix relation: the bytes are there.
+            self.assertIn("RH-001", collision)
+            errors = sc.check_fragments(manifest, collision)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("RH-001", errors[0])
+            self.assertIn("label position", errors[0])
+
+    def test_accepts_that_same_row_against_its_OWN_line(self) -> None:
+        """The control, so the rejection above is attributable to the collision
+        and not to the row's shape.  A fragment that IS its own id is a
+        well-formed row (`classify_fixture` accepts it), and it must pass when
+        the scenario really is traced."""
+        with tempfile.TemporaryDirectory() as d:
+            manifest = self._manifest(
+                d, "# Suite: robin_hood_suite\nRH-001 | RobinHood | RH-001\n")
+            own = "robin-hood check passed [RH-001a empty get? returns none]\n"
+            self.assertEqual(sc.check_fragments(manifest, own), [])
+
+    def test_accepts_the_unbracketed_label_shape(self) -> None:
+        """The second live manifest quotes the label without brackets, and
+        `expectCond` emits `{tag} check passed [{label}]` — so the id sits
+        immediately inside a `[` in the OUTPUT even though the fragment starts
+        with it.  Kept because asking the label relation of the output line is
+        what makes that work, and a narrowing that broke it would pass every
+        case above."""
+        with tempfile.TemporaryDirectory() as d:
+            manifest = self._manifest(
+                d, "# Suite: two_phase_arch_suite\n"
+                   "TPH-001 | TwoPhaseArch | TPH-001a empty builder valid\n")
+            emitted = "two-phase check passed [TPH-001a empty builder valid]\n"
+            self.assertEqual(sc.check_fragments(manifest, emitted), [])
+
     def test_a_rowless_manifest_cannot_pass_vacuously(self) -> None:
         with tempfile.TemporaryDirectory() as d:
             empty = sc.Manifest(Path(d) / "m.expected", "robin_hood_suite", [])

@@ -15790,7 +15790,22 @@ run_check "INVARIANT" bash -lc 'rg -n "            collect\(decl, kind, sig_spec
 # `RHTable.insert` in the table's own source IS the primitive, so counting it
 # would report the definition of the thing being measured -- and a primitive
 # added tomorrow is exempt on the day it is written.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def table_primitive_declarations\(\) -> set:[^\n]*(\n([ \t][^\n]*)?)*    for ns, files in _TABLE_SOURCES\.items\(\):" scripts/lean_store_read_census.py'
+#
+# `v0.35.119`: THE BINDERS ARE FREE.  This anchor was written
+# `for ns, files in _TABLE_SOURCES.items():`, and the claim above is about a
+# *derivation* -- that the exemption set is read off `_TABLE_SOURCES` rather than
+# typed out -- which no binder name is part of.  `v0.35.119` hoisted the
+# classification into `classify_table_declarations`, which left the namespace
+# binding unused, so it became `_ns` as Python style requires and the anchor went
+# red on a rename that changed nothing it claims: *a spelling is not the thing*,
+# inside an anchor.  The gap still bounds the search to this declaration, which is
+# the half that IS the relation; what the binders are called is not.
+#
+# The two `for key, was in …` anchors below deliberately DO pin their binder,
+# because there the name is load-bearing: the next line's `if key not in code:` is
+# the relation, and it is the same `key` the loop binds, so a free binder there
+# would let the membership test read something else.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def table_primitive_declarations\(\) -> set:[^\n]*(\n([ \t][^\n]*)?)*    for [^\n]* in _TABLE_SOURCES\.items\(\):" scripts/lean_store_read_census.py'
 # THE FLOOR IS BOTH DIRECTIONS, and so is the exemption: a key the tree no
 # longer has reads exactly like coverage, and an exemption nothing reconciles
 # reads exactly like one that applies.
@@ -16358,4 +16373,58 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def fragment_names_scenario[^\n]*(\n([
 run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*if not fragment_names_scenario\(scenario_id, fragment\):" scripts/scenario_catalog.py'
 # ...and the retired bare containment reading must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -n "return scenario_id in fragment" scripts/scenario_catalog.py'
+
+# ---------------------------------------------------------------------------
+# `v0.35.119` (PR #897 Codex review): two derivations asked the wrong question.
+#
+# (A) The object-table operation DOMAIN is a classified declaration KIND, not a
+# two-keyword list.  `_TABLE_DEF` matched `(?:def|abbrev)`, so an `opaque
+# RHTable.rawSet` -- executable, since Lean requires an inhabitant -- was
+# discovered by nothing, `table_op_violations` never demanded its classification,
+# and `READ` / `WRITE` / `SWEEP` are BUILT from that classification, so a keyed
+# access through it walked around an enforced zero.  Silent by construction.
+run_check "INVARIANT" bash -lc 'rg -n "^_TABLE_DECL = re\.compile\($" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^_TABLE_DECL = re\.compile\((\n([ \t][^\n]*)?)*\(\?P<kw>\[A-Za-z_\]\[A-Za-z_0-9\]\*\)" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "^_TABLE_OP_KINDS = frozenset" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "^_TABLE_OP_KINDS" scripts/lean_store_read_census.py | rg -F "opaque"'
+run_check "INVARIANT" bash -lc 'rg -n "^_TABLE_NON_OP_KINDS = frozenset" scripts/lean_store_read_census.py'
+# ...the unclassified kind is REFUSED rather than skipped -- the third direction,
+# and the one the other two structurally cannot see.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_table_declarations[^\n]*(\n([ \t][^\n]*)?)*        elif kw not in _TABLE_NON_OP_KINDS:" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "cannot classify the " scripts/lean_store_read_census.py'
+# ...one walker feeds the operation set AND the indirect census's exemption set,
+# over the CODE view, so a docstring cannot mint a phantom operation.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def _walk_table_sources[^\n]*(\n([ \t][^\n]*)?)*lean_code_view\.strip" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def declared_table_operations[^\n]*(\n([ \t][^\n]*)?)*return _walk_table_sources\(\)\[0\]" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def table_primitive_declarations[^\n]*(\n([ \t][^\n]*)?)*if m\.group\(.kw.\) in _TABLE_OP_KINDS:" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def table_op_violations[^\n]*(\n([ \t][^\n]*)?)*    declared, unclassified = _walk_table_sources\(\)\n" scripts/lean_store_read_census.py'
+# ...the retired two-keyword pattern must not come back, by name or by spelling.
+# ...the NAME, and not the alternation: the docstring and the self-test comment
+# quote `(?:def|abbrev)` in order to explain the defect, the `.py` code view has no
+# comment stripper, and a negative over the spelling would force this file to stop
+# explaining itself -- which this project forbids.  The keyword-agnostic form is
+# pinned positively above instead.
+run_negative_check "INVARIANT" bash -lc 'rg -n "_TABLE_DEF" scripts/lean_store_read_census.py'
+# ...and the cases that make the widening decisive: the `opaque` row, the refusal,
+# and the live-tree reconciliation that says the refusal is quiet today.
+run_check "INVARIANT" bash -lc 'rg -n "the pre-fix blind spot" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "a kind in NEITHER set is REFUSED rather than skipped" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "every live table declaration is classified" scripts/lean_store_read_census.py'
+#
+# (B) A manifest row's fragment must be emitted ON A LINE THAT NAMES ITS OWN
+# SCENARIO.  `check_fragments` asked bare containment, so a row whose fragment is
+# short enough to prefix another id -- `RH-001` against an emitted `[RH-0010a
+# ...]` -- passed while its scenario emitted nothing.  `fragment_names_scenario`
+# already owns that relation; `v0.35.116` applied it to the FRAGMENT and never
+# swept it onto the OUTPUT.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def check_fragments[^\n]*(\n([ \t][^\n]*)?)*if not any\(fragment in line and fragment_names_scenario\(scenario_id, line\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "on a line naming " scripts/scenario_catalog.py'
+# ...and the retired bare containment must not come back.
+run_negative_check "INVARIANT" bash -lc 'rg -n "if fragment not in output_text:" scripts/scenario_catalog.py'
+# ...with the decisive case and BOTH controls, so the rejection is attributable to
+# the collision and not to the row's shape or to the unbracketed label form.
+run_check "INVARIANT" bash -lc 'rg -n "def test_rejects_a_fragment_emitted_under_a_LONGER_scenario_id" scripts/tests/test_scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_that_same_row_against_its_OWN_line" scripts/tests/test_scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_the_unbracketed_label_shape" scripts/tests/test_scenario_catalog.py'
+
 finalize_report

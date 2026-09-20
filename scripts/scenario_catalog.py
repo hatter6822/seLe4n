@@ -575,26 +575,48 @@ def check_fixture_index(directory: Path, readme: Path,
 
 
 def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
-    """Every row's fragment must occur in `output_text`.
+    """Every row's fragment must be emitted ON A LINE THAT NAMES ITS SCENARIO.
 
-    Containment rather than equality, because the two manifests quote their
-    fragments at different widths: one carries the whole emitted line
+    Containment rather than equality *within the line*, because the two manifests
+    quote their fragments at different widths: one carries the whole emitted line
     (`robin-hood check passed [RH-001a ...]`) and the other only the label
     (`TPH-001a ...`).
 
-    That the fragment names its own row's scenario is `classify_fixture`'s
-    question, not this one: a cross-wired row is a malformed manifest rather than
-    a failed comparison, so it fails before any suite is run.
+    **Containment alone is not the relation** (PR #897 Codex review, `v0.35.119`).
+    The row's claim is "*my* scenario was traced", and a bare `fragment in
+    output_text` credits it to whichever line happens to contain those bytes.  A
+    row whose fragment is short enough to be a prefix of another id -- `RH-001`
+    against an emitted `[RH-0010a insert then get]` -- passes while scenario
+    `RH-001` emitted nothing and could be deleted from the suite outright.  That is
+    `v0.35.111`'s *a binding is a relation, not a containment* on the very same
+    ids, one artefact over: `fragment_names_scenario` was written for exactly this
+    relation, applied to the FRAGMENT at `v0.35.116`, and never swept onto the
+    OUTPUT -- *when a fix names a relation, grep for every other place that asks
+    it*.
+
+    So the evidence is a line that carries the fragment **and** names this
+    scenario at a label position, asked through the one function that owns the
+    question rather than through a second spelling of it.  It costs the tree
+    nothing, measured: `expectCond` emits `{tag} check passed [{label}]`, so the
+    id sits immediately inside a `[` on every one of the 19 live rows' lines.
+
+    That a row's fragment names its own scenario is still `classify_fixture`'s
+    question and is asked before any suite runs -- a cross-wired row is a
+    malformed manifest, not a failed comparison.  This check asks the same
+    relation of the *producer's output*, which is a different subject.
     """
     errors: list[str] = []
     if not manifest.rows:
         errors.append(f"{manifest.path}: no manifest rows — the check would pass vacuously")
         return errors
+    lines = output_text.splitlines()
     for scenario_id, _subsystem, fragment in manifest.rows:
-        if fragment not in output_text:
+        if not any(fragment in line and fragment_names_scenario(scenario_id, line)
+                   for line in lines):
             errors.append(
                 f"{manifest.path}: {scenario_id} expected_trace_fragment not emitted "
-                f"by `lake exe {manifest.suite}`: {fragment!r}"
+                f"by `lake exe {manifest.suite}` on a line naming {scenario_id} at a "
+                f"label position: {fragment!r}"
             )
     return errors
 

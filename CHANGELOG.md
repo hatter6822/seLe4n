@@ -1,3 +1,140 @@
+## v0.35.119 — two derivations asked the wrong question
+
+Both findings are PR #897 Codex review on `v0.35.117`, and both are the sweep class:
+a relation this tree already owns, asked of one artefact and never of its sibling.
+
+### An object-table operation is a classified declaration KIND
+
+`_TABLE_DEF` matched `(?:def|abbrev)`.  `opaque` is executable — Lean requires an
+inhabitant, `ConstantInfo.value? (allowOpaque := true)` hands the body back, and
+this tree's FFI surface has seventy-odd of them — so an `opaque RHTable.rawSet`
+was discovered by **nothing**: `table_op_violations` never demanded its
+classification, and `READ`, `WRITE` and `SWEEP` are *built from* that
+classification, so a keyed access through the new operation was outside all three
+patterns and walked around an enforced zero.
+
+That is `v0.35.114`'s *a default branch over a closed set of declaration kinds*
+arriving at a Python regex instead of a `ConstantInfo` match, and it is silent by
+construction: the declaration is never examined, no count moves, and the
+reconciliation goes on reporting its whole domain accounted for.
+
+**`_TABLE_DECL` is keyword-agnostic and the kind is classified.**
+`_TABLE_OP_KINDS` is `{def, abbrev, opaque, instance}` and `_TABLE_NON_OP_KINDS`
+is `{theorem, lemma, example, axiom, structure, class, inductive}` — both named,
+because *omission is what produced the defect*: a keyword in **neither** is now
+`table_op_violations`' **third direction**, a named Tier 0 failure, and it is the
+one the other two structurally cannot see (an unrecognised keyword yields no
+operation, so nothing is missing and nothing is stale).  `instance` sits in the
+operation set deliberately, and the direction is the argument: this feeds a
+*requirements* derivation, so an entry admitted in error costs one classification
+and a loud failure while one omitted in error costs the gate its silence.
+
+**One walker feeds both sets, over the code view.**  `_walk_table_sources` serves
+`declared_table_operations` and `table_primitive_declarations` — the indirect
+census's exemption set — so the operation question has one owner and the two
+cannot disagree; and it reads `lean_code_view.strip`, because *gates read code*: a
+`def RHTable.oldOp` at column 0 inside a docstring is not a declaration, and
+counting it would demand a `_TABLE_OPS` entry for an operation that does not
+exist.  Measured — no such line exists today, so the view costs the derivation
+nothing and removes a way for it to be wrong.  The exemption set's own direction
+is the opposite of its sibling's and that is now stated: a *missing* exemption
+reports the primitive's own definition as an indirection, which is loud.
+
+**The widening admits exactly nothing on the live tree** — 21 operations before
+and after, identical sets, zero violations — which is *why* it was silent, and it
+makes the plants the entire measurement.  The decisive one is at tree level: an
+`opaque FrozenMap.rawSet` planted in a real table source is reported by name,
+while the retired pattern sees it not at all.  Seven synthetic rows cover the
+kinds, including that the undotted `structure RHTable … where` field harvest is a
+*different* path and still works — a widening that broke it would pass every other
+row.
+
+### A fragment must be emitted ON A LINE THAT NAMES ITS SCENARIO
+
+`check_fragments` asked bare containment, so a row whose fragment is short enough
+to prefix another id — `RH-001` against an emitted `[RH-0010a insert then get]` —
+passed while scenario `RH-001` emitted nothing and could have been deleted from
+the suite outright.  `fragment_names_scenario` was written for exactly that
+relation, applied to the **fragment** at `v0.35.116`, and never swept onto the
+**output**.  It is asked of the emitted line now, through the one function that
+owns the question rather than a second spelling of it.
+
+It costs the tree nothing, measured: `expectCond` emits
+`{tag} check passed [{label}]`, so the id sits immediately inside a `[` on every
+one of the 19 live rows' lines — including the manifest whose fragment *starts*
+with its id, which is why asking the relation of the line rather than of the
+fragment is what makes that shape work.  Three permanent cases: the collision, and
+**both** controls — the same row against its own line, and the unbracketed label
+form — so the rejection is attributable to the collision and not to the row's
+shape.
+
+### The anchors found two defects in this cut's own work
+
+Twenty-one anchors, silent on the clean tree, with eight mutations each firing its
+intended anchor.  They are **not all token-preserving**, and this project draws a
+sharp line between deleting a token and breaking a relation, so what each one does
+is stated rather than summarised: one is strictly preserving (appending
+`[0], set()` to the tuple unpack, which drops the third reconciliation direction
+while every original token survives), one restores the pre-fix containment
+exactly, one is additive, and the remaining five each delete or rename precisely
+what their own anchor names — a classification entry, the code-view wrapper, a
+branch's condition (replaced by `if True` / `elif False`, so the shape survives and
+only the relation dies), or the pinned test method.  Only the first is evidence
+against the class this file names *a presence check is not a relation check*; the
+others are evidence that each check decides.
+
+Running them found a docstring that **contradicted the code**:
+`table_primitive_declarations` still said it "reads `REPO` rather than the code
+view … so the two cannot disagree", one screenful above the line this cut had moved
+onto the view.  Corrected rather than left, since prose that describes the
+superseded behaviour reads exactly like prose that describes the live one.
+
+And one anchor was a **presence check**, caught by its own mutation: it pinned
+`declared, unclassified = _walk_table_sources()` without anchoring the line end, so
+a mutation appending `[0], set()` — which drops the third direction entirely —
+still matched it.  That is this file's oldest rule inside the anchor written to
+enforce a different one, and the remedy is the end-of-line anchor.  A negative was
+dropped for the opposite reason: forbidding the retired `(?:def|abbrev)` spelling
+fired on the docstring and the self-test comment that **explain** the defect, and
+the `.py` code view has no comment stripper, so the negative would have forced the
+file to stop explaining itself.  The retired *name* is refused instead, and the
+keyword-agnostic form is pinned positively.
+
+### And a third defect, found by the full lane — the mutation harness's own domain
+
+The mutation harness above collected the anchors **from this cut's version marker
+onwards**, which is a recognised set standing in for a derived one, in the harness
+written to verify anchors.  The derived set is *every anchor naming a file this cut
+changes*, at every version block — and one of them broke.  Hoisting the
+classification into `classify_table_declarations` left
+`table_primitive_declarations`' namespace binding unused, so it became `_ns` as
+Python style requires, and a `v0.35.117` anchor had pinned `for ns, files in
+_TABLE_SOURCES.items():` verbatim.  Its own comment states the claim — *the
+primitive exemption is derived, never listed* — and no binder name is part of it,
+so the anchor was a **spelling** standing in for a derivation and went red on a
+rename that changed nothing it asserts.  The gap bounding the search to the
+declaration is the half that is the relation; the binders are free now, and the two
+`for key, was in …` anchors beside it keep their binder because there the next
+line's `if key not in code:` reads the same name, so a free binder would let the
+membership test read something else.  Mutation-tested in three directions: the new
+name passes, the *old* name passes, and replacing the derivation with a hand list
+fails.
+
+That is the third telling of *sweep what was pinning the thing you deleted* in
+three cuts — `v0.35.116` moved a table parse and three anchors over the old home
+went silent, `v0.35.118` retired a line a positive pinned, and this renamed a
+binder.  `CLAUDE.md` carries the sweep as a **procedure**, with the `rg` command to
+run and the arithmetic (seconds against tens of minutes); three failures say a
+procedure is not the answer.  Measured here: the derived sweep runs **101 anchors
+in seconds** and named this one, where the Full lane reached it fifty minutes in
+and then stopped, leaving the 21 anchors this cut adds unrun.  The gate is
+`v0.35.120`.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.118 — two gates located the wrong unit
 
 Both findings are in code this PR wrote two and four cuts earlier, and both are one
