@@ -355,6 +355,35 @@ run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py" --self-test
 
+# `v0.35.122`: ...and whether each anchor over a file THIS CUT CHANGES still
+# decides as declared.  The gate above asks whether two anchors CONTRADICT; it
+# cannot ask whether a positive is currently SATISFIED, and for the bounded-gap
+# family -- now this tree's dominant anchor form -- it is structurally limited to
+# exact-key matching, because `_literal_runs` refuses a quantifier or a class.
+#
+# `CLAUDE.md` states the remedy as a PROCEDURE, with the `rg` command and the
+# arithmetic ("seconds against tens of minutes").  Four consecutive cuts then
+# shipped an anchor it would have caught, each found fifty minutes into the Full
+# lane: `v0.35.116` (three anchors silent after a move), `v0.35.118` (a retired
+# line a positive pinned), `v0.35.119` (a renamed loop binding -- and Tier 3
+# stopped there, so that cut's own 21 new anchors never ran), `v0.35.121` (a
+# retired inline spelling).  A rule restated four times is owed a check.
+#
+# The selection is derived from git and the execution goes through the tier
+# suites' own `run_check`, so this gate and Tier 3 cannot disagree about any
+# anchor.  `run_gate_check` rather than `run_check` because it is a sub-tier that
+# writes its own report -- the shape Tier 4 uses for the SMP boot-check -- and,
+# usefully, `run_gate_check` is not itself an anchor spelling, so the sweep can
+# never select and re-enter this line.
+# Pass `--continue` through, so a broken anchor does not stop the sweep at the
+# first one when the caller asked for every failure in one pass.
+anchor_sweep_args=()
+if [[ "${CONTINUE_MODE:-0}" -eq 1 ]]; then anchor_sweep_args+=("--continue"); fi
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/select_changed_anchors.py" --self-test
+run_gate_check "HYGIENE" "${SCRIPT_DIR}/check_changed_file_anchors.sh" --controls
+run_gate_check "HYGIENE" "${SCRIPT_DIR}/check_changed_file_anchors.sh" \
+  "${anchor_sweep_args[@]+"${anchor_sweep_args[@]}"}"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads scripts/store_reader_hygiene_baseline.txt
 # and rejects regressions on any AK7 cascade metric (the raw-read site
 # inventory, typed-helper adoption, storeObjectKindChecked adoption, sentinel

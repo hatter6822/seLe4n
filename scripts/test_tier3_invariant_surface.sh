@@ -16536,4 +16536,161 @@ run_prose_check "INVARIANT" bash -lc 'rg -n "What the duplication really was is 
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_runQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact migrateSchedContextReplenishment_runQueueOnCore _ scId _ _ c" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMigrated_currentOnCore[^\n]*(\n([ \t][^\n]*)?)*    exact \(migrateSchedContextReplenishment_runQueue_current_eq _ scId _ _ c\)\.2" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 
+# ---------------------------------------------------------------------------
+# `v0.35.122`: the changed-file anchor sweep.  `CLAUDE.md` states this as a
+# PROCEDURE and four consecutive cuts broke it -- `v0.35.116`, `v0.35.118`,
+# `v0.35.119` and `v0.35.121` -- each found fifty minutes into the Full lane, and
+# the third stopped Tier 3 before its own 21 new anchors had run.  A rule restated
+# four times is owed a check, not a fifth telling.
+# ---------------------------------------------------------------------------
+# THE SELECTION IS DERIVED FROM GIT, three rules, and the change set includes
+# UNTRACKED files: `git diff` cannot see a file a cut adds, so without them a cut
+# whose only change is a new file falls through to `HEAD~1` and sweeps the
+# PREVIOUS cut while reporting a clean run.  This gate reported that on its own
+# first run, over the two files that add it.
+run_check "INVARIANT" bash -lc 'rg -n "^def _untracked\(\) -> list\[str\]:" scripts/select_changed_anchors.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def changed_paths[^\n]*(\n([ \t][^\n]*)?)*    if staged or worktree or untracked:" scripts/select_changed_anchors.py'
+# ...pinned at the `_git` CALL: the flag also appears in the docstring and twice
+# in the self-test, so a bare flag search is satisfied by the prose and by the
+# witness after the derivation stops making it.  Caught by this cut's mutations.
+run_check "INVARIANT" rg -F -n 'code, out = _git("ls-files", "--others", "--exclude-standard")' scripts/select_changed_anchors.py
+# ...and the CI base revision is the plan gate's own variable, because both gates
+# ask what this cut changes relative to the revision it merges into.  A second
+# variable would be one question answered in two places.
+# ...pinned at the READ, not at the mention: the name also appears in the docstring
+# that explains why it is shared, so a bare name search is satisfied by the prose
+# after the code stops reading it.  Caught by this cut's own mutation set.
+run_check "INVARIANT" rg -F -n 'os.environ.get("SELE4N_PLAN_BASE_REF", "")' scripts/select_changed_anchors.py
+# ...and a change set that cannot be derived FAILS: "the gate could not read it"
+# and "the gate checked it" must never produce the same PASS line.
+run_check "INVARIANT" bash -lc 'rg -n "class UnknownChangeSet\(SystemExit\):" scripts/select_changed_anchors.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def changed_paths[^\n]*(\n([ \t][^\n]*)?)*        raise UnknownChangeSet\(" scripts/select_changed_anchors.py'
+# THE ANCESTOR-DIRECTORY RULE IS TOKEN-DELIMITED.  Without the trailing-slash
+# lookahead, `SeLe4n/Kernel/IPC` selects every file beneath it -- 4261 anchors on
+# this tree -- and the sweep becomes Tier 3, losing its whole reason to exist.
+# Without the lookbehind, `SeLe4n` matches inside `MySeLe4n`.
+run_check "INVARIANT" rg -F -n 'r"(?<![\w./-])" + re.escape(directory)' scripts/select_changed_anchors.py
+# ...and the trailing-slash-plus-lookahead half, pinned up to the apostrophe a
+# single-quoted argv word cannot carry -- which is enough: `/?(?=[` is the
+# optional separator followed by a REQUIRED delimiter, and that pair is the rule.
+run_check "INVARIANT" rg -F -n 'r"/?(?=[\"' scripts/select_changed_anchors.py
+# THE CLASSIFIER AND THE CONTINUATION FOLDING ARE IMPORTED, never re-derived: a
+# second line-by-line reader here would reopen the hole `logical_lines` closed for
+# `check_anchor_consistency.py` while that gate stayed correct.
+run_check "INVARIANT" bash -lc 'rg -U -n "^from check_anchor_consistency import[^\n]*(\n([ \t][^\n]*)?)*    logical_lines,\n\)" scripts/select_changed_anchors.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "^ANCHOR_LINE = re\.compile" scripts/select_changed_anchors.py'
+# THE EXECUTION GOES THROUGH THE TIER SUITES OWN HELPERS, so this gate and Tier 3
+# cannot disagree about any anchor's verdict.  The mutation this refuses replaces
+# the `eval` with a hand-rolled `rg` -- which keeps the token and loses the code
+# view, the prose/code distinction and the polarity.  Scoped to the `sweep` arm,
+# because the claim is about what that arm does and not about the token occurring.
+run_check "INVARIANT" rg -U -n '^    sweep\)[^\n]*(\n([ \t][^\n]*)?)*      eval .\$\{command\}.' scripts/check_changed_file_anchors.sh
+# shellcheck disable=SC2016  # The literal `${...}` IS the subject: a
+# double-quoted pattern would search for the expansion, not the interpolation.
+run_check "INVARIANT" rg -F -n 'source "${SCRIPT_DIR}/test_lib.sh"' scripts/check_changed_file_anchors.sh
+# ...and A SWEPT ANCHOR MUST REACH A VERDICT.  Neither passing nor recording a
+# failure means it never ran, and an anchor counted as swept without being checked
+# is the fail-open the whole mechanism exists to remove.  This is also the
+# EMPIRICAL backstop for the selector's model of shell quoting: measuring the
+# outcome beats trusting the model, so an expansion that model misplaces as
+# literal fails here rather than passing.  Pinned as the whole THREE-PART order
+# -- capture `before`, then eval, then compare, over both operands -- because
+# any one part alone is a presence check that a moved or deleted condition
+# survives.  An added copy of the check ABOVE the eval is deliberately NOT
+# refused: the real one still runs after it, so the property holds, and a
+# mutation that leaves it intact would read as a coverage gap.
+run_check "INVARIANT" rg -U -n '^      before=.\$\{FAILURE_COUNT\}.[^\n]*(\n([ \t][^\n]*)?)*      eval .\$\{command\}.[^\n]*(\n([ \t][^\n]*)?)*      if \[\[ .\$\{rc\}. -ne 0 && .\$\{FAILURE_COUNT\}. -eq .\$\{before\}. \]\]; then' scripts/check_changed_file_anchors.sh
+# ...and `before` is captured ONCE, above the eval.  A second capture after it
+# would overwrite the baseline with a count that already includes the failure the
+# comparison is looking for, which keeps every token of the order above -- the
+# mutation that decides, and the reason a positive over that order is not enough.
+run_negative_check "INVARIANT" rg -U -n '^      eval .\$\{command\}.[^\n]*(\n([ \t][^\n]*)?)*      before=' scripts/check_changed_file_anchors.sh
+# ...and a FATAL expansion is reported in this gate's own voice.  `set -u` makes an
+# unbound variable fatal to the SHELL, not to the `eval`, so without the epilogue
+# the only trace is bash's `VAR: unbound variable` and an exit status -- which
+# reads like a broken script rather than a finding.  A subshell would contain it
+# and would also strip `record_failure`'s bookkeeping, losing a real anchor's own
+# message, which the controls assert; so the sweep stays in this shell.
+run_check "INVARIANT" rg -U -n '^_sweep_epilogue\(\) \{[^\n]*(\n([ \t][^\n]*)?)*    record_failure .HYGIENE.' scripts/check_changed_file_anchors.sh
+run_check "INVARIANT" rg -F -n "trap '_sweep_epilogue; rm -f \"\${CLEANUP[@]}\"' EXIT" scripts/check_changed_file_anchors.sh
+run_check "INVARIANT" rg -U -n '^done 9< .\$\{SELECTION\}.\nSWEEP_COMPLETE=1' scripts/check_changed_file_anchors.sh
+# ...and the selection is read on FD 9, not on stdin.  An `eval`ed anchor that read
+# stdin would drain the remaining rows and the loop would end early with a
+# "Swept N" line that reads like a complete pass.  Measured on the pre-fix reader:
+# a row running `cat` skipped the row after it and the reconciliation below
+# reported "accounted for 1 of 2".
+run_check "INVARIANT" rg -F -n 'disposition command <&9; do' scripts/check_changed_file_anchors.sh
+run_negative_check "INVARIANT" rg -n '^done\s*<' scripts/check_changed_file_anchors.sh
+# ...and EVERY ROW IS ACCOUNTED FOR: the dispositions partition the selection, so
+# their counts must sum to its rows.  Pinned as the three-line order -- count the
+# rows, sum the dispositions, compare -- because a sum that omits a counter and a
+# comparison that is never made both keep every token.  The unknown arm has to
+# count too, or its own failure would double as a shortfall.
+run_check "INVARIANT" rg -U -n '^rows=.*\n^accounted=.*\n^if \[\[ .\$\{accounted\}. -ne .\$\{rows\}. \]\]; then' scripts/check_changed_file_anchors.sh
+# shellcheck disable=SC2016  # The literal `$((...))` IS the subject: a
+# double-quoted pattern would search for the arithmetic's value.
+run_check "INVARIANT" rg -F -n 'accounted=$((swept + deferred_tool + deferred_var + deferred_subst + unreadable + unknown))' scripts/check_changed_file_anchors.sh
+run_check "INVARIANT" rg -U -n '^    \*\)[^\n]*(\n([ \t][^\n]*)?)*      unknown=\$\(\(unknown \+ 1\)\)' scripts/check_changed_file_anchors.sh
+# ...and a disposition this gate does not know FAILS rather than counting as
+# swept: an explicit default branch, because a silent skip is the fail-open the
+# whole mechanism exists to remove.
+run_check "INVARIANT" rg -F -n "has disposition '\${disposition}', which this gate does not know" scripts/check_changed_file_anchors.sh
+# ...and both unreadable dispositions share ONE arm, because both say the gate
+# could not read the invocation and it is the SELECTOR's report that names which.
+run_check "INVARIANT" rg -F -n 'fail:unparsed | fail:unlexable)' scripts/check_changed_file_anchors.sh
+# ...and all three deferrals are NAMED, never silent: a residue reported by count
+# and location is the treatment this project already gives a composed search.
+# ...pinned with its INTERPOLATION, because the bare phrase is also the controls'
+# expected-message argument: one string in two places, and an anchor on the string
+# alone cannot say which of them it found.  The control is what ties the two.
+# shellcheck disable=SC2016  # The literal `${...}` IS the subject: a
+# double-quoted pattern would search for the expansion, not the interpolation.
+run_check "INVARIANT" rg -F -n 'deferred (runs a tool, not a text scan): ${script}:${lineno} [${prov}]' scripts/check_changed_file_anchors.sh
+# shellcheck disable=SC2016  # The literal `${...}` IS the subject: a
+# double-quoted pattern would search for the expansion, not the interpolation.
+run_check "INVARIANT" rg -F -n 'deferred (reads ${disposition#defer:var:})' scripts/check_changed_file_anchors.sh
+# shellcheck disable=SC2016  # The literal `${...}` IS the subject: a
+# double-quoted pattern would search for the expansion, not the interpolation.
+run_check "INVARIANT" rg -F -n 'deferred (substitutes a command): ${script}:${lineno} [${prov}]' scripts/check_changed_file_anchors.sh
+# A `$` IS A VARIABLE ONLY WHERE A SHELL EXPANDS IT, which is a fact about quoting
+# and not about the text.  The raw-text scan this replaced flagged five searching
+# invocations tree-wide and FOUR were literal dollars in single- or
+# backslash-quoted patterns -- all four anchors pinning this gate's own
+# fail-closed branches, so its blind spot sat precisely on its safety machinery.
+# One is genuine (`ARTIFACT_DIR`, Tier 4).
+run_check "INVARIANT" rg -F -n 'VARIABLE_REF.findall(expanding_text(command))' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -F -n 'VARIABLE_REF.findall(command)' scripts/select_changed_anchors.py
+# ...and the view RECURSES into a `-c` script, which an inner shell re-lexes, while
+# a script word ALSO contributes its own outer-expanding runs.  Either half alone
+# is fail-open: `bash -lc 'rg -n "p" "${TRACE_OUTPUT}"'` is read by the inner
+# shell, and `bash -lc "rg -n '${X}' f"` by the outer one.  The self-test caught
+# the first half the day this view was written non-recursively.
+run_check "INVARIANT" rg -U -n '^def expanding_text[^\n]*(\n([ \t][^\n]*)?)*        chunks.append\(outer\)\n        if idx in scripts:\n            chunks.append\(expanding_text\(value, _depth \+ 1\)\)' scripts/select_changed_anchors.py
+# ...and the words are split OUTSIDE quotes, so the `'...'"'"'...'` idiom -- five
+# live anchors use it to put a single quote inside a `-c` script -- is ONE word, as
+# it is to bash.  Splitting it hands `rg -n "a` to the inner view on its own and
+# reads it as an unterminated span, which is what the first draft did.
+run_check "INVARIANT" rg -U -n '^def _shell_words[^\n]*(\n([ \t][^\n]*)?)*                    raise UnlexableCommand\(.unterminated single-quoted span.\)' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -U -n '^def _shell_words[^\n]*(\n([ \t][^\n]*)?)*    return command\.split\(\)' scripts/select_changed_anchors.py
+# ...and inside double quotes an escape pair contributes to the word's VALUE and
+# not to its outer-expanding text: a backslash is exactly what suppresses
+# expansion, so `rg -F "x \${disposition} y"` searches for a literal dollar sign,
+# while the inner shell of `bash -lc "rg -n \$X"` receives `$X` and expands it.
+# The two halves disagree on purpose; collapsing them is fail-open one way and
+# over-strict the other.
+run_negative_check "INVARIANT" rg -F -n 'outer.append(word[i + 1])' scripts/select_changed_anchors.py
+# ...and the two dispositions the quoting view adds are DISTINCT and explicit: a
+# command substitution cannot be reproduced, and a command this walk cannot lex is
+# a check nobody runs, so it fails.
+run_check "INVARIANT" rg -U -n '^                elif substitutes:\n                    disposition = .defer:subst.' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -U -n '^            except UnlexableCommand:\n                disposition = .fail:unlexable.' scripts/select_changed_anchors.py
+# THE CONTROLS ASSERT THE MESSAGE, not the exit status -- `v0.35.113`'s lesson,
+# where a control asserted a non-zero exit an unrelated guard was producing.  The
+# violated-negative case corrected its own expectation on the first run.
+run_check "INVARIANT" bash -lc 'rg -n "    \"Forbidden pattern present\"" scripts/check_changed_file_anchors.sh'
+run_check "INVARIANT" bash -lc 'rg -n "an UNSATISFIED positive fails -- the whole point" scripts/check_changed_file_anchors.sh'
+# ...and Tier 0 runs the selector's self-test, the executor's controls, and the
+# sweep itself, in that order.
+run_check "INVARIANT" bash -lc 'rg -n "select_changed_anchors.py\" --self-test" scripts/test_tier0_hygiene.sh'
+run_check "INVARIANT" bash -lc 'rg -n "check_changed_file_anchors.sh\" --controls" scripts/test_tier0_hygiene.sh'
 finalize_report

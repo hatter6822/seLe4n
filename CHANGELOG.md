@@ -1,3 +1,177 @@
+## v0.35.122 — the sweep `CLAUDE.md` states as a procedure is a gate
+
+`CLAUDE.md` tells a contributor to sweep the anchors over every file a cut touched
+before running Tier 3, gives the `rg` command, and states the arithmetic: *seconds
+against tens of minutes per iteration.*  **Four consecutive cuts then shipped an
+anchor that sweep would have caught**, each found fifty minutes into the Full lane:
+
+| cut | what broke it |
+|-----|---------------|
+| `v0.35.116` | a table parse moved between two functions; **three** anchors over the old home went silent, of which the run reported one |
+| `v0.35.118` | a widened regex deleted the line a `v0.35.115` positive pinned |
+| `v0.35.119` | a hoisted classifier left a loop binding unused, so `ns` became `_ns` and a `v0.35.117` anchor had pinned the name — and Tier 3 stopped there, so that cut's own 21 new anchors never ran at all |
+| `v0.35.121` | a bound state retired the inline spelling a `v0.35.86` positive pinned |
+
+A rule restated four times and broken four times is owed a check, not a fifth
+telling.  `scripts/select_changed_anchors.py` selects and
+`scripts/check_changed_file_anchors.sh` executes; both run in Tier 0.
+
+### Why not the satisfiability gate
+
+`check_anchor_consistency.py` asks whether two anchors **contradict**.  It cannot
+ask whether a positive is currently **satisfied**, which is what all four cuts
+broke — and `v0.35.121` measured its limit precisely: for the *bounded-gap* family,
+now this tree's dominant anchor form, `_literal_runs` refuses a quantifier or a
+class, so only the exact-key comparison reaches it.  Running the anchor is the only
+thing that answers the question.
+
+### Three selection rules, all derived from git
+
+`path` (the command mentions a changed path), `dir` (it mentions an **ancestor
+directory** as a *delimited token*), and `diff` (the anchor line is one this cut
+adds or changes in a tier suite — the case a version-marker-scoped harness cannot
+express, and the reason `v0.35.119`'s own new anchors went unrun).
+
+The delimiter is what makes `dir` affordable: without the trailing-slash lookahead,
+`SeLe4n/Kernel/IPC` selects every file beneath it — **4261** anchors on this tree —
+and the sweep becomes Tier 3.  Measured selections for realistic cuts: 77–378
+anchors, **3–6 seconds**.
+
+**The change set includes untracked files**, and that is this gate's own first
+finding about itself: `git diff` cannot see a file a cut *adds*, in either
+direction, so without `ls-files --others --exclude-standard` a cut whose only change
+is a new file falls through to the `HEAD~1` derivation and sweeps the **previous**
+cut while reporting a clean run.  It did exactly that on the two files that add it.
+
+**The CI base revision is the plan gate's own variable.**  `lean_action_ci.yml`'s
+fast lane already fetches the PR base and exports `SELE4N_PLAN_BASE_REF` for
+`check_workstream_plan.py`; both gates ask *what does this cut change relative to
+the revision it merges into*, so reading it here needs no workflow change and gives
+the whole PR rather than its tip commit.  A second variable would be one question
+answered in two places.
+
+### What is swept, what is deferred, and what fails
+
+Swept when the anchor performs a **text search** — `classify_line`'s question, not a
+second reading of it, so a mutation of that classifier fails both gates.  Deferred
+**by name and count**, never silently, on three grounds: a `plain` invocation runs a
+tool rather than scanning text (and running Tier 1's `lake build` in the hygiene
+lane would be a broken gate, not a slow one), a command a shell expands an undefined
+variable in would make this gate disagree with its suite about what it ran, and one
+that **substitutes** (`$(…)`, a backtick) cannot be reproduced at all.  `unparsed`
+and `unlexable` **fail**, and so does a disposition the executor does not know — an
+explicit default branch, because a silent skip is the fail-open the whole mechanism
+exists to remove; the two `fail:` reasons stay distinct so the report names *which*
+question could not be answered, though the executor answers both on one arm.  A
+derived change set that selects zero anchors is an honest zero and passes.
+
+The execution `eval`s the tier suite's own line through the tier suite's own
+`run_check`, so this gate's verdict is identical to Tier 3's **by construction**:
+the code-view overlay, the prose-versus-code distinction and the polarity all come
+from one place.  `run_gate_check` rather than `run_check`, which is also why the
+sweep can never re-enter its own Tier 0 line — `run_gate_check` is not an anchor
+spelling.
+
+### A `$` is a variable only where a shell expands it
+
+The deferral above needs to know which variables a command *reads*, and the first
+spelling of that asked `\$\{?([A-Za-z_][A-Za-z_0-9]*)` of the **raw line**.  That is
+this project's own presence-for-relation substitution one artefact further down:
+`rg -F '${command}'` spells a variable and reads none, because the shell does not
+expand inside single quotes.  Measured over all **5492** searching invocations in
+the tree, the raw scan flagged **five** and **four** were literal dollars in
+single- or backslash-quoted patterns — *all four of them anchors pinning this
+gate's own fail-closed branches*, so its blind spot sat precisely on its safety
+machinery.  With the question asked correctly, exactly **one** is genuine
+(`ARTIFACT_DIR`, Tier 4).  The same scan would have deferred the five anchors whose
+patterns carry a backtick, every one a Markdown code span inside single quotes.
+
+**The view is recursive, because a `-c` argument is a script and not data.**  The
+first draft blanked every single-quoted span, and the self-test failed at once:
+`bash -lc 'rg -n "p" "${TRACE_OUTPUT}"'` *does* read a variable — the **inner**
+shell expands it.  So a script word contributes both its own outer-expanding runs
+and a recursive view of its value, since the converse shape
+`bash -lc "rg -n '${X}' f"` is expanded by the **outer** shell inside single quotes
+the inner one would protect.  Either half alone is fail-open, and the self-test
+carries one case per direction.
+
+Two things that cost a draft each.  **`shlex` will not do**: `posix=True` *strips*
+quotes, so a token no longer says whether its `$` was quoted — which is why this is
+a hand-written walk rather than a call to the lexer `check_anchor_consistency.py`
+already uses.  And **the unit is the word, not the quoted run**: five live anchors
+assemble a `-c` script from three runs with the `'…'"'"'…'` idiom, and viewing each
+run separately reads the first one's `rg -n "pattern` as an unterminated span.  Bash
+joins adjacent runs into one word; so does this.
+
+**Which direction each misreading takes is stated, and the residue is measured
+rather than assumed empty.**  Over-reporting an expansion defers an anchor Tier 3
+runs anyway.  *Under*-reporting is the fail-open, so an unquoted `#` comment is
+deliberately not honoured (a `$` after one reads as expanding, which is the safe
+error), `$'…'` opens at the same byte the walk opens at, and `$((…))` reads names
+without a `$` — zero live invocations have one.  What makes that residue
+**detectable** is the executor: every swept anchor must reach a **verdict**, a pass
+or a recorded failure, because `set -u` aborts an `eval` that reads an unbound
+variable and an anchor counted as swept without being checked is exactly the
+fail-open this gate exists to remove.  Measuring the outcome beats trusting the
+model.
+
+That relation earned its keep on arrival: an unbound variable is fatal to the
+*shell*, not to the `eval`, so the sweep would have died with bash's own
+`VAR: unbound variable` and an exit status — a loud failure reading like a broken
+script rather than a finding.  A subshell would contain it and would also strip
+`record_failure`'s bookkeeping, losing a real anchor's own message, which the
+controls assert; so the sweep stays in this shell and an early exit is reported by
+an `EXIT` epilogue naming the row.
+
+### And a swept anchor must be READ, not only counted
+
+Two more fail-opens the same reasoning found, both in the executor and both about
+the difference between *counting* a row and *checking* it.
+
+**The selection is read on file descriptor 9.**  With the loop reading stdin, an
+`eval`ed anchor that reads stdin drains the remaining rows: the loop ends early and
+prints a `Swept N` line that reads exactly like a complete pass.  Measured on the
+pre-fix reader with a two-row selection whose first row runs `cat` — the second row
+was never run.  The dedicated descriptor makes that impossible.
+
+**And every row is accounted for.**  The dispositions partition the selection, so
+their counts must sum to its rows, and a shortfall is a named failure.  That catches
+every *other* cause of an early exit — and it caught one already present: a
+non-blank row with no command was dropped by a `continue` guard in silence, which is
+the same silence one field over.  On the pre-fix reader the reconciliation reports
+"accounted for 1 of 2 selected row(s)", which is what says the fd redirect is a fix
+and not a precaution.
+
+### Witnesses
+
+**Twenty-two selector cases and fourteen executor controls.**  The controls assert
+the **message**, not the exit status (`v0.35.113`'s lesson), and the
+violated-negative case corrected its own expectation on the first run — a negative's
+failure says "Forbidden pattern present", not "Command failed", and asserting the
+message is what makes that control a statement about *polarity*.
+
+**Twenty-nine Tier 3 anchors, twenty-four positives and five negatives, with all
+thirty mutations firing** — nine against the shell-quoting view through the
+selector's own self-test, twenty-one against the anchor block itself.
+
+**Five of those anchors were presence checks, caught by the mutation set rather
+than by review.**  One pinned a variable's name where it also appears in the
+docstring explaining why it is shared; one pinned a flag that appears in the
+docstring and twice in the self-test; two pinned a message string that is *also*
+the controls' expected-message argument — one string in two places, where an anchor
+on the string alone cannot say which it found; and the verdict relation was first
+pinned as "an `if` somewhere after the eval", which a *second* capture of the
+baseline between them survives, so it is now the whole three-part order plus a
+negative forbidding a re-capture.
+
+And two mutations were **rejected as inert** rather than counted: adding a copy of
+the verdict check *above* the eval leaves the real one running after it, so the
+property holds and the anchor is right to pass.  A mutation that does not break the
+relation reads as a coverage gap; the cases that replaced it move the baseline
+capture and delete the check.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.121 — the duplication was a divergence hazard, not a latency cost
 
 PR #897's review found `cancelIpcBlockingMigrated`'s donation arm spelling
