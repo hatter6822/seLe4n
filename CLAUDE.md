@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.119.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.120.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1591,6 +1591,40 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   letting the number read as a proof of absence — the second-kind treatment this
   section already prescribes.  **A predicate over a domain you filtered is a
   measurement of the filter.**
+
+  **And an exclusion's stated reason is a claim about its MEMBERS, re-measured or
+  not** (`v0.35.120`).  `check_anchor_consistency.py` leaves an invocation it
+  cannot reduce to one `(pattern, target)` out of the satisfiability comparison,
+  with the reason written at the category: such an invocation *"pins a property of
+  the composition rather than of a pattern, so it has no counterpart to
+  contradict"*.  True of a pipeline.  But the *membership* test was not that
+  relation — it was *the script inside a `bash -lc` is not one of two recognised
+  **wrapper** forms*, a syntactic accident — so a bare `rg PATTERN FILE` that
+  happens to be quoted through a shell landed in the bucket, and that is the form
+  **every** bounded-gap anchor in this tree must take, the gap carrying a `\n`.
+  Measured: **976 of 987** excluded invocations reduced to exactly one
+  `(pattern, target)` and 11 were genuinely composed; the compared set was **4579**
+  records where it is now **5573**, and the *negative* half **470** of **742**, so
+  over a third of the tree's absence pins — the *must not come back* negatives a
+  deletion's correctness rests on — were compared against nothing while the gate's
+  PASS line read as coverage of the anchor set.  It failed silently by
+  construction: an excluded member is never examined, so no count moved.
+
+  Three things follow.  **Make the membership test the relation the reason names**,
+  not a shape that usually implies it — the reduction is now the same one a bare
+  argv gets, and `_is_composed` decides what a composition is, so the 11 keep an
+  exclusion that is true of them.  **Re-measure a category's reason against its
+  members when either changes**, because this bucket was correct when it held only
+  the two wrapper forms and became wrong as the tree's anchor style moved.  And
+  **state what the gate still cannot decide at the gate**: *two positives* over one
+  subject are jointly satisfiable in the abstract — a file may hold two matching
+  lines — and unsatisfiable only given a fact no scanner has (*this file declares
+  that name once*), which is why `v0.35.118`'s defect is the changed-file sweep's
+  question and not this one's.  One mechanical note, from this cut's own mutation
+  set: the first anchor over the new fail-closed branch pinned its **condition and
+  explanatory comment**, so a mutation keeping both and changing `unparsed` to
+  `filtered` left it green — *a presence check is not a relation check*, inside an
+  anchor written for the cut that closes one.
 
   **And a narrower resemblance is not a relation** (PR #895 review round 4,
   `v0.35.17`).  The fourth remedy in that list was *a generated component is the

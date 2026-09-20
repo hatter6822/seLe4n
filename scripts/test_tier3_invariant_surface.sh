@@ -16427,4 +16427,59 @@ run_check "INVARIANT" bash -lc 'rg -n "def test_rejects_a_fragment_emitted_under
 run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_that_same_row_against_its_OWN_line" scripts/tests/test_scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_the_unbracketed_label_shape" scripts/tests/test_scenario_catalog.py'
 
+# ---------------------------------------------------------------------------
+# `v0.35.120`: a plain search quoted through a shell is COMPARED, not "composed".
+#
+# `check_anchor_consistency.py` filed every unrecognised `bash -lc '...'` as
+# `filtered` and excluded it from the satisfiability comparison, on the stated
+# ground that such an invocation pins a property of the composition rather than of
+# a pattern.  True of a pipeline; false of a bare `rg PATTERN FILE` that happens to
+# be quoted through a shell -- which is the form EVERY bounded-gap anchor in this
+# tree has to take, because the gap carries a `\n` and cannot be written as a bare
+# argv.  Measured: 976 of the 987 excluded invocations reduced to exactly one
+# (pattern, target); the compared set went 4579 -> 5573 records and the NEGATIVE
+# half 470 -> 742, so over a third of the tree's absence pins were compared against
+# nothing while the gate's PASS line read as coverage of the anchor set.
+# ---------------------------------------------------------------------------
+# THE REDUCTION IS AFTER THE WRAPPER READER, not instead of it: the `! rg` and
+# `if rg ...; then` forms are ABSENCE pins and must keep being read as such, so a
+# reduction placed first would file them as positives.  The gap bounds both to
+# `classify_line`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        wrapped = _wrapped_search\(script\)" scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*            reduced = _search_invocation\(inner\)" scripts/check_anchor_consistency.py'
+# ...and `_is_composed` still decides what a composition is, so the 11 genuinely
+# composed invocations keep their honest exclusion.  A mutation that drops this
+# guard compares a pipeline's first search as though it were the whole anchor.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        if not _is_composed\(inner\):" scripts/check_anchor_consistency.py'
+# ...and an uncomposed wrapped search this parser cannot reduce FAILS the gate,
+# the same direction a bare argv gets: "could not read" must not answer like
+# "read and clean".  Both fail-closed exits are pinned -- the unreadable script
+# and the unreducible search.
+# ...and the pin is the branch's RETURN VALUE, not its condition and comment: the
+# first spelling of this anchor named the `if` and the sentence under it, so a
+# mutation that kept both and changed `unparsed` to `filtered` -- the fail-open --
+# left it green.  That is *a presence check is not a relation check* inside an
+# anchor written for this cut, caught by its own mutation.  The comment lines are a
+# bounded run rather than text this depends on.
+run_check "INVARIANT" bash -lc 'rg -U -n "            if inner and inner\[0\] in SEARCH_TOOLS:\n(                #[^\n]*\n)*                return \(\"unparsed\", False, None, \[\], frozenset\(\)\)" scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*            # An unbalanced quote inside the script\." scripts/check_anchor_consistency.py'
+# ...and the measurement is recorded where the branch is, so a later reader can
+# re-run it rather than re-trust it.
+run_check "INVARIANT" bash -lc 'rg -n "976 reduce to exactly one \(pattern, target\)" scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -n "NEGATIVE half was 470 of 742" scripts/check_anchor_consistency.py'
+# ...and the module docstring no longer asserts the retired claim without its
+# retraction: the sentence stays (it is true of the 11) and the narrowing follows.
+run_check "INVARIANT" bash -lc 'rg -n "And .composed. means composed, not .quoted through a shell." scripts/check_anchor_consistency.py'
+# ...and it states what it still cannot decide, rather than implying coverage:
+# TWO POSITIVES over one subject are jointly satisfiable in the abstract, so they
+# are the changed-file sweep's question and not this gate's.
+run_check "INVARIANT" bash -lc 'rg -n "What it could not have caught either way is \*\*two positives\*\*" scripts/check_anchor_consistency.py'
+# ...and the four self-test cases that make the widening decisive: the plain
+# wrapped pair (silent before), the piped control that must stay counted, the
+# unreducible wrapped search that must fail, and the `! rg` regression control.
+run_check "INVARIANT" bash -lc 'rg -n "form 976 of this tree.s anchors take" scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -n "a piped search was compared rather than " scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -n "an unreducible search inside a shell " scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -n "the .! rg. wrapper stopped being read as " scripts/check_anchor_consistency.py'
+
 finalize_report

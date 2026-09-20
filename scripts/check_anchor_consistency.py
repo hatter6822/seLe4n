@@ -31,6 +31,30 @@ process substitution.  Those pin a property of the composition rather than of a
 pattern, so they have no counterpart to contradict; they are counted and named
 (`--list`) instead of being silently dropped.
 
+**And "composed" means composed, not "quoted through a shell"** (`v0.35.120`).
+The paragraph above was written when the shell-wrapper reader recognised only the
+two *absence* forms (`! rg …`, `if rg …; then … fi`), so everything else inside a
+`bash -lc` fell to `filtered` — and that exclusion carried the justification
+above, which is true of a pipeline and **false** of a bare `rg PATTERN FILE` that
+happens to be quoted through a shell.  Measured: of the 987 invocations filed
+`filtered`, **976 reduced to exactly one (pattern, target)** and 11 were
+genuinely composed.  So this gate compared 4475 of the tree's 5704 anchors — 83%
+— while its PASS line read as coverage of the anchor *set*, and the 17% it
+skipped is exactly the family the bounded-gap rule mandates: a gap pattern
+carries a `\n`, so it cannot be written as a bare argv and every one of those
+anchors is a `bash -lc`.  A shell-quoted search is reduced the same way a bare
+one is now, so the two spellings are one answer rather than two, and 5573
+anchors are compared with 11 honestly excluded.
+
+The class is this file's own (*a recognised set is not a derived set*), inside the
+gate written to keep the anchor set honest, and it failed silently by
+construction: an excluded anchor is never examined, so no count moved and nothing
+read as missing.  What it could not have caught either way is **two positives**
+over one subject — jointly satisfiable in the abstract, since a file may hold two
+matching lines, and unsatisfiable only given a fact about the subject that no
+scanner has (*this file declares that name once*).  That question is decided by
+running the anchor, which is `scripts/check_changed_file_anchors.sh`'s job.
+
 Exit status: 0 when the anchor set is satisfiable, 1 otherwise.
 """
 
@@ -474,7 +498,9 @@ def classify_line(line: str):
       regex failing to match.
     * `filtered` — it *does* search, but composes the result, so no single
       (pattern, target) is pinned.  Counted and reportable, never silently
-      dropped.
+      dropped.  Since `v0.35.120` this means *composed* and no longer "inside a
+      shell wrapper": a plain single search in a `bash -lc` is reduced to an
+      `anchor`, because it pins one pattern in one file whatever quotes it.
     * `unparsed` — it searches and this parser cannot say what it pins.  A hard
       failure: an anchor the gate cannot read is an anchor it cannot compare,
       and reporting PASS over it is the fail-open this gate exists to remove.
@@ -521,6 +547,53 @@ def classify_line(line: str):
                 # under `run_negative_check` each flips again.
                 is_neg = asserts_absent != bool(m.group("neg"))
                 return ("anchor", is_neg, inv[0], inv[1], inv[2])
+        # `v0.35.120`: A PLAIN SEARCH INSIDE A SHELL WRAPPER IS NOT COMPOSED.
+        #
+        # Until here, any `bash -lc '…'` whose script this function did not
+        # recognise as a *wrapper* fell straight to `filtered` — and `filtered`
+        # is excluded from the comparison on the stated ground that such an
+        # invocation "pins a property of the composition rather than of a
+        # pattern, so it has no counterpart to contradict".  That sentence is
+        # true of a pipeline and **false** of a bare `rg PATTERN FILE` that
+        # happens to be quoted through a shell, which is the form every
+        # multi-line-regex anchor in this tree has to take: the bounded gap
+        # `[^\n]*(\n([ \t][^\n]*)?)*` carries a `\n`, so it cannot be written
+        # as a bare argv.
+        #
+        # Measured before changing anything: of the 987 invocations this branch
+        # filed as `filtered`, **976 reduce to exactly one (pattern, target)**
+        # and 11 are genuinely composed.  So the gate whose whole purpose is
+        # "no two anchors disagree" was comparing 4579 records where it now
+        # compares 5573, and its NEGATIVE half was 470 of 742 — over a third of
+        # the tree's absence pins compared against nothing, while its PASS line
+        # read as coverage of the set.  The skipped family is
+        # precisely the one the bounded-gap rule mandates.  That
+        # is this file's own domain rule (*a recognised set is not a derived
+        # set*) inside the gate written to keep the anchor set honest, and it is
+        # silent by construction: an excluded anchor is never examined, so no
+        # count moves.
+        #
+        # The reduction is the same one a bare argv gets, so a shell-quoted
+        # anchor and an unquoted one are now compared by one answer rather than
+        # by two. `_is_composed` still decides what a composition is, so the 11
+        # keep their honest exclusion.
+        try:
+            inner = _shell_tokens(script)
+        except ValueError:
+            # An unbalanced quote inside the script.  Fail closed if it searches:
+            # "could not read" must not answer the same as "read and clean".
+            return ("unparsed" if SEARCH_TOOL_RE.search(script) else "plain",
+                    False, None, [], frozenset())
+        if not _is_composed(inner):
+            reduced = _search_invocation(inner)
+            if reduced is not None:
+                return ("anchor", bool(m.group("neg")),
+                        reduced[0], reduced[1], reduced[2])
+            if inner and inner[0] in SEARCH_TOOLS:
+                # A single, uncomposed search this parser cannot reduce is the
+                # `unparsed` case, not a tolerated middle one — exactly as it is
+                # for a bare argv four lines above.
+                return ("unparsed", False, None, [], frozenset())
         return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
                 False, None, [], frozenset())
 
@@ -1420,6 +1493,87 @@ def self_test() -> int:
             )
             return 1
 
+        # `v0.35.120`: A PLAIN SEARCH QUOTED THROUGH A SHELL IS COMPARED.
+        #
+        # The decisive case, and the one that was silent for the whole of this
+        # gate's life: both anchors are the form 976 live anchors take, so before
+        # the reduction each was filed `filtered` and the pair was never
+        # compared.  The pair is `v0.35.118`'s own shape — a positive anchored at
+        # `^` against a negative that is not — which is exactly what the `^`
+        # normalisation exists for and which the wrapper hid.
+        #
+        # It is spelled without a bounded gap deliberately.  `_literal_runs`
+        # refuses a quantifier or a class, so a gap pattern
+        # (`[^\n]*(\n([ \t][^\n]*)?)*`) is undecomposable and only the
+        # exact-key comparison can reach it — which is the reduction's whole
+        # benefit for that family, and a limitation this gate states rather than
+        # implies.
+        wrapped_p = d / "wrapped_plain.sh"
+        wrapped_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"^def gamma_present\" F.py'\n"
+            "run_negative_check \"INVARIANT\" bash -lc 'rg -n \"def gamma_present\" F.py'\n")
+        both, *_ = find_contradictions([str(wrapped_p)])
+        if both != [("def gamma_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — a contradiction between two plain searches "
+                f"quoted through `bash -lc` was missed (got {both}); that is the "
+                f"form 976 of this tree's anchors take.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and a GENUINELY composed one keeps its honest exclusion.  The two
+        # cases together are what make the widening a narrowing of `filtered`
+        # rather than its deletion: keeping the row a fix does not change is
+        # what distinguishes a fix that generalises from one that merely moves.
+        composed_p = d / "wrapped_composed.sh"
+        composed_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"delta\" F.py | wc -l'\n"
+            "run_negative_check \"INVARIANT\" rg -n 'delta' F.py\n")
+        both, _, _, _, _, filtered_c, _ = find_contradictions([str(composed_p)])
+        if both or len(filtered_c) != 1:
+            print(
+                f"FAIL: --self-test — a piped search was compared rather than "
+                f"counted (contradictions {both}, filtered {filtered_c}); "
+                f"`filtered` must still mean composed.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and an uncomposed search inside a wrapper that this parser cannot
+        # reduce is `unparsed`, which FAILS — the same direction a bare argv
+        # gets, because "could not read" must not answer like "read and clean".
+        unreadable_p = d / "wrapped_unreadable.sh"
+        unreadable_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg --colors=never'\n")
+        try:
+            find_contradictions([str(unreadable_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an unreducible search inside a shell "
+                "wrapper did not fail the gate.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the absence-wrapper path is unchanged: `! rg` inside the same
+        # wrapper is still read as a NEGATIVE, so the reduction did not capture
+        # a form the older branch already owned.
+        negwrap_p = d / "wrapped_negation.sh"
+        negwrap_p.write_text(
+            "run_check \"INVARIANT\" bash -lc '! rg -n \"eps\" F.py'\n"
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"eps\" F.py'\n")
+        both, *_ = find_contradictions([str(negwrap_p)])
+        if both != [("eps", "F.py")]:
+            print(
+                f"FAIL: --self-test — the `! rg` wrapper stopped being read as "
+                f"an absence pin (got {both}); the reduction must not shadow it.",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         "PASS: --self-test — planted contradictions were detected in both "
         "quoting styles, in both shell-wrapped spellings, on a second search "
@@ -1436,7 +1590,10 @@ def self_test() -> int:
         "pair reported as ambiguous, in-run overlap still proven), a negative "
         "over a directory contradicted a positive over a file inside it while "
         "the reverse did not, case-insensitivity was compared in the direction "
-        "that implies and skipped in the one that does not, the clean "
+        "that implies and skipped in the one that does not, a plain search "
+        "quoted through `bash -lc` was compared while a piped one stayed "
+        "counted, an unreducible wrapped search failed the gate, the `! rg` "
+        "absence wrapper was not shadowed, the clean "
         "set passed, and a commented-out anchor was not counted."
     )
     return 0

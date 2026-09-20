@@ -1,3 +1,78 @@
+## v0.35.120 — a third of the tree's absence pins were compared against nothing
+
+`check_anchor_consistency.py` exists so that no two anchors disagree: a cut that
+deletes a theorem, adds the negative pin forbidding its return and leaves the
+original positive in place produces an anchor set no tree satisfies, and the
+contradiction otherwise surfaces in the Full lane several commits later, reading as
+"the invariant surface regressed" rather than "two anchors disagree".
+
+It filed every `bash -lc '…'` whose script it did not recognise as one of two
+*wrapper* forms (`! rg …`, `if rg …; then … fi`) as **`filtered`**, and `filtered`
+is excluded from the comparison on this stated ground: such an invocation *"pins a
+property of the composition rather than of a pattern, so it has no counterpart to
+contradict"*.  That sentence is true of a pipeline and **false** of a bare
+`rg PATTERN FILE` that happens to be quoted through a shell.
+
+### The measurement, in the units the gate's own report prints
+
+Of the **987** invocations it excluded, **976 reduce to exactly one
+(pattern, target)** and **11** are genuinely composed — pipelines, a process
+substitution, an `&&` conjunction, a conditional.  Letting the 976 in takes the
+compared set from **4579 to 5573** records, and the **negative** half from **470 to
+742**: over a third of the tree's absence pins — the *must not come back* negatives,
+the ones a deletion's correctness rests on — were compared against nothing, while
+the gate's PASS line read as coverage of the anchor set.
+
+The excluded family was not arbitrary.  It is exactly the one this project's own
+bounded-gap rule mandates: a gap pattern carries a `\n`
+(`[^\n]*(\n([ \t][^\n]*)?)*`), so it cannot be written as a bare argv, and every
+anchor written that way since the WS-OD OD3 sweep is a `bash -lc`.  So the gate was
+blind precisely where this tree has been writing its anchors for the last thirty
+cuts — and that is why the `v0.35.118` and `v0.35.119` stale anchors were found
+fifty minutes into Tier 3 rather than statically: both were `bash -lc` positives.
+
+### What landed
+
+`classify_line` reduces the script the same way it reduces a bare argv — after the
+wrapper reader, so the two absence forms keep their polarity — and `_is_composed`
+still decides what a composition is, so the 11 keep their honest exclusion.  Two
+directions fail **closed**, as they do for a bare argv: an unbalanced quote and an
+uncomposed search this parser cannot reduce are both `unparsed`, which fails the
+gate, because *"the gate could not read it" and "the gate checked it" must never
+produce the same PASS line*.
+
+The tree is **clean** under the widening — no contradiction among the 994 newly
+compared records — so the witnesses are the whole measurement: a plain wrapped pair
+in `v0.35.118`'s own shape (a `^`-anchored positive against an unanchored negative,
+silent before this cut), a piped control that must stay counted, an unreducible
+wrapped search that must fail the gate, and the `! rg` regression control.  Seven
+Tier 3 anchors, each mutation-tested; five of the seven mutations keep every token
+and break a relation.
+
+### What this gate still cannot decide, stated rather than implied
+
+**Two positives** over one subject.  They are jointly satisfiable in the abstract —
+a file may hold two matching lines — and unsatisfiable only given a fact no scanner
+has (*this file declares that name once*).  That is `v0.35.118`'s defect exactly,
+and it is decided by *running* the anchor, not by comparing it.  And a bounded-gap
+pattern is undecomposable (`_literal_runs` refuses a quantifier or a class), so for
+that family only the exact-key comparison applies; the reduction is what makes even
+that reach them.
+
+### One mechanical finding, from this cut's own mutation set
+
+The first spelling of the anchor over the fail-closed branch pinned the branch's
+**condition and its explanatory comment**, so a mutation that kept both and changed
+`unparsed` to `filtered` — the fail-open — left it green.  That is *a presence check
+is not a relation check* inside an anchor written for this cut, caught by its own
+mutation rather than by review.  It pins the `return` now, with the comment lines a
+bounded run rather than text it depends on.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.119 — two derivations asked the wrong question
 
 Both findings are PR #897 Codex review on `v0.35.117`, and both are the sweep class:
