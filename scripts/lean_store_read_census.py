@@ -180,6 +180,91 @@ WRITE = re.compile(_table_access(("write",)))
 # populations.  See `_TABLE_OPS` for why they are not in `READ`.
 SWEEP = re.compile(_table_access(("sweep",)))
 
+# ---------------------------------------------------------------------------
+# The INDIRECT population (`v0.35.117`).
+#
+# Every pattern above keys on the receiver text `.objects`, so **an indirection
+# defeats all of them**.  There are two spellings of that indirection and they are
+# one question:
+#
+#   ALIAS  `let objs := st.objects` and then `objs.insert k v` -- a keyed write no
+#          `WRITE` match can see, and `objs[k]?` a keyed read no `READ` match can.
+#   PARAM  a declaration handed the table itself (`(objs : RHTable ObjId
+#          KernelObject)`) and keying into it.
+#
+# Not hypothetical, and not one site.  Derived over the tree: `endpointQueueRemove`
+# and `spliceOutMidQueueNode` bind the table and perform **six executable writes
+# and four executable reads** between them, and `queueNeighbourPatch` takes it as a
+# parameter for **one more of each** -- so `STORE_WRITE_CODE = 0` and
+# `STORE_READ_CODE = 0` were *evaded* rather than satisfied, and that is why the
+# raw-write migration (`v0.35.64`..`v0.35.78`) passed over all three.  `CLAUDE.md`
+# already states the rule -- *a new store primitive takes the state, never the
+# table* -- and nothing enforced it.
+#
+# **One classifier, both spellings**, because flooring one and describing the other
+# in prose is this project's own *a fix applied at one site and not its sibling*:
+# `table_receivers` derives the set of identifiers that denote the table, from the
+# signature and from the bindings alike and closed transitively, and the access
+# alternation is `_TABLE_OPS`' -- the same one `READ` and `WRITE` are built from --
+# so a newly classified operation reaches the direct and indirect censuses by
+# construction.  The *provenance* is reported as the shape rather than deciding
+# which check runs.
+#
+# The population is **reported and floored per (file, declaration, shape, kind)**,
+# not enforced at zero, because it is not zero.  A `ZERO_METRICS` entry this project
+# may not re-anchor would have to be false on the day it landed, and a floor that
+# says "these, here, and no more" is a true statement where a zero would be a false
+# one.  The floor is keys AND counts, the shape `identifier_naming_baseline.json`
+# has for the reason this file already records twice: a set of keys alone cannot see
+# a second access inside a declaration that already has one, and a count alone
+# cannot see the first in a declaration that had none.
+#
+# The unit is the **access**, not the binding.  A binding count cannot see a second
+# `objs.insert` added to a declaration that already aliases, which is the same
+# defect one level down and is exactly what the two enforced zeros count.
+#
+# Driving it to zero is registered (`docs/REGISTERED_DEBT.md` table C).  The writes
+# are correct; what this closes is their *invisibility*.
+# ---------------------------------------------------------------------------
+
+
+def _indirect_access(kinds: tuple[str, ...], receiver: str,
+                     extra_method: str = "") -> str:
+    """`_table_access`, over a BOUND receiver rather than the `.objects` projection.
+
+    Built from the same `_op_alternation` for the same reason `_table_access`
+    gives: an operation classified once in `_TABLE_OPS` is then recognised in the
+    direct spelling *and* the indirect one, so a widening cannot reach one and
+    silently miss the other.
+
+    The receiver is delimited on both sides against `[\\w'.]` rather than by `\\b`,
+    so `objs` does not match inside `myobjs` and does not match the *field path*
+    `st.objs`: a name is a table because of how it was bound, and a suffix of
+    another path was not bound here at all.
+    """
+    alt = _op_alternation(kinds)
+    r = re.escape(receiver)
+    method = rf"(?<![\w'.]){r}\.{alt}"
+    if extra_method:
+        method = rf"(?:{method}|{extra_method})"
+    qualified = rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{r}(?![\w'.])"
+    return rf"{method}|{qualified}"
+
+
+def indirect_patterns(receiver: str) -> dict:
+    """{kind: pattern} for the keyed accesses on `receiver`.
+
+    The subscript spelling `objs[k]?` is the indirect counterpart of `READ`'s
+    `extra_method` and has no qualified form, for the same reason.
+    """
+    r = re.escape(receiver)
+    return {
+        "read": re.compile(_indirect_access(
+            ("read",), receiver, extra_method=rf"(?<![\w'.]){r}\[")),
+        "write": re.compile(_indirect_access(("write",), receiver)),
+    }
+
+
 #: The two object-table types, and where their operations are declared.  The
 #: reconciliation below reads these files rather than a list of names, so an
 #: operation added to either table is a *named* Tier 0 failure -- "classify it in
@@ -757,7 +842,8 @@ def _declaration_is_valueless(lines: list[str], at: int) -> bool:
     return True
 
 
-def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None, pattern=READ):
+def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
+             pattern=READ, collect=None):
     """Yield (declaration, is_prop, occurrences, line, region) per access-bearing line.
 
     `pattern` is the access being counted — `READ` (the default) or `WRITE`.  The
@@ -781,6 +867,18 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None, patter
     is — and `"body"` otherwise.  The Tier 1 reconciliation needs the
     distinction: the elaborator's verdict is per *declaration*, so it cannot
     adjudicate a proposition sitting inside an executable declaration's binder.
+
+    `collect`, when a callable is supplied, is invoked once per line with
+    `(declaration, kind, signature_text, specification_text, executable_text)` --
+    the same four region texts this classifier counts `pattern` in, with the two
+    executable regions (a body that is not a proposition, and a binder default)
+    joined because both are code.  It is how the INDIRECT census
+    (`indirect_accesses`) reads declarations: that question needs a
+    declaration's signature *and* its body at once, which no line pattern can
+    express, and routing it through this classifier is what keeps the
+    declaration boundary, the `Prop` verdict and the region split ONE answer
+    shared by the direct and indirect censuses -- so a mutation of any of them
+    fails both rather than one.
 
     A read in a declaration's SIGNATURE -- anywhere before the top-level `:=`,
     which is where its hypothesis binders and its result type live -- is spec
@@ -911,6 +1009,8 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None, patter
         )
         if is_prop_decl:
             sig_spec, sig_default = sig_spec + sig_default, ""
+        if collect is not None:
+            collect(decl, kind, sig_spec, body_spec, sig_default + body_code)
         n_sig = len(pattern.findall(sig_spec))
         n_default = len(pattern.findall(sig_default))
         n_spec = len(pattern.findall(body_spec))
@@ -1135,6 +1235,233 @@ def census(view: Path, pattern=READ, registry: dict = ACCESSOR_BODIES):
             bucket[(rel, decl)] = bucket.get((rel, decl), 0) + n
         unparsed.extend((rel, d, k, ln, why) for d, k, ln, why in here)
     return code, spec, exempt_hits, attribution, unparsed
+
+
+# ---------------------------------------------------------------------------
+# The INDIRECT census.  See the pattern builders above for why it exists and why
+# both spellings of the indirection go through one classifier.
+# ---------------------------------------------------------------------------
+
+#: The object-table type, in either spelling.  ONE definition, so a bracketed
+#: binder and an unbracketed ascription cannot disagree about what a table is.
+_TABLE_TYPE = (r"(?:RHTable\s+(?:SeLe4n\.)?ObjId\s+KernelObject|FrozenMap)"
+               r"(?![\w'.])")
+
+#: A BRACKETED binder of object-table type: `(objs : RHTable ObjId KernelObject)`,
+#: `{fm : FrozenMap}`, `⦃t : FrozenMap⦄`.  One binder may bind several names
+#: (`(a b : RHTable ...)`), so the name group is split rather than captured singly.
+TABLE_BINDER = re.compile(
+    r"[(\{⦃]\s*(?P<names>[\w'][\w' ]*?)\s*:\s*" + _TABLE_TYPE)
+
+#: ...and the UNBRACKETED ascription, `let objs : FrozenMap ... := ...` / `fun objs
+#: : RHTable ... => ...`, which the bracketed form cannot see.  Live in the tree
+#: once (`Model.freeze`'s `frozenObjects`, which *constructs* a table and keys into
+#: nothing), so it costs the baseline nothing and makes a keyed access added to it
+#: a Tier 0 failure rather than a silent exclusion.
+TABLE_ASCRIPTION = re.compile(
+    r"\b(?:let|have|fun)\s+(?P<name>[\w']+)\s*:\s*" + _TABLE_TYPE)
+
+#: A binding whose value IS a table.  The right-hand side must END at the name:
+#: `let x := st.objects.toList` is a sweep, already classified and counted there,
+#: and a record field assignment (`{ st with objects := t }`) is not a binding.
+TABLE_BINDING = re.compile(
+    r"(?:^|[;(]|\bdo\b|\bthen\b|\belse\b|=>)\s*(?:let|have)\s+"
+    r"(?P<name>[\w']+)\s*(?::[^:=\n]*)?:=\s*(?P<rhs>[\w'.]+)\s*(?=$|[;)])", re.M)
+
+
+def table_receivers(signature: str, body: str) -> dict:
+    """{identifier: shape} for every name in this declaration that denotes a table.
+
+    `param` — a signature binder of table type.  `alias` — a binding whose value is
+    the `.objects` projection, or another name already known to be one, closed
+    **transitively**, so `let a := st.objects; let b := a` is one population rather
+    than a hole one rename opens.
+
+    A name with both provenances is reported `alias`: a binding is the later and
+    more specific evidence, and the shape is a reported attribute rather than a
+    selector for which check runs, so the choice only has to be deterministic.
+
+    The `.objects` test inherits the bounded ambiguity `READ` and `WRITE` already
+    carry, and for the same reason: resolving a receiver's *type* is an elaborator
+    question and this census runs in Tier 0, before any build.  Six types in this
+    tree carry an `objects` field (`OBJECTS_FIELD_OWNERS`, derived and reconciled
+    both ways), so binding a non-table one and keying into it would be
+    over-reported — a false Tier 0 failure naming the declaration, which is the
+    direction a floor must fail in, and which the reconciliation makes a *named*
+    failure rather than a mystery.
+    """
+    names: dict = {}
+    text = signature + "\n" + body
+    # Over the WHOLE declaration, not the signature alone: a `fun` binder or an
+    # ascription sits in the BODY, and a table bound there keys into the store
+    # exactly as a parameter does -- so a signature-only scan would leave the third
+    # spelling of the indirection invisible.
+    for m in TABLE_BINDER.finditer(text):
+        for n in m.group("names").split():
+            names[n] = "param"
+    for m in TABLE_ASCRIPTION.finditer(text):
+        names[m.group("name")] = "param"
+    changed = True
+    while changed:
+        changed = False
+        for m in TABLE_BINDING.finditer(text):
+            rhs, name = m.group("rhs"), m.group("name")
+            if (rhs.endswith(".objects") or rhs in names) and names.get(name) != "alias":
+                names[name] = "alias"
+                changed = True
+    return names
+
+
+def table_primitive_declarations() -> set:
+    """`(file, declaration)` for every operation of either object table.
+
+    **Derived from `_TABLE_SOURCES`, never listed.**  A declaration named
+    `RHTable.insert` or `FrozenMap.set`, in the table's own source, *is* the table
+    operation: its parameter is the table because it is the primitive, so counting
+    it as an indirection would report the definition of the thing being measured.
+    Deriving it means a primitive added tomorrow is exempt on the day it is
+    written, where a hand list would have made it a finding.
+
+    It reads `REPO` rather than the code view, exactly as its sibling
+    `declared_table_operations` does, so the two cannot disagree about what an
+    operation of either table is -- which matters more than the one theoretical
+    case it costs, a synthetic self-test tree holding a file at a `_TABLE_SOURCES`
+    path.  No fixture is at one.
+    """
+    out: set = set()
+    for ns, files in _TABLE_SOURCES.items():
+        for rel in files:
+            text = (REPO / rel).read_text(encoding="utf-8")
+            for m in _TABLE_DEF.finditer(text):
+                out.add((rel, f"{m.group('ns')}.{m.group('op')}"))
+    return out
+
+
+def indirect_accesses(view: Path):
+    """(code, spec, primitive_hits, unparsed) keyed `(file, declaration, shape, kind)`.
+
+    Driven through `classify`, so the declaration boundary, the `Prop` verdict and
+    the signature/body/default split are the SAME answers the direct censuses read
+    — a mutation of any of them fails this census too.
+
+    `primitive_hits` is what `table_primitive_declarations` matched, reconciled by
+    the caller so an exemption that stops applying is reported rather than kept: an
+    exemption nobody reconciles reads exactly like coverage.
+    """
+    code, spec, prim, unparsed = {}, {}, {}, []
+    aliases = prop_aliases(view)
+    primitives = table_primitive_declarations()
+    for f in sorted(view.rglob("SeLe4n/**/*.lean")):
+        rel = str(f.relative_to(view))
+        segments: dict = {}
+
+        def collect(decl, kind, sig, spec_text, code_text, _seg=segments):
+            cell = _seg.setdefault(decl, ["", "", ""])
+            cell[0] += sig + "\n"
+            cell[1] += spec_text + "\n"
+            cell[2] += code_text + "\n"
+
+        here: list = []
+        for _ in classify(f, aliases, here, READ, collect):
+            pass
+        unparsed.extend((rel, d, k, ln, why) for d, k, ln, why in here)
+        for decl, (sig, spec_text, code_text) in segments.items():
+            receivers = table_receivers(sig, spec_text + "\n" + code_text)
+            for name, shape in sorted(receivers.items()):
+                for kind, pat in sorted(indirect_patterns(name).items()):
+                    n_code = len(pat.findall(code_text))
+                    n_spec = len(pat.findall(spec_text))
+                    if n_code and (rel, decl) in primitives:
+                        prim[(rel, decl)] = prim.get((rel, decl), 0) + n_code
+                    elif n_code:
+                        key = (rel, decl, shape, kind)
+                        code[key] = code.get(key, 0) + n_code
+                    if n_spec:
+                        key = (rel, decl, shape, kind)
+                        spec[key] = spec.get(key, 0) + n_spec
+    return code, spec, prim, unparsed
+
+
+#: Every executable indirect access in the tree today, keyed
+#: `(file, declaration, shape, kind)` with its count.  Reconciled in BOTH
+#: directions in every mode: a key the baseline does not name, or a count above the
+#: one it records, is a NEW evasion of the two enforced zeros; a key the tree no
+#: longer has is a stale entry, which reads exactly like coverage.
+INDIRECT_BASELINE = {
+    # The queue-remove path binds the table and writes four neighbours and the
+    # endpoint through the binding, reading two of them first.
+    ("SeLe4n/Kernel/IPC/DualQueue/Core.lean",
+     "endpointQueueRemove", "alias", "read"): 2,
+    ("SeLe4n/Kernel/IPC/DualQueue/Core.lean",
+     "endpointQueueRemove", "alias", "write"): 4,
+    # The mid-queue splice binds it and patches both neighbours.
+    ("SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean",
+     "spliceOutMidQueueNode", "alias", "read"): 2,
+    ("SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean",
+     "spliceOutMidQueueNode", "alias", "write"): 2,
+    # ...and the helper those two splices are stated over is handed the table
+    # itself, which is the second spelling of the same indirection.
+    ("SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
+     "queueNeighbourPatch", "param", "read"): 1,
+    ("SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
+     "queueNeighbourPatch", "param", "write"): 1,
+}
+
+#: The exemptions `table_primitive_declarations` is expected to match, so a
+#: primitive that stops keying into its own table is reported.  Derived on one side
+#: and pinned on the other, the shape `WRITE_PRIMITIVE_BODIES` already has.
+INDIRECT_PRIMITIVES = {
+    ("SeLe4n/Model/FrozenState.lean", "FrozenMap.insert"): 1,
+}
+
+
+def indirect_violations(code: dict, prim: dict) -> list:
+    """The floor and the exemption reconciliation, both in both directions."""
+    out: list = []
+    for key, n in sorted(code.items()):
+        rel, decl, shape, kind = key
+        was = INDIRECT_BASELINE.get(key)
+        how = ("binds the object table" if shape == "alias"
+               else "is handed the object table as a parameter")
+        if was is None:
+            out.append(
+                f"{rel}: `{decl}` {how} and performs {n} keyed {kind}(s) through it."
+                f"  Every store census keys on the receiver text `.objects`, so an"
+                f" indirect access is one none of them can see -- which is how six"
+                f" writes and four reads stayed outside two ENFORCED ZEROS until"
+                f" `v0.35.117`.  A store primitive takes the STATE, never the table:"
+                f" write through `storeObject` / `withObjectStored` / `rewriteObject`"
+                f" or a typed update over it, and read through an accessor.")
+        elif n > was:
+            out.append(
+                f"{rel}: `{decl}` performs {n} keyed {kind}(s) on an indirectly held"
+                f" object table, up from {was}.  This floor may fall and never rise;"
+                f" a new indirect access is a new keyed access outside both enforced"
+                f" zeros.")
+    for key, was in sorted(INDIRECT_BASELINE.items()):
+        if key not in code:
+            out.append(
+                f"{key[0]}: stale INDIRECT_BASELINE entry -- `{key[1]}` no longer"
+                f" performs {was} keyed {key[3]}(s) on an object table held as"
+                f" `{key[2]}`, so delete the row.  An entry nothing reconciles reads"
+                f" exactly like coverage.")
+    for key, n in sorted(prim.items()):
+        was = INDIRECT_PRIMITIVES.get(key)
+        if was is None:
+            out.append(
+                f"{key[0]}: `{key[1]}` is exempted as an object-table primitive and"
+                f" `INDIRECT_PRIMITIVES` does not record it -- record it with its"
+                f" count, or the exemption is one nothing reconciles.")
+        elif n != was:
+            out.append(
+                f"{key[0]}: `{key[1]}` keys into its own table {n}x where"
+                f" `INDIRECT_PRIMITIVES` records {was}.")
+    for key, was in sorted(INDIRECT_PRIMITIVES.items()):
+        if key not in prim:
+            out.append(
+                f"{key[0]}: stale INDIRECT_PRIMITIVES entry for `{key[1]}` ({was}x)"
+                f" -- it no longer keys into its own table, so delete the row.")
+    return out
 
 
 # ---------------------------------------------------------------------------
@@ -1612,6 +1939,134 @@ def diagnostic : String := "avoid { st with objects := st.objects.insert k o }"
 }
 
 
+# ---------------------------------------------------------------------------
+# INDIRECT fixtures: `(source, want_code, want_spec)` keyed
+# `(file, declaration, shape, kind)`.
+#
+# Token-preserving where the property allows: a case that keeps the access and
+# changes only *how the table was obtained* is what distinguishes this census from
+# the receiver-keyed ones, and a case that keeps the access and changes the
+# declaration's kind is what pins the population split.
+# ---------------------------------------------------------------------------
+INDIRECT_FIXTURES = {
+    # THE FINDING: bind the table, write through the binding.  Invisible to
+    # `WRITE`, which keys on the receiver text `.objects`.
+    "alias_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let objs := st.objects
+  { st with objects := objs.insert k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # ...and read through it, invisible to `READ` for the same reason.
+    "alias_read": ("""
+def peek (st : SystemState) (k : ObjId) : Option KernelObject :=
+  let objs := st.objects
+  objs[k]?
+""", {("SeLe4n/f.lean", "peek", "alias", "read"): 1}, {}),
+    # THE SECOND SPELLING: the table itself as a parameter.  Token-preserving
+    # against `alias_write` -- same write, obtained by being handed the table.
+    "param_write": ("""
+def patch (objs : RHTable SeLe4n.ObjId KernelObject) (k : ObjId)
+    (o : KernelObject) : RHTable SeLe4n.ObjId KernelObject :=
+  objs.insert k o
+""", {("SeLe4n/f.lean", "patch", "param", "write"): 1}, {}),
+    # A binder may bind SEVERAL names, and each is a table.  A capture that took
+    # only the last would leave the first's accesses invisible, so this reads
+    # through one name and writes through the other.
+    "param_two_names": ("""
+def merge (a b : RHTable SeLe4n.ObjId KernelObject) (k : ObjId) :
+    RHTable SeLe4n.ObjId KernelObject :=
+  match a[k]? with
+  | some v => b.insert k v
+  | none => b.erase k
+""", {("SeLe4n/f.lean", "merge", "param", "read"): 1,
+      ("SeLe4n/f.lean", "merge", "param", "write"): 2}, {}),
+    # A SUBSCRIPT ON A DERIVED EXPRESSION is not an access on the bound name:
+    # `(objs.insert k o)[k]?` reads the table the insert returned, not `objs`.
+    # That is exactly what the direct censuses say of
+    # `(st.objects.insert k o)[k]?` -- one write, no read -- so the two agree by
+    # construction rather than by two authors choosing the same reading.
+    "derived_subscript_is_not_a_read": ("""
+def roundTrip (st : SystemState) (k : ObjId) (o : KernelObject) :
+    Option KernelObject :=
+  let objs := st.objects
+  (objs.insert k o)[k]?
+""", {("SeLe4n/f.lean", "roundTrip", "alias", "write"): 1}, {}),
+    # THE POPULATION SPLIT.  Token-preserving against `alias_write`: the same
+    # binding and the same write, in a `theorem`, which is specification.
+    "alias_write_in_theorem_is_spec": ("""
+theorem frame (st : SystemState) (k : ObjId) (o : KernelObject) : True :=
+  let objs := st.objects
+  have _h : (objs.insert k o).invExt := proofPlaceholder
+  trivial
+""", {}, {("SeLe4n/f.lean", "frame", "alias", "write"): 1}),
+    # TRANSITIVITY.  `let b := a` where `a` is already the table.  Closing the
+    # alias set transitively is what stops one extra binding hiding an access --
+    # the same hole one rename opens.
+    "alias_transitive": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let a := st.objects
+  let b := a
+  { st with objects := b.insert k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # A SWEEP BINDING IS NOT AN ALIAS.  The right-hand side must END at the
+    # projection: `st.objects.toList` is a traversal, already classified and
+    # counted by `SWEEP`, and its result is a list rather than a table -- so a
+    # subscript on it is not a keyed store access.
+    "sweep_binding_is_not_an_alias": ("""
+def count (st : SystemState) : Option (ObjId × KernelObject) :=
+  let entries := st.objects.toList
+  entries[0]?
+""", {}, {}),
+    # THE RECEIVER IS DELIMITED.  A longer identifier that merely CONTAINS the
+    # alias, and a field path that ends in it, are not the bound name.
+    "receiver_is_delimited": ("""
+def step (st : SystemState) (other : Shadow) (k : ObjId)
+    (o : KernelObject) : SystemState :=
+  let objs := st.objects
+  let _a := myobjs.insert k o
+  let _b := other.objs.insert k o
+  { st with objects := objs.insert k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # THE QUALIFIED SPELLING, indirect.  `RHTable.insert objs k o` is the same
+    # write; a method-only pattern is the asymmetry `WRITE` already paid for.
+    "qualified_indirect_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let objs := st.objects
+  { st with objects := RHTable.insert objs k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # THE FROZEN TABLE, as a parameter.  `FrozenMap.set` is the frozen store's
+    # ordinary write, and the frozen surface is production (`v0.35.60`).
+    "frozen_param_write": ("""
+def frozenPatch (fm : FrozenMap) (k : ObjId) (o : FrozenKernelObject) : FrozenMap :=
+  fm.set k o
+""", {("SeLe4n/f.lean", "frozenPatch", "param", "write"): 1}, {}),
+    # A LAMBDA BINDER of table type, which sits in the BODY.  Token-preserving
+    # against `param_write`: the same write, the table bound by a `fun` rather than
+    # by the declaration's own signature.
+    "lambda_binder_write": ("""
+def apply (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let f := fun (objs : RHTable SeLe4n.ObjId KernelObject) => objs.insert k o
+  { st with objects := f st.objects }
+""", {("SeLe4n/f.lean", "apply", "param", "write"): 1}, {}),
+    # ...and the UNBRACKETED ascription, which the bracketed binder cannot see.
+    # Live in the tree once (`Model.freeze`'s `frozenObjects`), keying into
+    # nothing -- so this is the arm that must be planted to be shown to work.
+    "ascribed_binding_write": ("""
+def build (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let t : RHTable SeLe4n.ObjId KernelObject := RHTable.empty 16
+  { st with objects := t.insert k o }
+""", {("SeLe4n/f.lean", "build", "param", "write"): 1}, {}),
+    # A BINDING OF SOMETHING ELSE is not a table, however it is spelled.  The
+    # control for `alias_write`: same shape, a right-hand side that is not the
+    # projection.
+    "unrelated_binding": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let q := st.scheduler
+  { st with scheduler := q.insert k o }
+""", {}, {}),
+}
+
+
 def self_test() -> int:
     failed = 0
     with tempfile.TemporaryDirectory() as td:
@@ -1659,6 +2114,87 @@ def self_test() -> int:
                 failed += 1
             else:
                 print(f"  ok   {name}")
+    # **The INDIRECT census**, on synthetic trees.  It is driven through
+    # `indirect_accesses` rather than through `classify` directly, because the
+    # property is a relation between a declaration's SIGNATURE and its BODY that no
+    # line pattern can express -- which is the whole reason the `collect` hook
+    # exists.
+    with tempfile.TemporaryDirectory() as td:
+        for name, (src, want_code, want_spec) in INDIRECT_FIXTURES.items():
+            root = Path(td) / ("i_" + name) / "SeLe4n"
+            root.mkdir(parents=True)
+            (root / "f.lean").write_text(lean_code_view.strip(src))
+            got_code, got_spec, _prim, refused = indirect_accesses(
+                Path(td) / ("i_" + name))
+            if got_code != want_code or got_spec != want_spec or refused:
+                print(f"  FAIL indirect:{name}")
+                print(f"    code:     got {got_code} want {want_code}")
+                print(f"    spec:     got {got_spec} want {want_spec}")
+                print(f"    refusals: {refused}")
+                failed += 1
+            else:
+                print(f"  ok   indirect:{name}")
+    # **The FLOOR, in both directions.**  Every case is token-preserving: the tree
+    # is the live one and only the BASELINE moves, so what each case decides is
+    # what the reconciliation asserts rather than what the scanner can see.
+    # Over the CODE VIEW, as `main` does: a comment naming a binding is not a
+    # binding, and the docstrings above quote both spellings in order to explain
+    # them.  Reading the raw tree here would make the self-test disagree with the
+    # gate about the live population -- two answers to one question.
+    live_code, live_spec, live_prim, _ = indirect_accesses(code_view(REPO))
+    saved_baseline = dict(INDIRECT_BASELINE)
+    saved_prims = dict(INDIRECT_PRIMITIVES)
+    a_key = ("SeLe4n/Kernel/IPC/DualQueue/Core.lean",
+             "endpointQueueRemove", "alias", "write")
+    for case, mutate, expect in [
+        ("the live tree reconciles both ways", None, False),
+        # A NEW indirect access -- the thing this census exists to refuse.  The
+        # mutation drops the key rather than the site, so the tree is unchanged
+        # and what fails is the claim that the site was known.
+        ("an UNRECORDED indirect access fails",
+         lambda b, p: b.pop(a_key), True),
+        # A count that ROSE.  A set of keys alone cannot see this.
+        ("a RAISED count fails",
+         lambda b, p: b.__setitem__(a_key, b[a_key] - 1), True),
+        # ...and a count that FELL is the floor working: it may fall and never
+        # rise, so this direction must PASS or the census would forbid progress.
+        ("a LOWERED count passes",
+         lambda b, p: b.__setitem__(a_key, b[a_key] + 1), False),
+        # A STALE key reads exactly like coverage, so it fails too.
+        ("a STALE baseline entry fails",
+         lambda b, p: b.__setitem__(
+             ("SeLe4n/Model/State.lean", "ghost", "alias", "write"), 1), True),
+        # The PRIMITIVE exemption, both ways.  An exemption nothing reconciles
+        # reads like coverage, and a stale one reads like a live one.
+        ("an UNRECORDED primitive exemption fails",
+         lambda b, p: p.clear(), True),
+        ("a STALE primitive exemption fails",
+         lambda b, p: p.__setitem__(
+             ("SeLe4n/Model/FrozenState.lean", "FrozenMap.ghost"), 1), True),
+    ]:
+        try:
+            if mutate is not None:
+                mutate(globals()["INDIRECT_BASELINE"], globals()["INDIRECT_PRIMITIVES"])
+            got = bool(indirect_violations(live_code, live_prim))
+        finally:
+            globals()["INDIRECT_BASELINE"] = dict(saved_baseline)
+            globals()["INDIRECT_PRIMITIVES"] = dict(saved_prims)
+        if got != expect:
+            print(f"  SELF-TEST FAIL: indirect-floor '{case}': "
+                  f"reported {got}, want {expect}")
+            failed += 1
+        else:
+            print(f"  ok   indirect-floor '{case}'")
+    # The INDIRECT population is reported, not enforced at zero, so the number
+    # itself is part of the claim: a census that silently stopped seeing the sites
+    # would report a smaller number and pass every case above.
+    if sum(live_code.values()) == 0:
+        print("  SELF-TEST FAIL: indirect-floor 'the census sees the live "
+              "population' -- STORE_INDIRECT_CODE is 0, which this tree is not")
+        failed += 1
+    else:
+        print(f"  ok   indirect-floor 'the census sees the live population' "
+              f"({sum(live_code.values())} access(es))")
     # **The DOMAIN, on a synthetic tree.**  `objects_field_owners` reads the
     # real repository, so nothing in FIXTURES can reach it -- and the property
     # it pins is precisely that this census's read patterns key on a field NAME
@@ -1760,8 +2296,12 @@ def self_test() -> int:
     if failed:
         print(f"[store-read-census] self-test: {failed} case(s) failed")
         return 1
+    # The figures are the fixture dictionaries' own lengths, never literals: a
+    # hand-kept count beside a derivation drifts on contact, and this line is what
+    # a reader takes as the claim about how much ran.
     print(f"[store-read-census] self-test passed ({len(FIXTURES)} read cases, "
-          f"{len(WRITE_FIXTURES)} write cases)")
+          f"{len(WRITE_FIXTURES)} write cases, "
+          f"{len(INDIRECT_FIXTURES)} indirect cases)")
     return 0
 
 
@@ -1801,6 +2341,15 @@ def main() -> int:
     code, spec, exempt_hits, attribution, unparsed = census(view)
     wcode, wspec, wexempt_hits, wattribution, _ = census(view, WRITE, WRITE_PRIMITIVE_BODIES)
     scode, sspec, _, _, _ = census(view, SWEEP, {})
+    # The INDIRECT population, driven through the SAME classifier: a table held
+    # through a binding or a parameter is only a finding where the holding
+    # declaration is executable, and "which population is this declaration in"
+    # already has one answer.
+    icode, ispec, iprim, iunparsed = indirect_accesses(view)
+    # The refusal channel is the classifier's own, so an unclosed signature fails
+    # here exactly as it does for the direct censuses rather than silently filing a
+    # declaration's whole body as specification.
+    unparsed = list(unparsed) + [u for u in iunparsed if u not in unparsed]
     # Refused in EVERY mode, for the same reason the registry is reconciled in
     # every mode: `--rows` is what Tier 0 calls, and a check only the unused
     # mode runs is a check nobody runs.
@@ -1812,6 +2361,17 @@ def main() -> int:
                   f"store read there would pass the enforced zero.  Teach "
                   f"`SIG_END` this declaration form, or add its kind to "
                   f"`BODYLESS_KINDS` if it has no body.", file=sys.stderr)
+        return 1
+    # Refused in EVERY mode, for the reason the registry is: `--rows` is what
+    # Tier 0 calls, and a check only the unused mode runs is a check nobody runs.
+    # AFTER the refusal channel above, deliberately: an unclosed signature makes
+    # the receiver derivation unreliable, so reporting "a new indirect access"
+    # there would name the wrong cause -- "the gate could not read it" and "the
+    # gate read it and it differs" must not produce the same failure.
+    indirect = indirect_violations(icode, iprim)
+    if indirect:
+        for problem in indirect:
+            print(f"FAIL: {problem}", file=sys.stderr)
         return 1
     # Reconciled in EVERY mode, `--rows` included: that is the mode the Tier 0
     # baseline calls, so skipping it there would leave the registry checkable
@@ -1840,6 +2400,8 @@ def main() -> int:
             print(f"STORE_WRITE_CODE_SITE={f}|{d}|{n}")
         for (f, d), n in sorted(wspec.items()):
             print(f"STORE_WRITE_SPEC_SITE={f}|{d}|{n}")
+        for (f, d, shape, kind), n in sorted(icode.items()):
+            print(f"STORE_INDIRECT_CODE_SITE={f}|{d}|{shape}|{kind}|{n}")
     if args.totals or not args.rows:
         print(f"STORE_READ_CODE={sum(code.values())}")
         print(f"STORE_READ_SPEC={sum(spec.values())}")
@@ -1860,6 +2422,25 @@ def main() -> int:
         print(f"STORE_SWEEP_CODE={sum(scode.values())}")
         print(f"STORE_SWEEP_SPEC={sum(sspec.values())}")
         print("STORE_SWEEP_SCOPE=whole-table traversals; diagnostic only, never enforced")
+        # The population the two zeros cannot see, reported with its floor.  A
+        # zero beside an invisible population is worse than a number: it reads as
+        # a measurement of absence.
+        print(f"STORE_INDIRECT_CODE={sum(icode.values())}")
+        print(f"STORE_INDIRECT_SPEC={sum(ispec.values())}")
+        print("STORE_INDIRECT_SCOPE=keyed accesses on an object table held through "
+              "an indirection -- bound from `.objects` (alias) or taken as a "
+              "parameter (param) -- which defeat every receiver-keyed pattern above; "
+              "floored per (file, declaration, shape, kind), not enforced at zero. "
+              "Three binder spellings are derived (a signature binder, a lambda "
+              "binder, an unbracketed ascription) plus the projection binding, "
+              "closed transitively. The table's own operations are exempt, derived "
+              "from _TABLE_SOURCES and reconciled both ways. Outside it, by "
+              "decision: a whole-table SWEEP through an indirection, which the "
+              "direct census also reports rather than enforces. Outside it, out of "
+              "reach: a table whose receiver has no syntactic provenance in its own "
+              "declaration -- an unannotated lambda parameter, a structure field, a "
+              "returned closure -- which is an elaborator question and so "
+              "unanswerable at Tier 0, where this gate runs")
     return 0
 
 

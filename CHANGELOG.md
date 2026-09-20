@@ -1,3 +1,163 @@
+## v0.35.117 — both enforced store zeros were floors, and neither said so
+
+`STORE_READ_CODE = 0` and `STORE_WRITE_CODE = 0` are `ZERO_METRICS` entries: Tier 0
+refuses a raw object-store access in an executable position, and regenerating the
+baseline cannot clear either.  Both are true of the spellings their patterns
+recognise.  Neither was true of the tree, and the gap is twelve keyed accesses.
+
+Found by reading the write census's own claim against the tree rather than by a
+review — which is the only way this class can be found, because the sites are
+never examined, the numbers stay at zero, and the gate goes on reporting that its
+whole domain is accounted for.
+
+### What the receiver cannot name
+
+`READ`, `WRITE` and `SWEEP` all key on the receiver text `.objects`.  So a
+declaration that *obtains* the table and then keys into **that** is invisible to
+every one of them.  There are two spellings of the indirection and they are one
+question:
+
+* **alias** — `let objs := st.objects`, then `objs.insert k v` is a keyed write no
+  `WRITE` match can see and `objs[k]?` a keyed read no `READ` match can.
+* **param** — a declaration handed the table itself, `(objs : RHTable ObjId
+  KernelObject)`, and keying into it.
+
+Three executable declarations use them.  `endpointQueueRemove` binds the table and
+performs **four writes and two reads** through the binding; `spliceOutMidQueueNode`
+**two and two**; `queueNeighbourPatch` — the helper those two splices are *stated
+over* — takes the table as a parameter for **one more of each**.  Twelve keyed
+accesses, outside two enforced zeros, which is why the raw-write migration
+(`v0.35.64` → `v0.35.78`) passed over all three: **the population a census measures
+is the population its receiver can name.**
+
+`CLAUDE.md` already stated the rule this breaks — *a new store primitive takes the
+state, never the table*, written at `v0.35.97` for exactly this reason — and
+nothing enforced it.
+
+### Two false claims, corrected because they were false
+
+This is not a documentation patch.  Two live claims are retracted, in both mirror
+files, and each was read as a measurement:
+
+* *"The only raw reads left anywhere are the accessor bodies and propositions."*
+  Four executable reads were not.
+* *"Over the whole `SeLe4n/` tree the only raw writes are those five primitives and
+  the reply-stack census's planted witness."*  Six executable writes were not.
+
+Both now say what the zeros cover, and both `_SCOPE` lines print it rather than
+leaving a reader to infer it: *recognised spellings only; a floor, not a proof of
+absence.*
+
+### One classifier, both spellings
+
+Flooring one spelling and describing the other in prose would have been this
+project's own *a fix applied at one site and not its sibling* — so the two go
+through one derivation.
+
+`table_receivers` collects the identifiers that denote the table from **three
+binder positions** — a signature binder, a lambda binder and an unbracketed
+ascription, read over the *whole* declaration rather than its signature alone,
+because `fun (objs : RHTable …) => objs.insert k v` binds a table wherever it sits
+— and from a binding of the projection, closing the set **transitively**, so
+`let a := st.objects; let b := a` is one population rather than a hole one extra
+binding opens.  The table type has one definition, so a binder and an ascription
+cannot disagree about what a table is.  The access alternation is `_op_alternation`'s — the same one `READ`
+and `WRITE` compose — so an operation classified once in `_TABLE_OPS` reaches the
+direct and the indirect census by construction; a hand-written alternation here
+would have been the hole `set` went through (`v0.35.97`), one indirection over.  The
+provenance is *reported* as the shape rather than selecting which check runs.
+
+It is driven through `classify`, via a new `collect` hook, because the property is a
+relation between a declaration's **signature** and its **body** that no line
+pattern can express.  That keeps the declaration boundary, the `Prop` verdict and
+the signature/body/default region split ONE answer shared with the two direct
+censuses, so a mutation of any of them fails all three rather than one.
+
+Four further decisions.  The unit is the **access**, not the binding: a binding
+count cannot see a second `objs.insert` added to a declaration that already
+aliases, which is *a cardinality is not a set* one level down and is exactly what
+the two zeros count.  The floor is keys **and** counts, per
+`(file, declaration, shape, kind)`, reconciled in **both** directions in every mode
+— a set of keys cannot see a second access in a declaration that already has one,
+and a count cannot see the first in one that had none.  The table's own operations
+are exempt by **derivation** from `_TABLE_SOURCES` — a declaration named
+`RHTable.insert` in the table's own source *is* the primitive, so counting it would
+report the definition of the thing being measured — with that exemption reconciled
+both ways, since one nothing reconciles reads exactly like coverage.  And it is a
+**floor, not a zero**: a `ZERO_METRICS` entry this project may not re-anchor would
+have had to be false on the day it landed, and a floor saying "these twelve, here,
+and no more" is a true statement where a zero would be a false one.
+
+### The measurement is the evidence
+
+`STORE_INDIRECT_CODE = 12`, `STORE_INDIRECT_SPEC = 22`, and the six
+`STORE_INDIRECT_CODE_SITE` rows name every one.  The derivation reproduced the
+hand count exactly and independently, in both directions.
+
+Fourteen self-test fixtures and eight floor cases, all mutation-verified.  Four are
+token-preserving against one another in the ways that decide this census:
+`alias_write`, `param_write` and `lambda_binder_write` are the *same write* obtained
+three ways — bound from the projection, taken as a signature parameter, bound by a
+`fun` — and `alias_write_in_theorem_is_spec` is `alias_write` with `def` changed to
+`theorem`, which is the population split.  `derived_subscript_is_not_a_read` is the
+boundary rather than a pair: it pins that `(objs.insert k o)[k]?` reads the table the
+insert *returned*, which is what the direct censuses already say of
+`(st.objects.insert k o)[k]?`, so the two agree by construction rather than by two
+authors choosing the same reading.  The floor's `a LOWERED count passes` case is
+there because a floor that forbids its own migration is not a floor.
+
+The decisive tree-level mutation keeps a live write and changes only how it is
+written — respelling one `storeObject` call through a binding — and the gate refuses
+it by name, naming the declaration and the remedy.  Twenty-nine Tier 3 anchors --
+twenty-six positives and three negatives -- each verified silent on the clean tree
+and firing under a mutation that keeps every other token; twelve such mutations were
+run and each fired exactly its intended anchor, and one of them corrected a
+*mutation* rather than the code: the first attempt at the ordering case added a
+second call instead of moving the one that is there, so the bounded-gap anchor still
+matched the original pair and reported nothing.  A mutation must revert the defect,
+not duplicate the fix.
+
+Two of the fourteen fixtures are **planted arms**: the lambda binder and the
+unbracketed ascription are zero on the live tree, so without them those two
+spellings could not be shown to work, and a check that cannot fire and carries no
+witness is indistinguishable from one that is wrong.  The ascription is live once —
+`Model.freeze`'s `frozenObjects`, which *constructs* a table and keys into nothing —
+so the widened derivation admits nothing new and the baseline is unmoved at twelve,
+measured before and after.
+
+### The migration is registered with its architecture named
+
+`docs/REGISTERED_DEBT.md` table C carries the row, and what makes it useful is that
+it says **how**.  No new primitive is needed: `queueNeighbourPatch` becomes
+state-level, which is `Option.elim` over the `SystemState.updateTcb` this tree has
+had since `v0.35.65` — a witnessed lookup around `rewriteObject`, lemma library
+already in place — and the two aliasing removals then compose it with no table in
+scope.
+
+The cost is **measured rather than estimated**: nine theorems stated over the *table*
+in `CleanupPreservation.lean`, twenty-five over `spliceOutMidQueueNode` across
+fifteen files, and the two `_eq_patches` pins whose right-hand sides compose at the
+table level — the second of which also restates the inlined boundary and link-clear
+records RR8.4 replaced with `queueRemoveBoundary` / `tcbWithQueueLinks`, so it is a
+live instance of the duplication RR8.4 removed.  Two Lean constraints the attempt
+must respect are recorded with it, both measured rather than reasoned: a term-mode
+`let` whose body's type does not depend on it elaborates as a `have`, whose body is
+erased and opaque to definitional unification, so a chain of `let`-bound states makes
+every `rfl` over it fail and distinct names do not help; and a witnessed lookup is a
+*dependent* match, which `rfl` cannot reduce when the scrutinee is not a variable.
+
+Shipping that migration with the census that found it would mean one commit that
+both adds a gate and refactors the dual-queue removal's write-set surface, so a
+proof failure in the second would cost the first.  The accesses are correct — they
+rewrite keys already holding an object of the same kind, which is `rewriteObject`'s
+own admissible case — so what this cut closes is their **invisibility**, and a
+thirteenth fails Tier 0 on the day it is written.
+
+No kernel transition changed, so the golden fixture is byte-identical and
+`maxLockSetSize` does not move.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.116 — the fixture catalogue's claims, and the audit harness's safety
 
 Four review findings against the scenario-traceability machinery, one slice: each

@@ -15743,6 +15743,115 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^WRITE = re\.compile\(r\"\\\\b\(
 run_check "INVARIANT" bash -lc 'rg -n "STORE_SWEEP_SCOPE=whole-table traversals; diagnostic only, never enforced" scripts/lean_store_read_census.py'
 
 # ---------------------------------------------------------------------------
+# `v0.35.117`: both enforced store zeros are floors over the DIRECT spellings,
+# and the INDIRECT population is measured rather than implied.  Every pattern
+# above keys on the receiver text `.objects`, so a declaration that holds the
+# table through a binding (`let objs := st.objects`) or a parameter
+# (`(objs : RHTable ObjId KernelObject)`) is invisible to all of them -- twelve
+# executable keyed accesses in three declarations, which is why the raw-write
+# migration passed over them and why this file's own claim that the only raw
+# writes were the five primitives was false.
+#
+# ONE CLASSIFIER, BOTH SPELLINGS.  The access alternation is `_op_alternation`'s
+# -- the same one `READ` and `WRITE` compose -- so an operation classified once
+# in `_TABLE_OPS` reaches the direct and the indirect census by construction.  A
+# hand-written alternation here would be the hole `set` went through, one
+# indirection over.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def _indirect_access\(kinds: tuple\[str, \.\.\.\], receiver: str,[^\n]*(\n([ \t][^\n]*)?)*    alt = _op_alternation\(kinds\)" scripts/lean_store_read_census.py'
+# The receiver is delimited against `[\w'"'"'.]` on BOTH sides, not by `\b`: a
+# name is a table because of how it was bound, so `myobjs` and the field path
+# `st.objs` are not it.
+run_check "INVARIANT" bash -lc 'rg -n "method = rf.\(\?<!\[\\\\w.\.\]\)\{r\}\\\\.\{alt\}." scripts/lean_store_read_census.py'
+# THE ALIAS SET IS CLOSED TRANSITIVELY.  `let a := st.objects; let b := a` is one
+# population rather than a hole one extra binding opens, so the derivation
+# iterates to a fixed point rather than reading each binding once.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def table_receivers\(signature: str, body: str\) -> dict:[^\n]*(\n([ \t][^\n]*)?)*    while changed:" scripts/lean_store_read_census.py'
+# THE TABLE TYPE HAS ONE DEFINITION, so a bracketed binder and an unbracketed
+# ascription cannot disagree about what a table is -- and BOTH read it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^TABLE_BINDER = re\.compile\(\n[^\n]*\+ _TABLE_TYPE\)$" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^TABLE_ASCRIPTION = re\.compile\(\n[^\n]*\+ _TABLE_TYPE\)$" scripts/lean_store_read_census.py'
+# THE BINDERS ARE READ OVER THE WHOLE DECLARATION, not the signature alone: a
+# `fun` binder and an ascription sit in the BODY, and a table bound there keys
+# into the store exactly as a parameter does.  The mutation this refuses keeps
+# the scan and narrows its subject back to the signature.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    for m in TABLE_BINDER\.finditer\(text\):\n        for n in m\.group\(.names.\)\.split\(\):\n            names\[n\] = .param.\n    for m in TABLE_ASCRIPTION\.finditer\(text\):\n        names\[m\.group\(.name.\)\] = .param.$" scripts/lean_store_read_census.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "TABLE_BINDER\.finditer\(signature\)" scripts/lean_store_read_census.py'
+# BOTH PROVENANCES.  A signature binder is `param` and a binding is `alias`; a
+# derivation that read only one of them would floor one spelling and leave its
+# sibling -- the shape this project retires as *a fix applied at one site*.
+# IT IS DRIVEN THROUGH `classify`.  The property is a relation between a
+# declaration's SIGNATURE and its BODY that no line pattern can express, and
+# routing it through the shared classifier is what keeps the declaration
+# boundary, the `Prop` verdict and the region split ONE answer -- so a mutation
+# of any of them fails both censuses rather than one.
+run_check "INVARIANT" bash -lc 'rg -n "for _ in classify\(f, aliases, here, READ, collect\):" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "            collect\(decl, kind, sig_spec, body_spec, sig_default \+ body_code\)" scripts/lean_store_read_census.py'
+# THE PRIMITIVE EXEMPTION IS DERIVED, never listed: a declaration named
+# `RHTable.insert` in the table's own source IS the primitive, so counting it
+# would report the definition of the thing being measured -- and a primitive
+# added tomorrow is exempt on the day it is written.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def table_primitive_declarations\(\) -> set:[^\n]*(\n([ \t][^\n]*)?)*    for ns, files in _TABLE_SOURCES\.items\(\):" scripts/lean_store_read_census.py'
+# THE FLOOR IS BOTH DIRECTIONS, and so is the exemption: a key the tree no
+# longer has reads exactly like coverage, and an exemption nothing reconciles
+# reads exactly like one that applies.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    for key, was in sorted\(INDIRECT_BASELINE\.items\(\)\):\n        if key not in code:" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^    for key, was in sorted\(INDIRECT_PRIMITIVES\.items\(\)\):\n        if key not in prim:" scripts/lean_store_read_census.py'
+# ...and the floor is keys AND COUNTS: a set of keys alone cannot see a second
+# access inside a declaration that already has one.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def indirect_violations\(code: dict, prim: dict\) -> list:[^\n]*(\n([ \t][^\n]*)?)*        elif n > was:" scripts/lean_store_read_census.py'
+# REFUSED IN EVERY MODE.  `--rows` is what Tier 0 calls, so a check only the
+# unused mode runs is a check nobody runs.  Pinned by INDENTATION rather than by a
+# bounded gap: both statements sit at `main`'s own top level (exactly four spaces),
+# which is what makes them run whatever mode was asked for -- a gap-based anchor
+# would still match with the call moved inside a `if args.rows:` branch, since that
+# branch's body is indented too.
+run_check "INVARIANT" bash -lc 'rg -n "^    icode, ispec, iprim, iunparsed = indirect_accesses\(view\)$" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^    indirect = indirect_violations\(icode, iprim\)\n    if indirect:\n        for problem in indirect:" scripts/lean_store_read_census.py'
+# ...and the floor is checked AFTER the classifier's own refusal channel: an
+# unclosed signature makes the receiver derivation unreliable, so reporting "a new
+# indirect access" there would name the wrong cause.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    if unparsed:[^\n]*(\n([ \t#][^\n]*)?)*^    indirect = indirect_violations\(icode, iprim\)$" scripts/lean_store_read_census.py'
+# THE CLAIM, beside the number.  A bare count over an invisible population reads
+# as a measurement of absence; the scope line names both shapes, says the floor
+# is not a zero, and states what is still outside it.
+run_check "INVARIANT" bash -lc 'rg -n "print\(f.STORE_INDIRECT_CODE=\{sum\(icode\.values\(\)\)\}.\)" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "STORE_INDIRECT_SCOPE=keyed accesses on an object table held through " scripts/lean_store_read_census.py'
+# ...and the two enforced zeros keep saying they are floors, which is the half of
+# the claim `v0.35.117` made true rather than implied.
+run_check "INVARIANT" bash -lc 'rg -n "STORE_READ_SCOPE=recognised spellings only" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "STORE_WRITE_SCOPE=recognised spellings only" scripts/lean_store_read_census.py'
+# IT IS A FLOOR, NOT A ZERO.  `STORE_INDIRECT_CODE` is twelve on this tree, so a
+# `ZERO_METRICS` entry for it -- which this project may not re-anchor -- would
+# have had to be false on the day it landed.  The negative keeps every token of
+# the metric's name and refuses only its promotion into the zero set.  The gate is
+# named by a glob rather than by its path because that path carries a retired
+# workstream id, which new lines must not re-introduce; the glob resolves to
+# exactly one file, and a whole-directory form cannot be used because this anchor
+# file legitimately names the metric itself.
+run_negative_check "INVARIANT" bash -lc 'rg -n "STORE_INDIRECT_CODE" scripts/*cascade_check_monotonic.sh'
+# THE SELF-TEST READS THE SAME VIEW THE GATE DOES.  A comment naming a binding is
+# not a binding, and this file's own docstrings quote both spellings in order to
+# explain them -- so a self-test over the raw tree would disagree with the gate
+# about the live population, which is one question with two answers.  The
+# mutation this refuses keeps the call and changes only its argument.
+run_check "INVARIANT" bash -lc 'rg -n "live_code, live_spec, live_prim, _ = indirect_accesses\(code_view\(REPO\)\)" scripts/lean_store_read_census.py'
+run_negative_check "INVARIANT" bash -lc 'rg -n "indirect_accesses\(REPO\)" scripts/lean_store_read_census.py'
+# THE SELF-TEST'"'"'S OWN DECISIVE CASES.  A floor whose reconciliation cannot fire
+# is indistinguishable from one that is wrong, and a lowered count must PASS or
+# the census would forbid the migration it exists to enable.
+run_check "INVARIANT" bash -lc 'rg -n "\(.an UNRECORDED indirect access fails.," scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "\(.a LOWERED count passes.," scripts/lean_store_read_census.py'
+# ...and the population itself is asserted non-empty, because a census that
+# silently stopped seeing the sites would report a smaller number and pass every
+# reconciliation case above.
+run_check "INVARIANT" bash -lc 'rg -n "if sum\(live_code\.values\(\)\) == 0:" scripts/lean_store_read_census.py'
+# THE THREE LIVE SITES are the baseline'"'"'s subject, so the row that names each one
+# is what a later cut'"'"'s migration deletes rather than re-anchors.
+run_check "INVARIANT" bash -lc 'rg -n "     .endpointQueueRemove., .alias., .write.\): 4," scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "     .spliceOutMidQueueNode., .alias., .write.\): 2," scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -n "     .queueNeighbourPatch., .param., .write.\): 1," scripts/lean_store_read_census.py'
+
+# ---------------------------------------------------------------------------
 # `v0.35.98`: a bound thread's base priority has TWO homes and the syscall
 # writes both.  `SystemState.threadBasePriority` reads the reservation;
 # `TCB.boostedPriority` -- which every run-queue insert is keyed by -- reads the

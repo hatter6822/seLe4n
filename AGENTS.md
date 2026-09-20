@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.116.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.117.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -827,14 +827,69 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   than bridging at the call site, so no `def` body mentions the store at all.
   `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
   `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
-  the tree does, and the gate says so in its failure epilogue.  The only raw
-  reads left anywhere are the accessor bodies — which the census registers by
-  name — and propositions, which have no helper form.  Since `v0.35.76`
+  the tree does, and the gate says so in its failure epilogue.  Since `v0.35.76`
   `STORE_WRITE_CODE` sits beside it: the same classifier run over the raw
   *write* spellings, with the bodies that write raw by design registered in
   `WRITE_PRIMITIVE_BODIES` and reconciled in both directions — and it was a
   zero floor from its first measurement, the raw-write migration having
   reached the primitives before the census existed.
+
+  **Both zeros are over the DIRECT spellings, and `v0.35.117` is where that stops
+  being implied and starts being printed.**  Until then this paragraph said the
+  only raw reads left anywhere were the accessor bodies and propositions, and the
+  §7's raw-write ledger said the only raw writes were the five primitives and one
+  planted witness.  Both were **false**, and the reason is the rule this file
+  states one item down (*a helper the scanner cannot see is a spelling that evades
+  the metric*) read in the other direction: every pattern here keys on the
+  receiver text `.objects`, so a declaration that holds the table through an
+  **indirection** is invisible to all of them.  There are two spellings of that
+  indirection and they are one question — a binding (`let objs := st.objects`,
+  then `objs.insert k v`) and a parameter (`(objs : RHTable ObjId KernelObject)`)
+  — and three executable declarations use them: `endpointQueueRemove` (four
+  writes, two reads), `spliceOutMidQueueNode` (two and two) and
+  `queueNeighbourPatch` (one and one).  Twelve keyed accesses, outside two
+  enforced zeros, which is why the raw-write migration
+  (`v0.35.64`..`v0.35.78`) passed over all three: *the population a census
+  measures is the population its receiver can name.*
+
+  `STORE_INDIRECT_CODE` is the number, `STORE_INDIRECT_SCOPE` the claim, and both
+  zeros now print their own `_SCOPE` line saying *recognised spellings only; a
+  floor, not a proof of absence*.  Four things new code must respect.  (1) **One
+  classifier, both spellings**: `table_receivers` derives the identifiers that
+  denote the table — from three binder positions, a signature binder, a lambda
+  binder and an unbracketed ascription, all read over the *whole* declaration
+  rather than its signature alone, and from a binding of the projection, closed
+  **transitively**, so one extra `let` is not a hole — and the access alternation
+  is `_TABLE_OPS`', the same one `READ` and `WRITE` are built from, so a newly
+  classified operation reaches the direct and indirect censuses by construction.
+  The table type itself has one definition (`_TABLE_TYPE`), so a binder and an
+  ascription cannot disagree about what a table is.  Flooring one spelling and
+  describing the other in prose would have been *a fix applied at one site and not
+  its sibling*.  (2) **It is driven through
+  `classify`**, via a `collect` hook, because the property is a relation between a
+  declaration's signature and its body that no line pattern can express — so the
+  declaration boundary, the `Prop` verdict and the region split stay ONE answer
+  and a mutation of any of them fails both censuses.  (3) **The unit is the
+  access, not the binding**: a binding count cannot see a second `objs.insert`
+  added to a declaration that already aliases, which is *a cardinality is not a
+  set* one level down and is exactly what the two zeros count.  (4) **It is a
+  floor, not a zero, and that is the honest shape**: a `ZERO_METRICS` entry this
+  project may not re-anchor would have had to be false on the day it landed.  The
+  table's own operations are exempt, **derived** from `_TABLE_SOURCES` — a
+  declaration named `RHTable.insert` in the table's own source *is* the primitive,
+  so counting it would report the definition of the thing being measured — and
+  reconciled both ways so a stale exemption cannot read as coverage.
+
+  **Driving it to zero is registered, with its architecture named rather than
+  left to be rediscovered** (`docs/REGISTERED_DEBT.md` table C).  The target is
+  not a new primitive: `queueNeighbourPatch` becomes state-level, which is
+  `Option.elim` over the `updateTcb` this tree has had since `v0.35.65`, and the
+  two aliasing removals then compose it and `rewriteObject` with no table in
+  scope.  What that costs is measured rather than estimated — nine theorems stated
+  over the *table* in `CleanupPreservation.lean`, twenty-five over
+  `spliceOutMidQueueNode` across fifteen files, and the two `_eq_patches` pins
+  whose right-hand sides compose at the table level — which is why it is a cut of
+  its own and not a rider on the census that found it.
 
   **And a spelling is not a write either — nor is a regex a classification**
   (PR #897 review, `v0.35.97`).  That zero was true of `objects.insert` and
@@ -7102,12 +7157,19 @@ code may assume:
   `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
   and the frozen store, so the executable population outside them is
   **zero**; since `v0.35.75` the trace harness's 61 fixture inserts are
-  stores too, so over the whole `SeLe4n/` tree the only raw writes are
-  those five and the reply-stack census's planted witness — and since
-  `v0.35.76` that is **enforced**: `STORE_WRITE_CODE` is a Tier 0
-  `ZERO_METRICS` entry, those six bodies are `WRITE_PRIMITIVE_BODIES`,
-  reconciled in both directions, and a raw write reappearing in an
-  executable position fails on the day it is written).  At `v0.35.77` (D2)
+  stores too, so over the whole `SeLe4n/` tree the only raw writes in the
+  spellings that census recognises are those five and the reply-stack
+  census's planted witness — and since `v0.35.76` that is **enforced**:
+  `STORE_WRITE_CODE` is a Tier 0 `ZERO_METRICS` entry, those six bodies are
+  `WRITE_PRIMITIVE_BODIES`, reconciled in both directions, and a raw write
+  reappearing in an executable position fails on the day it is written.
+  **Six executable writes and four reads are outside those spellings** and
+  were outside this ledger until `v0.35.117` measured them: a declaration
+  that holds the object table through a binding or a parameter is invisible
+  to a pattern keyed on the receiver text `.objects`, and three of them do
+  — see *both zeros are over the DIRECT spellings* in the key-conventions
+  section above for the population, the floor that now reports it, and the
+  named architecture for driving it to zero).  At `v0.35.77` (D2)
   `storeObject`'s capability-reference maintenance became an erase over the
   displaced CNode's populated slots rather than a filter over the whole
   table, and the register row was **closed**; what landing it found — the
