@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.123.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.124.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1486,11 +1486,10 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   alone cannot see a second occurrence inside a subject that already has one and a
   count alone cannot see the first in a subject that had none.  **Its domain is
   derived over both places this tree writes Lean**: `.lean` files, and a probe
-  string a Python gate hands to `lake env lean`, located by `ast` as a string
-  constant carrying a line-anchored `import Lean` — so the three such gates are
-  found without any of them being named, and a fourth is found the day it is
-  written.  A file whose text carries that marker while `ast` locates no such
-  constant is **refused** rather than skipped, since "could not read" must not
+  string a Python gate hands to `lake env lean`, located by `ast` — so the three
+  such gates are found without any of them being named, and a fourth is found the
+  day it is written.  A file whose import markers the located constants do not
+  account for is **refused** rather than skipped, since "could not read" must not
   answer the same as "read and clean".  Both views are the ones this tree already
   owns, because several subjects document in their docstrings exactly which
   constructors they retired and a check that counted those would force them to stop
@@ -1510,6 +1509,52 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   two guessed probe-variable names that do not exist, and the mutation set confirms
   it reports each pre-fix probe, a census re-deciding the question, a stale entry, a
   moved count in either direction and an unlocatable probe.
+
+  **And a domain written as a NODE KIND is the same defect one grammar down**
+  (PR #897 review, `v0.35.124`).  `v0.35.115` derived *which files* hold a Lean
+  probe and left *which expressions* to one `ast` node kind: `embedded_lean` read
+  the value of an `Assign`/`AnnAssign` and nothing else, with an explicit `else:
+  continue`.  So a probe handed straight to its runner —
+  `run_probe(<a literal>)` — was located by no shape at all, and the fail-closed
+  refusal beside it asked whether **anything** had been found, which one assigned
+  probe in the same file answers for every marker in it.  Measured on the fixture:
+  the capture read the assigned probe alone and refused nothing, so an inline probe
+  could re-decide the body-bearing question with the inventory unchanged and Tier 0
+  green — *invisible in both directions at once*, which is what makes a domain miss
+  unfindable by reading a failure.
+
+  Four things follow, and each is a rule this file already carries arriving at a
+  smaller unit.  **The domain is every string constant**, plus every expression that
+  *assembles* one (`A + B`, an f-string, a `.join`/`.format`), because an assembled
+  probe's import marker and its `ConstantInfo` match sit in different fragments and
+  neither is a probe on its own evidence — measured at **zero** admitted on the
+  tracked tree, against **1060** for the statement-level grouping first tried, so
+  the widening costs nothing and every witness is planted.  **The refusal is a
+  count** (`markers_located < markers_in_text`), since *a cardinality is what sees
+  the second occurrence*; its witness is therefore an unlocatable marker **beside** a
+  located probe, because a fixture whose only marker is the unlocatable one is
+  refused by the superseded reading too and would pass with the count reverted.  It
+  counts markers in located TEXT and not in the rows reported, because one constant
+  bound to two names is reported twice and that surplus would pay for a marker nobody
+  read — found by re-reading this cut's own diff, not by a review.  **A
+  subject key must identify a subject**: an assembled probe takes its assignment's
+  name rather than its scope, or two of them in one module collapse into one key
+  where the counts add — and two probes that bind *no* name in one scope are
+  **refused**, not bucketed, since an ordinal key churns when an earlier probe is
+  deleted and *refuse, name the scope, state the remedy* is what this project does
+  wherever a scanner cannot decide.  And **the reassembly is in SOURCE order**:
+  `ast.walk` is breadth-first, so `A + B + C` yields `C, A, B`, and a join in that
+  order destroys a constructor name straddling the last boundary — two fragments
+  cannot witness it, which is why the fixture the defect arrived with could not have
+  caught it.
+
+  One mechanical note, and it is the *fail-fast harness* hazard rather than a new
+  class: a `UnreadableProbe` raised inside a self-test case escaped as a traceback,
+  which is not the gate's voice and which skips every case after it — so one
+  mutation could mask another, and two of this cut's eleven mutations were
+  mis-attributed until the direct reads went through a helper that reports a refusal
+  the way `violations` already did.  **A harness that crashes where it should report
+  hides the second defect**, and a mutation run is the only thing that shows it.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule

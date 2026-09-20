@@ -1,3 +1,120 @@
+## v0.35.124 — the probe's location is derived from Python's grammar
+
+A PR #897 finding over `scripts/check_declaration_kind_askers.py`, and it is
+`v0.35.115`'s own rule one grammar down: that cut derived **which files** hold a Lean
+probe and left **which expressions** to a single `ast` node kind.
+
+### A domain written as a node kind
+
+`embedded_lean` walked for `Assign`/`AnnAssign` and read the *value*, with an
+explicit `else: continue`.  So a probe handed straight to its runner —
+`run_probe(<a literal>)` — was located by no shape at all; and the fail-closed
+refusal beside it asked whether **anything** had been found, which one assigned probe
+in the same file answers for every import marker in it.
+
+Measured on the fixture, with both halves of the pre-`v0.35.124` reading restored:
+the capture reads `scripts/inline_gate.py::PROBE` with `{ctorInfo: 1}` and **refuses
+nothing** — the inline probe's `.opaqueInfo` appears in no row and in no diagnostic.
+With either half alone the file is refused instead, so only the pair reproduces the
+silence.  That is a domain miss: the constant is never examined, the pin never moves,
+and the gate goes on reporting that the body-bearing question has one owner —
+*invisible in both directions at once*, which is why it cannot be found by reading a
+failure.
+
+### What the domain is now
+
+Three shapes, derived from the grammar rather than from the findings:
+
+- **a named constant** — an `Assign`/`AnnAssign` of a string, admitted on the
+  `v0.35.118` probe signal (a line-anchored import of `Lean` or of a project root, or
+  a `ConstantInfo` constructor name);
+- **an assembled one** — `A + B`, an f-string, a `.join`/`.format` — named after its
+  assignment target where it has one and after its enclosing declaration where it
+  does not;
+- **a bare one** — any remaining string constant that binds no name, which is what a
+  probe passed inline is.
+
+The last two are admitted on the **import marker alone**.  A docstring is an
+`ast.Constant` too and a constructor name is exactly what prose explaining a retired
+reading carries, so the widened signal would file this file's own documentation as a
+probe; an assembled or inline *probe* is by construction Lean source and imports a
+root.  Both controls are planted and both are witnessed.
+
+**The widening admits nothing on the tracked tree.**  Run against HEAD's own
+locator over the same tree, the `DECLARATION_KIND_SITE` inventory is
+**byte-identical** at 45 rows, and no concatenation anywhere in the tree carries an
+import marker — so every witness for the new shapes is planted, which is stated
+because it is the only honest reading of a widening that changes no number.  The
+expression grouping was chosen for the same reason it is not a *statement* grouping:
+grouping by statement admits **1060** fragments, because `ast.walk` of a statement
+descends into every nested one and a dict of fixtures pulls in all of them.
+
+### Three relations the new shapes need, each with its own witness
+
+**The refusal is a count.**  `markers_located < markers_in_text` replaces "did we
+find anything", because *a cardinality is what sees the second occurrence*.  Its
+witness is therefore an unlocatable marker **beside** a located probe
+(`_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE`): a fixture whose only marker is the
+unlocatable one is refused by the superseded reading too, and would pass with the
+count reverted.  The weaker fixture it replaces is deleted.
+
+**A subject key must identify a subject.**  An assembled probe takes its
+assignment's name, not its scope — a probe bound to a name is bound to it whether the
+right-hand side is one literal or three, and keying it by scope would collapse two
+assembled probes in one module into ONE key, where the counts add and a count moving
+between them is invisible.  Two probes that bind *no* name in one scope are therefore
+**refused** rather than bucketed: an ordinal key churns when an earlier probe is
+deleted, so the answer is the one this project gives wherever a scanner cannot decide
+— refuse, name the scope, state the remedy.
+
+**The count is over located TEXT, not over reported rows.**  One constant bound to
+two names (`PROBE = ALIAS = <probe>`) is reported twice, so summing markers over the
+rows reads two accounted for against the two in the file — and an unlocatable marker
+beside it is **masked** by the surplus.  Counting over the located constants closes
+it, and `_FIXTURE_DOUBLE_BOUND_PROBE` is the only shape on which the two readings
+differ.  Found by re-reading this cut's own diff rather than by a review.
+
+**The reassembly is in source order.**  `ast.walk` is breadth-first, so `A + B + C`
+yields `C, A, B`, and a join in that order destroys a constructor name straddling the
+last boundary and can invent one elsewhere.  Two fragments cannot witness this — one
+`BinOp`'s operands come out in order — so the fixture the defect arrived with could
+not have caught it; `_FIXTURE_ORDERED_FRAGMENTS` has three, with `.quotInfo` split
+across the last boundary.  Only the **outermost** concatenation is a subject, since an
+inner one builds a part of the same string and reporting it too counts one subject
+twice (`_FIXTURE_NESTED_CONCATENATION`).
+
+### The harness reported a crash where it should have reported a verdict
+
+A `UnreadableProbe` raised inside a self-test case escaped as a traceback — not this
+gate's voice — and an exception escaping one case skips every case after it, so one
+mutation could mask another.  Two of this cut's eleven mutations were mis-attributed
+until the direct reads went through `_capture_fixture`, which renders a refusal the
+way `violations` already did.  The self-test's fail-fast order is now stated in its
+docstring, because it changes how a mutation run is read.
+
+### Sweep
+
+Two Tier 3 positives pinned what this cut retired — the `not found and
+LEAN_PROBE_MARKER.search(text)` refusal condition, and case (8)'s `cannot locate`
+assertion, which now reads `not a recorded asker` because its probe is READ.  Both
+are repointed, with the retired refusal refused by name in both spellings.
+
+### Measurements
+
+- The `DECLARATION_KIND_SITE` inventory: **45 rows byte-identical** under HEAD's
+  locator and the widened one, over the same tree.
+- Groups carrying an import marker on the tracked tree: **0**.  Groups admitted under
+  the widened signal but not the marker: **0**.  Unnamed probes: **0**.
+- Statement-level grouping: **1060** admitted fragments; expression-level: **0**.
+- Self-test: 19 subjects, 18 cases (five new), **12 mutations all caught**, each in
+  the gate's own voice.
+- Tier 3: 27 new anchors, every one mutation-tested; 0 clean-tree failures.
+
+No Lean, Rust or fixture behaviour changed; the golden trace is byte-identical and
+`maxLockSetSize` is unmoved.
+
+Refs: `docs/REGISTERED_DEBT.md` WS-RR RR8.12
+
 ## v0.35.123 — every fixture question is asked of the right unit
 
 Three PR #897 findings over `scripts/scenario_catalog.py`, and they are one

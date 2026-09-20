@@ -171,33 +171,137 @@ def _tracked(repo: str, *globs: str) -> list[str]:
     return [p for p in out.split("\0") if p]
 
 
+def _string_constants(tree: ast.AST) -> list[tuple[str, ast.Constant]]:
+    """`(scope, node)` for every string constant, with its enclosing declaration.
+
+    The scope is the nearest enclosing `def`/`class` name, or `<module>`: that is
+    what a reader needs in order to find the probe, and unlike a line number it
+    survives reformatting.  `ast` carries no parent links, so the walk is explicit.
+    """
+    out: list[tuple[str, ast.Constant]] = []
+
+    def walk(node: ast.AST, scope: str) -> None:
+        for child in ast.iter_child_nodes(node):
+            inner = scope
+            if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
+                                  ast.ClassDef)):
+                inner = child.name
+            if isinstance(child, ast.Constant) and isinstance(child.value, str):
+                out.append((scope, child))
+            walk(child, inner)
+
+    walk(tree, "<module>")
+    return out
+
+
+def _is_concatenation(node: ast.AST) -> bool:
+    """Does this expression build ONE string out of several parts?
+
+    The four forms this tree's probes are assembled with.  Kept as a predicate
+    rather than inlined because the group walk and the assignment walk both ask it,
+    and two spellings of "is this a concatenation" could disagree about which
+    expression a probe's name belongs to.
+    """
+    return bool(
+        (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add))
+        or isinstance(node, ast.JoinedStr)
+        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr in ("join", "format"))
+    )
+
+
+def _concatenation_groups(
+        tree: ast.AST) -> list[tuple[ast.AST, list[ast.Constant]]]:
+    """`(expression, its string constants in SOURCE ORDER)` per assembled string.
+
+    `a + b`, an f-string, and a `.join(…)` / `.format(…)` call are the forms this
+    tree's probes are assembled with.  The grouping is what makes an ASSEMBLED
+    probe readable: one fragment carries the import marker and another carries the
+    `ConstantInfo` match, and neither is a probe on its own evidence.
+
+    Deliberately an EXPRESSION and not a statement.  Grouping by statement was
+    measured at **1060** admitted fragments, because `ast.walk` of a statement
+    descends into every nested one -- a dict of fixtures pulls in all of them.
+    Grouping by these four expression forms admits **zero** on the tracked tree, so
+    the widening costs nothing and its witnesses are entirely planted.
+
+    Only MAXIMAL groups are returned: a nested concatenation (`f"{x}" + "y"`) is
+    part of the string its parent builds, so reporting it as well would count one
+    fragment under two subjects.  And the constants are sorted by position, because
+    `ast.walk` is breadth-first -- `"a" + "b" + "c"` yields `c, a, b` -- and the
+    reassembled text is what the constructor patterns are counted over, so a
+    fragment boundary in the wrong place can both invent a match and destroy one.
+    """
+    nodes = [n for n in ast.walk(tree) if _is_concatenation(n)]
+    nested = {id(d) for n in nodes for d in ast.walk(n)
+              if d is not n and _is_concatenation(d)}
+    groups: list[tuple[ast.AST, list[ast.Constant]]] = []
+    for node in nodes:
+        if id(node) in nested:
+            continue
+        constants = sorted(
+            (c for c in ast.walk(node)
+             if isinstance(c, ast.Constant) and isinstance(c.value, str)),
+            key=lambda c: (c.lineno, c.col_offset))
+        if constants:
+            groups.append((node, constants))
+    return groups
+
+
 def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     """The Lean probes a Python source embeds, as (name, source) pairs.
 
-    Derived from Python's own grammar: `ast` locates every assignment of a string
-    constant to a name -- at module level or nested, since a probe returned from a
-    helper is as real as one at the top -- and the ones carrying a **probe signal**
-    are the Lean.  Two signals, because one was not enough (`v0.35.118`): a
-    line-anchored import of `Lean` **or of a project module**, and a `ConstantInfo`
-    constructor name.  The import is what distinguishes Lean from a docstring that
-    happens to quote some, the anchor is what keeps a quoted `import Lean` inside a
-    sentence from counting, and the constructor is what locates a probe that
-    imports neither root by the spelling this gate is actually about -- *the
-    question, not one of its preconditions*.
+    Derived from Python's own grammar, in three shapes, because the first two were
+    each a domain written as a node kind.  `ast` locates (a) every assignment of a
+    string constant to a name -- at module level or nested, since a probe returned
+    from a helper is as real as one at the top -- (b) every expression that
+    ASSEMBLES one out of fragments, named after its assignment target where it has
+    one and after its enclosing declaration where it does not, and (c) every
+    remaining string constant that binds no name at all, which is what a probe
+    handed straight to `run_probe(<literal>)` is.
 
-    Raises `UnreadableProbe` when the file's text carries the IMPORT marker and no
-    such constant does -- a probe assembled by an expression (`A + B`, a `join`, a
-    read from disk) is one this scanner cannot see, and skipping it would answer
-    the same as reading it.  The remedy is to bind the probe to a name, which is a
-    one-line hoist; the alternative, reading past it, is how a gate goes quiet.
-    The refusal is on the import marker and NOT on the widened signal, because only
-    the import *entails* an embedded probe: a constructor name is also what prose
-    explaining a retired reading carries.  The two are indistinguishable on today's
-    tree -- see `_ANY_CONSTRUCTOR` for the measurement -- so the choice is stated on
-    that ground rather than on an observed failure.  What it leaves outside is
-    stated rather than implied: a probe that imports neither root **and** is
-    assembled rather than bound to a name.  Both roots are recognised, so a real
-    Lean probe has to import one of them.
+    (a) is admitted on a **probe signal**; (b) and (c) on the IMPORT MARKER alone.
+    Two signals, because one was not enough (`v0.35.118`): a line-anchored import
+    of `Lean` **or of a project module**, and a `ConstantInfo` constructor name.
+    The import is what distinguishes Lean from a docstring that happens to quote
+    some, the anchor is what keeps a quoted `import Lean` inside a sentence from
+    counting, and the constructor is what locates a probe that imports neither root
+    by the spelling this gate is actually about -- *the question, not one of its
+    preconditions*.  For (b) and (c) the constructor alone would be too wide: a
+    docstring and a concatenated diagnostic are both ordinary Python, and a
+    constructor name is exactly what prose explaining a retired reading carries, so
+    admitting them would force every subject in this tree to stop explaining what
+    it retired.  An assembled or inline *probe* is by construction Lean source and
+    so imports a root.
+
+    Raises `UnreadableProbe` when the located constants do not account for every
+    import marker in the file's text -- a probe read from disk, or split so that no
+    fragment carries the marker, is one this scanner cannot see, and skipping it
+    would answer the same as reading it.  Asked as a COUNT and not as "did we find
+    anything", because one located probe used to answer the question for every
+    marker in the file: a cardinality is what sees the second occurrence.  The
+    remedy is to bind the probe to a name, which is a one-line hoist; the
+    alternative, reading past it, is how a gate goes quiet.  The count is over the
+    LOCATED CONSTANTS and not over the rows reported, because one constant bound to
+    two names (`A = B = <probe>`) reports twice: counting rows would let that surplus
+    mask a marker the scanner really cannot see.  Raises it again when
+    two probes that bind no name share one scope, since a subject key two probes
+    share cannot see a count moving between them -- the same remedy, for the same
+    reason.  What it leaves outside is stated rather than implied: a probe that
+    imports neither root **and** reaches this scanner as neither a named constant,
+    an assembled one, nor a bare one.  Both roots are recognised, so a real Lean
+    probe has to import one of them.
+
+    What no source scanner can close, and what this one therefore does NOT claim: a
+    fragment that is not a literal contributes text that is not in the file.  A
+    `Name` fragment is harmless -- the constant it is bound to is a subject of its
+    own, so its matches are counted under that name -- but a fragment computed by a
+    call is unreadable, and where such a fragment carries the `ConstantInfo` match
+    while a literal one carries the import, the marker IS accounted for and the count
+    is a FLOOR.  That is the same residue as a probe read from disk, which has no
+    string constant at all; it is stated rather than approximated, because a refusal
+    keyed on "some fragment is not a literal" would also refuse the readable
+    `HEADER + <literal>` shape.
     """
     if not _probe_signal(text):
         return []
@@ -209,6 +313,13 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
             f"its probe cannot be located.") from None
     found: list[tuple[str, str]] = []
+    named: set[int] = set()
+    constants = _string_constants(tree)
+    scopes = {id(c): scope for scope, c in constants}
+    by_id = {id(c): c for _, c in constants}
+    groups = _concatenation_groups(tree)
+    group_of: dict[int, list[ast.Constant]] = {id(n): cs for n, cs in groups}
+    claimed: set[int] = set()
     for node in ast.walk(tree):
         targets: list[ast.expr]
         if isinstance(node, ast.Assign):
@@ -217,21 +328,114 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             targets = [node.target]
         else:
             continue
+        names = [t.id for t in targets if isinstance(t, ast.Name)]
+        if not names:
+            continue
         value = node.value
-        if not isinstance(value, ast.Constant) or not isinstance(value.value, str):
+        if isinstance(value, ast.Constant) and isinstance(value.value, str):
+            if not _probe_signal(value.value):
+                continue
+            named.add(id(value))
+            for name in names:
+                found.append((name, value.value))
             continue
-        if not _probe_signal(value.value):
+        # ...and a value the assignment ASSEMBLES is named after the same target.
+        # A probe bound to a name is bound to it whether the right-hand side is one
+        # literal or three, so reporting the assembled one as `<inline in …>` would
+        # answer "what is this subject called" two ways -- and, worse, would collapse
+        # two assembled probes in one module into ONE key, where the counts add and
+        # a count moving between them is invisible.  That is the cardinality-for-a-set
+        # defect inside the widening that closes it, so the name is taken here.
+        #
+        # The signal is the MARKER, not the widened `_probe_signal`: a concatenated
+        # message string quoting a constructor is an everyday Python idiom and this
+        # tree's own diagnostics are full of them, while an assembled *probe* is by
+        # construction Lean source and so imports a root.
+        fragments = group_of.get(id(value))
+        if fragments is None:
             continue
-        for t in targets:
-            if isinstance(t, ast.Name):
-                found.append((t.id, value.value))
-    if not found and LEAN_PROBE_MARKER.search(text):
+        if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
+            continue
+        claimed.add(id(value))
+        named.update(id(c) for c in fragments)
+        for name in names:
+            found.append((name, "".join(c.value for c in fragments)))
+    # ...AND the ones that bind no name.  A walker reading only assignments could
+    # not see `run_probe("""import SeLe4n … .opaqueInfo …""")`, and an assigned
+    # probe elsewhere in the file made `found` non-empty, which suppressed the
+    # refusal below -- so an inline probe could re-decide the body-bearing question
+    # with the captured inventory unchanged and Tier 0 green, invisible in both
+    # directions at once.  Keyed by its ENCLOSING DECLARATION rather than by a line
+    # number, so the key survives reformatting; several in one scope accumulate,
+    # which is what the per-key counts already do for two assignments to one name.
+    #
+    # TWO shapes, and the second is why the refusal stopped having to stand in for
+    # a locator.  A constant carrying the IMPORT MARKER is probe text on its own
+    # evidence.  An expression that ASSEMBLES one carries the marker in one fragment
+    # and the `ConstantInfo` match in another, so neither fragment qualifies alone
+    # and the whole probe used to be refused rather than read; it is reassembled and
+    # counted once, because the expression builds one string.
+    #
+    # The marker -- not the widened `_probe_signal` -- is what identifies an
+    # unnamed constant, because a docstring is an `ast.Constant` too and a
+    # constructor name is exactly what prose explaining a retired reading carries.
+    # Measured: under the marker, zero unnamed constants on the tracked tree are
+    # admitted; under the widened signal, one message string would be, and this
+    # tree's own diagnostics would have to stop naming what they retired.
+    inline: list[tuple[str, str]] = []
+    for node, fragments in groups:
+        if id(node) in claimed:
+            continue
+        if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
+            continue
+        named.update(id(c) for c in fragments)
+        inline.append((scopes[id(fragments[0])],
+                       "".join(c.value for c in fragments)))
+    for scope, constant in _string_constants(tree):
+        if id(constant) in named:
+            continue
+        if not LEAN_PROBE_MARKER.search(constant.value):
+            continue
+        named.add(id(constant))
+        inline.append((scope, constant.value))
+    # TWO unnamed probes in ONE scope are REFUSED, not accumulated.  A key that two
+    # subjects share cannot see a count moving between them -- probe A loses a
+    # `.defnInfo`, probe B gains one, the total is unchanged and the reconciliation
+    # says nothing -- which is the cardinality-for-a-set defect this whole inventory
+    # is shaped against.  An ordinal (`<inline #2 in foo>`) would be a key that
+    # churns when an earlier probe is deleted, so the answer is the one this project
+    # gives everywhere a scanner cannot decide: refuse, name the scope, and state the
+    # remedy, which is the same one-line hoist the marker refusal asks for.  Costs
+    # nothing today -- zero unnamed probes on the tracked tree -- and it is what
+    # keeps `<inline in …>` identifying a subject rather than a bucket.
+    per_scope: dict[str, int] = {}
+    for scope, _src in inline:
+        per_scope[scope] = per_scope.get(scope, 0) + 1
+    crowded = sorted(s for s, n in per_scope.items() if n > 1)
+    if crowded:
         raise UnreadableProbe(
-            f"{path} carries a Lean import (`import Lean` / `import SeLe4n`) "
-            f"and no module-level string constant "
-            f"holding it.  A probe this scanner cannot locate is one whose "
-            f"`ConstantInfo` matches it cannot count; assign the probe to a "
-            f"module-level name, or the body-bearing discipline is unchecked "
+            f"{path} embeds {per_scope[crowded[0]]} probes that bind no name in "
+            f"`{crowded[0]}`" + (f" (and in {', '.join(crowded[1:])})"
+                                 if len(crowded) > 1 else "") + ".  They would "
+            f"share one subject key, where a count moving from one to the other is "
+            f"invisible; bind each probe to a name so each has its own.")
+    for scope, src in inline:
+        found.append((f"<inline in {scope}>", src))
+    # A marker the located constants do not account for is probe text this scanner
+    # CANNOT see -- read from disk, or split so that no fragment carries it.  Asked
+    # as a COUNT rather than as "did we find anything", because one located probe
+    # used to answer the question for every marker in the file: a cardinality is
+    # what sees the second occurrence.  The remedy is to bind the probe to a name.
+    markers_in_text = len(LEAN_PROBE_MARKER.findall(text))
+    markers_located = sum(len(LEAN_PROBE_MARKER.findall(by_id[i].value))
+                          for i in named)
+    if markers_located < markers_in_text:
+        raise UnreadableProbe(
+            f"{path} carries {markers_in_text} Lean import marker(s) "
+            f"(`import Lean` / `import SeLe4n`) and this scanner located only "
+            f"{markers_located} of them in a string constant.  A probe it cannot "
+            f"locate is one whose `ConstantInfo` matches it cannot count; assign "
+            f"the probe to a name, or the body-bearing discipline is unchecked "
             f"here.")
     return found
 
@@ -354,6 +558,58 @@ ASKER_REASONS: dict[str, str] = {
         "THIS GATE'S OWN FIXTURE for the refusal direction on a project-importing "
         "probe -- the case the old marker could see NEITHER way, since it neither "
         "located the probe nor had a marker to refuse on.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROBE":
+        "THIS GATE'S OWN FIXTURE for the reported defect (`v0.35.124`): a probe "
+        "passed INLINE, beside an assigned one.  Two counts, and both are "
+        "load-bearing -- the `ctorInfo` is the assigned probe that used to suppress "
+        "the refusal and the `opaqueInfo` is the inline one that was therefore "
+        "neither read nor refused, so a fixture that lost either would stop "
+        "witnessing the suppression.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROSE":
+        "THIS GATE'S OWN FIXTURE for the CONTROL that keeps the widening off prose: "
+        "a docstring and a call argument naming constructors in exactly the "
+        "positions the inline locator reads, and a third builds its text by "
+        "CONCATENATION, which is the position the group branch reads.  Its five "
+        "counts ARE the control -- they are what a locator admitting every string "
+        "constant, or a group admitted on the constructor signal, would file as a "
+        "probe -- so recording them is the measurement rather than the price.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ASSEMBLED_BESIDE_ASSIGNED":
+        "THIS GATE'S OWN FIXTURE for the reported defect's cardinality half: an "
+        "ASSEMBLED probe beside an assigned one, which one located probe used to "
+        "answer for.  Two counts because the file has two subjects, which is the "
+        "whole claim.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_ASSEMBLED":
+        "THIS GATE'S OWN FIXTURE for the one shape with no name to take: an "
+        "assembled probe passed inline, keyed by its enclosing declaration.  Its "
+        "`opaqueInfo` is what case (13) reads back, so a fixture that lost it would "
+        "assert nothing about the group branch's fallback key.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE":
+        "THIS GATE'S OWN FIXTURE for the marker-COUNT refusal: an unlocatable marker "
+        "beside a probe that IS located, which is the only shape the superseded "
+        "\"did we find anything\" reading passes.  Its `ctorInfo` belongs to the "
+        "located probe, and it is what makes `found` non-empty -- the very condition "
+        "the case turns on -- so a fixture that lost it would silently become the "
+        "weaker witness it replaced.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_DOUBLE_BOUND_PROBE":
+        "THIS GATE'S OWN FIXTURE for the one shape on which counting markers over "
+        "the located CONSTANTS differs from counting them over the rows reported: a "
+        "probe bound to two names, beside a marker nothing locates.  Its `quotInfo` "
+        "is the located probe's, and the two names are what produce the surplus the "
+        "case is about, so a fixture that dropped either would stop discriminating.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_NESTED_CONCATENATION":
+        "THIS GATE'S OWN FIXTURE for the maximal-group rule: a probe whose "
+        "concatenation nests, where reporting the inner expression as well would "
+        "count the same subject twice.  Its `recInfo` is what case (16) reads back "
+        "under ONE key, so a fixture that lost it would assert nothing.  Its "
+        "sibling `_FIXTURE_ORDERED_FRAGMENTS` is deliberately NOT a subject: its "
+        "constructor name is split across a `\"\"\" + \"\"\"` boundary, so the "
+        "literal text of this file carries no match -- which is exactly the "
+        "property case (15) is about, one level up.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_TWO_INLINE_ONE_SCOPE":
+        "THIS GATE'S OWN FIXTURE for the second refusal: two probes binding no name "
+        "in one scope, which would share a subject key.  The two counts are the two "
+        "probes, and they must DIFFER -- a count moving between them under a shared "
+        "key is precisely what the refusal exists to prevent.",
 }
 
 #: The inventory: {subject: {constructor: count}}, reconciled both directions.
@@ -394,6 +650,33 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_PROJECT_SPLIT_PROBE": {
         "defnInfo": 1,
+    },
+    # `v0.35.124`: the inline and assembled shapes, located since the probe domain
+    # became every string constant rather than every assignment value.
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROBE": {
+        "ctorInfo": 1, "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROSE": {
+        "ctorInfo": 1, "inductInfo": 1, "opaqueInfo": 1, "recInfo": 1,
+        "thmInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ASSEMBLED_BESIDE_ASSIGNED": {
+        "ctorInfo": 1, "defnInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_ASSEMBLED": {
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_TWO_INLINE_ONE_SCOPE": {
+        "defnInfo": 1, "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_NESTED_CONCATENATION": {
+        "recInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_DOUBLE_BOUND_PROBE": {
+        "quotInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE": {
+        "ctorInfo": 1,
     },
 }
 
@@ -561,9 +844,238 @@ private def hidden (ci : ConstantInfo) : Bool :=
 '''
 
 
+#: THE REPORTED CASE (PR #897, `v0.35.124`): a probe passed INLINE, beside an
+#: assigned one.  The walker considered only `Assign`/`AnnAssign` nodes, so this
+#: one was never located -- and the assigned probe made `found` non-empty, which
+#: suppressed the refusal.  So an inline probe could re-decide the body-bearing
+#: question without changing the captured inventory or failing Tier 0: a domain
+#: miss, silent by construction, and invisible in BOTH directions at once.
+#:
+#: The assigned probe beside it is the whole point.  Every earlier case in this
+#: file has at most one probe per fixture, so none of them exercises the
+#: suppression, which is why four review rounds and a widening did not find this.
+_FIXTURE_INLINE_PROBE = '''\
+PROBE = """
+import SeLe4n
+import Lean.Elab.Command
+
+private def declared (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .ctorInfo _ => true
+  | _ => false
+"""
+
+run_probe(PROBE)
+run_probe("""
+import SeLe4n
+import Lean.Elab.Command
+
+private def inline (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+""")
+'''
+
+#: ...and the CONTROLS that keep the widening from swallowing prose, one per
+#: admitted shape.  A docstring and a call argument name constructors in the
+#: non-assignment position the bare-constant branch reads; the third `note` builds
+#: its text by CONCATENATION, which is the position the group branch reads.  None is
+#: a probe.  The signal for both branches is the IMPORT MARKER alone for exactly this
+#: reason -- a constructor name is what prose explaining a retired reading carries,
+#: and an assembled diagnostic is an everyday Python idiom -- so the widened
+#: `_probe_signal` would file this file's own documentation as a probe.  Measured on
+#: the tracked tree: zero concatenations carry a constructor name today, so this
+#: control is planted rather than drawn from a live one, which is why it has to be
+#: written down rather than waited for.
+_FIXTURE_INLINE_PROSE = '''\
+"""A gate whose docstring mentions `.opaqueInfo` and `.recInfo`.
+
+It is a non-assignment string constant in exactly the position the inline
+locator reads, and it carries no Lean import, so it is prose and not a probe.
+"""
+
+PROBE = """
+import SeLe4n
+
+private def declared (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .ctorInfo _ => true
+  | _ => false
+"""
+
+note("this mentions `.thmInfo` and is still prose")
+note("a retired reading matched " + "`.inductInfo`" + " and is gone")
+'''
+
+#: A file with an assigned probe AND an assembled one.  The refusal used to ask
+#: "did we find anything", which one located probe answers for the whole file --
+#: so the assembled probe beside it was skipped.  Asked as a COUNT of markers, the
+#: second one is visible: a cardinality is what sees the second occurrence.
+_FIXTURE_ASSEMBLED_BESIDE_ASSIGNED = '''\
+PROBE = """
+import SeLe4n
+
+private def declared (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .ctorInfo _ => true
+  | _ => false
+"""
+
+HIDDEN = """
+import SeLe4n
+""" + """
+private def hidden (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+'''
+
+#: A Lean import marker OUTSIDE every string constant, BESIDE a probe the scanner
+#: does locate.  The `beside` is what makes it decisive: the refusal asks whether the
+#: located constants account for every marker, and a fixture whose only marker is the
+#: unlocatable one is refused by the superseded "did we find anything" reading too.
+#: Here `found` is non-empty and one marker is still unaccounted for, which exactly
+#: one of the two readings catches.
+#:
+#: Synthetic by necessity: the realistic assembled probes (cases 6, 8, 15 and 16) are
+#: now READ, and a probe whose text never appears literally in the source is outside
+#: any scanner.  The bare marker is a Python `import` statement, which parses and
+#: imports nothing Lean -- that is the point: the scanner sees a marker it cannot
+#: attribute to a probe, and says so instead of reading past it.
+_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE = '''\
+import SeLe4n.Testing
+
+PROBE = """
+import SeLe4n
+
+private def declared (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .ctorInfo _ => true
+  | _ => false
+"""
+'''
+
+
+#: An ASSEMBLED probe that binds NO name, inside a function: the one shape that
+#: reaches the group branch with no assignment target to take its name from, so the
+#: key is the enclosing declaration.  It is also the only fixture that exercises the
+#: scope tracking THROUGH a group -- every other inline case is a bare constant --
+#: which matters because the group's scope is read off its first fragment and a walk
+#: that lost the enclosing `def` would report `<module>` with nothing to notice it.
+_FIXTURE_INLINE_ASSEMBLED = '''\
+def build() -> None:
+    run_probe("""
+import SeLe4n
+""" + """
+private def nested (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+""")
+'''
+
+#: TWO probes that bind no name, in ONE scope.  They would share a single subject
+#: key, and a key two subjects share cannot see a count moving between them -- which
+#: is the defect the per-(subject, constructor) inventory exists to refuse, so the
+#: scanner refuses the file instead of bucketing them.
+_FIXTURE_TWO_INLINE_ONE_SCOPE = '''\
+run_probe("""
+import SeLe4n
+
+private def first (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+""")
+
+run_probe("""
+import SeLe4n
+
+private def second (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+""")
+'''
+
+#: A probe assembled from THREE fragments with a constructor name split across the
+#: last boundary.  `ast.walk` is breadth-first and `A + B + C` parses as
+#: `BinOp(BinOp(A, B), C)`, so it yields `C, A, B`: a join in walk order both
+#: destroys `.quotInfo` here and could invent a match elsewhere, and only a join in
+#: SOURCE order reads what the expression builds.  Two fragments cannot witness this
+#: -- a single `BinOp`'s operands come out in order -- which is why the fixture the
+#: reported defect came with could not have caught it.
+_FIXTURE_ORDERED_FRAGMENTS = '''\
+PROBE = """
+import SeLe4n
+""" + """
+private def ordered (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .quot""" + """Info _ => true
+  | _ => false
+"""
+'''
+
+#: ...and one whose concatenation NESTS.  Only the outermost expression is a
+#: subject: the inner `BinOp` builds a part of the same string, so reporting it as
+#: well would count its fragments twice -- once under the name the assignment binds
+#: and once under the enclosing scope -- which is a subject appearing twice rather
+#: than a probe appearing twice.  The `.recInfo` sits wholly inside the middle
+#: fragment, so this fixture is decisive for the nesting and silent about the sort,
+#: and `_FIXTURE_ORDERED_FRAGMENTS` is the other way round.
+_FIXTURE_NESTED_CONCATENATION = '''\
+PROBE = """
+import SeLe4n
+""" + """
+private def nested (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .recInfo _ => true
+""" + """  | _ => false
+"""
+'''
+
+#: One probe bound to TWO names, beside a marker the scanner cannot locate.  The
+#: refusal counts markers in LOCATED TEXT, and this shape is the only one on which
+#: that differs from counting the rows reported: the shared constant is reported
+#: twice, so a row-sum reads two markers accounted for against the two in the file
+#: and the unlocatable one is MASKED.  A surplus from double-reporting must not pay
+#: for a marker nobody read.
+_FIXTURE_DOUBLE_BOUND_PROBE = '''\
+import SeLe4n.Testing
+
+PROBE = ALIAS = """
+import SeLe4n
+
+private def doubled (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .quotInfo _ => true
+  | _ => false
+"""
+'''
+
 def _git(repo: str, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True,
                    capture_output=True, text=True)
+
+
+def _capture_fixture(root: str) -> dict[str, dict[str, int]]:
+    """`capture`, with a REFUSAL reported in this gate's voice rather than raised.
+
+    A case that asks what the capture contains has failed if the scan refused the
+    fixture -- but a traceback is not a verdict, and an exception escaping one case
+    skips every case after it, so one mutation could mask another.  `violations`
+    already renders a refusal as a problem string for the same reason; this is the
+    same treatment for the direct reads.  The empty capture returned here fails every
+    assertion a case makes of it, so the refusal cannot read as a pass.
+    """
+    try:
+        return capture(root)
+    except UnreadableProbe as exc:
+        print("FAIL: --self-test — the scan REFUSED a fixture a case expected to "
+              f"read: {exc}")
+        return {}
 
 
 def _fixture(root: str, files: dict[str, str]) -> None:
@@ -579,6 +1091,15 @@ def _fixture(root: str, files: dict[str, str]) -> None:
 
 
 def _self_test() -> int:
+    """Every case, in order, stopping at the FIRST one that fails.
+
+    Stated because it changes how a mutation run is read: a revert that breaks
+    several cases is reported by the earliest of them, so attributing a mutation to
+    the property it broke means reverting one relation at a time.  The alternative
+    -- collecting every failure -- would need each case to be a closure, and a case
+    that keeps going past its own failed assertion can crash on the next line; with
+    one relation reverted per run the earliest case IS the attribution.
+    """
     owner = "SeLe4n/Testing/DeclarationKind.lean"
     gate = "scripts/probe_gate.py"
     probe_subject = gate + "::PROBE"
@@ -593,7 +1114,7 @@ def _self_test() -> int:
     #     docstring outside the probe is not read at all).
     with tempfile.TemporaryDirectory() as root:
         _fixture(root, base)
-        got = capture(root)
+        got = _capture_fixture(root)
         if got != base_pin:
             print("FAIL: --self-test — the capture over a clean fixture is")
             print(f"      {got}, expected {base_pin}.  Either the Lean view has")
@@ -677,21 +1198,36 @@ def _self_test() -> int:
             print(f"      reported: {orphan}.")
             return 1
 
-    # (6) A file that embeds Lean the scanner cannot LOCATE is refused, not
-    #     skipped.  "The gate could not read it" and "the gate read it and it is
-    #     clean" must never produce the same verdict, and a probe assembled by
-    #     concatenation is exactly the input that produces the second by
-    #     accident.
+    # (6) A probe assembled by CONCATENATION is READ -- as ONE string, named after
+    #     the target it is bound to.  Until `v0.35.124` it was refused instead,
+    #     because the locator read only assignment *values* and a `BinOp` is not a
+    #     string constant, so the whole file was unreadable.  Two things are asserted
+    #     and the second is the sharper one.  The probe is reassembled in SOURCE
+    #     order rather than scanned fragment by fragment, because a constructor name
+    #     split across a fragment boundary belongs to neither half and `ast.walk` is
+    #     breadth-first (`"a" + "b" + "c"` yields `c, a, b`).  And the subject is
+    #     `::PROBE`, not `::<inline in <module>>`: a probe bound to a name is bound
+    #     to it whether the right-hand side is one literal or three, and keying the
+    #     assembled one by its scope would collapse two assembled probes in one
+    #     module into ONE subject, where the counts add and a count moving between
+    #     them is invisible -- the cardinality-for-a-set defect inside the widening
+    #     that closes it.  Reading it is strictly stronger than refusing it: the gate
+    #     now COUNTS what it could previously only decline.
     with tempfile.TemporaryDirectory() as root:
         split = "scripts/split_gate.py"
         _fixture(root, {**base, split: _FIXTURE_SPLIT_PROBE})
+        got = _capture_fixture(root)
+        fragments = {k: v for k, v in got.items() if k.startswith(split)}
+        if fragments != {split + "::PROBE": {"defnInfo": 1}}:
+            print("FAIL: --self-test — an assembled probe was not read as one")
+            print(f"      string under its own name: {fragments}.  The expression")
+            print("      builds one string and the assignment binds one name, so")
+            print("      the subject is the name and the text is the join.")
+            return 1
         problems = violations(root, base_pin, base_reasons)
-        if not any(split in p and "cannot locate" in p for p in problems):
-            print("FAIL: --self-test — a Python file carrying `import Lean` with")
-            print("      no locatable string constant was not refused:")
-            print(f"      {problems}.  A probe this scanner cannot read is one")
-            print("      whose constructor matches it cannot count, and a silent")
-            print("      skip answers the same as a clean read.")
+        if not any(split in p and "not a recorded asker" in p for p in problems):
+            print("FAIL: --self-test — the assembled probe was read and not")
+            print(f"      reported: {problems}.")
             return 1
 
     # (7) A probe importing only a PROJECT module is LOCATED (`v0.35.118`).
@@ -715,19 +1251,223 @@ def _self_test() -> int:
             print("      one import spelling is a domain written as a marker.")
             return 1
 
-    # (8) ...and its ASSEMBLED twin is REFUSED, not skipped.  Case (6) covers the
-    #     concatenated probe that also imports `Lean`; this one imports the
-    #     project root alone, so before `v0.35.118` the marker neither located it
-    #     nor had anything to refuse on -- invisible in both directions at once.
+    # (8) ...and its ASSEMBLED twin, importing the PROJECT root alone, is read the
+    #     same way.  Before `v0.35.118` the `^import Lean` marker neither located
+    #     it nor had anything to refuse on -- invisible in both directions at once;
+    #     before `v0.35.124` it was refused; now it is read.  Kept as a separate
+    #     case because the import spelling is the axis `v0.35.118` widened, and a
+    #     regression there would be silent in this one and not in case (6).
     with tempfile.TemporaryDirectory() as root:
         psplit = "scripts/project_split_gate.py"
         _fixture(root, {**base, psplit: _FIXTURE_PROJECT_SPLIT_PROBE})
         problems = violations(root, base_pin, base_reasons)
-        if not any(psplit in p and "cannot locate" in p for p in problems):
+        if not any(psplit in p and "not a recorded asker" in p for p in problems):
             print("FAIL: --self-test — an ASSEMBLED probe importing only a PROJECT")
-            print(f"      module was not refused: {problems}.  The refusal is what")
-            print("      keeps 'could not read it' from answering the same as")
-            print("      'read it and it is clean'.")
+            print(f"      module was not read: {problems}.")
+            return 1
+
+    # (8b) A marker the located constants do not account for is REFUSED, BESIDE a
+    #      probe that is located.  The `beside` is the whole of the case: the refusal
+    #      asks whether the located constants account for every marker, and a fixture
+    #      whose only marker is the unlocatable one is refused by the superseded "did
+    #      we find anything" reading as well -- so it would pass with the cardinality
+    #      reverted, which is the reading one located probe answered for a whole file.
+    #      Here `found` is non-empty and a marker is still unaccounted for, which
+    #      exactly one of the two readings catches.
+    #
+    #      The witness is SYNTHETIC on purpose: with every string constant in the
+    #      domain there is no realistic probe shape that reaches this branch, so a
+    #      fixture is the only way to show it decides -- the treatment
+    #      `BootEntryContract` and `StoreReadClassificationCensus` already carry for
+    #      the same reason.  What it cannot catch is stated in `embedded_lean`.
+    with tempfile.TemporaryDirectory() as root:
+        bare = "scripts/bare_marker_gate.py"
+        _fixture(root, {**base,
+                        bare: _FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(bare in p and "located only" in p for p in problems):
+            print("FAIL: --self-test — a Lean import marker outside every string")
+            print(f"      constant was not refused: {problems}.  'Could not read")
+            print("      it' and 'read it and it is clean' must never produce the")
+            print("      same verdict.")
+            return 1
+
+    # (10) An INLINE probe, BESIDE an assigned one, is located (PR #897).  The
+    #      walker read only `Assign`/`AnnAssign` nodes, and the assigned probe
+    #      made `found` non-empty, which suppressed the refusal -- so this probe
+    #      was invisible in both directions at once and could re-decide the
+    #      body-bearing question with the inventory unchanged and Tier 0 green.
+    #      Every earlier case here has at most one probe per fixture, which is why
+    #      none of them exercises the suppression.
+    #
+    #      Measured on this fixture with BOTH halves of the defect restored -- the
+    #      locator reading only assignment values and the refusal asking "did we
+    #      find anything" -- the capture is `{::PROBE: {ctorInfo: 1}}` and nothing
+    #      is refused: the inline probe's `.opaqueInfo` appears in no row and in no
+    #      diagnostic.  With either half alone the file is REFUSED instead, by the
+    #      marker count, so only the pair reproduces the reported silence, and this
+    #      case is what reads the row back.
+    with tempfile.TemporaryDirectory() as root:
+        inline = "scripts/inline_gate.py"
+        _fixture(root, {**base, inline: _FIXTURE_INLINE_PROBE})
+        got = _capture_fixture(root)
+        keys = [k for k in got if k.startswith(inline)]
+        if not any("<inline in <module>>" in k for k in keys):
+            print("FAIL: --self-test — an INLINE probe was not located:")
+            print(f"      {sorted(keys)}.  A probe passed as an argument decides")
+            print("      the body question exactly as an assigned one does, and a")
+            print("      walker that reads only assignments is a domain written as")
+            print("      a node kind.")
+            return 1
+        problems = violations(root, base_pin, base_reasons)
+        if not any("<inline in <module>>" in p and "not a recorded asker" in p
+                   for p in problems):
+            print("FAIL: --self-test — the INLINE probe was located and not")
+            print(f"      reported: {problems}.")
+            return 1
+
+    # (11) ...and a docstring in the SAME non-assignment position is NOT a probe.
+    #      The control for (10): without it, the widening is satisfied by a locator
+    #      that files every string constant, which would make this file's own
+    #      documentation an asker and force every subject to stop explaining what
+    #      it retired.  The inline signal is therefore the IMPORT MARKER alone.
+    with tempfile.TemporaryDirectory() as root:
+        prose = "scripts/prose_gate.py"
+        _fixture(root, {**base, prose: _FIXTURE_INLINE_PROSE})
+        got = _capture_fixture(root)
+        inline_keys = [k for k in got if k.startswith(prose) and "<inline" in k]
+        if inline_keys:
+            print("FAIL: --self-test — prose in a non-assignment string constant")
+            print(f"      was filed as a probe: {inline_keys}.  A constructor name")
+            print("      is what prose explaining a retired reading carries; only")
+            print("      the import entails an embedded probe.")
+            return 1
+        expected = {prose + "::PROBE": {"ctorInfo": 1}}
+        if {k: v for k, v in got.items() if k.startswith(prose)} != expected:
+            print("FAIL: --self-test — the prose fixture's capture is")
+            print(f"      {[(k, v) for k, v in got.items() if k.startswith(prose)]},")
+            print(f"      expected {expected}.")
+            return 1
+
+    # (12) An ASSEMBLED probe beside an ASSIGNED one yields TWO subjects, each
+    #      named, each counted.  This is the reported defect's own shape: the
+    #      refusal used to ask "did we find anything", which one located probe
+    #      answers for the whole file, so the assembled one was neither read nor
+    #      refused -- invisible in both directions at once, free to re-decide the
+    #      body-bearing question with the inventory unchanged and Tier 0 green.
+    #      Cases (6) and (8) each hold a single probe, so neither exercises the
+    #      suppression; what makes this one decisive is the CARDINALITY, two
+    #      subjects out of one file, which is exactly what the superseded gate
+    #      could not report.
+    with tempfile.TemporaryDirectory() as root:
+        both = "scripts/both_gate.py"
+        _fixture(root, {**base, both: _FIXTURE_ASSEMBLED_BESIDE_ASSIGNED})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(both)}
+        expected = {both + "::PROBE": {"ctorInfo": 1},
+                    both + "::HIDDEN": {"defnInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — an ASSEMBLED probe beside an assigned one")
+            print(f"      did not yield two named subjects: {got}, expected")
+            print(f"      {expected}.  One located probe used to answer the")
+            print("      question for every marker in the file, which is a")
+            print("      cardinality standing in for a set.")
+            return 1
+        problems = violations(root, base_pin, base_reasons)
+        for key in expected:
+            if not any(key in p and "not a recorded asker" in p for p in problems):
+                print(f"FAIL: --self-test — {key} was located and not reported:")
+                print(f"      {problems}.")
+                return 1
+
+    # (13) An ASSEMBLED probe that binds NO name is read under its ENCLOSING
+    #      DECLARATION.  The one shape with no assignment target to take a name
+    #      from, so it is the only witness for the group branch's fallback key --
+    #      and the only one that exercises the scope tracking THROUGH a group,
+    #      since the group's scope is read off its first fragment and a walk that
+    #      lost the enclosing `def` would answer `<module>` with nothing to notice.
+    with tempfile.TemporaryDirectory() as root:
+        ia = "scripts/inline_assembled_gate.py"
+        _fixture(root, {**base, ia: _FIXTURE_INLINE_ASSEMBLED})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(ia)}
+        expected = {ia + "::<inline in build>": {"opaqueInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — an unnamed ASSEMBLED probe was not read")
+            print(f"      under its enclosing declaration: {got}, expected")
+            print(f"      {expected}.")
+            return 1
+
+    # (14) ...and TWO probes that bind no name in ONE scope are REFUSED rather than
+    #      bucketed.  A subject key two probes share cannot see a count moving
+    #      between them -- the first loses a `.defnInfo`, the second gains one, the
+    #      total is unchanged and the reconciliation says nothing -- which is the
+    #      cardinality-for-a-set defect this inventory's shape exists to refuse, so
+    #      accumulating them would reopen it one level down.  An ordinal key would
+    #      churn when an earlier probe is deleted, so the answer is the one this
+    #      project gives wherever a scanner cannot decide: refuse, name the scope,
+    #      and state the remedy.
+    with tempfile.TemporaryDirectory() as root:
+        two = "scripts/two_inline_gate.py"
+        _fixture(root, {**base, two: _FIXTURE_TWO_INLINE_ONE_SCOPE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(two in p and "share one subject key" in p for p in problems):
+            print("FAIL: --self-test — two probes binding no name in one scope were")
+            print(f"      not refused: {problems}.  Bucketing two subjects under")
+            print("      one key hides a count moving between them.")
+            return 1
+
+    # (15) A three-fragment probe is reassembled in SOURCE order.  `ast.walk` is
+    #      breadth-first and `A + B + C` parses as `BinOp(BinOp(A, B), C)`, so it
+    #      yields `C, A, B`; here the constructor name straddles the last boundary,
+    #      so a join in walk order DESTROYS the match and the subject drops out of
+    #      the capture entirely.  Two fragments cannot witness this -- one `BinOp`'s
+    #      operands come out in order -- so the fixture the reported defect arrived
+    #      with could not have caught it, which is why this case exists rather than
+    #      an assertion in a comment.
+    with tempfile.TemporaryDirectory() as root:
+        order = "scripts/ordered_gate.py"
+        _fixture(root, {**base, order: _FIXTURE_ORDERED_FRAGMENTS})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(order)}
+        expected = {order + "::PROBE": {"quotInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a three-fragment probe was not reassembled")
+            print(f"      in source order: {got}, expected {expected}.  A join in")
+            print("      `ast.walk` order can destroy a constructor name that")
+            print("      straddles a fragment boundary, and invent one elsewhere.")
+            return 1
+
+    # (16) ...and only the OUTERMOST concatenation is a subject.  The inner
+    #      expression builds a part of the same string, so reporting it as well
+    #      would count one subject twice -- once under the name the assignment binds
+    #      and once under the enclosing scope -- which is a SUBJECT appearing twice,
+    #      not a probe.  The exact-equality assertion is the whole check: a second
+    #      key here is the defect.
+    with tempfile.TemporaryDirectory() as root:
+        nest = "scripts/nested_gate.py"
+        _fixture(root, {**base, nest: _FIXTURE_NESTED_CONCATENATION})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(nest)}
+        expected = {nest + "::PROBE": {"recInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a NESTED concatenation was reported as a")
+            print(f"      second subject: {got}, expected {expected}.  Only the")
+            print("      outermost expression builds the probe; an inner one is a")
+            print("      part of it.")
+            return 1
+
+    # (17) A marker the scanner cannot locate is refused even when a shared constant
+    #      is REPORTED TWICE.  `PROBE = ALIAS = <probe>` yields two rows over one
+    #      constant, so summing markers over the ROWS reads two accounted for against
+    #      the two in the file and the unlocatable one is masked -- a surplus from
+    #      double-reporting paying for a marker nobody read.  Counting over the
+    #      located CONSTANTS is the fix, and this is the only shape on which the two
+    #      readings differ, which is why the case exists rather than a comment.
+    with tempfile.TemporaryDirectory() as root:
+        dbl = "scripts/double_bound_gate.py"
+        _fixture(root, {**base, dbl: _FIXTURE_DOUBLE_BOUND_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(dbl in p and "located only" in p for p in problems):
+            print("FAIL: --self-test — an unlocatable marker was masked by a probe")
+            print(f"      bound to two names: {problems}.  The count is over the")
+            print("      located constants, not over the rows reported.")
             return 1
 
     # (9) The real tree, which is the check the tier runs.
@@ -742,9 +1482,16 @@ def _self_test() -> int:
     print(f"[declaration-kind] SELF-TEST PASS: the capture reads the Lean view "
           f"of both a `.lean` file and a probe embedded in Python; a new "
           f"subject, a stale entry, a moved count in either direction, either "
-          f"table orphaned, an unlocatable probe, a probe importing only a "
-          f"project module, and that probe assembled rather than bound are each "
-          f"reported; the live tree is clean at {len(found)} subject(s).")
+          f"table orphaned, an assembled probe READ as one string under its own "
+          f"name, one importing only a project module, an INLINE probe beside an "
+          f"assigned one, an assembled probe beside an assigned one as TWO named "
+          f"subjects, an unnamed assembled probe under its enclosing declaration, "
+          f"a marker outside every constant refused, two unnamed probes in one "
+          f"scope refused, a three-fragment probe reassembled in SOURCE order, a "
+          f"NESTED concatenation counted once and an unlocatable marker unmasked "
+          f"by a probe bound to two names are each reported, while a docstring in "
+          f"the same non-assignment position is not; the live tree is clean at "
+          f"{len(found)} subject(s).")
     return 0
 
 

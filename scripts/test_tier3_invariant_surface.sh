@@ -15903,14 +15903,16 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "if not LEAN_PROBE_MARKER\.search
 run_negative_check "INVARIANT" bash -lc 'rg -n "if not LEAN_PROBE_MARKER\.search\(value\.value\):" scripts/check_declaration_kind_askers.py'
 # THE REFUSAL STAYS ON THE MARKER, which is the half that can be exact: this
 # file's own inventory names every constructor in a tuple and in the baseline's
-# keys, so a constructor-based refusal would fail the gate on itself.
-run_check "INVARIANT" bash -lc 'rg -n "    if not found and LEAN_PROBE_MARKER\.search\(text\):" scripts/check_declaration_kind_askers.py'
+# keys, so a constructor-based refusal would fail the gate on itself.  Its
+# CONDITION moved at `v0.35.124` -- see the block below, where the count that
+# replaced "did we find anything" is pinned and the retired reading refused.
 # THE TWO WITNESSES, each token-preserving against the case beside it: the
-# reported defect must be LOCATED, and its assembled twin REFUSED.
+# reported defect must be LOCATED, and since `v0.35.124` so must its assembled
+# twin, which the widened locator READS rather than refusing.
 run_check "INVARIANT" bash -lc 'rg -n "^_FIXTURE_PROJECT_IMPORT_PROBE = " scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -n "^_FIXTURE_PROJECT_SPLIT_PROBE = " scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -n "not any\(project \+ .::PROBE. in p and .not a recorded asker. in p" scripts/check_declaration_kind_askers.py'
-run_check "INVARIANT" bash -lc 'rg -n "not any\(psplit in p and .cannot locate. in p for p in problems\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -n "not any\(psplit in p and .not a recorded asker. in p for p in problems\)" scripts/check_declaration_kind_askers.py'
 # ...and all four newly located subjects are RECORDED, since an inert fixture
 # reads as coverage while asserting nothing.
 run_check "INVARIANT" bash -lc 'rg -n "check_declaration_kind_askers.py::_FIXTURE_OWNER" scripts/check_declaration_kind_askers.py'
@@ -16746,5 +16748,83 @@ run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scr
 # the message and was caught by nothing.
 run_check "INVARIANT" rg -F -n 'claim(s) name a path that mentions the fixture ' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n 'name a gate that reads the fixture' scripts/scenario_catalog.py
+
+# ---------------------------------------------------------------------------
+# `v0.35.124` -- THE PROBE'S LOCATION IS DERIVED FROM PYTHON'S GRAMMAR, not from
+# one node kind.  `embedded_lean` read only `Assign`/`AnnAssign` VALUES, so a probe
+# passed inline -- `run_probe("""import SeLe4n … .opaqueInfo …""")` -- was located
+# by nothing; and the fail-closed refusal asked whether ANYTHING was found, which
+# one assigned probe in the same file answers.  Measured on the fixture: the
+# capture read `::PROBE` alone and nothing was refused, so an inline probe could
+# re-decide the body-bearing question with the inventory unchanged and Tier 0
+# green -- a domain miss, silent by construction, invisible in BOTH directions.
+# ---------------------------------------------------------------------------
+# THE DOMAIN IS EVERY STRING CONSTANT, with the scope tracked explicitly since
+# `ast` carries no parent links.
+run_check "INVARIANT" rg -F -n 'def _string_constants(tree: ast.AST) -> list[tuple[str, ast.Constant]]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '        inline.append((scope, constant.value))' scripts/check_declaration_kind_askers.py
+# ...AND EVERY EXPRESSION THAT ASSEMBLES ONE, because an assembled probe's marker
+# and its `ConstantInfo` match sit in different fragments, so neither qualifies
+# alone.  Four forms, derived as a predicate both walks read: two spellings of "is
+# this a concatenation" could disagree about which expression a probe belongs to.
+run_check "INVARIANT" rg -F -n 'def _is_concatenation(node: ast.AST) -> bool:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    groups = _concatenation_groups(tree)' scripts/check_declaration_kind_askers.py
+# A GROUP IS REASSEMBLED IN SOURCE ORDER.  `ast.walk` is breadth-first and
+# `A + B + C` parses as `BinOp(BinOp(A, B), C)`, so it yields `C, A, B`: a join in
+# walk order destroys a constructor name straddling the last boundary and can
+# invent one elsewhere.  Two fragments cannot witness it -- one `BinOp`'s operands
+# come out in order -- which is why the fixture the defect arrived with could not.
+run_check "INVARIANT" rg -F -n '            key=lambda c: (c.lineno, c.col_offset))' scripts/check_declaration_kind_askers.py
+# ...and only the OUTERMOST one is a subject: an inner concatenation builds a part
+# of the same string, so reporting it too counts one SUBJECT twice.
+run_check "INVARIANT" rg -F -n '        if id(node) in nested:' scripts/check_declaration_kind_askers.py
+# AN ASSEMBLED PROBE TAKES ITS ASSIGNMENT'S NAME.  A probe bound to a name is
+# bound to it whether the right-hand side is one literal or three, and keying the
+# assembled one by its scope would collapse two assembled probes in one module into
+# ONE subject, where the counts add and a count moving between them is invisible --
+# the cardinality-for-a-set defect inside the widening that closes it.
+run_check "INVARIANT" rg -F -n '            found.append((name, "".join(c.value for c in fragments)))' scripts/check_declaration_kind_askers.py
+# THE REFUSAL IS A COUNT, not "did we find anything": one located probe used to
+# answer for every marker in the file.  The retired reading must not come back.
+run_check "INVARIANT" rg -F -n '    if markers_located < markers_in_text:' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'if not found and LEAN_PROBE_MARKER.search(text):' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'if not found and markers_in_text:' scripts/check_declaration_kind_askers.py
+# ...and it counts markers in LOCATED TEXT, not in the rows reported: one constant
+# bound to two names is reported twice, so a row-sum lets that surplus pay for a
+# marker nobody read.  The only shape on which the two readings differ.
+run_check "INVARIANT" rg -F -n '    markers_located = sum(len(LEAN_PROBE_MARKER.findall(by_id[i].value))' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'markers_located = sum(len(LEAN_PROBE_MARKER.findall(src)) for _, src in found)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_DOUBLE_BOUND_PROBE = ' scripts/check_declaration_kind_askers.py
+# TWO UNNAMED PROBES IN ONE SCOPE ARE REFUSED, not bucketed.  A key two subjects
+# share cannot see a count moving between them; an ordinal would churn when an
+# earlier probe is deleted, so the answer is the one this project gives wherever a
+# scanner cannot decide -- refuse, name the scope, state the remedy.
+run_check "INVARIANT" rg -F -n '    crowded = sorted(s for s, n in per_scope.items() if n > 1)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'share one subject key, where a count moving from one to the other is ' scripts/check_declaration_kind_askers.py
+# THE UNNAMED SIGNAL IS THE IMPORT MARKER ALONE.  A docstring is an `ast.Constant`
+# too and a constructor name is exactly what prose explaining a retired reading
+# carries, so the widened `_probe_signal` would file this file's own documentation
+# as a probe.  The two controls are the measurement, not the price.
+run_negative_check "INVARIANT" rg -F -n 'if not _probe_signal(constant.value):' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'if not any(_probe_signal(c.value) for c in fragments):' scripts/check_declaration_kind_askers.py
+# THE WITNESSES, one per admitted shape and one per refusal, each with the control
+# that keeps the shape from being decided by the wrong thing.
+run_check "INVARIANT" rg -F -n '_FIXTURE_INLINE_PROBE = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_INLINE_PROSE = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_INLINE_ASSEMBLED = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_ORDERED_FRAGMENTS = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_NESTED_CONCATENATION = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_TWO_INLINE_ONE_SCOPE = ' scripts/check_declaration_kind_askers.py
+# ...and the marker-count witness is an unlocatable marker BESIDE a located probe,
+# since a fixture whose only marker is the unlocatable one is refused by the
+# superseded reading too and would pass with the cardinality reverted.
+run_check "INVARIANT" rg -F -n '_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE = ' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n '_FIXTURE_BARE_MARKER' scripts/check_declaration_kind_askers.py
+# A REFUSAL INSIDE A CASE IS REPORTED IN THIS GATE'S VOICE.  An exception escaping
+# one case skips every case after it, so one mutation could mask another -- and a
+# traceback is not a verdict.  `violations` already renders a refusal as a problem
+# string; this is the same treatment for the direct reads.
+run_check "INVARIANT" rg -F -n 'def _capture_fixture(root: str) -> dict[str, dict[str, int]]:' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n '        got = capture(root)' scripts/check_declaration_kind_askers.py
 
 finalize_report
