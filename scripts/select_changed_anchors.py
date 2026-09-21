@@ -499,8 +499,10 @@ def select(
     return out
 
 
-def _git(*args: str) -> tuple[int, str]:
-    r = subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True)
+def _git(*args: str, cwd: pathlib.Path | None = None) -> tuple[int, str]:
+    r = subprocess.run(
+        ["git", *args], cwd=cwd or REPO_ROOT, capture_output=True, text=True
+    )
     return r.returncode, r.stdout
 
 
@@ -511,7 +513,7 @@ def _names(*args: str) -> list[str]:
     return [l for l in out.splitlines() if l.strip()]
 
 
-def _untracked() -> list[str]:
+def _untracked(repo: pathlib.Path | None = None) -> list[str]:
     """Files this cut ADDS and has not staged.
 
     `git diff` structurally cannot see them — neither against the index nor
@@ -522,7 +524,7 @@ def _untracked() -> list[str]:
 
     `--exclude-standard` honours `.gitignore`, so build output is not a change.
     """
-    code, out = _git("ls-files", "--others", "--exclude-standard")
+    code, out = _git("ls-files", "--others", "--exclude-standard", cwd=repo)
     if code != 0:
         return []
     return [l for l in out.splitlines() if l.strip()]
@@ -578,7 +580,11 @@ def changed_paths() -> tuple[list[str], str, str]:
     return sorted(set(_names("HEAD~1", "HEAD"))), "HEAD~1 vs HEAD", "HEAD~1"
 
 
-def added_anchor_lines(base: str, scripts_dir: pathlib.Path) -> set[tuple[str, int]]:
+def added_anchor_lines(
+    base: str,
+    scripts_dir: pathlib.Path,
+    repo: pathlib.Path | None = None,
+) -> set[tuple[str, int]]:
     """Anchor lines this cut adds or changes, by `(script, first line number)`.
 
     Read from `git diff -U0`, whose hunk header gives the new line numbers
@@ -588,13 +594,52 @@ def added_anchor_lines(base: str, scripts_dir: pathlib.Path) -> set[tuple[str, i
 
     The key is the *logical* line, so a multi-line anchor whose continuation the
     diff touched is attributed to the line its helper name is on.
+
+    **An UNTRACKED tier script is diffed against the empty file** (`v0.35.140`,
+    PR #897's review).  `git diff` structurally cannot see a file this cut adds
+    until it is staged — the fact `changed_paths` records twenty lines above, and
+    which this function asked `git diff` anyway, so every anchor in a brand-new
+    tier script got an empty diff, no `diff` provenance, and was **not swept**.
+    Silent by construction, and silent in the case that matters: an anchor over an
+    unchanged file gets no `path` or `dir` provenance either, which is the ordinary
+    shape for a new suite.  Measured before choosing — a *staged* new file IS
+    reported by `git diff -U0 <base>`, as a `new file mode` whose every line is an
+    addition, so the hole is untracked-only and the remedy is to produce that same
+    diff for the untracked case rather than to special-case the parse.
+    `--no-index` against `os.devnull` is how git produces it, so the hunk header
+    the loop below reads is git's own in both branches and the two cannot drift.
+
+    **Both branches fail closed.**  `--no-index` exits **1** for *the two files
+    differ*, which is the answer rather than a failure, so only a status above that
+    is an error; the tracked branch's nonzero used to `continue`, which is the same
+    fail-open one step over — a script whose diff git could not produce contributed
+    no anchors and the sweep reported a clean run.
     """
     out: set[tuple[str, int]] = set()
+    untracked = set(_untracked(repo))
+    root = repo or REPO_ROOT
     for p in tier_scripts(scripts_dir):
-        rel = str(p.relative_to(REPO_ROOT)) if p.is_relative_to(REPO_ROOT) else str(p)
-        code, diff = _git("diff", "-U0", base, "--", rel)
-        if code != 0:
-            continue
+        rel = str(p.relative_to(root)) if p.is_relative_to(root) else str(p)
+        if rel in untracked:
+            code, diff = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)
+            if code > 1:
+                raise UnknownChangeSet(
+                    f"FAIL: changed-file anchor sweep — `git diff --no-index` "
+                    f"could not diff the untracked tier suite {rel} against the "
+                    f"empty file (status {code}), so this gate cannot say which "
+                    f"of its anchors this cut adds.  It will not report a clean "
+                    f"sweep over a suite it could not read."
+                )
+        else:
+            code, diff = _git("diff", "-U0", base, "--", rel, cwd=repo)
+            if code != 0:
+                raise UnknownChangeSet(
+                    f"FAIL: changed-file anchor sweep — `git diff -U0 {base}` "
+                    f"failed on the tier suite {rel} (status {code}), so this "
+                    f"gate cannot say which of its anchors this cut adds.  It "
+                    f"will not report a clean sweep over a suite it could not "
+                    f"read."
+                )
         owner, logical = physical_line_owners(p.read_text(encoding="utf-8"))
         lineno = 0
         for line in diff.splitlines():
@@ -750,6 +795,28 @@ _INV = [
 def _fail(msg: str) -> int:
     print(f"FAIL: --self-test — {msg}", file=sys.stderr)
     return 1
+
+
+#: A numbered case marker in `self_test`'s own source, e.g. `# 15b. …`.
+_CASE_MARKER = re.compile(r"^[ \t]*# (\d+[a-z]?)\. ", re.MULTILINE)
+
+
+def _case_count() -> int:
+    """How many cases `self_test` actually contains, read from its own source.
+
+    The figure used to be the literal `22` and was **already wrong by two** when
+    `v0.35.140` looked: the cases are numbered from zero, so 0..22 is twenty-three,
+    and a `15b` had joined them.  A hand-kept number beside an enumeration drifts
+    on contact and reads like a measurement — the shape this project retires
+    everywhere else — so it is derived, from the markers this function itself
+    defines.  `inspect.getsource` is the function asking for its own text, not a
+    scanner over an arbitrary file, and it **raises** rather than guessing when the
+    source is unavailable, because a count that silently answers zero would be the
+    fail-open direction for the line that reports coverage.
+    """
+    import inspect
+
+    return len(_CASE_MARKER.findall(inspect.getsource(self_test)))
 
 
 def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately flat
@@ -970,6 +1037,55 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
                 "output would enter the change set"
             )
 
+        # 15b. ...AND `added_anchor_lines` HAD TO LEARN THE SAME THING
+        #      (`v0.35.140`, PR #897's review).  Case 15 fixed the CHANGE SET and
+        #      this function, twenty lines below it, went on asking `git diff` —
+        #      so every anchor in a brand-new tier suite got an empty diff, no
+        #      `diff` provenance, and was NOT SWEPT.  Silent by construction, and
+        #      silent in the case that matters: an anchor over an unchanged file
+        #      gets no `path` or `dir` provenance either.  This case is
+        #      FUNCTIONAL — it drives `added_anchor_lines` rather than asserting
+        #      about git — and its mutation is the pre-fix reading.
+        sd = root / "scripts"
+        sd.mkdir()
+        (sd / "test_tier0_tracked.sh").write_text(
+            'run_check "A" rg -F -n \'x\' a.lean\n'
+        )
+        g("add", "-A")
+        g("commit", "-qm", "two")
+        (sd / "test_tier9_added.sh").write_text(
+            'run_check "B" rg -F -n \'y\' b.lean\n'
+        )
+        added = added_anchor_lines("HEAD", sd, repo=root)
+        if ("test_tier9_added.sh", 1) not in added:
+            return _fail(
+                f"an UNTRACKED tier suite contributed {sorted(added)}; `git diff` "
+                f"cannot see a file this cut adds, so every anchor in a new suite "
+                f"would get no `diff` provenance and go unswept"
+            )
+        # ...and the CONTROL, so the untracked branch is not "return everything":
+        # a tracked, unmodified suite still contributes nothing.
+        if ("test_tier0_tracked.sh", 1) in added:
+            return _fail(
+                "a tracked, UNMODIFIED tier suite contributed an added anchor, so "
+                "the untracked branch is reporting every line rather than the "
+                "lines this cut adds"
+            )
+        # ...and a base git cannot read is a REFUSAL, not an empty contribution:
+        # the tracked branch used to `continue`, which is the same fail-open one
+        # step over — a suite whose diff git could not produce contributed no
+        # anchors and the sweep reported a clean run.
+        try:
+            added_anchor_lines("no-such-ref-for-this-test", sd, repo=root)
+        except UnknownChangeSet:
+            pass
+        else:
+            return _fail(
+                "`added_anchor_lines` answered for a base `git diff` could not "
+                "read; a suite it cannot diff must fail the gate rather than "
+                "contribute nothing"
+            )
+
     # 16. A `$` INSIDE SINGLE QUOTES IS A DOLLAR SIGN, NOT A VARIABLE.  The four
     #     rows 50-53 are the four spellings the raw-text variable scan falsely
     #     deferred on the real tree, and all four were anchors pinning THIS GATE's
@@ -1051,7 +1167,8 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         )
 
     print(
-        "SELF-TEST PASS: changed-file anchor selection — 22 cases: an exact path, "
+        f"SELF-TEST PASS: changed-file anchor selection — {_case_count()} cases: "
+        "an exact path, "
         "an ancestor directory with the token delimiter and the lookbehind both "
         "doing work, the honest empty zero, a deferred tool invocation, a "
         "deferred-and-named undefined variable, `SCRIPT_DIR`/`REPO_ROOT` swept, an "
@@ -1061,8 +1178,10 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         "contributing their OLD path, an untracked file in the change set while an "
         "ignored one is not, a literal `$` in four quotings swept while a real one "
         "is deferred by name from either shell, an expanding `$(…)` deferred by "
-        "reason, an unlexable command failing distinguishably, and the `'…'\"'\"'…'` "
-        "idiom lexed as one word whose reassembled value keeps its quote."
+        "reason, an unlexable command failing distinguishably, the `'…'\"'\"'…'` "
+        "idiom lexed as one word whose reassembled value keeps its quote, and an "
+        "untracked tier suite's anchors reported as added while a tracked "
+        "unmodified one's are not and an unreadable base is refused."
     )
     return 0
 

@@ -1,3 +1,66 @@
+## v0.35.140 — the change set knew `git diff` cannot see an untracked file; the anchor selection did not
+
+PR #897's review, against `v0.35.131`: *"`added_anchor_lines` runs `git diff -U0
+<base> -- <rel>` per tier script. For an untracked tier script that returns
+nothing, so none of its anchors get `diff` provenance."*
+
+Exact, and it is **this file's own sweep rule failing at the shortest possible
+distance**.  `changed_paths` records the fact twenty lines above, in terms: the
+untracked files are unioned into the change set *"because `git diff` cannot see a
+file this cut adds until it is staged"*.  `added_anchor_lines` then asked `git
+diff` anyway.
+
+**Measured before choosing, on the real tree.**  An untracked
+`scripts/test_tier9_probe.sh` carrying one anchor: `changed_paths` reports it,
+`anchor_invocations` discovers its anchor, `added_anchor_lines` returns `[]`, and
+`select` gives it **no provenance at all** — not swept.  And it is silent in
+exactly the case that matters: an anchor over an *unchanged* file gets no `path`
+provenance (the command does not name the changed file) and no `dir` provenance
+either (`_dir_token` matches a directory as a token, not as a prefix), which is
+the ordinary shape for a new suite.  A *staged* new file **is** reported by `git
+diff -U0 <base>`, as a `new file mode` whose every line is an addition, so the
+hole is untracked-only.
+
+**The remedy produces that same diff rather than special-casing the parse.**
+`git diff --no-index -U0 /dev/null <rel>` is how git writes it, so the hunk header
+the loop reads is git's own in both branches and the two cannot drift.  Its exit
+status **1** means *the two files differ* — the answer, not a failure — so only a
+status above it is an error.
+
+**Both branches fail closed, which is the second half of the finding.**  The
+tracked branch's `if code != 0: continue` is the same fail-open one step over: a
+suite whose diff git could not produce contributed no anchors and the sweep
+reported a clean run.  Both raise `UnknownChangeSet` now, because *"the gate could
+not read it"* and *"the gate checked it"* must never produce the same PASS line.
+
+**The witness is functional, not an assertion about git.**  Case 15 (which taught
+`changed_paths` this fact) asserts git's *behaviour* in a temp repo; case 15b
+drives `added_anchor_lines` itself there — which needed `_git` and `_untracked` to
+take an explicit repository — and carries a **control**, a tracked unmodified
+suite contributing nothing, so the new branch is not "return everything".  Three
+mutations, three distinct failures: the pre-fix reading fails the untracked case,
+`if True` fails the control, and restoring the `continue` fails the refusal case.
+
+**And the self-test's own case count was a hand-kept figure that had already
+drifted.**  The line read `22 cases` while the numbered markers ran `0`..`22` plus
+a `15b` — twenty-four.  It is `_case_count()` now, read from the markers
+`self_test` itself defines, via `inspect.getsource`: the function asking for its
+own text rather than a scanner over an arbitrary file, and **raising** rather than
+answering zero when the source is unavailable, since a silent zero is the
+fail-open direction for the line that reports coverage.  Its Tier 3 pin is on the
+**read** as well as the definition, because a revert to a *different* literal
+passes a definition-only anchor while the derivation is gone — caught by this
+cut's own mutation set.
+
+**One mechanical note about the anchors, worth keeping.**  The four new
+declaration-bounded anchors are bounded from the **docstring**, not from the `def`
+line: the signature is multi-line, so its closing `) -> set[tuple[str, int]]:`
+sits at column 0 and a bounded gap cannot cross it — the bound working, not a
+defect.  And the quote is written `\x22`, because a `"""` inside a double-quoted
+`rg` argument inside single shell quotes ends the argument early and the anchor
+then silently decides nothing, which is the shape `check_anchor_consistency.py`
+exists to refuse.
+
 ## v0.35.139 — the manifest/output scenario relation is asked in both directions, and an id is declared once
 
 Two findings from PR #897's review, one artefact, and the first of them was

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.139.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.140.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3210,6 +3210,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   bounding a negative is not, so each negative bounded in that sweep was
   mutation-tested in both directions — silent on the clean tree, firing on a
   mutation that keeps the token and moves it into the target declaration.
+
+  **Two mechanical facts about writing one, both earned at `v0.35.140`.**  The
+  gap stops at the *first* column-0 line, so it cannot cross a **multi-line
+  signature's own closing line** — a Python `) -> set[tuple[str, int]]:` or the
+  equivalent sits at column 0 and is not a continuation.  That is the bound
+  working rather than a defect, and the answer is to anchor from a line that is
+  *inside* the declaration and unique to it (its docstring's first line), never to
+  widen the gap.  And a `\"` inside a double-quoted `rg` argument inside single
+  shell quotes **ends the argument early**, so an anchor over a Python or Lean
+  docstring marker writes the quote `\x22`: the shell-quoting failure does not
+  error, it silently decides nothing, which is the one outcome
+  `check_anchor_consistency.py` exists to refuse.
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded

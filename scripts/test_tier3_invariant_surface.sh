@@ -16604,12 +16604,59 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem cancelIpcBlockingMi
 # whose only change is a new file falls through to `HEAD~1` and sweeps the
 # PREVIOUS cut while reporting a clean run.  This gate reported that on its own
 # first run, over the two files that add it.
-run_check "INVARIANT" bash -lc 'rg -n "^def _untracked\(\) -> list\[str\]:" scripts/select_changed_anchors.py'
+run_check "INVARIANT" bash -lc 'rg -n "^def _untracked\(repo: pathlib\.Path \| None = None\) -> list\[str\]:" scripts/select_changed_anchors.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def changed_paths[^\n]*(\n([ \t][^\n]*)?)*    if staged or worktree or untracked:" scripts/select_changed_anchors.py'
 # ...pinned at the `_git` CALL: the flag also appears in the docstring and twice
 # in the self-test, so a bare flag search is satisfied by the prose and by the
 # witness after the derivation stops making it.  Caught by this cut's mutations.
-run_check "INVARIANT" rg -F -n 'code, out = _git("ls-files", "--others", "--exclude-standard")' scripts/select_changed_anchors.py
+# (`v0.35.140` repoints both: `_untracked` takes an explicit repository so
+# `added_anchor_lines` can be driven in a temp one, and the `_git` call carries
+# that `cwd`.  The RELATION is unchanged and is what is pinned -- the untracked
+# set is `ls-files --others --exclude-standard`, read at a call rather than in
+# prose.)
+run_check "INVARIANT" rg -F -n 'code, out = _git("ls-files", "--others", "--exclude-standard", cwd=repo)' scripts/select_changed_anchors.py
+# ...AND THE SAME FACT REACHES `added_anchor_lines` (`v0.35.140`, PR #897's
+# review).  `changed_paths` knew `git diff` cannot see an untracked file and this
+# function, twenty lines below, asked `git diff` anyway -- so every anchor in a
+# brand-new tier suite got an empty diff, no `diff` provenance and was NOT SWEPT,
+# silently, and in the case that matters: an anchor over an unchanged file gets no
+# `path` or `dir` provenance either.  The untracked branch diffs against the empty
+# file so git produces the hunk header BOTH branches parse, and the two cannot
+# drift.
+# (Bounded from the DOCSTRING rather than the `def` line: the signature is
+# multi-line, so its closing `) -> set[tuple[str, int]]:` sits at column 0 and
+# a bounded gap cannot cross it -- which is the bound working, not a defect.
+# The docstring's first line belongs to this declaration and to no other, so
+# the gap still cannot leave it.  `\\x22` rather than a literal `"` because the
+# pattern is a double-quoted argument inside single shell quotes, where an
+# escaped quote ends the argument early and the anchor silently decides
+# nothing -- which is exactly the shape `check_anchor_consistency.py` refuses.)
+run_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*    untracked = set\(_untracked\(repo\)\)" scripts/select_changed_anchors.py'
+run_check "INVARIANT" rg -F -n 'code, diff = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)' scripts/select_changed_anchors.py
+# ...with `--no-index`'s exit 1 read as THE ANSWER (the two files differ), so only
+# a status above it is an error.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*            if code > 1:" scripts/select_changed_anchors.py'
+# ...and BOTH branches fail closed: the tracked branch used to `continue`, which is
+# the same fail-open one step over -- a suite whose diff git could not produce
+# contributed no anchors and the sweep reported a clean run.
+run_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*            if code != 0:\n *raise UnknownChangeSet\(" scripts/select_changed_anchors.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*        if code != 0:\n *continue" scripts/select_changed_anchors.py'
+# ...with the FUNCTIONAL witness, its control (a tracked unmodified suite
+# contributes nothing, so the branch is not "return everything") and the refusal.
+run_check "INVARIANT" rg -F -n '        added = added_anchor_lines("HEAD", sd, repo=root)' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '        if ("test_tier9_added.sh", 1) not in added:' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '        if ("test_tier0_tracked.sh", 1) in added:' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '            added_anchor_lines("no-such-ref-for-this-test", sd, repo=root)' scripts/select_changed_anchors.py
+# ...and the self-test's case count is DERIVED from its own markers.  The literal
+# was `22` and was already wrong by two -- the cases are numbered from zero, so
+# 0..22 is twenty-three, and a `15b` had joined them.  A hand-kept figure beside an
+# enumeration drifts on contact and reads like a measurement.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def _case_count\(\) -> int:[^\n]*(\n([ \t][^\n]*)?)*    return len\(_CASE_MARKER.findall\(inspect.getsource\(self_test\)\)\)" scripts/select_changed_anchors.py'
+run_negative_check "INVARIANT" rg -F -n 'anchor selection — 22 cases' scripts/select_changed_anchors.py
+# ...pinned at the READ as well as the definition: a set can be defined here and
+# consulted nowhere, and a revert to a DIFFERENT literal passes both the negative
+# above and a definition-only anchor while the derivation is gone.
+run_check "INVARIANT" rg -F -n 'anchor selection — {_case_count()} cases: ' scripts/select_changed_anchors.py
 # ...and the CI base revision is the plan gate's own variable, because both gates
 # ask what this cut changes relative to the revision it merges into.  A second
 # variable would be one question answered in two places.
