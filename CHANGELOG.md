@@ -1,3 +1,77 @@
+## v0.35.144 — A fixture is opened by a program, and a probe's Lean source is one text (PR #897 review)
+
+Two more scanners credited a claim on the strength of text they had not read as
+the thing it stands for, and both fail **open**.
+
+**A fixture is opened by a program.**  `consumer_code_view` read a suffix the
+shared view table has no stripper for as RAW text — right for a `.sh` or `.py`
+gate, which is source, and wrong for prose, where the *whole file is the
+comment*.  Measured: `tests/fixtures/README.md` read as the consumer of
+`main_trace_smoke.expected` **and** `smp_4core_scheduler.expected`, because the
+prose before a filename is an operand as far as the mention test can tell.  So a
+new golden fixture could be listed, hashed and assigned only to documentation
+while `check-fixture-index` reported a validated consumer — the exact claim
+`v0.35.116` added the column check to decide, one file kind over.
+
+The suffix is **classified** now and the default branch **refuses**:
+`code_view_for` answers for `.lean` and `.rs`, `CONSUMER_SOURCE_SUFFIXES` pins
+the two source languages it has no view for, and anything else raises.  The pin
+is reconciled in both directions — the forward half is the refusal itself, the
+backward half `consumer_suffix_classification_violations`, because a member no
+live row names is a stale classification and a stale classification reads
+exactly like coverage.  **Free on the live tree**: all eighteen named consumer
+paths are `.sh` (2), `.py` (4), `.lean` (11) and `.rs` (1), and the gate reports
+30 files and 15 claims before and after.
+
+**A probe's Lean source is one text this scanner has read.**
+`HEADER + build_match()` reconstructs to the header's text plus one hole: the
+marker arrives through a *name*, so no string literal of the expression carries
+it and `v0.35.129`'s `literal_marker` is false; the hole borders no partial
+constructor spelling, so `_constructor_completing_holes` is false; and `HEADER`
+is a located subject of its own, so the fail-closed marker count is satisfied.
+Reproduced: `embedded_lean` returns `HEADER` alone with **zero** constructors
+while the text handed to Lean decides `.opaqueInfo` — invisible in both
+directions at once.  That is `v0.35.129`'s own admission test (*the marker is
+asked of the assembled text, not of the expression's literal parts*) applied to
+the substitution branch and **not** to its sibling: a fix applied at one site and
+not the other, for the fourth time in this family.
+
+Refusing every marker-bearing hole was measured first and would refuse the tree:
+**sixteen** live holed assemblies carry a marker, all of them `.replace` chains
+on a named template, and every one of this tree's four real probes is built by
+one.  So the remedy is the canonical-spelling exit rather than another partial
+analysis — `_substitution_into_determined_text` requires the probe's Lean source
+to be ONE determined text with data substituted into it, and a concatenation, an
+interpolation, a `%`, a `.format` or a `.join` onto probe text is refused with a
+new `concat` reason.  The **needle** is deliberately not re-examined there: a
+computed sentinel is already refused upstream as an unmodelled transform, and
+case (25b-ii) is the witness that it is.
+
+**And the TLBI gate's own fixture builder was made to conform rather than the
+check weakened to admit it.**  Its two self-test loops spelled a fixture's Lean
+source `BASE_LEAN + block`; they substitute into `BASE_LEAN_BLOCK_TEMPLATE` now.
+The askers inventory is byte-identical across the change (69 matches, 32
+subjects), so the restructure altered nothing the gate records.
+
+**Ten mutations, all caught**, including one this run found unwitnessed: through
+`violations` the base-determinedness test is invisible, because an undetermined
+base is yielded as an assembly of its own and the file is refused either way —
+so the contract is also read **directly**, over a template that is itself the
+canonical spelling.
+
+### Changed
+- `scripts/scenario_catalog.py` — `UnclassifiedConsumerSuffix`,
+  `CONSUMER_SOURCE_SUFFIXES`, the classified `consumer_code_view`, the per-row
+  report and `consumer_suffix_classification_violations`.
+- `scripts/check_declaration_kind_askers.py` —
+  `_substitution_into_determined_text`, the `concat` refusal and its reason,
+  four fixtures, cases (25b), (25b-ii), (25b-iii) and (25c).
+- `scripts/check_tlbi_broadcast_discipline.py` — the two fixture loops
+  substitute into a named template.
+- `scripts/tests/test_scenario_catalog.py` — four cases (85 tests).
+- `scripts/test_tier3_invariant_surface.sh` — seventeen anchors, fifteen
+  positive and two negative, each mutation-tested in both directions.
+
 ## v0.35.143 — Two scanners located the wrong unit of the text they read: a deletion-only hunk and a filename boundary (PR #897 review)
 
 Both findings are this project's oldest rule — *a presence check is not a

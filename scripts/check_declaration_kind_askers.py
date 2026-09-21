@@ -281,6 +281,11 @@ _REFUSAL_REASONS = {
     "builder": "a probe-signalling literal is handed to a plain-name call whose "
                "RESULT the program uses, so the call builds the probe and the "
                "located literal is not the text it runs",
+    "concat": "the probe's Lean source is not ONE text this scanner has read: "
+              "unread text is concatenated, interpolated or joined onto determined "
+              "probe text rather than substituted into it, so the fragment may "
+              "spell a whole `ConstantInfo` constructor and no located text "
+              "carries it",
 }
 
 
@@ -640,6 +645,63 @@ def _constructor_completing_holes(holed: str) -> list[int]:
     return out
 
 
+def _substitution_into_determined_text(node: ast.AST,
+                                       consts: dict[str, str]) -> bool:
+    """Is `node` a `.replace` chain substituting into text this scanner has read?
+
+    The CANONICAL spelling of a probe that carries data: one determined template
+    -- a string literal, or a module constant bound to one -- with sentinels
+    substituted into it.  All sixteen marker-bearing holed assemblies on the
+    tracked tree are that shape, and every one of this tree's four real probes is
+    built by one.
+
+    It is the shape a probe MUST take (PR #897's review, `v0.35.144`), because
+    the alternative is unbounded.  `HEADER + build_match()` reconstructs to the
+    header's text plus one hole: the marker arrives through the name, so no
+    string literal of the expression carries it and `_unreadable_assemblies`'
+    `literal_marker` is false; the hole borders no partial constructor spelling,
+    so `_constructor_completing_holes` is false; and `HEADER` is a located
+    subject of its own, so the fail-closed marker count is satisfied.  The
+    assembly is then invisible in BOTH directions at once while the text handed
+    to Lean decides `.opaqueInfo` -- which is `v0.35.129`'s own finding at the
+    one place its admission test was not applied.  That test is *the marker is
+    asked of the assembled text, not of the expression's literal parts*, and it
+    was applied to the `named` substitution branch and not to its sibling here:
+    **a fix applied at one site and not its sibling**, for the fourth time in
+    this family.
+
+    Refusing every marker-bearing hole would refuse those sixteen, so the
+    question is not *is there a hole* but *is the probe's Lean source ONE text
+    this scanner has read*.  A concatenation, an interpolation, a `%` format, a
+    `.format` or a `.join` says no -- the source is in two places and one of them
+    is unread.  A substitution says yes: the needle is a sentinel inside text the
+    scanner read, so the surrounding Lean is complete and the only question left
+    is the one `_constructor_completing_holes` asks.
+
+    **The residue is stated rather than assumed away**: a substituted VALUE can
+    itself spell a whole constructor (`PROBE.replace("@BODY@", build_match())`),
+    which no scanner that cannot read the value can decide.  What bounds it is
+    that the probe's own text is read, so a constructor arriving that way is a
+    *floor* violation rather than a silent zero, and the reconciliation this gate
+    performs is keyed on counts -- see this module's `scope` line.
+    """
+    if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "replace" and not node.keywords
+            and len(node.args) == 2):
+        return False
+    # The NEEDLE is not re-examined here, and that is a division of labour rather
+    # than an omission: `_reconstruct_holed` answers `_unreadable_transform(base)`
+    # for a `.replace` whose needle it cannot read, which is `None` for determined
+    # probe text -- so a computed sentinel is already refused as `form` before this
+    # predicate is consulted, and asking again would be a second answer to a settled
+    # question.  Case (25b)'s `computed_needle_gate` is the witness that it IS
+    # settled there.
+    base_text = _reconstruct_holed(node.func.value, consts)
+    if base_text is not None and _HOLE not in base_text:
+        return True
+    return _substitution_into_determined_text(node.func.value, consts)
+
+
 def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
     """String assemblies this scanner must refuse rather than read partially.
 
@@ -698,9 +760,11 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
             out.append((node, "unreadable" if literal_marker else "form"))
         elif literal_marker:
             out.append((node, "unreadable"))
-        elif (LEAN_PROBE_MARKER.search(holed)
-                and _constructor_completing_holes(holed)):
-            out.append((node, "splice"))
+        elif LEAN_PROBE_MARKER.search(holed):
+            if _constructor_completing_holes(holed):
+                out.append((node, "splice"))
+            elif not _substitution_into_determined_text(node, consts):
+                out.append((node, "concat"))
     out.extend((call, "builder") for call in _probe_building_calls(tree))
     return out
 
@@ -1174,6 +1238,32 @@ ASKER_REASONS: dict[str, str] = {
         "probe bound to two names, beside a marker nothing locates.  Its `quotInfo` "
         "is the located probe's, and the two names are what produce the surplus the "
         "case is about, so a fixture that dropped either would stop discriminating.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CONCATENATED_FRAGMENT":
+        "THIS GATE'S OWN FIXTURE for the reported defect (`v0.35.144`, PR #897's "
+        "review): a probe whose Lean source is a named header CONCATENATED with an "
+        "opaque call's result.  The marker arrives through the name, so no literal "
+        "of the expression carries it; the hole borders no partial constructor, so "
+        "the splice test is false; and the header is a located subject of its own, "
+        "so the marker count is satisfied.  Its `opaqueInfo` is the constructor the "
+        "unread fragment decides -- invisible in BOTH directions before the fix.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_COMPUTED_NEEDLE":
+        "THIS GATE'S OWN FIXTURE for the NEEDLE half (`v0.35.144`): a substitution "
+        "whose sentinel is itself computed, so the scanner cannot say where in the "
+        "template the hole lands.  Its own case, because the base half below is "
+        "rejected by a different conjunct and a fixture exercising one leaves the "
+        "other unwitnessed.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNDETERMINED_BASE":
+        "THIS GATE'S OWN FIXTURE for the BASE half (`v0.35.144`): a substitution "
+        "into text that is itself a concatenation with a hole, so the template is "
+        "not text this scanner has read.  Without it, \"any `.replace` is "
+        "canonical\" passes every other case.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CANONICAL_SUBSTITUTION":
+        "THIS GATE'S OWN FIXTURE for the CONTROL the three refusals need "
+        "(`v0.35.144`): a determined named template with a DATA value substituted "
+        "into it, which is what all four of this tree's real probes and all sixteen "
+        "of its live marker-bearing holed assemblies are.  Its `opaqueInfo` is read "
+        "rather than refused, so a widening that refuses every hole fails here -- "
+        "which is the only thing keeping the refusal from refusing the tree.",
     "scripts/check_declaration_kind_askers.py::_FIXTURE_NESTED_CONCATENATION":
         "THIS GATE'S OWN FIXTURE for the maximal-group rule: a probe whose "
         "concatenation nests, where reporting the inner expression as well would "
@@ -1304,6 +1394,18 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_NESTED_CONCATENATION": {
         "recInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CONCATENATED_FRAGMENT": {
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_COMPUTED_NEEDLE": {
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNDETERMINED_BASE": {
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CANONICAL_SUBSTITUTION": {
+        "opaqueInfo": 1,
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_DOUBLE_BOUND_PROBE": {
         "quotInfo": 1,
@@ -2163,6 +2265,89 @@ private def doubled (ci : ConstantInfo) : Bool :=
 """
 '''
 
+#: The one marker-bearing text case (25b-iii) reads the contract over, with the
+#: expression under test substituted in.  Written this way ON PURPOSE: it is the
+#: canonical spelling the contract requires, so the case demonstrates the rule it
+#: checks, and the four expressions carry no marker and so need no names.
+_CONTRACT_SHAPE_TEMPLATE = '''\
+T = """
+import SeLe4n
+"""
+P = @EXPRESSION@
+'''
+
+_FIXTURE_CONCATENATED_FRAGMENT = '''\
+HEADER = """
+import SeLe4n
+
+private def asked (ci : ConstantInfo) : Bool :=
+  match ci with
+"""
+
+
+def build_match() -> str:
+    return "  | .opaqueInfo _ => true\\n  | _ => false\\n"
+
+
+PROBE = HEADER + build_match()
+'''
+
+_FIXTURE_COMPUTED_NEEDLE = '''\
+TEMPLATE = """
+import SeLe4n
+
+private def asked (ci : ConstantInfo) : Bool :=
+  match ci with
+@SLOT@
+"""
+
+
+def slot_name() -> str:
+    return "@SLOT@"
+
+
+def body() -> str:
+    return "  | .opaqueInfo _ => true\\n  | _ => false\\n"
+
+
+PROBE = TEMPLATE.replace(slot_name(), body())
+'''
+
+_FIXTURE_UNDETERMINED_BASE = '''\
+HEADER = """
+import SeLe4n
+
+private def asked (ci : ConstantInfo) : Bool :=
+  match ci with
+"""
+
+
+def tail() -> str:
+    return "@SLOT@\\n"
+
+
+PROBE = (HEADER + tail()).replace("@SLOT@", "  | .opaqueInfo _ => true\\n")
+'''
+
+_FIXTURE_CANONICAL_SUBSTITUTION = '''\
+TEMPLATE = """
+import SeLe4n
+
+private def asked (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+-- @NOTE@
+"""
+
+
+def note() -> str:
+    return "built by a data substitution"
+
+
+PROBE = TEMPLATE.replace("@NOTE@", note())
+'''
+
 def _git(repo: str, *args: str) -> None:
     subprocess.run(["git", *args], cwd=repo, check=True,
                    capture_output=True, text=True)
@@ -2729,6 +2914,104 @@ def _self_test() -> int:
                 print("      A hole written against a constructor spelling is the")
                 print("      same defect however the hole is spelled.")
                 return 1
+
+    # (25b) ...and a fragment the scanner cannot read need not border a partial
+    #       constructor to decide the question: it can spell a WHOLE one.
+    #       `HEADER + build_match()` reconstructs to the header's text plus one
+    #       hole -- the marker arrives through a name, so no literal of the
+    #       expression carries it and (24)'s `literal_marker` is false; the hole
+    #       borders no partial spelling, so (25)'s test is false; and `HEADER` is
+    #       a located subject of its own, so the fail-closed marker count is
+    #       satisfied.  Invisible in BOTH directions while the text handed to
+    #       Lean decides `.opaqueInfo` (PR #897's review, `v0.35.144`).  The
+    #       needle and the base each get their own case, because a fixture that
+    #       exercises one leaves the other unwitnessed -- and the CONTROL below
+    #       is what keeps the refusal about *the probe's source being in two
+    #       places* rather than about there being a hole at all, which would
+    #       refuse all sixteen marker-bearing substitutions on the live tree.
+    for label, body, why in (
+            ("concat_fragment_gate.py", _FIXTURE_CONCATENATED_FRAGMENT,
+             "unread text is concatenated onto determined probe text"),
+            ("undetermined_base_gate.py", _FIXTURE_UNDETERMINED_BASE,
+             "the template substituted INTO is not text this scanner has read")):
+        with tempfile.TemporaryDirectory() as root:
+            sib = "scripts/" + label
+            _fixture(root, {**base, sib: body})
+            problems = violations(root, base_pin, base_reasons)
+            if not any(sib in p and "not ONE text" in p for p in problems):
+                print(f"FAIL: --self-test — {sib} was not refused: {problems}.")
+                print(f"      {why}, so the probe's Lean source is in two places")
+                print("      and one of them is unread.")
+                return 1
+
+    # (25b-ii) ...and a COMPUTED sentinel is refused one layer up, by the
+    #          reconstruction rather than by the substitution contract: a
+    #          `.replace` whose needle this scanner cannot read is an unmodelled
+    #          transform applied to determined probe text, which no hole
+    #          describes.  Asserting the REASON is what pins the division of
+    #          labour -- without it, a second needle test could be added to the
+    #          contract and nothing would say the question already had an owner.
+    with tempfile.TemporaryDirectory() as root:
+        sib = "scripts/computed_needle_gate.py"
+        _fixture(root, {**base, sib: _FIXTURE_COMPUTED_NEEDLE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(sib in p and "does not model" in p for p in problems):
+            print(f"FAIL: --self-test — {sib} was not refused as an unmodelled "
+                  f"transform: {problems}.")
+            print("      A computed sentinel leaves the scanner unable to say "
+                  "where in the")
+            print("      template the hole lands, which is the reconstruction's "
+                  "question.")
+            return 1
+
+    # (25b-iii) ...and the CONTRACT itself, asked directly.  Through
+    #           `violations` the base test is invisible: a `.replace` onto an
+    #           undetermined base has that base yielded as an assembly of its
+    #           own, so the file is refused either way and no fixture separates
+    #           "the outer substitution is canonical" from "it is not".  A
+    #           condition no case can reach is indistinguishable from a wrong
+    #           one, so this reads the predicate.
+    for expr, expected, what in (
+            ('T.replace("@X@", f())', True,
+             "a determined named template with a computed value"),
+            ('T.replace("@X@", "a").replace("@Y@", f())', True,
+             "a CHAIN of substitutions onto one determined template"),
+            ('(T + g()).replace("@X@", "v")', False,
+             "a base that is itself a concatenation with a hole"),
+            ('T + g()', False,
+             "a concatenation, which substitutes into nothing")):
+        tree = ast.parse(
+            _CONTRACT_SHAPE_TEMPLATE.replace("@EXPRESSION@", expr))
+        consts = _module_string_bindings(tree)
+        got = _substitution_into_determined_text(tree.body[-1].value, consts)
+        if got is not expected:
+            print(f"FAIL: --self-test — the substitution contract answered {got} "
+                  f"for {what}; a probe's Lean source must be ONE text this "
+                  f"scanner has read, with data substituted into it.")
+            return 1
+
+    # (25c) The CONTROL: the canonical spelling -- a determined named template
+    #       with a DATA value substituted into it -- is read, not refused.  It is
+    #       what all four of this tree's real probes are, and what its sixteen
+    #       live marker-bearing holed assemblies are, so a refusal that fires
+    #       here refuses the tree.  It must also RECORD the constructor the
+    #       template spells, since reading it and recording nothing would leave
+    #       (25b)'s hole open in its easiest form.
+    with tempfile.TemporaryDirectory() as root:
+        can = "scripts/canonical_substitution_gate.py"
+        _fixture(root, {**base, can: _FIXTURE_CANONICAL_SUBSTITUTION})
+        found = _capture_fixture(root)
+        # The located SUBJECT is the named template, not the assignment that
+        # substitutes into it -- the same key `_FIXTURE_SENTINEL_TEMPLATE` is
+        # reported under, and the reason the constructor must be recorded THERE.
+        key = f"{can}::TEMPLATE"
+        if found.get(key) != {"opaqueInfo": 1}:
+            print("FAIL: --self-test — the canonical spelling (a determined "
+                  f"template with a data substitution) recorded {found.get(key)} "
+                  "rather than the constructor it spells.")
+            print("      Every real probe in this tree is that shape, so a "
+                  "refusal or a zero here is a gate that refuses the tree.")
+            return 1
 
     # (26) The DETERMINED half, and the *reconstructed* rather than refused outcome:
     #      the substituted value is a literal, so the probe the program builds is a

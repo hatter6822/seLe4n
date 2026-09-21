@@ -583,6 +583,27 @@ def fixture_table_filenames(readme: Path) -> tuple[set[str], list[str]]:
     return declared, []
 
 
+class UnclassifiedConsumerSuffix(Exception):
+    """A `Used by` cell names a path whose suffix is neither source nor viewed.
+
+    Raised rather than answered, because the two possible silent answers are both
+    wrong: reading the file raw makes prose satisfy a code claim (which is how a
+    README became its own fixtures' consumer), and skipping it credits the claim
+    to nothing at all.
+    """
+
+
+#: Suffixes that are SOURCE the tree has no code view for.  Not a taste
+#: judgement: a fixture is opened by a program, and these are the two languages
+#: this repository writes gates in that `lean_code_view._STRIPPERS` has no
+#: stripper for.  Kept as a PIN rather than derived, because deriving it would
+#: mean adding a shell and a Python stripper to the shared overlay -- which every
+#: Tier 3 anchor over a `.sh` or `.py` comment reads, so widening it there is a
+#: cut of its own.  Reconciled in both directions below, so a stale member and an
+#: unclassified suffix each fail rather than reading like coverage.
+CONSUMER_SOURCE_SUFFIXES = frozenset({".sh", ".py"})
+
+
 def consumer_code_view(consumer: Path) -> str:
     """`consumer`'s source as the tree's code view for its language reads it.
 
@@ -601,10 +622,29 @@ def consumer_code_view(consumer: Path) -> str:
     forbids, and the over-approximation costs only precision on the diagnostic --
     the property (the row names a path whose text mentions the fixture) is still
     checked, and a typo or a fabricated consumer fails it either way.
+
+    **That argument holds for SOURCE and fails outright for prose** (PR #897's
+    review, `v0.35.144`).  A `.md` has no view either, so the whole document was
+    "code": `tests/fixtures/README.md` read as the consumer of
+    `main_trace_smoke.expected` AND `smp_4core_scheduler.expected`, because the
+    prose before a filename is an operand as far as the mention test can tell.  A
+    new golden fixture could therefore be listed, hashed and assigned **only to
+    documentation** while `check-fixture-index` reported a validated consumer --
+    the exact claim this check was added at `v0.35.116` to decide, one file kind
+    over.  So the suffix is CLASSIFIED and the default branch REFUSES: a file the
+    tree has no source view for and does not name as source cannot open a
+    fixture, and a suffix in neither set is a gate defect rather than a silent
+    acceptance.  `CONSUMER_SOURCE_SUFFIXES` is the pin for what `code_view_for`
+    cannot answer, reconciled in both directions by
+    `consumer_suffix_classification_violations`.
     """
     text = consumer.read_text(encoding="utf-8", errors="replace")
     view = lean_code_view.code_view_for(consumer.suffix)
-    return view(text) if view is not None else text
+    if view is not None:
+        return view(text)
+    if consumer.suffix in CONSUMER_SOURCE_SUFFIXES:
+        return text
+    raise UnclassifiedConsumerSuffix(consumer.suffix)
 
 
 #: A Python/Lean/Rust/shell identifier, for the bound-name question below.
@@ -945,13 +985,31 @@ def check_fixture_consumers(directory: Path, readme: Path,
             continue
         readers: list[str] = []
         bound_but_unread: list[str] = []
+        unclassified: list[str] = []
         for n in named:
-            verdict = fixture_mention_consumed(
-                consumer_code_view(repo_root / n), row.fixture)
+            try:
+                view = consumer_code_view(repo_root / n)
+            except UnclassifiedConsumerSuffix:
+                unclassified.append(n)
+                continue
+            verdict = fixture_mention_consumed(view, row.fixture)
             if verdict:
                 readers.append(n)
             elif verdict is False:
                 bound_but_unread.append(n)
+        if unclassified:
+            errors.append(
+                f"{readme}:{row.lineno}: the `Used by` cell for "
+                f"`{row.fixture}` names {', '.join(sorted(unclassified))}, "
+                f"which {'are' if len(unclassified) > 1 else 'is'} not source "
+                f"this check can read as code — a fixture is opened by a "
+                f"program, and prose or data named as its consumer credits the "
+                f"row to a file that cannot open anything (this README read as "
+                f"its own fixtures' consumer before `v0.35.144`).  Name the gate "
+                f"that compares it, or classify the suffix in "
+                f"`CONSUMER_SOURCE_SUFFIXES`"
+            )
+            continue
         if readers:
             validated += 1
         elif bound_but_unread:
@@ -971,6 +1029,38 @@ def check_fixture_consumers(directory: Path, readme: Path,
             )
     return errors, validated
 
+
+
+def consumer_suffix_classification_violations(
+        readme: Path, repo_root: Path | None = None) -> list[str]:
+    """`CONSUMER_SOURCE_SUFFIXES` against what the live table actually names.
+
+    The forward direction — a suffix the table names and nobody classified — is
+    the refusal `consumer_code_view` raises, reported per row.  This is the
+    other one: a member no live row names is a STALE classification, and a stale
+    exemption reads exactly like coverage.  Both directions, because a set of
+    suffixes nobody reconciles is the enumeration this check exists to retire.
+
+    `code_view_for`'s own suffixes are not reconciled here: they are derived from
+    the shared view table, so a `.lean` or `.rs` nothing names is that table's
+    business rather than a claim this file makes.
+    """
+    repo_root = repo_root or Path(__file__).resolve().parent.parent
+    rows, _ = fixture_table_rows(readme)
+    named_suffixes = {
+        Path(m.group(1)).suffix
+        for row in rows
+        for m in TABLE_CONSUMER_PATH.finditer(row.used_by)
+    }
+    stale = sorted(CONSUMER_SOURCE_SUFFIXES - named_suffixes)
+    if not stale:
+        return []
+    return [
+        f"{readme}: `CONSUMER_SOURCE_SUFFIXES` classifies {', '.join(stale)} as "
+        f"source no code view covers, and no `Used by` cell names a path with "
+        f"that suffix — a classification nothing reconciles reads like coverage, "
+        f"so drop it or name the gate that needs it"
+    ]
 
 def check_fixture_index(directory: Path, readme: Path,
                         exempt: dict[str, str] | None = None) -> list[str]:
@@ -1344,6 +1434,7 @@ def main() -> int:
         errors = check_fixture_index(directory, readme)
         consumer_errors, claims = check_fixture_consumers(directory, readme)
         errors += consumer_errors
+        errors += consumer_suffix_classification_violations(readme)
         if errors:
             print("fixture index check failed:", file=sys.stderr)
             for error in errors:

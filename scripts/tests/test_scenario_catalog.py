@@ -1173,6 +1173,57 @@ class TestFixtureConsumers(unittest.TestCase):
             self.assertTrue(errors)
             self.assertIn("scenario-traceability manifest", " ".join(errors))
 
+    def test_PROSE_is_not_a_consumer(self) -> None:
+        """A `Used by` cell naming a document credits a file that opens nothing.
+
+        Preserving: the path exists, is tracked, and names the fixture in a
+        sentence — which is what the README itself does, and before `v0.35.144`
+        `tests/fixtures/README.md` read as the consumer of two live fixtures.  A
+        `.md` has no code view, and reading a view-less file raw is right for a
+        shell or Python gate (source the tree has no stripper for) and wrong for
+        prose, where the WHOLE file is the comment.  So the suffix is classified
+        and the default branch refuses.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(
+                d, "a.expected", "x\n", "`docs/notes.md`",
+                {"docs/notes.md": "The trace gate compares `a.expected` here.\n"})
+            self.assertTrue(errors)
+            self.assertIn("not source this check can read as code",
+                          " ".join(errors))
+
+    def test_a_SHELL_gate_is_still_a_consumer(self) -> None:
+        """The control that keeps the refusal about PROSE rather than about
+        having no code view: `.sh` has no view either and is source, so it must
+        still be read — the same `Used by` cell shape, one suffix over."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/g.sh`",
+                           {"gates/g.sh": 'F=a.expected\ndiff "$F" out\n'}), [])
+
+    def test_an_UNRECONCILED_source_suffix_is_reported(self) -> None:
+        """The backward direction: a member of `CONSUMER_SOURCE_SUFFIXES` that no
+        live row names is a stale classification, and a stale classification
+        reads exactly like coverage."""
+        with tempfile.TemporaryDirectory() as d:
+            readme = Path(d) / "README.md"
+            readme.write_text(
+                "## Files\n\n| Fixture | Hash | Used by |\n| --- | --- | --- |\n"
+                "| `a.expected` | | `gates/g.sh` |\n", encoding="utf-8")
+            # `.py` is classified as source and this table names no `.py` path,
+            # so it is stale HERE — which is exactly what the reconciliation
+            # must say, and the live table's own row below is the control.
+            errors = sc.consumer_suffix_classification_violations(readme)
+            self.assertTrue(errors)
+            self.assertIn(".py", " ".join(errors))
+
+    def test_the_LIVE_table_reconciles_its_source_suffixes(self) -> None:
+        """...and the same reconciliation is silent on the real README, so the
+        classification is not merely enforced but earned."""
+        self.assertEqual(
+            sc.consumer_suffix_classification_violations(
+                REPO_ROOT / "tests" / "fixtures" / "README.md"), [])
+
     def test_a_LONGER_filename_is_not_this_fixture_s_consumer(self) -> None:
         """Preserving: the cell names a real gate whose code really does contain
         the fixture's name — as a *substring* of another filename.  A `.sha256`

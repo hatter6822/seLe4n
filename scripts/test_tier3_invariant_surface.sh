@@ -17187,8 +17187,11 @@ run_check "INVARIANT" rg -F -n '                if (before.endswith(prefix)' scr
 run_check "INVARIANT" rg -F -n '                        and not wordish(before[:-len(prefix)][-1:])):' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '                elif (after.startswith(suffix)' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '                        and not wordish(after[len(suffix):len(suffix) + 1])):' scripts/check_declaration_kind_askers.py
-run_check "INVARIANT" rg -F -n '        elif (LEAN_PROBE_MARKER.search(holed)' scripts/check_declaration_kind_askers.py
-run_check "INVARIANT" rg -F -n '                and _constructor_completing_holes(holed)):' scripts/check_declaration_kind_askers.py
+# ...repointed at `v0.35.144`, which split that `elif` so an unread fragment
+# spelling a WHOLE constructor is refused too: the claim is unchanged -- the
+# SPLICE refusal asks completion -- and the relation is now pinned across the
+# branch rather than by two presence checks over its two lines.
+run_check "INVARIANT" bash -lc 'rg -U -n "        elif LEAN_PROBE_MARKER.search\(holed\):\n            if _constructor_completing_holes\(holed\):\n                out.append\(\(node, .splice.\)\)" scripts/check_declaration_kind_askers.py'
 # (4) THE DEFAULT BRANCH IS A DECISION, taken per CALL SITE rather than per spelling:
 # a form this scanner does not model is `None` when applied to determined probe text
 # and an ordinary value fragment otherwise, which is what keeps the recognised set
@@ -17837,5 +17840,48 @@ run_check "INVARIANT" rg -F -n '    def test_a_SECOND_mention_on_one_line_is_sti
 # bare `line.find(fixture)` each keep the filename token and drop the relation.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "if fixture in line:" scripts/scenario_catalog.py'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "at = line.find\(fixture\)" scripts/scenario_catalog.py'
+
+# --- `v0.35.144` (PR #897's review): two more scanners credited a claim on text
+# they had not read as the thing it stands for.
+# (1) A fixture is opened by a PROGRAM.  `consumer_code_view` read a suffix with
+# no code view RAW, which is right for a shell or Python gate (source the shared
+# view table has no stripper for) and wrong for prose, where the WHOLE file is
+# the comment: `tests/fixtures/README.md` read as the consumer of two live
+# fixtures, so a new golden fixture could be listed, hashed and assigned only to
+# documentation while the gate reported a validated consumer.  The suffix is
+# classified and the default branch REFUSES.
+run_check "INVARIANT" bash -lc 'rg -U -n "    if consumer.suffix in CONSUMER_SOURCE_SUFFIXES:\n        return text\n    raise UnclassifiedConsumerSuffix\(consumer.suffix\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n 'class UnclassifiedConsumerSuffix(Exception):' scripts/scenario_catalog.py
+# ...and the refusal is REPORTED, in the gate's own voice, rather than skipped:
+# "the gate could not read it" and "the gate checked it" must not both pass.
+run_check "INVARIANT" bash -lc 'rg -U -n "            except UnclassifiedConsumerSuffix:\n                unclassified.append\(n\)\n                continue" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n 'def consumer_suffix_classification_violations(' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '        errors += consumer_suffix_classification_violations(readme)' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_PROSE_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_SHELL_gate_is_still_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
+# ...and the pre-fix reading must not come back: a view-less suffix answered with
+# the raw text and no classification at all.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "    return view\(text\) if view is not None else text" scripts/scenario_catalog.py'
+# (2) A probe's Lean source is ONE text this scanner has read.  `HEADER +
+# build_match()` reconstructs to the header plus a hole: the marker arrives
+# through the name so no literal of the expression carries it, the hole borders
+# no partial constructor, and the header is a located subject of its own -- so
+# the marker count is satisfied while the constructor the unread fragment
+# decides is in no located text.  Refusing every hole would refuse the sixteen
+# marker-bearing substitutions on this tree, so the contract is the shape.
+run_check "INVARIANT" rg -F -n 'def _substitution_into_determined_text(node: ast.AST,' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" bash -lc 'rg -U -n "            elif not _substitution_into_determined_text\(node, consts\):\n                out.append\(\(node, .concat.\)\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "    base_text = _reconstruct_holed\(node.func.value, consts\)\n    if base_text is not None and _HOLE not in base_text:\n        return True\n    return _substitution_into_determined_text\(node.func.value, consts\)" scripts/check_declaration_kind_askers.py'
+run_check "INVARIANT" rg -F -n '    "concat": "the probe'"'"'s Lean source is not ONE text this scanner has read: "' scripts/check_declaration_kind_askers.py
+# ...and its three witnesses: the reported shape, the undetermined base, and the
+# CONTROL that keeps the refusal off the canonical spelling every real probe in
+# this tree uses.
+run_check "INVARIANT" rg -F -n '_FIXTURE_CONCATENATED_FRAGMENT = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_UNDETERMINED_BASE = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_CANONICAL_SUBSTITUTION = ' scripts/check_declaration_kind_askers.py
+# ...and the TLBI gate's own fixture builder conforms to that contract rather
+# than the gate being weakened to admit it.
+run_check "INVARIANT" rg -F -n 'BASE_LEAN_BLOCK_TEMPLATE = BASE_LEAN + LEAN_BLOCK_SENTINEL' scripts/check_tlbi_broadcast_discipline.py
+run_negative_check "INVARIANT" rg -F -n '] = BASE_LEAN + block' scripts/check_tlbi_broadcast_discipline.py
 
 finalize_report

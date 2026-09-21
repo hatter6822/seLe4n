@@ -1267,6 +1267,19 @@ def tlbiLocalFullFlush : BaseIO Unit :=
 end SeLe4n.Kernel.Concurrency
 """
 
+#: The sentinel a per-case Lean block is substituted into, and the template that
+#: carries it.  The two loops below used to spell their fixture's Lean source
+#: `BASE_LEAN + block`, which puts the text in two places with one of them unread
+#: -- and `check_declaration_kind_askers` refuses that, because a concatenated
+#: fragment may spell a whole `ConstantInfo` constructor while the located text
+#: carries none, so the assembly is invisible in both directions at once
+#: (PR #897's review, `v0.35.144`).  A substitution into a named determined
+#: template is the spelling this tree's four real probes use: the Lean around the
+#: hole is text the scanner has read, so the only question left is whether the
+#: template writes part of a constructor against the hole, which it does not.
+LEAN_BLOCK_SENTINEL = "@BLOCK@"
+BASE_LEAN_BLOCK_TEMPLATE = BASE_LEAN + LEAN_BLOCK_SENTINEL
+
 BASE_FFI_LEAN = """
 @[extern "ffi_tlbi_all"]
 opaque ffiTlbiAll : BaseIO Unit
@@ -2099,7 +2112,8 @@ def self_test() -> int:
         ),
     ):
         block_form = fixture()
-        block_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = BASE_LEAN + block
+        block_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+            BASE_LEAN_BLOCK_TEMPLATE.replace(LEAN_BLOCK_SENTINEL, block))
         cases.append(
             Case(
                 f"a reference inside `{label}` does not inherit the previous entry",
@@ -2127,7 +2141,8 @@ def self_test() -> int:
         ),
     ):
         modifier_form = fixture()
-        modifier_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = BASE_LEAN + block
+        modifier_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+            BASE_LEAN_BLOCK_TEMPLATE.replace(LEAN_BLOCK_SENTINEL, block))
         cases.append(
             Case(
                 f"a `{label}` declaration is registered as its own boundary",
