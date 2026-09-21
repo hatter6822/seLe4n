@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.125.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.126.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,17 +222,17 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~73845 lines)
+- `CHANGELOG.md` (~73923 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7984 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7834 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7869 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
 - `docs/spec/SELE4N_SPEC.md` (~6407 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
+- `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5881 lines)
-- `SeLe4n/Platform/Boot.lean` (~5805 lines)
 - `SeLe4n/Model/State.lean` (~5710 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5124 lines)
@@ -325,8 +325,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1789 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1765 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1727 lines)
@@ -335,6 +335,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1648 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1565 lines)
@@ -343,7 +344,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1445 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1436 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
@@ -441,8 +441,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
 - `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
+- `docs/REGISTERED_DEBT.md` (~806 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `docs/REGISTERED_DEBT.md` (~805 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -7071,12 +7071,15 @@ code may assume:
   donation is minted because the state records no trace of the two gates that
   licensed it.  The **queue neighbours** are covered by nothing: their labels are
   constrained only against the endpoint's.  So `abortHolderWakeHigh` is
-  **discharged** (`abortHolderWakeHigh_of_donationOwnerFlowsToHolder`,
+  **reduced to that fact** (`abortHolderWakeHigh_of_donationOwnerFlowsToHolder`,
   `v0.35.84`) — it is a single `threadObservable` of the holder and needed no
   queue reasoning at all — while `abortHolderProjectionStable` and
   `hTeardownProj` reduce to the neighbour class and no further
   (`abortHolderSpliceHigh_of_victimHigh`, over the shared
-  `endpointSpliceHigh`).  (3) **The residue is
+  `endpointSpliceHigh`).  **Read that as a reduction, not a closure**: `v0.35.84`
+  called it *discharged*, which is what it would be if the fact it reduces to were
+  a fact about reachable states, and for two cuts it was a `Prop` nothing
+  established — see item (4).  (3) **The residue is
   representational and the remedy is forced**: `queuePrev` / `queuePPrev` /
   `queueNext` survive `projectKernelObject`, so an observable thread's projection
   already names a non-observable one's identity with no operation having run —
@@ -7089,7 +7092,53 @@ code may assume:
   the endpoint is and a member's own TCB is not — so the closure is non-intrusive
   endpoint queues, registered in `docs/REGISTERED_DEBT.md` table C with its
   measurement.  Until it lands, **v1.0.0 must not claim that a low observer
-  cannot learn a high thread's identity from endpoint queue state.**
+  cannot learn a high thread's identity from endpoint queue state.**  (4) **A
+  predicate only consumed as a hypothesis is an assumption wearing a definition's
+  name** (WS-RR RR8.16, `v0.35.126`, PR #897 review).  `v0.35.83` and `v0.35.84`
+  introduced `blockedSenderFlowsToEndpoint` and `donationOwnerFlowsToHolder`, argued
+  from the *gates* in their docstrings — which is the right argument — and then
+  consumed both as hypotheses and nothing else: no theorem established either where
+  the fact is created, none transported it across a step, and no state inhabited
+  either.  So the reduction above was not composable for a live state, and the word
+  *discharged* was reading a reduction as a closure.  Four things new code must
+  respect.  **Only ONE of the two needs a story**: `donationFlowFromBlockedDonor`
+  derives `donationOwnerFlowsToHolder`'s conclusion from its sibling plus the
+  *receiving* gate — `label owner ⊑ label ep ⊑ label holder` — because a
+  `.donated scId owner` binding is minted only through a `Call` rendezvous in which
+  the donor is `.blockedOnCall` on that endpoint.  **Transport is weaker than a
+  frame, deliberately**: `blockedSenderShrinks` (with `.refl`, `.trans` and
+  `blockedSenderShrinks_of_ipcStateFrame`) says a step introduces no blocked sender
+  *on the same endpoint* it did not already have — a send rendezvous writes the
+  receiver `.ready` and a wake writes a runnable state, so neither frames every
+  `ipcState` while both shrink the set, and a step moving a thread from
+  `.blockedOnSend ep₁` to `.blockedOnCall ep₂` would satisfy a set-shaped relation
+  and break the predicate.  The donation fact's counterpart is
+  `donationOwnerFlowsToHolder_of_sameSchedContextBindings`, over the frame family
+  the tree already has for every transition that mints no donation.
+  **Establishment is stated at the one WRITE, not per transition**: every
+  production path that blocks a sender or a caller goes through
+  `storeTcbIpcStateAndMessage` with the endpoint as an explicit argument, so
+  `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint` takes the gate
+  as an argument (a transition-time check the store records no trace of) and a
+  transition inherits the fact by exhibiting its own decomposition.  Landing it
+  moved `storeTcbIpcStateAndMessage_tcb_backward_fields` out of
+  `IPC/CrossCore/EndpointReplyInvariant.lean` and beside the primitive it frames,
+  which is `v0.35.59`'s rule — *when a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer* — and put it next to the two
+  siblings RR3.5 had already relocated for the same reason.  And **the boot state
+  inhabits both, for every labelling context**
+  (`bootFromPlatformCheckedWithIdleThreads_flowGateFacts`): `bootSafeTcbCheck`
+  refuses a blocked or bound config TCB and the idle fold installs neither, so both
+  antecedents are *empty* rather than their conclusions cheap.  That measurement
+  generalised `bootFromPlatformChecked_ok_tcb_inactive` — which concluded two of the
+  ten fields its own object-reachability argument establishes, so the other eight
+  needed a second copy of that argument — into
+  `bootFromPlatformChecked_ok_tcb_bootSafeFields`, with the old name its two-field
+  corollary.  What is **still owed** is the per-transition lift from that store to
+  the two checked dispatches that perform it (`endpointSendCrossCoreDispatchChecked`,
+  `endpointCallCrossCoreDispatchChecked`), which needs a per-TCB dichotomy for
+  `endpointSendDualWithCapsOnCore` / `endpointCallDualWithCapsOnCore` that the tree
+  does not have; it is a table C row, not a sentence here.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

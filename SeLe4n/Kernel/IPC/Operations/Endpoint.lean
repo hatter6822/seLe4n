@@ -7388,6 +7388,41 @@ theorem storeTcbIpcState_preserves_notification
 -- with the block (see the transition), so the frames are needed *here* and were
 -- moved rather than duplicated.
 
+open SeLe4n.Model.SystemState in
+/-- SM6.D transport helper: a post-`storeTcbIpcStateAndMessage` TCB lookup
+pulls back to a pre-state TCB agreeing on `pendingReceiveReply` and
+`timeoutBudget`, and either identical or rewritten to the stored `ipcState`. -/
+theorem storeTcbIpcStateAndMessage_tcb_backward_fields
+    (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
+      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
+        tx.pendingReceiveReply = ty.pendingReceiveReply ∧
+        tx.timeoutBudget = ty.timeoutBudget ∧
+        (tx = ty ∨ tx.ipcState = ipc) := by
+  intro s tx hObj
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLookup : lookupTcb st tid with
+  | none => simp [hLookup] at hStep
+  | some tcb =>
+    simp only [hLookup] at hStep
+    cases hStore : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, st''⟩ := pair
+      simp only [hStore, Except.ok.injEq] at hStep
+      subst hStep
+      by_cases hs : s = tid.toObjId
+      · subst hs
+        rw [storeObject_objects_eq st st'' tid.toObjId _ hObjInv hStore] at hObj
+        obtain rfl := KernelObject.tcb.inj (Option.some.inj hObj)
+        exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup, rfl, rfl, Or.inr rfl⟩
+      · rw [storeObject_objects_ne st st'' tid.toObjId s _ hs hObjInv hStore] at hObj
+        exact ⟨tx, hObj, rfl, rfl, Or.inl rfl⟩
+
 /-- WS-F1: `storeTcbIpcStateAndMessage` preserves objects at IDs other than `tid.toObjId`. -/
 theorem storeTcbIpcStateAndMessage_preserves_objects_ne
     (st st' : SystemState) (tid : SeLe4n.ThreadId)

@@ -3360,6 +3360,34 @@ theorem foldl_enqueueIdleThread_objects_frame_of_not_idle
     rw [ih (enqueueIdleThread ist x) (fun c' hc' => h c' (List.mem_cons.mpr (Or.inr hc')))]
     exact enqueueIdleThread_objects_ne ist x oid (h x (List.mem_cons.mpr (Or.inl rfl)))
 
+/-- **WS-RR RR8.16** (the fold at an arbitrary key): every object the fold's store
+    holds is either the pre-fold store's object at that key or one of the idle TCBs
+    the fold installs.
+
+    The three lemmas above frame a key the fold does not touch; this one says what
+    the fold *can* leave there, which is what a per-TCB statement about the
+    production boot state needs — a case analysis over one key, with no `Nodup`
+    hypothesis, because it asserts nothing about *which* core's idle thread a
+    matching key belongs to. -/
+theorem foldl_enqueueIdleThread_objects_cases
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (oid : SeLe4n.ObjId) (obj : KernelObject)
+    (h : (L.foldl enqueueIdleThread ist).state.objects[oid]? = some obj) :
+    ist.state.objects[oid]? = some obj ∨
+      ∃ c ∈ L, obj = KernelObject.tcb (queuedIdleThread c) := by
+  induction L generalizing ist with
+  | nil => exact Or.inl h
+  | cons x xs ih =>
+    simp only [List.foldl_cons] at h
+    rcases ih (enqueueIdleThread ist x) h with hStep | ⟨c, hc, hEq⟩
+    · by_cases hKey : (idleThreadId x).toObjId = oid
+      · subst hKey
+        rw [enqueueIdleThread_objects_self ist x] at hStep
+        exact Or.inr ⟨x, List.mem_cons_self .., by injection hStep with hStep; exact hStep.symm⟩
+      · rw [enqueueIdleThread_objects_ne ist x oid hKey] at hStep
+        exact Or.inl hStep
+    · exact Or.inr ⟨c, List.mem_cons.mpr (Or.inr hc), hEq⟩
+
 /-- **WS-RR RR5.11** (the fold's payoff, mirroring
     `foldl_installIdleThread_installs`): folding `enqueueIdleThread` over a
     `Nodup` list containing `c` leaves core `c`'s idle thread **on core `c`'s own
@@ -5514,16 +5542,32 @@ theorem bootFromPlatformCheckedWithIdleThreads_idle_threadState (config : Platfo
     rw [bootFromPlatformCheckedWithIdleThreads_currentAllNone config ist' h c']
     simp
 
-/-- **PR #889 review**: every TCB a successful checked boot installs is a
-    config entry that passed `bootSafeObjectCheck`, so it is `.Inactive` with a
-    `.ready` IPC state — the two fields `inferThreadState` reads for a thread
-    that is neither current nor queued.  The boot VSpace root, when present, is
-    not a TCB, and the interrupt-enable step frames the store. -/
-theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
+/-- **PR #889 review**, generalised at **WS-RR RR8.16**: every TCB a successful
+    checked boot installs is a config entry that passed `bootSafeObjectCheck`, so
+    it carries **every** field that check's soundness bridge establishes.  The boot
+    VSpace root, when present, is not a TCB, and the interrupt-enable step frames
+    the store.
+
+    Stated at the whole clause rather than at a projection of it.  The original
+    shape concluded only `threadState` and `ipcState` — the two fields
+    `inferThreadState` reads — so the *other eight* fields the very same
+    object-reachability argument establishes were unreachable without a second copy
+    of that argument, which is this project's `a recognised set is not a derived
+    set` rule applied to a conclusion.  RR8.16 needed
+    `schedContextBinding = .unbound`, which was in the bridge and not in the
+    theorem; `bootFromPlatformChecked_ok_tcb_inactive` is now this theorem's
+    two-field corollary, so the argument exists once. -/
+theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
     (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
     (oid : SeLe4n.ObjId) (tcb : TCB)
     (hObj : ist.state.objects[oid]? = some (KernelObject.tcb tcb)) :
-    tcb.threadState = .Inactive ∧ tcb.ipcState = .ready := by
+    tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+      tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
+      tcb.timeoutBudget = none ∧
+      tcb.schedContextBinding = .unbound ∧
+      tcb.replyObject = none ∧
+      tcb.pendingReceiveReply = none ∧
+      tcb.threadState = .Inactive := by
   obtain ⟨_, hSafe, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
   have hPlain : (bootFromPlatform config).state.objects[oid]? = some (KernelObject.tcb tcb) := by
     rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
@@ -5543,13 +5587,24 @@ theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
     ⟨e, hMem, _, hEObj⟩ | hBase
   · have hCheck : bootSafeObjectCheck e.obj = true := List.all_eq_true.mp hSafe e hMem
     rw [hEObj] at hCheck
-    have hTcb := (bootSafeObjectCheck_sound_structural _ hCheck).2.2.2.1 tcb rfl
-    exact ⟨hTcb.2.2.2.2.2.2.2.2.2, hTcb.2.1⟩
+    exact (bootSafeObjectCheck_sound_structural _ hCheck).2.2.2.1 tcb rfl
   · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
       simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
     rw [hEmpty] at hBase
     simp at hBase
+
+/-- **PR #889 review**: every TCB a successful checked boot installs is `.Inactive`
+    with a `.ready` IPC state — the two fields `inferThreadState` reads for a thread
+    that is neither current nor queued.  The two-field projection of
+    `bootFromPlatformChecked_ok_tcb_bootSafeFields`, which carries the rest. -/
+theorem bootFromPlatformChecked_ok_tcb_inactive (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.tcb tcb)) :
+    tcb.threadState = .Inactive ∧ tcb.ipcState = .ready :=
+  let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj
+  ⟨hTcb.2.2.2.2.2.2.2.2.2, hTcb.2.1⟩
 
 /-- **PR #889 review**: on the plain checked boot no thread is current and no
     thread is queued — the two `inferThreadState` tests, both `false`. -/
@@ -5589,6 +5644,107 @@ theorem bootFromPlatformChecked_ok_threadStateConsistent (config : PlatformConfi
   unfold inferThreadState
   rw [hRun, hQ, hReady]
   rfl
+
+-- ============================================================================
+-- WS-RR RR8.16: the boot state inhabits the two information-flow gate facts
+-- ============================================================================
+
+/-- **WS-RR RR8.16**: every TCB the *production* boot installs is IPC-quiescent and
+    owns no scheduling context.
+
+    Two populations, one conclusion.  A key the idle fold did not write holds a
+    config entry that passed `bootSafeObjectCheck`
+    (`bootFromPlatformChecked_ok_tcb_bootSafeFields`, whose `.ipcState = .ready` and
+    `.schedContextBinding = .unbound` clauses are exactly these); a key it did write
+    holds `queuedIdleThread c`, which sets neither field and so carries the `TCB`
+    record's own defaults, both by `rfl`.  `foldl_enqueueIdleThread_objects_cases` is
+    what makes that a case analysis rather than a `Nodup` argument. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (oid : SeLe4n.ObjId) (tcb : TCB)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.tcb tcb)) :
+    tcb.ipcState = .ready ∧ tcb.schedContextBinding = .unbound := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+    cases h
+  | ok base =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)] at h
+    injection h with h
+    subst h
+    rcases foldl_enqueueIdleThread_objects_cases cores base oid _ hObj with hBase | ⟨c, _, hEq⟩
+    · have hFields :=
+        bootFromPlatformChecked_ok_tcb_bootSafeFields config base hChecked oid tcb hBase
+      exact ⟨hFields.2.1, hFields.2.2.2.2.2.2.1⟩
+    · injection hEq with hEq
+      subst hEq
+      exact ⟨rfl, rfl⟩
+
+/-- **WS-RR RR8.16**: the boot state satisfies `blockedSenderFlowsToEndpoint`, for
+    **every** labelling context.
+
+    The base case, and the reason it is unconditional in `ctx`: a state with no
+    blocked sender constrains no label, so the predicate's antecedent is empty rather
+    than its conclusion cheap.  With this, the transport family in
+    `InformationFlow/Invariant/Composition.lean` carries the fact forward from a real
+    state instead of from a hypothesis — which is what the PR #897 review found
+    missing, and what this project's own rule demands of a stated fact: *a hypothesis
+    nothing exhibits is indistinguishable from one that cannot hold.* -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (ctx : LabelingContext) :
+    blockedSenderFlowsToEndpoint ctx ist.state := by
+  refine blockedSenderFlowsToEndpoint_of_none_blocked ?_
+  intro tid t epId hLook
+  have hReady :=
+    (bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent cores config ist h
+      tid.toObjId t (lookupTcb_some_objects ist.state tid t hLook)).1
+  rw [hReady]
+  exact ⟨by simp, by simp⟩
+
+/-- **WS-RR RR8.16**: the boot state satisfies `donationOwnerFlowsToHolder`, for
+    **every** labelling context.
+
+    Vacuous for the same structural reason and not by coincidence: `bootSafeTcbCheck`
+    refuses a bound config TCB and the idle fold installs an unbound one, so
+    `replyDonationReturn?` answers `none` at every thread — a donation is something
+    the kernel *mints*, and a boot state has minted none. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_donationOwnerFlowsToHolder
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (ctx : LabelingContext) :
+    donationOwnerFlowsToHolder ctx ist.state := by
+  intro holder owner scId hRes
+  have hNone : replyDonationReturn? ist.state holder = none := by
+    unfold replyDonationReturn?
+    cases hLook : lookupTcb ist.state holder with
+    | none => rfl
+    | some t =>
+      have hUnbound :=
+        (bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent cores config ist h
+          holder.toObjId t (lookupTcb_some_objects ist.state holder t hLook)).2
+      simp only [hUnbound]
+  rw [hNone] at hRes
+  exact absurd hRes (by simp)
+
+/-- **WS-RR RR8.16**: the all-cores production boot — the one
+    `bootAndInitialiseFromPlatform` runs — inhabits both facts.  The declared-list
+    form at `allCores` (`bootFromPlatformCheckedWithIdleThreadsFor_allCores`). -/
+theorem bootFromPlatformCheckedWithIdleThreads_flowGateFacts
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist)
+    (ctx : LabelingContext) :
+    blockedSenderFlowsToEndpoint ctx ist.state ∧
+      donationOwnerFlowsToHolder ctx ist.state := by
+  rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores] at h
+  exact ⟨bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint _ config ist h ctx,
+    bootFromPlatformCheckedWithIdleThreadsFor_donationOwnerFlowsToHolder _ config ist h ctx⟩
 
 /-- **PR #889 review**: two states that neither run nor queue `tid` classify it
     identically — `inferThreadState` then reads only the TCB's own IPC state. -/

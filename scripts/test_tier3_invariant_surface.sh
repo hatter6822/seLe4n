@@ -16891,4 +16891,58 @@ run_check "INVARIANT" rg -F -n '  , `SeLe4n.Platform.Boot.bootFromPlatformChecke
 # reads exactly like coverage.
 run_negative_check "INVARIANT" rg -F -n '`SeLe4n.Model.SystemState._sizeOf_inst' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 
+# ===========================================================================
+# WS-RR RR8.16 (v0.35.126, PR #897 review): the two information-flow gate facts
+# are ESTABLISHED and TRANSPORTED, not only consumed
+# ===========================================================================
+# `v0.35.83`/`v0.35.84` introduced `blockedSenderFlowsToEndpoint` and
+# `donationOwnerFlowsToHolder` and consumed both as hypotheses and nothing else --
+# no theorem established either where the fact is created, none transported it
+# across a step, no state inhabited either -- so the cancellation-NI reductions
+# built on them were not composable for a live state.
+# ---------------------------------------------------------------------------
+# (1) THE TRANSPORT RELATION CARRIES THE ENDPOINT.  A set-shaped relation ("no new
+# blocked sender") is satisfied by a step moving a thread from `.blockedOnSend ep1`
+# to `.blockedOnCall ep2`, which breaks the predicate, so the pre-state witness
+# must be blocked on the SAME endpoint -- which is why `epId` is bound once and
+# read on both sides.
+run_check "INVARIANT" rg -F -n 'def blockedSenderShrinks (st st' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n '      ∃ t, lookupTcb st tid = some t ∧' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n 'theorem blockedSenderShrinks_of_ipcStateFrame {st st' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n 'theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+# (2) THE DONATION FACT IS A CONSEQUENCE, not a second assumption: the donor own
+# admission gate composed with the receiving side, which is what makes a
+# donation two ends comparable at all.
+run_check "INVARIANT" rg -F -n 'theorem donationFlowFromBlockedDonor {ctx : LabelingContext} {st : SystemState}' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n '  securityFlowsTo_trans _ _ _' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n 'theorem donationOwnerFlowsToHolder_of_sameSchedContextBindings' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+# (3) ESTABLISHMENT IS AT THE ONE WRITE, with the gate as an argument QUANTIFIED
+# over the endpoint -- a hypothesis at one fixed endpoint would say nothing about a
+# store of a different blocking state, and the store records no trace of the gate.
+run_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -F -n '    (hGate : ∀ epId : SeLe4n.ObjId,' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+# ...and the frame that makes it ONE case split now lives beside the primitive it
+# frames, not in the cross-core arm module the information-flow layer cannot reach
+# (the `v0.35.59` rule).  Both directions: present at the primitive, refused at the
+# arm.
+run_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_tcb_backward_fields' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_negative_check "INVARIANT" rg -F -n 'theorem storeTcbIpcStateAndMessage_tcb_backward_fields' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+# (4) THE BOOT STATE INHABITS BOTH, for EVERY labelling context -- so neither fact
+# is an assumption nothing exhibits.  Vacuous because the antecedents are empty:
+# `bootSafeTcbCheck` refuses a blocked or bound config TCB and the idle fold
+# installs neither.
+run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_blockedSenderFlowsToEndpoint' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformCheckedWithIdleThreadsFor_donationOwnerFlowsToHolder' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n '    blockedSenderFlowsToEndpoint ctx ist.state ∧' SeLe4n/Platform/Boot.lean
+# ...over the fold AT-ANY-KEY characterisation, so the per-TCB statement is a
+# case analysis rather than a `Nodup` argument.
+run_check "INVARIANT" rg -F -n 'theorem foldl_enqueueIdleThread_objects_cases' SeLe4n/Platform/Boot.lean
+# (5) THE OBJECT-REACHABILITY ARGUMENT EXISTS ONCE.  It established ten TCB fields
+# and the theorem concluded two of them, so the other eight needed a second copy of
+# it; the `_ok_tcb_inactive` name is now the two-field corollary and names its source.
+run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformChecked_ok_tcb_bootSafeFields' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -F -n '  let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj' SeLe4n/Platform/Boot.lean
+
+
 finalize_report

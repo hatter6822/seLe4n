@@ -1009,6 +1009,209 @@ theorem blockedSenderEndpointObjectHigh
   endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
     (hFlow tid t epId hLookup hBlocked) hThreadHigh
 
+/-! ### WS-RR RR8.16: establishing and preserving the two flow facts
+
+`v0.35.83`/`v0.35.84` introduced the two predicates above and consumed them as
+**hypotheses**: no theorem established either one where the fact is created, none
+transported it across a step, and neither appeared in a reachable-state pack — so
+the reduction of the cancellation NI obligations they license was not composable
+for a live state (PR #897 review).  Their docstrings argued from the *gates*, which
+is the right argument and was not a theorem.
+
+What follows is that argument, machine-checked, and it is deliberately ordered so
+that only ONE of the two needs an independent story:
+
+* `blockedSenderShrinks` is the transport relation, with the algebra a composite
+  needs and a bridge from the `ipcStateFrame` this tree already has;
+* a blocking **store** is the one write that creates a blocked sender, so its
+  establishment is stated there rather than per transition;
+* and `donationOwnerFlowsToHolder` is then a **consequence** of its sibling and the
+  receiving gate, not a second assumption -- which is the whole reason a donation's
+  two ends are comparable at all.
+-/
+
+/-- WS-RR RR8.16: a step introduces no blocked sender it did not already have.
+
+Weaker than `ipcStateFrame`, and the weakening is the point: the send rendezvous
+writes the receiver's `ipcState` to `.ready` and the wake writes a runnable one, so
+neither frames every `ipcState` while both leave the blocked-sender set no larger.
+That is exactly what `blockedSenderFlowsToEndpoint` needs, since the predicate says
+nothing about a thread that is not blocked sending or calling.
+
+Stated with the ENDPOINT carried through: a step that moved a thread from
+`.blockedOnSend ep₁` to `.blockedOnCall ep₂` would satisfy a set-shaped relation and
+break the predicate, so the pre-state witness must be blocked on the *same*
+endpoint. -/
+def blockedSenderShrinks (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (t' : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st' tid = some t' →
+    (t'.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t'.ipcState = ThreadIpcState.blockedOnCall epId) →
+      ∃ t, lookupTcb st tid = some t ∧
+        (t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          t.ipcState = ThreadIpcState.blockedOnCall epId)
+
+theorem blockedSenderShrinks.refl (st : SystemState) : blockedSenderShrinks st st :=
+  fun _ t' _ h hB => ⟨t', h, hB⟩
+
+theorem blockedSenderShrinks.trans {st st' st'' : SystemState}
+    (h1 : blockedSenderShrinks st st') (h2 : blockedSenderShrinks st' st'') :
+    blockedSenderShrinks st st'' := by
+  intro tid t'' epId hLook hB
+  obtain ⟨t', hLook', hB'⟩ := h2 tid t'' epId hLook hB
+  exact h1 tid t' epId hLook' hB'
+
+/-- WS-RR RR8.16: a step that frames every `ipcState` shrinks the blocked-sender
+set, so every consumer of `ipcStateFrame` in the tree transports the flow fact with
+no new work. -/
+theorem blockedSenderShrinks_of_ipcStateFrame {st st' : SystemState}
+    (h : ipcStateFrame st st') : blockedSenderShrinks st st' := by
+  intro tid t' epId hLook hB
+  have hNotRes : ¬ tid.isReserved := lookupTcb_some_not_reserved st' tid t' hLook
+  obtain ⟨t, hPre, hEq⟩ := h tid t' (lookupTcb_some_objects st' tid t' hLook)
+  refine ⟨t, lookupTcb_of_objects_of_not_reserved st tid t hPre hNotRes, ?_⟩
+  rw [hEq]
+  exact hB
+
+/-- WS-RR RR8.16: **the write that creates a blocked sender carries the flow fact,
+given the gate that admitted it.**
+
+`storeTcbIpcStateAndMessage st tid ipc msg` is the one production write of a
+blocking `ipcState` — every path that blocks a sender or a caller goes through it,
+with the endpoint as an explicit argument — so the establishment is stated at the
+*store*, once, rather than per transition, and a transition inherits it by
+exhibiting its own decomposition.
+
+`storeTcbIpcStateAndMessage_tcb_backward_fields` is what makes that one case split:
+every post-state TCB either **is** its pre-state self (the fact carries verbatim) or
+carries exactly `ipc` (the conclusion is the gate's own).  That frame was declared
+in `IPC/CrossCore/EndpointReplyInvariant.lean`, which this module cannot reach, and
+RR8.16 moved it beside the primitive it frames.
+
+The gate is an argument rather than a hypothesis on the state, because it is a
+transition-time check the store records no trace of; the caller that holds it is the
+checked dispatch, whose `endpointFlowGate ctx epId (threadLabelOf tid)
+(endpointLabelOf epId)` is exactly `hGate` after
+`endpointFlowGate_implies_securityFlowsTo`.
+
+Stated for an arbitrary `ipc`: where the written state is not a blocking one the
+`hGate` argument is vacuous, so a non-blocking store transports the fact through the
+same theorem rather than through a second one. -/
+theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint
+    (ctx : LabelingContext) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hGate : ∀ epId : SeLe4n.ObjId,
+      (ipc = ThreadIpcState.blockedOnSend epId ∨
+        ipc = ThreadIpcState.blockedOnCall epId) →
+      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true) :
+    blockedSenderFlowsToEndpoint ctx st' := by
+  intro other t' epId hLook hB
+  have hNotRes : ¬ other.isReserved := lookupTcb_some_not_reserved st' other t' hLook
+  obtain ⟨ty, hPreObj, _, _, hCase⟩ :=
+    storeTcbIpcStateAndMessage_tcb_backward_fields st st' tid ipc msg hObjInv hStep
+      other.toObjId t' (lookupTcb_some_objects st' other t' hLook)
+  rcases hCase with hSame | hWritten
+  · -- the write did not touch this thread: the pre-state fact applies verbatim
+    refine hPre other ty epId
+      (lookupTcb_of_objects_of_not_reserved st other ty hPreObj hNotRes) ?_
+    rw [← hSame]
+    exact hB
+  · -- this thread carries the WRITTEN state.  Either it is the thread the write
+    -- targeted, where the gate is the conclusion, or the write did not reach it at
+    -- all and the pre-state fact does — so the branch needs no argument about which
+    -- thread `tid` is.
+    by_cases hTid : other = tid
+    · subst hTid
+      rw [hWritten] at hB
+      exact hGate epId hB
+    · have hOther : st'.objects[other.toObjId]? = st.objects[other.toObjId]? :=
+        storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg
+          other.toObjId
+          (fun hEq => hTid (SeLe4n.ThreadId.toObjId_injective _ _ hEq)) hObjInv hStep
+      refine hPre other t' epId ?_ hB
+      refine lookupTcb_of_objects_of_not_reserved st other t' ?_ hNotRes
+      rw [← hOther]
+      exact lookupTcb_some_objects st' other t' hLook
+
+/-- WS-RR RR8.16: the flow fact transports across any step that introduces no
+blocked sender. -/
+theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}
+    {st st' : SystemState}
+    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hShrink : blockedSenderShrinks st st') :
+    blockedSenderFlowsToEndpoint ctx st' := by
+  intro tid t' epId hLook hB
+  obtain ⟨t, hPreLook, hPreB⟩ := hShrink tid t' epId hLook hB
+  exact hPre tid t epId hPreLook hPreB
+
+/-- WS-RR RR8.16: the base case.  A state with no blocked sender satisfies the fact
+outright, which is what makes the boot state an inhabitant rather than an
+assumption. -/
+theorem blockedSenderFlowsToEndpoint_of_none_blocked {ctx : LabelingContext}
+    {st : SystemState}
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
+      lookupTcb st tid = some t →
+      t.ipcState ≠ ThreadIpcState.blockedOnSend epId ∧
+        t.ipcState ≠ ThreadIpcState.blockedOnCall epId) :
+    blockedSenderFlowsToEndpoint ctx st := by
+  intro tid t epId hLook hB
+  rcases hB with h | h
+  · exact absurd h (hNone tid t epId hLook).1
+  · exact absurd h (hNone tid t epId hLook).2
+
+/-- WS-RR RR8.16: **a donated context's two ends are comparable because the donor is
+a blocked caller.**
+
+This is what makes `donationOwnerFlowsToHolder` a consequence rather than a second
+assumption.  A `.donated scId owner` binding is minted only by `donateSchedContext`,
+reached through a `Call` rendezvous in which the donor is `.blockedOnCall` on the
+endpoint — so `blockedSenderFlowsToEndpoint` gives `threadLabelOf owner ⊑
+endpointLabelOf ep`, and the receiving side's own gate gives `endpointLabelOf ep ⊑
+threadLabelOf holder`.  Composed, that is the conclusion.
+
+The receiving gate is an argument rather than a hypothesis on the state, because it
+is a transition-time check the store records no trace of; the caller that has it in
+scope is the checked dispatch. -/
+theorem donationFlowFromBlockedDonor {ctx : LabelingContext} {st : SystemState}
+    {owner holder : SeLe4n.ThreadId} {ownerTcb : TCB} {epId : SeLe4n.ObjId}
+    (hBlockedSenders : blockedSenderFlowsToEndpoint ctx st)
+    (hOwner : lookupTcb st owner = some ownerTcb)
+    (hOwnerBlocked : ownerTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      ownerTcb.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hReceiveGate : securityFlowsTo (ctx.endpointLabelOf epId)
+      (ctx.threadLabelOf holder) = true) :
+    securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true :=
+  securityFlowsTo_trans _ _ _
+    (hBlockedSenders owner ownerTcb epId hOwner hOwnerBlocked) hReceiveGate
+
+/-- WS-RR RR8.16: the donation flow fact transports across any step that leaves
+every thread's `schedContextBinding` alone — which is what the tree's own
+`sameSchedContextBindings` frame family already establishes for the transitions
+that do not mint a donation. -/
+theorem donationOwnerFlowsToHolder_of_sameSchedContextBindings
+    {ctx : LabelingContext} {st st' : SystemState}
+    (hPre : donationOwnerFlowsToHolder ctx st)
+    (hFrame : sameSchedContextBindings st st') :
+    donationOwnerFlowsToHolder ctx st' := by
+  intro holder owner scId hRes
+  refine hPre holder owner scId ?_
+  unfold replyDonationReturn? at hRes ⊢
+  cases hLook : lookupTcb st' holder with
+  | none => rw [hLook] at hRes; simp at hRes
+  | some t' =>
+    have hNotRes : ¬ holder.isReserved :=
+      lookupTcb_some_not_reserved st' holder t' hLook
+    obtain ⟨t, hPreObj, hBindEq⟩ :=
+      hFrame holder t' (lookupTcb_some_objects st' holder t' hLook)
+    have hPreLook : lookupTcb st holder = some t :=
+      lookupTcb_of_objects_of_not_reserved st holder t hPreObj hNotRes
+    rw [hLook] at hRes
+    simp only [hPreLook, hBindEq]
+    exact hRes
+
 -- ============================================================================
 -- WS-H10/A-39: Declassification non-interference (C.10)
 -- ============================================================================

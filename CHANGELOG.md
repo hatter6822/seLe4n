@@ -1,3 +1,81 @@
+## v0.35.126 — WS-RR RR8.16 (part): the two information-flow gate facts are established, transported and inhabited
+
+PR #897 review: `blockedSenderFlowsToEndpoint` and `donationOwnerFlowsToHolder`
+(`SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean`, added at `v0.35.83` and
+`v0.35.84` to reduce the cancellation-NI obligations `abortHolderWakeHigh` and
+`abortHolderProjectionStable`) were **only consumed as hypotheses**.  No theorem
+established either where the fact is created, none transported it across a step, and
+no state inhabited either — so the reduction was not composable for a live state, and
+`v0.35.84`'s word *discharged* was reading a reduction as a closure.  Their docstrings
+argued from the admission **gates**, which is the right argument and was not a theorem.
+
+That argument is now machine-checked, ordered so only **one** of the two needs an
+independent story.
+
+**Transport.**  `blockedSenderShrinks st st'` — a step introduces no blocked sender,
+*on the same endpoint*, that it did not already have — with `.refl`, `.trans` and
+`blockedSenderShrinks_of_ipcStateFrame`, plus `blockedSenderFlowsToEndpoint_of_shrinks`.
+It is deliberately **weaker** than `ipcStateFrame`: a send rendezvous writes the
+receiver `.ready` and a wake writes a runnable state, so neither frames every
+`ipcState` while both leave the blocked-sender set no larger, and the predicate says
+nothing about a thread that is not blocked sending or calling.  The endpoint is carried
+through because a set-shaped relation admits a step moving a thread from
+`.blockedOnSend ep1` to `.blockedOnCall ep2`, which breaks the predicate.  The
+donation fact's counterpart is `donationOwnerFlowsToHolder_of_sameSchedContextBindings`,
+over the frame family the tree already has for every transition that mints no donation.
+
+**Derivation.**  `donationFlowFromBlockedDonor` makes `donationOwnerFlowsToHolder`'s
+conclusion a **consequence** of its sibling plus the receiving gate —
+`label owner ⊑ label ep ⊑ label holder` — because a `.donated scId owner` binding is
+minted only through a `Call` rendezvous in which the donor is `.blockedOnCall` on that
+endpoint.  That is what makes a donation's two ends comparable at all, and it is why
+the two predicates are not two assumptions.
+
+**Establishment, at the one write.**  Every production path that blocks a sender or a
+caller goes through `storeTcbIpcStateAndMessage` with the endpoint as an explicit
+argument, so `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint` states
+the establishment there, once, rather than per transition; the gate is an **argument**
+quantified over the endpoint, because it is a transition-time check the store records no
+trace of.  Landing it moved `storeTcbIpcStateAndMessage_tcb_backward_fields` out of
+`IPC/CrossCore/EndpointReplyInvariant.lean` and beside the primitive it frames
+(`IPC/Operations/Endpoint.lean`), next to the two siblings WS-RR RR3.5 had already
+relocated for the same reason — the `v0.35.59` rule: *when a question has one owner and
+an asker that cannot see it, the owner is in the wrong layer.*  A tombstone records the
+move, and Tier 3 pins both directions.
+
+**Inhabitation.**  `bootFromPlatformCheckedWithIdleThreads_flowGateFacts` proves both
+facts of the production boot state for **every** labelling context, over
+`bootFromPlatformCheckedWithIdleThreadsFor_ok_tcb_quiescent` (every stored TCB is
+`.ready` and `.unbound`) and the fold's new at-any-key characterisation
+`foldl_enqueueIdleThread_objects_cases`.  Both antecedents are *empty* rather than their
+conclusions cheap: `bootSafeTcbCheck` refuses a blocked or bound config TCB and the idle
+fold installs neither, so *a hypothesis nothing exhibits* is no longer what either fact
+is.
+
+**A conclusion that was a projection of its own argument.**
+`bootFromPlatformChecked_ok_tcb_inactive` concluded two of the **ten** TCB fields
+`bootSafeObjectCheck_sound_structural` establishes, so the other eight were unreachable
+without a second copy of its object-reachability argument — this project's *a recognised
+set is not a derived set* rule applied to a conclusion.  RR8.16 needed
+`schedContextBinding = .unbound`, which was in the bridge and not in the theorem.
+`bootFromPlatformChecked_ok_tcb_bootSafeFields` is the whole clause and the old name is
+its two-field corollary, so the argument exists once.
+
+**What is still owed**, registered in `docs/REGISTERED_DEBT.md` table C rather than
+implied: the per-transition lift from that store to the two checked dispatches that
+perform it (`endpointSendCrossCoreDispatchChecked`, `endpointCallCrossCoreDispatchChecked`),
+whose refusal branches are `blockedSenderShrinks.refl` and whose admitted branch needs a
+per-TCB dichotomy for `endpointSendDualWithCapsOnCore` / `endpointCallDualWithCapsOnCore`
+that no composite in the tree has; and a `LabelingContext`-parametrised reachable-state
+pack, since `ipcReachable` takes no `ctx`.
+
+No transition, refusal, fixture or figure moved: the golden trace is byte-identical and
+`maxLockSetSize` is unmoved.  CLAUDE.md's and AGENTS.md's RR8.8 bullet gains item (4)
+and its *discharged* reading is corrected to *reduced to that fact*.  Twenty-one Tier 3
+anchors, four of them mutation-verified in both directions (the relocation reverted, the
+transport relation made set-shaped, the gate fixed at one endpoint, the corollary
+re-derived).
+
 ## v0.35.125 — the reachability census's domain and closure are both derived
 
 Three PR #897 findings over `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,

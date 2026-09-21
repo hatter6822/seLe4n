@@ -819,40 +819,16 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
 -- composition reads each fold at its own input state).  These lemmas
 -- transport the receive leg's pre-state facts across the reply leg.
 
-open SeLe4n.Model.SystemState in
-/-- SM6.D transport helper: a post-`storeTcbIpcStateAndMessage` TCB lookup
-pulls back to a pre-state TCB agreeing on `pendingReceiveReply` and
-`timeoutBudget`, and either identical or rewritten to the stored `ipcState`. -/
-theorem storeTcbIpcStateAndMessage_tcb_backward_fields
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
-      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.pendingReceiveReply = ty.pendingReceiveReply ∧
-        tx.timeoutBudget = ty.timeoutBudget ∧
-        (tx = ty ∨ tx.ipcState = ipc) := by
-  intro s tx hObj
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, st''⟩ := pair
-      simp only [hStore, Except.ok.injEq] at hStep
-      subst hStep
-      by_cases hs : s = tid.toObjId
-      · subst hs
-        rw [storeObject_objects_eq st st'' tid.toObjId _ hObjInv hStore] at hObj
-        obtain rfl := KernelObject.tcb.inj (Option.some.inj hObj)
-        exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup, rfl, rfl, Or.inr rfl⟩
-      · rw [storeObject_objects_ne st st'' tid.toObjId s _ hs hObjInv hStore] at hObj
-        exact ⟨tx, hObj, rfl, rfl, Or.inl rfl⟩
+-- **WS-RR RR8.16**: `storeTcbIpcStateAndMessage_tcb_backward_fields` used to be
+-- declared here.  It is a **frame over a primitive**, and it sat in a cross-core
+-- *arm* module that the information-flow layer cannot reach -- so the establishment
+-- of `blockedSenderFlowsToEndpoint` at the one write that creates a blocked sender
+-- was unstateable beside the predicate.  It now lives beside
+-- `storeTcbIpcStateAndMessage` in `IPC/Operations/Endpoint.lean`, next to its two
+-- existing siblings (`_preserves_objects_ne` and `storeTcbIpcState`'s own frames,
+-- themselves moved there for the same reason at WS-RR RR3.5), keeping its name and
+-- statement -- the `v0.35.59` rule: *when a question has one owner and an asker that
+-- cannot see it, the owner is in the wrong layer.*
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport helper: a post-`consumeCallerReply` TCB lookup pulls back
