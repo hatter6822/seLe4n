@@ -215,13 +215,20 @@ theorem replyRecvBody_preserves_ipcInvariantFull
             (endpointReplyOnCore tid prevCaller msg ec st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
-      (∀ tcb, st2.getTcb? ((recordedReplyServer? st prevCaller).getD tid) = some tcb →
-        passiveServerIdleAllowed tcb.ipcState) ∧
+      -- **PR #897 review**: the idle-state obligation is the HOLDER's, keyed on
+      -- the pair the pop returned -- the thread the post-receive half now
+      -- deschedules.  It was stated unconditionally at `recordedReplyServer?`,
+      -- which HP6.8's splice makes a different thread on an orphan head.
+      (∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+        replyRecvPoppedDonation rid prevCaller
+          (endpointReplyOnCore tid prevCaller msg ec st).1 = some (scId, holder) →
+        ∀ tcb, st2.getTcb? holder = some tcb →
+          passiveServerIdleAllowed tcb.ipcState) ∧
       (∀ (tid' : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
           nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
-          (replyRecvPoppedContext rid prevCaller
+          (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller msg ec st).1)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
@@ -252,7 +259,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
             rw [hPop] at hStep
             simp only [] at hStep
             rw [replyRecvPostPopState_eq_of_ok _ _ st1 st1p returnedSc? hPop] at hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
-            rw [replyRecvPoppedContext_eq_of_ok _ _ st1 st1p returnedSc? hPop] at hReturnStage
+            rw [replyRecvPoppedDonation_eq_of_ok _ _ st1 st1p returnedSc? hPop] at hReturnStage
             have hInv1p : ipcInvariantFull st1p :=
               replyRecvPopDonation_preserves_ipcInvariantFull
                 rid prevCaller st1 st1p returnedSc?
@@ -546,13 +553,24 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
               (determineExecutingCore st tid) st).1)
         = (st2, .ok (nextThread, summary2, sgi2)) →
       st2.objects.invExt ∧
-      (∀ tcb, st2.getTcb? ((recordedReplyServer? st prevCaller).getD tid) = some tcb →
-        passiveServerIdleAllowed tcb.ipcState) ∧
+      -- **PR #897 review**: the idle-state obligation is the HOLDER's, keyed on
+      -- the pair the pop returned -- the thread the post-receive half now
+      -- deschedules.  It was stated unconditionally at `recordedReplyServer?`,
+      -- which HP6.8's splice makes a different thread on an orphan head.
+      (∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+        replyRecvPoppedDonation rid prevCaller
+            (endpointReplyOnCore tid prevCaller
+              { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
+                  1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+                caps := #[], badge := replyBadge }
+              (determineExecutingCore st tid) st).1 = some (scId, holder) →
+        ∀ tcb, st2.getTcb? holder = some tcb →
+          passiveServerIdleAllowed tcb.ipcState) ∧
       (∀ (tid' : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId),
         st2.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid) ∧
       (∀ st3, replyRecvPostReceiveDonation tid ((recordedReplyServer? st prevCaller).getD tid)
           nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD tid))
-          (replyRecvPoppedContext rid prevCaller
+          (replyRecvPoppedDonation rid prevCaller
             (endpointReplyOnCore tid prevCaller
               { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
                   1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,

@@ -1702,7 +1702,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -2084,7 +2084,7 @@ run_negative_check "INVARIANT" rg -n 'stageWokenSendCompletion st. wokenSender' 
 # drift apart again, and it is a mutation that leaves every name in the file
 # present.  WS-RM renamed the declaration when it split the fused resolution --
 # the question the anchor asks is unchanged.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation\s*\n?\s*\(replyRecvServerDeschedule tid recordedServer st\) tid nextThread" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation\s*\n?\s*\(replyRecvHolderDeschedule tid holder st\) tid nextThread" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyCallDonationOnCore" SeLe4n/Kernel/API.lean'
 # PR #895 review round 8: ...and the Call arm deschedules the recorded server
 # when the reply capability was DELEGATED.  `tid` is the receiver, so it is the
@@ -2094,14 +2094,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDona
 # -- it is conditioned on the thread already being descheduled -- so the anchor
 # is what pins it.  The negative is the PRE-FIX spelling: it keeps the donation
 # call and passes the undescheduled state, which is exactly the defect.
-run_check "INVARIANT" rg -n '^def replyRecvServerDeschedule' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def replyRecvHolderDeschedule' SeLe4n/Kernel/API.lean
 # ...at the core the server is ACTUALLY placed on, resolved by the step itself.
 # Round 9 took the caller's `serverCore`, which is `determineExecutingCore` -- a
 # core the server is CURRENT on, else `bootCoreId` -- so a preempted server was
 # descheduled on a queue it was not on and the defect survived untouched
 # (PR #895 review round 10).  The negative below is that pre-fix spelling.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st recordedServer" SeLe4n/Kernel/API.lean'
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedule[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st recordedServer serverCore" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHolderDeschedule[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st holder" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHolderDeschedule[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st holder serverCore" SeLe4n/Kernel/API.lean'
 # ...and the negative is scoped to the whole TRANSITION, not to the helper.
 # Round 10 bounded it to `replyRecvServerDeschedule` and the sibling arm of
 # `replyRecvPostReceiveDonation` kept calling `removeRunnableOnCore` directly
@@ -2109,21 +2109,21 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDeschedul
 # live defect and its silence was read as coverage (PR #895 review round 11).
 # A declaration-bounded negative only ever says something about the declaration
 # it names; the relation here is about every deschedule of the recorded server.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st recordedServer serverCore" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*removeRunnableOnCore st holder serverCore" SeLe4n/Kernel/API.lean'
 # ...and both arms reach the one step that resolves placement itself.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st recordedServer" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement st holder" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
 # ...and the write set names the cores that deschedule writes, or it is false of
 # exactly that arm.
-run_check "INVARIANT" rg -n '^def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvServerDescheduleWriteSet tid recordedServer st" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n '^def replyRecvHolderDescheduleWriteSet' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvHolderDescheduleWriteSet tid holder st" SeLe4n/Kernel/API.lean'
 # ...and the footprint reads the SAME resolver the transition does, so the two
 # cannot name different cores -- which is how round 9's cut went wrong.  Both
 # halves delegate, and `placedCoreOf?` is read in exactly the two definitions
 # anchored below: a resolver spelled a third time is a third answer.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/API.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvDescheduleAndWalkWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHolderDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st holder" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvDescheduleAndWalkWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st holder" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacementCores[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 # The guard IS the donation's caller-blocked obligation, not a second reading
 # of it: a receiving arm discharges the hypothesis from the predicate it
@@ -17915,14 +17915,14 @@ run_check "INVARIANT" rg -F -n 'def pipChainWriteSet (st : SystemState) (startTi
 run_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet (st : SystemState)' SeLe4n/Kernel/IPC/Operations/Donation.lean
 run_check "INVARIANT" rg -F -n 'def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -F -n 'def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -F -n 'def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -F -n 'def replyRecvDescheduleAndWalkWriteSet (recordedServer : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvHolderDescheduleWriteSet (tid holder : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvDescheduleAndWalkWriteSet (holder recordedServer : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
 # ...and none of the six may be declared in the staged module again: a write set
 # there is one the production footprint cannot read, which is the whole finding.
 run_negative_check "INVARIANT" rg -F -n 'def pipChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -F -n 'def replyRecvBodyWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -F -n 'def replyRecvPostReceiveDonationWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_negative_check "INVARIANT" rg -F -n 'def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def replyRecvHolderDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -F -n 'def replyRecvDescheduleAndWalkWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # ...while the CONFINEMENT theorems stay there, because
@@ -18053,5 +18053,35 @@ run_negative_check "INVARIANT" rg -U -n 'private partial def cfOwnerName : Name 
 # ...and the plant that makes the resolution decisive: a writer whose name
 # RESEMBLES a compiler auxiliary, reported under its own name by both sweeps.
 run_check "INVARIANT" rg -F -n 'SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"' scripts/check_content_flow_coverage.py
+
+# --- v0.35.149: the `.replyRecv` deschedule names the thread the pop unbound ---
+#
+# WS-HP HP4 (`v0.35.38`) repointed the pop's TRIGGER onto the answered reply
+# frame and left the post-receive half's DESCHEDULE on `recordedReplyServer?` --
+# the server the answered caller recorded when it *Called*.  HP6.8 (`v0.35.45`)
+# made the splice live, which is what puts the two readings in disagreement: a
+# spliced middle caller leaves an orphan head, and there the context's bound
+# thread is not the thread the caller recorded.  Measured on the live
+# `replyRecvBody`: the holder ended `.unbound` and still queued (running at its
+# legacy TCB band charged to no reservation), while a bystander that still held
+# its own reservation was taken off its run queue and left `.ready`.
+#
+# The pair travels inside the arm selector, so no caller can hold the context
+# and the holder apart.
+run_check "INVARIANT" rg -F -n 'Kernel (Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n '.ok (some (oldScId, holder), migrateSchedContextReplenishment st1'"'"' oldScId' SeLe4n/Kernel/API.lean
+# Both deschedule arms name the holder; both chain walks keep `recordedServer`.
+run_check "INVARIANT" rg -F -n '(replyRecvHolderDeschedule tid holder st) tid nextThread with' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n '(descheduleAtPlacement st holder) recordedServer serverCore).1)' SeLe4n/Kernel/API.lean
+# ...and the relation that ties the deschedule to the pop's own trigger.
+run_check "INVARIANT" rg -F -n 'theorem replyRecvPopDonation_holder_eq_frameHead' SeLe4n/Kernel/API.lean
+# NEGATIVES: the retired spellings must not come back.
+run_negative_check "INVARIANT" rg -F -n 'replyRecvServerDeschedule' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -F -n 'replyRecvPoppedContext' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -F -n 'descheduleAtPlacement st recordedServer' SeLe4n/
+run_negative_check "INVARIANT" rg -F -n 'replyRecvHolderDeschedule tid recordedServer' SeLe4n/
+# ...and the witness that both shapes are reachable and the outcome differs.
+run_check "INVARIANT" rg -F -n 'runReplyRecvHolderDescheduleChecks' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'private def recordedServerDescheduleTarget' tests/SmpIpcSuite.lean
 
 finalize_report

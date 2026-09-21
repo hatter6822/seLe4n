@@ -1869,18 +1869,18 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
 -- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
-theorem replyRecvDescheduleAndWalk_confinedToCores (recordedServer : SeLe4n.ThreadId)
+theorem replyRecvDescheduleAndWalk_confinedToCores (holder recordedServer : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
-      (propagatePipChainCrossCore (descheduleAtPlacement st recordedServer)
+      (propagatePipChainCrossCore (descheduleAtPlacement st holder)
         recordedServer serverCore
-        (descheduleAtPlacement st recordedServer).objectIndex.length).1
-      (replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st) :=
+        (descheduleAtPlacement st holder).objectIndex.length).1
+      (replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st) :=
   observableSlotsConfinedToCores_trans
-    (descheduleAtPlacement_confinedToCores st recordedServer)
+    (descheduleAtPlacement_confinedToCores st holder)
     (propagatePipChainCrossCore_confinedToCores serverCore
-      (descheduleAtPlacement st recordedServer).objectIndex.length
-      (descheduleAtPlacement st recordedServer) recordedServer)
+      (descheduleAtPlacement st holder).objectIndex.length
+      (descheduleAtPlacement st holder) recordedServer)
 
 /-- **WS-RM (`v0.35.6`)**: the pop half writes **no** core.  Both its effects are
 per-core silent — the donation return writes neither a scheduler slot nor the
@@ -1890,7 +1890,7 @@ from its post-receive half.  That is what lets `replyRecvBody` move the pop to
 the other side of the receive leg without its declared set changing. -/
 theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
     (target : SeLe4n.ThreadId)
-    (st st' : SystemState) (returned? : Option SeLe4n.SchedContextId)
+    (st st' : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (hStep : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     observableSlotsConfinedToCores st st' [] := by
   unfold replyRecvPopDonation at hStep
@@ -1924,12 +1924,12 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
           have hEq : migrateSchedContextReplenishment st1' oldScId
               (determineTargetCore st holder)
                 (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
-            (by simpa using hStep : some oldScId = returned? ∧ _).2
+            (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq]
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
 
--- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvServerDescheduleWriteSet` moved to `Kernel/API.lean`, beside the
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvHolderDescheduleWriteSet` moved to `Kernel/API.lean`, beside the
 -- transition it describes.  A write set declared in a STAGED module is one the
 -- production scheduler footprint cannot read, which is the layering rule Cuts 5
 -- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
@@ -1937,18 +1937,18 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
 
 /-- ...and it stays inside them, by the same two facts the unconditional
 deschedule above uses. -/
-theorem replyRecvServerDeschedule_confinedToCores (tid recordedServer : SeLe4n.ThreadId)
+theorem replyRecvHolderDeschedule_confinedToCores (tid holder : SeLe4n.ThreadId)
     (st : SystemState) :
     observableSlotsConfinedToCores st
-      (replyRecvServerDeschedule tid recordedServer st)
-      (replyRecvServerDescheduleWriteSet tid recordedServer st) := by
-  unfold replyRecvServerDeschedule replyRecvServerDescheduleWriteSet
-  by_cases h : recordedServer = tid
+      (replyRecvHolderDeschedule tid holder st)
+      (replyRecvHolderDescheduleWriteSet tid holder st) := by
+  unfold replyRecvHolderDeschedule replyRecvHolderDescheduleWriteSet
+  by_cases h : holder = tid
   · rw [if_pos h, if_pos h]; exact observableSlotsConfinedToCores_refl st []
   · rw [if_neg h, if_neg h]
     -- **One resolver, read by both.**  The transition and its footprint match
     -- because they are the same step, not two spellings that happen to agree.
-    exact descheduleAtPlacement_confinedToCores st recordedServer
+    exact descheduleAtPlacement_confinedToCores st holder
 
 -- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved to `Kernel/API.lean`, beside the
 -- transition it describes.  A write set declared in a STAGED module is one the
@@ -1962,7 +1962,8 @@ per-core silent; what is not silent is the recorded server's deschedule and the
 chain reversion, and both are named. -/
 theorem replyRecvPostReceiveDonation_confinedToCores
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : CoreId)
-    (returned? : Option SeLe4n.SchedContextId) (st st' : SystemState) (u : Unit)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st st' : SystemState) (u : Unit)
     (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
       = .ok (u, st')) :
     observableSlotsConfinedToCores st st'
@@ -1979,7 +1980,8 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     rw [← hOkInj hStep]
     exact propagatePipChainCrossCore_confinedToCores serverCore st.objectIndex.length st
       recordedServer
-  | some scId =>
+  | some pair =>
+    obtain ⟨_scId, holder⟩ := pair
     simp only [] at hStep ⊢
     split
     · next hCall =>
@@ -1993,7 +1995,7 @@ theorem replyRecvPostReceiveDonation_confinedToCores
         -- which is `desched ++ pip` definitionally; the left association would
         -- need `List.append_nil`.
         exact observableSlotsConfinedToCores_trans
-          (replyRecvServerDeschedule_confinedToCores tid recordedServer st)
+          (replyRecvHolderDeschedule_confinedToCores tid holder st)
           (observableSlotsConfinedToCores_trans
             (applyRendezvousCallDonation_confinedToCores _ st2 _ _ hDon)
             (propagatePipChainCrossCore_confinedToCores serverCore
@@ -2001,7 +2003,7 @@ theorem replyRecvPostReceiveDonation_confinedToCores
     · next hCall =>
       simp only [hCall, Bool.false_eq_true, if_false] at hStep
       rw [← hOkInj hStep]
-      exact replyRecvDescheduleAndWalk_confinedToCores recordedServer serverCore st
+      exact replyRecvDescheduleAndWalk_confinedToCores holder recordedServer serverCore st
 
 /-- SM8.B.2: a scheduler- and machine-preserving prefix can be dropped from a
 confinement statement.

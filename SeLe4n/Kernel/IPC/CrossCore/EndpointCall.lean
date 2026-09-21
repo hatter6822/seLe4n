@@ -100,7 +100,7 @@ The one step for "take this thread off the scheduler", for the reason round 10
 gave and then did not finish applying: `removeRunnableOnCore` accepts a core
 from *anyone*, so protecting one named wrapper leaves every direct caller free
 to hand it a proxy.  Round 10 removed the core parameter from
-`replyRecvServerDeschedule` and left its sibling arm calling the primitive
+`replyRecvHolderDeschedule` and left its sibling arm calling the primitive
 directly with `determineExecutingCore`'s answer, so the same defect survived
 twenty-five lines away (PR #895 review round 11).
 

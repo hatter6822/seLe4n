@@ -404,8 +404,9 @@ is retired and split:
 Each carries its own `_preserves_ipcInvariantFull` and
 `_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
 step runs on; `PerCoreDonationStep` gains a constructor for each in place of the
-fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are total
-accessors over the pop, so the staged dispatch payoff's hypothesis pack stays
+fused one.  `replyRecvPostPopState` / `replyRecvPoppedDonation` are total
+accessors over the pop (the second was `replyRecvPoppedContext` until
+`v0.35.149`, when the pop's result became the `(context, holder)` pair), so the staged dispatch payoff's hypothesis pack stays
 flat and pre-state-computable while its receive-leg fields move to the post-pop
 state.
 

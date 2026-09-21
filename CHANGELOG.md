@@ -1,3 +1,82 @@
+## v0.35.149 — the `.replyRecv` deschedule names the thread the pop unbound
+
+**PR #897 review (P2, `SeLe4n/Kernel/API.lean:853`).**  `replyRecvPopDonation`
+returned only the scheduling context it handed back, and
+`replyRecvPostReceiveDonation` then descheduled **`recordedReplyServer?`** — the
+server the answered caller recorded when it *Called*.  The thread the pop makes
+`.unbound` is the answered frame's head context's own `boundThread`, and WS-HP
+HP4 (`v0.35.38`) repointed the pop's **trigger** onto the frame while leaving the
+**deschedule** on the binding-era proxy.  HP6.8 (`v0.35.45`) is what makes the two
+disagree: a spliced middle caller leaves an **orphan head**, where the context's
+bound thread is no longer the thread the caller recorded.
+
+**Measured on the live `replyRecvBody`**, on an orphan head with a plain `Send`
+waiting (so the receive leg takes the non-rendezvous arm):
+
+* the holder ended `.unbound` **and still placed**, with `hasSufficientBudget`
+  unconditionally `true` for an unbound thread — so it runs at its legacy TCB band
+  charged to no reservation, which is PR #895 review round 8's defect verbatim, on
+  the sibling site that round did not sweep; and
+* a thread that had lost nothing and still held its own `.bound` reservation was
+  taken off its run queue and left `.ready`, which WS-OD OD1.7 enumerates as
+  unrecoverable (`.tcbResume` demands `.Inactive`, `schedContextBind` re-buckets
+  only an already-queued thread, and `chooseThreadOnCore` never scans ready TCBs).
+
+**The sweep is what settles which answer is right.**  Every production donation
+pop was read: `applyReplyDonation` deschedules `holder` (`removeRunnable`),
+`applyReplyDonationOnCore` deschedules `holder`
+(`descheduleAtPlacement`), `cleanupPreReceiveDonation` leaves placement to the
+receive leg, and the cancellation reclaim *enqueues* the holder because
+`abortPendingIpcOnEndpoint` stages `Architecture.timeoutFrame` into its register
+context (WS-RR RR7.14) and a staged frame must be observable.  Three sites name the
+holder and one names a proxy; this was the proxy.
+
+**What changed.**  `replyRecvPopDonation : Kernel (Option (SchedContextId × ThreadId))`
+— the pair `replyFrameHeadHolder?` already produces — so the holder travels *inside*
+the arm selector and no caller can pass a different thread to the deschedule than
+the one the pop unbound.  `replyRecvServerDeschedule` is
+`replyRecvHolderDeschedule (tid holder)`; `replyRecvPoppedContext` is
+`replyRecvPoppedDonation`, since an accessor called "context" that answers a pair
+no longer describes what it is.  Both deschedule arms name the holder and **both
+chain walks keep `recordedServer`**, because that walk keys on waiters rather than
+on donations (WS-HP HP7's reason for keeping the resolver).
+`replyRecvPopDonation_holder_eq_frameHead` is the relation; the two definitional
+cases are `replyRecvHolderDeschedule_eq_self_of_receiver` and
+`_eq_deschedule_of_ne`.
+
+**The obligation moved with the thread.**  `replyRecvPostReceiveDonation`'s
+`hServerIdleAllowed` — stated unconditionally at `recordedServer` — is
+`hHolderIdleAllowed`, conditioned on the arm selector: given the pair the pop
+returned, the thread it names is in a state `passiveServerIdle` permits.  On the
+`none` arm nothing is descheduled and there is no premise to discharge.  The
+`syscallDispatchQuiescence` / `checkedSyscallDispatchQuiescence` packs carry the
+same shape, and so does `replyRecvBody_preserves_ipcInvariantFull`'s own
+`hReturnStage`.  The write sets follow the same selector — no new parameter can
+disagree with it — and `replyRecvDescheduleAndWalkWriteSet` takes both threads,
+because the arm performs two steps that ask different questions.
+
+**Witness.**  `tests/SmpIpcSuite.lean` §3.27 drives the live arm on the orphan head
+and on a **control** that differs in one field (the caller recording the holder,
+so the two readings coincide — the non-delegated steady state).  The retired
+reading is computed beside the live one, `private`, and nowhere else.  Three
+mutations were run: reverting either deschedule arm and swapping the pair's second
+component all fail to **elaborate**, because the repaired proofs and
+`replyRecvPopDonation_holder_eq_frameHead` pin the relation; the mutation that does
+elaborate — the live body re-deriving the target from the proxy — fails §3.27's
+holder assertion while the control still passes, which is what makes the witness a
+measurement of the *divergence* rather than of the deschedule.
+
+**One mechanical note.**  The first draft pasted the theorem's spelling of the
+reply leg into the *structure field*, whose scope has no `msg` or `ec`.  Lean's
+auto-bound implicits turned that free-name error into six extra binders, so the
+field elaborated and every `intro` in twelve inhabitation witnesses silently
+shifted — twelve `simp made no progress` errors, none of them at the cause.  *A
+spelling is not the expression*: a term moved between scopes must be re-read in the
+scope it lands in, and `autoBound` is what stops the compiler from saying so.
+
+Tier 3: five positives, four negatives, each mutation-tested by keeping every other
+token.  `maxLockSetSize` is unmoved and the golden fixture is byte-identical.
+
 ## v0.35.148 — a resemblance is not a relation, at the taint-writer sweep
 
 PR #897 review.  `check_content_flow_coverage.py` decided *"is this constant a

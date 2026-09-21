@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.148.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.149.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2326,7 +2326,9 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   **a justification that holds on one side of a distinction the code already
   makes is not a justification — say which side, or make the code not care.**
   `replyRecvServerDeschedule` is the named answer, with the write set, the
-  confinement and both bundle proofs carrying it, and the witness pair in
+  confinement and both bundle proofs carrying it (renamed
+  `replyRecvHolderDeschedule` at `v0.35.149`, when its argument stopped being the
+  recorded server), and the witness pair in
   `tests/SmpIpcSuite.lean` §3.9b is delegated *and* non-delegated, because a
   deschedule that fires unconditionally passes the first and breaks the second.
 
@@ -2429,6 +2431,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   same *kind* of mistake, made at the point where a fix chooses what to trust.
 
   **A proxy is not the fact, at the scheduler.**  `replyRecvServerDeschedule`
+  (`replyRecvHolderDeschedule` since `v0.35.149`)
   accepted the core its caller had already computed — `determineExecutingCore`,
   which finds a core the thread is *current* on and otherwise answers
   `bootCoreId`.  A **queued** server matches nothing there, so the deschedule
@@ -2511,8 +2514,9 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   carried since round 10, and that asymmetry is what hid the `///` cell — the
   same defect one level up, inside the matrix meant to close it.  **A
   declaration-bounded negative is a statement about that declaration**: round
-  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule` while the relation
-  is about *every* deschedule of the recorded server, so the sibling arm
+  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule`
+  (`replyRecvHolderDeschedule` since `v0.35.149`) while the relation
+  is about *every* deschedule of the thread the pop unbound, so the sibling arm
   twenty-five lines away kept the retired spelling and the anchor's silence read
   as coverage.  And **a harness that re-spells the gate's own decision absorbs
   the defect it is there to find**: the refusal handler was written out three
@@ -5329,8 +5333,9 @@ own bundle theorem stated at the state its own step runs on.  New code must not
 read the fused name as live.
 
 (5) **The dispatch payoff's receive-leg hypotheses are stated at the post-pop
-state.**  `replyRecvPostPopState` and `replyRecvPoppedContext` are *total*
-accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+state.**  `replyRecvPostPopState` and `replyRecvPoppedDonation` are *total*
+accessors over the pop (the second was `replyRecvPoppedContext` until
+`v0.35.149`, when the pop's result became the `(context, holder)` pair), so `syscallDispatchQuiescence.replyRecvStage` stays a
 flat pre-state-computable pack rather than a quantification nested under the
 pop's own success; the pop's two obligations (`hSrvIdle1`, `hStackValid1`) are
 stated at the reply leg's committed state, which is where it runs.  Stating the
@@ -7956,6 +7961,59 @@ code may assume:
   no SGI can arise.  The retired reading survives in one place,
   `tests/SmpCancellationSuite.lean` §3.24's `retiredHomeAndRunningDeschedule`,
   computed beside the live one on the queued-off-home shape.
+- **A donation pop's deschedule names the thread the pop UNBOUND** (PR #897
+  review, `v0.35.149`).  Every production pop makes the answered frame's head
+  context's own `boundThread` `.unbound`, and the step that follows must be about
+  *that* thread: `applyReplyDonation` and `applyReplyDonationOnCore` always were,
+  and `replyRecvPostReceiveDonation` was not — it descheduled
+  `recordedReplyServer?`, the server the answered caller recorded when it
+  *Called*.  WS-HP HP4 (`v0.35.38`) repointed the **trigger** onto the frame and
+  left the **deschedule** on the binding-era proxy; HP6.8 (`v0.35.45`) is what
+  makes the two disagree, because a spliced middle caller leaves an **orphan
+  head** whose context is bound to a thread the caller never recorded.  Measured
+  on the live `replyRecvBody`: the holder ended `.unbound` and still queued
+  (`hasSufficientBudget` is unconditionally `true` for an unbound thread, so it
+  runs at its legacy TCB band charged to no reservation — PR #895 round 8's
+  defect on the sibling site that round did not sweep), while a bystander still
+  holding its own reservation was taken off its run queue and left `.ready`,
+  which WS-OD OD1.7 enumerates as unrecoverable.  Four things new code must
+  respect.  (1) **The holder travels inside the arm selector**:
+  `replyRecvPopDonation` answers `Option (SchedContextId × ThreadId)`, so a
+  consumer cannot hold the context and the holder apart and hand the deschedule a
+  different thread; `replyRecvPopDonation_holder_eq_frameHead` is the relation,
+  and `replyRecvServerDeschedule` / `replyRecvPoppedContext` are refused
+  tree-wide.  (2) **Two threads, two questions**: both deschedule arms name the
+  holder and both chain walks keep `recordedServer`, because the walk keys on
+  waiters rather than on donations (WS-HP HP7's reason for keeping that
+  resolver).  (3) **The idle-state obligation moved with the thread** —
+  `hHolderIdleAllowed`, conditioned on the pair the pop returned rather than
+  stated unconditionally at a proxy, in the transition's own theorem and in both
+  dispatch packs.  (4) **The cancellation reclaim is the one pop that ENQUEUES**,
+  and that is a decision rather than an omission: `abortPendingIpcOnEndpoint`
+  stages `Architecture.timeoutFrame` into the holder's register context (WS-RR
+  RR7.14), so the kernel owes it a delivery it can only observe by running, where
+  a pop owes nothing.  See the registered temporal-isolation residue that choice
+  carries in `docs/REGISTERED_DEBT.md` table C.
+- **A reclaimed holder runs unbudgeted, and `passiveServerIdle` cannot see it**
+  (PR #897 review, `v0.35.149`; registered, unfixed).  `.unbound` in this kernel
+  means *both* "MCS-passive" and "legacy time-sliced at `tcb.priority`":
+  `hasSufficientBudget`'s `.unbound` arm is `true` by design,
+  `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever, and
+  `schedContextUnbind` deliberately re-buckets an unbound thread.  So the
+  cancellation reclaim cannot both return the reservation and keep the holder off
+  the CPU.  Measured on the live `suspendThreadOnCore`: after a `.tcbSuspend` of a
+  reply-blocked client whose donated context is held by a server blocked on a
+  nested call, the server ends `.unbound`, `.ready`, **on its home core's run
+  queue**, `hasSufficientBudget = true`, at its own TCB band, and
+  `chooseThreadOnCore` selects it.  `passiveServerIdle`'s antecedent is *not
+  queued*, so a runnable unbound thread satisfies it vacuously — PR #895 round 8's
+  rule, on the conjunct that rule was written about.  A properly passivated server
+  is otherwise never runnable-and-unbound (it is unbound while blocked in receive
+  and enqueued only by a donation), so **the reclaim is what creates the state**:
+  a malicious passive server that Calls onward and blocks, plus an ordinary
+  suspension of its client, escapes CBS admission entirely.  New code must not
+  read a successful reclaim as leaving the holder budget-limited, and **v1.0.0
+  must not claim that a thread without a reservation does not consume CPU.**
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

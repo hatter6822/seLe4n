@@ -2994,8 +2994,11 @@ private def runReplyRecvLoopCompletionChecks : IO Unit := do
       match replyRecvPopDonation donReply donClient stAfterReply with
       | .error e => assertBool s!"the donation pop must succeed (got {reprStr e})" false
       | .ok (returned?, stPopped) =>
-        assertBool "the pop hands the context back to its original owner"
-          (returned? == some scClient)
+        -- **PR #897 review**: the pop answers the context AND the thread it
+        -- unbound, so the post-receive half deschedules that thread rather than
+        -- `recordedReplyServer?` — which HP6.8's splice makes a different thread.
+        assertBool "the pop hands the context back to its original owner, naming the holder"
+          (returned? == some (scClient, donServer))
         assertBool "...and the answered Reply is free once its frame comes off the stack"
           (match stPopped.getReply? donReply with
            | some r => r.isFree
@@ -3828,6 +3831,148 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
                 == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
          | .error _ => false)
 
+-- ============================================================================
+-- §3.27 the `.replyRecv` deschedule names the thread the pop unbound
+--        (WS-RR RR8.12, PR #897 review)
+-- ============================================================================
+
+/-! The post-receive half used to deschedule `recordedReplyServer?` — the server
+the answered caller recorded when it **Called** — while the thread the pop makes
+`.unbound` is the answered frame's head context's own `boundThread`.  HP4
+(`v0.35.38`) repointed the pop's *trigger* onto the frame and left the
+*deschedule* on the binding-era proxy; HP6.8 (`v0.35.45`) made the splice live,
+which is what puts the two readings in disagreement — a spliced middle caller
+leaves an **orphan head**, and there the context's bound thread is not the thread
+the caller recorded.
+
+Two-sided, and the suite measures both sides: the holder stayed runnable while
+`.unbound` (`hasSufficientBudget` is unconditionally `true` there, so it runs at
+its legacy TCB band charged to no reservation — PR #895 round 8's defect on the
+sibling site that round did not sweep), and an unrelated thread still holding its
+own reservation was taken off its run queue and left `.ready`, which WS-OD OD1.7
+enumerates as unrecoverable (`.tcbResume` demands `.Inactive`, `schedContextBind`
+re-buckets only an already-queued thread, and `chooseThreadOnCore` never scans
+ready TCBs).
+
+The retired reading lives here, `private`, and nowhere else. -/
+
+/-- The superseded deschedule target: the server the answered caller recorded at
+Call time, which is the holder only while nothing has re-headed the stack. -/
+private def recordedServerDescheduleTarget (st : SystemState) (prevCaller receiver : SeLe4n.ThreadId) :
+    SeLe4n.ThreadId :=
+  (recordedReplyServer? st prevCaller).getD receiver
+
+private def orphanS1 : SeLe4n.ThreadId := ⟨861⟩
+private def orphanClient : SeLe4n.ThreadId := ⟨862⟩
+private def orphanHolder : SeLe4n.ThreadId := ⟨863⟩
+private def orphanSender : SeLe4n.ThreadId := ⟨864⟩
+private def orphanDelegate : SeLe4n.ThreadId := ⟨865⟩
+private def orphanEp : SeLe4n.ObjId := ⟨866⟩
+private def orphanReply : SeLe4n.ReplyId := ⟨867⟩
+private def orphanSc : SeLe4n.SchedContextId := ⟨868⟩
+private def orphanS1Sc : SeLe4n.SchedContextId := ⟨869⟩
+
+/-- **The orphan head**: `orphanReply` heads `orphanSc`, whose `boundThread` is
+`orphanHolder`, while `orphanClient` recorded `orphanS1` as its server.  A plain
+`Send` waits on the endpoint so the receive leg takes the **non-rendezvous** arm,
+which is the arm that deschedules unconditionally.  `orphanS1` carries a
+reservation of its own, so descheduling it is a measurable strand rather than a
+no-op. -/
+private def stOrphanHeadReplyRecv : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject cnRoot (.cnode
+        { depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+    |>.withObject orphanEp (.endpoint
+        { sendQ := ({ head := some orphanSender, tail := some orphanSender } : IntrusiveQueue) })
+    |>.withObject orphanReply.toObjId (.reply
+        { replyId := orphanReply, caller := some orphanClient,
+          next := some (.head orphanSc) })
+    |>.withObject orphanClient.toObjId (.tcb { mkTcb 862 30 (some c1) with
+        ipcState := .blockedOnReply orphanEp (some orphanS1),
+        threadState := .BlockedReply,
+        replyObject := some orphanReply,
+        schedContextBinding := SchedContextBinding.unbound })
+    |>.withObject orphanS1.toObjId (.tcb { mkTcb 861 40 (some c2) with
+        schedContextBinding := .bound orphanS1Sc })
+    |>.withObject orphanHolder.toObjId (.tcb { mkTcb 863 50 (some c3) with
+        schedContextBinding := .donated orphanSc orphanClient })
+    |>.withObject orphanSender.toObjId (.tcb { mkTcb 864 20 (some c0) with
+        ipcState := .blockedOnSend orphanEp,
+        threadState := .BlockedSend,
+        queuePPrev := some .endpointHead,
+        pendingMessage := some IpcMessage.empty })
+    |>.withObject orphanDelegate.toObjId (.tcb { mkTcb 865 25 (some c0) with
+        schedContextBinding := SchedContextBinding.unbound })
+    |>.withObject orphanSc.toObjId (.schedContext { SchedContext.empty orphanSc with
+        boundThread := some orphanHolder, scReply := some orphanReply })
+    |>.withObject orphanS1Sc.toObjId (.schedContext { SchedContext.empty orphanS1Sc with
+        boundThread := some orphanS1 })
+    |>.withRunnable [orphanS1, orphanHolder, orphanDelegate]
+    |>.build)
+
+/-- The CONTROL: `stOrphanHeadReplyRecv` with the answered caller recording the
+**holder** — one field different, and the two readings then coincide, which is
+the ordinary non-delegated steady state. -/
+private def stAgreeingHeadReplyRecv : SystemState :=
+  match stOrphanHeadReplyRecv.getTcb? orphanClient with
+  | none => stOrphanHeadReplyRecv
+  | some t =>
+      { stOrphanHeadReplyRecv with
+          objects := stOrphanHeadReplyRecv.objects.insert orphanClient.toObjId
+            (.tcb { t with ipcState := .blockedOnReply orphanEp (some orphanHolder) }) }
+
+private def runReplyRecvHolderDescheduleChecks : IO Unit := do
+  IO.println "--- §3.27 WS-RR RR8.12: the `.replyRecv` deschedule names the pop's holder ---"
+  let st := stOrphanHeadReplyRecv
+  -- (i) Setup: the two readings DISAGREE on this state, which is the whole point.
+  assertBool "setup: the answered frame heads the context, whose bound thread is the holder"
+    (replyFrameHeadHolder? st orphanReply == some (orphanSc, orphanHolder))
+  assertBool "setup: ...while the caller recorded a DIFFERENT server"
+    (decide (recordedServerDescheduleTarget st orphanClient orphanDelegate = orphanS1)
+      && decide (orphanS1 ≠ orphanHolder))
+  assertBool "setup: both are runnable, and the recorded server holds its own reservation"
+    (runnableOnSomeCore st orphanHolder && runnableOnSomeCore st orphanS1
+      && decide ((st.getTcb? orphanS1).map (·.schedContextBinding)
+          = some (SchedContextBinding.bound orphanS1Sc)))
+  -- (ii) The live arm, end to end.
+  match replyRecvBody orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c0 st with
+  | .error e => assertBool s!"the live `.replyRecv` must succeed (got {reprStr e})" false
+  | .ok (_, stOut) =>
+      -- The pop unbound the holder...
+      assertBool "the pop unbinds the holder"
+        (decide ((stOut.getTcb? orphanHolder).map (·.schedContextBinding)
+          = some SchedContextBinding.unbound))
+      -- ...and the deschedule takes THAT thread off its run queue.
+      assertBool "...and the deschedule takes the HOLDER off its core: no unbudgeted runnable"
+        (!runnableOnSomeCore stOut orphanHolder && !runningOnSomeCore stOut orphanHolder)
+      -- ...while the recorded server, which lost nothing, keeps its placement.
+      assertBool "...while the recorded server keeps its reservation AND its placement"
+        (decide ((stOut.getTcb? orphanS1).map (·.schedContextBinding)
+            = some (SchedContextBinding.bound orphanS1Sc))
+          && threadPlacedOnSomeCore stOut orphanS1)
+      -- The retired reading, computed beside the live one: it names the thread
+      -- the fix stopped descheduling, so the assertions above discriminate.
+      assertBool "NEGATIVE: the RETIRED target is the recorded server, not the holder"
+        (decide (recordedServerDescheduleTarget st orphanClient orphanDelegate ≠ orphanHolder))
+  -- (iii) The CONTROL: the same fixture with the caller recording the holder --
+  -- one field different, the two readings agreeing, which is the non-delegated
+  -- steady state.  There the fix is the identity, so an implementation that
+  -- descheduled `recordedReplyServer?` passes (iii) and fails (ii): that is what
+  -- makes (ii) a measurement of the DIVERGENCE rather than of the deschedule.
+  let stAgree := stAgreeingHeadReplyRecv
+  assertBool "CONTROL setup: here the recorded server IS the holder"
+    (decide (recordedServerDescheduleTarget stAgree orphanClient orphanDelegate = orphanHolder))
+  match replyRecvBody orphanEp orphanDelegate orphanReply orphanClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c0 stAgree with
+  | .error e => assertBool s!"the control `.replyRecv` must succeed (got {reprStr e})" false
+  | .ok (_, stOut) =>
+      assertBool "CONTROL: the holder is descheduled here too -- the fix is the identity"
+        (!runnableOnSomeCore stOut orphanHolder && !runningOnSomeCore stOut orphanHolder)
+      assertBool "CONTROL: ...and the bystander is untouched, as it is on the divergent shape"
+        (threadPlacedOnSomeCore stOut orphanS1)
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -3859,6 +4004,7 @@ def runSmpIpcChecks : IO Unit := do
   runDonationOriginRedirectChecks
   runReceivePriorityHandoffChecks
   runReceiveReplenishSegmentChecks
+  runReplyRecvHolderDescheduleChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."
