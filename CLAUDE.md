@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.126.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.127.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1603,6 +1603,64 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   mis-attributed until the direct reads went through a helper that reports a refusal
   the way `violations` already did.  **A harness that crashes where it should report
   hides the second defect**, and a mutation run is the only thing that shows it.
+
+  **And the located subject's TEXT and its IDENTITY are each something the program
+  computes** (PR #897 review, `v0.35.127`).  Two fail-open defects in that same
+  locator, one cut later, and they are one class: it asked *what shape is this* where
+  the question was *what value does this have*, and *what is this called* where the
+  question was *which subject is this*.
+
+  The text half is `a spelling is not the text` at the one place the text is
+  assembled rather than written.  `_is_concatenation` asked whether an expression
+  builds a string from parts, and the callers then **joined its literals in source
+  order** — which is the string `"a" + "b"` builds and is *not* the one
+  `"… .{}Info …".format("opaque")` builds: joining yields `… .{}Info … opaque`, so the
+  constructor pattern matches nothing while the template's own import marker **is**
+  accounted for, so the fail-closed marker count passes too and the asker is invisible
+  in both directions at once.  `_reconstruct` returns the string or `None`, and four
+  forms are determined by literals — a literal, `+` over two determined operands, an
+  f-string with no interpolation, and `<literal>.join([<determined>, …])`.  Narrowing
+  the reader is **not enough on its own**, and that is the load-bearing part: with
+  `.format` no longer forming an assembly its template would fall through to the
+  bare-constant branch and be *located*, reopening the hole one branch over — so
+  `_unreadable_assemblies` **refuses** a string assembly that carries a marker and
+  does not reconstruct, which is *a scanner's default branch is a decision* applied to
+  the one branch a narrowing creates.  The shape set excludes a call on a plain
+  **name**, because a probe handed straight to a helper is this tree's commonest idiom
+  and its literal is the call's *argument* rather than a part of a string the call
+  builds; a `.replace` on a named `@SENTINEL@` template — how all four real probes are
+  built — is likewise not a subject, its marker living in the template's own
+  assignment.  Measured before choosing: **zero** such expressions on the tracked
+  tree, so the refusal is entirely planted today.
+
+  The identity half is this file's own rule inside the cut that wrote it.  A named
+  probe's key was the bare target name, so two probes assigning `PROBE` in two
+  functions shared one subject and their counts **added**: change one from `.defnInfo`
+  to `.opaqueInfo` and the other the inverse, and every number in the inventory is
+  unchanged while *both* askers have re-decided the question.  `v0.35.124` had already
+  refused exactly that for probes binding **no** name, one branch over, under a
+  comment stating the reason — *a fix applied at one site and not its sibling*, for the
+  third time in this file.  `_qualified` keys a named probe by scope-and-name, the
+  scope itself is now a **qualified path** rather than the nearest declaration name (a
+  bare name is a resemblance two methods in two classes share), and two probes that
+  still land on one key are **refused** — by OCCURRENCE, not by distinct text, because
+  two identical rebindings double every constructor in them and a set cannot see the
+  second one.  Free on the tree: all 17 located probes are at module scope, so every
+  key is byte-identical and the pin does not move.
+
+  Two things the cut records about its own witnesses.  **The axis came from Python's
+  grammar, not from the reported spelling**: the review named `.format`, and `%` was
+  not even *grouped* by the superseded reader — so its template was read as a bare
+  inline probe and the constructor was lost the same way, one branch further over —
+  while an interpolating f-string has `FormattedValue` parts that are not literals at
+  all.  All three are cases, with **two controls** (a literal f-string, which
+  reconstructs and is read; a `@SENTINEL@` template, which is the tree's own idiom),
+  because a fix that banned the node type would pass a case list drawn from the
+  finding.  And **a mutation must revert the defect, not merely edit the code**: the
+  first mutation written against the `.format` refusal widened a branch whose other
+  conditions still rejected the input, so the self-test passed and the case read as
+  unverified; the mutation that decides restores the *superseded reading* — a
+  `.format` branch returning the source-order join — and is caught immediately.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule

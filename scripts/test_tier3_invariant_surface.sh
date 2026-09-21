@@ -16765,25 +16765,30 @@ run_check "INVARIANT" rg -F -n 'def _string_constants(tree: ast.AST) -> list[tup
 run_check "INVARIANT" rg -F -n '        inline.append((scope, constant.value))' scripts/check_declaration_kind_askers.py
 # ...AND EVERY EXPRESSION THAT ASSEMBLES ONE, because an assembled probe's marker
 # and its `ConstantInfo` match sit in different fragments, so neither qualifies
-# alone.  Four forms, derived as a predicate both walks read: two spellings of "is
-# this a concatenation" could disagree about which expression a probe belongs to.
-run_check "INVARIANT" rg -F -n 'def _is_concatenation(node: ast.AST) -> bool:' scripts/check_declaration_kind_askers.py
-run_check "INVARIANT" rg -F -n '    groups = _concatenation_groups(tree)' scripts/check_declaration_kind_askers.py
-# A GROUP IS REASSEMBLED IN SOURCE ORDER.  `ast.walk` is breadth-first and
-# `A + B + C` parses as `BinOp(BinOp(A, B), C)`, so it yields `C, A, B`: a join in
-# walk order destroys a constructor name straddling the last boundary and can
-# invent one elsewhere.  Two fragments cannot witness it -- one `BinOp`'s operands
-# come out in order -- which is why the fixture the defect arrived with could not.
-run_check "INVARIANT" rg -F -n '            key=lambda c: (c.lineno, c.col_offset))' scripts/check_declaration_kind_askers.py
+# alone.  `v0.35.127` replaced the predicate (`_is_concatenation`, a SHAPE) with the
+# reconstruction (`_reconstruct`, a VALUE) and both walks read that instead, so one
+# spelling still answers which expression a probe belongs to -- see the v0.35.127
+# block below for why the shape reading was fail-open.
+run_check "INVARIANT" rg -F -n '    assemblies = _assembled_strings(tree)' scripts/check_declaration_kind_askers.py
+# A GROUP IS REASSEMBLED IN SOURCE ORDER -- and since `v0.35.127` that is
+# STRUCTURAL rather than a sort: `_reconstruct` composes `left + right` down the
+# `BinOp` tree, so the order is the grammar's and no `ast.walk` ordering can enter.
+# (The sorted-by-position reading it replaced was correct and fragile: `ast.walk` is
+# breadth-first, so `A + B + C` yielded `C, A, B` and a join in that order destroyed
+# a constructor name straddling the last boundary.)  Case (15) still reads the
+# three-fragment probe back, which is what pins the order.
+run_check "INVARIANT" rg -F -n '        return None if left is None or right is None else left + right' scripts/check_declaration_kind_askers.py
 # ...and only the OUTERMOST one is a subject: an inner concatenation builds a part
 # of the same string, so reporting it too counts one SUBJECT twice.
 run_check "INVARIANT" rg -F -n '        if id(node) in nested:' scripts/check_declaration_kind_askers.py
-# AN ASSEMBLED PROBE TAKES ITS ASSIGNMENT'S NAME.  A probe bound to a name is
-# bound to it whether the right-hand side is one literal or three, and keying the
-# assembled one by its scope would collapse two assembled probes in one module into
-# ONE subject, where the counts add and a count moving between them is invisible --
-# the cardinality-for-a-set defect inside the widening that closes it.
-run_check "INVARIANT" rg -F -n '            found.append((name, "".join(c.value for c in fragments)))' scripts/check_declaration_kind_askers.py
+# AN ASSEMBLED PROBE TAKES ITS ASSIGNMENT'S NAME, qualified by the scope that binds
+# it since `v0.35.127`.  A probe bound to a name is bound to it whether the
+# right-hand side is one literal or three, and keying the assembled one by its scope
+# alone would collapse two assembled probes in one module into ONE subject, where
+# the counts add and a count moving between them is invisible -- the
+# cardinality-for-a-set defect inside the widening that closes it.  The text it
+# carries is `_reconstruct`'s, not a re-join of the fragments.
+run_check "INVARIANT" rg -F -n '            found.append((_qualified(scopes[id(fragments[0])], name), assembled))' scripts/check_declaration_kind_askers.py
 # THE REFUSAL IS A COUNT, not "did we find anything": one located probe used to
 # answer for every marker in the file.  The retired reading must not come back.
 run_check "INVARIANT" rg -F -n '    if markers_located < markers_in_text:' scripts/check_declaration_kind_askers.py
@@ -16943,6 +16948,59 @@ run_check "INVARIANT" rg -F -n 'theorem foldl_enqueueIdleThread_objects_cases' S
 # it; the `_ok_tcb_inactive` name is now the two-field corollary and names its source.
 run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformChecked_ok_tcb_bootSafeFields' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -F -n '  let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj' SeLe4n/Platform/Boot.lean
+
+
+# ===========================================================================
+# v0.35.127 (PR #897 review): the probe locator's TEXT is what the program
+# builds, and its SUBJECT KEY identifies one probe
+# ===========================================================================
+# Two fail-open defects in `v0.35.124`'s own locator, and they are one class: the
+# located subject's IDENTITY and its TEXT must each be what the program produces,
+# and where the scanner cannot compute either it must refuse.
+# ---------------------------------------------------------------------------
+# (1) THE TEXT IS A VALUE, NOT A SHAPE.  `_is_concatenation` asked whether an
+# expression assembles a string and the callers then JOINED its literals, which is
+# the string `"a" + "b"` builds and is not the one `.format` builds: the constructor
+# is lost while the template's marker is accounted for, so the fail-closed marker
+# count passed too.  `_reconstruct` returns the string or `None`.
+run_check "INVARIANT" rg -F -n 'def _reconstruct(node: ast.AST) -> str | None:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _assembled_strings(' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'def _is_concatenation(' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n 'def _concatenation_groups(' scripts/check_declaration_kind_askers.py
+# ...and narrowing the reader is not enough on its own: with `.format` no longer an
+# assembly its template would fall through to the bare-constant branch and be
+# LOCATED, reopening the hole one branch over.  So the default branch is a decision.
+run_check "INVARIANT" rg -F -n 'def _unreadable_assemblies(tree: ast.AST) -> list[ast.AST]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    unreadable = _unreadable_assemblies(tree)' scripts/check_declaration_kind_askers.py
+# ...over a shape set that excludes a call on a plain NAME, because a probe handed
+# straight to a helper is the commonest idiom in this tree and its literal is the
+# call's argument rather than a part of a string the call builds.
+run_check "INVARIANT" rg -F -n 'def _string_assembly_shapes(tree: ast.AST) -> list[ast.AST]:' scripts/check_declaration_kind_askers.py
+# (2) THE SUBJECT KEY IS QUALIFIED BY WHERE THE NAME IS BOUND.  The bare target name
+# put two probes assigning `PROBE` in two functions under one subject, so swapping a
+# constructor between them left every count unchanged -- `v0.35.124`'s own
+# crowded-scope refusal, applied to the unnamed branch and not to its named sibling.
+run_check "INVARIANT" rg -F -n 'def _qualified(scope: str, name: str) -> str:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    return name if scope == "<module>" else f"{scope}.{name}"' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                found.append((_qualified(scopes[id(value)], name), value.value))' scripts/check_declaration_kind_askers.py
+# ...over a FULLY QUALIFIED scope, since a bare declaration name is itself a
+# resemblance two methods in two classes share.
+run_check "INVARIANT" rg -F -n '                inner = (child.name if scope == "<module>"' scripts/check_declaration_kind_askers.py
+# ...and two probes that still land on one key are REFUSED, counted by OCCURRENCE
+# rather than by distinct text: two identical rebindings double every constructor in
+# them, and a set cannot see the second one.
+run_check "INVARIANT" rg -F -n '        occurrences[key] = occurrences.get(key, 0) + 1' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    clashing = sorted(k for k, n in occurrences.items() if n > 1)' scripts/check_declaration_kind_askers.py
+# (3) THE AXIS IS TAKEN FROM PYTHON'S GRAMMAR, at every value, with both controls --
+# the review named `.format` alone, and a fix that banned the node type would pass a
+# case list drawn from the finding.
+run_check "INVARIANT" rg -F -n '_FIXTURE_FORMAT_ASSEMBLED = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_PERCENT_ASSEMBLED = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_FSTRING_INTERPOLATED = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_FSTRING_LITERAL = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SENTINEL_TEMPLATE = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SAME_NAME_TWO_SCOPES = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_NAME_REBOUND = ' scripts/check_declaration_kind_askers.py
 
 
 finalize_report

@@ -174,9 +174,17 @@ def _tracked(repo: str, *globs: str) -> list[str]:
 def _string_constants(tree: ast.AST) -> list[tuple[str, ast.Constant]]:
     """`(scope, node)` for every string constant, with its enclosing declaration.
 
-    The scope is the nearest enclosing `def`/`class` name, or `<module>`: that is
-    what a reader needs in order to find the probe, and unlike a line number it
-    survives reformatting.  `ast` carries no parent links, so the walk is explicit.
+    The scope is the enclosing `def`/`class` path, or `<module>`: that is what a
+    reader needs in order to find the probe, and unlike a line number it survives
+    reformatting.  `ast` carries no parent links, so the walk is explicit.
+
+    **Qualified, not nearest** (`v0.35.127`).  A bare declaration name is a
+    *resemblance*: two methods called `probe` in two classes, or a helper defined
+    inside two functions, share it, and this scope is what identifies a subject --
+    both in the `<inline in …>` key and, since this cut, in a named probe's key.  A
+    key two subjects share cannot see a count moving between them, which is the
+    defect the whole per-subject inventory is shaped against.  Costs nothing on the
+    tracked tree, where every located probe is at module scope.
     """
     out: list[tuple[str, ast.Constant]] = []
 
@@ -185,7 +193,8 @@ def _string_constants(tree: ast.AST) -> list[tuple[str, ast.Constant]]:
             inner = scope
             if isinstance(child, (ast.FunctionDef, ast.AsyncFunctionDef,
                                   ast.ClassDef)):
-                inner = child.name
+                inner = (child.name if scope == "<module>"
+                         else f"{scope}.{child.name}")
             if isinstance(child, ast.Constant) and isinstance(child.value, str):
                 out.append((scope, child))
             walk(child, inner)
@@ -194,58 +203,150 @@ def _string_constants(tree: ast.AST) -> list[tuple[str, ast.Constant]]:
     return out
 
 
-def _is_concatenation(node: ast.AST) -> bool:
-    """Does this expression build ONE string out of several parts?
+def _qualified(scope: str, name: str) -> str:
+    """A named probe's subject key: the binding, qualified by where it is bound.
 
-    The four forms this tree's probes are assembled with.  Kept as a predicate
-    rather than inlined because the group walk and the assignment walk both ask it,
-    and two spellings of "is this a concatenation" could disagree about which
-    expression a probe's name belongs to.
+    `v0.35.127` (PR #897 review).  The key was the bare target name, so two probes
+    assigning `PROBE` in two functions shared one subject: change one from
+    `.defnInfo` to `.opaqueInfo` and the other the inverse, and every count in the
+    inventory is unchanged while **both** askers have re-decided the body-bearing
+    question.  That is the cardinality-for-a-set defect this inventory exists against
+    -- and `v0.35.124` had already refused it for probes that bind NO name, one branch
+    over, under a comment stating the reason.  *A fix applied at one site and not its
+    sibling.*
+
+    A module-level name is its own qualification, so every key on the tracked tree
+    (where all 17 located probes are at module scope) is byte-identical to before and
+    the pin does not move.
     """
-    return bool(
-        (isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add))
-        or isinstance(node, ast.JoinedStr)
-        or (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-            and node.func.attr in ("join", "format"))
-    )
+    return name if scope == "<module>" else f"{scope}.{name}"
 
 
-def _concatenation_groups(
-        tree: ast.AST) -> list[tuple[ast.AST, list[ast.Constant]]]:
-    """`(expression, its string constants in SOURCE ORDER)` per assembled string.
+def _reconstruct(node: ast.AST) -> str | None:
+    """The exact string `node` evaluates to, when literals ALONE determine it.
 
-    `a + b`, an f-string, and a `.join(…)` / `.format(…)` call are the forms this
-    tree's probes are assembled with.  The grouping is what makes an ASSEMBLED
-    probe readable: one fragment carries the import marker and another carries the
-    `ConstantInfo` match, and neither is a probe on its own evidence.
+    `v0.35.127` (PR #897 review).  The superseded reader asked *is this expression a
+    concatenation* and then **joined its literals in source order**, which is the
+    string the program builds for `"a" + "b"` and is **not** for
+    `"… .{}Info …".format("opaque")`: joining yields `… .{}Info … opaque`, so the
+    constructor pattern matches nothing while the template's own import marker is
+    accounted for -- so the fail-closed marker count passed too and the asker was
+    invisible in both directions at once.  *A spelling is not the text*, at the one
+    place the text is assembled rather than written.
+
+    So the question is not a shape but a **value**: return the string, or `None`.
+    Four forms are determined by literals -- a literal, `+` over two determined
+    operands (recursively, so `"a" + ("b" + "c")` is one string), an f-string with no
+    interpolation, and `<literal>.join([<determined>, …])`.  `.format`, `%`, an
+    interpolating f-string and every other method are `None` by construction, and
+    `_unreadable_assemblies` turns a `None` that carries a marker into a refusal
+    rather than a silent partial read.
+    """
+    if isinstance(node, ast.Constant):
+        return node.value if isinstance(node.value, str) else None
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _reconstruct(node.left)
+        right = _reconstruct(node.right)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.JoinedStr):
+        parts: list[str] = []
+        for value in node.values:
+            piece = _reconstruct(value)
+            if piece is None:
+                return None
+            parts.append(piece)
+        return "".join(parts)
+    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
+            and node.func.attr == "join" and not node.keywords
+            and len(node.args) == 1
+            and isinstance(node.args[0], (ast.List, ast.Tuple))):
+        sep = _reconstruct(node.func.value)
+        if sep is None:
+            return None
+        pieces = [_reconstruct(e) for e in node.args[0].elts]
+        if any(p is None for p in pieces):
+            return None
+        return sep.join(pieces)  # type: ignore[arg-type]
+    return None
+
+
+def _string_assembly_shapes(tree: ast.AST) -> list[ast.AST]:
+    """Every expression that builds a string out of PARTS.
+
+    An operator (`+`, `%`), an f-string, or a method called on a string-valued
+    expression.  A `Call` on a plain *name* -- a probe handed straight to a helper --
+    is deliberately NOT one: the literal is its ARGUMENT, not a part of a string
+    the call builds, and that is the commonest probe idiom in this tree.
+    """
+    out: list[ast.AST] = []
+    for node in ast.walk(tree):
+        if isinstance(node, (ast.BinOp, ast.JoinedStr)):
+            out.append(node)
+        elif isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            out.append(node)
+    return out
+
+
+def _assembled_strings(
+        tree: ast.AST) -> list[tuple[ast.AST, str, list[ast.Constant]]]:
+    """`(expression, the string it builds, its string constants)` per assembly.
+
+    Only expressions `_reconstruct` DETERMINES are here, and the second component is
+    that reconstruction rather than a re-joining of the fragments -- so the text the
+    constructor patterns are counted over is the text the program builds.  The
+    superseded `_concatenation_groups` returned the literals in source order and its
+    callers joined them, which is right for `+` and wrong for every substituting form;
+    `_unreadable_assemblies` refuses those rather than reading them partially.
 
     Deliberately an EXPRESSION and not a statement.  Grouping by statement was
     measured at **1060** admitted fragments, because `ast.walk` of a statement
     descends into every nested one -- a dict of fixtures pulls in all of them.
-    Grouping by these four expression forms admits **zero** on the tracked tree, so
-    the widening costs nothing and its witnesses are entirely planted.
 
-    Only MAXIMAL groups are returned: a nested concatenation (`f"{x}" + "y"`) is
-    part of the string its parent builds, so reporting it as well would count one
-    fragment under two subjects.  And the constants are sorted by position, because
-    `ast.walk` is breadth-first -- `"a" + "b" + "c"` yields `c, a, b` -- and the
-    reassembled text is what the constructor patterns are counted over, so a
-    fragment boundary in the wrong place can both invent a match and destroy one.
+    Only MAXIMAL assemblies are returned: a nested one (`("a" + "b") + "c"`) is part
+    of the string its parent builds, so reporting it as well would count one fragment
+    under two subjects.
     """
-    nodes = [n for n in ast.walk(tree) if _is_concatenation(n)]
-    nested = {id(d) for n in nodes for d in ast.walk(n)
-              if d is not n and _is_concatenation(d)}
-    groups: list[tuple[ast.AST, list[ast.Constant]]] = []
-    for node in nodes:
+    determined = [(n, _reconstruct(n)) for n in _string_assembly_shapes(tree)]
+    nodes = [(n, v) for n, v in determined if v is not None]
+    nested = {id(d) for n, _ in nodes for d in ast.walk(n)
+              if d is not n and _reconstruct(d) is not None
+              and isinstance(d, (ast.BinOp, ast.JoinedStr, ast.Call))}
+    out: list[tuple[ast.AST, str, list[ast.Constant]]] = []
+    for node, value in nodes:
         if id(node) in nested:
             continue
-        constants = sorted(
-            (c for c in ast.walk(node)
-             if isinstance(c, ast.Constant) and isinstance(c.value, str)),
-            key=lambda c: (c.lineno, c.col_offset))
+        constants = [c for c in ast.walk(node)
+                     if isinstance(c, ast.Constant) and isinstance(c.value, str)]
         if constants:
-            groups.append((node, constants))
-    return groups
+            out.append((node, value, constants))
+    return out
+
+
+def _unreadable_assemblies(tree: ast.AST) -> list[ast.AST]:
+    """String assemblies carrying a probe marker that this scanner cannot evaluate.
+
+    The fail-closed half of `_reconstruct`, and the reason narrowing the reader is
+    not enough on its own: with `.format` no longer forming an assembly, its template
+    literal would fall through to the bare-constant branch and be *located*, so the
+    marker count would be satisfied and the hole would reopen one branch over.
+
+    The subject is an expression that assembles a string from parts, has a
+    marker-bearing string literal **among those parts**, and whose value literals do
+    not determine.  A `Call` on a plain name is excluded by
+    `_string_assembly_shapes`, so a probe handed straight to a helper is read rather
+    than refused, and a `.replace` on a NAMED template is not a subject either -- its
+    marker lives in that template's own assignment, which is located there.  Measured: **zero** such
+    expressions on the tracked tree, so the refusal is entirely planted today.
+    """
+    out: list[ast.AST] = []
+    for node in _string_assembly_shapes(tree):
+        if _reconstruct(node) is not None:
+            continue
+        if any(isinstance(c, ast.Constant) and isinstance(c.value, str)
+               and LEAN_PROBE_MARKER.search(c.value)
+               for c in ast.walk(node)):
+            out.append(node)
+    return out
 
 
 def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
@@ -312,13 +413,27 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"{path} embeds Lean (an `import Lean`/`import SeLe4n` line, or a "
             f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
             f"its probe cannot be located.") from None
+    unreadable = _unreadable_assemblies(tree)
+    if unreadable:
+        first = unreadable[0]
+        raise UnreadableProbe(
+            f"{path} assembles a string from a probe literal at line "
+            f"{getattr(first, 'lineno', 0)} in a form this scanner cannot evaluate "
+            f"(a `.format`, a `%`, an interpolating f-string or another string "
+            f"method), and {len(unreadable)} such expression(s) carry a Lean import "
+            f"marker.  Joining the literals would count constructors over text the "
+            f"program never builds -- and would satisfy the marker check while doing "
+            f"it -- so build the probe by `+` over literals, or substitute with an "
+            f"`@NAME@` sentinel on a named template (as this tree's other probes do) "
+            f"so the located text is the template itself.")
     found: list[tuple[str, str]] = []
     named: set[int] = set()
     constants = _string_constants(tree)
     scopes = {id(c): scope for scope, c in constants}
     by_id = {id(c): c for _, c in constants}
-    groups = _concatenation_groups(tree)
-    group_of: dict[int, list[ast.Constant]] = {id(n): cs for n, cs in groups}
+    assemblies = _assembled_strings(tree)
+    assembly_of: dict[int, tuple[str, list[ast.Constant]]] = {
+        id(n): (v, cs) for n, v, cs in assemblies}
     claimed: set[int] = set()
     for node in ast.walk(tree):
         targets: list[ast.expr]
@@ -337,7 +452,7 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
                 continue
             named.add(id(value))
             for name in names:
-                found.append((name, value.value))
+                found.append((_qualified(scopes[id(value)], name), value.value))
             continue
         # ...and a value the assignment ASSEMBLES is named after the same target.
         # A probe bound to a name is bound to it whether the right-hand side is one
@@ -351,15 +466,16 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
         # message string quoting a constructor is an everyday Python idiom and this
         # tree's own diagnostics are full of them, while an assembled *probe* is by
         # construction Lean source and so imports a root.
-        fragments = group_of.get(id(value))
-        if fragments is None:
+        entry = assembly_of.get(id(value))
+        if entry is None:
             continue
+        assembled, fragments = entry
         if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
             continue
         claimed.add(id(value))
         named.update(id(c) for c in fragments)
         for name in names:
-            found.append((name, "".join(c.value for c in fragments)))
+            found.append((_qualified(scopes[id(fragments[0])], name), assembled))
     # ...AND the ones that bind no name.  A walker reading only assignments could
     # not see `run_probe("""import SeLe4n … .opaqueInfo …""")`, and an assigned
     # probe elsewhere in the file made `found` non-empty, which suppressed the
@@ -383,14 +499,13 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     # admitted; under the widened signal, one message string would be, and this
     # tree's own diagnostics would have to stop naming what they retired.
     inline: list[tuple[str, str]] = []
-    for node, fragments in groups:
+    for node, assembled, fragments in assemblies:
         if id(node) in claimed:
             continue
         if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
             continue
         named.update(id(c) for c in fragments)
-        inline.append((scopes[id(fragments[0])],
-                       "".join(c.value for c in fragments)))
+        inline.append((scopes[id(fragments[0])], assembled))
     for scope, constant in _string_constants(tree):
         if id(constant) in named:
             continue
@@ -421,6 +536,30 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"invisible; bind each probe to a name so each has its own.")
     for scope, src in inline:
         found.append((f"<inline in {scope}>", src))
+    # ...and TWO NAMED probes under one qualified key are refused too, which is the
+    # same claim for the branch that binds a name.  `A = B = <probe>` is one probe
+    # under two keys and is fine; what this refuses is two DISTINCT probe texts whose
+    # counts would add under one key -- a name rebound at the same scope, or (before
+    # `_qualified`) the same name in two scopes.  Symmetric with the refusal above by
+    # construction, because *keeping the tables symmetric* is what stopped this from
+    # being found by a review round rather than by the gate.
+    #
+    # A COUNT, not a set of texts: two assignments of the *same* text to one name
+    # also double every constructor in it, and a set cannot see the second one --
+    # which is this gate's own rule one level inside the check that enforces it.
+    occurrences: dict[str, int] = {}
+    for key, _src in found:
+        occurrences[key] = occurrences.get(key, 0) + 1
+    clashing = sorted(k for k, n in occurrences.items() if n > 1)
+    if clashing:
+        raise UnreadableProbe(
+            f"{path} binds {occurrences[clashing[0]]} probes to the subject key "
+            f"`{clashing[0]}`" +
+            (f" (and several to {', '.join(clashing[1:])})"
+             if len(clashing) > 1 else "") +
+            ".  Their constructor counts would add under one key, where a count "
+            f"moving from one to the other is invisible; give each probe its own "
+            f"name.")
     # A marker the located constants do not account for is probe text this scanner
     # CANNOT see -- read from disk, or split so that no fragment carries it.  Asked
     # as a COUNT rather than as "did we find anything", because one located probe
@@ -613,6 +752,30 @@ ASKER_REASONS: dict[str, str] = {
         "constructor name is split across a `\"\"\" + \"\"\"` boundary, so the "
         "literal text of this file carries no match -- which is exactly the "
         "property case (15) is about, one level up.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_FSTRING_LITERAL":
+        "THIS GATE'S OWN FIXTURE, and the CONTROL for the assembly-form axis: an "
+        "f-string with no interpolation is a literal, so it reconstructs and is "
+        "READ.  Its `axiomInfo` is what case (20) reads back; without it the "
+        "refusal beside it would read as \"f-strings are refused\" rather than "
+        "\"interpolation cannot be evaluated\", and a fix that banned the node "
+        "type would pass case (19).",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SENTINEL_TEMPLATE":
+        "THIS GATE'S OWN FIXTURE, and the CONTROL for the enclosure axis: a "
+        "`@SENTINEL@` template consumed by `.replace` is how all four of this "
+        "tree's real probes are built, so a refusal that fired here would refuse "
+        "the tree.  Its `inductInfo` is what case (21) reads back under the "
+        "template's own name, which is where the marker lives.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SAME_NAME_TWO_SCOPES":
+        "THIS GATE'S OWN FIXTURE for the subject-key axis: two probes binding one "
+        "local name in two scopes.  The two counts are the two probes and they "
+        "must DIFFER -- under the superseded bare-name key they landed under one "
+        "subject and ADDED, so swapping a constructor between them left every "
+        "number unchanged, which is exactly what case (22) refutes.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_NAME_REBOUND":
+        "THIS GATE'S OWN FIXTURE for the other value of that axis: one name "
+        "rebound at a SINGLE scope, which no key can separate, so it is refused.  "
+        "Its two counts are the two bindings; they are the surplus a shared key "
+        "would produce, and case (23) asserts the refusal rather than the counts.",
     "scripts/check_declaration_kind_askers.py::_FIXTURE_TWO_INLINE_ONE_SCOPE":
         "THIS GATE'S OWN FIXTURE for the second refusal: two probes binding no name "
         "in one scope, which would share a subject key.  The two counts are the two "
@@ -684,6 +847,20 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_DOUBLE_BOUND_PROBE": {
         "quotInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_FSTRING_LITERAL": {
+        "axiomInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SENTINEL_TEMPLATE": {
+        "inductInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SAME_NAME_TWO_SCOPES": {
+        "defnInfo": 1,
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_NAME_REBOUND": {
+        "defnInfo": 1,
+        "opaqueInfo": 1,
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_UNLOCATABLE_MARKER_BESIDE_PROBE": {
         "ctorInfo": 1,
@@ -1043,6 +1220,136 @@ private def nested (ci : ConstantInfo) : Bool :=
   match ci with
   | .recInfo _ => true
 """ + """  | _ => false
+"""
+'''
+
+#: **`v0.35.127` (PR #897 review): the assembly FORMS, at every value of the axis.**
+#: `_reconstruct` divides string-building expressions into the ones literals determine
+#: and the ones they do not, and the second half is REFUSED rather than partially read.
+#: The axis is taken from Python's grammar rather than from the reported spelling: the
+#: review named `.format`, and `%`, an interpolating f-string and an arbitrary string
+#: method defeat a joining reader in exactly the same way.
+_FIXTURE_FORMAT_ASSEMBLED = '''\
+TEMPLATE = ("""
+import SeLe4n
+
+private def formatted (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .{}Info _ => true
+  | _ => false
+""").format("opaque")
+'''
+
+#: The same defect in the `%` spelling, which the superseded reader did not even group
+#: -- so its template was read as a bare inline probe and the constructor was lost the
+#: same way, one branch further over.
+_FIXTURE_PERCENT_ASSEMBLED = '''\
+TEMPLATE = """
+import SeLe4n
+
+private def formatted (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .%sInfo _ => true
+  | _ => false
+""" % "opaque"
+'''
+
+#: ...and in the f-string spelling, whose `FormattedValue` parts are not literals.
+_FIXTURE_FSTRING_INTERPOLATED = '''\
+KIND = "opaque"
+
+TEMPLATE = f"""
+import SeLe4n
+
+private def interpolated (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .{KIND}Info _ => true
+  | _ => false
+"""
+'''
+
+#: The CONTROL for the form axis: an f-string with NO interpolation is a literal, so it
+#: reconstructs and is read.  Without it the refusal would read as "f-strings are
+#: refused" rather than "interpolation cannot be evaluated".
+_FIXTURE_FSTRING_LITERAL = '''\
+TEMPLATE = f"""
+import SeLe4n
+
+private def literalFString (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .axiomInfo _ => true
+  | _ => false
+"""
+'''
+
+#: The CONTROL for the ENCLOSURE axis, and the one that matters most: `.replace` on a
+#: NAMED template with `@SENTINEL@` placeholders is how all four of this tree's real
+#: probes are built, and the marker lives in the template's own assignment.  A refusal
+#: that fired here would refuse the tree.
+_FIXTURE_SENTINEL_TEMPLATE = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def sentinel (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .inductInfo _ => true
+  | _ => false
+-- @TARGETS@
+"""
+
+
+def build(names):
+    return PROBE_TEMPLATE.replace("@TARGETS@", ", ".join(names))
+'''
+
+#: **The SUBJECT-KEY axis.**  Two probes binding one local name in two scopes, which
+#: the superseded bare-name key collapsed into ONE subject with their counts added --
+#: so swapping a constructor between them left every number unchanged.
+_FIXTURE_SAME_NAME_TWO_SCOPES = '''\
+def probe_definition():
+    PROBE = """
+import SeLe4n
+
+private def inFirst (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+    return PROBE
+
+
+def probe_opaque():
+    PROBE = """
+import SeLe4n
+
+private def inSecond (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+"""
+    return PROBE
+'''
+
+#: ...and one name REBOUND at a single scope, which no key can separate, so it is
+#: refused.  A set of texts could not see this if the two texts were identical, which
+#: is why the duplicate check counts occurrences.
+_FIXTURE_NAME_REBOUND = '''\
+PROBE = """
+import SeLe4n
+
+private def firstBinding (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+
+PROBE = """
+import SeLe4n
+
+private def secondBinding (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
 """
 '''
 
@@ -1480,6 +1787,111 @@ def _self_test() -> int:
             print("      located constants, not over the rows reported.")
             return 1
 
+    # (18) A `.format`-assembled probe is REFUSED, not joined.  Source-order joining
+    #      is the string `"a" + "b"` builds and is NOT the one `"… .{}Info …"
+    #      .format("opaque")` builds: joining yields `… .{}Info … opaque`, so the
+    #      constructor pattern matches nothing while the template's own import marker
+    #      IS accounted for -- so the fail-closed marker count passes too and the
+    #      asker is invisible in both directions at once.  *A spelling is not the
+    #      text*, at the one place the text is assembled rather than written.
+    with tempfile.TemporaryDirectory() as root:
+        fmt = "scripts/format_gate.py"
+        _fixture(root, {**base, fmt: _FIXTURE_FORMAT_ASSEMBLED})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(fmt in p and "cannot evaluate" in p for p in problems):
+            print("FAIL: --self-test — a `.format`-assembled probe was not refused:")
+            print(f"      {problems}.  Joining its literals counts constructors")
+            print("      over text the program never builds.")
+            return 1
+
+    # (19) ...and so are its two siblings on the same axis.  The review named
+    #      `.format`; `%` was not even GROUPED by the superseded reader, so its
+    #      template fell through to the bare-constant branch and was read as an
+    #      inline probe with the constructor lost the same way -- the identical
+    #      defect one branch further over -- and an interpolating f-string has
+    #      `FormattedValue` parts that are not literals at all.  *Take the axis from
+    #      the grammar, not from the reported spelling.*
+    for label, body in (("percent_gate.py", _FIXTURE_PERCENT_ASSEMBLED),
+                        ("fstring_gate.py", _FIXTURE_FSTRING_INTERPOLATED)):
+        with tempfile.TemporaryDirectory() as root:
+            sib = "scripts/" + label
+            _fixture(root, {**base, sib: body})
+            problems = violations(root, base_pin, base_reasons)
+            if not any(sib in p and "cannot evaluate" in p for p in problems):
+                print(f"FAIL: --self-test — {sib} was not refused: {problems}.")
+                print("      Every substituting form loses the constructor the same")
+                print("      way; the axis is Python's grammar, not one spelling.")
+                return 1
+
+    # (20) The CONTROL for that axis: an f-string with NO interpolation is a literal,
+    #      so it reconstructs and is READ.  Without it the refusal would read as
+    #      "f-strings are refused" rather than "interpolation cannot be evaluated",
+    #      and a fix that simply banned the node type would pass case (19).
+    with tempfile.TemporaryDirectory() as root:
+        lit = "scripts/fstring_literal_gate.py"
+        _fixture(root, {**base, lit: _FIXTURE_FSTRING_LITERAL})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(lit)}
+        expected = {lit + "::TEMPLATE": {"axiomInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — an f-string with no interpolation was not")
+            print(f"      read: {got}, expected {expected}.  It is a literal; the")
+            print("      refusal is about substitution, not about the node type.")
+            return 1
+
+    # (21) The CONTROL for the ENCLOSURE axis, and the one that matters most:
+    #      `.replace("@SENTINEL@", …)` on a NAMED template is how all four of this
+    #      tree's real probes are built, and the marker lives in the template's own
+    #      assignment, so the located text is the template itself.  A refusal that
+    #      fired here would refuse the tree -- which is why the assembly shapes
+    #      exclude a call on a plain name, and why this case is an equality rather
+    #      than an absence.
+    with tempfile.TemporaryDirectory() as root:
+        sen = "scripts/sentinel_gate.py"
+        _fixture(root, {**base, sen: _FIXTURE_SENTINEL_TEMPLATE})
+        got = {k: v for k, v in _capture_fixture(root).items() if k.startswith(sen)}
+        expected = {sen + "::PROBE_TEMPLATE": {"inductInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a `@SENTINEL@` template consumed by")
+            print(f"      `.replace` was not read: {got}, expected {expected}.")
+            print("      That is the idiom every real probe in this tree uses.")
+            return 1
+
+    # (22) TWO probes binding one local name in TWO scopes are two subjects.  The
+    #      superseded key was the bare target name, so both landed under
+    #      `<path>::PROBE` and their counts ADDED: change one from `.defnInfo` to
+    #      `.opaqueInfo` and the other the inverse, and every number in the inventory
+    #      is unchanged while both askers have re-decided the body-bearing question.
+    #      `v0.35.124` had already refused exactly that for probes binding NO name,
+    #      one branch over, under a comment stating the reason -- *a fix applied at
+    #      one site and not its sibling*.  The equality is the check: one key here is
+    #      the defect.
+    with tempfile.TemporaryDirectory() as root:
+        two_scopes = "scripts/two_scopes_gate.py"
+        _fixture(root, {**base, two_scopes: _FIXTURE_SAME_NAME_TWO_SCOPES})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(two_scopes)}
+        expected = {two_scopes + "::probe_definition.PROBE": {"defnInfo": 1},
+                    two_scopes + "::probe_opaque.PROBE": {"opaqueInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — two probes binding one local name in two")
+            print(f"      scopes were not two subjects: {got}, expected {expected}.")
+            print("      A shared key cannot see a count moving between them.")
+            return 1
+
+    # (23) ...and one name REBOUND at a single scope is refused, because no key can
+    #      separate two probes bound to the same name in the same place.  The named
+    #      sibling of case (14), and the reason the duplicate check counts
+    #      OCCURRENCES rather than distinct texts: two identical rebindings double
+    #      every constructor in them, and a set of texts cannot see the second one.
+    with tempfile.TemporaryDirectory() as root:
+        rebound = "scripts/rebound_gate.py"
+        _fixture(root, {**base, rebound: _FIXTURE_NAME_REBOUND})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(rebound in p and "subject key" in p for p in problems):
+            print("FAIL: --self-test — a name rebound at one scope was not refused:")
+            print(f"      {problems}.  Two probes under one key add their counts.")
+            return 1
+
     # (9) The real tree, which is the check the tier runs.
     live = violations()
     if live:
@@ -1500,8 +1912,12 @@ def _self_test() -> int:
           f"scope refused, a three-fragment probe reassembled in SOURCE order, a "
           f"NESTED concatenation counted once and an unlocatable marker unmasked "
           f"by a probe bound to two names are each reported, while a docstring in "
-          f"the same non-assignment position is not; the live tree is clean at "
-          f"{len(found)} subject(s).")
+          f"the same non-assignment position is not; a `.format`, `%` or "
+          f"interpolating-f-string assembly is REFUSED rather than joined while a "
+          f"literal f-string and a `@SENTINEL@` template consumed by `.replace` "
+          f"are read; and two probes binding one local name in two scopes are two "
+          f"subjects while one name rebound at a single scope is refused; the "
+          f"live tree is clean at {len(found)} subject(s).")
     return 0
 
 

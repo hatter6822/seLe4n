@@ -1,3 +1,66 @@
+## v0.35.127 — the probe locator's text is what the program builds, and its key identifies one probe
+
+Two PR #897 findings over `scripts/check_declaration_kind_askers.py`, both fail-open,
+both introduced by `v0.35.124`'s own locator one cut earlier, and both one class: the
+located subject's **text** and its **identity** are each something the program
+computes, and where the scanner cannot compute either it must refuse.
+
+**The text.**  `_is_concatenation` asked whether an expression builds a string from
+parts, and the callers then **joined its literals in source order** — which is the
+string `"a" + "b"` builds and is not the one `"… .{}Info …".format("opaque")` builds:
+joining yields `… .{}Info … opaque`, so the constructor pattern matches nothing while
+the template's own `import SeLe4n` marker **is** accounted for, so the fail-closed
+marker count passes too and the asker is invisible in both directions at once.
+`_reconstruct` returns the string or `None`; four forms are determined by literals (a
+literal, `+` over two determined operands, an f-string with no interpolation, and
+`<literal>.join([<determined>, …])`).
+
+Narrowing the reader is not enough on its own, and that is the load-bearing part:
+with `.format` no longer forming an assembly its template would fall through to the
+bare-constant branch and be *located*, reopening the hole one branch over.  So
+`_unreadable_assemblies` **refuses** a string assembly that carries a marker and does
+not reconstruct — *a scanner's default branch is a decision*, applied to the branch a
+narrowing creates.  The shape set (`_string_assembly_shapes`) excludes a call on a
+plain **name**, because a probe handed straight to a helper is this tree's commonest
+idiom and its literal is the call's *argument* rather than a part of a string the call
+builds; a `.replace` on a named `@SENTINEL@` template — how all four real probes are
+built — is likewise not a subject, its marker living in the template's own assignment.
+Measured before choosing: **zero** such expressions on the tracked tree, so the
+refusal is entirely planted today.
+
+**The identity.**  A named probe's key was the bare target name, so two probes
+assigning `PROBE` in two functions shared one subject and their counts **added**:
+change one from `.defnInfo` to `.opaqueInfo` and the other the inverse, and every
+number in the inventory is unchanged while both askers have re-decided the
+body-bearing question.  `v0.35.124` had already refused exactly that for probes
+binding **no** name, one branch over, under a comment stating the reason — *a fix
+applied at one site and not its sibling*.  `_qualified` keys a named probe by
+scope-and-name; the scope is now a **qualified path** rather than the nearest
+declaration name (a bare name is a resemblance two methods in two classes share); and
+two probes that still land on one key are **refused**, by OCCURRENCE rather than by
+distinct text, because two identical rebindings double every constructor in them and
+a set cannot see the second one.  Free on the tree: all 17 located probes are at
+module scope, so every key is byte-identical and the pin does not move.
+
+**Witnesses.**  Six new cases (18)–(23) and seven fixtures, with the axis taken from
+Python's grammar rather than from the reported spelling: the review named `.format`,
+and `%` was not even *grouped* by the superseded reader — so its template was read as
+a bare inline probe and the constructor was lost the same way, one branch further
+over — while an interpolating f-string has `FormattedValue` parts that are not
+literals at all.  All three are cases; **two controls** (a literal f-string, which
+reconstructs and is read; a `@SENTINEL@` template consumed by `.replace`) keep the
+refusal about substitution rather than about a node type.  Four mutations, all
+caught.  One of them had to be rewritten: the first mutation against the `.format`
+refusal widened a branch whose other conditions still rejected the input, so the
+self-test passed and the case read as unverified — *a mutation must revert the
+defect, not merely edit the code* — and the deciding one restores the superseded
+reading itself.
+
+Eighteen Tier 3 anchors plus two negatives refusing the retired `_is_concatenation`
+and `_concatenation_groups`.  The gate reads 60 constructor matches across 23
+subjects (19 embedded probes), up from 19 subjects, the four new ones being this
+cut's own fixtures.  No Lean, no kernel behaviour and no fixture moved.
+
 ## v0.35.126 — WS-RR RR8.16 (part): the two information-flow gate facts are established, transported and inhabited
 
 PR #897 review: `blockedSenderFlowsToEndpoint` and `donationOwnerFlowsToHolder`
