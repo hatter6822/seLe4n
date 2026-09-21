@@ -190,6 +190,67 @@ def anchor_invocations(
     return out
 
 
+#: A top-level `NAME=...` assignment on its own logical line.  Anchored, so a
+#: `test "${X}" -ge 5` is not one and an assignment nested inside a command
+#: substitution is not reached (`logical_lines` folds continuations, so a
+#: multi-line producer arrives as one record).
+_PRODUCER_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z_0-9]*)=(?!=)")
+
+
+def anchor_producers(
+    scripts_dir: pathlib.Path,
+) -> dict[str, list[tuple[int, str, str]]]:
+    """`{script: [(line, NAME, assignment)]}` -- what each tier script BINDS.
+
+    `v0.35.152` (PR #897 review).  An anchor's inputs are not always spelled in
+    its own command: `test "${CIBUNDLE_CONJUNCTS}" -ge 5` names no path, and the
+    file it is about is named by the `CIBUNDLE_CONJUNCTS=$( … Defs.lean … )` line
+    above it.  Relating changed paths to the anchor's command ALONE therefore
+    omitted such an anchor entirely -- not deferred, not reported, absent -- so
+    deleting conjuncts from that bundle left the changed-file sweep green while
+    direct Tier 3 failed.  Two are live (`CIBUNDLE_CONJUNCTS`, `NI_CTORS`).
+
+    *Resolve the text into the structure it stands for*: a variable reference is
+    a reference to its producer, and the producer is the last assignment of that
+    name at or before the anchor's line in the same script.  The LAST one,
+    because a re-assignment is what the anchor actually reads -- `v0.34.41`
+    recorded a shell expander taking the FIRST and reading a setting at a value
+    the command never receives.
+    """
+    out: dict[str, list[tuple[int, str, str]]] = {}
+    for path in tier_scripts(scripts_dir):
+        rows: list[tuple[int, str, str]] = []
+        for line_no, joined in logical_lines(path.read_text(encoding="utf-8")):
+            stripped = joined.strip()
+            if stripped.startswith("#"):
+                continue
+            m = _PRODUCER_ASSIGNMENT.match(stripped)
+            if m is not None:
+                rows.append((line_no, m.group(1), stripped))
+        out[path.name] = rows
+    return out
+
+
+def resolve_producers(
+    producers: list[tuple[int, str, str]], line: int, names: set[str],
+) -> list[str] | None:
+    """The assignments binding `names` before `line`, in source order, or `None`.
+
+    `None` when any name has no producer in this script: the anchor then reads
+    something the script does not bind, which is the `defer:var` case the
+    executor already reports.  Returning a partial list would be the *a FAILED
+    derivation is not an EMPTY one* shape -- a caller cannot tell "resolved to
+    nothing" from "resolved to these".
+    """
+    chosen: dict[str, tuple[int, str]] = {}
+    for at, name, text in producers:
+        if at < line and name in names:
+            chosen[name] = (at, text)
+    if len(chosen) != len(names):
+        return None
+    return [text for _, text in sorted(chosen.values())]
+
+
 def ancestor_dirs(path: str) -> list[str]:
     parts = [p for p in path.split("/") if p]
     return ["/".join(parts[:i]) for i in range(1, len(parts))]
@@ -544,6 +605,7 @@ def select(
     invocations: list[tuple[str, int, str, str]],
     paths: list[str],
     added: set[tuple[str, int]] | None = None,
+    producers: dict[str, list[tuple[int, str, str]]] | None = None,
 ) -> list[tuple[str, int, str, str, str, str]]:
     """`(script, line, provenance, kind, disposition, command)` for this cut.
 
@@ -578,20 +640,43 @@ def select(
             if d not in seen:
                 seen.add(d)
                 dirs.append(_dir_token(d))
+    producers = producers or {}
     out: list[tuple[str, int, str, str, str, str]] = []
     for script, n, kind, command in invocations:
+        # **An anchor's inputs include its PRODUCERS'** (`v0.35.152`, PR #897
+        # review).  `test "${X}" -ge 5` names no path; the file it is about is
+        # named by the `X=$( … )` line above it, and relating changed paths to
+        # the command alone dropped such an anchor from the selection entirely.
+        # Resolved here so the relation, the disposition and the executed text
+        # are ONE answer: a partial resolution would select the anchor and then
+        # defer it, which is the shape that made this invisible.
+        prelude: list[str] = []
+        try:
+            wanted = undefined_variables(command)
+        except UnlexableCommand:
+            wanted = set()
+        if wanted:
+            resolved = resolve_producers(producers.get(script, []), n, wanted)
+            if resolved is not None:
+                prelude = resolved
+        related = "\n".join(prelude + [command])
         if (script, n) in added:
             prov = "diff"
-        elif any(p in command for p in exact):
+        elif any(p in related for p in exact):
             prov = "path"
-        elif any(d.search(command) for d in dirs):
+        elif any(d.search(related) for d in dirs):
             prov = "dir"
-        elif _GLOB_META & set(command) and any(
-            g.fullmatch(pth) for g in glob_targets(command) for pth in exact
+        elif _GLOB_META & set(related) and any(
+            g.fullmatch(pth) for g in glob_targets(related) for pth in exact
         ):
             prov = "glob"
         else:
             continue
+        if prelude:
+            # The producer runs, then the anchor, in one `eval` -- so the sweep's
+            # verdict is the tier suite's own rather than a deferral.  `;` rather
+            # than a newline, because the executor reads TAB-separated rows.
+            command = "; ".join(prelude + [command])
         if kind == "unparsed":
             disposition = "fail:unparsed"
         elif kind not in SEARCHING_KINDS:
@@ -898,20 +983,22 @@ def main() -> int:
         else REPO_ROOT / "scripts"
     )
     invocations = anchor_invocations(scripts_dir)
+    producers = anchor_producers(scripts_dir)
 
     if args.all:
         every = {(s, n) for s, n, _, _ in invocations}
         chosen = [
             (s, n, "all", k, d, c)
-            for s, n, _, k, d, c in select(invocations, [], every)
+            for s, n, _, k, d, c in select(invocations, [], every, producers)
         ]
         how = "every anchor (--all)"
     elif args.paths is not None:
-        chosen = select(invocations, sorted(set(args.paths)), set())
+        chosen = select(invocations, sorted(set(args.paths)), set(), producers)
         how = "--paths"
     else:
         paths, how, base = changed_paths()
-        chosen = select(invocations, paths, added_anchor_lines(base, scripts_dir))
+        chosen = select(invocations, paths,
+                        added_anchor_lines(base, scripts_dir), producers)
 
     print(f"# derivation: {how}", file=sys.stderr)
     for script, n, prov, kind, disposition, command in chosen:
@@ -1506,6 +1593,46 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
             f"the reassembled `-c` script lost its embedded single quote: {value!r}"
         )
 
+    # 23. **An anchor's inputs include its PRODUCERS'** (`v0.35.152`, PR #897
+    #     review).  `test "${X}" -ge 5` names no path, so relating changed paths
+    #     to the command alone dropped it from the selection ENTIRELY -- not
+    #     deferred, not reported, absent -- and deleting conjuncts from the
+    #     bundle its producer counts left the sweep green while direct Tier 3
+    #     failed.  The pair below is decisive: the same anchor, selected only
+    #     when the producer map is supplied, which is the pre-fix behaviour and
+    #     the fixed one side by side.
+    with tempfile.TemporaryDirectory() as td:
+        fake = pathlib.Path(td)
+        (fake / "test_tier9_fixture.sh").write_text(
+            "N=$(grep -c 'x' SeLe4n/Kernel/Fake.lean)\n"
+            'run_check "H" test "${N}" -ge 5\n',
+            encoding="utf-8")
+        invs = anchor_invocations(fake)
+        prods = anchor_producers(fake)
+        target = ["SeLe4n/Kernel/Fake.lean"]
+        without = select(invs, target, set())
+        if without:
+            return _fail(
+                f"a variable-backed anchor was selected with no producer map: "
+                f"{without}; the pre-fix reading must select nothing, or this "
+                f"case decides nothing")
+        with_prod = select(invs, target, set(), prods)
+        if len(with_prod) != 1 or with_prod[0][2] != "path":
+            return _fail(
+                f"a variable-backed anchor was not related to the path its "
+                f"PRODUCER names: {with_prod}")
+        if not with_prod[0][5].startswith("N=$(grep"):
+            return _fail(
+                f"the producer was not prepended to the executed text: "
+                f"{with_prod[0][5]!r}; the relation and the command must be one "
+                f"answer, or the anchor is selected and then deferred")
+        # ...and a variable NO producer binds still resolves to nothing, so the
+        # executor's `defer:var` arm keeps its subject.  A partial resolution
+        # would be the *a FAILED derivation is not an EMPTY one* shape.
+        if resolve_producers(
+                prods["test_tier9_fixture.sh"], 2, {"N", "MISSING"}) is not None:
+            return _fail("an unbound variable resolved to a partial prelude")
+
     print(
         f"SELF-TEST PASS: changed-file anchor selection — {_case_count()} cases: "
         "an exact path, "
@@ -1525,7 +1652,10 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         "untracked tier suite's anchors reported as added while a tracked "
         "unmodified one's are not and an unreadable base is refused, and a "
         "DELETION-ONLY hunk attributed to the anchor it survives in while an "
-        "unmodified multi-line anchor contributes nothing."
+        "unmodified multi-line anchor contributes nothing, and a "
+        "variable-backed anchor related to the path its PRODUCER names and "
+        "executed with that producer prepended, while an unbound variable "
+        "resolves to no prelude at all."
     )
     return 0
 

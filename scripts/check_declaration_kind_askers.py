@@ -581,7 +581,7 @@ def _reconstruct_holed(node: ast.AST, consts: dict[str, str]) -> str | None:
     if isinstance(node, ast.Name):
         return consts.get(node.id, _HOLE)
     if isinstance(node, ast.FormattedValue):
-        return _HOLE
+        return _opaque_fragment(node, consts)
     if isinstance(node, ast.JoinedStr):
         parts: list[str] = []
         for value in node.values:
@@ -617,7 +617,55 @@ def _reconstruct_holed(node: ast.AST, consts: dict[str, str]) -> str | None:
         if node.func.attr == "format":
             return _FORMAT_FIELD.sub(_HOLE, base)
         return _unreadable_transform(base)
-    return _HOLE
+    return _opaque_fragment(node, consts)
+
+
+def _reaches_probe_template(node: ast.AST, consts: dict[str, str]) -> bool:
+    """Does this fragment reach Lean probe text through a NAME this module binds?
+
+    `v0.35.152` (PR #897 review).  The canonical contract `v0.35.150` states is
+    that probe text reaches Lean *through a named template and a `.replace` over
+    literals*; a fragment that touches a template by any other route is outside
+    it.  `[TEMPLATE][0]` is a `Subscript`, which no branch models, so the
+    superseded default read it as an ordinary value fragment -- a hole -- and the
+    `.replace` wrapped around it then carried no marker and was not refused.
+    Measured: the scanner reported only the unexpanded `TEMPLATE` with **zero**
+    constructors while the program's `PROBE` held `.opaqueInfo`, invisible in both
+    directions at once, which is what makes a domain miss unfindable by reading a
+    failure.
+
+    **The name is the only route asked, and that is a measurement rather than an
+    omission.**  The first draft also searched for a marker-bearing LITERAL
+    written inline inside the unmodelled form, and its mutation was MISSED -- so
+    the shape was measured across five spellings (a list projection, a
+    conditional, a dict value, a tuple index and a call argument) with the clause
+    present and absent, and every one is refused either way: an inline literal
+    carrying the marker is a marker this file's own reconciliation cannot account
+    for among the LOCATED constants, which refuses it upstream of here.  *A
+    filter positioned where it can only ever be wrong is not a filter*, and an
+    unwitnessable condition reads as coverage while asserting nothing, so it is
+    deleted rather than kept for symmetry.
+    """
+    for child in ast.walk(node):
+        if isinstance(child, ast.Name):
+            text = consts.get(child.id)
+            if text is not None and LEAN_PROBE_MARKER.search(text):
+                return True
+    return False
+
+
+def _opaque_fragment(node: ast.AST, consts: dict[str, str]) -> str | None:
+    """A fragment whose SHAPE this scanner does not model, answered by what it
+    reaches.
+
+    The sibling of `_unreadable_transform`, which answers an unmodelled *method*
+    by what it is applied to; this answers an unmodelled *expression* by what it
+    mentions.  Both are *a scanner's default branch is a decision*, taken per call
+    site rather than per spelling -- and the direction is the one a locator must
+    fail in: a fragment that cannot reach a template is an ordinary value whose
+    content was never needed, and one that can is refused rather than read past.
+    """
+    return None if _reaches_probe_template(node, consts) else _HOLE
 
 
 def _unreadable_transform(base: str) -> str | None:
@@ -928,7 +976,7 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
 _PROBE_TEXT_SINKS: tuple[tuple[str, ...], ...] = (("ast", "parse"),)
 
 
-def _module_name_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
+def _module_name_bindings(tree: ast.AST) -> tuple[dict[str, str], set[str]]:
     """`(imported, assigned)` -- every name this module binds, by how it binds it.
 
     A sink's exemption is only sound while its spelling RESOLVES to what the
@@ -936,20 +984,41 @@ def _module_name_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
     `ast.parse`, and the exemption would then excuse a call this scanner knows
     nothing about.  *A name is not a definition.*
 
-    The two sets are kept apart because the two sink shapes ask opposite
-    questions of them.  An attribute sink's receiver must BE an import and must
-    not be assigned anywhere; a bare-name sink must be bound by nothing at all,
-    import included, so it is the builtin.  Collecting over every scope rather
-    than resolving each call site's own over-approximates toward REFUSAL, which
-    is the safe direction: a shadowed sink is a named failure whose remedy is a
-    rename.
+    **`imported` maps the bound name to the MODULE PATH it names** (`v0.35.152`,
+    PR #897 review).  Recording the bound name alone was the same substitution the
+    exemption exists to refuse: `import probe_builder as ast` binds `ast`, so
+    `ast.parse(TEMPLATE, "opaque")` was exempted as the structurally harmless
+    standard-library parser while the local `parse` expanded and executed the
+    probe -- measured, and the scanner then reported only the unexpanded template
+    with zero constructors and raised no refusal, invisible in both directions at
+    once.  `import a.b` binds the package `a`; `import a.b as c` binds `c` to
+    `a.b`; `from m import x [as y]` binds to `m.x`.  A RELATIVE import resolves to
+    no absolute path this scanner can compare, so it is recorded under a name that
+    cannot equal a sink's module (`"." * level + …`) and therefore never exempts.
+
+    The two collections are kept apart because the two sink shapes ask opposite
+    questions of them.  An attribute sink's receiver must be imported FROM the
+    module the sink names and must not be assigned anywhere; a bare-name sink must
+    be bound by nothing at all, import included, so it is the builtin.  Collecting
+    over every scope rather than resolving each call site's own over-approximates
+    toward REFUSAL, which is the safe direction: a shadowed sink is a named failure
+    whose remedy is a rename.
     """
-    imported: set[str] = set()
+    imported: dict[str, str] = {}
     assigned: set[str] = set()
     for node in ast.walk(tree):
-        if isinstance(node, (ast.Import, ast.ImportFrom)):
+        if isinstance(node, ast.Import):
             for alias in node.names:
-                imported.add((alias.asname or alias.name).split(".")[0])
+                if alias.asname:
+                    imported[alias.asname] = alias.name
+                else:
+                    head = alias.name.split(".")[0]
+                    imported[head] = head
+        elif isinstance(node, ast.ImportFrom):
+            prefix = "." * (node.level or 0) + (node.module or "")
+            for alias in node.names:
+                bound = alias.asname or alias.name
+                imported[bound] = f"{prefix}.{alias.name}" if prefix else alias.name
         elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
             assigned.add(node.name)
         elif isinstance(node, ast.arg):
@@ -961,21 +1030,27 @@ def _module_name_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
     return imported, assigned
 
 
-def _is_probe_text_sink(node: ast.Call, imported: set[str],
+def _is_probe_text_sink(node: ast.Call, imported: dict[str, str],
                         assigned: set[str]) -> bool:
     """Is this call one of `_PROBE_TEXT_SINKS`, resolved rather than spelled?
 
-    An attribute sink requires its receiver to be an IMPORTED name that nothing
-    in the file assigns; a bare-name sink requires the name to be bound by
-    nothing at all, so it is the builtin.  *A name is not a definition*, and an
-    exemption keyed on a spelling is one a local `ast = FakeParser()` walks
-    around.
+    An attribute sink requires its receiver to be bound BY AN IMPORT OF THE MODULE
+    THE SINK NAMES and assigned nowhere in the file; a bare-name sink requires the
+    name to be bound by nothing at all, so it is the builtin.  *A name is not a
+    definition*, and an exemption keyed on a spelling is one a local
+    `ast = FakeParser()` -- or an `import probe_builder as ast` -- walks around.
+
+    The module comparison is the `v0.35.152` half: requiring merely that the
+    receiver be *some* import is satisfied by an import of anything, and the sink
+    table names a module (`ast`) rather than a name, so the resolution the
+    exemption's own docstring claims is the path and not the binding.
     """
     func = node.func
     if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
         key = (func.value.id, func.attr)
         return (key in _PROBE_TEXT_SINKS
-                and func.value.id in imported and func.value.id not in assigned)
+                and imported.get(func.value.id) == key[0]
+                and func.value.id not in assigned)
     if isinstance(func, ast.Name):
         return ((func.id,) in _PROBE_TEXT_SINKS
                 and func.id not in imported and func.id not in assigned)
@@ -2423,6 +2498,66 @@ private def k (ci : ConstantInfo) : Bool :=
 '''
 
 
+#: ...and a sink whose receiver is bound by an import of SOMETHING ELSE.
+#: `v0.35.152` (PR #897 review): `v0.35.150` exempted `ast.parse` "by resolution
+#: rather than by spelling" and resolved only that the receiver is *some* import,
+#: which `import probe_builder as ast` satisfies.  Measured before fixing: this
+#: shape was not refused, the scanner reported only the unexpanded template with
+#: ZERO constructors, and the aliased `parse` substituted and ran the probe --
+#: invisible in both directions at once.  The `@KIND@` is what makes the case
+#: decide: a fixture spelling a real constructor would be recorded rather than
+#: hidden, so the count that must not appear is the one the transform builds.
+_FIXTURE_ALIASED_SINK_PROBE = '''\
+import probe_builder as ast
+
+TEMPLATE = """
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+"""
+
+ast.parse(TEMPLATE, "opaque")
+'''
+
+
+#: ...and a template reached through a PROJECTION rather than by its name.  A
+#: `Subscript` is a form no branch of `_reconstruct_holed` models, so the
+#: superseded default read it as an ordinary value fragment -- a hole -- and the
+#: `.replace` wrapped around it then carried no marker and was not refused.  The
+#: canonical contract is a NAMED template and a `.replace` over literals; this is
+#: one hop outside it, and one hop is all an escape needs.
+_FIXTURE_PROJECTED_TEMPLATE_PROBE = '''\
+TEMPLATE = """
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+"""
+
+PROBE = [TEMPLATE][0].replace("@KIND@", "opaque")
+'''
+
+
+#: ...and a template reached by INTERPOLATION.  The third route past the same
+#: contract, and the one no review reported: the mutation run for the two above
+#: found the `FormattedValue` branch unwitnessed, and measuring what it alone
+#: decides showed `f"{TEMPLATE}".replace("@KIND@", "opaque")` was **not** refused
+#: without it -- one row holding the unexpanded template, zero constructors, no
+#: refusal.  *An unwitnessed condition is indistinguishable from a wrong one*, and
+#: here the measurement said it was right and unreachable rather than redundant.
+_FIXTURE_INTERPOLATED_TEMPLATE_PROBE = '''\
+TEMPLATE = """
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+"""
+
+PROBE = f"{TEMPLATE}".replace("@KIND@", "opaque")
+'''
+
+
 #: ...and probe text bound through a target this scanner cannot pair with a value.
 #: The name then denotes nothing, a join through it carries no import marker, and
 #: every refusal downstream stays silent while the literal is located with the
@@ -3707,6 +3842,58 @@ def _self_test() -> int:
             print("      something else by it.")
             return 1
 
+    # (37f) ...and a sink whose receiver is bound by an import of SOMETHING ELSE
+    #       is not a sink either.  `v0.35.150` wrote that the exemption resolves
+    #       rather than spells, and resolved only that the name is SOME import;
+    #       the sink table names a MODULE, so the resolution it claimed is the
+    #       path.  Token-preserving against (37e): the same call, the same
+    #       argument, one import line changed.
+    with tempfile.TemporaryDirectory() as root:
+        aliased = "scripts/aliased_sink_gate.py"
+        _fixture(root, {**base, aliased: _FIXTURE_ALIASED_SINK_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(aliased in p and "handed to a call" in p for p in problems):
+            print("FAIL: --self-test — a sink receiver bound by an import of")
+            print(f"      ANOTHER module was still exempt: {problems}.  The")
+            print("      exemption is about the standard-library parser, and")
+            print("      `import probe_builder as ast` is not it.")
+            return 1
+
+    # (37g) ...and a template reached through a PROJECTION is refused.  The
+    #       contract is a named template and a `.replace` over literals;
+    #       `[TEMPLATE][0]` is a form no branch models, and reading it as an
+    #       ordinary value fragment left the transform carrying no marker.
+    #       Token-preserving against the canonical substitution fixtures: the
+    #       same template, the same `.replace`, one projection.
+    with tempfile.TemporaryDirectory() as root:
+        projected = "scripts/projected_template_gate.py"
+        _fixture(root, {**base, projected: _FIXTURE_PROJECTED_TEMPLATE_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(projected in p and "refuses to read partially" in p
+                   for p in problems):
+            print("FAIL: --self-test — a template reached through a PROJECTION")
+            print(f"      was read as an ordinary fragment: {problems}.  The")
+            print("      substituted text is what the program runs, and a hole")
+            print("      cannot stand for it.")
+            return 1
+
+    # (37h) ...and a template reached by INTERPOLATION is refused.  A
+    #       `FormattedValue` is a third route past the same contract, found by
+    #       running (37f)/(37g)'s mutations rather than reported: the branch was
+    #       unwitnessed, and measuring what it alone decides showed the shape
+    #       passing without it.  Token-preserving against (37g): the same
+    #       template and the same `.replace`, reached by an f-string instead of
+    #       a projection.
+    with tempfile.TemporaryDirectory() as root:
+        interp = "scripts/interpolated_template_gate.py"
+        _fixture(root, {**base, interp: _FIXTURE_INTERPOLATED_TEMPLATE_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(interp in p and "refuses to read partially" in p
+                   for p in problems):
+            print("FAIL: --self-test — a template reached by INTERPOLATION was")
+            print(f"      read as an ordinary fragment: {problems}.")
+            return 1
+
     found = capture()
     print(f"[declaration-kind] SELF-TEST PASS: the capture reads the Lean view "
           f"of both a `.lean` file and a probe embedded in Python; a new "
@@ -3733,7 +3920,10 @@ def _self_test() -> int:
           f"refused in all three shapes -- a literal whose result is used, one "
           f"whose result is not, and a named template -- while an unnamed literal "
           f"that reaches no call is still read, and probe text bound through a "
-          f"target this scanner cannot pair with a value is refused; the live tree "
+          f"target this scanner cannot pair with a value is refused; a sink "
+          f"receiver bound by an import of ANOTHER module is not the exempt "
+          f"standard-library parser, and a template reached by PROJECTION or by "
+          f"INTERPOLATION rather than by its own name is refused; the live tree "
           f"is clean at {len(found)} subject(s).")
     return 0
 

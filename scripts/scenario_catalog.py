@@ -44,6 +44,12 @@ import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import lean_code_view  # noqa: E402  (needs the path insert above)
+# The two per-language code views this tree already owns.  `consumer_code_view`
+# reaches for them rather than growing a third Python stripper and a second shell
+# lexer -- which is what a fixture-consumer question needs and what the shared
+# overlay deliberately does not provide (see `CONSUMER_VIEWS`).
+import rust_code_view  # noqa: E402
+import check_identifier_naming  # noqa: E402
 
 #: The repository root, so a `Used by` cell's repository-relative path resolves
 #: the same way wherever this script is invoked from.
@@ -593,15 +599,33 @@ class UnclassifiedConsumerSuffix(Exception):
     """
 
 
-#: Suffixes that are SOURCE the tree has no code view for.  Not a taste
-#: judgement: a fixture is opened by a program, and these are the two languages
-#: this repository writes gates in that `lean_code_view._STRIPPERS` has no
-#: stripper for.  Kept as a PIN rather than derived, because deriving it would
-#: mean adding a shell and a Python stripper to the shared overlay -- which every
-#: Tier 3 anchor over a `.sh` or `.py` comment reads, so widening it there is a
-#: cut of its own.  Reconciled in both directions below, so a stale member and an
-#: unclassified suffix each fail rather than reading like coverage.
-CONSUMER_SOURCE_SUFFIXES = frozenset({".sh", ".py"})
+#: Suffixes whose consumer view is this question's rather than the shared
+#: overlay's.  `v0.35.152` (PR #897 review): these two were read RAW, so a `.sh`
+#: file holding nothing but `# open("foo.expected")` satisfied the consumer claim
+#: and a fixture could be indexed, hashed and opened by no executable code --
+#: *gates read code, prose reads prose*, at the one table that did not.
+#:
+#: **Not a third lexer**: both views already exist in this tree, and the reason
+#: they are not in `lean_code_view._STRIPPERS` is unchanged -- the shared overlay
+#: feeds every Tier 3 anchor, and many of those deliberately match a `.sh` or
+#: `.py` comment, so stripping them THERE would break anchors that are correct.
+#: *The view you read depends on the question*, and this question is not the
+#: overlay's.  What the two answers must not do is disagree about a suffix the
+#: overlay DOES cover, which `consumer_view_overlap_violations` refuses.
+#:
+#: The shell view takes `keep_quoted=True` because its default blanks a
+#: double-quoted span's message text -- right for "which tokens are identifiers"
+#: and wrong here, since a fixture path IS that message text.
+#:
+#: `.bash` is deliberately ABSENT: the reconciliation below refused it on its
+#: first run, because no `Used by` cell names such a path.  A `.bash` consumer
+#: added tomorrow reaches the explicit refusal, which names the remedy -- which
+#: is the right outcome for a suffix nothing exercises, and better than an entry
+#: that reads like coverage.
+CONSUMER_VIEWS = {
+    ".py": rust_code_view.python_code_view,
+    ".sh": lambda text: check_identifier_naming.strip_shell(text, keep_quoted=True),
+}
 
 
 def consumer_code_view(consumer: Path) -> str:
@@ -623,27 +647,30 @@ def consumer_code_view(consumer: Path) -> str:
     the property (the row names a path whose text mentions the fixture) is still
     checked, and a typo or a fabricated consumer fails it either way.
 
-    **That argument holds for SOURCE and fails outright for prose** (PR #897's
-    review, `v0.35.144`).  A `.md` has no view either, so the whole document was
-    "code": `tests/fixtures/README.md` read as the consumer of
-    `main_trace_smoke.expected` AND `smp_4core_scheduler.expected`, because the
-    prose before a filename is an operand as far as the mention test can tell.  A
-    new golden fixture could therefore be listed, hashed and assigned **only to
-    documentation** while `check-fixture-index` reported a validated consumer --
-    the exact claim this check was added at `v0.35.116` to decide, one file kind
-    over.  So the suffix is CLASSIFIED and the default branch REFUSES: a file the
-    tree has no source view for and does not name as source cannot open a
-    fixture, and a suffix in neither set is a gate defect rather than a silent
-    acceptance.  `CONSUMER_SOURCE_SUFFIXES` is the pin for what `code_view_for`
-    cannot answer, reconciled in both directions by
-    `consumer_suffix_classification_violations`.
+    **That argument held for prose and not for SOURCE** (PR #897's review).
+    `v0.35.144` closed the `.md` half: a `.md` had no view either, so
+    `tests/fixtures/README.md` read as the consumer of two golden fixtures,
+    because the prose before a filename is an operand as far as the mention test
+    can tell.  The `.sh` / `.py` half was left reading RAW under the paragraph
+    quoted above, and the argument for it -- "the over-approximation costs only
+    precision on the diagnostic" -- was false: a shell gate containing nothing
+    but `# open("foo.expected")` satisfied the consumer claim outright, so a
+    fixture could be indexed, hashed and opened by no executable code.
+
+    So the suffix is CLASSIFIED and the default branch REFUSES, and the two
+    source languages get **this question's** view (`CONSUMER_VIEWS`) rather than
+    raw text: a file the tree has no view for and does not classify cannot open a
+    fixture, and a suffix in neither table is a gate defect rather than a silent
+    acceptance.  `consumer_view_overlap_violations` keeps the two tables from
+    disagreeing about a suffix they both cover.
     """
     text = consumer.read_text(encoding="utf-8", errors="replace")
+    own = CONSUMER_VIEWS.get(consumer.suffix)
+    if own is not None:
+        return own(text)
     view = lean_code_view.code_view_for(consumer.suffix)
     if view is not None:
         return view(text)
-    if consumer.suffix in CONSUMER_SOURCE_SUFFIXES:
-        return text
     raise UnclassifiedConsumerSuffix(consumer.suffix)
 
 
@@ -1055,7 +1082,7 @@ def check_fixture_consumers(directory: Path, readme: Path,
                 f"row to a file that cannot open anything (this README read as "
                 f"its own fixtures' consumer before `v0.35.144`).  Name the gate "
                 f"that compares it, or classify the suffix in "
-                f"`CONSUMER_SOURCE_SUFFIXES`"
+                f"`CONSUMER_VIEWS`"
             )
             continue
         if readers:
@@ -1081,13 +1108,13 @@ def check_fixture_consumers(directory: Path, readme: Path,
 
 def consumer_suffix_classification_violations(
         readme: Path, repo_root: Path | None = None) -> list[str]:
-    """`CONSUMER_SOURCE_SUFFIXES` against what the live table actually names.
+    """`CONSUMER_VIEWS` against what the live table actually names.
 
-    The forward direction — a suffix the table names and nobody classified — is
-    the refusal `consumer_code_view` raises, reported per row.  This is the
-    other one: a member no live row names is a STALE classification, and a stale
-    exemption reads exactly like coverage.  Both directions, because a set of
-    suffixes nobody reconciles is the enumeration this check exists to retire.
+    The forward direction — a suffix neither table covers — is the refusal
+    `consumer_code_view` raises, reported per row.  This is the other one: a
+    member no live row names is a STALE classification, and a stale exemption
+    reads exactly like coverage.  Both directions, because a set of suffixes
+    nobody reconciles is the enumeration this check exists to retire.
 
     `code_view_for`'s own suffixes are not reconciled here: they are derived from
     the shared view table, so a `.lean` or `.rs` nothing names is that table's
@@ -1100,14 +1127,41 @@ def consumer_suffix_classification_violations(
         for row in rows
         for m in TABLE_CONSUMER_PATH.finditer(row.used_by)
     }
-    stale = sorted(CONSUMER_SOURCE_SUFFIXES - named_suffixes)
-    if not stale:
+    stale = sorted(set(CONSUMER_VIEWS) - named_suffixes)
+    problems = []
+    if stale:
+        problems.append(
+            f"{readme}: `CONSUMER_VIEWS` gives {', '.join(stale)} a view of this "
+            f"question's own, and no `Used by` cell names a path with that "
+            f"suffix — a classification nothing reconciles reads like coverage, "
+            f"so drop it or name the gate that needs it")
+    problems.extend(consumer_view_overlap_violations())
+    return problems
+
+
+def consumer_view_overlap_violations() -> list[str]:
+    """The two view tables must not both answer for one suffix.
+
+    `CONSUMER_VIEWS` exists because this question is not the shared overlay's --
+    a Tier 3 anchor may legitimately match a `.sh` or `.py` comment, so stripping
+    those THERE would break correct anchors, while a consumer claim must read
+    code.  *The view you read depends on the question.*  What the two must never
+    do is disagree about the same file: if `code_view_for` grows a `.py` or `.sh`
+    stripper, one of these two answers is now redundant and a reader cannot tell
+    which one a consumer check used.  Reported rather than silently preferred,
+    because a precedence nobody states is the *one question, two answers* shape
+    this project spends its length retiring.
+    """
+    both = sorted(suffix for suffix in CONSUMER_VIEWS
+                  if lean_code_view.code_view_for(suffix) is not None)
+    if not both:
         return []
     return [
-        f"{readme}: `CONSUMER_SOURCE_SUFFIXES` classifies {', '.join(stale)} as "
-        f"source no code view covers, and no `Used by` cell names a path with "
-        f"that suffix — a classification nothing reconciles reads like coverage, "
-        f"so drop it or name the gate that needs it"
+        f"`CONSUMER_VIEWS` and `lean_code_view.code_view_for` both answer for "
+        f"{', '.join(both)} — one question with two views, and the call site "
+        f"silently prefers this file's.  Delete the entry here if the shared "
+        f"overlay's view now answers this question too, or say at both why they "
+        f"differ"
     ]
 
 def check_fixture_index(directory: Path, readme: Path,

@@ -17797,10 +17797,12 @@ run_prose_check "INVARIANT" rg -F -n 'redirect is guarded by a PROXY for ownersh
 # `rg PAT tests/*.lean`, so a glob-targeted anchor got no diff provenance and was
 # selected on no changed path.  The glob is read off the word VALUES -- a quoted
 # `'tests/*.lean'` is one word whose value IS the pattern -- and a `-c` script is
-# descended into, since an inner shell expands the globs in it.
+# descended into, since an inner shell expands the globs in it.  Since
+# `v0.35.152` the subject is `related` -- the anchor WITH its producers'
+# prelude -- because a glob the producer spells is one of the anchor's inputs.
 run_check "INVARIANT" rg -F -n '_GLOB_META = frozenset("*?[")' scripts/select_changed_anchors.py
 run_check "INVARIANT" rg -F -n 'def glob_targets(command: str, _depth: int = 0) -> list["re.Pattern"]:' scripts/select_changed_anchors.py
-run_check "INVARIANT" bash -lc 'rg -U -n "elif _GLOB_META & set\(command\) and any\([^\n]*(\n([ \t][^\n]*)?)*prov = \"glob\"" scripts/select_changed_anchors.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "elif _GLOB_META & set\(related\) and any\([^\n]*(\n([ \t][^\n]*)?)*prov = \"glob\"" scripts/select_changed_anchors.py'
 # ...and a command this walk cannot lex contributes its raw tokens rather than
 # nothing, because dropping them is the fail-OPEN direction for a module that
 # decides which checks run.
@@ -17843,9 +17845,10 @@ run_negative_check "INVARIANT" rg -F -n '"builder") for call in' scripts/check_d
 # to probe text is probe text, whatever the call does with the result.
 run_check "INVARIANT" bash -lc 'rg -U -n "def _argument_carries_probe_text[^\n]*(\n([ \t][^\n]*)?)*if isinstance\(arg, ast\.Name\):\n        return arg\.id in probe_names" scripts/check_declaration_kind_askers.py'
 # ...and the sink exemption RESOLVES rather than matching a spelling: an attribute
-# sink's receiver must be imported AND unassigned, so a local `ast = FakeParser()`
-# is not the stdlib parser.
-run_check "INVARIANT" bash -lc 'rg -U -n "def _is_probe_text_sink[^\n]*(\n([ \t][^\n]*)?)*func\.value\.id in imported and func\.value\.id not in assigned\)" scripts/check_declaration_kind_askers.py'
+# sink's receiver must be imported AS THE MODULE THE SINK NAMES (`v0.35.152`)
+# and unassigned, so neither a local `ast = FakeParser()` nor an
+# `import probe_builder as ast` is the stdlib parser.
+run_check "INVARIANT" bash -lc 'rg -U -n "def _is_probe_text_sink[^\n]*(\n([ \t][^\n]*)?)*and imported\.get\(func\.value\.id\) == key\[0\]\n                and func\.value\.id not in assigned\)" scripts/check_declaration_kind_askers.py'
 # ...and every BINDING TARGET is seen, so a destructured template resolves rather
 # than denoting nothing; a target this scanner cannot pair with the value is a
 # refusal, and `_elementwise` is the length-and-shape guard that decides which.
@@ -17900,13 +17903,25 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "at = line.find\(fixture\)" sc
 # --- `v0.35.144` (PR #897's review): two more scanners credited a claim on text
 # they had not read as the thing it stands for.
 # (1) A fixture is opened by a PROGRAM.  `consumer_code_view` read a suffix with
-# no code view RAW, which is right for a shell or Python gate (source the shared
-# view table has no stripper for) and wrong for prose, where the WHOLE file is
-# the comment: `tests/fixtures/README.md` read as the consumer of two live
-# fixtures, so a new golden fixture could be listed, hashed and assigned only to
+# no code view RAW, which is wrong for prose, where the WHOLE file is the
+# comment: `tests/fixtures/README.md` read as the consumer of two live fixtures,
+# so a new golden fixture could be listed, hashed and assigned only to
 # documentation while the gate reported a validated consumer.  The suffix is
 # classified and the default branch REFUSES.
-run_check "INVARIANT" bash -lc 'rg -U -n "    if consumer.suffix in CONSUMER_SOURCE_SUFFIXES:\n        return text\n    raise UnclassifiedConsumerSuffix\(consumer.suffix\)" scripts/scenario_catalog.py'
+#
+# `v0.35.152`: it was wrong for SOURCE too, on the argument this block used to
+# record as right -- a `.sh` holding only `# open("foo.expected")` satisfied the
+# claim.  The two source languages get this question's own views, so the anchor
+# that pinned the raw-text branch named a spelling the fix retired and failed
+# loudly.  What replaces it pins the table, its default refusal, and the
+# reconciliation that keeps it from disagreeing with the shared overlay.
+run_check "INVARIANT" rg -F -n 'CONSUMER_VIEWS = {' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    ".py": rust_code_view.python_code_view,' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'check_identifier_naming.strip_shell(text, keep_quoted=True)' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "    own = CONSUMER_VIEWS.get\(consumer.suffix\)\n    if own is not None:\n        return own\(text\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n 'def consumer_view_overlap_violations() -> list[str]:' scripts/scenario_catalog.py
+# ...and the retired raw-text branch must not come back.
+run_negative_check "INVARIANT" rg -F -n 'CONSUMER_SOURCE_SUFFIXES' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'class UnclassifiedConsumerSuffix(Exception):' scripts/scenario_catalog.py
 # ...and the refusal is REPORTED, in the gate's own voice, rather than skipped:
 # "the gate could not read it" and "the gate checked it" must not both pass.
@@ -18248,5 +18263,51 @@ run_check "INVARIANT" rg -F -n 'for what, template in _OPERATION_SPELLINGS:' scr
 # ...and the one spelling that must NOT be a read: Lean's lexer separates a
 # subscript from an application to a list literal by exactly that space.
 run_check "INVARIANT" rg -F -n 'if READ.search("  f (st.objects) [a, b]"):' scripts/lean_store_read_census.py
+
+# ============================================================================
+# v0.35.152 -- an escape hatch keyed on a resemblance is the contract's width
+# ============================================================================
+#
+# `v0.35.150` required probe text to reach Lean through a named template and a
+# `.replace` over literals, with `ast.parse` exempt "by RESOLUTION rather than by
+# spelling" -- and resolved only that the receiver is SOME import, and let a
+# projection of a template through the unmodelled-form fallback.  Both measured
+# invisible in both directions at once.
+run_check "INVARIANT" rg -F -n 'def _module_name_bindings(tree: ast.AST) -> tuple[dict[str, str], set[str]]:' scripts/check_declaration_kind_askers.py
+# (the module-path comparison's POSITIVE is the `v0.35.150` anchor above,
+# repointed: declaration-bounded and over both conjuncts, so it is strictly
+# stronger than a line match and a second anchor here would be duplication.)
+run_check "INVARIANT" rg -F -n 'def _reaches_probe_template(node: ast.AST, consts: dict[str, str]) -> bool:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _opaque_fragment(node: ast.AST, consts: dict[str, str]) -> str | None:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    return _opaque_fragment(node, consts)' scripts/check_declaration_kind_askers.py
+# ...and the retired readings must not come back INSIDE the two owners.  Bounded
+# to each declaration, because the fixtures carry the retired spellings by design.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _is_probe_text_sink\([^\n]*(\n([ \t][^\n]*)?)*func\.value\.id in imported" scripts/check_declaration_kind_askers.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _reconstruct_holed\([^\n]*(\n([ \t][^\n]*)?)*if isinstance\(node, ast\.FormattedValue\):\n        return _HOLE" scripts/check_declaration_kind_askers.py'
+#
+# A fixture consumer is read as CODE, through the two views this tree already
+# owns -- not a third lexer, and not the shared overlay, whose `.sh`/`.py`
+# anchors legitimately match comments.  The shell view's double-quote policy is
+# the CALLER's, because a fixture path is the message text its default blanks.
+run_check "INVARIANT" rg -F -n 'CONSUMER_VIEWS = {' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'def consumer_view_overlap_violations() -> list[str]:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'def strip_shell(text: str, keep_quoted: bool = False) -> str:' scripts/check_identifier_naming.py
+run_check "INVARIANT" rg -F -n 'out.append(span if (keep_quoted or is_command_payload(text, i))' scripts/check_identifier_naming.py
+run_check "INVARIANT" rg -F -n 'def python_code_view(text: str) -> str:' scripts/rust_code_view.py
+#
+# A locale prefix is collation-only only ahead of a tool the locale cannot
+# reach.  Measured: GNU grep answers 0 under `LC_ALL=C` and 1 under
+# `LC_ALL=C.UTF-8` for one character class; `rg` answers identically in both.
+run_check "INVARIANT" rg -F -n 'LOCALE_INDEPENDENT_SEARCH_TOOLS = frozenset({"rg"})' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -F -n 'LOCALE_ASSIGNMENTS = frozenset({"LC_ALL", "LANG", "LC_CTYPE"})' scripts/check_anchor_consistency.py
+run_check "INVARIANT" bash -lc 'rg -U -n "    if locale_seen and \(not rest\n                        or os\.path\.basename\(rest\[0\]\)\n                        not in LOCALE_INDEPENDENT_SEARCH_TOOLS\):\n        return None" scripts/check_anchor_consistency.py'
+#
+# An anchor's inputs include its PRODUCERS'.  The relation, the disposition and
+# the executed text are one answer; an unbound name resolves to nothing at all.
+run_check "INVARIANT" rg -F -n 'def anchor_producers(' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'def resolve_producers(' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '    if len(chosen) != len(names):' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '        related = "\n".join(prelude + [command])' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '            command = "; ".join(prelude + [command])' scripts/select_changed_anchors.py
 
 finalize_report

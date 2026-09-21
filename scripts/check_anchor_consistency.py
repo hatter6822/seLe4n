@@ -60,6 +60,7 @@ Exit status: 0 when the anchor set is satisfiable, 1 otherwise.
 
 from __future__ import annotations
 
+import os
 import argparse
 import pathlib
 import re
@@ -329,13 +330,40 @@ def _split_short_cluster(tok: str, valued: set[str], bare: set[str]) -> bool:
     return True
 
 
-#: Environment assignments that change a search's COLLATION and nothing it
-#: pins.  A `NAME=VALUE` prefix is part of the command, so `LC_ALL=C rg P F`
-#: still pins pattern `P` in file `F` -- but only for a variable that cannot
-#: change what MATCHES.  `RIPGREP_CONFIG_PATH` and `GREP_OPTIONS` can (they
-#: inject flags), so the set is closed and anything outside it makes the
-#: invocation unreadable rather than silently reduced.
-COLLATION_ONLY_ASSIGNMENTS = frozenset({"LC_ALL", "LANG", "LC_COLLATE", "LC_CTYPE"})
+#: Environment assignments a search may carry and still be reducible to
+#: `(pattern, target)`.  A `NAME=VALUE` prefix is part of the command, so
+#: `LC_ALL=C rg P F` still pins pattern `P` in file `F` -- but only where the
+#: variable cannot change what MATCHES.  `RIPGREP_CONFIG_PATH` and
+#: `GREP_OPTIONS` can (they inject flags), so the set is closed and anything
+#: outside it makes the invocation unreadable rather than silently reduced.
+#:
+#: **And "collation-only" was a claim about these members that is FALSE of a
+#: locale-sensitive tool** (`v0.35.152`, PR #897 review).  POSIX gives `LC_CTYPE`
+#: the character-class question, and `LC_ALL` and `LANG` set it; measured on this
+#: runner, GNU `grep -c '^[[:alpha:]]*$'` over `aeb` spelled with a U+00E9
+#: answers **0** under `LC_ALL=C` and **1** under `LC_ALL=C.UTF-8`.  So a
+#: C-locale negative and a UTF-8 positive over one pattern and one file are two
+#: DIFFERENT searches, and stripping both prefixes collapsed them into one key
+#: and reported a contradiction that is not one -- a gate refusing valid input,
+#: which `v0.35.120` records as a defect in its own right.
+#:
+#: *An exclusion's stated reason is a claim about its members*, so the membership
+#: test is now that relation: the prefix is strippable only ahead of a tool whose
+#: matching the locale cannot reach.  Measured before choosing, and the answer is
+#: per tool rather than per variable -- the same probe under `rg` answers
+#: identically in all three locales, because Rust's regex engine consults no
+#: locale at all.
+LOCALE_ASSIGNMENTS = frozenset({"LC_ALL", "LANG", "LC_CTYPE"})
+
+#: ...and the tools those are inert ahead of.  `rg` alone: `grep`, `egrep` and
+#: `fgrep` are GNU's, and the measurement above is theirs.  A locale-prefixed
+#: `grep` anchor is REFUSED (the caller's `unparsed` arm, a hard failure) rather
+#: than reduced, which is the fail-closed direction for a scanner building
+#: requirements and costs the tree nothing: it carries **zero** locale-prefixed
+#: anchors today, against 6032 `rg` and 3 `grep` invocations.
+LOCALE_INDEPENDENT_SEARCH_TOOLS = frozenset({"rg"})
+
+COLLATION_ONLY_ASSIGNMENTS = frozenset({"LC_COLLATE"}) | LOCALE_ASSIGNMENTS
 
 _ENV_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z_0-9]*)=")
 
@@ -348,16 +376,29 @@ def _strip_env_prefix(argv: list[str]) -> list[str] | None:
     rather than being reduced as though the prefix were absent.  That is the
     fail-closed direction for a scanner building *requirements*: a requirement
     dropped is a check nobody runs.
+
+    ...and `None` for a LOCALE assignment ahead of a tool whose matching the
+    locale reaches, which is every one of them but `rg`.  Stripping it would make
+    two different searches share a key; see `LOCALE_ASSIGNMENTS` for the
+    measurement.  The head is read AFTER the prefix, because that is where the
+    tool is.
     """
     i = 0
+    locale_seen = False
     while i < len(argv):
         m = _ENV_ASSIGNMENT.match(argv[i])
         if m is None:
             break
         if m.group(1) not in COLLATION_ONLY_ASSIGNMENTS:
             return None
+        locale_seen = locale_seen or m.group(1) in LOCALE_ASSIGNMENTS
         i += 1
-    return argv[i:]
+    rest = argv[i:]
+    if locale_seen and (not rest
+                        or os.path.basename(rest[0])
+                        not in LOCALE_INDEPENDENT_SEARCH_TOOLS):
+        return None
+    return rest
 
 
 def _search_invocation(argv: list[str]):
@@ -1648,6 +1689,31 @@ def self_test() -> int:
             )
             return 1
 
+        # `v0.35.152`: …and a LOCALE prefix ahead of a locale-SENSITIVE tool is
+        # refused, because there the same two claims are two different searches.
+        # Measured on this runner: GNU `grep -c '^[[:alpha:]]*$'` over a
+        # U+00E9 answers 0 under `LC_ALL=C` and 1 under `LC_ALL=C.UTF-8`, so
+        # reducing both to `(pattern, target)` makes a C-locale negative and a
+        # UTF-8 positive share a key and reports a contradiction that is not one
+        # — a gate refusing valid input.  Token-preserving against the two cases
+        # above: the same prefix, the same pattern, the same file, `grep` for
+        # `rg`.
+        envgrep_p = d / "wrapped_env_prefix_grep.sh"
+        envgrep_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C grep -n \"iota_present\" F.py'\n")
+        try:
+            find_contradictions([str(envgrep_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — a locale prefix ahead of `grep` was "
+                "reduced; `LC_CTYPE` decides what a character class matches "
+                "there, so two locales are two searches.",
+                file=sys.stderr,
+            )
+            return 1
+
         # …and an assignment OUTSIDE the closed set is refused rather than
         # reduced as though it were absent.  `RIPGREP_CONFIG_PATH` injects
         # flags, so it can change what MATCHES — the one thing a reduction may
@@ -1742,7 +1808,8 @@ def self_test() -> int:
         "quoted through `bash -lc` was compared while a piped one stayed "
         "counted, an unreducible wrapped search failed the gate, a collation "
         "env prefix was reduced in both the wrapped and the bare spelling "
-        "while an unmodelled assignment and an unreducible non-search head "
+        "while the same prefix ahead of locale-sensitive `grep` was refused, "
+        "an unmodelled assignment and an unreducible non-search head "
         "each failed rather than falling into `filtered`, the `! rg` "
         "absence wrapper was not shadowed, the clean "
         "set passed, and a commented-out anchor was not counted."

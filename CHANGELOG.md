@@ -1,3 +1,121 @@
+## v0.35.152 — an escape hatch keyed on a resemblance is the contract's real width
+
+Six review findings, and four are one class: **`v0.35.150` required probe text
+to reach Lean "through a named template and `.replace` over literals, with one
+structurally-incapable sink (`ast.parse`) exempt by RESOLUTION rather than by
+spelling" — and then resolved only that the receiver is *some* import, and let a
+projection of a template through the unmodelled-form fallback.**  A
+canonical-spelling contract is exactly as strong as its narrowest escape, and
+both escapes were keyed on a resemblance.
+
+**Measured, and both are invisible in both directions at once** — no row
+carrying the constructor *and* no refusal, which is what makes a domain miss
+unfindable by reading a failure:
+
+- `import probe_builder as ast` then `ast.parse(TEMPLATE, "opaque")` was
+  **exempted** as the structurally harmless standard-library parser; the control
+  `run_probe(TEMPLATE)` is refused, so the exemption is what admitted it.
+  `_module_name_bindings` maps the bound name to the **module path** now
+  (`import a.b` binds the package, `import a.b as c` binds `c` to `a.b`,
+  `from m import x` binds to `m.x`, a relative import to a name no sink can
+  equal), and `_is_probe_text_sink` requires `imported.get(recv) == key[0]`.
+- `PROBE = [TEMPLATE][0].replace("@KIND@", "opaque")` reported only the
+  unexpanded `TEMPLATE` with **zero** constructors while the program's `PROBE`
+  held `.opaqueInfo`.  A `Subscript` is a form no branch models, so the default
+  read it as an ordinary value fragment.  `_reaches_probe_template` +
+  `_opaque_fragment` refuse a fragment that reaches probe text — *a scanner's
+  default branch is a decision*, taken per call site rather than per spelling.
+
+**A third route came out of the mutation run rather than the review.**
+Reverting the `FormattedValue` branch left the suite green, so what it alone
+decides was measured: `f"{TEMPLATE}".replace("@KIND@", "opaque")` is **not**
+refused without it.  *An unwitnessed condition is indistinguishable from a wrong
+one* — and here the measurement said it was right and unreachable rather than
+redundant.  The **fourth** clause of the same helper measured the other way: a
+marker-bearing literal written inline inside an unmodelled form is refused
+either way across five spellings (a list projection, a conditional, a dict
+value, a tuple index, a call argument), because the file-level marker
+reconciliation catches it upstream.  *A filter positioned where it can only ever
+be wrong is not a filter*, so it is deleted with its measurement rather than
+kept for symmetry.
+
+**And a fixture consumer was read RAW, so a comment satisfied a code claim.**
+`scenario_catalog.consumer_code_view` routed `.sh` and `.py` past the view
+table under a docstring stating the over-approximation "costs only precision on
+the diagnostic".  It did not: a shell gate containing nothing but
+`# open("foo.expected")` satisfied the claim outright, so a fixture could be
+indexed, hashed and opened by no executable code — *gates read code, prose reads
+prose*, at the one table that did not.  **Not a third lexer**: both views already
+exist here, and the reason they are not in the shared overlay is unchanged (a
+Tier 3 anchor may legitimately match a `.sh` or `.py` comment).  *The view you
+read depends on the question.*  `python_code_view` is public now — it gained a
+second asker — and `strip_shell` takes the double-quote policy as a
+**parameter**, because the lexing is one question and the policy is the caller's:
+its default blanks a double-quoted span's message text, which is right for
+"which tokens are identifiers" and wrong here, since a fixture path *is* that
+message text.  `consumer_view_overlap_violations` refuses the two tables both
+answering for one suffix.  The reconciliation bit on its first run — `.bash` was
+classified and no `Used by` cell names one — so the entry is dropped and a
+`.bash` consumer added tomorrow reaches the explicit refusal.
+
+**And a locale prefix is not collation-only ahead of a locale-sensitive tool.**
+`COLLATION_ONLY_ASSIGNMENTS` named `LC_ALL`, `LANG` and `LC_CTYPE` under a
+stated reason — "a variable that cannot change what MATCHES" — that is false of
+GNU `grep`.  Measured on this runner: `grep -c '^[[:alpha:]]*$'` over a U+00E9
+answers **0** under `LC_ALL=C` and **1** under `LC_ALL=C.UTF-8`, while the same
+probe under `rg` answers identically in all three locales, Rust's engine
+consulting no locale at all.  So a C-locale negative and a UTF-8 positive over
+one pattern and one file are two different searches, and stripping both prefixes
+collapsed them into one key and reported a contradiction that is not one — a
+gate refusing valid input.  *An exclusion's stated reason is a claim about its
+members*, so the membership test is that relation: the prefix is strippable only
+ahead of `rg`, and a locale-prefixed `grep` is refused.  Free: the tree carries
+**zero** locale-prefixed anchors, against 6032 `rg` and 3 `grep` invocations.
+
+**And an anchor's inputs include its producers'.**  `test "${CIBUNDLE_CONJUNCTS}"
+-ge 5` names no path, so relating changed paths to the anchor's command alone
+dropped it from the changed-file selection **entirely** — not deferred, not
+reported, absent — and deleting conjuncts from the bundle its producer counts
+left the sweep green while direct Tier 3 failed.  Two are live
+(`CIBUNDLE_CONJUNCTS`, `NI_CTORS`).  `anchor_producers` / `resolve_producers`
+resolve a variable to the **last** assignment of that name before the anchor in
+the same script, and the relation, the disposition and the executed text are one
+answer: the producer is prepended to the command rather than the anchor being
+selected and then deferred.  An unbound name resolves to `None`, never to a
+partial prelude — *a FAILED derivation is not an EMPTY one*.
+
+**Residue, stated rather than implied**: such an anchor is `test`-headed, so its
+disposition is `defer:tool` — the sweep's contract is to re-run text scans — and
+it is now *reported* where it used to be absent.  Executing a non-search anchor
+whose prelude is itself a text scan is a separate question and is registered.
+
+Witnesses: three probe-locator fixtures (an aliased sink, a projected template,
+an interpolated one), four fixture-consumer cases with two controls, a
+locale-sensitive-tool refusal, and a producer-resolution pair whose first half
+asserts the **pre-fix** reading selects nothing — so the case decides the fix
+rather than the fixture.  Every one mutation-verified; two conditions were found
+unwitnessed by running the mutations and one of those was deleted on measurement.
+
+**And the cut's own anchor sweep was one file wide**, which is this file's own
+*sweep what was pinning the thing you deleted* rule unrun: the sweep was scoped
+to the previous cut's subject, and two anchors over *other* touched files pinned
+spellings this cut retired — the glob branch's `set(command)` and
+`_is_probe_text_sink`'s `func.value.id in imported`.  Tier 0 found both, the
+second as *the shell exited while sweeping row 17803*, which is `run_check`'s
+`finalize_report` doing what it documents.  Both are repointed at the relation
+rather than at the new text — the sink's at the **strengthened** relation, over
+both conjuncts and declaration-bounded, which makes the standalone line-positive
+this cut had added a second anchor over one relation, so it is dropped.  The
+sweep is now over every file the cut touched: 358 anchors, 0 broken.
+
+**Registered, not fixed**: the coexisting positive and negative over
+`_is_probe_text_sink` were *unsatisfiable together* — the negative's pattern is a
+strict prefix of the positive's — and `check_anchor_consistency.py` reported PASS
+at 5280/861/38, because the satisfiability comparison keys on the literal
+`(pattern, target)` pair and never compares two patterns in a **subsumption**
+relation.  Same class as the alternation-branch and two-positives gaps already
+registered.
+
 ## v0.35.151 — a receiver may be parenthesised, and seven positions key on its text
 
 PR #897's review reported ONE of them: `TABLE_BINDING`'s right-hand side is a

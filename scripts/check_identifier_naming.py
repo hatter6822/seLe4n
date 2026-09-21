@@ -815,10 +815,11 @@ def backtick_substitution_end(text: str, at: int) -> int:
     return -1
 
 
-def backtick_substitution_view(text: str, at: int, end: int) -> str:
+def backtick_substitution_view(text: str, at: int, end: int,
+                               keep_quoted: bool = False) -> str:
     """The code view of the `` ` … ` `` spanning `[at, end)`: its body lexed
     by `strip_shell` recursively, the delimiters kept, length preserved."""
-    return "`" + strip_shell(text[at + 1:end - 1]) + "`"
+    return "`" + strip_shell(text[at + 1:end - 1], keep_quoted) + "`"
 
 
 def command_substitution_end(text: str, at: int) -> int:
@@ -999,7 +1000,8 @@ def keep_expansions(span: str) -> str:
     return "".join(out)
 
 
-def command_substitution_view(text: str, at: int, end: int) -> str:
+def command_substitution_view(text: str, at: int, end: int,
+                              keep_quoted: bool = False) -> str:
     """The code view of the `$( ... )` spanning `[at, end)`: its body lexed
     by `strip_shell` recursively, so the commands inside survive while the
     comments inside are blanked, and nested substitutions get the same
@@ -1007,7 +1009,7 @@ def command_substitution_view(text: str, at: int, end: int) -> str:
     `# note` inside `X=$(echo ok # note\n)` as code -- a gate reading prose
     as code again, one level down.  Byte-aligned: the delimiters are kept
     and `strip_shell` preserves length."""
-    return "$(" + strip_shell(text[at + 2:end - 1]) + ")"
+    return "$(" + strip_shell(text[at + 2:end - 1], keep_quoted) + ")"
 
 
 # A here-document operator: `<<` or `<<-`, then the terminator word, bare,
@@ -1023,8 +1025,19 @@ HEREDOC_OPEN = re.compile(
 )
 
 
-def strip_shell(text: str) -> str:
+def strip_shell(text: str, keep_quoted: bool = False) -> str:
     """Shell: blank `#` comments and KEEP every quoted span.
+
+    **`keep_quoted` is the double-quote POLICY, and it is a parameter because
+    the lexing is one question and the policy is the caller's** (`v0.35.152`,
+    PR #897 review).  The default is this gate's own question -- which tokens are
+    identifiers -- for which a double-quoted span is message text and only its
+    expansions survive.  A caller asking what the CODE SAYS (does this script
+    open that fixture?) needs the span verbatim, since a path is exactly the
+    message text this gate discards; `scenario_catalog.consumer_code_view` passes
+    `True`.  Writing a second shell lexer for that is what this project forbids,
+    and `strip_hash` is not it either: a naive `#` scan blanks a `#` inside a
+    string, so the quote-state machine below is the part that must be shared.
 
     Routing `.sh` through the Python stripper blanked quoted text as
     prose, so `echo "${phase5_helper}"` became invisible -- a regression,
@@ -1081,7 +1094,7 @@ def strip_shell(text: str) -> str:
                     j = n if j < 0 else j
                     line = text[i:j]
                     if (line.lstrip("\t") if dash else line) == term:
-                        out.append(strip_shell(text[body_start:i]))
+                        out.append(strip_shell(text[body_start:i], keep_quoted))
                         out.append(line)
                         if j < n:
                             out.append("\n")
@@ -1090,7 +1103,7 @@ def strip_shell(text: str) -> str:
                     i = j + 1 if j < n else n
                 else:
                     # Unterminated: the body runs to the end of the text.
-                    out.append(strip_shell(text[body_start:n]))
+                    out.append(strip_shell(text[body_start:n], keep_quoted))
             pending = []
         elif (text.startswith("<<", i) and not text.startswith("<<<", i)
               and (i == 0 or text[i - 1] != "<")
@@ -1098,9 +1111,11 @@ def strip_shell(text: str) -> str:
             pending.append((m.group(2) or m.group(3) or m.group(4), bool(m.group(1))))
             out.append(m.group(0)); i = m.end()
         elif text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
-            out.append(command_substitution_view(text, i, end)); i = end
+            out.append(command_substitution_view(text, i, end, keep_quoted))
+            i = end
         elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
-            out.append(backtick_substitution_view(text, i, end)); i = end
+            out.append(backtick_substitution_view(text, i, end, keep_quoted))
+            i = end
         elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
@@ -1120,7 +1135,7 @@ def strip_shell(text: str) -> str:
                     j += 1; break
                 j += 1
             span = text[i:j]
-            out.append(span if is_command_payload(text, i)
+            out.append(span if (keep_quoted or is_command_payload(text, i))
                        else keep_expansions(span))
             i = j
         else:

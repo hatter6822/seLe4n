@@ -1237,17 +1237,65 @@ class TestFixtureConsumers(unittest.TestCase):
 
     def test_a_SHELL_gate_is_still_a_consumer(self) -> None:
         """The control that keeps the refusal about PROSE rather than about
-        having no code view: `.sh` has no view either and is source, so it must
-        still be read — the same `Used by` cell shape, one suffix over."""
+        having no SHARED code view: `.sh` gets this question's own view
+        (`v0.35.152`) rather than raw text, so it must still be read — the same
+        `Used by` cell shape, one suffix over."""
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(
                 self._case(d, "a.expected", "x\n", "`gates/g.sh`",
                            {"gates/g.sh": 'F=a.expected\ndiff "$F" out\n'}), [])
 
+    def test_a_SHELL_comment_naming_the_fixture_is_not_a_consumer(self) -> None:
+        """`v0.35.152` (PR #897 review).  A `.sh` consumer was read RAW, so a
+        gate containing nothing but `# diff "a.expected"` satisfied the claim and
+        a fixture could be indexed, hashed and opened by no executable code.
+        Token-preserving against the accepting shell case above: the same file,
+        the same mention, one `#`."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/g.sh`",
+                                {"gates/g.sh": '# diff "a.expected" out\n'})
+            self.assertTrue(errors)
+            self.assertIn("a.expected", " ".join(errors))
+
+    def test_a_PYTHON_comment_naming_the_fixture_is_not_a_consumer(self) -> None:
+        """...and its sibling, which the same raw read admitted.  A docstring is
+        prose here too, which is why the view is `rust_code_view`'s rather than a
+        `#`-only scan."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(
+                d, "a.expected", "x\n", "`gates/g.py`",
+                {"gates/g.py": '"""Compares a.expected."""\n# open("a.expected")\n'})
+            self.assertTrue(errors)
+            self.assertIn("a.expected", " ".join(errors))
+
+    def test_a_PYTHON_consumer_that_really_opens_it_is_accepted(self) -> None:
+        """The control for both: the view must keep STRING contents, since a
+        fixture path IS a string literal.  A check that refused everything would
+        satisfy the two cases above while asserting nothing."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/g.py`",
+                           {"gates/g.py": 'F = "a.expected"\nopen(F)\n'}), [])
+
+    def test_the_TWO_view_tables_do_not_both_answer_for_a_suffix(self) -> None:
+        """`CONSUMER_VIEWS` exists because this question is not the shared
+        overlay's; if the overlay grew a view for the same suffix, one of the two
+        answers would be redundant and the call site would silently prefer this
+        file's.  Reported rather than preferred."""
+        self.assertEqual(sc.consumer_view_overlap_violations(), [])
+        saved = dict(sc.CONSUMER_VIEWS)
+        try:
+            sc.CONSUMER_VIEWS[".lean"] = lambda text: text
+            self.assertTrue(sc.consumer_view_overlap_violations())
+        finally:
+            sc.CONSUMER_VIEWS.clear()
+            sc.CONSUMER_VIEWS.update(saved)
+
     def test_an_UNRECONCILED_source_suffix_is_reported(self) -> None:
-        """The backward direction: a member of `CONSUMER_SOURCE_SUFFIXES` that no
-        live row names is a stale classification, and a stale classification
-        reads exactly like coverage."""
+        """The backward direction: a member of `CONSUMER_VIEWS` that no live row
+        names is a stale classification, and a stale classification reads exactly
+        like coverage.  It bit on its own first run (`v0.35.152`): `.bash` was
+        classified and no cell named one, so the entry was dropped."""
         with tempfile.TemporaryDirectory() as d:
             readme = Path(d) / "README.md"
             readme.write_text(

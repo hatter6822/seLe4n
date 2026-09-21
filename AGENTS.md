@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.151.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.152.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -2387,7 +2387,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the gate sources and refuses any bare word-boundary keyword spelling written
   outside it, wired into the view's self-test.  The next such pattern fails on
   the day it is written.  Two things make it honest: it reads **code, not
-  prose** — `_python_code_view` blanks `#` comments and, via `ast`, docstrings,
+  prose** — `python_code_view` blanks `#` comments and, via `ast`, docstrings,
   because `keyword`'s own docstring quotes the bad spelling in order to explain
   it and a check that counted it would force the file to stop explaining itself
   — and it is mutation-tested in all three directions, since a discipline check
@@ -3474,6 +3474,61 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   retired patterns as mutation inputs, so a tree-wide negative would fire on
   them; each is bounded to the declaration that must not ask the question the
   retired way, and verified by restoring the pre-fix reading inside it.
+
+  **And a canonical-spelling contract is exactly as strong as its narrowest
+  escape** (PR #897 review, `v0.35.152`).  Round 16's exit — *where the subject
+  is code this project writes, require a canonical spelling and refuse the rest*
+  — is the remedy this section arrives at twice, and `v0.35.150` applied it to
+  probe text: *a probe reaches Lean through a named template and a `.replace`
+  over literals, never as a call argument*, with one structurally-incapable sink
+  (`ast.parse`) exempt "by RESOLUTION rather than by spelling".  Both escapes
+  were then keyed on a **resemblance**: the exemption resolved that the receiver
+  is *some* import rather than *which module*, so `import probe_builder as ast`
+  satisfied it; and the unmodelled-form fallback answered "ordinary value" for a
+  `Subscript`, so `[TEMPLATE][0].replace(…)` carried no marker and was not
+  refused.  Both measured invisible in both directions at once.  So: **write the
+  contract, then audit every branch that lets something past it** — an
+  exemption resolves what its table NAMES (a module path, not a binding), and a
+  default branch that cannot read its input answers *refuse* when the input
+  reaches the thing the contract is about.
+
+  Two corollaries the mutation run produced rather than the review.  **A third
+  escape existed and no case reached it**: reverting the `FormattedValue` branch
+  left the suite green, and measuring what it alone decides showed
+  `f"{TEMPLATE}".replace(…)` passing without it — so the branch was right and
+  unwitnessed, which is indistinguishable from wrong until a case is planted.
+  And **a fourth clause measured the other way**: a marker-bearing literal
+  written inline inside an unmodelled form is refused either way across five
+  spellings, because an upstream reconciliation already catches it, so it is
+  deleted with its measurement rather than kept for symmetry — *a filter
+  positioned where it can only ever be wrong is not a filter*.
+
+  **And "the view you read depends on the question" cuts both ways** (same
+  round).  This file states that rule for *structure versus text*; the fixture
+  catalogue needed it for *two code views of one language*.  `.sh` and `.py`
+  consumers were read RAW under a docstring calling the over-approximation a
+  loss of "precision on the diagnostic", and it was not: a shell gate containing
+  only `# open("foo.expected")` satisfied the consumer claim, so a fixture could
+  be indexed, hashed and opened by no executable code.  Both views already
+  existed here, and the reason they are not in the shared overlay stands — a
+  Tier 3 anchor may legitimately match a `.sh` or `.py` comment — so the remedy
+  is a second table with a **stated** question and a reconciliation refusing the
+  two to answer for one suffix, not a third lexer.  Where the existing view
+  answers a *different* question, make the difference a **parameter**:
+  `strip_shell` blanks a double-quoted span's message text, which is right for
+  "which tokens are identifiers" and wrong for "does this script open that
+  fixture", so the policy is the caller's and the lexing stays one answer.
+
+  **And an anchor's inputs are not always in its own command.**  `test
+  "${CIBUNDLE_CONJUNCTS}" -ge 5` names no path; the file it is about is named by
+  the assignment above it.  Relating changed paths to the command alone dropped
+  such an anchor from the changed-file selection **entirely** — not deferred,
+  not reported, absent — so deleting conjuncts left that sweep green while
+  direct Tier 3 failed.  *Resolve the text into the structure it stands for*: a
+  variable reference is a reference to its producer, taken as the **last**
+  assignment of that name before the anchor, and the relation, the disposition
+  and the executed text are one answer.  An unbound name resolves to nothing at
+  all rather than to a partial prelude.
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded
