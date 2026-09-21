@@ -17180,4 +17180,82 @@ run_check "INVARIANT" rg -F -n '  if !isProjectConstant n || (← isCompilerGene
 run_negative_check "INVARIANT" rg -F -n '  if !isProjectConstant n || isCompilerGenerated env n then return false' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 
 
+# ===========================================================================
+# v0.35.131 (PR #897 review): the census's two remaining PARTIAL answers, returned
+# as complete
+# ===========================================================================
+# `v0.35.128` made an exhausted carrier fixpoint an error and did not sweep the
+# question onto its siblings.  Measured over this tree's four bounded walks:
+# `ExportCommitDisciplineCensus.reachesAny` answers `true` on exhaustion,
+# `IpcDethreadingEnvironmentCensus.entailedTargets` answers the empty entailment
+# set, `stateCarryingTypes` throws -- three fail closed, and `liveClosure` was the
+# fourth, returning what it had under a docstring calling that "like its sibling".
+# ---------------------------------------------------------------------------
+# (1) AN EXHAUSTED CLOSURE IS AN ERROR, and completion is distinguished from it by
+# NESTING rather than by arm order, so there is no precedence to get wrong.
+run_check "INVARIANT" rg -F -n 'partial def liveClosure (env : Environment) (roots : List Name)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    (fuel : Nat := liveClosureFuel) : Option NameSet :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    match worklist with' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    | [] => some seen' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    match fuel with' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    | 0 => none' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'def liveClosureFuel : Nat := 400000' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the arm that handed back a partial set must not come back.
+run_negative_check "INVARIANT" rg -F -n '    | 0, _ => seen' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n '    match fuel, worklist with' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...with both callers taking the refusal rather than a set.
+run_check "INVARIANT" rg -F -n '  let some live := liveClosure env roots.toList' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  let some live := liveClosure env [``censusWitnessErasedRoot]' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the WITNESS, because `liveClosureFuel` is two orders of magnitude above
+# this kernel's closure and a refusal no input reaches is indistinguishable from
+# one that is wrong.  Driven at a fuel of 1, where the walk provably cannot finish.
+run_check "INVARIANT" rg -F -n 'def liveClosureRefusalViolations (env : Environment) : List String :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  match liveClosure env [``censusWitnessErasedRoot] (fuel := 1) with' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    liveClosureRefusalViolations env ++' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (2) A TYPE ALIAS IS A CARRIER WHEN WHAT IT ABBREVIATES IS.  `typeCarries`
+# normalises the telescoped result at reducible transparency, which unfolds an alias
+# that IS the whole result and cannot reach one nested under a constructor: `Option
+# StateAlias` is already in weak-head normal form.  Adding the alias to the carrier
+# SET answers both shapes with the mechanism already here, and the fixpoint closes a
+# chain of aliases for free.  Measured: 7 alias carriers and ONE new domain member --
+# `dispatchCapabilityOnly`, the live capability dispatcher, which was outside the
+# domain entirely.
+run_check "INVARIANT" rg -F -n '  let mut aliases : Array (Name × Expr) := #[]' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      if ← lambdaTelescope value fun _ body => typeCarries carriers body then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...skipping `Prop`, on BOTH branches, because `Prop` is a sort: without it every
+# predicate in the tree reads as an alias of a state-carrying type, measured at 30
+# spurious domain members.
+run_check "INVARIANT" rg -F -n '      if ci.type.isSort then pure !ci.type.isProp' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '          pure (body.isSort && !body.isProp)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and judged by what the alias ABBREVIATES, never by what its binders mention.
+run_negative_check "INVARIANT" rg -F -n '      if ← typeCarries carriers value then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...asking the OWNER whether a declaration carries a body, never a `.defnInfo`
+# match of its own: that would be a sixth asker re-deciding the question, and it
+# would miss an `opaque` type alias exactly as the five `v0.35.114` found did.
+run_check "INVARIANT" rg -F -n '    if !bodyBearing ci then continue' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    let some value := ci.value? (allowOpaque := true) | continue' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and what holds that is `check_declaration_kind_askers.py` (Tier 0), which
+# counts `ConstantInfo` constructor matches per subject against a pin, derived per
+# constructor.  A Tier 3 negative on the spelling was written here first and
+# DELETED: a mutation that re-decides the question inline (`match ci with |
+# .defnInfo dv => …`) keeps the token at another indentation and walks straight
+# past it, so it was a spelling pin standing in for the relation the Tier 0 gate
+# already decides.  Verified: that mutation leaves the negative silent and makes
+# the Tier 0 gate report `.defnInfo matched 1x, recorded 0x`.
+# (3) THE FOUR PLANTS, one per decision, since the real tree witnesses only the
+# `Prop` skip on the parameterised branch: the NESTED alias and its non-carrying
+# control, the `Prop`-valued alias, and the parameterised alias whose binder mentions
+# the state while its body does not.
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessNestedAlias := Model.SystemState' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessNestedAliasTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessNestedAliasCount := Nat' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessNestedAliasCounter (_st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def CensusWitnessPropAlias : Prop := ∀ st : Model.SystemState, st = st' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessPropAliasProducer (_st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessParameterisedAlias' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessParameterReader : Model.SystemState → Nat := fun _ => 0' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessParameterisedAliasProducer (_st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessNestedAliasTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
+
 finalize_report

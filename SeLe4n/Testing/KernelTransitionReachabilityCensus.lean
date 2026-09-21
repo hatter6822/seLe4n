@@ -283,12 +283,59 @@ residue, the lock-bracket machinery, and the reviewer's own
 holding kernel state, which is precisely this census's subject. -/
 partial def stateCarryingTypes (env : Environment)
     (bound : Nat := carrierFixpointBound) : MetaM NameSet := do
+  -- **A TYPE ALIAS IS A CARRIER WHEN WHAT IT ABBREVIATES IS** (PR #897 review,
+  -- `v0.35.131`).  `typeCarries` normalises the telescoped result at reducible
+  -- transparency, which unfolds an alias that IS the whole result and cannot reach
+  -- one nested under a constructor: `Option StateAlias` is already in weak-head
+  -- normal form, so `whnf` stops at `Option` and only `StateAlias` remains for the
+  -- search -- a constant the carrier set never held, so the transformer was in
+  -- NEITHER the reachable nor the unreachable set.  Recursing the normalisation
+  -- through the expression would be one more partial analysis; adding the alias to
+  -- the carrier SET answers both shapes with the mechanism already here, and the
+  -- fixpoint closes a chain of aliases for free.
+  --
+  -- Collected once, outside the loop: whether a definition is a type alias is a
+  -- property of its own signature and no round can change it.  Only the carrier
+  -- test below is re-run.
+  let mut aliases : Array (Name × Expr) := #[]
+  for (n, ci) in env.constants.toList do
+    if !isProjectConstant n then continue
+    -- "Does this declaration carry a body" has ONE owner, and matching `.defnInfo`
+    -- here would be a sixth asker re-deciding it -- and would miss an `opaque` type
+    -- alias exactly as the five `v0.35.114` found did.  `bodyBearing` answers, and
+    -- `value?` with its flag hands back the body it says is there.
+    if !bodyBearing ci then continue
+    let some value := ci.value? (allowOpaque := true) | continue
+    -- A type alias' telescoped TYPE is a sort, and `Prop` IS a sort: without the
+    -- second half every `SystemState → Prop` predicate in the tree reads as an
+    -- alias of a state-carrying type, and its value mentions `SystemState`, so the
+    -- carrier set swallows them.  Measured at **30** spurious domain members -- the
+    -- `Decidable` instances and the four evidence records `v0.35.128` already
+    -- identified as what DEFAULT transparency would file.  The `isProp` skip is the
+    -- same one the inductive arm below makes, for the same reason.
+    let isAlias ←
+      if ci.type.isSort then pure !ci.type.isProp
+      else if ci.type.isForall then
+        forallTelescopeReducing ci.type fun _ body =>
+          pure (body.isSort && !body.isProp)
+      else pure false
+    if isAlias then
+      aliases := aliases.push (n, value)
   let mut carriers : NameSet := ({} : NameSet).insert kernelStateType
   let mut changed := true
   let mut rounds := 0
   while changed && rounds < bound do
     changed := false
     rounds := rounds + 1
+    for (n, value) in aliases do
+      if carriers.contains n then continue
+      -- ...judged by the SAME question a field is judged by, so "does this carry
+      -- kernel state" keeps one answer across the alias, the field and the result.
+      -- The value's own PARAMETERS are stripped first, so a parameterised alias is
+      -- judged by what it abbreviates rather than by what its binders mention.
+      if ← lambdaTelescope value fun _ body => typeCarries carriers body then
+        carriers := carriers.insert n
+        changed := true
     for (n, ci) in env.constants.toList do
       if !isProjectConstant n || carriers.contains n then continue
       match ci with
@@ -416,12 +463,42 @@ def isErasedConstant (env : Environment) (n : Name) : Bool :=
   | some _ => SeLe4n.Testing.ReplyStackWriteCensus.isPredicate env n
   | none => false
 
+/-- How much worklist the live closure may consume before it gives up.
+
+Far above the closure of this kernel's seams — measured at **3477** constants
+against a bound of 400000 — so nothing in production can reach the refusal, which
+is why `liveClosureRefusalViolations` exercises it at a bound of 1.  *A check that
+cannot fire and carries no witness is indistinguishable from one that is wrong.* -/
+def liveClosureFuel : Nat := 400000
+
 /-- Every constant a committing export can reach **computationally**, following
 project constants transitively.
 
-Fuel-bounded like its sibling, and an exhausted walk returns what it has —
-which makes the *reachable* set smaller and so makes the census demand more.
-The bound is far above the closure of this kernel's seams.
+Fuel-bounded, and an exhausted walk is an **error** (PR #897 review, `v0.35.131`).
+
+It used to return what it had, on the stated ground that a smaller *reachable* set
+makes the census demand more.  That reads one of the reconciliation's two
+directions and not the other.  A transformer already recorded in
+`nonExecutedTransitions` that becomes reachable only beyond the cutoff stays in
+`unreachable`, still matches its entry, and the reconciliation **passes** — instead
+of reporting that a pin entry is now live, which is the regression this census
+exists to catch.  Exhaustion is not conservative here; it is a false green on the
+stale-entry half.
+
+That docstring also called the behaviour "like its sibling", and the sibling does
+the opposite: `ExportCommitDisciplineCensus.reachesAny` answers **`true`** on
+exhaustion, because for *that* predicate — does this export reach a state write? —
+`true` is what demands more.  Two walks, two conservative directions, and the
+comparison was false in the direction that mattered.  Measured over this tree's four
+bounded walks: `reachesAny` answers `true`,
+`IpcDethreadingEnvironmentCensus.entailedTargets` answers the empty entailment set,
+`stateCarryingTypes` throws since `v0.35.128` — three fail closed, and this was the
+fourth.
+
+An empty worklist and an exhausted fuel are therefore distinguished rather than
+collapsed: completion is `some seen` whatever the fuel is, exhaustion is `none`,
+and the fuel is an ARGUMENT so `liveClosureRefusalViolations` can exercise the
+refusal on a tree where the real bound is never reached.
 
 **An erased dependency is not a call** (PR #897 review, `v0.35.125`).  An
 unrestricted `getUsedConstants` walk follows a proof: a committing path that
@@ -444,14 +521,24 @@ every argument of every application in the closure, which is a type inference pe
 node over thousands of constants; the residue is an over-approximation of *live*,
 which makes the census demand **less**, and it is named here rather than left for a
 reader to find. -/
-partial def liveClosure (env : Environment) (roots : List Name) : NameSet :=
-  go roots {} 400000
+partial def liveClosure (env : Environment) (roots : List Name)
+    (fuel : Nat := liveClosureFuel) : Option NameSet :=
+  go roots {} fuel
 where
-  go (worklist : List Name) (seen : NameSet) (fuel : Nat) : NameSet :=
-    match fuel, worklist with
-    | 0, _ => seen
-    | _, [] => seen
-    | fuel' + 1, c :: rest =>
+  go (worklist : List Name) (seen : NameSet) (fuel : Nat) : Option NameSet :=
+    -- The worklist is matched FIRST and the fuel only inside the non-empty arm, so
+    -- "finished" strictly dominates "exhausted" by NESTING rather than by arm order.
+    -- Written as one `match worklist, fuel` the two are peers, and swapping them
+    -- makes a walk that empties the worklist on its last unit of fuel report as
+    -- exhausted -- a spurious refusal on a correct run, at a boundary no witness on
+    -- this tree can reach.  *Prefer making the property structural over checking
+    -- it*: nested, there is no order to get wrong.
+    match worklist with
+    | [] => some seen
+    | c :: rest =>
+    match fuel with
+    | 0 => none
+    | fuel' + 1 =>
       if seen.contains c || !isProjectConstant c then go rest seen fuel'
       else
         let seen := seen.insert c
@@ -460,6 +547,66 @@ where
           match (env.find? c).bind (·.value? (allowOpaque := true)) with
           | none => go rest seen fuel'
           | some v => go (v.getUsedConstants.toList ++ rest) seen fuel'
+
+/-- An alias for the state itself, used NESTED under a result constructor.
+
+`v0.35.128`'s `CensusWitnessAliasedState` is the alias as the WHOLE result, which
+`typeCarries`' weak-head reduction unfolds.  This one is `Option
+CensusWitnessNestedAlias`: already in weak-head normal form, so `whnf` stops at
+`Option` and only the alias constant reaches the search.  Without the alias arm of
+`stateCarryingTypes` the transformer below is in NEITHER the reachable nor the
+unreachable set, and its pin entry reads as stale. -/
+private abbrev CensusWitnessNestedAlias := Model.SystemState
+
+/-- The transformer that must be in the domain, and so in the pin. -/
+private def censusWitnessNestedAliasTransformer (st : Model.SystemState) :
+    Option CensusWitnessNestedAlias := some st
+
+/-- A `Prop`-valued definition whose statement quantifies over the state.
+
+`Prop` IS a sort, so without the `isProp` half of the alias test every proposition
+in the tree reads as a type alias, and `typeCarries` of its statement finds the
+state it quantifies over -- measured at **30** spurious domain members, the
+`Decidable` instances and the four evidence records `v0.35.128` identified as what
+DEFAULT transparency would file.  Its inhabitants are proofs and hold no state.
+This one has NO parameters, so it exercises the `dv.type.isSort` branch; the
+parameterised branch is exercised by the tree's own predicates. -/
+private def CensusWitnessPropAlias : Prop := ∀ st : Model.SystemState, st = st
+
+/-- Its producer must NOT be in the domain.  `PLift` because `Option` takes a
+`Type` and a proposition is `Sort 0`; the wrapper keeps the alias NESTED, which is
+what stops the reducible unfolding from answering before the carrier test does. -/
+private def censusWitnessPropAliasProducer (_st : Model.SystemState) :
+    Option (PLift CensusWitnessPropAlias) := none
+
+/-- A PARAMETERISED alias whose binder mentions the state and whose body does not.
+
+The control for how an alias is judged: `stateCarryingTypes` strips the value's own
+parameters before asking whether what it abbreviates carries state, so this one does
+not.  Asking `typeCarries` of the whole value instead searches the lambda *including
+its binder types*, finds `SystemState` there, and files the alias as a carrier --
+which is judging a type by what its parameters read rather than by what it holds.
+Used NESTED below, so the reducible unfolding cannot answer the question first. -/
+private abbrev CensusWitnessParameterisedAlias
+    (_reader : Model.SystemState → Nat) : Type := Nat
+
+/-- The argument is a NAMED constant rather than a lambda: an inline `fun _ => 0`
+carries its own binder type, so the result expression would mention `SystemState`
+outright and the control would pass for a reason that has nothing to do with the
+alias. -/
+private def censusWitnessParameterReader : Model.SystemState → Nat := fun _ => 0
+
+/-- Its producer must NOT be in the domain. -/
+private def censusWitnessParameterisedAliasProducer (_st : Model.SystemState) :
+    Option (CensusWitnessParameterisedAlias censusWitnessParameterReader) := some 0
+
+/-- The CONTROL, and what makes the pair decide *the alias names a carrier* rather
+than *the result is nested*: the same shape over an alias that carries nothing. -/
+private abbrev CensusWitnessNestedAliasCount := Nat
+
+/-- Its producer must NOT be in the domain. -/
+private def censusWitnessNestedAliasCounter (_st : Model.SystemState) :
+    Option CensusWitnessNestedAliasCount := some 0
 
 /-! ## Witnesses for the domain's two widenings
 
@@ -660,8 +807,10 @@ whole pipeline: no committing export reaches these witnesses, so the pipeline
 could not exercise the arm.  Both directions, because a walk that followed
 nothing would satisfy the first clause vacuously. -/
 def erasureWitnessViolations (env : Environment) : List String := Id.run do
-  let live := liveClosure env [``censusWitnessErasedRoot]
   let mut out : List String := []
+  let some live := liveClosure env [``censusWitnessErasedRoot]
+    | return out ++ ["`liveClosure` exhausted its fuel on the erasure \
+        witness's own root, so both clauses below decide nothing."]
   if live.contains ``censusWitnessErasedTransformer then
     out := out ++ ["`liveClosure` followed an ERASED dependency: \
       `censusWitnessErasedRoot` reaches `censusWitnessErasedTransformer` only \
@@ -679,6 +828,26 @@ def erasureWitnessViolations (env : Environment) : List String := Id.run do
         `censusWitnessErasedTransformer`, so the erasure witness is INERT: the \
         permissive walk it is meant to refute would not have followed it either."]
   return out
+
+/-- The refusal above, exercised on a tree where the real bound is never reached.
+
+`liveClosureFuel` is two orders of magnitude above this kernel's closure, so nothing
+in production can make the walk answer `none` — and a refusal no input reaches is
+indistinguishable from one that is wrong.  The witness drives the same walk at a fuel
+of **1**, where it provably cannot complete (one pop leaves the root's own used
+constants on the worklist), and reports a violation when the call **succeeds**.
+
+That is the only direction that can go silent: delete the `none` arm, or reverse the
+two match arms so exhaustion is read as completion, and this returns a violation.
+The root is the planted erasure witness rather than the census's own export list, so
+the claim does not depend on how many committing seams the tree happens to have. -/
+def liveClosureRefusalViolations (env : Environment) : List String :=
+  match liveClosure env [``censusWitnessErasedRoot] (fuel := 1) with
+  | some _ => ["`liveClosure` at a fuel of 1 SUCCEEDED, so its exhaustion arm is \
+      unreachable and the refusal it reports is untested: an exhausted walk would \
+      hand back a partial `live` set, and a pin entry that has become live would \
+      still look unreachable."]
+  | none => []
 
 /-- The committing exports, derived exactly as `ExportCommitDisciplineCensus`
 derives them — through that census's own `commitsState`, so the two cannot
@@ -1019,6 +1188,8 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.initFnCensusWitnessTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessNestedAliasTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus._flat_ctor
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessNestedTransformer
@@ -1247,7 +1418,12 @@ def pinCheckWitnessViolations (env : Environment) : List String := Id.run do
 run_cmd Command.liftTermElabM do
   let env ← getEnv
   let roots := committingExports env
-  let live := liveClosure env roots.toList
+  let some live := liveClosure env roots.toList
+    | throwError "the live closure exhausted its fuel of {liveClosureFuel}: the \
+      reachable set is a strict UNDER-approximation, so a transformer recorded \
+      in `nonExecutedTransitions` that has since been wired would still look \
+      unreachable and its now-stale entry would pass.  Raise `liveClosureFuel` \
+      and re-measure the closure size in its docstring."
   let carriers ← stateCarryingTypes env
   let mut domainSize : Nat := 0
   let mut unreachable : NameSet := {}
@@ -1261,6 +1437,7 @@ run_cmd Command.liftTermElabM do
     pinViolations env live unreachable standsBesideLive ++
     pinCheckWitnessViolations env ++
     erasureWitnessViolations env ++
+    liveClosureRefusalViolations env ++
     (← carrierFixpointRefusalViolations env)
   if violations.isEmpty then
     let unreachableCount := unreachable.toList.length

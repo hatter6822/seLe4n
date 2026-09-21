@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.130-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.35.131-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -96,9 +96,9 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.35.130` |
+| **Версия** | `0.35.131` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовый код (Lean LoC)** | 395 934 строки в 334 файлах |
+| **Продуктовый код (Lean LoC)** | 396 110 строк в 334 файлах |
 | **Тестовый код (Lean LoC)** | 80 213 строк в 70 тест-сьютах |
 | **Доказанные декларации** | 13 131 декларация theorem/lemma (ноль sorry/axiom) |
 | **Целевое оборудование** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |

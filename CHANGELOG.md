@@ -1,3 +1,72 @@
+## v0.35.131 — the census's two remaining partial answers, returned as complete
+
+PR #897 review (Codex P2, two findings).  `v0.35.128` made an exhausted carrier
+fixpoint an **error** and wrote down why — *a rule stated is not a rule enforced* —
+and did not sweep the question onto its siblings.  Running that sweep across every
+bounded walk in the tree is what this cut is: `ExportCommitDisciplineCensus.reachesAny`
+answers **`true`** on exhaustion, `IpcDethreadingEnvironmentCensus.entailedTargets`
+answers the **empty** entailment set, `stateCarryingTypes` **throws** — three fail
+closed, and `liveClosure` was the fourth, returning what it had.
+
+**An exhausted live closure is an error.**  It returned its partial set on the
+stated ground that a smaller *reachable* set makes the census demand more.  That
+reads one of the reconciliation's two directions: a transformer already recorded in
+`nonExecutedTransitions` that becomes reachable only beyond the cutoff stays in
+`unreachable`, still matches its entry, and the reconciliation **passes** instead of
+reporting that a pin entry is now live.  Its docstring also called that "like its
+sibling", and the sibling does the opposite — two walks, two conservative
+directions, and the comparison was false in the direction that mattered.
+Completion is now distinguished from exhaustion by **nesting** rather than by arm
+order, so there is no precedence to get wrong, and the fuel is an argument so
+`liveClosureRefusalViolations` exercises the refusal at a fuel of 1 on a tree where
+400000 is never reached.
+
+**A type alias is a carrier when what it abbreviates is.**  `typeCarries`
+normalises the telescoped result at reducible transparency, which unfolds an alias
+that *is* the whole result and cannot reach one nested under a constructor: `Option
+StateAlias` is already in weak-head normal form, so `whnf` stops at `Option`.
+Recursing the normalisation would be one more partial analysis; adding the alias to
+the carrier **set** answers both shapes with the mechanism already here, and the
+fixpoint closes a chain of aliases for free.  Judged by the same question a field is
+judged by, with the value's own parameters stripped first, and skipping `Prop` on
+both branches — `Prop` **is** a sort, and without that half every predicate in the
+tree reads as an alias of a state-carrying type, measured at **30** spurious domain
+members (the `Decidable` instances and the four evidence records `v0.35.128`
+identified as what *default* transparency would file).
+
+**And this widening is not vacuous.**  7 alias carriers — `Model.Kernel`,
+`Liveness.SchedulerTrace`, four compiler-minted type aliases and `v0.35.128`'s own
+plant — and **one** new domain member: `SeLe4n.Kernel.dispatchCapabilityOnly`, the
+live capability dispatcher, which was outside the census's domain entirely.  It is
+reachable from a committing export, so it needs no pin entry.
+
+**Five mutations, all caught, and four plants because the real tree witnesses only
+one of the decisions.**  The nested alias and its non-carrying control decide *the
+alias names a carrier* rather than *the result is nested*; a `Prop`-valued alias
+decides the unparameterised `isProp` skip (the tree's own predicates decide the
+parameterised one); and a parameterised alias whose **binder** mentions the state
+while its body does not decides the parameter stripping.  Two earlier attempts at
+that last plant were contaminated — an inline `fun _ => 0` carries its own binder
+type, so the result expression mentioned `SystemState` outright — and it passes a
+named reader constant instead.  A sixth mutation was dropped rather than
+witnessed: reversing the two `match` arms is now unstateable, because the nesting
+makes completion dominate structurally.
+
+**And the alias scan asks the OWNER whether a declaration carries a body.**  It
+first matched `.defnInfo` directly — which Tier 0's `check_declaration_kind_askers`
+caught as a sixth asker re-deciding the body-bearing question, and which would have
+missed an `opaque` type alias exactly as the five `v0.35.114` found did.  It reads
+`bodyBearing` and `value? (allowOpaque := true)` now.
+
+One anchor was written and then **deleted** rather than kept: a Tier 3 negative on
+the retired `| .defnInfo dv =>` spelling is walked around by a mutation that
+re-decides the question inline at another indentation, so it was a spelling pin
+standing in for a relation the Tier 0 gate already decides per constructor.
+Verified both ways — that mutation leaves the negative silent and makes the Tier 0
+gate report `.defnInfo matched 1x, recorded 0x`.
+
+31 Tier 3 anchors.  The sweep over what this cut retires found nothing stale.
+
 ## v0.35.130 — the compiler-generated classification asks the environment, over the FINAL component
 
 PR #897 review (Codex P2).  `v0.35.125` deleted the `initFn` prefix and kept the

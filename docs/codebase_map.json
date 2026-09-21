@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "4bd43d025fb9b8e63f4e163f1ec1352acafb5b30",
-      "tree_sha": "6725826eba20a598dcf05bef3e07d905ae0858c0",
-      "committed_at_utc": "2026-09-21T02:19:35+00:00"
+      "commit_sha": "629ce9602decfde2e9381a35d032c2c4fc227f3d",
+      "tree_sha": "0242e4fd8240d874bfaa3d210a642e4036c4365e",
+      "committed_at_utc": "2026-09-21T02:45:30+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "1358856418971d169e322d2ae14615801a3f8c9276da352d138f9993e1acf030"
+    "source_digest": "9b898827f64c4f32bf745ac182d7f16721518176093d116a18a21704a73097b4"
   },
   "summary": {
     "module_count": 404,
-    "declaration_count": 22072
+    "declaration_count": 22083
   },
   "readme_sync": {
-    "version": "0.35.130",
+    "version": "0.35.131",
     "lean_toolchain": "v4.28.0",
     "production_files": 334,
-    "production_loc": 395934,
+    "production_loc": 396110,
     "test_files": 70,
     "test_loc": 80213,
     "proved_theorem_lemma_decls": 13131,
@@ -272216,7 +272216,7 @@
     {
       "module": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
       "path": "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean",
-      "declaration_count": 47,
+      "declaration_count": 58,
       "declarations": [
         {
           "kind": "namespace",
@@ -272287,13 +272287,14 @@
             "set",
             "state",
             "toList",
-            "typeCarries"
+            "typeCarries",
+            "value"
           ]
         },
         {
           "kind": "def",
           "name": "isStateTransformer",
-          "line": 363,
+          "line": 409,
           "called": [
             "bodyBearing",
             "isCompilerGenerated",
@@ -272304,7 +272305,7 @@
         {
           "kind": "opaque",
           "name": "censusWitnessOpaqueTransformer",
-          "line": 394,
+          "line": 440,
           "called": [
             "SystemState",
             "st"
@@ -272313,7 +272314,7 @@
         {
           "kind": "opaque",
           "name": "censusWitnessOpaqueNonTransformer",
-          "line": 397,
+          "line": 443,
           "called": [
             "SystemState"
           ]
@@ -272321,7 +272322,7 @@
         {
           "kind": "def",
           "name": "isErasedConstant",
-          "line": 413,
+          "line": 459,
           "called": [
             "isPredicate",
             "none"
@@ -272329,23 +272330,108 @@
         },
         {
           "kind": "def",
+          "name": "liveClosureFuel",
+          "line": 471,
+          "called": []
+        },
+        {
+          "kind": "def",
           "name": "liveClosure",
-          "line": 447,
+          "line": 523,
           "called": [
             "bind",
             "contains",
             "insert",
             "isErasedConstant",
             "isProjectConstant",
+            "liveClosureFuel",
             "none",
             "toList",
             "value"
           ]
         },
         {
+          "kind": "abbrev",
+          "name": "CensusWitnessNestedAlias",
+          "line": 558,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessNestedAliasTransformer",
+          "line": 561,
+          "called": [
+            "CensusWitnessNestedAlias",
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "CensusWitnessPropAlias",
+          "line": 573,
+          "called": [
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessPropAliasProducer",
+          "line": 578,
+          "called": [
+            "CensusWitnessPropAlias",
+            "SystemState",
+            "none"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "CensusWitnessParameterisedAlias",
+          "line": 589,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessParameterReader",
+          "line": 596,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessParameterisedAliasProducer",
+          "line": 599,
+          "called": [
+            "CensusWitnessParameterisedAlias",
+            "SystemState",
+            "censusWitnessParameterReader"
+          ]
+        },
+        {
+          "kind": "abbrev",
+          "name": "CensusWitnessNestedAliasCount",
+          "line": 604,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessNestedAliasCounter",
+          "line": 607,
+          "called": [
+            "CensusWitnessNestedAliasCount",
+            "SystemState"
+          ]
+        },
+        {
           "kind": "structure",
           "name": "CensusWitnessWrapper",
-          "line": 473,
+          "line": 619,
           "called": [
             "SystemState",
             "tag"
@@ -272354,7 +272440,7 @@
         {
           "kind": "structure",
           "name": "CensusWitnessReader",
-          "line": 481,
+          "line": 627,
           "called": [
             "SystemState"
           ]
@@ -272362,7 +272448,7 @@
         {
           "kind": "def",
           "name": "censusWitnessWrapperTransformer",
-          "line": 487,
+          "line": 633,
           "called": [
             "CensusWitnessWrapper",
             "SystemState",
@@ -272373,7 +272459,7 @@
         {
           "kind": "def",
           "name": "censusWitnessReaderProducer",
-          "line": 494,
+          "line": 640,
           "called": [
             "CensusWitnessReader"
           ]
@@ -272381,7 +272467,7 @@
         {
           "kind": "abbrev",
           "name": "CensusWitnessAliasedState",
-          "line": 507,
+          "line": 653,
           "called": [
             "SystemState"
           ]
@@ -272389,13 +272475,13 @@
         {
           "kind": "abbrev",
           "name": "CensusWitnessAliasedCount",
-          "line": 512,
+          "line": 658,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessAliasedTransformer",
-          "line": 518,
+          "line": 664,
           "called": [
             "CensusWitnessAliasedState",
             "SystemState",
@@ -272405,7 +272491,7 @@
         {
           "kind": "def",
           "name": "censusWitnessAliasedCounter",
-          "line": 523,
+          "line": 669,
           "called": [
             "CensusWitnessAliasedCount",
             "SystemState"
@@ -272414,7 +272500,7 @@
         {
           "kind": "inductive",
           "name": "CensusWitnessPropCarrier",
-          "line": 535,
+          "line": 681,
           "called": [
             "SystemState"
           ]
@@ -272422,7 +272508,7 @@
         {
           "kind": "def",
           "name": "censusWitnessPropositionProducer",
-          "line": 539,
+          "line": 685,
           "called": [
             "CensusWitnessPropCarrier",
             "SystemState",
@@ -272432,7 +272518,7 @@
         {
           "kind": "def",
           "name": "initFnCensusWitnessTransformer",
-          "line": 548,
+          "line": 694,
           "called": [
             "SystemState",
             "st"
@@ -272441,7 +272527,7 @@
         {
           "kind": "def",
           "name": "_flat_ctor",
-          "line": 558,
+          "line": 704,
           "called": [
             "SystemState",
             "st"
@@ -272450,7 +272536,7 @@
         {
           "kind": "def",
           "name": "_cstage1.censusWitnessNestedTransformer",
-          "line": 565,
+          "line": 711,
           "called": [
             "SystemState",
             "default",
@@ -272462,7 +272548,7 @@
         {
           "kind": "def",
           "name": "censusWitnessErasedTransformer",
-          "line": 595,
+          "line": 741,
           "called": [
             "SystemState",
             "st"
@@ -272471,7 +272557,7 @@
         {
           "kind": "def",
           "name": "censusWitnessErasedProp",
-          "line": 604,
+          "line": 750,
           "called": [
             "SystemState",
             "censusWitnessErasedTransformer",
@@ -272481,7 +272567,7 @@
         {
           "kind": "theorem",
           "name": "censusWitnessErasedLemma",
-          "line": 607,
+          "line": 753,
           "called": [
             "SystemState",
             "censusWitnessErasedProp",
@@ -272492,13 +272578,13 @@
         {
           "kind": "def",
           "name": "censusWitnessProofConsumer",
-          "line": 622,
+          "line": 768,
           "called": []
         },
         {
           "kind": "def",
           "name": "censusWitnessErasedRoot",
-          "line": 628,
+          "line": 774,
           "called": [
             "SystemState",
             "censusWitnessErasedLemma",
@@ -272509,7 +272595,7 @@
         {
           "kind": "def",
           "name": "carrierFixpointRefusalViolations",
-          "line": 646,
+          "line": 792,
           "called": [
             "pure",
             "set",
@@ -272519,7 +272605,7 @@
         {
           "kind": "def",
           "name": "erasureWitnessViolations",
-          "line": 662,
+          "line": 808,
           "called": [
             "bind",
             "censusWitnessErasedLemma",
@@ -272533,8 +272619,20 @@
         },
         {
           "kind": "def",
+          "name": "liveClosureRefusalViolations",
+          "line": 843,
+          "called": [
+            "censusWitnessErasedRoot",
+            "liveClosure",
+            "none",
+            "refusal",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "committingExports",
-          "line": 686,
+          "line": 854,
           "called": [
             "commitsState",
             "isProjectConstant",
@@ -272544,7 +272642,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPlain",
-          "line": 712,
+          "line": 880,
           "called": [
             "KernelTransitionInstance.ofWithLockSet",
             "TlbCacheJointState.empty",
@@ -272806,7 +272904,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
-          "line": 988,
+          "line": 1156,
           "called": [
             "_cstage1.censusWitnessNestedTransformer",
             "_flat_ctor",
@@ -272817,6 +272915,7 @@
             "censusWitnessDirectLinkWrite",
             "censusWitnessErasedRoot",
             "censusWitnessErasedTransformer",
+            "censusWitnessNestedAliasTransformer",
             "censusWitnessOpaqueTransformer",
             "censusWitnessRawTableWrite",
             "censusWitnessSplitWriter",
@@ -272839,7 +272938,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitions",
-          "line": 1028,
+          "line": 1198,
           "called": [
             "nonExecutedTransitionsPlain",
             "nonExecutedTransitionsPrivate"
@@ -272848,7 +272947,7 @@
         {
           "kind": "def",
           "name": "standsBesideLive",
-          "line": 1054,
+          "line": 1224,
           "called": [
             "cancelBoundDonationOnCore",
             "cancelDonationOnCore",
@@ -272861,7 +272960,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 1078,
+          "line": 1248,
           "called": [
             "contains",
             "insert",
@@ -272873,7 +272972,7 @@
         {
           "kind": "def",
           "name": "pinSides",
-          "line": 1111,
+          "line": 1281,
           "called": [
             "conclusionOf",
             "none"
@@ -272882,7 +272981,7 @@
         {
           "kind": "def",
           "name": "pinRelatesPrograms",
-          "line": 1143,
+          "line": 1313,
           "called": [
             "contains",
             "none",
@@ -272892,7 +272991,7 @@
         {
           "kind": "def",
           "name": "pinViolations",
-          "line": 1156,
+          "line": 1326,
           "called": [
             "any",
             "contains",
@@ -272906,7 +273005,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
-          "line": 1196,
+          "line": 1366,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272915,7 +273014,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
-          "line": 1204,
+          "line": 1374,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272924,7 +273023,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
-          "line": 1211,
+          "line": 1381,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272933,7 +273032,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnesses",
-          "line": 1216,
+          "line": 1386,
           "called": [
             "pinWitnessBothOnOneSide",
             "pinWitnessConjunctionOfReflexivity",
@@ -272943,7 +273042,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnessViolations",
-          "line": 1228,
+          "line": 1398,
           "called": [
             "SystemState",
             "cancelIpcBlockingOnCore",
@@ -272957,6 +273056,8 @@
             "isStateTransformer",
             "length",
             "liveClosure",
+            "liveClosureFuel",
+            "liveClosureRefusalViolations",
             "nonExecutedTransitions",
             "of",
             "pinCheckWitnesses",
@@ -272964,6 +273065,7 @@
             "pinViolations",
             "reconciliationViolations",
             "refusal",
+            "set",
             "size",
             "standsBesideLive",
             "state",

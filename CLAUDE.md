@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.130.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.131.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,7 +222,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~74045 lines)
+- `CHANGELOG.md` (~74203 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -342,6 +342,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1454 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1436 lines)
@@ -372,7 +373,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1178 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
@@ -1781,6 +1781,46 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   conjunct is unwitnessed however plausible it reads.  The plant will usually have to
   be constructed rather than written, because the property being witnessed is
   precisely the one the ordinary way of writing code cannot produce.
+
+  **And when a cut fixes an exhaustion, SWEEP every other bounded walk — the
+  conservative direction is different for each** (PR #897 review, `v0.35.131`).
+  `v0.35.128` made an exhausted carrier fixpoint an error and wrote down why; the
+  question was never asked of its siblings.  Asking it found the tree has **four**
+  bounded walks and that three of them fail closed for three *different* reasons —
+  `reachesAny` answers `true` (does this export reach a state write? `true` demands
+  more), `entailedTargets` answers the empty entailment set (fewer entailments
+  demand more), `stateCarryingTypes` throws — while `liveClosure` returned its
+  partial set.  A bound is not conservative in itself; **which** answer is
+  conservative depends on what the predicate means, so every walk needs the question
+  asked separately and the answer recorded at the walk.
+
+  Two things that cut records.  **A docstring that compares itself to a sibling is a
+  claim about the sibling**: `liveClosure`'s said it was "fuel-bounded like its
+  sibling", and the sibling does the opposite — the comparison was false in exactly
+  the direction that mattered, and it read as having been checked.  And **a
+  precedence you would otherwise have to witness is better removed**: distinguishing
+  "finished" from "exhausted" by arm order in one `match a, b` is a property no
+  witness on this tree can reach (it bites only when the worklist empties on the last
+  unit of fuel), so the arms are *nested* instead and there is nothing left to get
+  wrong.  *Prefer making the property structural over checking it at all.*
+
+  The same cut's second finding is the recursion rule one level down: a normalisation
+  that reaches only the HEAD is a partial answer too.  `whnf` on `Option StateAlias`
+  stops at `Option`, so an alias nested under a constructor never unfolds — and the
+  answer is not to recurse the normalisation, which is one more partial analysis, but
+  to add the alias to the **set** the search consults, where the existing fixpoint
+  closes a chain of them for free.  *When a reduction cannot reach the thing, widen
+  what the question is asked about rather than deepening the reduction.*
+
+  Two corollaries about the plants it needed, both earned by a mutation run that
+  found three of five conditions unwitnessed.  **A control that mentions the subject
+  for an unrelated reason decides nothing**: the parameterised-alias plant first
+  passed its argument as an inline `fun _ => 0`, whose own binder type put
+  `SystemState` in the result expression outright, so the plant was in the domain
+  whatever the code did.  And **`Prop` is a sort** — the one place this cut's first
+  draft had to be told twice, because dropping that half admitted 30 spurious domain
+  members and the mutation that proves it must target the branch the tree's own
+  predicates actually take.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
