@@ -146,23 +146,63 @@ def _op_alternation(kinds: tuple[str, ...]) -> str:
     return "(?:" + "|".join(parts) + ")"
 
 
+#: **A receiver may be parenthesised, and every pattern here keys on its TEXT.**
+#:
+#: Lean permits redundant parentheses around any expression, so `(st.objects)[k]?`
+#: *is* `st.objects[k]?` and `(objs).insert k v` *is* `objs.insert k v` -- the same
+#: access, on the same table, with a bracket run in between.  Every receiver
+#: position below therefore composes these two, and they are ONE definition for the
+#: reason `_TABLE_TYPE` is: seven positions ask this question, a widening applied at
+#: whichever branch a review points at leaves the other six open, and that is this
+#: project's own *a fix applied at one site and not its sibling*.
+#:
+#: Measured before choosing (`v0.35.151`): the tree already spells four keyed reads
+#: `({ st with objects := ... }.objects)[tid.toObjId]?`, which `READ` could not see.
+#: They sit in a `theorem`, so `STORE_READ_CODE`'s enforced zero was untouched -- by
+#: accident, not by construction: the same expression in a `def` body walks around
+#: it, which is `v0.35.12`'s *a spelling is not a read* and `v0.35.97`'s *a spelling
+#: is not a write* at the one position neither of those cuts swept.
+#:
+#: `_RECV_CLOSE` admits whitespace only INSIDE the group (`( x )`), never between
+#: the last `)` and the accessor -- which is exact rather than conservative, because
+#: Lean's own lexer requires it: `x[i]` is a subscript and `x [i]` is an application
+#: to a list, and `x.f` is a projection while `x .f` is an application to an
+#: anonymous constructor.  So `f (st.objects) [a, b]` is correctly NOT a read.
+#:
+#: Where it over-approximates it does so in the direction a floor must fail in, and
+#: the same direction `table_receivers` already documents: `(f st.objects).erase k`
+#: has `f`'s result as its receiver, not the table, and is counted -- a *named* Tier
+#: 0 failure a maintainer can see, never a silent miss.  Zero such sites today.
+_RECV_OPEN = r"(?:\(\s*)*"
+_RECV_CLOSE = r"(?:\s*\))*"
+
+
 def _table_access(kinds: tuple[str, ...], extra_method: str = "") -> str:
     """The method and qualified spellings of every operation of one of `kinds`.
 
     One alternation, two branches, so a widening reaches both by construction.
+
+    Both branches compose `_RECV_OPEN` / `_RECV_CLOSE`; see them for why a
+    receiver's parentheses are part of this question and not a separate one.  The
+    qualified branch additionally admits a parenthesised APPLICATION as the
+    projection's head (`RHTable.erase (spliceOutMidQueueNode st tid).objects k`),
+    which `[\w'.]*` structurally cannot span -- a shape this tree already writes at
+    five sites for theorem helpers, so a write spelled that way is one rename away.
     """
     alt = _op_alternation(kinds)
-    method = rf"\.objects\.{alt}"
+    method = rf"\.objects{_RECV_CLOSE}\.{alt}"
     if extra_method:
         method = rf"(?:{method}|{extra_method})"
-    qualified = rf"\b(?:RHTable|FrozenMap)\.{alt}\s+[\w'.]*\.objects\b"
+    qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}"
+                 rf"(?:\([^()\n]*\)|[\w'.]*)\.objects\b")
     return rf"{method}|{qualified}"
 
 
 # `st.objects[k]?` is the subscript spelling of the keyed read and has no
 # qualified counterpart, so it is the one branch that is not derived from an
 # operation name.
-READ = re.compile(_table_access(("read",), extra_method=r"\.objects\["))
+READ = re.compile(_table_access(
+    ("read",), extra_method=rf"\.objects{_RECV_CLOSE}\["))
 
 # A raw WRITE of an object table, in either spelling (`v0.35.76`): the method
 # form `st.objects.insert k v` / `st.objects.erase k` and the qualified call
@@ -241,13 +281,18 @@ def _indirect_access(kinds: tuple[str, ...], receiver: str,
     so `objs` does not match inside `myobjs` and does not match the *field path*
     `st.objs`: a name is a table because of how it was bound, and a suffix of
     another path was not bound here at all.
+
+    ...and it may be parenthesised, in all three spellings, through the same
+    `_RECV_OPEN` / `_RECV_CLOSE` the direct patterns compose -- so `(objs).insert k
+    v`, `(objs)[k]?` and `RHTable.insert (objs) k v` are the accesses they are.
     """
     alt = _op_alternation(kinds)
     r = re.escape(receiver)
-    method = rf"(?<![\w'.]){r}\.{alt}"
+    method = rf"(?<![\w'.]){r}{_RECV_CLOSE}\.{alt}"
     if extra_method:
         method = rf"(?:{method}|{extra_method})"
-    qualified = rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{r}(?![\w'.])"
+    qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}{r}"
+                 rf"{_RECV_CLOSE}(?![\w'.])")
     return rf"{method}|{qualified}"
 
 
@@ -260,7 +305,8 @@ def indirect_patterns(receiver: str) -> dict:
     r = re.escape(receiver)
     return {
         "read": re.compile(_indirect_access(
-            ("read",), receiver, extra_method=rf"(?<![\w'.]){r}\[")),
+            ("read",), receiver,
+            extra_method=rf"(?<![\w'.]){r}{_RECV_CLOSE}\[")),
         "write": re.compile(_indirect_access(("write",), receiver)),
     }
 
@@ -422,26 +468,68 @@ def table_op_violations() -> list[str]:
     return out
 
 
+#: The spellings every classified operation must be recognised in, as
+#: `(description, template)` where `{op}` is the operation name.  **Derived over,
+#: not enumerated beside**: `branch_symmetry_violations` crosses this list with
+#: `_TABLE_OPS`, so classifying an operation checks it in every spelling and adding
+#: a spelling checks it for every operation.  A hand-written pair of `if`s is what
+#: let `set` live in one branch and not the other past an enforced zero.
+_OPERATION_SPELLINGS = (
+    ("METHOD", "  let t := st.objects.{op} k v"),
+    ("QUALIFIED", "  let t := RHTable.{op} st.objects k v"),
+    # ...and the same two with the receiver parenthesised.  Lean permits it, this
+    # tree already writes the parenthesised projection at five sites, and every
+    # pattern here keys on the receiver's TEXT -- see `_RECV_OPEN` / `_RECV_CLOSE`.
+    ("PARENTHESISED METHOD", "  let t := (st.objects).{op} k v"),
+    ("PARENTHESISED QUALIFIED ARGUMENT",
+     "  let t := RHTable.{op} (st.objects) k v"),
+    # The projection's head may itself be a parenthesised application, which
+    # `[\w'.]*` structurally cannot span.
+    ("PARENTHESISED QUALIFIED HEAD",
+     "  let t := RHTable.{op} (spliceOutMidQueueNode st tid).objects k v"),
+)
+
+
 def branch_symmetry_violations() -> list[str]:
-    """Both branches of each pattern recognise the same operations.
+    """Every classified operation is recognised in every spelling of its access.
 
     The defect this is the mechanism for: `WRITE` named `set` in its qualified
     branch and not in its method branch, so the tree's ordinary frozen store
     spelling was invisible to an enforced zero.  Asserting the symmetry directly
     is what makes a future widening reach both branches by construction --
     stating the rule a fourth time is what had already failed.
+
+    Since `v0.35.151` the spellings are `_OPERATION_SPELLINGS` rather than two
+    inline templates, for the reason the whole cut is about: the receiver may be
+    parenthesised, seven positions ask that question, and a reconciliation that
+    names two of them is the presence check this file spends its length retiring.
+
+    The SUBSCRIPT read has no per-operation form -- it is notation, not a named
+    operation -- so it is asserted once, in both spellings, beside the crossing.
     """
     out = []
     for op, kind in sorted(_TABLE_OPS.items()):
         pat = {"read": READ, "write": WRITE, "sweep": SWEEP}.get(kind)
         if pat is None:
             continue
-        if not pat.search(f"  let t := st.objects.{op} k v"):
-            out.append(f"`{op}` is classified `{kind}` and the METHOD spelling "
-                       f"`st.objects.{op}` is not recognised")
-        if not pat.search(f"  let t := RHTable.{op} st.objects k v"):
-            out.append(f"`{op}` is classified `{kind}` and the QUALIFIED spelling "
-                       f"`RHTable.{op} st.objects` is not recognised")
+        for what, template in _OPERATION_SPELLINGS:
+            probe = template.format(op=op)
+            if not pat.search(probe):
+                out.append(f"`{op}` is classified `{kind}` and the {what} spelling "
+                           f"`{probe.strip()}` is not recognised")
+    for what, probe in (("SUBSCRIPT", "  have h : st.objects[k]? = none"),
+                        ("PARENTHESISED SUBSCRIPT",
+                         "  have h : (st.objects)[k]? = none")):
+        if not READ.search(probe):
+            out.append(f"the {what} read `{probe.strip()}` is not recognised")
+    # ...and the one spelling that must NOT be a read, because Lean's own lexer
+    # says so: `x[i]` is a subscript and `x [i]` is an application to a list.
+    # Asserted here rather than left implicit, since the widening that admits
+    # `(st.objects)[k]?` is one whitespace class away from admitting this.
+    if READ.search("  f (st.objects) [a, b]"):
+        out.append("`f (st.objects) [a, b]` is an application to a list literal, "
+                   "not a subscript read, and `READ` matched it -- `_RECV_CLOSE` "
+                   "must not admit whitespace after the closing parenthesis")
     return out
 
 
@@ -1356,9 +1444,16 @@ TABLE_ASCRIPTION = re.compile(
 #: A binding whose value IS a table.  The right-hand side must END at the name:
 #: `let x := st.objects.toList` is a sweep, already classified and counted there,
 #: and a record field assignment (`{ st with objects := t }`) is not a binding.
+#:
+#: ...and it may be parenthesised (`let objs := (st.objects)`), through the same
+#: `_RECV_OPEN` / `_RECV_CLOSE` every other receiver position composes.  The
+#: brackets sit OUTSIDE the `rhs` group deliberately: `table_receivers` tests that
+#: group with `.endswith(".objects")`, so capturing a `)` would make the test a
+#: statement about punctuation.
 TABLE_BINDING = re.compile(
     r"(?:^|[;(]|\bdo\b|\bthen\b|\belse\b|=>)\s*(?:let|have)\s+"
-    r"(?P<name>[\w']+)\s*(?::[^:=\n]*)?:=\s*(?P<rhs>[\w'.]+)\s*(?=$|[;)])", re.M)
+    r"(?P<name>[\w']+)\s*(?::[^:=\n]*)?:=\s*" + _RECV_OPEN
+    + r"(?P<rhs>[\w'.]+)" + _RECV_CLOSE + r"\s*(?=$|[;)])", re.M)
 
 
 def table_receivers(signature: str, body: str) -> dict:
@@ -1968,6 +2063,32 @@ def diagnostic : String := "avoid .objects[raw]? syntax"
 def peek (st : SystemState) (oid : ObjId) : Bool :=
   (st.objects[oid]?).isSome
 """, {("f.lean", "peek"): 1}, {}),
+    # **The decisive cases for `_RECV_CLOSE`** (`v0.35.151`).  A receiver may be
+    # parenthesised, and the SUBSCRIPT spelling is the one the live tree already
+    # writes: four keyed reads in `Scheduler/Invariant.lean` are spelled
+    # `({ st with objects := ... }.objects)[tid.toObjId]?`, which `READ` could
+    # not see.  They sit in a `theorem`, so the enforced zero was untouched by
+    # ACCIDENT; this fixture is the same read in a `def` body, where it is not.
+    # Token-preserving against `code_read`: same read, same operand, brackets
+    # moved from around the subscript to around the receiver.
+    "parenthesised_subscript_read": ("""
+def peek (st : SystemState) (oid : ObjId) : Option KernelObject :=
+  (st.objects)[oid]?
+""", {("f.lean", "peek"): 1}, {}),
+    # ...and the method spelling of the same keyed read.
+    "parenthesised_method_read": ("""
+def peek (st : SystemState) (oid : ObjId) : Option KernelObject :=
+  (st.objects).get? oid
+""", {("f.lean", "peek"): 1}, {}),
+    # **The control that keeps the widening exact rather than conservative.**
+    # Lean's own lexer separates `x[i]` (a subscript) from `x [i]` (an
+    # application to a list literal), so `_RECV_CLOSE` admits whitespace only
+    # INSIDE the bracket group and never between the last `)` and the accessor.
+    # Token-preserving against `parenthesised_subscript_read`: one space.
+    "a_spaced_bracket_is_an_application_not_a_read": ("""
+def build (st : SystemState) (a b : ObjId) : List ObjId :=
+  consumeTable (st.objects) [a, b]
+""", {}, {}),
 }
 
 #: Cases whose fixture the parser must REFUSE, and how many declarations it must
@@ -2038,6 +2159,29 @@ def stored (st : SystemState) (k : ObjId) (o : KernelObject) : Prop :=
     "string_names_a_write": ("""
 def diagnostic : String := "avoid { st with objects := st.objects.insert k o }"
 """, {}, {}),
+    # **The decisive cases for `_RECV_CLOSE` / `_RECV_OPEN`** (`v0.35.151`): the
+    # SAME write, with the receiver parenthesised.  Lean permits redundant
+    # brackets around any expression, and every pattern here keys on the
+    # receiver's TEXT, so each of these walked around an enforced zero.  Each is
+    # token-preserving against `code_write` / `qualified_write` above -- the
+    # write and its operands are identical and only the brackets move, which is
+    # the mutation this class needs (*keep the token, break the relation*).
+    "parenthesised_method_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  { st with objects := (st.objects).insert k o }
+""", {("f.lean", "step"): 1}, {}),
+    "parenthesised_qualified_argument_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  { st with objects := RHTable.insert (st.objects) k o }
+""", {("f.lean", "step"): 1}, {}),
+    # ...and the projection's HEAD parenthesised, which `[\w'.]*` structurally
+    # cannot span.  This tree already writes that shape at five sites for
+    # theorem helpers (`RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode
+    # st tid).objects`), so a write spelled this way is one rename away.
+    "parenthesised_qualified_head_write": ("""
+def step (st : SystemState) (tid : ThreadId) (k : ObjId) : SystemState :=
+  { st with objects := RHTable.erase (spliceOutMidQueueNode st tid).objects k }
+""", {("f.lean", "step"): 1}, {}),
 }
 
 
@@ -2165,6 +2309,42 @@ def build (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
 def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
   let q := st.scheduler
   { st with scheduler := q.insert k o }
+""", {}, {}),
+    # **THE REPORTED FINDING** (PR #897 review, `v0.35.151`): the binding's
+    # right-hand side may be parenthesised, and `TABLE_BINDING`'s `rhs` group is
+    # a bare path class, so `let objs := (st.objects)` bound no table at all and
+    # every access through `objs` was outside this census.  Token-preserving
+    # against `alias_write`: the same binding and the same write, two brackets.
+    "parenthesised_binding_rhs": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let objs := (st.objects)
+  { st with objects := objs.insert k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # ...and the ACCESS may be parenthesised in each of its three spellings, on
+    # a receiver bound the ordinary way.  Each is token-preserving against
+    # `alias_write` / `alias_read`: the same access, two brackets.
+    "parenthesised_alias_method_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let objs := st.objects
+  { st with objects := (objs).insert k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    "parenthesised_alias_subscript_read": ("""
+def peek (st : SystemState) (k : ObjId) : Option KernelObject :=
+  let objs := st.objects
+  (objs)[k]?
+""", {("SeLe4n/f.lean", "peek", "alias", "read"): 1}, {}),
+    "parenthesised_alias_qualified_write": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let objs := st.objects
+  { st with objects := RHTable.insert (objs) k o }
+""", {("SeLe4n/f.lean", "step", "alias", "write"): 1}, {}),
+    # The CONTROL for the widened binding: `_RECV_OPEN` / `_RECV_CLOSE` admit
+    # brackets around the right-hand side and must not make the right-hand side
+    # itself looser.  `(st.scheduler)` is still not a table.
+    "parenthesised_unrelated_binding": ("""
+def step (st : SystemState) (k : ObjId) (o : KernelObject) : SystemState :=
+  let q := (st.scheduler)
+  { st with scheduler := (q).insert k o }
 """, {}, {}),
 }
 
@@ -2386,6 +2566,86 @@ def self_test() -> int:
         failed += 1
     else:
         print("  ok   table-ops 'a QUALIFIED-ONLY write branch is reported'")
+    # **The paren spellings' own decisive cases** (`v0.35.151`).  The fixtures
+    # above pin that the patterns SEE a parenthesised receiver; these pin that
+    # the RECONCILIATION would report it if they stopped, which is the half a
+    # fixture cannot assert.  Each mutation rebuilds `WRITE` / `READ` with one
+    # piece of the receiver admission removed and keeps everything else, so what
+    # is being measured is that piece and nothing beside it.
+    #
+    # Each case names the substring its violation must carry, so what it decides
+    # is WHICH assertion fired.  A case that merely asked "was anything
+    # reported" is satisfied by a neighbouring assertion, and the first run of
+    # this block measured exactly that: dropping the PARENTHESISED SUBSCRIPT
+    # check left the suite green, because no case could reach it.  The two
+    # subscript cases below are therefore each other's controls -- one requires
+    # a bracket where Lean does not, the other admits none where Lean does.
+    for case, kind, pattern, want in [
+        # The closing run: `(st.objects).insert k v` becomes invisible.
+        ("a receiver whose CLOSING bracket is not admitted is reported",
+         "WRITE",
+         re.compile(rf"\.objects\.{_op_alternation(('write',))}"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
+                    rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "PARENTHESISED METHOD"),
+        # The opening run: `RHTable.insert (st.objects) k v` becomes invisible.
+        ("a receiver whose OPENING bracket is not admitted is reported",
+         "WRITE",
+         re.compile(rf"\.objects{_RECV_CLOSE}\.{_op_alternation(('write',))}"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
+                    rf"\s+(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "PARENTHESISED QUALIFIED ARGUMENT"),
+        # The parenthesised APPLICATION head, which `[\w'.]*` cannot span.
+        ("a parenthesised projection HEAD that is not admitted is reported",
+         "WRITE",
+         re.compile(rf"\.objects{_RECV_CLOSE}\.{_op_alternation(('write',))}"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
+                    rf"\s+{_RECV_OPEN}[\w'.]*\.objects\b"),
+         "PARENTHESISED QUALIFIED HEAD"),
+        # The SUBSCRIPT is notation rather than a named operation, so it is
+        # asserted once beside the crossing -- and each of its two spellings
+        # needs the case the other cannot produce.  Here the bracket is
+        # REQUIRED, so the bare `st.objects[k]?` stops being a read.
+        ("a subscript branch that requires a bracket is reported",
+         "READ",
+         re.compile(rf"(?:\.objects{_RECV_CLOSE}\.{_op_alternation(('read',))}"
+                    rf"|\.objects(?:\s*\))+\[)"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('read',))}"
+                    rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "the SUBSCRIPT read"),
+        # ...and here it is REFUSED, which is the pre-`v0.35.151` state and the
+        # spelling the live tree already writes four times.
+        ("a subscript branch that admits no bracket is reported",
+         "READ",
+         re.compile(rf"(?:\.objects{_RECV_CLOSE}\.{_op_alternation(('read',))}"
+                    rf"|\.objects\[)"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('read',))}"
+                    rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "the PARENTHESISED SUBSCRIPT read"),
+        # ...and the other direction: a closing run that admits TRAILING
+        # whitespace turns `f (st.objects) [a, b]` -- an application to a list
+        # literal -- into a subscript read.  The one case where the widening
+        # must be shown to be exact rather than merely safe.
+        ("a closing run that admits trailing whitespace is reported",
+         "READ",
+         re.compile(rf"(?:\.objects(?:\s*\))*\s*\.{_op_alternation(('read',))}"
+                    rf"|\.objects(?:\s*\))*\s*\[)"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('read',))}"
+                    rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "application to a list literal"),
+    ]:
+        saved = globals()[kind]
+        try:
+            globals()[kind] = pattern
+            reported = branch_symmetry_violations()
+        finally:
+            globals()[kind] = saved
+        if not any(want in line for line in reported):
+            print(f"  SELF-TEST FAIL: table-ops '{case}' -- no violation "
+                  f"carrying {want!r} was reported (got {reported})")
+            failed += 1
+        else:
+            print(f"  ok   table-ops '{case}'")
     # `v0.35.119`: the declaration KIND decides, and a kind in NEITHER set is
     # refused rather than skipped.  Over synthetic text, because the case that
     # matters -- a declaration form this tree does not yet contain -- cannot be

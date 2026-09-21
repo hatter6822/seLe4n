@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.150.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.151.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3426,6 +3426,54 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   The explanatory measurement moves to the owner's docstring in the same step,
   since leaving it behind both duplicates the fact and trips that negative on
   prose.
+
+  **And a RECEIVER may be parenthesised, which is the same substitution at the
+  smallest unit a scanner has** (PR #897 review, `v0.35.151`).  The rule above
+  polices the *question* a gate asks; this is the one where the question is
+  right and the **text** it is asked of has a legal second form.  Lean permits
+  redundant brackets around any expression, so `(st.objects)[k]?` *is*
+  `st.objects[k]?` — the same access, on the same table — and every store-census
+  pattern keys on the receiver's text.  Seven positions ask *which text denotes
+  the object table*, the review reported one, and **all seven** keyed on the
+  unparenthesised spelling.
+
+  **Measured, and the measurement is what makes it a class rather than a
+  nit**: four keyed reads in `Scheduler/Invariant.lean` are already spelled
+  `({ st with objects := … }.objects)[tid.toObjId]?`, which `READ` could not
+  see.  They sit in a `theorem`, so `STORE_READ_CODE`'s **enforced zero** was
+  untouched — by accident, not by construction; the same expression in a `def`
+  body walks around it.  That is `v0.35.12`'s *a spelling is not a read* and
+  `v0.35.97`'s *a spelling is not a write* at the one position neither cut
+  swept, and the qualified branch's second sub-shape
+  (`RHTable.erase (spliceOutMidQueueNode st tid).objects k`, which `[\w'.]*`
+  structurally cannot span) is a rename away from the same hole, the tree
+  already writing that shape at five sites for theorem helpers.
+
+  Three things follow.  **One owner, not seven patches**: `_RECV_OPEN` /
+  `_RECV_CLOSE` are composed by every receiver position, so a widening reaches
+  all of them by construction — a fix at whichever branch a review names leaves
+  the other six open.  **Exact beats safe where the language decides it**:
+  `_RECV_CLOSE` admits whitespace only INSIDE the bracket group and never
+  between the last `)` and the accessor, because Lean's own lexer separates
+  `x[i]` (a subscript) from `x [i]` (an application to a list literal), so
+  `f (st.objects) [a, b]` is correctly refused — and that refusal is
+  *asserted*, since the widening that admits the one is a whitespace class away
+  from admitting the other.  And **the reconciliation is derived**:
+  `branch_symmetry_violations` crosses `_TABLE_OPS` with `_OPERATION_SPELLINGS`
+  rather than naming two spellings inline, so classifying an operation checks
+  it in every spelling and adding a spelling checks it for every operation.
+
+  Two mechanical notes, both earned by running the mutations rather than
+  reasoning about them.  **Asking "was anything reported" is satisfied by a
+  neighbouring assertion**: dropping the PARENTHESISED SUBSCRIPT check left the
+  suite green because no case could reach it, so each reconciliation case now
+  names the substring its violation must carry, and the two subscript cases are
+  each other's controls — one requires a bracket where Lean does not, the other
+  admits none where Lean does.  And **a negative over a spelling the fixtures
+  deliberately carry must be scoped to its owner**: `self_test` holds the
+  retired patterns as mutation inputs, so a tree-wide negative would fire on
+  them; each is bounded to the declaration that must not ask the question the
+  retired way, and verified by restoring the pre-fix reading inside it.
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded

@@ -15796,7 +15796,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def _indirect_access\(kinds: tuple\[s
 # The receiver is delimited against `[\w'"'"'.]` on BOTH sides, not by `\b`: a
 # name is a table because of how it was bound, so `myobjs` and the field path
 # `st.objs` are not it.
-run_check "INVARIANT" bash -lc 'rg -n "method = rf.\(\?<!\[\\\\w.\.\]\)\{r\}\\\\.\{alt\}." scripts/lean_store_read_census.py'
+#
+# `v0.35.151` moved the LEADING half: the method branch composes `_RECV_CLOSE`
+# between the receiver and its accessor, so the anchor that used to pin this
+# whole branch named a spelling the widening retired -- and it failed loudly,
+# which is the direction a pin on a retired construct should fail in.  The
+# leading delimiter is pinned with that composition in the `v0.35.151` block
+# below; this one pins the TRAILING half, which no other anchor names.
+run_check "INVARIANT" rg -F -n 'rf"{_RECV_CLOSE}(?![\w'"'"'.])")' scripts/lean_store_read_census.py
 # THE ALIAS SET IS CLOSED TRANSITIVELY.  `let a := st.objects; let b := a` is one
 # population rather than a hole one extra binding opens, so the derivation
 # iterates to a fixed point rather than reading each binding once.
@@ -18189,5 +18196,57 @@ run_negative_check "INVARIANT" rg -F -n 'os.environ["SELE4N_PLAN_BASE_REF"] = "m
 # `word_read_occurrences`; keeping it would have left one pattern written twice
 # in one file, and a pin on a symbol nothing reads decides nothing.
 run_negative_check "INVARIANT" rg -F -n 'def word_occurrences(' scripts/scenario_catalog.py
+
+# ============================================================================
+# v0.35.151 -- a RECEIVER may be parenthesised, and seven positions key on its
+# text
+# ============================================================================
+#
+# PR #897's review reported ONE of them: `TABLE_BINDING`'s right-hand side is a
+# bare path class, so `let objs := (st.objects)` bound no table.  The sweep for
+# the question -- *which text denotes the object table* -- found SEVEN positions
+# asking it and every one keyed on an unparenthesised spelling.  Measured on the
+# live code view: `(...objects)[k]?` has FOUR sites in
+# `SeLe4n/Kernel/Scheduler/Invariant.lean`, which sit in a `theorem`, so
+# `STORE_READ_CODE`'s enforced ZERO was untouched by accident rather than by
+# construction -- the same expression in a `def` body walks around it, which is
+# `v0.35.12`'s *a spelling is not a read* and `v0.35.97`'s *a spelling is not a
+# write* at the one position neither cut swept.
+#
+# The remedy is ONE owner, not seven patches.  The census is Python, so the
+# overlay links it whole and these anchors read raw text; the negatives are
+# therefore scoped to the DECLARATION that must not ask the question the retired
+# way, since the self-test deliberately contains the retired spellings as
+# mutation fixtures and a tree-wide negative would fire on them.
+run_check "INVARIANT" rg -F -n '_RECV_OPEN = r"(?:\(\s*)*"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '_RECV_CLOSE = r"(?:\s*\))*"' scripts/lean_store_read_census.py
+# The three DIRECT positions compose them.
+run_check "INVARIANT" rg -F -n 'method = rf"\.objects{_RECV_CLOSE}\.{alt}"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'extra_method=rf"\.objects{_RECV_CLOSE}\[")' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'rf"(?:\([^()\n]*\)|[\w'"'"'.]*)\.objects\b")' scripts/lean_store_read_census.py
+# ...and the three INDIRECT positions.
+run_check "INVARIANT" rg -F -n 'method = rf"(?<![\w'"'"'.]){r}{_RECV_CLOSE}\.{alt}"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}{r}"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'extra_method=rf"(?<![\w'"'"'.]){r}{_RECV_CLOSE}\[")),' scripts/lean_store_read_census.py
+# ...and the BINDING's right-hand side, with the brackets outside the capture.
+run_check "INVARIANT" rg -F -n '+ r"(?P<rhs>[\w'"'"'.]+)" + _RECV_CLOSE + r"\s*(?=$|[;)])", re.M)' scripts/lean_store_read_census.py
+#
+# NEGATIVE: the retired bare spellings must not come back INSIDE the two owners.
+# Bounded to each declaration, because the mutation fixtures in `self_test`
+# carry them by design.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _table_access\(kinds: tuple\[str, \.\.\.\], extra_method: str = \x22\x22\) -> str:[^\n]*(\n([ \t][^\n]*)?)*\[\\\\w.\.\]\*\\\\\.objects\\\\b" scripts/lean_store_read_census.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _indirect_access\([^\n]*(\n([ \t][^\n]*)?)*qualified = rf\x22\\\\b\(\?:RHTable\|FrozenMap\)\\\\\.\{alt\}\\\\s\+\{r\}\(\?!" scripts/lean_store_read_census.py'
+#
+# The reconciliation crosses `_TABLE_OPS` with the spelling list rather than
+# naming two spellings inline: classifying an operation checks it in every
+# spelling, and adding a spelling checks it for every operation.
+run_check "INVARIANT" rg -F -n '_OPERATION_SPELLINGS = (' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '("PARENTHESISED METHOD", "  let t := (st.objects).{op} k v"),' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '("PARENTHESISED QUALIFIED HEAD",' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'for what, template in _OPERATION_SPELLINGS:' scripts/lean_store_read_census.py
+# ...and the one spelling that must NOT be a read: Lean's lexer separates a
+# subscript from an application to a list literal by exactly that space.
+run_check "INVARIANT" rg -F -n 'if READ.search("  f (st.objects) [a, b]"):' scripts/lean_store_read_census.py
 
 finalize_report

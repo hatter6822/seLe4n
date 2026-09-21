@@ -1,3 +1,76 @@
+## v0.35.151 — a receiver may be parenthesised, and seven positions key on its text
+
+PR #897's review reported ONE of them: `TABLE_BINDING`'s right-hand side is a
+bare path class, so `let objs := (st.objects)` bound no table and every access
+through `objs` was outside the indirect census.  The sweep for the *question* it
+answers — **which text denotes the object table** — found **seven** positions
+asking it, and every one keyed on an unparenthesised spelling: the direct method
+and subscript, the direct qualified call in two sub-shapes, the three indirect
+spellings, and the binding.  Lean permits redundant brackets around any
+expression, so `(st.objects)[k]?` *is* `st.objects[k]?`: the same access, on the
+same table, with a bracket run in between.
+
+**Measured on the live code view, and it is not hypothetical.**  Four keyed
+reads in `SeLe4n/Kernel/Scheduler/Invariant.lean` are already spelled
+`({ st with objects := … }.objects)[tid.toObjId]?`, which `READ` could not see.
+They sit in a `theorem`, so `STORE_READ_CODE`'s **enforced zero** was untouched —
+by accident, not by construction: the same expression in a `def` body walks
+around it.  That is `v0.35.12`'s *a spelling is not a read* and `v0.35.97`'s *a
+spelling is not a write* at the one position neither of those cuts swept.  The
+qualified branch's second sub-shape is one rename away from the same hole: this
+tree writes `RHTable.fold_preserves_of_lookup (spliceOutMidQueueNode st tid).objects`
+at five sites for theorem helpers, and `[\w'.]*` structurally cannot span a
+parenthesised application.
+
+**The remedy is one owner, not seven patches.**  `_RECV_OPEN` / `_RECV_CLOSE`
+are composed by every receiver position — `_table_access`' method, subscript and
+qualified branches, `_indirect_access`' three, and `TABLE_BINDING`'s right-hand
+side, with the brackets deliberately OUTSIDE the `rhs` capture, since
+`table_receivers` tests that group with `.endswith(".objects")` and capturing a
+`)` would make the test a statement about punctuation.  A widening applied at
+whichever branch a review points at leaves the other six open, which is this
+project's own *a fix applied at one site and not its sibling*.
+
+**And the widening is EXACT where it could have been merely safe.**
+`_RECV_CLOSE` admits whitespace only INSIDE the bracket group and never between
+the last `)` and the accessor — because Lean's own lexer requires it: `x[i]` is
+a subscript and `x [i]` is an application to a list literal, `x.f` is a
+projection and `x .f` an application to an anonymous constructor.  So
+`f (st.objects) [a, b]` is correctly **not** a read, and that is asserted rather
+than left implicit: the widening that admits `(st.objects)[k]?` is one
+whitespace class away from admitting it.  Where it does over-approximate —
+`(f st.objects).erase k` has `f`'s result as its receiver, not the table — it
+does so in the direction `table_receivers` already documents: a *named* Tier 0
+failure a maintainer can see, never a silent miss.  Zero such sites today.
+
+**The reconciliation is derived rather than enumerated.**
+`branch_symmetry_violations` crossed `_TABLE_OPS` with two inline templates; it
+crosses it with `_OPERATION_SPELLINGS` now, so classifying an operation checks
+it in every spelling and adding a spelling checks it for every operation.  The
+SUBSCRIPT is notation rather than a named operation, so it is asserted once
+beside the crossing, in both spellings.
+
+**Effect on the tree, measured:** exactly one row moves — that theorem's
+`STORE_READ_SPEC_SITE`, 10 → 14 — and `STORE_READ_CODE` and `STORE_WRITE_CODE`
+stay at zero.  The AK7 monotonic gate is green without a baseline refresh, SPEC
+being a diagnostic.
+
+**Witnesses.**  Eleven fixtures, each token-preserving against an existing
+sibling — the same access, the same operands, two brackets — plus the
+whitespace control, and six mutation cases over the reconciliation itself.  The
+mutation run is what made the last of them honest: dropping the PARENTHESISED
+SUBSCRIPT assertion left the suite green, because no case could reach it, so
+each reconciliation case now names the substring its violation must carry and
+the two subscript cases are each other's controls — one requires a bracket where
+Lean does not, the other admits none where Lean does.  *A condition no case can
+reach is indistinguishable from a wrong one*, and asking "was anything reported"
+is satisfied by a neighbouring assertion.
+
+Seventeen Tier 3 anchors, two of them negatives **scoped to the declaration**
+rather than to the spelling: `self_test` deliberately carries the retired
+spellings as mutation fixtures, so a tree-wide negative would fire on them, and
+each is mutation-verified by restoring the pre-fix reading inside its owner.
+
 ## v0.35.150 — a requirement a gate drops is a check nobody runs
 
 PR #897's remaining review threads, all one class: the gate answers "nothing
