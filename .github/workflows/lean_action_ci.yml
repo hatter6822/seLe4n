@@ -229,7 +229,7 @@ jobs:
       # the action's docs — non-master SHAs get garbage-collected).
       # To update: git ls-remote https://github.com/dtolnay/rust-toolchain.git master
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: 1.94.1
           # `test_rust.sh` runs `cargo fmt --check` and `cargo clippy`, so the
@@ -290,7 +290,7 @@ jobs:
 
       # Same SHA-pinned action and toolchain version as `test-rust`.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: 1.94.1
 
@@ -343,7 +343,7 @@ jobs:
       # `rust/rust-toolchain.toml` so the cross target is present even
       # though this action does not read that file.
       - name: Install Rust toolchain
-        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        uses: dtolnay/rust-toolchain@02cb101ec7c40f2c49e1d9714d64511d8e1b74de # master
         with:
           toolchain: 1.94.1
           # `clippy` is not optional here: step [4/4] of the gate lints
