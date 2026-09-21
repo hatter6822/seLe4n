@@ -16866,7 +16866,7 @@ run_check "INVARIANT" rg -F -n '    erasureWitnessViolations env' SeLe4n/Testing
 # wrapper -- `TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` -- is
 # in the domain now, so a transition that rewrites a state held in a field cannot
 # sit outside both sides of the reconciliation.
-run_check "INVARIANT" rg -F -n 'partial def stateCarryingTypes (env : Environment) : MetaM NameSet := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'partial def stateCarryingTypes (env : Environment)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '  typeCarries carriers ci.type' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '  let carriers ← stateCarryingTypes env' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # A FIELD, not a parameter: a constructor's telescope opens the inductive's own
@@ -17001,6 +17001,49 @@ run_check "INVARIANT" rg -F -n '_FIXTURE_FSTRING_LITERAL = ' scripts/check_decla
 run_check "INVARIANT" rg -F -n '_FIXTURE_SENTINEL_TEMPLATE = ' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '_FIXTURE_SAME_NAME_TWO_SCOPES = ' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '_FIXTURE_NAME_REBOUND = ' scripts/check_declaration_kind_askers.py
+
+
+# ===========================================================================
+# v0.35.128 (PR #897 review): the carrier DOMAIN -- a reducible alias result, and
+# an exhausted fixpoint that certified a partial answer
+# ===========================================================================
+# Two more silent domain misses in `v0.35.125`'s own derivation, both fail-open in the
+# one direction this census cannot report: a constant never examined moves no pin and
+# the reconciliation goes on saying every non-executed transformer is recorded.
+# ---------------------------------------------------------------------------
+# (1) A REDUCIBLE ALIAS IS NOT A DIFFERENT TYPE.  `forallTelescopeReducing` reduces
+# only far enough to expose a `∀`, so `abbrev StateResult := Option SystemState` as a
+# result arrives as the alias constant, which the carrier set (built from inductives)
+# never contains.  One `whnf` at REDUCIBLE transparency is the exact boundary: it
+# unfolds an `abbrev` and leaves a plain `def` alone.
+run_check "INVARIANT" rg -F -n '    let body ← withReducible (whnf body)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and DEFAULT transparency is refused, because it opens a dependent projection like
+# `id.evidenceProp` and files four records of PROOFS as state transformers -- measured,
+# not reasoned.
+run_negative_check "INVARIANT" rg -F -n '    let body ← whnf body' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...with the planted PAIR that decides it, since the real tree gains zero: an alias
+# naming a state-carrying type, and the control naming one that carries nothing.
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessAliasedState := Option Model.SystemState' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessAliasedCount := Option Nat' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessAliasedTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the widening asks the ENVIRONMENT what it generated, because reducing a
+# `T.noConfusion`'s result mentions the constructor fields' types.  Complementary to
+# the component list rather than a replacement for it, measured both ways.
+run_check "INVARIANT" rg -F -n '  Lean.isAuxRecursor env n || Lean.isNoConfusion env n ||' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  Lean.Meta.isMatcherCore env n ||' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (2) EXHAUSTION IS AN ERROR, not a smaller answer.  The bound's own docstring already
+# said a partial carrier set under-approximates the domain; the loop then returned it
+# as complete, so a transition holding an omitted wrapper was in neither set.  A rule
+# stated is not a rule enforced.
+run_check "INVARIANT" rg -F -n '  if changed then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    throwError "carrier fixpoint did not converge within {bound} round(s)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the bound is an ARGUMENT so the refusal has a witness: on this tree the
+# fixpoint converges in two rounds, so nothing in production can reach the throw.
+run_check "INVARIANT" rg -F -n '    (bound : Nat := carrierFixpointBound) : MetaM NameSet := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'def carrierFixpointRefusalViolations (env : Environment) : MetaM (List String) := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    (do let _ ← stateCarryingTypes env 1; pure true)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    (← carrierFixpointRefusalViolations env)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 
 
 finalize_report

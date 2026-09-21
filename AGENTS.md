@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.127.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.128.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,7 +222,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~73923 lines)
+- `CHANGELOG.md` (~74045 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -372,6 +372,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1178 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
@@ -391,7 +392,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1055 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `tests/SmpCbsSuite.lean` (~1015 lines)
@@ -1557,6 +1557,50 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the witness is about.  The consumer is generic in the proposition, and the check
   asserts that the theorem's own proof term mentions the transformer, because a
   proof term that does not makes the whole witness **inert**.
+
+  **And a REDUCIBLE ALIAS is not a different type, nor is an exhausted fixpoint a
+  smaller answer** (PR #897 review, `v0.35.128`).  Two more misses in that same
+  derivation one cut later, and both are the *domain* half of this family rather than
+  the predicate half — so both fail in the one direction this census structurally
+  cannot report: a constant it never examines moves no pin, and the reconciliation goes
+  on stating that every non-executed transformer is recorded.
+
+  `forallTelescopeReducing` reduces only far enough to expose a `∀`, so a result spelled
+  through `abbrev StateResult := Option SystemState` arrives as the alias **constant** —
+  which the carrier set never contains, that set being built from inductives — and the
+  transformer is then in neither the reachable nor the unreachable set.  One `whnf` at
+  **reducible** transparency is the exact boundary, and *exact* is measured rather than
+  argued: `abbrev` is what Lean makes reducible, so it unfolds, while **default**
+  transparency opens a dependent projection like `id.evidenceProp` and files **four**
+  records of proofs (`covertChannelEvidence`, `fineLockClaimEvidence`,
+  `declassificationRuleEvidence`, `crossCoreLiveArmEvidence`) as state transformers.
+  The negative anchor on the unrestricted spelling is what keeps that boundary.
+
+  Two things the fix records.  **The widening needed the environment's own answer to
+  "did you generate this"**: reducing a `T.noConfusion`'s result mentions the
+  constructor fields' types, so `Lean.isAuxRecursor`, `Lean.isNoConfusion` and
+  `Meta.isMatcherCore` join the filter — and they are **complementary** to the
+  hand-written component list rather than a replacement, measured both ways (the list
+  catches `_flat_ctor` / `_sizeOf_inst` / `_unsafe_rec` members the predicates do not;
+  the predicates catch every `*.noConfusion` the list does not).  *Derive what the
+  environment can answer and keep the list as a pin for what it cannot* — claiming
+  redundancy in either direction would have shrunk the filter.  And **the real tree
+  gains zero declarations**, so the plants are the entire measurement: an `abbrev`
+  naming a state-carrying type (which must be in the pin) beside the control naming one
+  that carries nothing (which must not), so the pair decides *the alias names a carrier*
+  rather than *the result is an alias*.
+
+  The second miss is *a rule stated is not a rule enforced*, and the rule was stated in
+  the very docstring that failed to enforce it: `carrierFixpointBound`'s own text said
+  exhaustion "would under-approximate the carriers, which makes the domain SMALLER, so
+  a new bound must be checked rather than assumed" — and the loop then **returned the
+  partial set as though it were complete**.  It throws now.  The bound is an *argument*
+  so the refusal has a witness, because on this tree the fixpoint converges in **two**
+  rounds against a bound of twelve and nothing in production can reach the throw:
+  `carrierFixpointRefusalViolations` runs the derivation at a bound of **1** and reports
+  a violation when it *succeeds*, which is the only direction that can be silent.  (The
+  two-round figure also corrects the previous cut's docstring, which said three — it had
+  counted the convergence-detecting pass that does not run.)
 
   **And a domain written as a NODE KIND is the same defect one grammar down**
   (PR #897 review, `v0.35.124`).  `v0.35.115` derived *which files* hold a Lean

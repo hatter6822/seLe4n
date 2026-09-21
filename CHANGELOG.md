@@ -1,3 +1,62 @@
+## v0.35.128 — the carrier domain: a reducible alias result, and an exhausted fixpoint that certified a partial answer
+
+Two PR #897 findings over `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,
+both introduced by `v0.35.125`'s own carrier derivation one cut earlier, and both the
+**domain** half of this family rather than the predicate half — so both fail in the one
+direction this census structurally cannot report: a constant it never examines moves no
+pin, and the reconciliation goes on stating that every non-executed transformer is
+recorded.
+
+**A reducible alias is not a different type.**  `forallTelescopeReducing` reduces only
+far enough to expose a `∀`, so a transformer whose result is spelled through
+`abbrev StateResult := Option SystemState` arrives as the alias **constant** — which the
+carrier set never contains, that set being built from inductives — and the transformer is
+then in neither the reachable nor the unreachable set.  `typeCarries` now takes one
+`whnf` at **reducible** transparency, which is the exact boundary and is measured rather
+than argued: `abbrev` is what Lean makes reducible, so it unfolds, while **default**
+transparency opens a dependent projection like `id.evidenceProp` and files **four**
+records of proofs (`covertChannelEvidence`, `fineLockClaimEvidence`,
+`declassificationRuleEvidence`, `crossCoreLiveArmEvidence`) as state transformers.  A
+Tier 3 negative on the unrestricted spelling is what keeps that boundary.
+
+That widening needed the environment's own answer to *did you generate this*, because
+reducing a `T.noConfusion`'s result mentions the constructor fields' types:
+`Lean.isAuxRecursor`, `Lean.isNoConfusion` and `Meta.isMatcherCore` join
+`isCompilerGenerated`.  They are **complementary** to the hand-written component list
+rather than a replacement, measured both ways — the list catches `_flat_ctor`,
+`_sizeOf_inst` and `_unsafe_rec` members the predicates do not; the predicates catch
+every `*.noConfusion` the list does not — so this is *derive what the environment can
+answer and keep the list as a pin for what it cannot*.  Claiming redundancy in either
+direction would have shrunk the filter.
+
+**The real tree gains zero declarations**, so the plants are the entire measurement: an
+`abbrev` naming a state-carrying type (`CensusWitnessAliasedState`, whose transformer
+must be in the pin) beside the control naming one that carries nothing
+(`CensusWitnessAliasedCount`, whose producer must not), so the pair decides *the alias
+names a carrier* rather than *the result is an alias*.  Dropping the `whnfR` makes the
+reconciliation report the pin entry as stale; the census's figures move by exactly the
+one planted transformer (579 → 580, 284 → 285 unreachable).
+
+**An exhausted fixpoint is not a smaller answer** — and the rule was stated in the very
+docstring that failed to enforce it.  `carrierFixpointBound`'s own text said exhaustion
+"would under-approximate the carriers, which makes the domain SMALLER, so a new bound
+must be checked rather than assumed", and the loop then returned the partial set as
+though it were complete, so a transition holding an omitted wrapper was in neither set
+and the wire-or-record gate passed silently.  *A rule stated is not a rule enforced*:
+`stateCarryingTypes` throws now.  The bound is an **argument** so the refusal has a
+witness, because on this tree the fixpoint converges in **two** rounds against a bound of
+twelve and nothing in production can reach the throw —
+`carrierFixpointRefusalViolations` runs the derivation at a bound of 1 and reports a
+violation when it *succeeds*, which is the only direction that can be silent.  (Two
+rounds also corrects the previous cut's docstring, which said three: it had counted the
+convergence-detecting pass that does not run.)
+
+Three mutations, all caught: dropping the `whnfR` (the reconciliation reports the stale
+pin entry), deleting the throw (the bound-1 witness fires), and using default
+transparency instead of reducible (four proof bundles reported as unrecorded
+transformers).  Thirteen Tier 3 anchors plus the transparency negative.  No kernel
+behaviour, no fixture and no figure outside the census's own output moved.
+
 ## v0.35.127 — the probe locator's text is what the program builds, and its key identifies one probe
 
 Two PR #897 findings over `scripts/check_declaration_kind_askers.py`, both fail-open,

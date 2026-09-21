@@ -107,9 +107,29 @@ measured: `_flat_ctor` 279, `_sunfold` 92, `_unsafe_rec` 98 and `_sizeOf_inst`
 355 members, **none** of them reached by `isAuxiliary`; `_cstage1` / `_cstage2`
 have **0** members in this build, and are kept because their absence is a
 code-generation configuration fact rather than a design one — a release build that
-emits them must not turn this census red. -/
+emits them must not turn this census red.
+
+**And three more questions the environment answers, added at `v0.35.128`** (PR #897
+review).  `Lean.isAuxRecursor`, `Lean.isNoConfusion` and `Meta.isMatcherCore` are the
+compiler's own predicates for the recursors, the injectivity helpers and the match
+auxiliaries it mints, so asking them is *ask the environment* rather than another
+resemblance.  They were needed because `typeCarries` now reduces reducible aliases
+(see below), which brings a `T.noConfusion` into the domain: its result is
+`T.noConfusionType P x y`, an `abbrev` whose unfolding mentions the constructor
+fields' types and so mentions `SystemState` for any state-carrying `T`.
+
+**The two filters are complementary, and that is measured rather than assumed** —
+the reason the component list is not deleted with the addition.  Of this
+environment's project constants, the LIST catches `_flat_ctor`, `_sizeOf_inst` and
+`_unsafe_rec` members the three predicates do not, and the PREDICATES catch every
+`*.noConfusion` (and the matchers and aux recursors) the list does not.  So this is
+*derive what the environment can answer, and keep the list as a pin for what it
+cannot* — neither half subsumes the other, and claiming redundancy in either
+direction would have shrunk the filter. -/
 def isCompilerGenerated (env : Environment) (n : Name) : Bool :=
   SeLe4n.Testing.ReplyStackWriteCensus.isAuxiliary env n ||
+  Lean.isAuxRecursor env n || Lean.isNoConfusion env n ||
+  Lean.Meta.isMatcherCore env n ||
   n.components.any fun c =>
     let s := c.toString
     s == "_cstage1" || s == "_cstage2" || s == "_flat_ctor"
@@ -119,9 +139,21 @@ def isCompilerGenerated (env : Environment) (n : Name) : Bool :=
 
 The fixpoint is monotone in a finite set so it terminates on its own; the bound is
 what keeps a `partial` walk from becoming a hang if a future Lean makes the
-environment cyclic.  Measured at **3** rounds on this tree, so the bound is not
-close to binding — and reaching it would under-approximate the carriers, which
-makes the domain SMALLER, so a new bound must be checked rather than assumed. -/
+environment cyclic.
+
+**Reaching it is an ERROR, not a smaller answer** (PR #897 review, `v0.35.128`).
+This docstring already said that exhaustion "would under-approximate the carriers,
+which makes the domain SMALLER, so a new bound must be checked rather than assumed"
+— and the loop then returned the partial set as though it were complete, so a
+transition returning an omitted wrapper was in neither the reachable nor the
+unreachable set and the wire-or-record gate passed silently.  *A rule stated is not a
+rule enforced*: `stateCarryingTypes` throws now, and takes the bound as an argument so
+the throw has a witness (`carrierFixpointRefusesExhaustion`, which runs the
+derivation at a bound of 1 and requires it to fail).
+
+Measured on this environment: the fixpoint converges after **2** rounds — this
+docstring said 3, which was the previous cut counting the convergence-detecting pass
+that does not run. -/
 def carrierFixpointBound : Nat := 12
 
 /-- `true` when a type's own telescoped RESULT mentions one of `carriers`.
@@ -130,7 +162,25 @@ The same question the domain asks of a definition, asked of a field, so "this
 returns kernel state" has one answer: a field of type `SystemState → Prop` reads a
 state and holds none, and `Option SystemState` holds one. -/
 def typeCarries (carriers : NameSet) (ty : Expr) : MetaM Bool :=
-  forallTelescopeReducing ty fun _ body =>
+  forallTelescopeReducing ty fun _ body => do
+    -- **A REDUCIBLE ALIAS IS NOT A DIFFERENT TYPE** (PR #897 review, `v0.35.128`).
+    -- `forallTelescopeReducing` reduces only far enough to expose a `∀`, so a result
+    -- spelled through `abbrev StateResult := Option SystemState` arrives as the alias
+    -- constant, which `stateCarryingTypes` never adds (it adds inductives), and the
+    -- transition is then in NEITHER the reachable nor the unreachable set -- a
+    -- domain miss, silent by construction.  One `whnf` at REDUCIBLE transparency
+    -- unfolds an `abbrev` and leaves a plain `def` alone, which is the exact
+    -- boundary: `abbrev` is what Lean makes reducible, and reducing further would
+    -- pull a dependent projection like `id.evidenceProp` open and file three proof
+    -- bundles as state transformers.  Nesting needs no recursion here: an alias
+    -- whose unfolding is a function type is already stripped by the telescope, and
+    -- one whose unfolding names another alias is reduced by the same `whnf`.
+    --
+    -- Measured on this environment: with `isCompilerGenerated` asking the
+    -- environment as well (above), the domain gains **0** declarations -- so the fix
+    -- costs nothing today and the class it closes is one the tree does not yet
+    -- exhibit.  Without that filter it would gain 2, both `T.noConfusion`.
+    let body ← withReducible (whnf body)
     pure (body.find? fun e => match e with
       | .const c _ => carriers.contains c
       | _ => false).isSome
@@ -178,11 +228,12 @@ until SM10.1/WS-BP), the revocation traversals that are already a registered
 residue, the lock-bracket machinery, and the reviewer's own
 `TlbCacheJointState` pair.  Every one of them is a definition that produces a value
 holding kernel state, which is precisely this census's subject. -/
-partial def stateCarryingTypes (env : Environment) : MetaM NameSet := do
+partial def stateCarryingTypes (env : Environment)
+    (bound : Nat := carrierFixpointBound) : MetaM NameSet := do
   let mut carriers : NameSet := ({} : NameSet).insert kernelStateType
   let mut changed := true
   let mut rounds := 0
-  while changed && rounds < carrierFixpointBound do
+  while changed && rounds < bound do
     changed := false
     rounds := rounds + 1
     for (n, ci) in env.constants.toList do
@@ -206,6 +257,19 @@ partial def stateCarryingTypes (env : Environment) : MetaM NameSet := do
           carriers := carriers.insert n
           changed := true
       | _ => pure ()
+  -- **THE DEFAULT BRANCH IS A DECISION.**  Exiting with `changed` still set means a
+  -- carrier chain was longer than `bound`, so the set returned is a strict subset of
+  -- the carriers and every transition whose result holds an omitted wrapper drops out
+  -- of BOTH sides of the reconciliation -- which is the one failure mode this census
+  -- cannot report, because a domain miss is silent by construction.  Refusing is the
+  -- only answer that is not a false green.
+  if changed then
+    throwError "carrier fixpoint did not converge within {bound} round(s): the \
+      derived set of state-carrying types is a strict UNDER-approximation, so a \
+      transition returning an omitted wrapper would be in neither the reachable nor \
+      the unreachable set and this census would pass over it silently.  Raise \
+      `carrierFixpointBound` and re-measure the convergence round count in its \
+      docstring."
   return carriers
 
 
@@ -377,6 +441,35 @@ decides the *field* rule rather than the existence of the walk. -/
 private def censusWitnessReaderProducer : CensusWitnessReader :=
   { readsState := fun _ => 0 }
 
+/-- A reducible ALIAS of a state-carrying result — `abbrev`, which is what Lean makes
+reducible, so this is the exact shape `typeCarries`' `whnfR` is about.
+
+PR #897 review (`v0.35.128`): `forallTelescopeReducing` reduces only far enough to
+expose a `∀`, so a transformer whose result is spelled through an alias that is **not**
+a function type arrives as the alias constant — which the carrier set never contains,
+since that set is built from inductives — and the transformer is then in NEITHER the
+reachable nor the unreachable set.  A domain miss, silent by construction.  The tree
+exhibits no such alias today, which is why this is planted: on the real tree the fix
+gains zero declarations, so the plants are the whole measurement. -/
+private abbrev CensusWitnessAliasedState := Option Model.SystemState
+
+/-- ...and the CONTROL: an alias that reduces to something carrying no state.  It keeps
+the arm from being decided by "the result is an alias" rather than by "the alias names a
+type that carries state" — a reduction that accepted any alias would pull this in too. -/
+private abbrev CensusWitnessAliasedCount := Option Nat
+
+/-- A transformer whose result type is a reducible alias.  It must be in the domain and,
+being reachable from no committing export, in the pin below: delete its pin entry and
+the reconciliation reports it, and drop the `whnfR` and it leaves the domain and the
+reconciliation reports the entry as stale. -/
+private def censusWitnessAliasedTransformer (st : Model.SystemState) :
+    CensusWitnessAliasedState := some st
+
+/-- ...and the control that must NOT be in the pin, being the transformer above with
+the alias swapped for one that carries nothing. -/
+private def censusWitnessAliasedCounter (_st : Model.SystemState) :
+    CensusWitnessAliasedCount := some 0
+
 /-- A PROPOSITION carrying a state in a data field — legal Lean, and the one
 shape the carrier walk's `Prop` skip is about.
 
@@ -439,6 +532,33 @@ reaches the transformer through an erased dependency and through nothing else.
 `liveClosure` must not follow it. -/
 private def censusWitnessErasedRoot (st : Model.SystemState) : Model.SystemState :=
   censusWitnessProofConsumer st (censusWitnessErasedLemma st)
+
+/-- **WS-RR / PR #897 review (`v0.35.128`): the carrier fixpoint's exhaustion refusal
+FIRES.**
+
+`stateCarryingTypes` throws when it exits with work outstanding, because returning a
+partial carrier set certifies an under-approximated domain and every transition holding
+an omitted wrapper then sits in neither the reachable nor the unreachable set.  On this
+tree the fixpoint converges after 2 rounds against a bound of 12, so the throw is
+unreachable in production — and *a check that cannot fire and carries no witness is
+indistinguishable from one that is wrong*, which is why the bound is an argument.
+
+At a bound of **1** the derivation cannot converge (`SystemState` alone is round one's
+input, and the wrappers that hold it are found in round two), so the call must fail.
+The witness reports a problem when it **succeeds**, which is the only direction that
+can be silent: a refusal deleted, or a bound raised past the point where it binds, both
+leave this returning a violation. -/
+def carrierFixpointRefusalViolations (env : Environment) : MetaM (List String) := do
+  let converged ← tryCatch
+    (do let _ ← stateCarryingTypes env 1; pure true)
+    (fun _ => pure false)
+  if converged then
+    pure ["carrier fixpoint at a bound of 1 SUCCEEDED: `stateCarryingTypes` no \
+      longer refuses exhaustion, so a carrier chain longer than the bound would be \
+      returned as a complete set and this census would pass over every transition \
+      holding an omitted wrapper."]
+  else
+    pure []
 
 /-- The erasure claim, decided against the walk itself rather than against the
 whole pipeline: no committing export reaches these witnesses, so the pipeline
@@ -789,6 +909,8 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_1
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessOpaqueTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.CensusWitnessWrapper.carried
@@ -1038,7 +1160,8 @@ run_cmd Command.liftTermElabM do
     reconciliationViolations live unreachable recorded ++
     pinViolations env live unreachable standsBesideLive ++
     pinCheckWitnessViolations env ++
-    erasureWitnessViolations env
+    erasureWitnessViolations env ++
+    (← carrierFixpointRefusalViolations env)
   if violations.isEmpty then
     let unreachableCount := unreachable.toList.length
     let carrierCount := carriers.toList.length - 1
