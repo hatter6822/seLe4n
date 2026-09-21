@@ -17256,11 +17256,33 @@ run_check "INVARIANT" rg -F -n '    liveClosureRefusalViolations env ++' SeLe4n/
 # domain entirely.
 run_check "INVARIANT" rg -F -n '  let mut aliases : Array (Name × Expr) := #[]' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '      if ← lambdaTelescope value fun _ body => typeCarries carriers body then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
-# ...skipping `Prop`, on BOTH branches, because `Prop` is a sort: without it every
-# predicate in the tree reads as an alias of a state-carrying type, measured at 30
-# spurious domain members.
-run_check "INVARIANT" rg -F -n '      if ci.type.isSort then pure !ci.type.isProp' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
-run_check "INVARIANT" rg -F -n '          pure (body.isSort && !body.isProp)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...asking whether the DECLARED SORT is a non-`Prop` sort through ONE owner, which
+# normalises at reducible transparency (`v0.35.135`, PR #897's review): the test read
+# `ci.type` raw, so a sort that is itself an `abbrev` is a `.const` -- neither a sort
+# nor a forall -- and the alias never entered the candidate array, leaving a
+# transformer over it in NEITHER reconciliation set.  The `Prop` skip stays: `Prop`
+# IS a sort, and without it every predicate in the tree reads as an alias of a
+# state-carrying type, measured at 30 spurious domain members.
+run_check "INVARIANT" rg -F -n 'private def declaresNonPropSort (ty : Expr) : MetaM Bool := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  let ty'"'"' ← whnfR ty' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  pure (ty'"'"'.isSort && !ty'"'"'.isProp)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    let isAlias ← forallTelescopeReducing ci.type fun _ body => declaresNonPropSort body' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the raw spelling must not come back.  A token-preserving revert keeps
+# `isSort`, `isProp` and the telescope and merely asks them of the unreduced type,
+# which is exactly what this refuses.
+run_negative_check "INVARIANT" rg -F -n '      if ci.type.isSort then pure !ci.type.isProp' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...at REDUCIBLE transparency, which is the boundary `v0.35.128` measured for the
+# result and which holds for the sort: DEFAULT transparency opens a dependent
+# projection and files four records of proofs as carriers.
+run_negative_check "INVARIANT" rg -F -n '  let ty'"'"' ← whnf ty' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...with the planted pair that decides it, since the tree spells no sort this way
+# and the widening therefore admits nothing on it (586/20 against 585/19: exactly
+# the transformer and its carrier, with the control correctly excluded).
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessCarrierSort : Type 1 := Type' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessAliasedSortState : CensusWitnessCarrierSort :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private abbrev CensusWitnessAliasedSortCount : CensusWitnessCarrierSort := Nat' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedSortTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedSortCounter' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # ...and judged by what the alias ABBREVIATES, never by what its binders mention.
 run_negative_check "INVARIANT" rg -F -n '      if ← typeCarries carriers value then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # ...asking the OWNER whether a declaration carries a body, never a `.defnInfo`

@@ -238,6 +238,21 @@ def typeCarries (carriers : NameSet) (ty : Expr) : MetaM Bool :=
       | .const c _ => carriers.contains c
       | _ => false).isSome
 
+/-- **Does this type DECLARE a non-`Prop` sort**, up to reducible transparency?
+
+The question `stateCarryingTypes` asks of a candidate type alias, asked once so
+the whole type and a telescoped body cannot answer it differently.  PR #897's
+review found it asked of the raw expression, where a declared sort that is itself
+reducibly aliased is a `.const` and so neither a sort nor a `∀`.
+
+`whnfR`, not `whnf`: reducible transparency unfolds an `abbrev` and leaves a plain
+`def` alone, which is the boundary `v0.35.128` measured for the *result* of a
+declaration and which this asks of its *sort*.  `Prop` is a sort and is excluded,
+because a proposition's inhabitants are proofs and hold no state. -/
+private def declaresNonPropSort (ty : Expr) : MetaM Bool := do
+  let ty' ← whnfR ty
+  pure (ty'.isSort && !ty'.isProp)
+
 /-- Every project type that **carries** kernel state: `SystemState` itself, and
 every non-propositional project inductive one of whose constructor FIELDS holds
 one, transitively.
@@ -306,19 +321,31 @@ partial def stateCarryingTypes (env : Environment)
     -- `value?` with its flag hands back the body it says is there.
     if !bodyBearing ci then continue
     let some value := ci.value? (allowOpaque := true) | continue
-    -- A type alias' telescoped TYPE is a sort, and `Prop` IS a sort: without the
-    -- second half every `SystemState → Prop` predicate in the tree reads as an
-    -- alias of a state-carrying type, and its value mentions `SystemState`, so the
-    -- carrier set swallows them.  Measured at **30** spurious domain members -- the
-    -- `Decidable` instances and the four evidence records `v0.35.128` already
-    -- identified as what DEFAULT transparency would file.  The `isProp` skip is the
-    -- same one the inductive arm below makes, for the same reason.
-    let isAlias ←
-      if ci.type.isSort then pure !ci.type.isProp
-      else if ci.type.isForall then
-        forallTelescopeReducing ci.type fun _ body =>
-          pure (body.isSort && !body.isProp)
-      else pure false
+    -- A type alias' telescoped TYPE is a sort -- **up to reducible transparency**,
+    -- which is the correction PR #897's review made at `v0.35.135`.  The test read
+    -- `ci.type` raw, so a declared sort that is ITSELF reducibly aliased --
+    -- `abbrev CarrierSort : Type 1 := Type` and then
+    -- `abbrev StateAlias : CarrierSort := SystemState` -- is a `.const`, neither
+    -- `isSort` nor `isForall`, and the alias never entered this array.  A
+    -- transformer returning `Option StateAlias` was then in NEITHER reconciliation
+    -- set, which is the silent direction: the constant is never examined and the
+    -- pin never moves.  That is `v0.35.128`'s own finding one level up -- there the
+    -- RESULT needed one reducible `whnf` and here the declared SORT does -- so
+    -- `declaresNonPropSort` asks the question once, of the whole type and of the
+    -- telescoped body, and the branch on the raw shape is gone with it.
+    --
+    -- **Reducible is the exact boundary, for the reason `v0.35.128` measured**:
+    -- `abbrev` is what Lean makes reducible, while DEFAULT transparency opens a
+    -- dependent projection like `id.evidenceProp` and files four records of proofs
+    -- as carriers.
+    --
+    -- `Prop` IS a sort, so the `isProp` half stays: without it every
+    -- `SystemState → Prop` predicate in the tree reads as an alias of a
+    -- state-carrying type, and its value mentions `SystemState`, so the carrier set
+    -- swallows them.  Measured at **30** spurious domain members -- the `Decidable`
+    -- instances and the four evidence records `v0.35.128` identified.  The `isProp`
+    -- skip is the same one the inductive arm below makes, for the same reason.
+    let isAlias ← forallTelescopeReducing ci.type fun _ body => declaresNonPropSort body
     if isAlias then
       aliases := aliases.push (n, value)
   let mut carriers : NameSet := ({} : NameSet).insert kernelStateType
@@ -607,6 +634,39 @@ private abbrev CensusWitnessNestedAliasCount := Nat
 /-- Its producer must NOT be in the domain. -/
 private def censusWitnessNestedAliasCounter (_st : Model.SystemState) :
     Option CensusWitnessNestedAliasCount := some 0
+
+/-- A sort that is **itself** a reducible alias.
+
+PR #897's review, at `v0.35.135`: the alias test read `ci.type` raw, so an alias
+whose DECLARED SORT is spelled through an `abbrev` is a `.const` -- neither
+`isSort` nor `isForall` -- and never entered the candidate array at all.  This is
+`v0.35.128`'s *a reducible alias is not a different type* one level up: there the
+declaration's RESULT needed one reducible `whnf`, here its SORT does.  Planted
+because the tree spells no sort this way, so the widening admits nothing on it and
+this pair is the whole measurement. -/
+private abbrev CensusWitnessCarrierSort : Type 1 := Type
+
+/-- The alias the census must see: its declared sort is the one above, and what it
+abbreviates is the state.  Used NESTED below, so the reducible unfolding of the
+RESULT cannot answer before the carrier set is consulted -- which is what makes
+this decide the SORT test rather than `v0.35.128`'s result test. -/
+private abbrev CensusWitnessAliasedSortState : CensusWitnessCarrierSort :=
+  Model.SystemState
+
+/-- The transformer that must be in the domain, and so in the pin.  Before the fix
+it was in NEITHER reconciliation set, so its pin entry read as stale -- the silent
+direction, since a constant the domain never examines moves no number. -/
+private def censusWitnessAliasedSortTransformer (st : Model.SystemState) :
+    Option CensusWitnessAliasedSortState := some st
+
+/-- The CONTROL, and what makes the pair decide *the aliased sort is normalised*
+rather than *anything declared through this sort is a carrier*: the same shape over
+an alias that abbreviates something holding no state. -/
+private abbrev CensusWitnessAliasedSortCount : CensusWitnessCarrierSort := Nat
+
+/-- Its producer must NOT be in the domain. -/
+private def censusWitnessAliasedSortCounter (_st : Model.SystemState) :
+    Option CensusWitnessAliasedSortCount := some 0
 
 /-! ## Witnesses for the domain's two widenings
 
@@ -1189,6 +1249,8 @@ def nonExecutedTransitionsPrivate : List Name :=
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.initFnCensusWitnessTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessNestedAliasTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessAliasedSortTransformer
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus._flat_ctor
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus

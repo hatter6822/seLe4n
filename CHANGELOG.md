@@ -1,3 +1,72 @@
+## v0.35.135 — the declared sort is normalised too
+
+PR #897's review, against the domain `v0.35.128` widened: when a state alias'
+**declared sort** is itself reducibly aliased — `abbrev CarrierSort : Type 1 :=
+Type`, then `abbrev StateAlias : CarrierSort := SystemState` — Lean retains
+`CarrierSort` as `ci.type`, so the raw `isSort` and `isForall` tests are both
+false and the alias never enters the candidate array.  A transformer returning
+`Option StateAlias` is then in **neither** reconciliation set of
+`KernelTransitionReachabilityCensus`: not reachable, not recorded, and no number
+moves.  That is the silent direction this census fails in by construction — a
+constant it never examines cannot be reported — so it is unfindable by reading a
+failure.
+
+It is `v0.35.128`'s own finding one level up.  There the declaration's **result**
+needed one reducible `whnf`, because `forallTelescopeReducing` reduces only far
+enough to expose a `∀` and stops at an `abbrev` naming the result type.  Here the
+declaration's **sort** needs the same normalisation for the same reason, and the
+sweep that cut owed itself was never run against the neighbouring test four lines
+above.
+
+`declaresNonPropSort` is the one owner: `whnfR` on the type, then `isSort &&
+!isProp`.  The branch on the raw shape is **deleted**, not extended — the whole
+type and a telescoped body were two spellings of one question, and
+`forallTelescopeReducing` over a non-`∀` type calls its continuation on that type,
+so one call answers both.  Two things the fix holds fixed.
+
+**Reducible is the exact boundary, and it is measured rather than argued.**
+`abbrev` is what Lean makes reducible, so an aliased sort unfolds; **default**
+transparency opens a dependent projection like `id.evidenceProp` and files four
+records of proofs (`covertChannelEvidence`, `fineLockClaimEvidence`,
+`declassificationRuleEvidence`, `crossCoreLiveArmEvidence`) as state carriers —
+the measurement `v0.35.128` took for the result test, which holds unchanged for
+the sort test.  A Tier 3 negative refuses the unrestricted spelling.
+
+**`Prop` is a sort, so the `isProp` half stays.**  Without it every `SystemState →
+Prop` predicate in the tree reads as an alias of a state-carrying type, and its
+value mentions `SystemState`, so the carrier set swallows them — 30 spurious
+domain members, the `Decidable` instances and the four evidence records above.
+
+**The widening admits nothing on the live tree, so the plants are the entire
+measurement.**  Before and after the fix the census reports the same figures
+(585 state transformers over 19 state-carrying wrapper types, 296 reachable, 289
+not), because no sort in this tree is spelled through an `abbrev`.
+`CensusWitnessAliasedSortState` is the alias whose declared sort is
+`CensusWitnessCarrierSort`, `censusWitnessAliasedSortTransformer` the transformer
+over it that must be in the pin, and `CensusWitnessAliasedSortCount` /
+`censusWitnessAliasedSortCounter` the **control** — the same shape over an alias
+abbreviating `Nat`, which must stay out.  The pair is what makes the witness
+decide *the aliased sort is normalised* rather than *anything declared through
+this sort is a carrier*; a single positive plant passes under a mutation that
+admits every such declaration.  With them the census reads 586 over 20, 296
+reachable, 290 not: exactly the transformer and its carrier, with the control
+correctly excluded.
+
+Both mutations were run rather than reasoned about.  Reverting `isAlias` to the
+raw two-branch test makes the reconciliation report
+`censusWitnessAliasedSortTransformer` as a stale pin entry; making
+`declaresNonPropSort` answer `pure true` makes it report
+`censusWitnessAliasedSortCounter` as an unrecorded transformer.  Neither plant
+could have been an older witness: `CensusWitnessNestedAliasCount` and its
+siblings declare their sorts literally, so every one of them passes both halves
+of the defect.
+
+Two stale Tier 3 anchors — one on each branch of the retired test — were
+repointed rather than deleted, since the property they pin (the `Prop` skip) is
+still live and still load-bearing; four positives on the new owner and the
+planted pair, and two negatives (the raw spelling, the unrestricted `whnf`)
+replace them.
+
 ## v0.35.134 — the frozen resume reads the priority the live resume reads
 
 PR #897's review reported `frozenComputeMaxWaiterPriority` as diverging from the

@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.134` (`lakefile.toml`) |
+| **Package version** | `0.35.135` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,157 across 334 Lean files |
+| **Production LoC** | 396,219 across 334 Lean files |
 | **Test LoC** | 80,490 across 70 Lean test suites |
 | **Proved declarations** | 13,126 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -1831,10 +1831,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (WS-RR
    RR8.12, `v0.35.91`) derives every project declaration with a body
    whose **result type** transforms `SystemState` and asks which of them
-   a committing export can reach: **530 state transformers, 289
-   reachable, 241 not**, with the unreachable half pinned by name and
-   reconciled in both directions — a new one is a build failure, and so
-   is an entry that has become live.  It read `.defnInfo` alone until
+   a committing export can reach, with the unreachable half pinned by
+   name and reconciled in both directions — a new one is a build
+   failure, and so is an entry that has become live.  **The census
+   prints its own three counts** and they are deliberately not mirrored
+   here: a hand-kept figure beside a derivation drifts on contact, and
+   this one did, from `530 / 289 / 241` at `v0.35.91` through four
+   domain widenings that each moved it.  It read `.defnInfo` alone until
    `v0.35.114`, when the same wildcard was found at four sites across
    three censuses: an `opaque` is executable and was silently outside
    four derived domains, so which declarations carry a body has one
@@ -1843,7 +1846,19 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    admitted one real constant — `Platform.FFI.kernelStateRef`, the
    `opaque IO.Ref SystemState` this census is defined over — which is
    reachable and so needs no pin entry; the other new member is a
-   planted witness.  It exists because `v0.35.90` found two verified
+   planted witness.  Two later widenings are the same *domain* defect in
+   the type-alias arm, and both admit **nothing** on the live tree, so
+   their plants are the whole measurement: a declaration's **result**
+   spelled through an `abbrev` needs one reducible `whnf`, since
+   `forallTelescopeReducing` stops at the alias constant (`v0.35.128`),
+   and the sort a state alias **declares** needs the same normalisation,
+   since a sort that is itself an `abbrev` is a `.const` and so neither
+   a sort nor a `∀` (`v0.35.135`).  Reducible is the exact boundary in
+   both: default transparency opens a dependent projection and files
+   four records of proofs as carriers.  Each plant is paired with a
+   control abbreviating a type that holds no state, so the pair decides
+   that the alias is *normalised* rather than that anything spelled this
+   way is a carrier.  It exists because `v0.35.90` found two verified
    behavioural steps in a composite no production path calls while the
    live `.tcbSuspend` re-composed that composite's parts and carried
    neither.  Its commit predicate and its auxiliary filter are imported

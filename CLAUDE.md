@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.134.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.135.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1602,6 +1602,25 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   a violation when it *succeeds*, which is the only direction that can be silent.  (The
   two-round figure also corrects the previous cut's docstring, which said three — it had
   counted the convergence-detecting pass that does not run.)
+
+  **And the sort the alias DECLARES is normalised too** (PR #897 review,
+  `v0.35.135`).  The same miss four lines above, in the same derivation, unswept by
+  the cut that wrote the paragraph above: the alias test read `ci.type` **raw**, so a
+  declared sort that is itself reducibly aliased — `abbrev CarrierSort : Type 1 :=
+  Type`, then `abbrev StateAlias : CarrierSort := SystemState` — is a `.const`,
+  neither `isSort` nor `isForall`, and the alias never entered the candidate array at
+  all.  A transformer over it is then in neither reconciliation set, which is the same
+  silent direction one level further out.  *When a fix names a relation, grep for every
+  other place that asks it* — here the other place was the **next test in the same
+  function**, and asking it is what shows that the whole type and a telescoped body
+  were two spellings of one question: `declaresNonPropSort` is the one owner and the
+  branch on the raw shape is deleted, since `forallTelescopeReducing` over a non-`∀`
+  type calls its continuation on that type.  Both boundaries above carry over
+  unchanged — reducible unfolds an `abbrev` while default files the four evidence
+  records, and `Prop` is a sort — so the plants are again the entire measurement (585
+  over 19 before and after the fix; 586 over 20 with the pair), and the **control** is
+  what makes them decide *the aliased sort is normalised* rather than *anything
+  declared through this sort is a carrier*.
 
   **And a domain written as a NODE KIND is the same defect one grammar down**
   (PR #897 review, `v0.35.124`).  `v0.35.115` derived *which files* hold a Lean
