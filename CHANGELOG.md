@@ -1,3 +1,61 @@
+## v0.35.129 — the probe locator reads a template's SUBSTITUTIONS, not only its text
+
+PR #897 review (Codex P2).  `v0.35.127` asked *what value does this expression have*
+and answered "the string, or `None`".  The case that survived it is the one where the
+answer is **almost** the string: a named template holding a constructor spelling with
+a hole in it — `. @KIND@ Info`, without the spaces — is a **located** subject, so its
+import marker is accounted for and the fail-closed marker count is satisfied, while
+its constructor count is **zero** and the probe handed to Lean matches `.opaqueInfo`.
+Invisible in both directions at once, which is what makes a domain miss unfindable by
+reading a failure.  Demonstrated before fixing, against the `v0.35.128` locator:
+located subject `PROBE_TEMPLATE`, constructors found `{}`, markers `1/1`, refusals
+`0`, while the text Lean receives matches `opaqueInfo`.
+
+**The reconstruction is partial rather than all-or-nothing.**  `_reconstruct_holed`
+returns determined text with a single `_HOLE` (NUL — not a word character, so it can
+never sit inside a `\b`-bounded constructor match) wherever text this scanner cannot
+read enters it, and `_reconstruct` is that function with "no holes" demanded.  A
+`Name` resolves to the module's unique binding of it, so `PROBE.replace("@K@",
+"opaque")` on a resolvable template is a **string** rather than a refusal — the
+*reconstructed* half of the remedy — and the substituted probe is recorded under its
+own subject, which is what closes the defect in its easiest form.
+
+**The refusal asks COMPLETION, not the presence of a hole.**
+`_constructor_completing_holes` is derived from `CONSTANT_INFO_CONSTRUCTORS` and
+inherits `_WORD`'s word bounds: a hole completes a constructor when the template
+itself has written part of one against it — a non-empty proper prefix ending the text
+before it, or a proper suffix beginning the text after it, each at a `\b`.  Refusing
+on the marker alone would refuse all four of this tree's real probes, and that is
+measured rather than argued: **thirteen** substitution sites on the tracked tree, every
+one with an undetermined value, and **zero** writing a constructor against its hole
+(`[@ROOTS@]`, a line of its own, after a colon).  The mutation that refuses every hole
+fails both the control *and* the live tree.
+
+**Three further reasons, each a rule this file already carries.**  An unmodelled
+transform of determined probe text is `None` and refused (`form`) — asked of what the
+form is applied **to** rather than of the method name, which is what keeps
+`", ".join(names)` readable while `PROBE.upper()` is not.  The marker is asked of the
+**assembled text** in both admission branches, because a template reached through its
+name puts the marker in no literal fragment of the expression that substitutes into
+it.  And a probe-bearing name bound twice and **reached through** by an assembly is
+refused, since the defect otherwise walks around the splice refusal by rebinding the
+name — conditioned on the reach, so `v0.35.127`'s two-scopes case stays two subjects.
+
+**The widening admits nothing and refuses nothing on the live tree**: 25 subjects and
+byte-identical counts before and after, zero refusals of any reason, so the plants are
+the entire measurement.  Eight fixtures at every value of the axis (the reported
+`.replace`, its `.format` / `%` / concatenation siblings, the determined half in both
+the returned and the assigned branch, the unmodelled transform, the word-boundary
+control, and two resolution fixtures), cases (24)–(31), 39 Tier 3 anchors.
+
+**Ten mutations, all caught — and three of them were written because two were
+missed.**  The first run left the word-boundary guards and the named branch's marker
+test unwitnessed, and an unwitnessed condition is indistinguishable from a wrong one;
+`_FIXTURE_BOUNDED_HOLE_NEIGHBOURS` (two holes, so a mutation dropping one guard is
+caught by its own half), `_FIXTURE_ASSIGNED_SUBSTITUTION` and
+`_FIXTURE_AMBIGUOUS_FRAGMENT` are what the second run added.  The sweep then found the
+two `v0.35.127` anchors naming signatures this cut retires, and both are repointed.
+
 ## v0.35.128 — the carrier domain: a reducible alias result, and an exhausted fixpoint that certified a partial answer
 
 Two PR #897 findings over `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,

@@ -16963,14 +16963,14 @@ run_check "INVARIANT" rg -F -n '  let hTcb := bootFromPlatformChecked_ok_tcb_boo
 # the string `"a" + "b"` builds and is not the one `.format` builds: the constructor
 # is lost while the template's marker is accounted for, so the fail-closed marker
 # count passed too.  `_reconstruct` returns the string or `None`.
-run_check "INVARIANT" rg -F -n 'def _reconstruct(node: ast.AST) -> str | None:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _reconstruct(node: ast.AST, consts: dict[str, str]) -> str | None:' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n 'def _assembled_strings(' scripts/check_declaration_kind_askers.py
 run_negative_check "INVARIANT" rg -F -n 'def _is_concatenation(' scripts/check_declaration_kind_askers.py
 run_negative_check "INVARIANT" rg -F -n 'def _concatenation_groups(' scripts/check_declaration_kind_askers.py
 # ...and narrowing the reader is not enough on its own: with `.format` no longer an
 # assembly its template would fall through to the bare-constant branch and be
 # LOCATED, reopening the hole one branch over.  So the default branch is a decision.
-run_check "INVARIANT" rg -F -n 'def _unreadable_assemblies(tree: ast.AST) -> list[ast.AST]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '    unreadable = _unreadable_assemblies(tree)' scripts/check_declaration_kind_askers.py
 # ...over a shape set that excludes a call on a plain NAME, because a probe handed
 # straight to a helper is the commonest idiom in this tree and its literal is the
@@ -17044,6 +17044,88 @@ run_check "INVARIANT" rg -F -n '    (bound : Nat := carrierFixpointBound) : Meta
 run_check "INVARIANT" rg -F -n 'def carrierFixpointRefusalViolations (env : Environment) : MetaM (List String) := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '    (do let _ ← stateCarryingTypes env 1; pure true)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '    (← carrierFixpointRefusalViolations env)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
+
+# ===========================================================================
+# v0.35.129 (PR #897 review): a SUBSTITUTION into a located template can splice
+# the decision, and the template records zero
+# ===========================================================================
+# `v0.35.127` asked *what value does this expression have* and answered "the string,
+# or nothing".  The case that survived it is where the answer is ALMOST the string: a
+# named template holding a constructor spelling with a hole in it is a LOCATED subject,
+# so its import marker is accounted for and the fail-closed marker count is satisfied,
+# while its constructor count is ZERO and the probe handed to Lean decides the
+# question.  Invisible in both directions at once.
+# ---------------------------------------------------------------------------
+# (1) THE RECONSTRUCTION IS PARTIAL: determined text with a HOLE wherever text this
+# scanner cannot read enters it.  `_reconstruct` is then "no holes" demanded of it.
+run_check "INVARIANT" rg -F -n 'def _reconstruct_holed(node: ast.AST, consts: dict[str, str]) -> str | None:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_HOLE = "\x00"' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    text = _reconstruct_holed(node, consts)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    return None if text is None or _HOLE in text else text' scripts/check_declaration_kind_askers.py
+# ...and the all-or-nothing recursion it replaces must not come back: an untreaded
+# `_reconstruct` call is the reader that had no notion of a partially known string.
+run_negative_check "INVARIANT" rg -F -n '        left = _reconstruct(node.left)' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n '        right = _reconstruct(node.right)' scripts/check_declaration_kind_askers.py
+# (2) A NAME RESOLVES, fail-closed at both ends.  A template is reached through its
+# name, so a scanner that cannot resolve the name cannot see the text the substitution
+# applies to -- which is the whole of this defect.  A name bound MORE THAN ONCE
+# resolves to nothing, because the two bindings are two texts and no occurrence says
+# which is live.
+run_check "INVARIANT" rg -F -n 'def _module_string_bindings(tree: ast.AST) -> dict[str, str]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _name_bindings(tree: ast.AST) -> dict[str, list[str | None]]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '            if len(t) == 1 and t[0] is not None}' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    if isinstance(node, ast.Name):' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '        return consts.get(node.id, _HOLE)' scripts/check_declaration_kind_askers.py
+# (3) THE REFUSAL ASKS COMPLETION, NOT PRESENCE OF A HOLE.  Derived from the eight
+# spellings the counters use, and inheriting their word bounds: a hole completes a
+# constructor when the template itself has written part of one against it.  Refusing
+# on the marker alone would refuse all four of this tree's real probes, whose holes
+# carry module names, counts and quoted lists -- measured, zero of the thirteen
+# substitution sites writes a constructor against its hole.
+run_check "INVARIANT" rg -F -n 'def _constructor_completing_holes(holed: str) -> list[int]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '        for ctor in CONSTANT_INFO_CONSTRUCTORS:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                if (before.endswith(prefix)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                        and not wordish(before[:-len(prefix)][-1:])):' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                elif (after.startswith(suffix)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                        and not wordish(after[len(suffix):len(suffix) + 1])):' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '        elif (LEAN_PROBE_MARKER.search(holed)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                and _constructor_completing_holes(holed)):' scripts/check_declaration_kind_askers.py
+# (4) THE DEFAULT BRANCH IS A DECISION, taken per CALL SITE rather than per spelling:
+# a form this scanner does not model is `None` when applied to determined probe text
+# and an ordinary value fragment otherwise, which is what keeps the recognised set
+# from having to be complete while `", ".join(names)` stays readable.
+run_check "INVARIANT" rg -F -n 'def _unreadable_transform(base: str) -> str | None:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    return None if _HOLE not in base and LEAN_PROBE_MARKER.search(base) else _HOLE' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_REFUSAL_REASONS = {' scripts/check_declaration_kind_askers.py
+# (5) THE MARKER IS ASKED OF THE ASSEMBLED TEXT, in BOTH branches.  A template
+# reached through its name puts the marker in no literal fragment of the expression
+# that substitutes into it, so the fragment-only test dropped the probe the program
+# builds -- and the substituted constructor was recorded against nothing.
+run_check "INVARIANT" rg -F -n '        # The marker is asked of the ASSEMBLED TEXT, not of the literal fragments' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '        # ...on the ASSEMBLED TEXT, for the reason the named branch states.' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n '        if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):' scripts/check_declaration_kind_askers.py
+# (6) AND AN AMBIGUOUS PROBE NAME IS REFUSED, conditioned on an assembly REACHING
+# THROUGH it -- the defect walks around (3) by rebinding the name, while two probes
+# bound to one local name in two scopes stay two perfectly good subjects.
+run_check "INVARIANT" rg -F -n 'def _ambiguous_probe_bindings(tree: ast.AST) -> list[str]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    reached = {n.id for shape in _string_assembly_shapes(tree)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                  if name in reached and len(texts) > 1' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    ambiguous = _ambiguous_probe_bindings(tree)' scripts/check_declaration_kind_askers.py
+# (7) THE FIXTURES, at every value of the axis: the reported `.replace` splice and
+# its three siblings, the DETERMINED half in both the returned and the assigned
+# branch, the unmodelled transform, the word-boundary control that nothing else
+# witnesses, and the two resolution fixtures.
+run_check "INVARIANT" rg -F -n '_FIXTURE_SPLICED_CONSTRUCTOR = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SPLICED_BY_FORMAT = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SPLICED_BY_PERCENT = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SPLICED_BY_CONCATENATION = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_SPLICED_DETERMINED = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_ASSIGNED_SUBSTITUTION = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_UNMODELLED_TRANSFORM = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_BOUNDED_HOLE_NEIGHBOURS = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_AMBIGUOUS_TEMPLATE_NAME = ' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '_FIXTURE_AMBIGUOUS_FRAGMENT = ' scripts/check_declaration_kind_askers.py
 
 
 finalize_report

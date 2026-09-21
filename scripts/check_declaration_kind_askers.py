@@ -222,52 +222,230 @@ def _qualified(scope: str, name: str) -> str:
     return name if scope == "<module>" else f"{scope}.{name}"
 
 
-def _reconstruct(node: ast.AST) -> str | None:
-    """The exact string `node` evaluates to, when literals ALONE determine it.
+#: The character standing for a fragment of an assembled string this scanner cannot
+#: read.  NUL, for two reasons that are both about the question rather than about
+#: convenience: it is not a word character, so it can never sit *inside* a
+#: `\b`-bounded constructor match and therefore never manufactures one; and a source
+#: literal that contained one would make a hole indistinguishable from determined
+#: text, which `_reconstruct_holed` refuses outright rather than reading past.
+_HOLE = "\x00"
 
-    `v0.35.127` (PR #897 review).  The superseded reader asked *is this expression a
-    concatenation* and then **joined its literals in source order**, which is the
-    string the program builds for `"a" + "b"` and is **not** for
-    `"… .{}Info …".format("opaque")`: joining yields `… .{}Info … opaque`, so the
-    constructor pattern matches nothing while the template's own import marker is
-    accounted for -- so the fail-closed marker count passed too and the asker was
-    invisible in both directions at once.  *A spelling is not the text*, at the one
-    place the text is assembled rather than written.
+#: The two substitution mini-languages, as HOLE producers rather than as
+#: interpreters.  A `str.format` field and a `%`-conversion are each replaced by a
+#: hole wherever they occur in a determined template, so the scanner never has to
+#: decide which argument lands where -- *a parser for a language you are not parsing
+#: is a list of the spellings you have seen*, and the position of the hole is the
+#: only thing the constructor question needs.
+_FORMAT_FIELD = re.compile(r"\{[^{}]*\}")
+_PERCENT_FIELD = re.compile(
+    r"%(?:\([^()]*\))?[-+ #0]*(?:\*|[0-9]+)?(?:\.(?:\*|[0-9]+))?[hlL]?[a-zA-Z%]")
 
-    So the question is not a shape but a **value**: return the string, or `None`.
-    Four forms are determined by literals -- a literal, `+` over two determined
-    operands (recursively, so `"a" + ("b" + "c")` is one string), an f-string with no
-    interpolation, and `<literal>.join([<determined>, …])`.  `.format`, `%`, an
-    interpolating f-string and every other method are `None` by construction, and
-    `_unreadable_assemblies` turns a `None` that carries a marker into a refusal
-    rather than a silent partial read.
+
+#: What each refusal reason means, in the words a maintainer needs to act on it.
+#: Three reasons and not one, because they call for different remedies: text the
+#: scanner cannot see at all, a transform it cannot model, and a hole written against
+#: a constructor spelling.  A single message would name the wrong fix for two of them.
+_REFUSAL_REASONS = {
+    "unreadable": "a probe literal is assembled by a `.format`, a `%`, an "
+                  "interpolating f-string or another string method",
+    "form": "a transform this scanner does not model is applied to determined "
+            "probe text, so its result is not that text with substitutions",
+    "splice": "unread text is substituted into a located probe template at a "
+              "position where the template has written part of a `ConstantInfo` "
+              "constructor against it, so the constructor the probe decides is "
+              "not in any located text",
+}
+
+
+def _module_string_bindings(tree: ast.AST) -> dict[str, str]:
+    """Names this module binds ONCE, anywhere, to a string literal.
+
+    A named template is reached through its name, so a scanner that cannot resolve
+    the name cannot see the text the substitution is applied to -- which is the whole
+    of the `v0.35.129` defect.  Resolution is a relation and *a name is not a
+    definition*, so it is fail-closed at both ends: a name bound **more than once**
+    resolves to nothing (the two bindings are two texts and no occurrence says which
+    is live), and so does a name bound to anything but a plain string literal.
+    Bindings are collected at every scope and keyed by the bare name, which
+    over-approximates the collision set -- a module-level `PROBE` and a local `PROBE`
+    in one function count as two bindings and neither resolves -- and that direction
+    is the safe one: an unresolved template is a refusal, a wrongly-resolved one is a
+    count over text the program never builds.
+    """
+    return {n: t[0] for n, t in _name_bindings(tree).items()
+            if len(t) == 1 and t[0] is not None}
+
+
+def _name_bindings(tree: ast.AST) -> dict[str, list[str | None]]:
+    """Every name binding in the module, as the literal text bound or `None`.
+
+    One walk, because "which text does this name denote" and "is that answer
+    ambiguous" are one question and answering them separately is how two readings
+    of one fact drift apart.
+    """
+    seen: dict[str, list[str | None]] = {}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets, value = list(node.targets), node.value
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+            targets, value = [node.target], node.value
+        elif isinstance(node, ast.AugAssign):
+            # `X += "..."` binds X to a concatenation this scanner has not evaluated,
+            # so it is recorded as a binding with no text: the name then resolves to
+            # nothing, which is the direction that refuses rather than misreads.
+            targets, value = [node.target], None
+        else:
+            continue
+        text = (value.value if isinstance(value, ast.Constant)
+                and isinstance(value.value, str) else None)
+        for target in targets:
+            if not isinstance(target, ast.Name):
+                continue
+            seen.setdefault(target.id, []).append(text)
+    return seen
+
+
+def _ambiguous_probe_bindings(tree: ast.AST) -> list[str]:
+    """Names bound more than once, at least one binding being probe text.
+
+    The fail-closed half of `_module_string_bindings`, and the residue that made it
+    necessary: an unresolvable name is not a refusal by itself -- most names in a
+    Python file are not templates -- but a name that denotes PROBE text at one
+    binding and something else at another cannot be resolved, so a substitution
+    applied to it is read as applying to nothing and the splice refusal never sees
+    the template.  The defect walks around the fix by binding the name twice.
+
+    Named here and not folded into the duplicate-SUBJECT-KEY refusal below, because
+    the two questions differ: that one is about two probes whose *counts would add*
+    under one key, and fires only when both are located; this one is about which text
+    a name DENOTES, and fires when a second binding hides a template from resolution
+    even though the two probes have distinct keys.
+
+    It is conditioned on an assembly REACHING THROUGH the name, and that condition is
+    the whole of its precision rather than an economy.  Two probes bound to one local
+    name in two scopes are two perfectly good subjects under two keys -- which is what
+    `v0.35.127` established and what this gate's own case (22) pins -- and nothing is
+    hidden by the ambiguity until something substitutes into one of them.  So the
+    refusal asks both halves: the name is ambiguous, AND a string assembly reads it.
+    The reach is asked over the whole module rather than per scope, which
+    over-approximates and is the direction that refuses rather than misreads.
+    Measured: zero such names on the tracked tree, so it is planted today, and the
+    remedy is the same one-line rename.
+    """
+    reached = {n.id for shape in _string_assembly_shapes(tree)
+               for n in ast.walk(shape) if isinstance(n, ast.Name)}
+    return sorted(name for name, texts in _name_bindings(tree).items()
+                  if name in reached and len(texts) > 1
+                  and any(t is not None and LEAN_PROBE_MARKER.search(t)
+                          for t in texts))
+
+
+def _reconstruct_holed(node: ast.AST, consts: dict[str, str]) -> str | None:
+    """The text `node` builds, with every unreadable fragment as a single `_HOLE`.
+
+    `v0.35.129` (PR #897 review).  `v0.35.127` asked *what value does this expression
+    have* and answered "the string, or nothing"; the defect that survived it is the
+    case where the answer is **almost** the string.  A named template holding
+    `. @KIND@ Info` (without the spaces) is a LOCATED subject in its own right, so its
+    import marker is accounted for and the fail-closed marker count is satisfied,
+    while its constructor count is **zero** and the probe handed to Lean matches
+    `.opaqueInfo`.  Invisible in both directions at once -- the same shape as the
+    `.format` finding, at the one place the text is transformed rather than assembled.
+
+    So the reconstruction is partial rather than all-or-nothing: determined text with
+    holes where text this scanner cannot read enters it.  `_reconstruct` is then this
+    function with "no holes" demanded, and the refusal asks the only question a hole
+    leaves open -- whether the unread fragment could COMPLETE a constructor spelling
+    the template has written half of.
+
+    `None` is reserved for a form whose result is NOT describable as determined text
+    with holes: an unrecognised string method or free function applied to determined
+    probe text mangles it in a way no hole can stand for, and reading past it would
+    count constructors over text the program never builds.  Where the same form is
+    applied to text that is not a probe it is an ordinary value fragment, so it is a
+    hole -- which is what keeps `", ".join(names)` (this tree's own idiom) readable
+    while `PROBE.upper()` is refused.
     """
     if isinstance(node, ast.Constant):
-        return node.value if isinstance(node.value, str) else None
-    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
-        left = _reconstruct(node.left)
-        right = _reconstruct(node.right)
-        return None if left is None or right is None else left + right
+        if not isinstance(node.value, str):
+            return _HOLE
+        return None if _HOLE in node.value else node.value
+    if isinstance(node, ast.Name):
+        return consts.get(node.id, _HOLE)
+    if isinstance(node, ast.FormattedValue):
+        return _HOLE
     if isinstance(node, ast.JoinedStr):
         parts: list[str] = []
         for value in node.values:
-            piece = _reconstruct(value)
+            piece = _reconstruct_holed(value, consts)
             if piece is None:
                 return None
             parts.append(piece)
         return "".join(parts)
-    if (isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute)
-            and node.func.attr == "join" and not node.keywords
-            and len(node.args) == 1
-            and isinstance(node.args[0], (ast.List, ast.Tuple))):
-        sep = _reconstruct(node.func.value)
-        if sep is None:
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Add):
+        left = _reconstruct_holed(node.left, consts)
+        right = _reconstruct_holed(node.right, consts)
+        return None if left is None or right is None else left + right
+    if isinstance(node, ast.BinOp) and isinstance(node.op, ast.Mod):
+        left = _reconstruct_holed(node.left, consts)
+        return None if left is None else _PERCENT_FIELD.sub(_HOLE, left)
+    if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+        base = _reconstruct_holed(node.func.value, consts)
+        if base is None:
             return None
-        pieces = [_reconstruct(e) for e in node.args[0].elts]
-        if any(p is None for p in pieces):
-            return None
-        return sep.join(pieces)  # type: ignore[arg-type]
-    return None
+        if (node.func.attr == "join" and not node.keywords and len(node.args) == 1
+                and isinstance(node.args[0], (ast.List, ast.Tuple))):
+            pieces = [_reconstruct_holed(e, consts) for e in node.args[0].elts]
+            if any(p is None for p in pieces):
+                return None
+            return base.join(pieces)  # type: ignore[arg-type]
+        if (node.func.attr == "replace" and not node.keywords
+                and len(node.args) == 2):
+            needle = _reconstruct_holed(node.args[0], consts)
+            value = _reconstruct_holed(node.args[1], consts)
+            if needle is not None and value is not None and _HOLE not in needle:
+                return base.replace(needle, value)
+            return _unreadable_transform(base)
+        if node.func.attr == "format":
+            return _FORMAT_FIELD.sub(_HOLE, base)
+        return _unreadable_transform(base)
+    return _HOLE
+
+
+def _unreadable_transform(base: str) -> str | None:
+    """A form this scanner does not model, answered by what it is applied TO.
+
+    The default branch, made explicit: applied to determined probe text the result is
+    that text mangled, which no hole describes, so it is `None` and the caller refuses
+    it; applied to anything else it is an ordinary value whose content this scanner
+    never needed.  Asking about the BASE rather than about the method name is what
+    keeps the set of recognised forms from having to be complete -- *a scanner's
+    default branch is a decision*, and this one is taken per call site rather than per
+    spelling.
+    """
+    return None if _HOLE not in base and LEAN_PROBE_MARKER.search(base) else _HOLE
+
+
+def _reconstruct(node: ast.AST, consts: dict[str, str]) -> str | None:
+    """The exact string `node` evaluates to, when the source ALONE determines it.
+
+    `v0.35.127` (PR #897 review).  The superseded reader asked *is this expression a
+    concatenation* and then **joined its literals in source order**, which is the
+    string the program builds for `"a" + "b"` and is **not** for a `.format` on a
+    template: joining yields the template followed by the argument, so the constructor
+    pattern matches nothing while the template's own import marker is accounted for --
+    the fail-closed marker count passed too and the asker was invisible in both
+    directions at once.  *A spelling is not the text*, at the one place the text is
+    assembled rather than written.
+
+    So the question is not a shape but a **value**: return the string, or `None`.
+    Since `v0.35.129` the recursion lives in `_reconstruct_holed` and this is the
+    "determined everywhere" reading of it, which also makes `PROBE.replace("@K@",
+    "opaque")` on a resolvable template a string rather than a refusal -- the
+    *reconstructed* half of that finding's remedy, the refusal being the other.
+    """
+    text = _reconstruct_holed(node, consts)
+    return None if text is None or _HOLE in text else text
 
 
 def _string_assembly_shapes(tree: ast.AST) -> list[ast.AST]:
@@ -306,10 +484,11 @@ def _assembled_strings(
     of the string its parent builds, so reporting it as well would count one fragment
     under two subjects.
     """
-    determined = [(n, _reconstruct(n)) for n in _string_assembly_shapes(tree)]
+    consts = _module_string_bindings(tree)
+    determined = [(n, _reconstruct(n, consts)) for n in _string_assembly_shapes(tree)]
     nodes = [(n, v) for n, v in determined if v is not None]
     nested = {id(d) for n, _ in nodes for d in ast.walk(n)
-              if d is not n and _reconstruct(d) is not None
+              if d is not n and _reconstruct(d, consts) is not None
               and isinstance(d, (ast.BinOp, ast.JoinedStr, ast.Call))}
     out: list[tuple[ast.AST, str, list[ast.Constant]]] = []
     for node, value in nodes:
@@ -322,30 +501,106 @@ def _assembled_strings(
     return out
 
 
-def _unreadable_assemblies(tree: ast.AST) -> list[ast.AST]:
-    """String assemblies carrying a probe marker that this scanner cannot evaluate.
+def _constructor_completing_holes(holed: str) -> list[int]:
+    """Hole offsets at which unread text could COMPLETE a constructor spelling.
+
+    The refusal criterion for a partially determined assembly, and the reason it is
+    not an identifier-adjacency resemblance: the question is about the eight spellings
+    `_WORD` counts, so it is derived from `CONSTANT_INFO_CONSTRUCTORS` and inherits
+    their `\\b` bounds.  A hole completes a constructor when the template itself has
+    written part of one against it --
+
+      * a non-empty proper PREFIX of some constructor ends the text before the hole,
+        with a non-word character (or nothing) before that prefix, so the leading
+        `\\b` holds and the hole supplies the rest; or
+      * a non-empty proper SUFFIX of some constructor begins the text after the hole,
+        with a non-word character (or nothing) after it, so the trailing `\\b` holds
+        and the hole supplies the front.
+
+    A hole whose neighbours write no part of a constructor is a DATA substitution, and
+    it is admitted: the located template already carries the decision, and all
+    thirteen substitution sites on this tree are of that kind -- measured, in value
+    positions (`[@ROOTS@]`, a line of its own, after a colon), zero of them writing a
+    constructor against the hole.  A refusal that fired on those would refuse the tree.
+
+    What that admission leaves is a FLOOR and not a count: unread text could contain a
+    whole constructor of its own, which no source scanner can exclude.  That is the
+    same residue `embedded_lean` already states for a fragment computed by a call, and
+    it is stated rather than approximated -- refusing every hole would refuse the four
+    real probes, whose decisions are written in their templates and whose holes carry
+    module names, counts and quoted lists.
+    """
+    def wordish(ch: str) -> bool:
+        return bool(ch) and (ch.isalnum() or ch == "_")
+
+    out: list[int] = []
+    for match in re.finditer(re.escape(_HOLE) + "+", holed):
+        before, after = holed[:match.start()], holed[match.end():]
+        for ctor in CONSTANT_INFO_CONSTRUCTORS:
+            hit = False
+            for cut in range(1, len(ctor)):
+                prefix, suffix = ctor[:cut], ctor[cut:]
+                if (before.endswith(prefix)
+                        and not wordish(before[:-len(prefix)][-1:])):
+                    hit = True
+                elif (after.startswith(suffix)
+                        and not wordish(after[len(suffix):len(suffix) + 1])):
+                    hit = True
+                if hit:
+                    break
+            if hit:
+                out.append(match.start())
+                break
+    return out
+
+
+def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
+    """String assemblies this scanner must refuse rather than read partially.
 
     The fail-closed half of `_reconstruct`, and the reason narrowing the reader is
     not enough on its own: with `.format` no longer forming an assembly, its template
     literal would fall through to the bare-constant branch and be *located*, so the
     marker count would be satisfied and the hole would reopen one branch over.
 
-    The subject is an expression that assembles a string from parts, has a
-    marker-bearing string literal **among those parts**, and whose value literals do
-    not determine.  A `Call` on a plain name is excluded by
-    `_string_assembly_shapes`, so a probe handed straight to a helper is read rather
-    than refused, and a `.replace` on a NAMED template is not a subject either -- its
-    marker lives in that template's own assignment, which is located there.  Measured: **zero** such
-    expressions on the tracked tree, so the refusal is entirely planted today.
+    Three reasons, and the third is `v0.35.129`.
+
+    `unreadable` -- the expression does not determine and a marker-bearing string
+    LITERAL is among its parts.  The marker is nowhere else, so refusing is the only
+    way the probe is seen at all.
+
+    `form` -- the expression applies a transform this scanner does not model to
+    determined probe text, so its result is not determined text with holes and no
+    partial reading of it is honest.
+
+    `splice` -- the expression IS determined text with holes, the text carries a
+    marker, and unread text enters it where the template has written part of a
+    constructor spelling.  This is the case the marker count cannot see: the template
+    is a located subject of its own, so the marker is accounted for and only the
+    CONSTRUCTOR count is wrong -- zero recorded against a probe that decides the
+    question.  Refusing on the marker alone here would refuse all four of this tree's
+    real probes, whose holes carry data; refusing on nothing would leave the hole.
+
+    A `Call` on a plain name is excluded by `_string_assembly_shapes`, so a probe
+    handed straight to a helper is read rather than refused.  Measured: **zero**
+    refusals of any of the three reasons on the tracked tree, so all three are
+    planted today.
     """
-    out: list[ast.AST] = []
+    consts = _module_string_bindings(tree)
+    out: list[tuple[ast.AST, str]] = []
     for node in _string_assembly_shapes(tree):
-        if _reconstruct(node) is not None:
+        holed = _reconstruct_holed(node, consts)
+        if holed is not None and _HOLE not in holed:
             continue
-        if any(isinstance(c, ast.Constant) and isinstance(c.value, str)
-               and LEAN_PROBE_MARKER.search(c.value)
-               for c in ast.walk(node)):
-            out.append(node)
+        literal_marker = any(
+            isinstance(c, ast.Constant) and isinstance(c.value, str)
+            and LEAN_PROBE_MARKER.search(c.value) for c in ast.walk(node))
+        if holed is None:
+            out.append((node, "unreadable" if literal_marker else "form"))
+        elif literal_marker:
+            out.append((node, "unreadable"))
+        elif (LEAN_PROBE_MARKER.search(holed)
+                and _constructor_completing_holes(holed)):
+            out.append((node, "splice"))
     return out
 
 
@@ -413,19 +668,29 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"{path} embeds Lean (an `import Lean`/`import SeLe4n` line, or a "
             f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
             f"its probe cannot be located.") from None
+    ambiguous = _ambiguous_probe_bindings(tree)
+    if ambiguous:
+        raise UnreadableProbe(
+            f"{path} binds `{ambiguous[0]}` more than once and at least one binding "
+            f"is Lean probe text" + (f" (and so does {', '.join(ambiguous[1:])})"
+                                     if len(ambiguous) > 1 else "") + ".  The name "
+            f"then denotes no one text, so a template reached through it cannot be "
+            f"resolved and a substitution into it is read as applying to nothing; "
+            f"give each probe its own name.")
     unreadable = _unreadable_assemblies(tree)
     if unreadable:
-        first = unreadable[0]
+        first, reason = unreadable[0]
         raise UnreadableProbe(
-            f"{path} assembles a string from a probe literal at line "
-            f"{getattr(first, 'lineno', 0)} in a form this scanner cannot evaluate "
-            f"(a `.format`, a `%`, an interpolating f-string or another string "
-            f"method), and {len(unreadable)} such expression(s) carry a Lean import "
-            f"marker.  Joining the literals would count constructors over text the "
-            f"program never builds -- and would satisfy the marker check while doing "
-            f"it -- so build the probe by `+` over literals, or substitute with an "
-            f"`@NAME@` sentinel on a named template (as this tree's other probes do) "
-            f"so the located text is the template itself.")
+            f"{path} builds Lean probe text at line "
+            f"{getattr(first, 'lineno', 0)} in a way this scanner refuses to read "
+            f"partially ({_REFUSAL_REASONS[reason]}), and {len(unreadable)} "
+            f"expression(s) in the file are refused.  Reading it partially would "
+            f"count `ConstantInfo` constructors over text the program never builds "
+            f"-- and would satisfy the marker check while doing it -- so build the "
+            f"probe by `+` over literals, or substitute with an `@NAME@` sentinel on "
+            f"a named template (as this tree's other probes do) placed where no "
+            f"constructor spelling is written against it, so the located text "
+            f"decides the question the recorded count is about.")
     found: list[tuple[str, str]] = []
     named: set[int] = set()
     constants = _string_constants(tree)
@@ -470,7 +735,12 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
         if entry is None:
             continue
         assembled, fragments = entry
-        if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
+        # The marker is asked of the ASSEMBLED TEXT, not of the literal fragments
+        # (`v0.35.129`).  A template reached through its NAME puts the marker in no
+        # fragment of the expression that substitutes into it, so a fragment-only
+        # test admitted `"@K@" + "opaque"` and refused the probe the program builds --
+        # and the substituted constructor was then recorded against nothing.
+        if not LEAN_PROBE_MARKER.search(assembled):
             continue
         claimed.add(id(value))
         named.update(id(c) for c in fragments)
@@ -502,7 +772,8 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     for node, assembled, fragments in assemblies:
         if id(node) in claimed:
             continue
-        if not any(LEAN_PROBE_MARKER.search(c.value) for c in fragments):
+        # ...on the ASSEMBLED TEXT, for the reason the named branch states.
+        if not LEAN_PROBE_MARKER.search(assembled):
             continue
         named.update(id(c) for c in fragments)
         inline.append((scopes[id(fragments[0])], assembled))
@@ -765,6 +1036,26 @@ ASKER_REASONS: dict[str, str] = {
         "tree's real probes are built, so a refusal that fired here would refuse "
         "the tree.  Its `inductInfo` is what case (21) reads back under the "
         "template's own name, which is where the marker lives.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNMODELLED_TRANSFORM":
+        "THIS GATE'S OWN FIXTURE for the substitution axis' `form` reason: "
+        "determined probe text passed to a transform this scanner does not model.  "
+        "Its `opaqueInfo` is in the TEMPLATE, deliberately -- the refusal is about "
+        "the transform mangling text the scanner has already read, so a fixture "
+        "whose template decided nothing would be refused for the wrong reason and "
+        "case (27) would not distinguish `form` from `splice`.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_BOUNDED_HOLE_NEIGHBOURS":
+        "THIS GATE'S OWN FIXTURE for the word-boundary half of the completion "
+        "test: its `defnInfo` is what case (29) reads back, and reading it is the "
+        "claim -- a neighbour spelling part of a constructor inside a longer "
+        "identifier cannot complete a word-bounded match, so the template is a "
+        "DATA substitution and refusing it would reject a probe this gate should "
+        "read.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_AMBIGUOUS_FRAGMENT":
+        "THIS GATE'S OWN FIXTURE for the resolution axis: its `defnInfo` sits in "
+        "the FIRST of two bindings of one name, which is what makes the fixture "
+        "decisive -- a scanner that resolved the name to that binding would read "
+        "the probe as deciding it, and the count recorded here is over the "
+        "fixture's own literal text rather than over any text the program builds.",
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SAME_NAME_TWO_SCOPES":
         "THIS GATE'S OWN FIXTURE for the subject-key axis: two probes binding one "
         "local name in two scopes.  The two counts are the two probes and they "
@@ -853,6 +1144,15 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SENTINEL_TEMPLATE": {
         "inductInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_UNMODELLED_TRANSFORM": {
+        "opaqueInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_BOUNDED_HOLE_NEIGHBOURS": {
+        "defnInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_AMBIGUOUS_FRAGMENT": {
+        "defnInfo": 1,
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SAME_NAME_TWO_SCOPES": {
         "defnInfo": 1,
@@ -1300,6 +1600,211 @@ private def sentinel (ci : ConstantInfo) : Bool :=
 
 def build(names):
     return PROBE_TEMPLATE.replace("@TARGETS@", ", ".join(names))
+'''
+
+#: **The SUBSTITUTION axis** (`v0.35.129`, PR #897 review).  A named template holding
+#: a constructor spelling with a HOLE in it, substituted at runtime.  The template is
+#: a LOCATED subject, so its import marker is accounted for and the fail-closed marker
+#: count is satisfied, while its constructor count is **zero** and the probe handed to
+#: Lean matches `.opaqueInfo`.  Invisible in both directions at once -- the `.format`
+#: finding one artefact over, at the place the text is transformed rather than
+#: assembled.  `_constructor_completing_holes` is what sees it: the template has
+#: written `Info` against the hole, so unread text can complete a constructor there.
+_FIXTURE_SPLICED_CONSTRUCTOR = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def spliced (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .@KIND@Info _ => true
+  | _ => false
+"""
+
+
+def build(kind):
+    return PROBE_TEMPLATE.replace("@KIND@", kind)
+'''
+
+#: The same splice through the two OTHER substitution mini-languages and through
+#: concatenation, so the refusal is about where unread text enters a template rather
+#: than about `.replace`.  A fix that taught the scanner one spelling would pass the
+#: fixture above and leave all three of these open.
+_FIXTURE_SPLICED_BY_FORMAT = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def spliced (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .{}Info _ => true
+  | _ => false
+"""
+
+
+def build(kind):
+    return PROBE_TEMPLATE.format(kind)
+'''
+
+_FIXTURE_SPLICED_BY_PERCENT = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def spliced (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .%sInfo _ => true
+  | _ => false
+"""
+
+
+def build(kind):
+    return PROBE_TEMPLATE % (kind,)
+'''
+
+_FIXTURE_SPLICED_BY_CONCATENATION = '''\
+PROBE_HEAD = """
+import SeLe4n
+
+private def spliced (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .
+"""
+
+
+def build(kind):
+    return PROBE_HEAD + kind + "Info _ => true | _ => false"
+'''
+
+#: The DETERMINED half of the same axis, and the *reconstructed* rather than refused
+#: outcome: the substituted value is a literal, so the probe the program builds is a
+#: string this scanner can read, and the constructor it decides is recorded under the
+#: enclosing declaration.  The template keeps its own subject with a count of zero,
+#: which is the truth about the template's own text.  Refusing this would be the
+#: wrong remedy -- *reconstruct what you can, refuse only what you cannot*.
+_FIXTURE_SPLICED_DETERMINED = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def spliced (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .@KIND@Info _ => true
+  | _ => false
+"""
+
+
+def build():
+    return PROBE_TEMPLATE.replace("@KIND@", "opaque")
+'''
+
+#: A transform this scanner does not model, applied to determined probe text.  Its
+#: result is that text mangled, which no hole describes, so reading it partially would
+#: count constructors over text the program never builds.  The CONTROL for it is the
+#: tree's own `", ".join(names)` inside `_FIXTURE_SENTINEL_TEMPLATE`: the same shape
+#: applied to text that is not a probe is an ordinary value fragment and is read.
+_FIXTURE_UNMODELLED_TRANSFORM = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def mangled (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .opaqueInfo _ => true
+  | _ => false
+"""
+
+
+def build():
+    return PROBE_TEMPLATE.upper()
+'''
+
+#: The RESOLUTION residue, closed.  A template whose name is bound twice -- here at
+#: module scope and again inside a function -- denotes no one text, so the substitution
+#: below would be read as applying to nothing and the splice refusal would never see
+#: the template.  The defect walks around the fix by rebinding the name, so an
+#: ambiguous probe-bearing name is refused before any assembly is examined.  Distinct
+#: from the duplicate-SUBJECT-KEY refusal beside it: these two probes have different
+#: keys, and what fails is *resolution*, not the counts adding.
+_FIXTURE_AMBIGUOUS_TEMPLATE_NAME = '''\
+PROBE = """
+import SeLe4n
+
+private def outer (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .@KIND@Info _ => true
+  | _ => false
+"""
+
+
+def build(kind):
+    PROBE = """
+import SeLe4n
+-- an ordinary second binding
+"""
+    return PROBE.replace("@KIND@", kind)
+'''
+
+#: The WORD-BOUNDARY half of the completion test, which nothing else witnesses.  A
+#: constructor is counted as a whole word (`_WORD` is `\b<ctor>\b`), so a neighbour
+#: that spells part of one *inside a longer identifier* cannot complete a match: no
+#: substitution makes `xopaqueInfo` or `opaqueInformal` a word-bounded `opaqueInfo`.
+#: Dropping either guard refuses this template, which is refusing a data substitution
+#: -- the fail-CLOSED direction, and still a defect, since the gate would then reject
+#: a probe it should read.  Two holes and not one, so a mutation that drops only the
+#: front guard or only the back guard is caught by its own half.
+_FIXTURE_BOUNDED_HOLE_NEIGHBOURS = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def bounded (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+
+-- `xopaque` before the first hole and `Informal` after the second each spell part
+-- of a constructor name INSIDE a longer identifier, so neither can complete a
+-- word-bounded match however the holes are filled.  The name itself is spelled in
+-- this fixture's Python docstring and NOT here: the gate counts a probe's own text,
+-- so an explanatory mention inside one would be a decision the probe does not make.
+-- front: xopaque@FRONT@ back: @BACK@Informal
+"""
+
+
+def build(front, back):
+    return PROBE_TEMPLATE.replace("@FRONT@", front).replace("@BACK@", back)
+'''
+
+#: The ASSIGNED half of the determined substitution.  `_FIXTURE_SPLICED_DETERMINED`
+#: returns its probe, so it is named after its enclosing declaration; this one binds
+#: it, so it is named after the target.  Two fixtures because `embedded_lean` has two
+#: branches and both were changed to ask the marker of the ASSEMBLED TEXT: a template
+#: reached through its NAME puts the marker in no literal fragment of the expression
+#: that substitutes into it, so the superseded fragment-only test dropped the
+#: assignment's name and reported the probe under its enclosing scope instead.
+#: *Keeping the tables symmetric* is what makes a mutation of either branch visible.
+_FIXTURE_ASSIGNED_SUBSTITUTION = '''\
+PROBE_TEMPLATE = """
+import SeLe4n
+
+private def assigned (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .@KIND@Info _ => true
+  | _ => false
+"""
+
+PROBE = PROBE_TEMPLATE.replace("@KIND@", "ctor")
+'''
+
+#: The RESOLUTION half in its other direction: an ambiguous name that is NOT probe
+#: text, reached by an assembly whose marker comes from a literal.  Resolving it to
+#: either binding would read the probe over text the program may never build, so the
+#: name resolves to nothing and the assembly is refused as unreadable.  Without this
+#: fixture the "bound once" condition carries no witness -- the ambiguous-PROBE
+#: refusal fires first for every name that is probe text, so a mutation resolving an
+#: ambiguous name to its first binding passed every other case.
+_FIXTURE_AMBIGUOUS_FRAGMENT = '''\
+SUFFIX = "-- .defnInfo is decided here"
+SUFFIX = "-- and nothing is decided here"
+
+PROBE = """
+import SeLe4n
+""" + SUFFIX
 '''
 
 #: **The SUBJECT-KEY axis.**  Two probes binding one local name in two scopes, which
@@ -1798,7 +2303,8 @@ def _self_test() -> int:
         fmt = "scripts/format_gate.py"
         _fixture(root, {**base, fmt: _FIXTURE_FORMAT_ASSEMBLED})
         problems = violations(root, base_pin, base_reasons)
-        if not any(fmt in p and "cannot evaluate" in p for p in problems):
+        if not any(fmt in p and "refuses to read partially" in p
+                   for p in problems):
             print("FAIL: --self-test — a `.format`-assembled probe was not refused:")
             print(f"      {problems}.  Joining its literals counts constructors")
             print("      over text the program never builds.")
@@ -1817,7 +2323,8 @@ def _self_test() -> int:
             sib = "scripts/" + label
             _fixture(root, {**base, sib: body})
             problems = violations(root, base_pin, base_reasons)
-            if not any(sib in p and "cannot evaluate" in p for p in problems):
+            if not any(sib in p and "refuses to read partially" in p
+                       for p in problems):
                 print(f"FAIL: --self-test — {sib} was not refused: {problems}.")
                 print("      Every substituting form loses the constructor the same")
                 print("      way; the axis is Python's grammar, not one spelling.")
@@ -1900,6 +2407,151 @@ def _self_test() -> int:
             print(f"      {v}")
         return 1
 
+    # (24) **The SUBSTITUTION axis** (`v0.35.129`, PR #897 review).  A named template
+    #      holding `.@KIND@Info`, substituted at runtime, is REFUSED.  `v0.35.127`
+    #      asked *what value does this expression have* and answered "the string, or
+    #      nothing"; this is the case where the answer is almost the string.  The
+    #      template is a LOCATED subject, so its marker is accounted for and the
+    #      fail-closed count is satisfied, while its constructor count is zero and
+    #      the probe Lean receives matches `.opaqueInfo` -- invisible in both
+    #      directions at once.
+    with tempfile.TemporaryDirectory() as root:
+        spl = "scripts/splice_gate.py"
+        _fixture(root, {**base, spl: _FIXTURE_SPLICED_CONSTRUCTOR})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(spl in p and "constructor against it" in p for p in problems):
+            print("FAIL: --self-test — a template splicing its own constructor was")
+            print(f"      not refused: {problems}.  The template records zero while")
+            print("      the probe it builds decides the question.")
+            return 1
+
+    # (25) ...and so does every other way unread text enters a template.  `.format`,
+    #      `%` and a concatenation put the hole in the same place; a fix that taught
+    #      the scanner `.replace` alone would pass (24) and leave all three open.
+    #      *Take the axis from the grammar, not from the reported spelling.*
+    for label, body in (("splice_format_gate.py", _FIXTURE_SPLICED_BY_FORMAT),
+                        ("splice_percent_gate.py", _FIXTURE_SPLICED_BY_PERCENT),
+                        ("splice_concat_gate.py",
+                         _FIXTURE_SPLICED_BY_CONCATENATION)):
+        with tempfile.TemporaryDirectory() as root:
+            sib = "scripts/" + label
+            _fixture(root, {**base, sib: body})
+            problems = violations(root, base_pin, base_reasons)
+            if not any(sib in p and "constructor against it" in p
+                       for p in problems):
+                print(f"FAIL: --self-test — {sib} was not refused: {problems}.")
+                print("      A hole written against a constructor spelling is the")
+                print("      same defect however the hole is spelled.")
+                return 1
+
+    # (26) The DETERMINED half, and the *reconstructed* rather than refused outcome:
+    #      the substituted value is a literal, so the probe the program builds is a
+    #      string this scanner can read and the constructor it decides is recorded
+    #      under the enclosing declaration.  Refusing it would be the wrong remedy,
+    #      and reading it while recording nothing would leave the reported hole open
+    #      in its easiest form -- so this case is an EQUALITY over both subjects.
+    with tempfile.TemporaryDirectory() as root:
+        det = "scripts/splice_determined_gate.py"
+        _fixture(root, {**base, det: _FIXTURE_SPLICED_DETERMINED})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(det)}
+        expected = {det + "::<inline in build>": {"opaqueInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a determined substitution was not read:")
+            print(f"      {got}, expected {expected}.  The template's own text")
+            print("      decides nothing; the string it builds decides `opaqueInfo`.")
+            return 1
+
+    # (27) A transform this scanner does not model, applied to determined probe text,
+    #      is refused under its own reason: its result is that text mangled, which no
+    #      hole describes.  The CONTROL is case (21)'s `", ".join(names)` -- the same
+    #      shape applied to text that is not a probe is an ordinary value fragment
+    #      and is read -- so the question is asked of what the form is applied TO
+    #      rather than of the method name, which is what keeps the recognised set
+    #      from having to be complete.
+    with tempfile.TemporaryDirectory() as root:
+        mng = "scripts/mangled_gate.py"
+        _fixture(root, {**base, mng: _FIXTURE_UNMODELLED_TRANSFORM})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(mng in p and "does not model" in p for p in problems):
+            print("FAIL: --self-test — an unmodelled transform of probe text was")
+            print(f"      not refused: {problems}.  Its result is not the template")
+            print("      with substitutions, so no partial reading of it is honest.")
+            return 1
+
+    # (28) The RESOLUTION residue, closed.  A template whose name is bound twice
+    #      denotes no one text, so the substitution is read as applying to nothing
+    #      and the splice refusal never sees the template -- the defect walks around
+    #      (24) by rebinding the name.  Distinct from the duplicate-SUBJECT-KEY
+    #      refusal in (23): these two probes have different keys, and what fails here
+    #      is RESOLUTION rather than the counts adding.
+    with tempfile.TemporaryDirectory() as root:
+        amb = "scripts/ambiguous_gate.py"
+        _fixture(root, {**base, amb: _FIXTURE_AMBIGUOUS_TEMPLATE_NAME})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(amb in p and "denotes no one text" in p for p in problems):
+            print("FAIL: --self-test — a template bound to an ambiguous name was")
+            print(f"      not refused: {problems}.  Resolution failing silently is")
+            print("      how the splice refusal is walked around.")
+            return 1
+
+    # (29) The WORD-BOUNDARY half of the completion test.  A constructor is counted
+    #      as a whole word, so a neighbour spelling part of one INSIDE a longer
+    #      identifier cannot complete a match: no substitution makes `xopaqueInfo` or
+    #      `opaqueInformal` a word-bounded `opaqueInfo`.  Without this case the two
+    #      guards carry no witness -- a mutation dropping them passed every other
+    #      case -- and an unwitnessed condition is indistinguishable from a wrong
+    #      one.  An EQUALITY, because the claim is that the template is READ, and two
+    #      holes, so a mutation dropping one guard is caught by its own half.
+    with tempfile.TemporaryDirectory() as root:
+        bnd = "scripts/bounded_hole_gate.py"
+        _fixture(root, {**base, bnd: _FIXTURE_BOUNDED_HOLE_NEIGHBOURS})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(bnd)}
+        expected = {bnd + "::PROBE_TEMPLATE": {"defnInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a template whose hole neighbours spell part")
+            print(f"      of a constructor inside a longer identifier was not read:")
+            print(f"      {got}, expected {expected}.  `\\b` is what makes those")
+            print("      neighbours unable to complete a match.")
+            return 1
+
+    # (30) The ASSIGNED half of case (26).  `embedded_lean` has two branches and both
+    #      now ask the marker of the ASSEMBLED TEXT, because a template reached
+    #      through its NAME puts the marker in no literal fragment of the expression
+    #      that substitutes into it.  Under the superseded fragment-only test this
+    #      probe lost its assignment's name and was reported under its enclosing
+    #      scope, so the case is an EQUALITY over the KEY as much as the count.
+    with tempfile.TemporaryDirectory() as root:
+        asg = "scripts/assigned_substitution_gate.py"
+        _fixture(root, {**base, asg: _FIXTURE_ASSIGNED_SUBSTITUTION})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(asg)}
+        expected = {asg + "::PROBE": {"ctorInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — an assigned determined substitution was not")
+            print(f"      read under its own name: {got}, expected {expected}.")
+            print("      The marker is in the template, not in the fragments.")
+            return 1
+
+    # (31) ...and the other direction of resolution: an ambiguous name that is NOT
+    #      probe text, reached by an assembly whose marker comes from a literal.
+    #      Resolving it to either binding would read the probe over text the program
+    #      may never build, so it resolves to nothing and the assembly is refused.
+    #      Without this the "bound once" condition carries no witness at all -- the
+    #      ambiguous-PROBE refusal of case (28) fires first for every name that IS
+    #      probe text, so a mutation taking the first binding passed every case.
+    with tempfile.TemporaryDirectory() as root:
+        afr = "scripts/ambiguous_fragment_gate.py"
+        _fixture(root, {**base, afr: _FIXTURE_AMBIGUOUS_FRAGMENT})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(afr in p and "refuses to read partially" in p
+                   for p in problems):
+            print("FAIL: --self-test — an assembly over an ambiguous fragment name")
+            print(f"      was not refused: {problems}.  Resolving it to either")
+            print("      binding reads the probe over text it may never build.")
+            return 1
+
     found = capture()
     print(f"[declaration-kind] SELF-TEST PASS: the capture reads the Lean view "
           f"of both a `.lean` file and a probe embedded in Python; a new "
@@ -1915,8 +2567,12 @@ def _self_test() -> int:
           f"the same non-assignment position is not; a `.format`, `%` or "
           f"interpolating-f-string assembly is REFUSED rather than joined while a "
           f"literal f-string and a `@SENTINEL@` template consumed by `.replace` "
-          f"are read; and two probes binding one local name in two scopes are two "
-          f"subjects while one name rebound at a single scope is refused; the "
+          f"are read; two probes binding one local name in two scopes are two "
+          f"subjects while one name rebound at a single scope is refused; and a "
+          f"template that SPLICES a constructor -- by `.replace`, `.format`, `%` or "
+          f"concatenation -- is refused, as is an unmodelled transform of probe text "
+          f"and a template whose name is bound twice, while a substitution whose "
+          f"value is a literal is RECONSTRUCTED and its constructor recorded; the "
           f"live tree is clean at {len(found)} subject(s).")
     return 0
 

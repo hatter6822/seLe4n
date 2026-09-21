@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.128.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.129.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1705,6 +1705,52 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   conditions still rejected the input, so the self-test passed and the case read as
   unverified; the mutation that decides restores the *superseded reading* — a
   `.format` branch returning the source-order join — and is caught immediately.
+
+  **And a TRANSFORM of located text is a third thing, beside its shape and its
+  value** (PR #897 review, `v0.35.129`).  `v0.35.127` replaced *what shape is this*
+  with *what value does this have*, and the case that survived is the one where the
+  answer is **almost** the value.  A named template holding a constructor spelling
+  with a hole in it is a **located** subject: its import marker is accounted for, the
+  fail-closed marker count is satisfied, and its constructor count is **zero**, while
+  the probe handed to Lean decides the question.  Invisible in both directions at
+  once — the shape that makes a domain miss unfindable by reading a failure — and
+  reached by the tree's own commonest probe idiom, a `@SENTINEL@` template consumed
+  by `.replace`.
+
+  **So the reconstruction is PARTIAL: determined text with holes.**  Not the
+  all-or-nothing string, and not a shape — `_reconstruct_holed` returns the text the
+  expression builds with one non-word `_HOLE` wherever text the scanner cannot read
+  enters it, and "determined" is that with no holes left.  Four things follow, and
+  each is a rule already in this file arriving at a smaller unit.  **A name resolves,
+  fail-closed at both ends** — a template is reached *through* its name, so a scanner
+  that cannot resolve the name cannot see the text a substitution applies to, and a
+  name bound more than once resolves to nothing because two bindings are two texts
+  and no occurrence says which is live.  **The refusal asks COMPLETION, not the
+  presence of a hole**: `_constructor_completing_holes` is derived from the
+  constructor tuple and inherits its `\b` bounds, so a hole is refused exactly where
+  the template has written part of a constructor against it — measured at
+  **thirteen** substitution sites on the tree, every one undetermined and **zero**
+  writing a constructor against its hole, so refusing every hole would refuse the
+  tree and the mutation that does fails the control *and* the live gate.  **The
+  default branch is taken per CALL SITE rather than per spelling** — an unmodelled
+  form is unreadable when applied to determined probe text and an ordinary value
+  fragment otherwise, which is what keeps the recognised set from having to be
+  complete.  And **the admission test moves with the text**: the marker is asked of
+  the assembled text in *both* branches, because a template reached through its name
+  puts the marker in no literal fragment of the expression that substitutes into it.
+
+  Two things that cut records about its own witnesses.  **The widening admits nothing
+  and refuses nothing on the live tree** — 25 subjects, byte-identical counts, zero
+  refusals — so the plants are the entire measurement, as at `v0.35.115`.  And **two
+  of the ten mutations were MISSED on the first run**, which is the part worth
+  keeping: the word-boundary guards and the named branch's admission test each passed
+  every case that existed, because every fixture reached them through the other
+  branch.  *An unwitnessed condition is indistinguishable from a wrong one*, so the
+  answer is not to reason about it but to plant the case that separates it — a
+  fixture with **two** holes, so a mutation dropping one guard is caught by its own
+  half; a substitution **assigned** to a name beside the one that is returned; and an
+  ambiguous name that is *not* probe text, since the ambiguous-probe refusal fires
+  first for every name that is.  **Run the mutations before believing the cases.**
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
