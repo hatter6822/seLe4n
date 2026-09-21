@@ -728,6 +728,14 @@ def added_anchor_lines(
     is an error; the tracked branch's nonzero used to `continue`, which is the same
     fail-open one step over — a script whose diff git could not produce contributed
     no anchors and the sweep reported a clean run.
+
+    **A DELETION-ONLY hunk is attributed to the surviving command**
+    (`v0.35.143`, PR #897's review).  The loop recorded `+` lines only, so an
+    anchor edited by *removing* a continuation contributed nothing — and, the
+    changed path being the tier script rather than a file the command names, it
+    got no `path` or `dir` provenance either, so the edited anchor was not swept
+    at all.  `_deleted_hunk_owners` says which anchors a deletion touches and why
+    both new-file neighbours are the right answer.
     """
     out: set[tuple[str, int]] = set()
     untracked = set(_untracked(repo))
@@ -761,7 +769,11 @@ def added_anchor_lines(
             if m:
                 lineno = int(m.group(1))
                 continue
-            if line.startswith("+++"):
+            if line.startswith("+++") or line.startswith("---"):
+                continue
+            if line.startswith("-"):
+                for first in _deleted_hunk_owners(owner, logical, lineno):
+                    out.add((p.name, first))
                 continue
             if line.startswith("+"):
                 first = owner.get(lineno)
@@ -769,6 +781,40 @@ def added_anchor_lines(
                     out.add((p.name, first))
                 lineno += 1
     return out
+
+
+def _deleted_hunk_owners(
+    owner: dict[int, int],
+    logical: dict[int, str],
+    lineno: int,
+) -> list[int]:
+    """The surviving anchors a deletion at new-file position `lineno` touches.
+
+    A DELETION-ONLY hunk carries no `+` line at all -- `git diff -U0` writes it
+    `@@ -4 +3,0 @@` -- so a loop that records only additions attributes it to
+    nothing.  An anchor edited solely by *removing* a continuation (one `-e`
+    pattern, one target) therefore got no `diff` provenance, and because the
+    changed path is the tier script rather than a file the command names, it got
+    no `path` or `dir` provenance either: the edited anchor was not swept at all
+    (PR #897's review, `v0.35.143`).  That is `v0.35.140`'s finding one hunk kind
+    over -- there an added file's diff was empty, here a deletion's is nonempty
+    and carries nothing the loop reads.
+
+    Git's `+c` for a deletion is the new-file line the removed text sat *after*,
+    so the surviving neighbours are `c` and `c + 1`; for a continuation deletion
+    both belong to the same logical command, which is why attributing to both is
+    exact there rather than merely safe.  Where an anchor was deleted **whole**
+    the two neighbours are different commands and those are re-run, which is the
+    over-approximating direction and costs a run.  A neighbour whose logical line
+    is not a `run_*` helper contributes nothing, so ordinary shell text around an
+    edit selects no anchor.
+    """
+    return [
+        first
+        for probe in (lineno, lineno + 1)
+        if (first := owner.get(probe)) is not None
+        and HELPER_NAME_RE.match(logical[first].strip())
+    ]
 
 
 def physical_line_owners(text: str) -> tuple[dict[int, int], dict[int, str]]:
@@ -1228,6 +1274,115 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
                 "contribute nothing"
             )
 
+        # 15c. A DELETION-ONLY hunk carries no `+` line, so an anchor edited by
+        #      REMOVING a continuation got no `diff` provenance (PR #897's
+        #      review, `v0.35.143`).  It got no other provenance either: the
+        #      changed path is the tier script rather than a file the command
+        #      names.  Case 15b's shape one hunk kind over, and FUNCTIONAL for
+        #      the same reason.  Git writes a deletion `@@ -a +c,0 @@`, where `c`
+        #      is the new-file line the removed text sat AFTER, so the surviving
+        #      neighbours are `c` and `c + 1`.  The five sub-cases below separate
+        #      every condition of the two branches, because a fixture on which
+        #      both probes land in one command witnesses neither probe, and one
+        #      on which every line is a helper witnesses neither filter.
+        multi = sd / "test_tier8_multi.sh"
+        base_text = (
+            "# a header comment, so a deletion ABOVE the first anchor exists\n"
+            'run_check "C" rg -n \\\n'
+            "  -e 'alpha' \\\n"
+            "  -e 'beta' \\\n"
+            "  -e 'gamma' \\\n"
+            "  c.lean\n"
+            # A SECOND anchor, untouched by sub-case (i): it is what makes that
+            # control decide the BRANCH rather than the fixture, since
+            # "attribute a deletion to every anchor in the file" passes a
+            # control that only re-checks the unmodified state.
+            "run_check \"D\" rg -n 'zeta' d.lean\n"
+            # ...and a run of ordinary shell text at the end, three lines, so an
+            # edit INSIDE it has a non-helper logical line on BOTH sides and
+            # selects no anchor at all -- which is the only thing the
+            # helper-name filter decides, on either branch.
+            "# ordinary shell text, three lines, so an edit inside it has a\n"
+            "# non-helper logical line on both sides: neither probe of a\n"
+            "# deletion here, and no addition here, may select an anchor.\n"
+        )
+        multi.write_text(base_text)
+        g("add", "-A")
+        g("commit", "-qm", "three")
+
+        def _after(text: str) -> set[tuple[str, int]]:
+            multi.write_text(text)
+            found = {n for n in added_anchor_lines("HEAD", sd, repo=root)
+                     if n[0] == "test_tier8_multi.sh"}
+            multi.write_text(base_text)
+            return found
+
+        def _after_deleting(physical: int) -> set[tuple[str, int]]:
+            kept = [ln for i, ln in enumerate(base_text.splitlines(keepends=True), 1)
+                    if i != physical]
+            return _after("".join(kept))
+
+        # (i) THE FINDING: one continuation of a multi-line anchor removed.  Both
+        #     probes land in that anchor, which is why it is exact here -- and
+        #     the exact-set form is the control: the untouched anchor below must
+        #     NOT come with it.
+        cut = _after_deleting(4)
+        if cut != {("test_tier8_multi.sh", 2)}:
+            return _fail(
+                f"deleting ONE continuation of a multi-line anchor contributed "
+                f"{sorted(cut)} rather than the edited anchor alone; a "
+                f"deletion-only hunk has no `+` line, so either the edited "
+                f"anchor gets no `diff` provenance and goes unswept, or the "
+                f"branch reports every anchor in the file instead of the "
+                f"anchors the hunk survives in"
+            )
+        # (ii) The line BEFORE the cut is load-bearing: deleting the trailing
+        #      anchor leaves `c` inside the anchor above and `c + 1` on the
+        #      comment run, so `c + 1` alone finds nothing.
+        if ("test_tier8_multi.sh", 2) not in _after_deleting(7):
+            return _fail(
+                "deleting an anchor whose successor is ordinary shell text "
+                "swept no anchor; the surviving command above the cut is `c`, "
+                "so dropping that probe leaves such a deletion attributed to "
+                "nothing"
+            )
+        # (iii) ...and the line AFTER it likewise: deleting the header comment
+        #       puts `c` at 0, which owns nothing, so `c` alone finds nothing.
+        if ("test_tier8_multi.sh", 1) not in _after_deleting(1):
+            return _fail(
+                "deleting the line ABOVE the first anchor swept no anchor; a "
+                "deletion at the start of a file has `c = 0`, so dropping the "
+                "`c + 1` probe leaves it attributed to nothing"
+            )
+        # (iv) A DELETION inside ordinary shell text: both probes land on
+        #      non-helper logical lines, so the helper-name filter is the only
+        #      thing keeping them out of the selection.
+        if _after_deleting(9):
+            return _fail(
+                f"deleting a line of ordinary shell text selected "
+                f"{sorted(_after_deleting(9))}; both surviving neighbours are "
+                f"comments, so the deletion branch is reporting logical lines "
+                f"that are not anchors at all"
+            )
+        # (v) ...and an ADDITION there likewise, which is the same filter on the
+        #     `+` branch -- unwitnessed until this cut, and the reason the `-`
+        #     branch inherited the gap.
+        if _after(base_text + "# a fourth line of ordinary shell text\n"):
+            return _fail(
+                "appending a line of ordinary shell text selected an anchor; "
+                "the added line's logical owner is a comment, so the addition "
+                "branch is reporting logical lines that are not anchors"
+            )
+        # ...and the last control: an unmodified suite contributes nothing at
+        # all, so neither branch is firing on files this cut did not touch.
+        if any(n == "test_tier8_multi.sh"
+               for n, _ in added_anchor_lines("HEAD", sd, repo=root)):
+            return _fail(
+                "an UNMODIFIED multi-line anchor contributed an added line, so "
+                "the deletion branch is reporting every anchor rather than the "
+                "anchors this cut edits"
+            )
+
     # 16. A `$` INSIDE SINGLE QUOTES IS A DOLLAR SIGN, NOT A VARIABLE.  The four
     #     rows 50-53 are the four spellings the raw-text variable scan falsely
     #     deferred on the real tree, and all four were anchors pinning THIS GATE's
@@ -1325,7 +1480,9 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         "reason, an unlexable command failing distinguishably, the `'…'\"'\"'…'` "
         "idiom lexed as one word whose reassembled value keeps its quote, and an "
         "untracked tier suite's anchors reported as added while a tracked "
-        "unmodified one's are not and an unreadable base is refused."
+        "unmodified one's are not and an unreadable base is refused, and a "
+        "DELETION-ONLY hunk attributed to the anchor it survives in while an "
+        "unmodified multi-line anchor contributes nothing."
     )
     return 0
 

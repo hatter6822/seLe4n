@@ -1,3 +1,78 @@
+## v0.35.143 — Two scanners located the wrong unit of the text they read: a deletion-only hunk and a filename boundary (PR #897 review)
+
+Both findings are this project's oldest rule — *a presence check is not a
+relation check* — at the one place a scanner chooses **which slice of text** to
+ask the question of, and both fail **open**, so the gate reports a clean sweep
+over exactly the edit it missed.
+
+**A deletion-only hunk carries no `+` line.**
+`select_changed_anchors.added_anchor_lines` recorded only `+` lines, and
+`git diff -U0` writes a pure deletion `@@ -4 +3,0 @@` — nonempty, and carrying
+nothing the loop reads.  So an anchor edited solely by *removing* a
+continuation (one `-e` pattern, one target) got no `diff` provenance; and
+because the changed path is the tier script rather than a file the command
+names, it got no `path` or `dir` provenance either.  The edited anchor was not
+swept at all.  Reproduced: deleting one `-e` line of a three-pattern anchor
+contributed `[]` before the fix and `[('test_tier9_probe.sh', 2)]` after.  That
+is `v0.35.140`'s finding one hunk kind over — there an added file's diff was
+empty, here a deletion's is nonempty and says nothing to a loop reading the
+wrong sign.
+
+Git's `+c` for a deletion is the new-file line the removed text sat *after*, so
+the surviving neighbours are `c` and `c + 1`, and `_deleted_hunk_owners` probes
+**both**: for a continuation deletion they are one command, which makes the
+attribution exact rather than merely safe; for a whole-anchor deletion they are
+two commands and both are re-run, which is the over-approximating direction and
+costs a run.  A neighbour whose logical line is not a `run_*` helper contributes
+nothing.
+
+**A fixture name is a path component.**  `check_fixture_consumers` asked
+`fixture in line`, so `foo.expected.sha256` — the companion file every row of
+`tests/fixtures/README.md` names in its own `Hash` cell — read as a mention of
+`foo.expected`, and `xfoo.expected` did too.  A `Used by` claim was therefore
+creditable to a gate that never opens the fixture, which is precisely the claim
+`v0.35.116` added the column check to decide.  `fixture_mentions_in` bounds the
+match on both sides with `FIXTURE_NAME_CHAR`, and the consumer loop now reads
+**every** bounded occurrence on a line rather than the first: a line spelling
+the path twice — a dead binding beside a real read — was decided by whichever
+came first, which is *a cardinality is not a set* one level below the boundary
+defect and needs its own witness.
+
+**The widening is free on the live tree**, which is what licenses the strict
+form in both cases: the fixture gate reports 30 files and **15** `Used by`
+claims before and after, byte-identical.
+
+**And the mutation run found a third condition, unwitnessed since it was
+written.**  The helper-name filter on the **`+`** branch — the thing that keeps
+ordinary shell text around an edit from selecting an anchor — was reachable by
+no self-test case, so dropping it passed the whole suite.  That is why the `-`
+branch inherited the same gap: *a condition no case can reach is
+indistinguishable from a wrong one*, and the fixture that witnesses it is the
+one shape no existing case had, a run of non-helper lines with an edit inside
+it.  Self-test case 15c is rebuilt around that: a ten-line fixture with a header
+comment, a three-pattern anchor, a single-line anchor and a three-line comment
+run, and five sub-cases that separate every condition — a continuation deletion
+(exact-set, so the untouched anchor below is the control), a deletion whose
+successor is ordinary text (witnesses the `c` probe), a deletion at the start of
+the file (witnesses `c + 1`, since `c = 0` owns nothing), a deletion inside the
+comment run and an addition there (each witnesses one branch's filter).  Six
+mutations, all caught.
+
+### Changed
+- `scripts/select_changed_anchors.py` — the `-` branch and
+  `_deleted_hunk_owners`; case 15c rebuilt with five sub-cases and two controls
+  (27 cases).
+- `scripts/scenario_catalog.py` — `FIXTURE_NAME_CHAR`, `fixture_mentions_in`,
+  and `fixture_mention_consumed` reading every bounded occurrence.
+- `scripts/tests/test_scenario_catalog.py` — two cases (a longer filename is not
+  this fixture's consumer; a second mention on one line is still read); 81 tests.
+- `scripts/test_tier3_invariant_surface.sh` — twelve anchors, nine positive and
+  three negative, each mutation-tested in both directions: the positives against
+  a token-preserving break of the relation (the helper called and its answer
+  discarded, one probe of two, the filter dropped, the left lookaround dropped,
+  the first occurrence only), the negatives by reintroducing the retired reading
+  as code.
+
 ## v0.35.142 — four scanners whose DOMAIN was derived from a resemblance
 
 PR #897's four remaining review findings are one defect in four costumes, and it

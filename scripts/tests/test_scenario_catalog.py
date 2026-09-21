@@ -1173,6 +1173,36 @@ class TestFixtureConsumers(unittest.TestCase):
             self.assertTrue(errors)
             self.assertIn("scenario-traceability manifest", " ".join(errors))
 
+    def test_a_LONGER_filename_is_not_this_fixture_s_consumer(self) -> None:
+        """Preserving: the cell names a real gate whose code really does contain
+        the fixture's name — as a *substring* of another filename.  A `.sha256`
+        companion is the sharp case: it pins the fixture against itself, which is
+        exactly what `v0.35.109` established cannot witness a comparison, so a row
+        naming a gate that only checksums the fixture would pass.  Every case here
+        keeps the token and breaks the relation (PR #897's review, `v0.35.143`)."""
+        for view in ('open("foo.expected.sha256")',
+                     'open("foo.expected.backup")',
+                     'open("xfoo.expected")',
+                     'read_to_string("my-foo.expected")'):
+            self.assertIsNone(sc.fixture_mention_consumed(view, "foo.expected"),
+                              view)
+        # CONTROLS, so this is about the EXTENSION and not about the search: the
+        # fixture itself, bare and under the path prefix every live row uses.
+        self.assertTrue(sc.fixture_mention_consumed(
+            'open("foo.expected")', "foo.expected"))
+        self.assertTrue(sc.fixture_mention_consumed(
+            'open("tests/fixtures/foo.expected")', "foo.expected"))
+
+    def test_a_SECOND_mention_on_one_line_is_still_read(self) -> None:
+        """Preserving: the line spells the path twice — a dead binding and a real
+        read — and the superseded `line.find` decided it by whichever came first,
+        so the read was invisible.  Its control is the same line with the read
+        removed, which must still be `False`."""
+        self.assertTrue(sc.fixture_mention_consumed(
+            'UNUSED = "foo.expected"; open("foo.expected")', "foo.expected"))
+        self.assertFalse(sc.fixture_mention_consumed(
+            'UNUSED = "foo.expected"', "foo.expected"))
+
     def test_the_real_tree_names_a_real_reader_for_every_fixture(self) -> None:
         """The claim holds on the shipped README, so the fix is not a refusal."""
         errors, claims = sc.check_fixture_consumers(

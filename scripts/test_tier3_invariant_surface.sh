@@ -17795,4 +17795,47 @@ run_check "INVARIANT" rg -F -n 'def _probe_building_calls(tree: ast.AST) -> list
 run_check "INVARIANT" rg -F -n '    out.extend((call, "builder") for call in _probe_building_calls(tree))' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '    "builder": "a probe-signalling literal is handed to a plain-name call whose "' scripts/check_declaration_kind_askers.py
 
+# --- `v0.35.143` (PR #897's review): two scanners located the wrong UNIT of the
+# text they read -- a hunk kind in one, a filename boundary in the other -- and
+# both fail OPEN, so the gate reports a clean sweep over the edit it missed.
+# (1) A DELETION-ONLY hunk carries no `+` line, so an anchor edited by REMOVING a
+# continuation got no `diff` provenance; and the changed path is the tier script
+# rather than a file the command names, so it got no `path` or `dir` provenance
+# either.  Git's `+c` is the new-file line the removed text sat AFTER, so the
+# surviving neighbours are `c` and `c + 1` -- both, because a continuation
+# deletion has them in one command while a whole-anchor deletion has them in two.
+run_check "INVARIANT" bash -lc 'rg -U -n "if line.startswith\(\x22-\x22\):\n                for first in _deleted_hunk_owners\(owner, logical, lineno\):\n                    out.add\(\(p.name, first\)\)\n                continue" scripts/select_changed_anchors.py'
+# ...and the pre-fix reading -- a `-` line skipped like a diff header -- must not
+# come back.  It keeps every token of the loop around it, so the anchor is over
+# the branch rather than over a name.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if line.startswith\(\x22-\x22\):\n                continue" scripts/select_changed_anchors.py'
+# ...and the helper-name filter is on BOTH branches, so ordinary shell text
+# around an edit selects no anchor.  It was unwitnessed on the `+` branch since
+# it was written, which is why the `-` branch inherited the gap: a condition no
+# case can reach is indistinguishable from a wrong one.
+run_check "INVARIANT" bash -lc 'rg -U -n "for probe in \(lineno, lineno \+ 1\)\n        if \(first := owner.get\(probe\)\) is not None\n        and HELPER_NAME_RE.match\(logical\[first\].strip\(\)\)" scripts/select_changed_anchors.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "if _after_deleting\(9\):\n            return _fail\(" scripts/select_changed_anchors.py'
+run_check "INVARIANT" rg -F -n 'if _after(base_text + "# a fourth line of ordinary shell text' scripts/select_changed_anchors.py
+# (2) A fixture name is a PATH COMPONENT, so a mention of it is bounded on both
+# sides: `foo.expected.sha256` is the companion file a row names in its own cell
+# and `xfoo.expected` is a different fixture, and an unbounded search read either
+# as this fixture's consumer -- crediting a `Used by` claim to a gate that never
+# opens it, which is the very claim `v0.35.116` added the column check to decide.
+# The CONSTANT is pinned by its two USES below rather than by its definition: a
+# pin on a definition is a presence check even when the symbol is live, and what
+# its class must contain (`.` and `-` continue a filename) is witnessed by the
+# two unit tests, which are themselves anchored.
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mentions_in\([^\n]*(\n([ \t][^\n]*)?)*rf\x22\(\?<\!\{FIXTURE_NAME_CHAR\}\)\{re.escape\(fixture\)\}\(\?\!\{FIXTURE_NAME_CHAR\}\)\x22\)" scripts/scenario_catalog.py'
+# ...and EVERY bounded occurrence on a line is read, not the first: a line that
+# spells the path twice -- a dead binding beside a real read -- was decided by
+# whichever came first, which is a cardinality defect one level below the
+# boundary one and needs its own witness.
+run_check "INVARIANT" bash -lc 'rg -U -n "for at in fixture_mentions_in\(line, fixture\):\n            mentioned = True" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n '    def test_a_LONGER_filename_is_not_this_fixture_s_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_SECOND_mention_on_one_line_is_still_read(self) -> None:' scripts/tests/test_scenario_catalog.py
+# ...and the retired unbounded reading must not return: `fixture in line` and a
+# bare `line.find(fixture)` each keep the filename token and drop the relation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if fixture in line:" scripts/scenario_catalog.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "at = line.find\(fixture\)" scripts/scenario_catalog.py'
+
 finalize_report

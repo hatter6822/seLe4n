@@ -759,6 +759,41 @@ def word_occurrences(text: str, word: str) -> int:
         r"(?<![A-Za-z_0-9])" + re.escape(word) + r"(?![A-Za-z_0-9])", text))
 
 
+#: A filename character, for deciding whether a mention of a fixture IS that
+#: fixture.  `/` is deliberately absent, so a path prefix still names the file.
+FIXTURE_NAME_CHAR = "[A-Za-z0-9._-]"
+
+
+def fixture_mentions_in(line: str, fixture: str) -> list[int]:
+    """Every offset at which `line` names `fixture` AS A FILENAME.
+
+    A fixture name is a **path component**, so a mention of it is only a mention
+    when nothing extends it on either side.  `line.find(fixture)` is a substring
+    test, and a substring of a filename is a *different* filename: `open(
+    "foo.expected.sha256")` and `open("xfoo.expected")` both contained
+    `foo.expected` and both satisfied the claim that a gate reads the fixture
+    (PR #897's review, `v0.35.143`).  The companion is the sharp case, because a
+    `.sha256` pins a fixture against itself and is exactly what `v0.35.109`
+    established cannot witness a comparison -- so the row could name a gate that
+    checksums the fixture and never opens it.
+
+    `/` is not a boundary character, so `tests/fixtures/foo.expected` still names
+    it; every other extension -- a suffix (`.sha256`, `.backup`), a prefix
+    (`xfoo.expected`) or a hyphenated sibling (`my-foo.expected`) -- is refused.
+
+    **Measured before taking the strict form**, as `v0.35.116` was: over the
+    shipped README the bounded search leaves the check at 0 errors and 15 claims,
+    unchanged, so every live consumer idiom still validates and the boundary costs
+    the tree nothing.  It is the same relation the row side has had since
+    `v0.35.137` (`test_a_substring_mention_is_not_a_row`), which is where the
+    consumer side should have got it: a fix applied at one site and not its
+    sibling.
+    """
+    pattern = re.compile(
+        rf"(?<!{FIXTURE_NAME_CHAR}){re.escape(fixture)}(?!{FIXTURE_NAME_CHAR})")
+    return [m.start() for m in pattern.finditer(line)]
+
+
 def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
     """Does `view` mention `fixture` somewhere that is not a dead binding?
 
@@ -788,20 +823,22 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
     lines = view.splitlines()
     mentioned = False
     for index, line in enumerate(lines):
-        at = line.find(fixture)
-        if at < 0:
-            continue
-        mentioned = True
-        name = consumer_bound_name(lines, index, at)
-        if name is None:
-            # Binds nothing -- an argument, a comparison, a call, or a STANDALONE
-            # LITERAL, and only the first three are uses (`v0.35.138`).
-            if consumer_mention_is_operand(
-                    consumer_mention_head(lines, index, at)):
+        # EVERY bounded occurrence on the line, not the first: a line that spells
+        # the path twice -- a dead binding beside a real read -- used to be decided
+        # by whichever came first (`v0.35.143`).
+        for at in fixture_mentions_in(line, fixture):
+            mentioned = True
+            name = consumer_bound_name(lines, index, at)
+            if name is None:
+                # Binds nothing -- an argument, a comparison, a call, or a
+                # STANDALONE LITERAL, and only the first three are uses
+                # (`v0.35.138`).
+                if consumer_mention_is_operand(
+                        consumer_mention_head(lines, index, at)):
+                    return True
+                continue
+            if word_occurrences(view, name) > 1:
                 return True
-            continue
-        if word_occurrences(view, name) > 1:
-            return True
     return False if mentioned else None
 
 
