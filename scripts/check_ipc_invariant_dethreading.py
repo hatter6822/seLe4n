@@ -337,7 +337,14 @@ MACHINERY_PINS = {
     # One `run_cmd`, which derives the state-transformer domain, partitions it
     # by reachability from the committing exports and reconciles the
     # unreachable half against its pin.  It mints no declaration.
-    ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 1,
+    # 2 since `v0.35.130`: the census itself, and the `Lean.addDecl` that mints
+    # the range-less witness the compiler-generated classification needs.  A
+    # declaration a `def` cannot produce -- the property being witnessed is the
+    # absence of the source position the elaborator always supplies -- so it has
+    # to be minted, and minting is exactly what this pin exists to review.  It
+    # defines one closed constant and no command, and it is named in
+    # `nonExecutedTransitions`, so the census that would not see it does.
+    ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 2,
     # The census's own loop witness: a `local macro` minting a hygienic
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.

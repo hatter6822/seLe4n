@@ -16845,7 +16845,7 @@ run_negative_check "INVARIANT" rg -F -n '        got = capture(root)' scripts/ch
 # the domain before its result type was read -- and it was redundant besides: of
 # the 4 `initFn` constants here, 0 are outside `isAuxiliary`, a module's init
 # being macro-scoped.
-run_check "INVARIANT" rg -F -n '      || s == "_sunfold" || s == "_unsafe_rec" || s == "_sizeOf_inst"' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  ["_cstage1", "_cstage2", "_flat_ctor", "_sunfold", "_unsafe_rec", "_sizeOf_inst"]' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_negative_check "INVARIANT" rg -F -n 's.startsWith "initFn"' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n 'private def initFnCensusWitnessTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # (2) AN ERASED DEPENDENCY IS NOT A CALL.  A committing path that supplies a proof
@@ -17030,8 +17030,8 @@ run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabili
 # ...and the widening asks the ENVIRONMENT what it generated, because reducing a
 # `T.noConfusion`'s result mentions the constructor fields' types.  Complementary to
 # the component list rather than a replacement for it, measured both ways.
-run_check "INVARIANT" rg -F -n '  Lean.isAuxRecursor env n || Lean.isNoConfusion env n ||' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
-run_check "INVARIANT" rg -F -n '  Lean.Meta.isMatcherCore env n ||' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      || Lean.isAuxRecursor env n || Lean.isNoConfusion env n' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      || Lean.Meta.isMatcherCore env n then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 # (2) EXHAUSTION IS AN ERROR, not a smaller answer.  The bound's own docstring already
 # said a partial carrier set under-approximates the domain; the loop then returned it
 # as complete, so a transition holding an omitted wrapper was in neither set.  A rule
@@ -17126,6 +17126,58 @@ run_check "INVARIANT" rg -F -n '_FIXTURE_UNMODELLED_TRANSFORM = ' scripts/check_
 run_check "INVARIANT" rg -F -n '_FIXTURE_BOUNDED_HOLE_NEIGHBOURS = ' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '_FIXTURE_AMBIGUOUS_TEMPLATE_NAME = ' scripts/check_declaration_kind_askers.py
 run_check "INVARIANT" rg -F -n '_FIXTURE_AMBIGUOUS_FRAGMENT = ' scripts/check_declaration_kind_askers.py
+
+
+# ===========================================================================
+# v0.35.130 (PR #897 review): a NAME is still not a fact -- the compiler-generated
+# classification asks the environment, over the FINAL component
+# ===========================================================================
+# Two independent silent misses in the one clause `v0.35.125` kept.  Lean accepts
+# `_flat_ctor` as an ordinary identifier, so a contributor's transformer with that
+# name was excluded before its result type was read; and `components.any` excludes
+# every declaration NESTED beneath a namespace of such a name, whatever it is
+# called.  Both are fail-open in the direction a census cannot report: the constant
+# is never examined, no pin moves, and the reconciliation goes on saying its whole
+# domain is accounted for.
+# ---------------------------------------------------------------------------
+# (1) THE ENVIRONMENT DECIDES, over a name that merely NARROWS.  A declaration the
+# compiler minted carries no declaration range; one a contributor wrote does.  The
+# two conjuncts are both load-bearing -- the name alone excludes a user's
+# `_flat_ctor`, the range alone excludes every range-less declaration -- and each
+# has its own witness below.
+run_check "INVARIANT" rg -F -n 'def isCompilerGenerated [Monad m] [MonadEnv m] (n : Name) : m Bool := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  if !hasReservedFinalComponent n then return false' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  return (← Lean.findDeclarationRangesCore? n).isNone' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...over the FINAL component, because a reserved spelling is a SUFFIX the compiler
+# appends.  Measured: all 830 of this environment's reserved-component constants
+# carry it finally, so the narrowing excludes nothing that is really generated.
+run_check "INVARIANT" rg -F -n 'def hasReservedFinalComponent (n : Name) : Bool :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  match n.components.getLast? with' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'def reservedFinalComponents : List String :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the `any`-component reading must not come back.
+run_negative_check "INVARIANT" rg -F -n '  n.components.any fun c =>' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n '    s == "_cstage1" || s == "_cstage2" || s == "_flat_ctor"' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (2) THE THREE PLANTS, because the live tree gains none: the domain moves 580 ->
+# 583 and every one of the three is planted.  A user-written transformer whose FINAL
+# component is reserved decides the RANGE conjunct; one nested beneath a reserved
+# namespace decides the scope; and a MINTED, range-less transformer with an ordinary
+# final component decides the NAME conjunct and the `any`-vs-`last` reading at once
+# -- the two the first two plants cannot reach, because the range test rescues them.
+run_check "INVARIANT" rg -F -n 'private def _flat_ctor (st : Model.SystemState) : Model.SystemState := st' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def _cstage1.censusWitnessNestedTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    name := `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  Lean.addDecl (.defnDecl {' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...each of them in the pin, which is what makes it reach the reconciliation
+# rather than merely elaborate.
+run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus._flat_ctor' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessNestedTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (3) AND THE ENVIRONMENT IS ASKED THROUGH ITS OWN READER.  `isStateTransformer`
+# no longer threads an `Environment` the classification does not use, so the two
+# cannot disagree about which environment answers.
+run_check "INVARIANT" rg -F -n 'def isStateTransformer (carriers : NameSet) (n : Name)' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  if !isProjectConstant n || (← isCompilerGenerated n) then return false' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n '  if !isProjectConstant n || isCompilerGenerated env n then return false' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 
 
 finalize_report

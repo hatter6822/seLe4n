@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.129.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.130.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1751,6 +1751,36 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   half; a substitution **assigned** to a name beside the one that is returned; and an
   ambiguous name that is *not* probe text, since the ambiguous-probe refusal fires
   first for every name that is.  **Run the mutations before believing the cases.**
+
+  **And when TWO conditions guard one question, each needs a witness the other
+  cannot rescue** (PR #897 review, `v0.35.130`).  `v0.35.125` deleted the `initFn`
+  prefix and kept the component list on the stated ground that its members are
+  *whole* components the compiler reserves rather than prefixes of user names.  True,
+  and not enough twice over: Lean accepts `_flat_ctor` as an ordinary identifier, so
+  a contributor's transformer with that name was excluded before its result type was
+  read; and `components.any` excludes every declaration **nested beneath a namespace**
+  of such a name, whatever it is called.  So the remedy is the one this section keeps
+  arriving at — the name *narrows* and the **environment decides**: a reserved
+  spelling is a suffix, so the question is the FINAL component, and a declaration the
+  compiler minted carries **no declaration range**, which
+  `Lean.findDeclarationRangesCore?` answers.
+
+  What is new is what the mutation run then showed.  With the range test in place,
+  **neither** the `any`→`last` narrowing nor the name test itself was observable:
+  every user-written plant carries a range, so restoring `components.any` and
+  deleting the name test each passed every case.  Two conjuncts, one of them
+  witnessed.  *A condition no case can reach is indistinguishable from a wrong one*,
+  and the pair rescuing each other is how a two-condition guard hides a dead half —
+  so the witness has to be the shape **neither** existing plant can take: a
+  transformer **minted** through `Lean.addDecl`, with no declaration range, an
+  ordinary final component, under a reserved namespace.  It decides both mutations at
+  once, because it is the only input on which the two conjuncts disagree.
+
+  Generalising: when a guard is a conjunction, ask of each conjunct *what input does
+  this one alone reject?* — and if every fixture is rejected by its partner too, the
+  conjunct is unwitnessed however plausible it reads.  The plant will usually have to
+  be constructed rather than written, because the property being witnessed is
+  precisely the one the ordinary way of writing code cannot produce.
 
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
