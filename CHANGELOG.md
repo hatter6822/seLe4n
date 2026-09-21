@@ -1,3 +1,69 @@
+## v0.35.145 — WS-RR RR8.12 Cut 8b-i: the `.replyRecv` arm's write sets are production, beside their transitions
+
+**The plan row's stated reason was half the obstacle, and measuring it is what
+this cut is.**  Cut 7 left `.receive` and `.replyRecv` undeclared because "their
+cores come from the migration rather than from a confinement write set".
+`replyRecvBodyWriteSet` **is** a pre-state-computable confinement write set — it
+takes the pre-state and the syscall's own operands and evaluates every leg
+internally — so what actually blocked the arm from declaring a scheduler-domain
+footprint was **layering**, and the measurement names it exactly:
+
+- `replyRecvBodyWriteSet`, `replyRecvPostReceiveDonationWriteSet`,
+  `replyRecvServerDescheduleWriteSet`, `replyRecvDescheduleAndWalkWriteSet` and
+  `receiveLegPipHandoffWriteSet` were declared in the **staged**
+  `InformationFlow/NonInterferenceCrossCore.lean`, which imports `Kernel.API` and
+  which no production module may import;
+- so did `pipChainWriteSet`, which all of them compose;
+- while the arm's spine — `replyRecvBody`, `replyRecvPopDonation`,
+  `replyRecvPostReceiveDonation`, `replyRecvServerDeschedule` — sits in
+  `Kernel/API.lean`.
+
+That is *when a question has one owner and an asker that cannot see it, the owner
+is in the wrong layer*, for the **fifth** time in this row: Cuts 5 and 7 moved
+four others for the same reason.
+
+**Each write set moves beside the transition it describes**, which is the rule
+rather than a convenience — `pipChainWriteSet` to
+`Scheduler/PriorityInheritance/Propagate.lean` (beside `pipBoostWithWake` and
+`propagatePipChainCrossCore`, whose fuel recursion it mirrors),
+`receiveLegPipHandoffWriteSet` to `IPC/Operations/Donation.lean` (beside
+`applyReceiveLegPipHandoff`), and the four `.replyRecv` ones to `API.lean`.
+Every one keeps the `SeLe4n.Kernel` namespace it was declared in, so the move
+**renames nothing** and all 23 + 61 + 33 + 28 + 22 references in the tree are
+untouched.
+
+**The confinement theorems stay staged**, and that is the split the relocation
+turns on: a write set is a fact about the transition, while
+`observableSlotsConfinedToCores` is the staged module's own predicate.  Only the
+*subject* moves; the SM8.B claim does not.
+
+Behaviour-neutral and inert: nothing consumes the relocated definitions yet
+(Cut 8b-ii builds the footprint from them), both library roots and
+`tests/SmpInformationFlowSuite` build, and the golden trace is untouched because
+no transition changed.
+
+### Changed
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean`,
+  `SeLe4n/Kernel/IPC/Operations/Donation.lean`, `SeLe4n/Kernel/API.lean` — the six
+  relocated write sets, with `Concurrency.CoreId` spelled explicitly in `API.lean`
+  (which opens only `bootCoreId`) rather than widening a 7 600-line file's opens.
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` — six tombstones
+  naming the new home and the reason.
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` — the RR8.12 row's premise
+  corrected in place: *a premise that survives the cut it motivated will be cited
+  by the next one*.
+- `scripts/test_tier3_invariant_surface.sh` — fourteen anchors: six positives at
+  the new homes, six negatives refusing a re-declaration in the staged module
+  (each mutation-tested by reintroducing the definition there), and two positives
+  pinning that the confinement theorems did **not** move.  **Seven pre-existing
+  anchors watched the moved definitions and all seven were repointed**, which is
+  the *sweep what was pinning the thing you deleted* rule with a measurement: the
+  satisfiability gate named three of them (a pattern asserted both present and
+  absent over one target), a fourth came out of the same run, and the remaining
+  three — relation anchors over each definition's **body**, which no
+  present/absent comparison can see — were found by the changed-file sweep
+  actually running them.  Three artefacts, three findings, in that order.
+
 ## v0.35.144 — A fixture is opened by a program, and a probe's Lean source is one text (PR #897 review)
 
 Two more scanners credited a claim on the strength of text they had not read as

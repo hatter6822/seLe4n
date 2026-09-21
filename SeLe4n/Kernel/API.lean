@@ -1659,6 +1659,125 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                             prevCaller 0)
                           wokenSender?)
 
+
+-- ============================================================================
+-- WS-RR RR8.12 Cut 8b: the `.replyRecv` arm's per-core write sets
+-- ============================================================================
+--
+-- Relocated from the STAGED `InformationFlow/NonInterferenceCrossCore.lean` at
+-- `v0.35.145`, beside the transitions they describe.  A write set declared in a
+-- staged module is one a **production** scheduler-domain footprint cannot read,
+-- and Cut 7's rule is that an arm's footprint is `schedFootprintOfCores` of the
+-- arm's own SM8.B write set rather than of a second resolution of the same cores
+-- -- so the footprint and the confinement claim cannot name different cores.
+-- That is the same layering correction Cuts 5 and 7 made four times over: *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  The CONFINEMENT theorems stay in the staged module, because
+-- `observableSlotsConfinedToCores` is its predicate.
+--
+-- They keep the `SeLe4n.Kernel` namespace they were declared in, so the move
+-- renames nothing and every reference in the tree is untouched.
+
+/-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
+deschedule the now-passive recorded server on its own core, then revert its chain
+from the post-deschedule state. -/
+def replyRecvDescheduleAndWalkWriteSet (recordedServer : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+  -- The deschedule's cores come from the SAME resolver the step uses, not from
+  -- `serverCore`: this arm removed the server at `determineExecutingCore`'s
+  -- answer until round 11, so the footprint named a core the transition did not
+  -- write and omitted the one it did.
+  descheduleAtPlacementCores st recordedServer
+    ++ pipChainWriteSet (descheduleAtPlacement st recordedServer)
+      recordedServer serverCore
+      (descheduleAtPlacement st recordedServer).objectIndex.length
+/-- **PR #895 review round 8**: the cores `replyRecvServerDeschedule` may write.
+
+None on a non-delegated reply, where it is the identity because the receiver
+*is* the recorded server and keeps the new request's budget; the server's own
+core on a delegated one, where it is a real deschedule. -/
+def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)
+    (st : SystemState) : List Concurrency.CoreId :=
+  if recordedServer = tid then []
+  else descheduleAtPlacementCores st recordedServer
+/-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
+half may write**, mirroring its own control flow.  Three shapes: the
+never-donated arm walks the chain from its pre-state; the rendezvous arm donates
+(per-core silent) and walks from the post-donation state; the remaining arm
+deschedules the recorded server on its own core first.  The fail-closed arm
+produces no post-state at all, so its entry is `[]` and the confinement theorem's
+hypothesis rules it out.
+
+The arm is selected by `returned?` — the context the pop handed back — rather
+than by re-reading a binding the pop has already cleared, which is the same
+reason the transition takes it as an argument. -/
+def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (returned? : Option SeLe4n.SchedContextId)
+    (st : SystemState) : List Concurrency.CoreId :=
+  match returned? with
+  | none => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
+  | some _ =>
+      if rendezvousDequeuedCall st nextThread then
+        match applyRendezvousCallDonation
+            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
+        | .error _ => []
+        | .ok st2 =>
+            -- The deschedule's cores come FIRST, because it runs first: on a
+            -- delegated reply the recorded server is taken off its own core
+            -- before the new client's context is donated to the invoker
+            -- (PR #895 review round 8).  A footprint that omitted them would be
+            -- false of exactly that arm.
+            replyRecvServerDescheduleWriteSet tid recordedServer st ++
+              pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+      else replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st
+/-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
+caller's home core, the receive leg's set at the reply's post-state, the
+donation leg's set at the receive's post-state, and (**WS-OD OD3.14**) the
+receive leg's priority hand-off at the donation return's post-state. Each leg is
+read at the state that leg actually runs at, which is the discipline
+`endpointCallDispatchChainWriteSet` established: reading a later leg at `st`
+would name a different chain.
+
+The fourth leg is empty on every **non-delegated** reply, because there the
+donation return's own walk already started at the receiver and OD3.14's gate
+makes this step the identity — so no pin taken against the three-leg set moves
+on any state a non-delegated `.replyRecv` reaches. -/
+def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+  determineTargetCore st prevCaller ::
+    (match endpointReplyOnCore receiver prevCaller msg executingCore st with
+     | (_, .error _) => []
+     | (st1, .ok _) =>
+        -- **WS-RM (`v0.35.6`)**: the pop runs between the legs and writes no core
+        -- (`replyRecvPopDonation_confinedToCores`), so it contributes nothing here
+        -- — but the states the later legs branch on are its post-state, and a
+        -- write set that mirrors a transition has to read the states it reads.
+        -- **WS-HP HP4.5**: keyed on the frame and the answered caller, as the
+        -- transition is.
+        (match replyRecvPopDonation replyId prevCaller st1 with
+         | .error _ => []
+         | .ok (returnedSc?, st1p) =>
+            endpointReceiveDualWriteSet st1p endpointId executingCore ++
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+                  receiverCspaceRoot receiverSlotBase executingCore st1p with
+               | (_, .error _) => []
+               | (st2, .ok (nextThread, _, _)) =>
+                  replyRecvPostReceiveDonationWriteSet receiver
+                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                    (determineExecutingCore st
+                      ((recordedReplyServer? st prevCaller).getD receiver)) returnedSc? st2 ++
+                    (match replyRecvPostReceiveDonation receiver
+                        ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                        (determineExecutingCore st
+                          ((recordedReplyServer? st prevCaller).getD receiver))
+                        returnedSc? st2 with
+                     | .error _ => []
+                     | .ok (_, st3) =>
+                        receiveLegPipHandoffWriteSet st3 receiver nextThread
+                          ((recordedReplyServer? st prevCaller).getD receiver) executingCore))))
+
 -- ============================================================================
 -- Syscall soundness theorems
 -- ============================================================================

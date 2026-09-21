@@ -1187,6 +1187,23 @@ def applyReceiveLegPipHandoff (st : SystemState) (receiver dequeued : SeLe4n.Thr
     applyReceiverPipHandoff st receiver executingCore
   else st
 
+/- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: relocated from the staged
+`InformationFlow/NonInterferenceCrossCore.lean`, beside the step it describes, so
+a production scheduler footprint can read it.  Its confinement theorem stays
+there.  The `SeLe4n.Kernel` namespace is unchanged, so nothing is renamed. -/
+/-- **WS-OD OD3.14: the cores the receive leg's hand-off may write.**
+
+Unlike the receive arm's `receiveRendezvousHandoffWriteSet`, this one *is*
+computable from the pre-state: the step runs at the very state it reads, because
+the arm that calls it has already committed its donation return. -/
+def receiveLegPipHandoffWriteSet (st : SystemState)
+    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) :
+    List CoreId :=
+  if alreadyWalked == receiver then []
+  else if rendezvousDequeuedCall st dequeued then
+    pipChainWriteSet st receiver executingCore st.objectIndex.length
+  else []
+
 /-- WS-OD OD3.14: a **non-delegated** reply changes nothing — the arm's earlier
 walk started at the receiver, so this step is the identity and every result taken
 before OD3.14 survives verbatim on the states it held for. -/

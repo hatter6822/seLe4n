@@ -2116,14 +2116,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ 
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
 # ...and the write set names the cores that deschedule writes, or it is false of
 # exactly that arm.
-run_check "INVARIANT" rg -n '^def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvServerDescheduleWriteSet tid recordedServer st" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" rg -n '^def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvServerDescheduleWriteSet tid recordedServer st" SeLe4n/Kernel/API.lean'
 # ...and the footprint reads the SAME resolver the transition does, so the two
 # cannot name different cores -- which is how round 9's cut went wrong.  Both
 # halves delegate, and `placedCoreOf?` is read in exactly the two definitions
 # anchored below: a resolver spelled a third time is a third answer.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvDescheduleAndWalkWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvServerDescheduleWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvDescheduleAndWalkWriteSet[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st recordedServer" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacementCores[^\n]*(\n([ \t][^\n]*)?)*placedCoreOf\? st tid" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
 # The guard IS the donation's caller-blocked obligation, not a second reading
 # of it: a receiving arm discharges the hypothesis from the predicate it
@@ -2231,7 +2231,7 @@ run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores'
 # The walk is not per-core silent, so `.replyRecv`'s declared write set gains a
 # FOURTH leg, read at the state that leg runs at -- the discipline the module
 # states for the other three.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBodyWriteSet[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBodyWriteSet[^\n]*(\n([ \t][^\n]*)?)*receiveLegPipHandoffWriteSet st3 receiver nextThread" SeLe4n/Kernel/API.lean'
 # The SM3.C walker's obligation list grows with the walks, not with the
 # syscalls: `.replyRecv` declares TWO chain starts because it performs two.
 run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_endpointReceive' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
@@ -5415,7 +5415,7 @@ run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly' SeLe4n/Kernel/S
 run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvBody_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvBody_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -5443,7 +5443,7 @@ run_negative_check "INVARIANT" rg -n 'decide \(\(st..scheduler.runQueueOnCore c\
 # — it also runs the donation and the PIP chain walk, and the chain walk
 # re-buckets on each boosted server's HOME core.  Bounding the live arm needs
 # the chain walk's own write set, so these pin it and the union.
-run_check "INVARIANT" rg -n '^def pipChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def pipChainWriteSet' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def endpointCallLiveWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -17883,5 +17883,32 @@ run_check "INVARIANT" rg -F -n '_FIXTURE_CANONICAL_SUBSTITUTION = ' scripts/chec
 # than the gate being weakened to admit it.
 run_check "INVARIANT" rg -F -n 'BASE_LEAN_BLOCK_TEMPLATE = BASE_LEAN + LEAN_BLOCK_SENTINEL' scripts/check_tlbi_broadcast_discipline.py
 run_negative_check "INVARIANT" rg -F -n '] = BASE_LEAN + block' scripts/check_tlbi_broadcast_discipline.py
+
+# --- `v0.35.145` (WS-RR RR8.12 Cut 8b-i): the `.replyRecv` arm's write sets are
+# PRODUCTION, beside the transitions they describe.  Six definitions were declared
+# in the STAGED `InformationFlow/NonInterferenceCrossCore.lean`, which a production
+# scheduler footprint cannot read, while the arm's spine sits in `API.lean` -- the
+# layering rule Cuts 5 and 7 applied four times over, for the fifth time.  Each
+# keeps the `SeLe4n.Kernel` namespace it was declared in, so the move renames
+# nothing.
+run_check "INVARIANT" rg -F -n 'def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet (st : SystemState)' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -F -n 'def replyRecvDescheduleAndWalkWriteSet (recordedServer : SeLe4n.ThreadId)' SeLe4n/Kernel/API.lean
+# ...and none of the six may be declared in the staged module again: a write set
+# there is one the production footprint cannot read, which is the whole finding.
+run_negative_check "INVARIANT" rg -F -n 'def pipChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def replyRecvBodyWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def replyRecvPostReceiveDonationWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def replyRecvServerDescheduleWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def replyRecvDescheduleAndWalkWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# ...while the CONFINEMENT theorems stay there, because
+# `observableSlotsConfinedToCores` is that module's predicate and the relocation
+# is of the write sets alone.
+run_check "INVARIANT" rg -F -n 'theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -F -n 'theorem pipChainWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 finalize_report

@@ -903,5 +903,27 @@ theorem propagatePipChainCrossCore_getTcb?_isSome :
           simpa using propagatePipChainCrossCore_getTcb?_isSome n
             (pipBoostWithWake st startTid ec).1 nextServer x ec hStepInv hStepSome
 
-
 end SeLe4n.Kernel.PriorityInheritance
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (CoreId)
+open SeLe4n.Kernel.PriorityInheritance
+
+/-- SM8.B.2: **the cores a cross-core PIP chain walk may write** — the home core
+of every member the walk reaches, computed from the pre-state by mirroring the
+walk's own fuel recursion. The state is threaded exactly as
+`propagatePipChainCrossCore` threads it, so the two agree member for member. -/
+def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : Nat → List CoreId
+  | 0 => []
+  | fuel + 1 =>
+      determineTargetCore st startTid ::
+        (match blockingServer st startTid with
+         | some nextServer =>
+             pipChainWriteSet (pipBoostWithWake st startTid executingCore).1 nextServer
+               executingCore fuel
+         | none => [])
+
+end SeLe4n.Kernel

@@ -998,20 +998,14 @@ theorem pipBoostWithWake_confinedToCores (st : SystemState) (tid : SeLe4n.Thread
       [determineTargetCore st tid] :=
   updatePipBoostOnCore_confinedToCores st (determineTargetCore st tid) tid
 
-/-- SM8.B.2: **the cores a cross-core PIP chain walk may write** — the home core
-of every member the walk reaches, computed from the pre-state by mirroring the
-walk's own fuel recursion. The state is threaded exactly as
-`propagatePipChainCrossCore` threads it, so the two agree member for member. -/
-def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)
-    (executingCore : CoreId) : Nat → List CoreId
-  | 0 => []
-  | fuel + 1 =>
-      determineTargetCore st startTid ::
-        (match blockingServer st startTid with
-         | some nextServer =>
-             pipChainWriteSet (pipBoostWithWake st startTid executingCore).1 nextServer
-               executingCore fuel
-         | none => [])
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `pipChainWriteSet` moved to
+-- `Scheduler/PriorityInheritance/Propagate.lean`, beside the walk it mirrors.
+-- It was declared here, in a STAGED module, and the `.replyRecv` write sets that
+-- compose it have to reach production so the arm can declare a scheduler-domain
+-- footprint -- *when a question has one owner and an asker that cannot see it,
+-- the owner is in the wrong layer*, for the fifth time in this row (Cuts 5 and 7
+-- moved four others for the same reason).  It keeps the `SeLe4n.Kernel`
+-- namespace it was declared in, so the move renames nothing.
 
 /-- SM8.B.2 (**SM5.F, cross-core**): the chain walk's per-core writes stay inside
 `pipChainWriteSet`. By induction on the fuel, composing one
@@ -1281,18 +1275,11 @@ theorem applyReceiveRendezvousHandoff_confinedToCores (st stDon st' : SystemStat
         (propagatePipChainCrossCore_confinedToCores executingCore
           stDon'.objectIndex.length stDon' receiver)
 
-/-- **WS-OD OD3.14: the cores the receive leg's hand-off may write.**
-
-Unlike the receive arm's `receiveRendezvousHandoffWriteSet`, this one *is*
-computable from the pre-state: the step runs at the very state it reads, because
-the arm that calls it has already committed its donation return. -/
-def receiveLegPipHandoffWriteSet (st : SystemState)
-    (receiver dequeued alreadyWalked : SeLe4n.ThreadId) (executingCore : CoreId) :
-    List CoreId :=
-  if alreadyWalked == receiver then []
-  else if rendezvousDequeuedCall st dequeued then
-    pipChainWriteSet st receiver executingCore st.objectIndex.length
-  else []
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `receiveLegPipHandoffWriteSet` moved to `Kernel/IPC/Operations/Donation.lean`, beside the
+-- transition it describes.  A write set declared in a STAGED module is one the
+-- production scheduler footprint cannot read, which is the layering rule Cuts 5
+-- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
+-- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
 /-- **WS-OD OD3.14**: the receive leg's hand-off writes only inside that set —
 nothing at all on the two identity arms, and the chain walk's own cores on the
@@ -1876,19 +1863,11 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
 -- no core (`replyRecvPopDonation_confinedToCores`), so the arm's declared set is
 -- unchanged by the move.
 
-/-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
-deschedule the now-passive recorded server on its own core, then revert its chain
-from the post-deschedule state. -/
-def replyRecvDescheduleAndWalkWriteSet (recordedServer : SeLe4n.ThreadId)
-    (serverCore : CoreId) (st : SystemState) : List CoreId :=
-  -- The deschedule's cores come from the SAME resolver the step uses, not from
-  -- `serverCore`: this arm removed the server at `determineExecutingCore`'s
-  -- answer until round 11, so the footprint named a core the transition did not
-  -- write and omitted the one it did.
-  descheduleAtPlacementCores st recordedServer
-    ++ pipChainWriteSet (descheduleAtPlacement st recordedServer)
-      recordedServer serverCore
-      (descheduleAtPlacement st recordedServer).objectIndex.length
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvDescheduleAndWalkWriteSet` moved to `Kernel/API.lean`, beside the
+-- transition it describes.  A write set declared in a STAGED module is one the
+-- production scheduler footprint cannot read, which is the layering rule Cuts 5
+-- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
+-- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
 theorem replyRecvDescheduleAndWalk_confinedToCores (recordedServer : SeLe4n.ThreadId)
     (serverCore : CoreId) (st : SystemState) :
@@ -1950,15 +1929,11 @@ theorem replyRecvPopDonation_confinedToCores (rid : SeLe4n.ReplyId)
           simpa using observableSlotsConfinedToCores_trans hReturn
             (migrateSchedContextReplenishment_confinedToCores st1' oldScId _ _)
 
-/-- **PR #895 review round 8**: the cores `replyRecvServerDeschedule` may write.
-
-None on a non-delegated reply, where it is the identity because the receiver
-*is* the recorded server and keeps the new request's budget; the server's own
-core on a delegated one, where it is a real deschedule. -/
-def replyRecvServerDescheduleWriteSet (tid recordedServer : SeLe4n.ThreadId)
-    (st : SystemState) : List CoreId :=
-  if recordedServer = tid then []
-  else descheduleAtPlacementCores st recordedServer
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvServerDescheduleWriteSet` moved to `Kernel/API.lean`, beside the
+-- transition it describes.  A write set declared in a STAGED module is one the
+-- production scheduler footprint cannot read, which is the layering rule Cuts 5
+-- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
+-- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
 /-- ...and it stays inside them, by the same two facts the unconditional
 deschedule above uses. -/
@@ -1975,36 +1950,11 @@ theorem replyRecvServerDeschedule_confinedToCores (tid recordedServer : SeLe4n.T
     -- because they are the same step, not two spellings that happen to agree.
     exact descheduleAtPlacement_confinedToCores st recordedServer
 
-/-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
-half may write**, mirroring its own control flow.  Three shapes: the
-never-donated arm walks the chain from its pre-state; the rendezvous arm donates
-(per-core silent) and walks from the post-donation state; the remaining arm
-deschedules the recorded server on its own core first.  The fail-closed arm
-produces no post-state at all, so its entry is `[]` and the confinement theorem's
-hypothesis rules it out.
-
-The arm is selected by `returned?` — the context the pop handed back — rather
-than by re-reading a binding the pop has already cleared, which is the same
-reason the transition takes it as an argument. -/
-def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)
-    (serverCore : CoreId) (returned? : Option SeLe4n.SchedContextId)
-    (st : SystemState) : List CoreId :=
-  match returned? with
-  | none => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
-  | some _ =>
-      if rendezvousDequeuedCall st nextThread then
-        match applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
-        | .error _ => []
-        | .ok st2 =>
-            -- The deschedule's cores come FIRST, because it runs first: on a
-            -- delegated reply the recorded server is taken off its own core
-            -- before the new client's context is donated to the invoker
-            -- (PR #895 review round 8).  A footprint that omitted them would be
-            -- false of exactly that arm.
-            replyRecvServerDescheduleWriteSet tid recordedServer st ++
-              pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
-      else replyRecvDescheduleAndWalkWriteSet recordedServer serverCore st
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvPostReceiveDonationWriteSet` moved to `Kernel/API.lean`, beside the
+-- transition it describes.  A write set declared in a STAGED module is one the
+-- production scheduler footprint cannot read, which is the layering rule Cuts 5
+-- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
+-- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
 /-- SM8.B.2 / **WS-RM (`v0.35.6`)**: the post-receive half's per-core writes stay
 inside its write set.  The re-donation and *its* replenishment migration are
@@ -2164,53 +2114,11 @@ theorem endpointReceiveDualWithCapsOnCore_confinedToCores (endpointId : SeLe4n.O
         receiverCspaceRoot receiverSlotBase executingCore st))
   simpa using h
 
-/-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
-caller's home core, the receive leg's set at the reply's post-state, the
-donation leg's set at the receive's post-state, and (**WS-OD OD3.14**) the
-receive leg's priority hand-off at the donation return's post-state. Each leg is
-read at the state that leg actually runs at, which is the discipline
-`endpointCallDispatchChainWriteSet` established: reading a later leg at `st`
-would name a different chain.
-
-The fourth leg is empty on every **non-delegated** reply, because there the
-donation return's own walk already started at the receiver and OD3.14's gate
-makes this step the identity — so no pin taken against the three-leg set moves
-on any state a non-delegated `.replyRecv` reaches. -/
-def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) : List CoreId :=
-  determineTargetCore st prevCaller ::
-    (match endpointReplyOnCore receiver prevCaller msg executingCore st with
-     | (_, .error _) => []
-     | (st1, .ok _) =>
-        -- **WS-RM (`v0.35.6`)**: the pop runs between the legs and writes no core
-        -- (`replyRecvPopDonation_confinedToCores`), so it contributes nothing here
-        -- — but the states the later legs branch on are its post-state, and a
-        -- write set that mirrors a transition has to read the states it reads.
-        -- **WS-HP HP4.5**: keyed on the frame and the answered caller, as the
-        -- transition is.
-        (match replyRecvPopDonation replyId prevCaller st1 with
-         | .error _ => []
-         | .ok (returnedSc?, st1p) =>
-            endpointReceiveDualWriteSet st1p endpointId executingCore ++
-              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
-                  receiverCspaceRoot receiverSlotBase executingCore st1p with
-               | (_, .error _) => []
-               | (st2, .ok (nextThread, _, _)) =>
-                  replyRecvPostReceiveDonationWriteSet receiver
-                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                    (determineExecutingCore st
-                      ((recordedReplyServer? st prevCaller).getD receiver)) returnedSc? st2 ++
-                    (match replyRecvPostReceiveDonation receiver
-                        ((recordedReplyServer? st prevCaller).getD receiver) nextThread
-                        (determineExecutingCore st
-                          ((recordedReplyServer? st prevCaller).getD receiver))
-                        returnedSc? st2 with
-                     | .error _ => []
-                     | .ok (_, st3) =>
-                        receiveLegPipHandoffWriteSet st3 receiver nextThread
-                          ((recordedReplyServer? st prevCaller).getD receiver) executingCore))))
+-- **WS-RR RR8.12 Cut 8b (`v0.35.145`)**: `replyRecvBodyWriteSet` moved to `Kernel/API.lean`, beside the
+-- transition it describes.  A write set declared in a STAGED module is one the
+-- production scheduler footprint cannot read, which is the layering rule Cuts 5
+-- and 7 applied four times over.  The CONFINEMENT theorem stays here: it is an
+-- SM8.B claim about `observableSlotsConfinedToCores`, which is this module's.
 
 /-- SM8.B.2 (**the live `.replyRecv` bound**): `replyRecvBody` — the function
 `API.dispatchWithCap`'s `.replyRecv` arm routes through — writes no core outside
