@@ -35,10 +35,11 @@ executed path: the fact was true, checkable and unstated.
 It claims: **every state-transforming definition is either reachable from a
 committing export, or recorded in the pin below** — and the pin is reconciled
 both ways, so a new non-executed transition fails and so does an entry that has
-become live.  The pin carries no per-entry prose, deliberately: 240 shallow
-reasons would read as justification while asserting nothing, and the obligation
-that does the work falls on whoever adds the 241st, who must either wire it or
-say there why it exists.
+become live.  The pin carries no per-entry prose, deliberately: a few hundred
+shallow reasons would read as justification while asserting nothing, and the
+obligation that does the work falls on whoever adds the next entry, who must
+either wire it or say there why it exists.  The census prints its own sizes; a
+count restated here is a hand-kept figure beside a derivation.
 
 It does **not** claim that a recorded surface agrees with whatever live code
 re-composes it.  A bare reachability partition cannot: the offending composite
@@ -78,32 +79,149 @@ was retired in favour of it.  Reusing it is deliberate: a second auxiliary
 filter beside a derived one is this project's one-question-two-answers hazard,
 and the two would diverge on the next compiler change.
 
-What that predicate does **not** reach is the three generated shapes whose
-result type mentions `SystemState` and which therefore land in *this* census's
-domain but not in its sibling's: the compiler's own lowering stages
-(`_cstage1` / `_cstage2`, and the `_sunfold` / `_unsafe_rec` pair a `partial`
-or well-founded definition gets), the flat constructor a structure gets, and a
-module's `initFn`.  Each is named here
-rather than pattern-matched loosely, and each was measured in the environment
-before being added — a filter entry with no member is an exclusion nobody can
-justify. -/
+What that predicate does **not** reach is the generated shapes whose result type
+mentions a state-carrying type and which therefore land in *this* census's domain
+but not in its sibling's: the compiler's own lowering stages (`_cstage1` /
+`_cstage2`, and the `_sunfold` / `_unsafe_rec` pair a `partial` or well-founded
+definition gets), the flat constructor a structure gets, and the `SizeOf` instance
+every structure and inductive gets.
+
+**Every clause is an EXACT component match, and that is the fix rather than an
+incidental style** (PR #897 review, `v0.35.125`).  What stood here was
+`s.startsWith "initFn"`, a name RESEMBLANCE: a project transition called
+`initFnCleanup` is an ordinary name a contributor may write, and the prefix
+excluded it from the domain **before** its result type was ever inspected — so a
+definition returning `SystemState` could sit unreachable from every committing
+export and appear on neither side of the reconciliation.  That is
+`ReplyStackWriteCensus`'s own retired `eq_` prefix, one census over, and
+*narrowing a resemblance produces a smaller resemblance, not a relation*.
+
+It is not narrowed here; it is **deleted**, because the environment already
+answers it.  Measured on this environment: of the 4 project constants carrying an
+`initFn` component, **0** are outside `isAuxiliary` — a module's `initFn` is
+macro-scoped (`initFn._@.M._hyg.N`), which `n.eraseMacroScopes != n` decides — so
+the clause excluded nothing the derived predicate did not already exclude, while
+admitting a user name it should not have.  The surviving clauses are whole
+components the compiler reserves, not prefixes of user names, and each was
+measured: `_flat_ctor` 279, `_sunfold` 92, `_unsafe_rec` 98 and `_sizeOf_inst`
+355 members, **none** of them reached by `isAuxiliary`; `_cstage1` / `_cstage2`
+have **0** members in this build, and are kept because their absence is a
+code-generation configuration fact rather than a design one — a release build that
+emits them must not turn this census red. -/
 def isCompilerGenerated (env : Environment) (n : Name) : Bool :=
   SeLe4n.Testing.ReplyStackWriteCensus.isAuxiliary env n ||
   n.components.any fun c =>
     let s := c.toString
     s == "_cstage1" || s == "_cstage2" || s == "_flat_ctor"
-      || s == "_sunfold" || s == "_unsafe_rec" || s.startsWith "initFn"
+      || s == "_sunfold" || s == "_unsafe_rec" || s == "_sizeOf_inst"
+
+/-- How many rounds `stateCarryingTypes` may take before it gives up.
+
+The fixpoint is monotone in a finite set so it terminates on its own; the bound is
+what keeps a `partial` walk from becoming a hang if a future Lean makes the
+environment cyclic.  Measured at **3** rounds on this tree, so the bound is not
+close to binding — and reaching it would under-approximate the carriers, which
+makes the domain SMALLER, so a new bound must be checked rather than assumed. -/
+def carrierFixpointBound : Nat := 12
+
+/-- `true` when a type's own telescoped RESULT mentions one of `carriers`.
+
+The same question the domain asks of a definition, asked of a field, so "this
+returns kernel state" has one answer: a field of type `SystemState → Prop` reads a
+state and holds none, and `Option SystemState` holds one. -/
+def typeCarries (carriers : NameSet) (ty : Expr) : MetaM Bool :=
+  forallTelescopeReducing ty fun _ body =>
+    pure (body.find? fun e => match e with
+      | .const c _ => carriers.contains c
+      | _ => false).isSome
+
+/-- Every project type that **carries** kernel state: `SystemState` itself, and
+every non-propositional project inductive one of whose constructor FIELDS holds
+one, transitively.
+
+**A result type that carries state is not the same as one that mentions it**
+(PR #897 review, `v0.35.125`).  The domain test below asked whether the telescoped
+result *mentions* `SystemState` as a constant, so `Option SystemState` and
+`Except KernelError SystemState` were in and a named wrapper was not:
+`TlbCacheJointState.pageTableUpdate : TlbCacheJointState → … → TlbCacheJointState`
+rewrites that structure's `sysState` field and appeared on **neither** side of the
+reconciliation, so another unreachable transition could use the same wrapper and
+bypass the gate entirely.  The projection `TlbCacheJointState.sysState` *was* in the
+domain, which is the shape of the miss: the census could see the field and not the
+record.
+
+Three things this derivation decides, each of which the first measurement got
+wrong and the second corrected — *a measurement that licenses a conclusion gets
+checked as hard as the conclusion*.
+
+**A FIELD, not a parameter.**  A constructor's telescope opens the inductive's own
+parameters first, so `structure P (st : SystemState) : Prop` reads as "a field of
+type `SystemState`" unless the first `numParams` arguments are dropped.  Without
+that drop the carrier set is **64** types, almost all of them propositions —
+`syscallDispatchQuiescence`, `donationChainWellFormed`, every `.below` motive.
+
+**A field CARRIES state when its own telescoped result does.**  A field of type
+`SystemState → Prop` *reads* state; it does not hold one.  Judging a field by
+whether its type mentions a carrier anywhere admits `PlatformBinding` and both
+boundary contracts, and with them every platform binding and contract constant in
+the tree — 13 carriers and 24 configuration records that transform nothing.  The
+rule here is the one the domain already applies to definitions, which is also why
+the two cannot disagree about what "returns state" means.
+
+**A proposition carries nothing.**  An inductive whose sort is `Prop` is excluded
+outright: its parameters are states it is *about*.
+
+Measured on this environment: **10** carrier types besides `SystemState`, and the
+domain grows by **39** definitions no committing export reaches — the boot builder
+and the whole boot path (unreachable because `lean_kernel_main` is not written
+until SM10.1/WS-BP), the revocation traversals that are already a registered
+residue, the lock-bracket machinery, and the reviewer's own
+`TlbCacheJointState` pair.  Every one of them is a definition that produces a value
+holding kernel state, which is precisely this census's subject. -/
+partial def stateCarryingTypes (env : Environment) : MetaM NameSet := do
+  let mut carriers : NameSet := ({} : NameSet).insert kernelStateType
+  let mut changed := true
+  let mut rounds := 0
+  while changed && rounds < carrierFixpointBound do
+    changed := false
+    rounds := rounds + 1
+    for (n, ci) in env.constants.toList do
+      if !isProjectConstant n || carriers.contains n then continue
+      match ci with
+      | .inductInfo iv =>
+        if ← forallTelescopeReducing iv.type fun _ body => pure body.isProp then
+          continue
+        let mut hit := false
+        for ctor in iv.ctors do
+          match env.find? ctor with
+          | some (.ctorInfo cv) =>
+            let holds ← forallTelescopeReducing cv.type fun args _ => do
+              let mut found := false
+              for a in args.toList.drop iv.numParams do
+                if ← typeCarries carriers (← inferType a) then found := true
+              pure found
+            if holds then hit := true
+          | _ => pure ()
+        if hit then
+          carriers := carriers.insert n
+          changed := true
+      | _ => pure ()
+  return carriers
+
 
 /-- `true` when `n` is a declaration with a body whose result type mentions
 `SystemState`.
 
-`forallTelescopeReducing` strips the binders, so a predicate
-`SystemState → Prop` has body `Prop` and is **not** in the domain, while
-`SystemState → Except KernelError SystemState` is.  The test
-over-approximates — an `Option SystemState` resolver and a pure reader that
-returns its argument both qualify — and that is the safe direction for a
-*domain*: a member wrongly included must be explained, a member wrongly excluded
-is never looked at.
+`typeCarries` strips the binders, so a predicate `SystemState → Prop` has body
+`Prop` and is **not** in the domain, while `SystemState → Except KernelError
+SystemState` is.  Since `v0.35.125` it asks whether the result **carries** state
+rather than whether it mentions `SystemState`, so a named wrapper —
+`TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` — counts; see
+`stateCarryingTypes` for the derivation and for what the first two measurements of
+it got wrong.  The test over-approximates — an `Option SystemState` resolver and a
+pure reader that returns its argument both qualify — and that is the safe direction
+for a *domain*: a member wrongly included must be explained, a member wrongly
+excluded is never looked at.
 
 **Which declarations have a body is `DeclarationKind.bodyBearing`'s question, not
 this function's** (PR #897's review).  What stood here was a `match` on
@@ -125,12 +243,11 @@ over-approximating; it is **reachable** from every committing seam, so it needs
 no pin entry and demands nothing.  Carving it out by name would be the
 enumeration this census exists to retire, so it stays in and is explained here.
 The other new member is the planted witness below. -/
-def isStateTransformer (env : Environment) (n : Name) (ci : ConstantInfo) :
-    MetaM Bool := do
+def isStateTransformer (env : Environment) (carriers : NameSet) (n : Name)
+    (ci : ConstantInfo) : MetaM Bool := do
   if !bodyBearing ci then return false
   if !isProjectConstant n || isCompilerGenerated env n then return false
-  forallTelescopeReducing ci.type fun _ body =>
-    pure (body.find? (·.isConstOf kernelStateType)).isSome
+  typeCarries carriers ci.type
 
 /-! ## Witnesses for the `opaque` arm of the domain
 
@@ -163,12 +280,53 @@ private opaque censusWitnessOpaqueTransformer : Model.SystemState → Model.Syst
 private opaque censusWitnessOpaqueNonTransformer : Model.SystemState → Nat :=
   fun _ => 0
 
-/-- Every constant a committing export can reach, following project constants
-transitively.
+/-- `true` when a constant's own body is ERASED — a theorem, a proof, or a
+predicate.
+
+Lean compiles no code for any of them, so a transformer that one of their terms
+mentions is not on an executed path because of that mention.  The walk below
+records such a constant as seen and does not expand it.
+
+**The test is the TELESCOPED result, not the type** — `ReplyStackWriteCensus`'s
+`isPredicate`, reused rather than re-spelled, so the two censuses cannot disagree
+about what a proposition is.  `Expr.isProp` asks whether the type *is* `Prop`,
+which is true of a proof and false of `SystemState → Prop`; a predicate is erased
+just as a proof is, and it is also how a proof reaches this walk in practice, since
+the proposition a root supplies appears as an implicit argument at the call site. -/
+def isErasedConstant (env : Environment) (n : Name) : Bool :=
+  match env.find? n with
+  | some (.thmInfo _) => true
+  | some _ => SeLe4n.Testing.ReplyStackWriteCensus.isPredicate env n
+  | none => false
+
+/-- Every constant a committing export can reach **computationally**, following
+project constants transitively.
 
 Fuel-bounded like its sibling, and an exhausted walk returns what it has —
 which makes the *reachable* set smaller and so makes the census demand more.
-The bound is far above the closure of this kernel's seams. -/
+The bound is far above the closure of this kernel's seams.
+
+**An erased dependency is not a call** (PR #897 review, `v0.35.125`).  An
+unrestricted `getUsedConstants` walk follows a proof: a committing path that
+supplies a proof argument, or calls a theorem whose proof mentions an otherwise
+unwired transformer, marked that transformer **live** although Lean erases the
+dependency and no runtime path executes it — so it escaped `nonExecutedTransitions`
+and the wire-or-record gate saw nothing.  That is *occurrence is not execution*,
+one artefact over from where `BootEntryContract` records it.
+
+Measured before tightening: the permissive closure is **4231** constants and the
+erasure-respecting one **3477**, so 754 constants were reachable only through a
+proof — and **zero** of them are state transformers, which is why the pin is
+byte-identical across this change.  The tightening is therefore free *today* and
+closes the path a single proof-carrying committing body would have opened.
+
+What it does **not** close, stated rather than approximated: a proof term written
+*inline* in a committing definition's own body is part of that body, so the
+constants it mentions are still followed.  Deciding that needs `Meta.isProof` at
+every argument of every application in the closure, which is a type inference per
+node over thousands of constants; the residue is an over-approximation of *live*,
+which makes the census demand **less**, and it is named here rather than left for a
+reader to find. -/
 partial def liveClosure (env : Environment) (roots : List Name) : NameSet :=
   go roots {} 400000
 where
@@ -180,9 +338,132 @@ where
       if seen.contains c || !isProjectConstant c then go rest seen fuel'
       else
         let seen := seen.insert c
-        match (env.find? c).bind (·.value? (allowOpaque := true)) with
-        | none => go rest seen fuel'
-        | some v => go (v.getUsedConstants.toList ++ rest) seen fuel'
+        if isErasedConstant env c then go rest seen fuel'
+        else
+          match (env.find? c).bind (·.value? (allowOpaque := true)) with
+          | none => go rest seen fuel'
+          | some v => go (v.getUsedConstants.toList ++ rest) seen fuel'
+
+/-! ## Witnesses for the domain's two widenings
+
+Each is planted, because the property each states is one the tree does not
+currently exhibit — and a check that cannot fire on the current tree and carries
+no witness is indistinguishable from one that is wrong.  Each comes with the
+CONTROL that keeps its arm from being decided by the wrong thing.
+-/
+
+/-- A structure that **carries** kernel state in a field. -/
+private structure CensusWitnessWrapper where
+  carried : Model.SystemState
+  tag : Nat
+
+/-- ...and one that only **reads** it.  Its field is a function *of* a state, so
+the wrapper holds no state: this is the distinction that keeps `PlatformBinding`
+and both boundary contracts — and with them every platform binding in the tree —
+out of the carrier set. -/
+private structure CensusWitnessReader where
+  readsState : Model.SystemState → Nat
+
+/-- A transformer returning a WRAPPER, which mentions `SystemState` nowhere in its
+own type.  It must be in the domain and, being reachable from no committing export,
+in the pin below: delete its pin entry and the reconciliation reports it. -/
+private def censusWitnessWrapperTransformer (st : Model.SystemState) :
+    CensusWitnessWrapper :=
+  { carried := st, tag := 0 }
+
+/-- ...and the control that must NOT be, since `CensusWitnessReader` carries
+nothing.  It is the wrapper witness with one field type changed, so the pair
+decides the *field* rule rather than the existence of the walk. -/
+private def censusWitnessReaderProducer : CensusWitnessReader :=
+  { readsState := fun _ => 0 }
+
+/-- A PROPOSITION carrying a state in a data field — legal Lean, and the one
+shape the carrier walk's `Prop` skip is about.
+
+Its own sort is `Prop`, so Lean erases it and a definition returning it transforms
+nothing observable; without the skip it would become a carrier and
+`censusWitnessPropositionProducer` a state transformer.  Planted because the tree
+has no such inductive: the skip was measured to exclude **nothing** here, and a
+filter with no member is one whose deletion changes no number — so it needs a
+witness or it is indistinguishable from dead code. -/
+private inductive CensusWitnessPropCarrier : Prop where
+  | mk (carried : Model.SystemState)
+
+/-- ...and the producer that must NOT be in the domain. -/
+private def censusWitnessPropositionProducer (st : Model.SystemState) :
+    CensusWitnessPropCarrier :=
+  .mk st
+
+/-- A transformer whose name begins with the compiler's `initFn`, which the
+retired prefix clause excluded from the domain **before** its result type was
+read.  It is an ordinary project definition, so it must be in the domain and in
+the pin; the real generated init is macro-scoped and `isAuxiliary` still excludes
+it, which is what makes this witness decide the *prefix* rather than the filter. -/
+private def initFnCensusWitnessTransformer (st : Model.SystemState) :
+    Model.SystemState := st
+
+/-- A transformer nothing calls, reachable from `censusWitnessErasedRoot` only
+through a PROOF. -/
+private def censusWitnessErasedTransformer (st : Model.SystemState) :
+    Model.SystemState := st
+
+/-- The proof that mentions it.  Proved by `unfold` rather than by `rfl`, because
+what an erasure-blind walk follows is this theorem's **value**, and `rfl`'s
+elaborated term need not name the constant its type mentions — a witness whose
+proof term does not carry the transformer is inert, and an inert witness reads as
+coverage while asserting nothing.  `erasureWitnessViolations` asserts it rather
+than trusting it. -/
+private def censusWitnessErasedProp (st : Model.SystemState) : Prop :=
+  censusWitnessErasedTransformer st = st
+
+private theorem censusWitnessErasedLemma (st : Model.SystemState) :
+    censusWitnessErasedProp st := by
+  unfold censusWitnessErasedProp censusWitnessErasedTransformer
+  rfl
+
+/-- A function that CONSUMES a proof, generically in the proposition.
+
+Generic on purpose, and it is the second thing this witness had to get right:
+`Expr.getUsedConstants` walks binder **types** as well as bodies, so a consumer
+whose argument is typed `censusWitnessErasedTransformer st = st` reaches the
+transformer through its own signature — a type-level mention, which is not
+execution either, but is not the *erased* route the witness is about.  With `P`
+abstract, the only route from the root below to the transformer runs through the
+theorem's proof term.  It is not a state transformer, so it needs no pin entry: its
+result is a variable. -/
+private def censusWitnessProofConsumer {α : Sort u} {P : Prop} (a : α) (_h : P) :
+    α := a
+
+/-- A root whose elaborated body carries the lemma as an argument, and therefore
+reaches the transformer through an erased dependency and through nothing else.
+`liveClosure` must not follow it. -/
+private def censusWitnessErasedRoot (st : Model.SystemState) : Model.SystemState :=
+  censusWitnessProofConsumer st (censusWitnessErasedLemma st)
+
+/-- The erasure claim, decided against the walk itself rather than against the
+whole pipeline: no committing export reaches these witnesses, so the pipeline
+could not exercise the arm.  Both directions, because a walk that followed
+nothing would satisfy the first clause vacuously. -/
+def erasureWitnessViolations (env : Environment) : List String := Id.run do
+  let live := liveClosure env [``censusWitnessErasedRoot]
+  let mut out : List String := []
+  if live.contains ``censusWitnessErasedTransformer then
+    out := out ++ ["`liveClosure` followed an ERASED dependency: \
+      `censusWitnessErasedRoot` reaches `censusWitnessErasedTransformer` only \
+      through `censusWitnessErasedLemma`, whose body Lean compiles away."]
+  if !live.contains ``censusWitnessErasedRoot then
+    out := out ++ ["`liveClosure` does not contain its own root, so the erasure \
+      witness above holds vacuously and decides nothing."]
+  match (env.find? ``censusWitnessErasedLemma).bind (·.value? (allowOpaque := true)) with
+  | none =>
+    out := out ++ ["`censusWitnessErasedLemma` has no value, so the erasure \
+      witness carries no erased reference and asserts nothing."]
+  | some v =>
+    if !v.getUsedConstants.contains ``censusWitnessErasedTransformer then
+      out := out ++ ["`censusWitnessErasedLemma`'s proof term does not mention \
+        `censusWitnessErasedTransformer`, so the erasure witness is INERT: the \
+        permissive walk it is meant to refute would not have followed it either."]
+  return out
 
 /-- The committing exports, derived exactly as `ExportCommitDisciplineCensus`
 derives them — through that census's own `commitsState`, so the two cannot
@@ -198,10 +479,10 @@ def committingExports (env : Environment) : Array Name := Id.run do
 
 A **pin**, in the shape `scripts/identifier_naming_baseline.json` uses for the
 same reason: the set is derived above, and this list is what makes a *change* to
-it visible.  It carries no per-entry prose, deliberately — 240 shallow reasons
-would read as justification while asserting nothing, and the obligation that
-does the work falls on whoever adds the 241st, who must either wire it or say
-here why it exists.
+it visible.  It carries no per-entry prose, deliberately — a few hundred shallow
+reasons would read as justification while asserting nothing, and the obligation
+that does the work falls on whoever adds the next entry, who must either wire it
+or say here why it exists.
 
 **Two known residues inside this list, both registered rather than absorbed.**
 The whole `cspaceRevoke*` / `revokeCdt*` / `streamingRevokeBFS` family is here
@@ -214,7 +495,9 @@ measurement and a decision rather than a line in a list, so both carry rows in
 `docs/REGISTERED_DEBT.md`.  Naming them here keeps a *known* residue from reading
 like an unexamined one. -/
 def nonExecutedTransitionsPlain : List Name :=
-  [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.sysState
+  [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.empty
+  , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate
+  , `SeLe4n.Kernel.Architecture.TlbCacheJointState.sysState
   , `SeLe4n.Kernel.Architecture.ackInterruptAudit
   , `SeLe4n.Kernel.Architecture.adapterAdvanceTimer
   , `SeLe4n.Kernel.Architecture.adapterContextSwitch
@@ -262,8 +545,13 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Architecture.writeRegisterState
   , `SeLe4n.Kernel.Architecture.writeRestartFrameToTcb
   , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.action
+  , `SeLe4n.Kernel.Concurrency.KernelTransitionInstance.ofWithLockSet
   , `SeLe4n.Kernel.Concurrency.applySequential
   , `SeLe4n.Kernel.Concurrency.applySequentialWithLockSet
+  , `SeLe4n.Kernel.Concurrency.commitSort
+  , `SeLe4n.Kernel.Concurrency.insertByCommitTime
+  , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
+  , `SeLe4n.Kernel.Concurrency.readOnlyInstance
   , `SeLe4n.Kernel.Concurrency.runChainExtension
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
   , `SeLe4n.Kernel.Concurrency.setSchedulerAction
@@ -371,6 +659,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.replenishScOnCore
   , `SeLe4n.Kernel.replyRecvPostPopState
   , `SeLe4n.Kernel.replyTransferOnCore
+  , `SeLe4n.Kernel.resolveCapAddressUnderWalkLocks
   , `SeLe4n.Kernel.restoreIncomingContext
   , `SeLe4n.Kernel.restoreIncomingContextChecked
   , `SeLe4n.Kernel.restoredAndConsumed
@@ -379,8 +668,13 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.retypeAsidRoundStep
   , `SeLe4n.Kernel.retypeFromUntyped
   , `SeLe4n.Kernel.revokeCdtFoldBody
+  , `SeLe4n.Kernel.revokeCdtMaterializedTraversal
+  , `SeLe4n.Kernel.revokeCdtReportingOutcome
   , `SeLe4n.Kernel.revokeCdtReportingStep
   , `SeLe4n.Kernel.revokeCdtScaffold
+  , `SeLe4n.Kernel.revokeCdtStreamingTraversal
+  , `SeLe4n.Kernel.revokeCdtStrictTraversal
+  , `SeLe4n.Kernel.revokeCdtTransactionalTraversal
   , `SeLe4n.Kernel.revokePendingTransfersFrom
   , `SeLe4n.Kernel.saveOutgoingContext
   , `SeLe4n.Kernel.saveOutgoingContextChecked
@@ -404,6 +698,8 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.syscallEntryFromAcquired
   , `SeLe4n.Kernel.syscallEntryUnderDeclaredLockSet
   , `SeLe4n.Kernel.syscallEntryUnderLockSet
+  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSet
+  , `SeLe4n.Kernel.syscallEntryUnderRevalidatedLockSetModel
   , `SeLe4n.Kernel.syscallLookupReplyId
   , `SeLe4n.Kernel.timeoutAwareReceive
   , `SeLe4n.Kernel.timerTick
@@ -413,16 +709,39 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.timerTickOnCorePrepared
   , `SeLe4n.Kernel.timerTickWithBudget
   , `SeLe4n.Kernel.withObjects
+  , `SeLe4n.Model.Builder.createObject
+  , `SeLe4n.Model.Builder.insertCap
+  , `SeLe4n.Model.Builder.mapPage
+  , `SeLe4n.Model.Builder.markRunnable
+  , `SeLe4n.Model.Builder.registerIrq
+  , `SeLe4n.Model.Builder.registerService
+  , `SeLe4n.Model.Builder.withTaint
   , `SeLe4n.Model.IntermediateState.state
-  , `SeLe4n.Model.SystemState._sizeOf_inst
   , `SeLe4n.Model.SystemState.withObjectStored
   , `SeLe4n.Model.lookupObject
   , `SeLe4n.Model.lookupVSpaceRoot
+  , `SeLe4n.Model.mkEmptyIntermediateState
   , `SeLe4n.Model.setCurrentThread
   , `SeLe4n.Model.setDomainScheduleChecked
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
   , `SeLe4n.Model.storeServiceState
+  , `SeLe4n.Platform.Boot.applyMachineConfig
+  , `SeLe4n.Platform.Boot.applyMachineConfigChecked
+  , `SeLe4n.Platform.Boot.bootEnableInterruptsOp
+  , `SeLe4n.Platform.Boot.bootFromPlatform
+  , `SeLe4n.Platform.Boot.bootFromPlatformChecked
+  , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreads
+  , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor
+  , `SeLe4n.Platform.Boot.bootFromPlatformUnchecked
+  , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
+  , `SeLe4n.Platform.Boot.bootFromPlatformWithInterrupts
+  , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings
+  , `SeLe4n.Platform.Boot.enqueueIdleThread
+  , `SeLe4n.Platform.Boot.foldIrqs
+  , `SeLe4n.Platform.Boot.foldObjects
+  , `SeLe4n.Platform.Boot.installBootVSpaceRoot
+  , `SeLe4n.Platform.Boot.installIdleThread
   , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatform
   , `SeLe4n.Platform.FFI.bootAndInitialiseFromPlatformOn
   , `SeLe4n.Platform.FFI.bootAndInitialisePlatform
@@ -471,6 +790,16 @@ def nonExecutedTransitionsPrivate : List Name :=
   , privateIn `SeLe4n.Testing.ReplyStackWriteCensus `SeLe4n.Testing.ReplyStackWriteCensus.eq_censusWitnessUserNamed
   , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
       `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessOpaqueTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.CensusWitnessWrapper.carried
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessErasedRoot
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessErasedTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessWrapperTransformer
+  , privateIn `SeLe4n.Testing.KernelTransitionReachabilityCensus
+      `SeLe4n.Testing.KernelTransitionReachabilityCensus.initFnCensusWitnessTransformer
   ]
 
 /-- The whole pin. -/
@@ -697,24 +1026,28 @@ run_cmd Command.liftTermElabM do
   let env ← getEnv
   let roots := committingExports env
   let live := liveClosure env roots.toList
+  let carriers ← stateCarryingTypes env
   let mut domainSize : Nat := 0
   let mut unreachable : NameSet := {}
   for (n, ci) in env.constants.toList do
-    if (← isStateTransformer env n ci) then
+    if (← isStateTransformer env carriers n ci) then
       domainSize := domainSize + 1
       if !live.contains n then unreachable := unreachable.insert n
   let recorded := nonExecutedTransitions
   let violations :=
     reconciliationViolations live unreachable recorded ++
     pinViolations env live unreachable standsBesideLive ++
-    pinCheckWitnessViolations env
+    pinCheckWitnessViolations env ++
+    erasureWitnessViolations env
   if violations.isEmpty then
     let unreachableCount := unreachable.toList.length
-    logInfo s!"kernel-transition reachability census: {domainSize} state transformers, \
+    let carrierCount := carriers.toList.length - 1
+    logInfo s!"kernel-transition reachability census: {domainSize} state transformers \
+      over {carrierCount} state-carrying wrapper type(s) beside `SystemState`, \
       {domainSize - unreachableCount} reachable from one of {roots.size} committing \
-      `@[export]`s, {unreachableCount} not — every one of them recorded, and \
-      {standsBesideLive.length} RELATED to code the live path runs, with \
-      {pinCheckWitnesses.length} witness shapes refused."
+      `@[export]`s by a COMPUTATIONAL path, {unreachableCount} not — every one of \
+      them recorded, and {standsBesideLive.length} RELATED to code the live path \
+      runs, with {pinCheckWitnesses.length} witness shapes refused."
   else
     throwError "kernel-transition reachability census failed:\n{
       String.intercalate "\n" (violations.map ("  - " ++ ·))}"

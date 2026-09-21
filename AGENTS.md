@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.124.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.125.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~72226 lines)
+- `CHANGELOG.md` (~73845 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7984 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7834 lines)
 - `SeLe4n/Kernel/API.lean` (~7592 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6390 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6407 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5881 lines)
 - `SeLe4n/Platform/Boot.lean` (~5805 lines)
@@ -249,7 +249,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `tests/SmpIpcSuite.lean` (~3796 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3682 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3725 lines)
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3439 lines)
@@ -294,7 +294,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2184 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2150 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2163 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2124 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
@@ -367,8 +367,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1249 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1236 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
@@ -391,6 +391,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1055 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `tests/SmpCbsSuite.lean` (~1015 lines)
@@ -438,10 +439,10 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
+- `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `docs/DEVELOPMENT.md` (~803 lines)
-- `docs/REGISTERED_DEBT.md` (~802 lines)
+- `docs/REGISTERED_DEBT.md` (~805 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -1509,6 +1510,53 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   two guessed probe-variable names that do not exist, and the mutation set confirms
   it reports each pre-fix probe, a census re-deciding the question, a stale entry, a
   moved count in either direction and an unlocatable probe.
+
+  **And the answer to "who else asks this" had a THIRD dimension: the census's own
+  domain and closure** (PR #897 review, `v0.35.125`).  `v0.35.115` derived which
+  *files* hold a Lean probe and gave the question one owner; it left
+  `KernelTransitionReachabilityCensus`'s own three questions to resemblances, and a
+  review found all three at once.  A **name prefix** stood for "generated"
+  (`startsWith "initFn"`, which an ordinary `initFnCleanup` trips — this file's own
+  retired `eq_` prefix, one census over); a **constant occurrence** stood for
+  "reachable", so a transformer mentioned only inside a proof was marked live and
+  escaped the wire-or-record pin; and a **mention** of `SystemState` stood for
+  "returns state", so `TlbCacheJointState.pageTableUpdate` — which rewrites that
+  record's `sysState` field — was on neither side of the reconciliation while the
+  projection `TlbCacheJointState.sysState` was.
+
+  Each remedy is the environment answering, and each was **measured before it was
+  chosen**.  The prefix is *deleted* rather than narrowed: of the 4 `initFn`
+  constants here, **0** are outside `isAuxiliary`, a module's init being
+  macro-scoped, so the clause excluded nothing while admitting a user name.  The
+  closure skips an **erased** constant, decided on the telescoped result through
+  the sibling census's `isPredicate`, since `Expr.isProp` is true of a proof and
+  false of `SystemState → Prop` and a proposition reaches the walk as an implicit
+  argument at a call site: the permissive closure is 4231 constants and the
+  erasure-respecting one 3477, and **zero** of the 754 are transformers, so the
+  tightening is free today and closes the path one proof-carrying body would open.
+  And the domain asks whether a result **carries** state — `SystemState`, or a
+  non-propositional project inductive holding one in a constructor field,
+  transitively — which is 10 carrier types and 39 more pinned definitions, the boot
+  path among them.
+
+  Two rules the carrier derivation cost, both about the measurement rather than the
+  code.  **A constructor's telescope opens the inductive's own parameters**, so
+  without dropping `numParams` a `Prop` structure over a state reads as holding
+  one — 64 carriers, almost all propositions, which is a measurement that would
+  have licensed a much larger claim than the tree supports.  And **a field carries
+  state when its own telescoped result does**, the same question the domain asks of
+  a definition: judging by a mention anywhere admits `PlatformBinding` and both
+  boundary contracts, and with them every configuration record in the tree.  *A
+  measurement that licenses a conclusion gets checked as hard as the conclusion* —
+  twice here, and the third reading is the one that shipped.
+
+  One thing the erasure witness had to get right, and it generalises: **`Expr`
+  traversal walks binder TYPES**, so a helper whose argument is typed with the
+  proposition reaches the subject through its own signature rather than through the
+  proof — a type-level mention, which is not execution either but is not the route
+  the witness is about.  The consumer is generic in the proposition, and the check
+  asserts that the theorem's own proof term mentions the transformer, because a
+  proof term that does not makes the whole witness **inert**.
 
   **And a domain written as a NODE KIND is the same defect one grammar down**
   (PR #897 review, `v0.35.124`).  `v0.35.115` derived *which files* hold a Lean
@@ -6956,7 +7004,7 @@ code may assume:
   a member wrongly included must be explained and a member wrongly excluded is
   never looked at.  (3) **The 240 carry no per-entry prose**, deliberately —
   that many shallow reasons read as justification while asserting nothing — so
-  the obligation falls on whoever adds the 241st.  (4) **Two known residues are
+  the obligation falls on whoever adds the next entry.  (4) **Two known residues are
   named in the pin's docstring rather than left to read as unexamined**: the
   revocation family, which has no syscall arm at all, and four transformers
   consumed by nothing; both carry register rows, because each needs the

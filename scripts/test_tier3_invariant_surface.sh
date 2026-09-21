@@ -16827,4 +16827,68 @@ run_negative_check "INVARIANT" rg -F -n '_FIXTURE_BARE_MARKER' scripts/check_dec
 run_check "INVARIANT" rg -F -n 'def _capture_fixture(root: str) -> dict[str, dict[str, int]]:' scripts/check_declaration_kind_askers.py
 run_negative_check "INVARIANT" rg -F -n '        got = capture(root)' scripts/check_declaration_kind_askers.py
 
+# ---------------------------------------------------------------------------
+# `v0.35.125` -- THE REACHABILITY CENSUS'S DOMAIN AND CLOSURE ARE BOTH DERIVED.
+# Three PR #897 findings over one file, and one class: `v0.35.115` derived WHICH
+# FILES hold a Lean probe and left the rest of this census to resemblances -- a
+# name prefix for "generated", a constant occurrence for "reachable", and a
+# mention of `SystemState` for "returns state".
+# ---------------------------------------------------------------------------
+# (1) A GENERATED DECLARATION IS ASKED OF THE ENVIRONMENT, and every surviving
+# clause is an EXACT component the compiler reserves.  `startsWith "initFn"` is a
+# resemblance an ordinary project name trips -- `initFnCleanup` was excluded from
+# the domain before its result type was read -- and it was redundant besides: of
+# the 4 `initFn` constants here, 0 are outside `isAuxiliary`, a module's init
+# being macro-scoped.
+run_check "INVARIANT" rg -F -n '      || s == "_sunfold" || s == "_unsafe_rec" || s == "_sizeOf_inst"' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n 's.startsWith "initFn"' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def initFnCensusWitnessTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (2) AN ERASED DEPENDENCY IS NOT A CALL.  A committing path that supplies a proof
+# argument, or calls a theorem whose proof mentions an unwired transformer, marked
+# it live although Lean compiles the dependency away -- so it escaped the pin.  The
+# test is the TELESCOPED result, reusing the sibling census's `isPredicate`, since
+# a proposition reaches this walk as an implicit argument at a call site.
+run_check "INVARIANT" rg -F -n '        if isErasedConstant env c then go rest seen fuel' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  | some _ => SeLe4n.Testing.ReplyStackWriteCensus.isPredicate env n' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_negative_check "INVARIANT" rg -F -n '  | some ci => ci.type.isProp' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and its witness asserts its own decisiveness: a proof term that does not
+# mention the transformer would make the whole witness inert, which reads as
+# coverage while asserting nothing.
+run_check "INVARIANT" rg -F -n 'def erasureWitnessViolations (env : Environment) : List String := Id.run do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    if !v.getUsedConstants.contains ``censusWitnessErasedTransformer then' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '    erasureWitnessViolations env' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# (3) A RESULT TYPE THAT CARRIES STATE IS NOT ONE THAT MENTIONS IT.  A named
+# wrapper -- `TlbCacheJointState`, `IntermediateState`, `LockBracketOutcome` -- is
+# in the domain now, so a transition that rewrites a state held in a field cannot
+# sit outside both sides of the reconciliation.
+run_check "INVARIANT" rg -F -n 'partial def stateCarryingTypes (env : Environment) : MetaM NameSet := do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  typeCarries carriers ci.type' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  let carriers ← stateCarryingTypes env' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# A FIELD, not a parameter: a constructor's telescope opens the inductive's own
+# parameters, so without the drop a `Prop` structure over a state reads as holding
+# one and the carrier set is 64 types, almost all of them propositions.
+run_check "INVARIANT" rg -F -n '              for a in args.toList.drop iv.numParams do' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# A field CARRIES state when its own telescoped RESULT does -- the rule the domain
+# already applies to a definition, so the two cannot disagree.  Judging it by a
+# mention anywhere admits `PlatformBinding` and every platform binding with it.
+run_check "INVARIANT" rg -F -n '  forallTelescopeReducing ty fun _ body =>' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and a PROPOSITION carries nothing, with the planted `Prop`-sorted carrier that
+# makes the skip decide rather than merely exist.
+run_check "INVARIANT" rg -F -n 'private inductive CensusWitnessPropCarrier : Prop where' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessPropositionProducer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# THE WRAPPER WITNESS AND ITS CONTROL, the pair that decides the field rule: one
+# structure holds a state, its neighbour holds a function OF one.
+run_check "INVARIANT" rg -F -n 'private structure CensusWitnessWrapper where' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private structure CensusWitnessReader where' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessWrapperTransformer (st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n 'private def censusWitnessReaderProducer : CensusWitnessReader :=' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# THE REVIEWER'S OWN EXAMPLE IS IN THE PIN, which is the measurement that the
+# widening reaches the tree rather than only its witnesses.
+run_check "INVARIANT" rg -F -n '  , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+run_check "INVARIANT" rg -F -n '  , `SeLe4n.Platform.Boot.bootFromPlatformCheckedWithIdleThreadsFor' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+# ...and the `SizeOf` instance that WAS pinned is gone with the clause that let it
+# in: a generated instance is not a definition anyone wrote, and a stale entry
+# reads exactly like coverage.
+run_negative_check "INVARIANT" rg -F -n '`SeLe4n.Model.SystemState._sizeOf_inst' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
 finalize_report

@@ -500,10 +500,18 @@ ASKER_REASONS: dict[str, str] = {
         "ninth constructor in a future toolchain is a missing-case error naming "
         "this function rather than a silent exclusion.",
     "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean":
-        "Two fail-CLOSED theorem reporters, neither of them the body question: a "
-        "pin entry that names a theorem, and a pin-check witness that is one, are "
-        "each REPORTED as a defect rather than skipped.  The census's own domain "
-        "test reads `bodyBearing`.",
+        "Three questions, none of them the body one, and the census's own domain "
+        "test reads `bodyBearing`.  (1) Two fail-CLOSED theorem reporters: a pin "
+        "entry that names a theorem, and a pin-check witness that is one, are each "
+        "REPORTED as a defect rather than skipped.  (2) `isErasedConstant` asks "
+        "whether a constant is a THEOREM -- Lean compiles no code for one, so the "
+        "reachability walk records it as seen and does not expand it; that is "
+        "`.thmInfo`'s third occurrence, and the predicate half is delegated to "
+        "`ReplyStackWriteCensus.isPredicate` rather than re-spelled.  (3) "
+        "`stateCarryingTypes` asks whether a constant is an INDUCTIVE and reads its "
+        "CONSTRUCTORS' field types -- a question about a type's shape, for which a "
+        "non-inductive is correctly skipped, since the eight constructors partition "
+        "on that too.",
     "SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean":
         "One fail-CLOSED assertion that its single named root is a definition; a "
         "root that is anything else throws.  The frontier walk it drives reads "
@@ -623,7 +631,9 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
         "axiomInfo": 1, "defnInfo": 1, "thmInfo": 1, "opaqueInfo": 1,
         "quotInfo": 1, "inductInfo": 1, "ctorInfo": 1, "recInfo": 1,
     },
-    "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean": {"thmInfo": 2},
+    "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean": {
+        "ctorInfo": 1, "inductInfo": 1, "thmInfo": 3,
+    },
     "SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean": {"defnInfo": 1},
     "SeLe4n/Testing/StoreReadClassificationCensus.lean": {"inductInfo": 1},
     "scripts/check_module_axioms.py::PROBE_TEMPLATE": {

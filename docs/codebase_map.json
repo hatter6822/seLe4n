@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "11a4ea2b266687f469a700a8063b7d63e2d89e31",
-      "tree_sha": "f4d275d0c74f94257fa965a2b0d35601cd93bb67",
-      "committed_at_utc": "2026-09-20T23:00:41+00:00"
+      "commit_sha": "de4f0e22e319f72f5224477f4f672ddfcb96a521",
+      "tree_sha": "177d92ce58b0a0c2e20e7ff9e2595d6fedb0d6a5",
+      "committed_at_utc": "2026-09-20T23:49:44+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0ff61467123d1dd04222efc121d6e729bd88c57477418b725853b9a51ec2da67"
+    "source_digest": "51975b96a6ccac61160842bf93fe992c526216b01762d0b9ebec88a32e75543c"
   },
   "summary": {
     "module_count": 404,
-    "declaration_count": 22031
+    "declaration_count": 22048
   },
   "readme_sync": {
-    "version": "0.35.124",
+    "version": "0.35.125",
     "lean_toolchain": "v4.28.0",
     "production_files": 334,
-    "production_loc": 395008,
+    "production_loc": 395341,
     "test_files": 70,
     "test_loc": 80213,
-    "proved_theorem_lemma_decls": 13116,
+    "proved_theorem_lemma_decls": 13117,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -271955,18 +271955,18 @@
     {
       "module": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
       "path": "SeLe4n/Testing/KernelTransitionReachabilityCensus.lean",
-      "declaration_count": 21,
+      "declaration_count": 38,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.KernelTransitionReachabilityCensus",
-          "line": 59,
+          "line": 60,
           "called": []
         },
         {
           "kind": "def",
           "name": "kernelStateType",
-          "line": 69,
+          "line": 70,
           "called": [
             "SystemState"
           ]
@@ -271974,7 +271974,7 @@
         {
           "kind": "def",
           "name": "isCompilerGenerated",
-          "line": 90,
+          "line": 111,
           "called": [
             "any",
             "isAuxiliary"
@@ -271982,20 +271982,49 @@
         },
         {
           "kind": "def",
+          "name": "carrierFixpointBound",
+          "line": 125,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "typeCarries",
+          "line": 132,
+          "called": [
+            "contains",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stateCarryingTypes",
+          "line": 181,
+          "called": [
+            "carrierFixpointBound",
+            "contains",
+            "insert",
+            "isProjectConstant",
+            "kernelStateType",
+            "pure",
+            "toList",
+            "typeCarries"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "isStateTransformer",
-          "line": 128,
+          "line": 246,
           "called": [
             "bodyBearing",
             "isCompilerGenerated",
             "isProjectConstant",
-            "kernelStateType",
-            "pure"
+            "typeCarries"
           ]
         },
         {
           "kind": "opaque",
           "name": "censusWitnessOpaqueTransformer",
-          "line": 160,
+          "line": 277,
           "called": [
             "SystemState",
             "st"
@@ -272004,19 +272033,29 @@
         {
           "kind": "opaque",
           "name": "censusWitnessOpaqueNonTransformer",
-          "line": 163,
+          "line": 280,
           "called": [
             "SystemState"
           ]
         },
         {
           "kind": "def",
+          "name": "isErasedConstant",
+          "line": 296,
+          "called": [
+            "isPredicate",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "liveClosure",
-          "line": 172,
+          "line": 330,
           "called": [
             "bind",
             "contains",
             "insert",
+            "isErasedConstant",
             "isProjectConstant",
             "none",
             "toList",
@@ -272024,9 +272063,134 @@
           ]
         },
         {
+          "kind": "structure",
+          "name": "CensusWitnessWrapper",
+          "line": 356,
+          "called": [
+            "SystemState",
+            "tag"
+          ]
+        },
+        {
+          "kind": "structure",
+          "name": "CensusWitnessReader",
+          "line": 364,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessWrapperTransformer",
+          "line": 370,
+          "called": [
+            "CensusWitnessWrapper",
+            "SystemState",
+            "st",
+            "tag"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessReaderProducer",
+          "line": 377,
+          "called": [
+            "CensusWitnessReader"
+          ]
+        },
+        {
+          "kind": "inductive",
+          "name": "CensusWitnessPropCarrier",
+          "line": 389,
+          "called": [
+            "SystemState"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessPropositionProducer",
+          "line": 393,
+          "called": [
+            "CensusWitnessPropCarrier",
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "initFnCensusWitnessTransformer",
+          "line": 402,
+          "called": [
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessErasedTransformer",
+          "line": 407,
+          "called": [
+            "SystemState",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessErasedProp",
+          "line": 416,
+          "called": [
+            "SystemState",
+            "censusWitnessErasedTransformer",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "censusWitnessErasedLemma",
+          "line": 419,
+          "called": [
+            "SystemState",
+            "censusWitnessErasedProp",
+            "censusWitnessErasedTransformer",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessProofConsumer",
+          "line": 434,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessErasedRoot",
+          "line": 440,
+          "called": [
+            "SystemState",
+            "censusWitnessErasedLemma",
+            "censusWitnessProofConsumer",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "erasureWitnessViolations",
+          "line": 447,
+          "called": [
+            "bind",
+            "censusWitnessErasedLemma",
+            "censusWitnessErasedRoot",
+            "censusWitnessErasedTransformer",
+            "contains",
+            "liveClosure",
+            "none",
+            "value"
+          ]
+        },
+        {
           "kind": "def",
           "name": "committingExports",
-          "line": 190,
+          "line": 471,
           "called": [
             "commitsState",
             "isProjectConstant",
@@ -272036,8 +272200,11 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPlain",
-          "line": 216,
+          "line": 497,
           "called": [
+            "KernelTransitionInstance.ofWithLockSet",
+            "TlbCacheJointState.empty",
+            "TlbCacheJointState.pageTableUpdate",
             "ackInterruptAudit",
             "adapterAdvanceTimer",
             "adapterContextSwitch",
@@ -272049,6 +272216,8 @@
             "advanceDomainOnCore",
             "advanceDomainOnCoreN",
             "advanceTimerState",
+            "applyMachineConfig",
+            "applyMachineConfigChecked",
             "applyReplyDonation",
             "applySequential",
             "applySequentialWithLockSet",
@@ -272057,6 +272226,15 @@
             "bootAndInitialiseFromPlatformOn",
             "bootAndInitialisePlatform",
             "bootAndInitialiseRPi5",
+            "bootEnableInterruptsOp",
+            "bootFromPlatform",
+            "bootFromPlatformChecked",
+            "bootFromPlatformCheckedWithIdleThreads",
+            "bootFromPlatformCheckedWithIdleThreadsFor",
+            "bootFromPlatformUnchecked",
+            "bootFromPlatformWithIdleThreads",
+            "bootFromPlatformWithInterrupts",
+            "bootFromPlatformWithWarnings",
             "cancelBoundDonation",
             "cancelDonatedDonation",
             "cancelDonation",
@@ -272071,8 +272249,10 @@
             "cleanupPreReceiveDonation",
             "cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull",
             "commitKernelAction",
+            "commitSort",
             "contextSwitchState",
             "continueFromAcquired",
+            "createObject",
             "cspaceLookupMultiLevel",
             "cspaceLookupPath",
             "cspaceMutate",
@@ -272111,10 +272291,13 @@
             "endpointSendDualChecked",
             "endpointSendDualWithCaps",
             "endpointSweepBody",
+            "enqueueIdleThread",
             "enqueueIdleThreadOnCore",
             "ensureRunnable",
             "faultAbandon",
             "faultSuspend",
+            "foldIrqs",
+            "foldObjects",
             "getKernelState",
             "handleInterrupt",
             "handleTlbShootdownReqOnCore",
@@ -272124,6 +272307,10 @@
             "handleYieldWithBudget",
             "icFetchOnCore",
             "icInvalidateOnCore",
+            "insertByCommitTime",
+            "insertCap",
+            "installBootVSpaceRoot",
+            "installIdleThread",
             "interruptDispatchSequence",
             "lifecycleCleanupPipeline",
             "lifecyclePreRetypeCleanupWithToken",
@@ -272136,9 +272323,12 @@
             "lockSetAcquiredState",
             "lookupObject",
             "lookupVSpaceRoot",
+            "mapPage",
+            "markRunnable",
             "markTlbBarriered",
             "markTlbDirty",
             "migrateRunQueueBucket",
+            "mkEmptyIntermediateState",
             "mmioRead",
             "mmioRead32",
             "mmioRead64",
@@ -272155,17 +272345,22 @@
             "notificationWait",
             "notificationWaitChecked",
             "notificationWaitCrossCoreDispatch",
+            "objStoreWriteInstance",
             "processReplenishmentsDue",
             "processRevokeNode",
             "propagatePipChainCrossCoreState",
             "propagatePriorityInheritance",
             "purgedAndRestored",
+            "readOnlyInstance",
             "registerInterface",
+            "registerIrq",
+            "registerService",
             "removeRunnable",
             "removeRunnableValid",
             "replenishScOnCore",
             "replyRecvPostPopState",
             "replyTransferOnCore",
+            "resolveCapAddressUnderWalkLocks",
             "restoreIncomingContext",
             "restoreIncomingContextChecked",
             "restoreToReadyMidState",
@@ -272178,8 +272373,13 @@
             "retypeAsidRoundStep",
             "retypeFromUntyped",
             "revokeCdtFoldBody",
+            "revokeCdtMaterializedTraversal",
+            "revokeCdtReportingOutcome",
             "revokeCdtReportingStep",
             "revokeCdtScaffold",
+            "revokeCdtStreamingTraversal",
+            "revokeCdtStrictTraversal",
+            "revokeCdtTransactionalTraversal",
             "revokePendingTransfersFrom",
             "runChainExtension",
             "saveOutgoingContext",
@@ -272223,6 +272423,8 @@
             "syscallEntryFromAcquired",
             "syscallEntryUnderDeclaredLockSet",
             "syscallEntryUnderLockSet",
+            "syscallEntryUnderRevalidatedLockSet",
+            "syscallEntryUnderRevalidatedLockSetModel",
             "syscallLookupReplyId",
             "timeoutAwareReceive",
             "timerInterruptHandler",
@@ -272252,6 +272454,7 @@
             "withObjectStored",
             "withObjects",
             "withPipChainSchedExtension",
+            "withTaint",
             "writeRegisterState",
             "writeRestartFrameToTcb"
           ]
@@ -272259,19 +272462,23 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
-          "line": 453,
+          "line": 772,
           "called": [
             "censusWitnessBareConsume",
             "censusWitnessDelegatedStoreHelper",
             "censusWitnessDelegatedStoreWriter",
             "censusWitnessDirectLinkWrite",
+            "censusWitnessErasedRoot",
+            "censusWitnessErasedTransformer",
             "censusWitnessOpaqueTransformer",
             "censusWitnessRawTableWrite",
             "censusWitnessSplitWriter",
+            "censusWitnessWrapperTransformer",
             "chainWitnessSt1",
             "chainWitnessSt2",
             "eq_1",
             "eq_censusWitnessUserNamed",
+            "initFnCensusWitnessTransformer",
             "privateIn",
             "resolveExtraCapsDetailed",
             "resolveExtraCapsGated",
@@ -272285,7 +272492,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitions",
-          "line": 477,
+          "line": 806,
           "called": [
             "nonExecutedTransitionsPlain",
             "nonExecutedTransitionsPrivate"
@@ -272294,7 +272501,7 @@
         {
           "kind": "def",
           "name": "standsBesideLive",
-          "line": 503,
+          "line": 832,
           "called": [
             "cancelBoundDonationOnCore",
             "cancelDonationOnCore",
@@ -272307,7 +272514,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 527,
+          "line": 856,
           "called": [
             "contains",
             "insert",
@@ -272319,7 +272526,7 @@
         {
           "kind": "def",
           "name": "pinSides",
-          "line": 560,
+          "line": 889,
           "called": [
             "conclusionOf",
             "none"
@@ -272328,7 +272535,7 @@
         {
           "kind": "def",
           "name": "pinRelatesPrograms",
-          "line": 592,
+          "line": 921,
           "called": [
             "contains",
             "none",
@@ -272338,7 +272545,7 @@
         {
           "kind": "def",
           "name": "pinViolations",
-          "line": 605,
+          "line": 934,
           "called": [
             "any",
             "contains",
@@ -272352,7 +272559,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
-          "line": 645,
+          "line": 974,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272361,7 +272568,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
-          "line": 653,
+          "line": 982,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272370,7 +272577,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
-          "line": 660,
+          "line": 989,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -272379,7 +272586,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnesses",
-          "line": 665,
+          "line": 994,
           "called": [
             "pinWitnessBothOnOneSide",
             "pinWitnessConjunctionOfReflexivity",
@@ -272389,12 +272596,14 @@
         {
           "kind": "def",
           "name": "pinCheckWitnessViolations",
-          "line": 677,
+          "line": 1006,
           "called": [
+            "SystemState",
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed",
             "committingExports",
             "contains",
+            "erasureWitnessViolations",
             "insert",
             "isEmpty",
             "isStateTransformer",
@@ -272410,6 +272619,7 @@
             "size",
             "standsBesideLive",
             "state",
+            "stateCarryingTypes",
             "toList"
           ]
         }

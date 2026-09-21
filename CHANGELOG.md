@@ -1,3 +1,123 @@
+## v0.35.125 — the reachability census's domain and closure are both derived
+
+Three PR #897 findings over `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean`,
+and they are one class: `v0.35.115` derived **which files** hold a Lean probe and
+left the rest of this census to resemblances — a name prefix for "generated", a
+constant occurrence for "reachable", and a *mention* of `SystemState` for "returns
+state".  Each is silent by construction, because a domain miss never examines the
+constant, never moves the pin, and goes on reporting that every non-executed
+transformer is recorded.
+
+### A name prefix is not a generated declaration
+
+`isCompilerGenerated` carried `s.startsWith "initFn"`, so a project transition
+called `initFnCleanup` was excluded from the domain **before** its result type was
+read: a definition returning `SystemState` could sit unreachable from every
+committing export and appear on neither side of the reconciliation.  That is
+`ReplyStackWriteCensus`'s own retired `eq_` prefix, one census over.
+
+It is **deleted**, not narrowed, because the environment already answers it:
+measured, of the 4 project constants carrying an `initFn` component, **0** are
+outside `isAuxiliary` — a module's init is macro-scoped (`initFn._@.M._hyg.N`) —
+so the clause excluded nothing the derived predicate did not already exclude while
+admitting a user name it should not have.  The surviving clauses are whole
+components the compiler reserves, each measured: `_flat_ctor` 279, `_sunfold` 92,
+`_unsafe_rec` 98, and `_sizeOf_inst` **355**, none of them reached by
+`isAuxiliary`.  `_sizeOf_inst` is new here and it retires a pin entry:
+`SystemState._sizeOf_inst` was recorded as a non-executed transition, and a
+generated `SizeOf` instance is not a definition anyone wrote.
+
+### An erased dependency is not a call
+
+`liveClosure` followed `getUsedConstants` unrestricted, so a committing path that
+supplies a proof argument — or calls a theorem whose proof mentions an otherwise
+unwired transformer — marked that transformer **live** although Lean compiles the
+dependency away.  It then escaped `nonExecutedTransitions` and the wire-or-record
+gate saw nothing.  *Occurrence is not execution*, one artefact over from where
+`BootEntryContract` records it.
+
+Measured before tightening: the permissive closure is **4231** constants and the
+erasure-respecting one **3477**, so 754 were reachable only through a proof — and
+**zero** of them are state transformers, which is why the pin is unchanged by this
+half.  The tightening is free today and closes the path a single proof-carrying
+committing body would open.
+
+The test is the **telescoped result**, reusing `ReplyStackWriteCensus.isPredicate`
+rather than re-spelling it: `Expr.isProp` is true of a proof and false of
+`SystemState → Prop`, and a predicate is erased just as a proof is — which is also
+how a proof reaches this walk in practice, since the proposition a root supplies
+appears as an implicit argument at the call site.
+
+What it does **not** close is stated rather than approximated: a proof term written
+*inline* in a committing body is part of that body, and deciding that needs
+`Meta.isProof` at every argument of every application in the closure.  The residue
+over-approximates *live*, so the census demands less, and it is named in the
+docstring.
+
+### A result type that carries state is not one that mentions it
+
+The domain asked whether the telescoped result *mentions* `SystemState`, so
+`Option SystemState` was in and a named wrapper was not:
+`TlbCacheJointState.pageTableUpdate` rewrites that structure's `sysState` field and
+appeared on **neither** side of the reconciliation — while the projection
+`TlbCacheJointState.sysState` *was* in the domain, which is the shape of the miss.
+
+`stateCarryingTypes` is the derivation: `SystemState`, plus every non-propositional
+project inductive one of whose constructor **fields** holds one, transitively.
+Three things it decides, and the first two measurements got each of them wrong —
+*a measurement that licenses a conclusion gets checked as hard as the conclusion*:
+
+- **A field, not a parameter.**  A constructor's telescope opens the inductive's
+  own parameters first, so without dropping `numParams` a `Prop` structure over a
+  state reads as holding one: **64** carriers, almost all propositions.
+- **A field carries state when its own telescoped result does.**  `SystemState →
+  Prop` *reads* state.  Judging by a mention anywhere admits `PlatformBinding` and
+  both boundary contracts, and with them every platform binding and contract
+  constant in the tree — 13 carriers and 24 configuration records that transform
+  nothing.
+- **A proposition carries nothing**, since its parameters are states it is *about*.
+
+Measured: **10** carrier types beside `SystemState`, and the domain grows by **39**
+definitions no committing export reaches — the boot builder and the whole boot path
+(unreachable until SM10.1/WS-BP writes `lean_kernel_main`), the revocation
+traversals that are already a registered residue, the lock-bracket machinery, and
+the reviewer's own `TlbCacheJointState` pair.  No noise: every one produces a value
+holding kernel state.
+
+### Witnesses, and one that had to assert its own decisiveness
+
+Five planted, each with the control that keeps its arm from being decided by the
+wrong thing: a wrapper-returning transformer beside a reader-returning producer
+(the field rule); a `Prop`-sorted carrier beside its producer (the `Prop` skip,
+which excludes **nothing** on this tree and would otherwise be indistinguishable
+from dead code); an `initFn`-named transformer (the retired prefix); and the erased
+route — a transformer, a named proposition, a theorem, and a generic proof consumer.
+
+Two things that witness had to get right, both found by building it.
+`Expr.getUsedConstants` walks binder **types**, so a consumer whose argument is
+typed with the proposition reaches the transformer through its own signature; the
+consumer is generic in `P`.  And a proof term that does not mention the transformer
+makes the whole witness **inert**, so `erasureWitnessViolations` asserts that it
+does, rather than trusting it.
+
+### Measurements
+
+- Census: **579** state transformers over **11** carrier types, **295** reachable
+  from 7 committing exports by a computational path, **284** recorded.
+- Pin: 221 → 260 plain entries and 19 → 24 private ones; one stale entry retired.
+- **10 mutations, all caught** (the prefix restored, the permissive closure, the
+  mentions-only domain, the parameter drop, the field rule, the `Prop` skip, the
+  inert witness, the unwired witness, and both controls renamed).
+- Tier 3: 23 new anchors, each mutation-tested; 0 clean-tree failures.
+
+The two hand-kept pin counts in the census's own prose are retired with the same
+reasoning the tree applies everywhere else: the census prints its sizes, and a
+figure restated beside a derivation drifts on contact.
+
+No kernel behaviour changed: the census is a Tier 1 check over the environment.
+
+Refs: docs/REGISTERED_DEBT.md WS-RR RR8.12
+
 ## v0.35.124 — the probe's location is derived from Python's grammar
 
 A PR #897 finding over `scripts/check_declaration_kind_askers.py`, and it is
