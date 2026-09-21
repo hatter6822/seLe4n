@@ -1419,22 +1419,25 @@ def self_test() -> int:
     cases.append(Case("a .S comment naming tlbi is not an emission", asm_prose, False, check="containment", mutation="none"))
 
     lean_unregistered = fixture()
-    lean_unregistered["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+    lean_unregistered_vspace = (
         "import SeLe4n.Platform.FFI\n\n"
         "def unrelatedEarlierDecl : BaseIO Unit := pure ()\n\n"
         "/-- leading docstring, so the declaration is not on line 1 -/\n"
         "def unmapPage : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiByVaddr\n"
     )
+    lean_unregistered["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+        lean_unregistered_vspace)
     cases.append(Case("unregistered Lean local-FFI reference", lean_unregistered, True, check="lean_allowlist"))
 
     lean_prose = fixture()
-    lean_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+    lean_prose_vspace = (
         "import SeLe4n.Platform.FFI\n\n"
         "-- never call ffiTlbiByVaddr from here\n"
         "def unmapPage : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiForSharing 0 1\n"
     )
+    lean_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = lean_prose_vspace
     cases.append(Case("a Lean comment naming the binding is not a call", lean_prose, False, check="lean_allowlist", mutation="none"))
 
     # --- The mutation class that finds "presence checked, relation not" ---
@@ -1469,13 +1472,15 @@ def self_test() -> int:
     )
 
     lean_attr_in_prose = fixture()
-    lean_attr_in_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+    lean_attr_in_prose_vspace = (
         "import SeLe4n.Platform.FFI\n\n"
         "/-- Resolves against `@[extern \"ffi_tlbi_by_vaddr\"] ffiTlbiByVaddr`,\n"
         "    quoted here so the docstring cannot exempt this file. -/\n"
         "def unmapPage : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiByVaddr\n"
     )
+    lean_attr_in_prose["SeLe4n/Kernel/Architecture/VSpace.lean"] = (
+        lean_attr_in_prose_vspace)
     cases.append(
         Case(
             "a docstring quoting the extern attribute does not exempt the file",
@@ -1800,10 +1805,12 @@ def self_test() -> int:
     # only the reference's owner changed, and a keyword the scanner does
     # not know must not silently extend the previous declaration.
     lean_unknown_form = fixture()
-    lean_unknown_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+    lean_unknown_form_runtime = (
         BASE_LEAN
         + "\ninitialize badLocalFlush : Unit \u2190 SeLe4n.Platform.FFI.ffiTlbiAll\n"
     )
+    lean_unknown_form["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+        lean_unknown_form_runtime)
     cases.append(
         Case(
             "an `initialize` after an allowlisted def does not inherit its entry",
@@ -2055,11 +2062,12 @@ def self_test() -> int:
     # see; classifying it as a non-declaration let them inherit the
     # preceding definition's allowlist entry.
     lean_mutual = fixture()
-    lean_mutual["SeLe4n/Kernel/Concurrency/Runtime.lean"] = (
+    lean_mutual_runtime = (
         BASE_LEAN
         + "\nmutual\n\ndef hiddenLocalFlush : BaseIO Unit :=\n"
         "  SeLe4n.Platform.FFI.ffiTlbiAll\n\nend\n"
     )
+    lean_mutual["SeLe4n/Kernel/Concurrency/Runtime.lean"] = lean_mutual_runtime
     cases.append(
         Case(
             "a declaration inside `mutual` does not inherit the previous entry",

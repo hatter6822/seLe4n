@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.131.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.132.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1751,6 +1751,43 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   half; a substitution **assigned** to a name beside the one that is returned; and an
   ambiguous name that is *not* probe text, since the ambiguous-probe refusal fires
   first for every name that is.  **Run the mutations before believing the cases.**
+
+
+  **And a PREFILTER is not the SIGNAL — and asking one with the other's predicate
+  skipped two whole gates** (PR #897 review, `v0.35.132`).  Every rule above is about
+  what a scanner asserts of input it examined.  This is the cheapest way not to
+  examine any: `embedded_lean` returned early unless `_probe_signal(text)` held, and
+  that predicate is written for a probe's OWN text, where the import begins a line.
+  Asked of a whole Python file it is a different question, false for one of the
+  commonest spellings there is — `PROBE = """import SeLe4n ...` opens the literal on
+  the assignment line, so no line of the file begins with the import.
+
+  **Measured, and the measurement is why this is a rule rather than a patch**: that
+  skipped `check_ipc_invariant_dethreading.py` (11 markers) and
+  `check_tlbi_broadcast_discipline.py` (4) — two real Tier 0 gates, every embedded
+  Lean probe outside the inventory, with the gate reporting the tree clean.  Not
+  fixtures; the plants in the six preceding cuts admitted nothing, and this widening
+  admits exactly those two files.  **A prefilter must be strictly WIDER than the
+  predicate it stands in for**, and where a scanner has both, the narrow one is kept
+  for the questions that genuinely are about a line start.
+
+  Its sibling finding is the resolution residue reached by an extra HOP: `ALIAS =
+  PROBE` resolves to no literal, so a transform through it substitutes into a hole
+  whose result carries no marker, and the template is still located carrying the
+  constructors its *unsubstituted* text spells.  **The refusal is the remedy, not
+  resolution** — a probe has one name, deleting an alias is a one-line change, and
+  chasing a chain whose depth nothing bounds is the partial-analysis shape this file
+  retires twice over; the probe SET is closed transitively all the same, so `B = A`
+  over `A = PROBE` is seen.
+
+  One correction this cut records about its own plan, because the plan was wrong and
+  the measurement said so before any code was written.  The first design deleted the
+  hole machinery outright, on the ground that no probe in the tree assembles text.
+  That is true of the 41 probe **assignments** and false of their **uses**: three
+  `@SENTINEL@` `.replace` sites substitute *computed* values, so a canonical
+  "substitute with literals or refuse" rule would have refused every real probe in
+  the repository.  *Measure the uses, not only the definitions* — and when a
+  measurement kills the plan, that is the measurement working.
 
   **And when TWO conditions guard one question, each needs a witness the other
   cannot rescue** (PR #897 review, `v0.35.130`).  `v0.35.125` deleted the `initFn`

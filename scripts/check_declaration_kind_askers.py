@@ -160,6 +160,30 @@ def _probe_signal(text: str) -> bool:
     return bool(LEAN_PROBE_MARKER.search(text) or _ANY_CONSTRUCTOR.search(text))
 
 
+#: The FILE-level prefilter, which must be strictly WIDER than the value-level
+#: signal -- `v0.35.132` (PR #897 review).  `_probe_signal` reads a probe's own
+#: text, where the import really does start a line.  Applied to the RAW SOURCE it
+#: asks a different question, and gets it wrong for one of the commonest spellings
+#: there is: `PROBE = """import SeLe4n ...` opens the literal on the assignment
+#: line, so no line in the file begins with the import, and a template that fills
+#: `.@KIND@Info` spells no complete constructor either.  Both signals are false,
+#: the early return in `embedded_lean` fires, and the file is never parsed -- a
+#: body-kind asker outside this inventory with the gate reporting the tree clean.
+#: That is the silent domain defect this gate exists to close, in the gate itself.
+#:
+#: So the prefilter drops the anchor.  Being strictly wider, it can never skip a
+#: file the anchored reading would have admitted, and the anchored reading is kept
+#: for the two questions that genuinely are about a line start: whether a LOCATED
+#: constant is probe text, and whether the file's markers are all accounted for.
+_PROBE_PREFILTER_MARKER = re.compile(r"import\s+(?:Lean|SeLe4n)\b")
+
+
+def _probe_prefilter(text: str) -> bool:
+    """Could this FILE embed a probe?  Strictly wider than `_probe_signal`."""
+    return bool(_PROBE_PREFILTER_MARKER.search(text)
+                or _ANY_CONSTRUCTOR.search(text))
+
+
 class UnreadableProbe(Exception):
     """A file embeds Lean this gate cannot locate as a string constant."""
 
@@ -338,6 +362,65 @@ def _ambiguous_probe_bindings(tree: ast.AST) -> list[str]:
                   if name in reached and len(texts) > 1
                   and any(t is not None and LEAN_PROBE_MARKER.search(t)
                           for t in texts))
+
+
+def _probe_alias_bindings(tree: ast.AST) -> list[tuple[str, str]]:
+    """Aliases of a probe name that a string assembly then reads.
+
+    `v0.35.132` (PR #897 review).  `_module_string_bindings` resolves a name to a
+    string LITERAL, so an alias -- `ALIAS = PROBE` -- resolves to nothing at all,
+    and a transform through it (`ALIAS.replace("@KIND@", kind)`) has an unreadable
+    base: the `.replace` arm substitutes into a hole, the result IS a hole, it
+    carries no import marker, and so neither the splice refusal nor the unreadable
+    refusal ever sees it.  The template itself is still located -- with the
+    constructors its *unsubstituted* text spells, which is none -- so the asker is
+    invisible in both directions at once.  The same shape as the ambiguous-name
+    defect beside it, reached by an extra hop instead of by a second binding.
+
+    Resolving the hop is one remedy and REFUSING it is the other; this takes the
+    refusal, because it is the canonical-spelling exit this project prefers
+    wherever the subject is code it writes itself: a probe has ONE name, and
+    deleting the alias is a one-line change.  Resolution would have to chase a
+    chain whose depth nothing bounds, which is the partial-analysis shape that has
+    already cost this file several rounds.
+
+    The probe SET is closed transitively all the same, because the refusal has to
+    see `B = A` over `A = PROBE`; what is deliberately not chased is the value.
+    The closure terminates without a fuel bound: `probes` only grows and is
+    bounded by the module's own names, so a bound would be the partial answer
+    `v0.35.131` retired one file over.
+
+    Conditioned on a string assembly READING the alias, for the reason the
+    ambiguous-name refusal is: `SRC = PROBE` followed by `run(SRC)` hides nothing,
+    the template being located and counted under its own name, and refusing it
+    would reject correct code.  Measured: zero such aliases on the tracked tree,
+    so both directions are planted today.
+    """
+    probes = {name for name, texts in _name_bindings(tree).items()
+              if any(t is not None and LEAN_PROBE_MARKER.search(t) for t in texts)}
+    aliases: list[tuple[str, str]] = []
+    while True:
+        grew = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Assign):
+                targets, value = list(node.targets), node.value
+            elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+                targets, value = [node.target], node.value
+            else:
+                continue
+            if not isinstance(value, ast.Name) or value.id not in probes:
+                continue
+            for target in targets:
+                if isinstance(target, ast.Name) and target.id not in probes:
+                    probes.add(target.id)
+                    aliases.append((target.id, value.id))
+                    grew = True
+        if not grew:
+            break
+    reached = {n.id for shape in _string_assembly_shapes(tree)
+               for n in ast.walk(shape) if isinstance(n, ast.Name)}
+    return sorted({(alias, source) for alias, source in aliases
+                   if alias in reached})
 
 
 def _reconstruct_holed(node: ast.AST, consts: dict[str, str]) -> str | None:
@@ -659,7 +742,7 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     keyed on "some fragment is not a literal" would also refuse the readable
     `HEADER + <literal>` shape.
     """
-    if not _probe_signal(text):
+    if not _probe_prefilter(text):
         return []
     try:
         tree = ast.parse(text)
@@ -677,6 +760,20 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"then denotes no one text, so a template reached through it cannot be "
             f"resolved and a substitution into it is read as applying to nothing; "
             f"give each probe its own name.")
+    aliased = _probe_alias_bindings(tree)
+    if aliased:
+        alias, source = aliased[0]
+        raise UnreadableProbe(
+            f"{path} binds `{alias}` to the probe name `{source}` and then builds "
+            f"string text through `{alias}`"
+            + (f" ({len(aliased)} such aliases)" if len(aliased) > 1 else "")
+            + ".  A name bound to another NAME resolves to no literal, so the "
+            f"transform reads an unreadable base, its result carries no import "
+            f"marker, and neither the splice nor the unreadable refusal sees it -- "
+            f"while `{source}` is still located, carrying the constructors its "
+            f"unsubstituted template spells rather than the ones the probe decides. "
+            f" Give the probe one name: apply the substitution to `{source}` "
+            f"directly and delete the alias.")
     unreadable = _unreadable_assemblies(tree)
     if unreadable:
         first, reason = unreadable[0]
@@ -1072,6 +1169,12 @@ ASKER_REASONS: dict[str, str] = {
         "in one scope, which would share a subject key.  The two counts are the two "
         "probes, and they must DIFFER -- a count moving between them under a shared "
         "key is precisely what the refusal exists to prevent.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ALIASED_PASSTHROUGH":
+        "THIS GATE'S OWN FIXTURE for the CONTROL of the alias refusal: a probe "
+        "merely passed on by name, with no assembly reading it, which hides nothing "
+        "and must still be located and counted under its own name.  Its constructor "
+        "is what the control asserts, so a refusal that swallowed the pass-through "
+        "would show up as a missing count rather than as a silent pass.",
 }
 
 #: The inventory: {subject: {constructor: count}}, reconciled both directions.
@@ -1144,6 +1247,9 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SENTINEL_TEMPLATE": {
         "inductInfo": 1,
+    },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_ALIASED_PASSTHROUGH": {
+        "defnInfo": 1,
     },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_UNMODELLED_TRANSFORM": {
         "opaqueInfo": 1,
@@ -1864,6 +1970,71 @@ private def secondBinding (ci : ConstantInfo) : Bool :=
 #: twice, so a row-sum reads two markers accounted for against the two in the file
 #: and the unlocatable one is MASKED.  A surplus from double-reporting must not pay
 #: for a marker nobody read.
+#: The FILE-level prefilter's own defect (`v0.35.132`).  The literal OPENS on the
+#: assignment line, so no line of the raw source begins with the import, and the
+#: template fills `.@KIND@Info`, so no complete constructor is spelled either: both
+#: signals are false on the raw text and the file is never parsed.  The located
+#: VALUE is anchored at its own start, so the value-level signal admits it the
+#: moment the file is read -- which is why the remedy is a wider prefilter rather
+#: than a weaker signal.
+_FIXTURE_INLINE_OPENED_LITERAL = '''\
+PROBE = """import SeLe4n.Platform.FFI
+
+def fixtureProbe : BaseIO Unit := pure ()
+"""
+
+
+def build():
+    return PROBE
+'''
+
+#: The RESOLUTION residue reached by an extra HOP rather than by a second binding
+#: (`v0.35.132`).  `ALIAS = PROBE` resolves to no literal, so `ALIAS.replace(...)`
+#: substitutes into a hole; the result is a hole, carries no import marker, and so
+#: neither the splice refusal nor the unreadable refusal fires -- while `PROBE` is
+#: located carrying zero constructors and the probe handed to Lean matches
+#: `.opaqueInfo`.  TWO hops, so a fix that closes only the direct alias is caught
+#: by the fixture rather than by the next review round.
+_FIXTURE_ALIASED_TEMPLATE = '''\
+PROBE = """
+import SeLe4n
+
+private def aliased (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .@KIND@Info _ => true
+  | _ => false
+"""
+
+HOP = PROBE
+ALIAS = HOP
+
+
+def build(kind):
+    return ALIAS.replace("@KIND@", kind)
+'''
+
+#: The CONTROL for the alias refusal, and what keeps it from rejecting correct
+#: code.  A probe passed on by name with no assembly reading it hides nothing: the
+#: template is located and counted under its own name, exactly as it would be
+#: without the binding.  Without this case a mutation dropping the `reached`
+#: condition refuses every such pass-through and still passes the self-test.
+_FIXTURE_ALIASED_PASSTHROUGH = '''\
+PROBE = """
+import SeLe4n
+
+private def passthrough (ci : ConstantInfo) : Bool :=
+  match ci with
+  | .defnInfo _ => true
+  | _ => false
+"""
+
+SRC = PROBE
+
+
+def run():
+    return _elaborate(SRC)
+'''
+
 _FIXTURE_DOUBLE_BOUND_PROBE = '''\
 import SeLe4n.Testing
 
@@ -2550,6 +2721,58 @@ def _self_test() -> int:
             print("FAIL: --self-test — an assembly over an ambiguous fragment name")
             print(f"      was not refused: {problems}.  Resolving it to either")
             print("      binding reads the probe over text it may never build.")
+            return 1
+
+    # (32) The FILE-level prefilter, which is a DIFFERENT question from the
+    #      value-level signal and was asked with the same predicate.  Modelled on
+    #      the two real gates this found: the literal OPENS on the assignment line,
+    #      so no line of the raw source begins with the import, and the probe names
+    #      no constructor at all, so the widened locator does not admit the file
+    #      either.  Under the anchored reading `embedded_lean` returned before
+    #      parsing and every probe in the file was outside the inventory, with the
+    #      gate reporting the tree clean.  The located VALUE is anchored at its own
+    #      start, so nothing about the signal needed weakening -- only the prefilter
+    #      needed widening, and the assertion is LOCATION rather than a count,
+    #      because a probe naming no constructor has none.
+    opened = "scripts/opened_literal_gate.py"
+    located = embedded_lean(opened, _FIXTURE_INLINE_OPENED_LITERAL)
+    if [name for name, _ in located] != ["PROBE"]:
+        print("FAIL: --self-test — a probe whose literal opens on the assignment")
+        print(f"      line was not located: {[n for n, _ in located]}.  The")
+        print("      file-level prefilter must be WIDER than the value-level")
+        print("      signal, or a whole file is skipped before it is parsed.")
+        return 1
+
+    # (33) The RESOLUTION residue reached by an extra HOP.  `ALIAS = PROBE` resolves
+    #      to no literal, so the transform reads an unreadable base, its result
+    #      carries no marker, and neither the splice nor the unreadable refusal sees
+    #      it -- while the template is located carrying zero constructors.  TWO hops,
+    #      so a fix closing only the direct alias fails here rather than in the next
+    #      review round.
+    with tempfile.TemporaryDirectory() as root:
+        ali = "scripts/aliased_template_gate.py"
+        _fixture(root, {**base, ali: _FIXTURE_ALIASED_TEMPLATE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(ali in p and "resolves to no literal" in p for p in problems):
+            print("FAIL: --self-test — a transform through an ALIAS of a probe")
+            print(f"      name was not refused: {problems}.  The template is then")
+            print("      counted with the constructors it does not decide.")
+            return 1
+
+    # (34) ...and its control, which is what keeps (33) from rejecting correct code.
+    #      A probe passed on by name with no assembly reading it hides nothing, so it
+    #      must be located and counted exactly as it would be without the binding.
+    #      A mutation dropping the `reached` condition refuses this and passes (33).
+    with tempfile.TemporaryDirectory() as root:
+        thru = "scripts/aliased_passthrough_gate.py"
+        _fixture(root, {**base, thru: _FIXTURE_ALIASED_PASSTHROUGH})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(thru)}
+        expected = {thru + "::PROBE": {"defnInfo": 1}}
+        if got != expected:
+            print("FAIL: --self-test — a probe merely passed on by name was not")
+            print(f"      read under its own name: {got}, expected {expected}.")
+            print("      Refusing a pass-through rejects correct code.")
             return 1
 
     found = capture()

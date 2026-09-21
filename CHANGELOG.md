@@ -1,3 +1,63 @@
+## v0.35.132 — a file-level prefilter is a different question from a value-level signal
+
+Two findings from PR #897's review of `scripts/check_declaration_kind_askers.py`,
+both real, and the first of them was live on **two Tier 0 gates** rather than on a
+fixture.
+
+**The prefilter asked the value-level question of the raw source.**
+`embedded_lean` returned early unless `_probe_signal(text)` held, and that
+predicate is written for a probe's OWN text, where the import really does begin a
+line.  Asked of a whole Python file it is a different question, and it is false
+for one of the commonest spellings there is: `PROBE = """import SeLe4n ...` opens
+the literal on the assignment line, so no line of the file begins with the import.
+Measured on the tracked tree, that skipped **`check_ipc_invariant_dethreading.py`
+(11 markers) and `check_tlbi_broadcast_discipline.py` (4)** — two real gates whose
+every embedded Lean probe was outside this inventory, with the gate reporting the
+tree clean.  A domain miss is silent by construction, which is why neither showed
+up as a failure anywhere.
+
+The prefilter drops the anchor (`_probe_prefilter`).  Being strictly wider it can
+never skip a file the anchored reading admitted, and the anchored reading is kept
+for the two questions that genuinely are about a line start: whether a LOCATED
+constant is probe text, and whether a file's markers are all accounted for.  The
+widening admits exactly those two files and nothing else.
+
+Both were then refused for the reason the gate exists to state — several probes in
+one scope binding no name, so a count moving between them would be invisible — and
+the remedy is the one the message names: the ten fixture sources are hoisted to
+names.  No gate behaviour changes; both self-tests pass unchanged (132 and 49
+cases).
+
+**A transform through an ALIAS of a probe name was read as applying to nothing.**
+`_module_string_bindings` resolves a name to a string LITERAL, so `ALIAS = PROBE`
+resolves to nothing and `ALIAS.replace("@KIND@", kind)` substitutes into a hole:
+the result is a hole, carries no import marker, and neither the splice nor the
+unreadable refusal sees it, while the template is still located carrying the
+constructors its *unsubstituted* text spells.  Invisible in both directions at
+once — the ambiguous-name defect beside it, reached by an extra hop.
+
+Resolving the hop is one remedy and refusing it is the other; this takes the
+refusal, because a probe has ONE name and deleting an alias is a one-line change,
+where resolution would chase a chain whose depth nothing bounds.  The probe SET is
+closed transitively all the same, so `B = A` over `A = PROBE` is seen; the closure
+needs no fuel, since it only grows and is bounded by the module's own names.
+
+Three cases, and the third is the one that keeps the second from rejecting correct
+code: a probe merely passed on by name hides nothing and must still be counted.
+All three mutations are caught by their own case — reverting the prefilter,
+disabling the refusal, and dropping the condition that makes it precise.
+
+**Measured before choosing, and it corrected the plan.**  The first design was to
+delete the hole machinery outright on the ground that no probe in the tree
+assembles text.  That is true of the 41 probe *assignments* and false of their
+*uses*: three `@SENTINEL@` `.replace` sites substitute computed values
+(`", ".join(...)`), so a "substitute with literals or refuse" rule would have
+refused every real probe in the tree.  The machinery is load-bearing and stays.
+
+No kernel behaviour, no Lean, no fixture and no proof changes.
+
+Refs: docs/REGISTERED_DEBT.md table C
+
 ## v0.35.131 — the census's two remaining partial answers, returned as complete
 
 PR #897 review (Codex P2, two findings).  `v0.35.128` made an exhausted carrier

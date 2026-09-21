@@ -15893,10 +15893,19 @@ run_check "INVARIANT" bash -lc 'rg -n "     .queueNeighbourPatch., .param., .wri
 # and the counts together.
 run_check "INVARIANT" bash -lc 'rg -n "^LEAN_PROBE_MARKER = re\.compile\(r.\^import\\\\s\+\(\?:Lean\|SeLe4n\)\\\\b., re\.M\)$" scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "^_ANY_CONSTRUCTOR = re\.compile\(\n    r.\\\\b\(\?:. \+ .\|.\.join\(CONSTANT_INFO_CONSTRUCTORS\) \+ r.\)\\\\b.\)$" scripts/check_declaration_kind_askers.py'
-# ...and BOTH the file-level early return and the per-constant filter read the
-# same predicate, so the two cannot answer differently about what a probe is.
+# ...and the per-constant filter reads that predicate.
+#
+# RETRACTED AT `v0.35.132`: this block used to assert that the FILE-LEVEL early
+# return read the same predicate, "so the two cannot answer differently about what
+# a probe is".  They are not the same question, and reading one predicate at both
+# was the defect: `_probe_signal` is written for a probe's OWN text, where the
+# import begins a line, and asked of a whole Python file it is false for
+# `PROBE = """import SeLe4n ...`, which opens the literal on the assignment line.
+# Measured, that skipped two real Tier 0 gates whole.  The file-level check is
+# `_probe_prefilter`, pinned in the `v0.35.132` block below, and it must be
+# strictly WIDER than this one; the anchor that used to sit here pinned the
+# retired call and is repointed there rather than deleted.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def _probe_signal\(text: str\) -> bool:[^\n]*(\n([ \t][^\n]*)?)*    return bool\(LEAN_PROBE_MARKER\.search\(text\) or _ANY_CONSTRUCTOR\.search\(text\)\)$" scripts/check_declaration_kind_askers.py'
-run_check "INVARIANT" bash -lc 'rg -n "    if not _probe_signal\(text\):" scripts/check_declaration_kind_askers.py'
 run_check "INVARIANT" bash -lc 'rg -n "        if not _probe_signal\(value\.value\):" scripts/check_declaration_kind_askers.py'
 # The retired marker-only spellings must not come back at either site.
 run_negative_check "INVARIANT" bash -lc 'rg -n "if not LEAN_PROBE_MARKER\.search\(text\):" scripts/check_declaration_kind_askers.py'
@@ -17257,5 +17266,54 @@ run_check "INVARIANT" rg -F -n 'private def censusWitnessParameterReader : Model
 run_check "INVARIANT" rg -F -n 'private def censusWitnessParameterisedAliasProducer (_st : Model.SystemState) :' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 run_check "INVARIANT" rg -F -n '      `SeLe4n.Testing.KernelTransitionReachabilityCensus.censusWitnessNestedAliasTransformer' SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
 
+
+# ===========================================================================
+# v0.35.132 (PR #897 review): a PREFILTER is not the SIGNAL
+# ===========================================================================
+# `embedded_lean` returned early unless `_probe_signal(text)` held, and that
+# predicate is written for a probe's OWN text, where the import begins a line.
+# Asked of a whole Python file it is a different question: `PROBE = """import
+# SeLe4n ...` opens the literal on the assignment line, so no line of the file
+# begins with the import.  Measured, that skipped TWO real Tier 0 gates --
+# `check_ipc_invariant_dethreading.py` and `check_tlbi_broadcast_discipline.py` --
+# with every embedded Lean probe outside the inventory and the gate reporting the
+# tree clean.  A domain miss is silent by construction.
+# ---------------------------------------------------------------------------
+# (1) THE PREFILTER IS ITS OWN PREDICATE, and its marker is UNANCHORED, so it is
+# strictly wider than the value-level signal it stands in for.
+run_check "INVARIANT" rg -F -n '_PROBE_PREFILTER_MARKER = re.compile(r"import\s+(?:Lean|SeLe4n)\b")' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _probe_prefilter(text: str) -> bool:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    return bool(_PROBE_PREFILTER_MARKER.search(text)' scripts/check_declaration_kind_askers.py
+# (2) ...and `embedded_lean` reads THE PREFILTER, never the value-level signal.
+# A mutation that keeps both definitions and calls the narrow one here is exactly
+# the pre-fix behaviour, so the relation is pinned at the call rather than at the
+# definition.
+run_check "INVARIANT" bash -lc 'rg -n -U "def embedded_lean\(path: str, text: str\)[^\n]*(\n([ \t][^\n]*)?)*" scripts/check_declaration_kind_askers.py | rg -F "if not _probe_prefilter(text):"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def embedded_lean\(path: str, text: str\)[^\n]*(\n([ \t][^\n]*)?)*" scripts/check_declaration_kind_askers.py | rg -F "if not _probe_signal(text):"'
+# (3) THE ANCHORED READING SURVIVES for the two questions that are about a line
+# start: whether a LOCATED constant is probe text, and the marker accounting.
+run_check "INVARIANT" rg -F -n 'LEAN_PROBE_MARKER = re.compile(r"^import\s+(?:Lean|SeLe4n)\b", re.M)' scripts/check_declaration_kind_askers.py
+# (4) THE ALIAS REFUSAL, and its transitive probe set: `B = A` over `A = PROBE`
+# must be seen, so the SET is closed even though the VALUE is not chased.
+run_check "INVARIANT" rg -F -n 'def _probe_alias_bindings(tree: ast.AST) -> list[tuple[str, str]]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '                    probes.add(target.id)' scripts/check_declaration_kind_askers.py
+# (5) ...conditioned on an assembly READING the alias, which is what keeps it from
+# refusing a probe merely passed on by name.
+run_check "INVARIANT" rg -F -n '                   if alias in reached})' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    aliased = _probe_alias_bindings(tree)' scripts/check_declaration_kind_askers.py
+# (6) THE CLOSURE CARRIES NO FUEL, deliberately: it only grows and is bounded by
+# the module's own names, so a bound would be `v0.35.131`'s partial answer one file
+# over.  Pinned by the SIGNATURE positive above rather than by a negative on the
+# word: the shared code view has no Python stripper, so a `.py` file is read raw
+# and a negative would fire on the docstring that explains the decision -- which is
+# this project's own rule against contorting prose to satisfy a scanner.  Adding a
+# fuel parameter changes the signature and fails that positive.
+# (7) THE TEN FIXTURE SOURCES the widening exposed are bound to names, so each is
+# its own subject.  Pinned at the two gates, since a count moving between probes
+# sharing one key is precisely what the refusal exists to prevent.
+run_check "INVARIANT" rg -F -n '    orphan_payoff_main = (' scripts/check_ipc_invariant_dethreading.py
+run_check "INVARIANT" rg -F -n '    census_missing_main = (' scripts/check_ipc_invariant_dethreading.py
+run_check "INVARIANT" rg -F -n '    lean_unregistered_vspace = (' scripts/check_tlbi_broadcast_discipline.py
+run_check "INVARIANT" rg -F -n '    lean_mutual_runtime = (' scripts/check_tlbi_broadcast_discipline.py
 
 finalize_report

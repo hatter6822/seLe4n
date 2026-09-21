@@ -5837,12 +5837,13 @@ end «shadow»""",
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    orphan_payoff["Main.lean"] = (
+    orphan_payoff_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    orphan_payoff["Main.lean"] = orphan_payoff_main
     cases.append(
         _Case(
             "a payoff module no build root reaches is an orphan, not a consumer",
@@ -6210,12 +6211,13 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    echo_root["Main.lean"] = (
+    echo_root_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    echo_root["Main.lean"] = echo_root_main
     echo_root["scripts/fixture_note.sh"] = (
         "#!/bin/sh\n"
         'echo lake build SeLe4n.Kernel.API\n'
@@ -6898,16 +6900,18 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    unreachable_bundle["Main.lean"] = (
+    unreachable_bundle_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.API\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
-    unreachable_bundle[CENSUS_MODULE] = (
+    unreachable_bundle["Main.lean"] = unreachable_bundle_main
+    unreachable_bundle_census = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.API\n"
     )
+    unreachable_bundle[CENSUS_MODULE] = unreachable_bundle_census
     cases.append(
         _Case(
             "a bundle outside the census module's closure is reported",
@@ -6923,13 +6927,14 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
     # layer at all.
     census_missing = _fixture()
     census_missing["lakefile.toml"] = unreachable_bundle["lakefile.toml"]
-    census_missing["Main.lean"] = (
+    census_missing_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "import SeLe4n.Kernel.API\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    census_missing["Main.lean"] = census_missing_main
     cases.append(
         _Case(
             "a missing census module is reported, not silently skipped",
