@@ -140,6 +140,74 @@ class TestManifestClassification(unittest.TestCase):
             self.assertIn("is not a row", shape.error)
             self.assertFalse(shape.is_trace_fixture)
 
+    def test_a_repeated_scenario_id_is_an_ERROR(self) -> None:
+        """PR #897's review, `v0.35.139`: the id set collapses the repetition.
+
+        Two rows for one id classify successfully under the superseded parse, the
+        registry can supply ONE metadata entry for them, `scenario_ids_in`
+        returns a set so `validate-registry` cannot see the second, and
+        `check_fragments` loops rows, so both can be credited to the same emitted
+        line.  Preserving: both rows are well-formed and both fragments name
+        their own scenario — they simply name the same one.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.expected"
+            p.write_text(
+                MANIFEST
+                + "RH-001 | RobinHood | robin-hood check passed "
+                  "[RH-001b empty size is 0]\n",
+                encoding="utf-8")
+            shape = sc.classify_fixture(p)
+            self.assertIsNotNone(shape.error)
+            self.assertIn("repeats scenario id RH-001", shape.error)
+
+    def test_a_scenario_id_repeated_ACROSS_fixtures_is_an_ERROR(self) -> None:
+        """The other half: `classify_fixture` refuses a repeat inside one
+        manifest, and `fixture_ids_and_errors` is where two fixtures declaring
+        one id collapse — `ids |= found`.  The registry then describes one of the
+        two scenarios while `validate-registry` compares sets and agrees."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            first = root / "a.expected"
+            second = root / "b.expected"
+            first.write_text(MANIFEST, encoding="utf-8")
+            second.write_text(
+                MANIFEST.replace("Suite: robin_hood_suite", "Suite: other_suite"),
+                encoding="utf-8")
+            ids, errors = sc.fixture_ids_and_errors([first, second])
+            self.assertTrue(errors)
+            self.assertIn("already declared by", errors[0])
+
+    def test_two_fixtures_with_DISJOINT_ids_are_accepted(self) -> None:
+        """The control: without it the case above is satisfied by a union that
+        refuses any second fixture at all, and the live tree has two manifests."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            first = root / "a.expected"
+            second = root / "b.expected"
+            first.write_text(MANIFEST, encoding="utf-8")
+            second.write_text(
+                MANIFEST.replace("Suite: robin_hood_suite", "Suite: other_suite")
+                        .replace("RH-00", "TPH-00"),
+                encoding="utf-8")
+            ids, errors = sc.fixture_ids_and_errors([first, second])
+            self.assertEqual(errors, [])
+            self.assertEqual(ids, {"RH-001", "RH-002", "TPH-001", "TPH-002"})
+
+    def test_a_scenario_id_with_no_FAMILY_is_an_ERROR(self) -> None:
+        """The family is what bounds the reverse scan's domain, so an id without
+        one would take its manifest out of that scan silently — the shape of
+        defect the reverse direction exists to close, arriving through its own
+        domain.  Every live row already matches, so requiring it is free."""
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "m.expected"
+            p.write_text(
+                "# Suite: robin_hood_suite\n"
+                "Legacy | RobinHood | Legacy check passed\n", encoding="utf-8")
+            shape = sc.classify_fixture(p)
+            self.assertIsNotNone(shape.error)
+            self.assertIn("is not `<FAMILY>-<number>`", shape.error)
+
     def test_a_declared_manifest_with_no_rows_is_an_ERROR(self) -> None:
         """Preserving: the header block is untouched; only the rows are gone.
 
@@ -268,6 +336,59 @@ class TestFragmentRelation(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             self.assertEqual(sc.check_fragments(self._manifest(d), OUTPUT), [])
 
+    def test_rejects_an_EMITTED_scenario_with_no_row(self) -> None:
+        """PR #897's review, `v0.35.139`, and it was LIVE.
+
+        The forward loop asks only whether every ROW is traced, so a suite that
+        adds a labelled scenario without adding its row passes: every old
+        fragment still matches, and `validate-registry` sees only the id set the
+        manifest itself declares.  The manifest claims to enumerate its
+        producer's scenarios, and that claim was made by nothing.
+
+        Measured on the real tree rather than constructed: `two_phase_arch_suite`
+        had emitted `TPH-015` with thirteen sub-case labels and no manifest row
+        since it was written, so the registry silently stopped describing it.
+        That row and its registry entry land in the same cut.
+
+        Preserving: every declared row is still emitted and still passes the
+        forward direction — the output simply carries one scenario more.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            extra = OUTPUT + "robin-hood check passed [RH-003a resize keeps order]\n"
+            errors = sc.check_fragments(self._manifest(d), extra)
+            self.assertEqual(len(errors), 1)
+            self.assertIn("RH-003", errors[0])
+            self.assertIn("does not declare", errors[0])
+
+    def test_an_emitted_label_of_ANOTHER_family_is_not_this_manifest_s(self) -> None:
+        """The domain bound, and what makes the reverse direction askable at all.
+
+        An ordinary output line may carry anything, so a scan for every
+        label-shaped token would report whatever a suite happens to print.  The
+        families the manifest's own rows declare are what bound it — `TPH-015` is
+        not a Robin Hood scenario and this manifest makes no claim about it.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            other = OUTPUT + "two-phase check passed [TPH-015a boot succeeds]\n"
+            self.assertEqual(sc.check_fragments(self._manifest(d), other), [])
+
+    def test_an_emitted_id_NOT_at_a_label_position_is_not_a_claim(self) -> None:
+        """Both directions read one `LABEL_POSITION`, so a mid-line mention is no
+        more a claim here than it is evidence there: `(covers RH-003)` says the
+        suite mentioned a scenario, not that it traced one."""
+        with tempfile.TemporaryDirectory() as d:
+            mention = OUTPUT + "robin-hood check passed [RH-002b get (covers RH-003)]\n"
+            self.assertEqual(sc.check_fragments(self._manifest(d), mention), [])
+
+    def test_the_emitted_extractor_reads_the_families_it_is_given(self) -> None:
+        """The predicate, directly, in both directions — so the reverse scan is
+        pinned at its own function rather than only through a whole check."""
+        text = "a [RH-001a x]\nb [TPH-002c y]\nRH-003a z\nq (covers RH-009) r\n"
+        self.assertEqual(sc.emitted_scenario_ids(text, {"RH"}),
+                         {"RH-001", "RH-003"})
+        self.assertEqual(sc.emitted_scenario_ids(text, {"TPH"}), {"TPH-002"})
+        self.assertEqual(sc.emitted_scenario_ids(text, set()), set())
+
     def test_rejects_a_renamed_label(self) -> None:
         """THE decisive case, and the drift that actually shipped.
 
@@ -312,9 +433,16 @@ class TestFragmentRelation(unittest.TestCase):
             # The pre-fix relation: the bytes are there.
             self.assertIn("RH-001", collision)
             errors = sc.check_fragments(manifest, collision)
-            self.assertEqual(len(errors), 1)
-            self.assertIn("RH-001", errors[0])
-            self.assertIn("label position", errors[0])
+            # TWO findings since `v0.35.139`, and the second is the reverse
+            # direction agreeing: the row is not emitted, AND the suite labels a
+            # scenario (`RH-0010`) this manifest does not declare.  Both are true
+            # of this output and the pair is strictly more informative than the
+            # one; the assertion names each rather than counting, so a later cut
+            # that adds a third finding is not forced to edit a number.
+            self.assertTrue(any("RH-001 expected_trace_fragment not emitted" in e
+                                and "label position" in e for e in errors))
+            self.assertTrue(any("RH-0010" in e and "does not declare" in e
+                                for e in errors))
 
     def test_accepts_that_same_row_against_its_OWN_line(self) -> None:
         """The control, so the rejection above is attributable to the collision

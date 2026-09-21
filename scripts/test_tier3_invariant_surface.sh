@@ -16428,7 +16428,14 @@ run_check "INVARIANT" bash -lc 'rg -n "scenario_catalog.py\" list-manifests" scr
 # happens to be emitted; and the id must not be satisfied by a longer one that
 # merely has it as a prefix.
 run_check "INVARIANT" rg -n '^def fragment_names_scenario' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def fragment_names_scenario[^\n]*(\n([ \t][^\n]*)?)*\[a-z\]\?\(\?!\[0-9A-Za-z-\]\)" scripts/scenario_catalog.py'
+# (`v0.35.139` retires the inline-pattern anchor that stood here.  The label
+# position is one owner now -- the module-level `LABEL_POSITION`, which the
+# reverse direction reads too -- so this declaration no longer spells the
+# boundary itself, and the relation this anchor asserted is the COMPOSITION of
+# two facts the `v0.35.139` block below pins: that `LABEL_POSITION` carries
+# `[a-z]?(?![0-9A-Za-z-])`, and that `fragment_names_scenario` substitutes into
+# it.  A third anchor with that same literal would be a second answer free to
+# drift from the first, which is what hoisting the pattern removed.)
 run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*if not fragment_names_scenario\(scenario_id, fragment\):" scripts/scenario_catalog.py'
 # ...and the retired bare containment reading must not come back.
 run_negative_check "INVARIANT" bash -lc 'rg -n "return scenario_id in fragment" scripts/scenario_catalog.py'
@@ -17590,6 +17597,57 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mention_consumed[
 run_check "INVARIANT" rg -F -n '    def test_rejects_a_STANDALONE_LITERAL(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_accepts_that_same_literal_with_a_CALLEE_in_front(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_the_operand_question_is_asked_of_the_HEAD(self) -> None:' scripts/tests/test_scenario_catalog.py
+
+
+# --------------------------------------------------------------------------
+# `v0.35.139` (PR #897's review): the manifest/output scenario relation is asked
+# in BOTH directions, and a scenario id is declared ONCE.
+# --------------------------------------------------------------------------
+# `check_fragments` asked only whether every ROW is traced, so a suite that added
+# a labelled scenario without adding its row passed -- live on this tree, where
+# `two_phase_arch_suite` had emitted `TPH-015` under thirteen sub-case labels
+# and no row.
+# Where a label may sit has ONE owner, so the two directions cannot reconcile
+# different relations.
+run_check "INVARIANT" rg -F -n 'LABEL_POSITION = r"(?:^|\[){id}[a-z]?(?![0-9A-Za-z-])"' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    pattern = re.compile(LABEL_POSITION.format(id=re.escape(scenario_id)))' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'EMITTED_LABEL = re.compile(LABEL_POSITION.format(id=r"([A-Z]+-\d+)"), re.MULTILINE)' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'def emitted_scenario_ids(output_text: str, families: set[str]) -> set[str]:' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fragments[^\n]*(\n([ \t][^\n]*)?)*for scenario_id in sorted\(emitted_scenario_ids\(output_text, families\) - declared\):" scripts/scenario_catalog.py'
+# ...bounded to the manifest's OWN families, which is what makes the reverse scan
+# askable: an ordinary output line may carry anything.
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fragments[^\n]*(\n([ \t][^\n]*)?)*families = \{m.group\(1\) for row in manifest.rows" scripts/scenario_catalog.py'
+# ...and the label position must not be re-spelled: a second pattern would be
+# free to disagree, and the two directions would reconcile different relations.
+run_negative_check "INVARIANT" rg -F -n 're.compile(r"(?:^|\[)" + re.escape(scenario_id)' scripts/scenario_catalog.py
+# ...which the negative above only APPROXIMATES, since it names one retired
+# spelling and a third reader is free to invent another.  The claim is "ONE
+# owner", so the pin is a COUNT: the alternation occurs exactly once in the file,
+# and the two positives above say which occurrence that is.  (A composed
+# invocation, so `check_anchor_consistency.py` reads it as pinning a property of
+# the composition -- which it is.)
+run_check "INVARIANT" bash -lc "rg -c --fixed-strings '(?:^|\[)' scripts/scenario_catalog.py | rg -x '1'"
+# A SCENARIO ID IS DECLARED ONCE -- within a manifest and across fixtures.  The
+# registry is keyed by id and can describe one scenario per id, and both later
+# checks read a SET, so a repetition is invisible to every one of them.
+run_check "INVARIANT" rg -F -n '        if scenario_id in seen_ids:' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_ids_and_errors[^\n]*(\n([ \t][^\n]*)?)*first = declared_by.get\(scenario_id\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n 'SCENARIO_ID = re.compile(r"^([A-Z]+)-\d+$")' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '        if SCENARIO_ID.match(scenario_id) is None:' scripts/scenario_catalog.py
+# ...with the rejecting cases, the domain-bound control, and the two-fixture
+# control that stops the union refusal from being "refuse any second fixture".
+run_check "INVARIANT" rg -F -n '    def test_rejects_an_EMITTED_scenario_with_no_row(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_an_emitted_label_of_ANOTHER_family_is_not_this_manifest_s(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_an_emitted_id_NOT_at_a_label_position_is_not_a_claim(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_the_emitted_extractor_reads_the_families_it_is_given(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_repeated_scenario_id_is_an_ERROR(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_scenario_id_repeated_ACROSS_fixtures_is_an_ERROR(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_two_fixtures_with_DISJOINT_ids_are_accepted(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_scenario_id_with_no_FAMILY_is_an_ERROR(self) -> None:' scripts/tests/test_scenario_catalog.py
+# ...and the live omission the reverse direction found is closed: the manifest
+# row and the registry entry for the scenario the suite had always emitted.
+run_prose_check "INVARIANT" rg -F -n 'TPH-015 | TwoPhaseArch | TPH-015a boot succeeds with rpi5BootVSpaceRoot' tests/fixtures/two_phase_arch_smoke.expected
+run_prose_check "INVARIANT" rg -F -n '  TPH-015:' tests/fixtures/scenario_registry.yaml
 
 
 finalize_report

@@ -1,3 +1,107 @@
+## v0.35.139 — the manifest/output scenario relation is asked in both directions, and an id is declared once
+
+Two findings from PR #897's review, one artefact, and the first of them was
+**live on this tree**.
+
+### The reverse direction was asked by nothing, and `TPH-015` is what that cost
+
+*"When a suite adds a new labelled scenario without adding its manifest row—for
+example, outputting `[RH-013a ...]` while the Robin Hood manifest still ends at
+`RH-012`—this loop checks only existing rows, so every old fragment matches and
+Tier 2 passes; registry validation also sees only fixture IDs. The scenario
+registry can therefore silently stop enumerating the scenarios the producer
+actually emits."*
+
+Measured before choosing, and the measurement found the defect rather than a
+hypothetical: `two_phase_arch_suite` emits **eight** label-position scenarios and
+its manifest declared **seven**.  `TPH-015` (WS-RC R3 boot VSpaceRoot threading,
+twelve test functions emitting thirteen sub-case labels) had no row and no
+registry entry, since the registry is derived from these ids — so the artefact
+that claims to enumerate the suite's scenarios had silently stopped describing
+one.  The row and the registry entry land in this cut, with the fixture's
+`.sha256` refreshed; the fragment count moves 7 → 8 and `robin_hood_smoke` is
+unchanged at 12, which is the measurement that its manifest was already complete.
+
+`check_fragments` now also extracts the ids the producer puts at a **label
+position** and requires each to be a row.  Two things make that askable:
+
+* **One owner for where a label may sit.**  `LABEL_POSITION` is the pattern
+  `fragment_names_scenario` has always used, hoisted to a module constant and
+  substituted either with an escaped id (the forward direction) or with a
+  capturing group (the reverse).  A second spelling would be free to disagree
+  about what a label position is, and the two directions would then reconcile
+  different relations.
+* **The domain is the manifest's own families.**  An ordinary output line may
+  carry anything, so a scan for every label-shaped token would report whatever a
+  suite happens to print.  Restricting to the families its rows declare asks the
+  question the manifest is a claim about.  It still over-approximates in the safe
+  direction — a line that brackets `RH-999` is a false *missing row*, never a
+  false pass.
+
+The family is therefore load-bearing, so a manifest row's id must be
+`<FAMILY>-<number>`: an id without one would take its manifest out of the reverse
+scan's domain silently, which is the shape of defect this direction exists to
+close arriving through its own domain.  Every live row already matches, so
+requiring it is free.
+
+One thing this cut's own row exposed, and it is the hand-kept-figure rule
+arriving inside the cut that adds a row.  `v0.35.119` wrote *"all 19 live rows"*
+into **two** live docstrings as the measurement licensing its strict reading;
+this cut, writing a third strict reading, **copied the figure into three more**
+— and then added the twentieth row.  Five docstrings said 19 of a tree with 20,
+and three of them were written in the same cut that falsified them.  That is how
+such a figure propagates: not by going stale where it was written, but by being
+carried into new prose as though it were the claim.  The claim is *every live
+row already matches*; the numeral was never the content and is exactly what
+drifts on contact, so the docstrings state the claim and the number stays here,
+where a version stamps it.
+
+One mechanical note worth keeping: `EMITTED_LABEL` needs `re.MULTILINE` and
+`fragment_names_scenario` must not have it, because **the two directions ask the
+same pattern at different scopes** — the forward one is handed a single line, so
+its `^` means a line start, while the reverse is handed a whole output, where an
+unflagged `^` would mean the start of the *document*.  Sharing the pattern and
+not the scope would be two relations again, at the one point this cut exists to
+make single.  Measured: the flag admits **nothing** on this tree —
+`Testing.expectCond` prints `<tag> check passed [<label>]` and both producers use
+it, so every live label is bracketed — so the extractor's own test, with a
+line-start label no suite emits, is what pins it.
+
+### A scenario id is declared once
+
+*"When a manifest repeats an ID, this set comprehension silently collapses the
+rows... The later registry comparison also operates on sets, so it still passes
+even though the registry can supply only one metadata entry for the two
+declarations."*
+
+Exact, and it is invisible to every downstream check by construction: the
+registry is keyed by id, `scenario_ids_in` returns a **set**, and
+`check_fragments` loops rows so both can be credited to the same emitted line.
+Two places collapse a repetition and both now refuse it — `classify_fixture` for
+a repeat **within** a manifest (it is a malformed manifest, reported with both
+line numbers) and `fixture_ids_and_errors` for one **across** fixtures, at the
+`ids |= found` where the union is formed.
+
+The two-fixture **control** is what stops the second from being "refuse any
+second fixture at all", which the live tree would fail: it has two manifests.
+
+### Six conditions, six distinct failure sets
+
+| mutation | fails |
+|---|---|
+| drop the reverse loop | the emitted-with-no-row case; the longer-id collision |
+| drop the family bound | the other-family control; the extractor's own verdicts |
+| drop `re.MULTILINE` | the extractor's own verdicts |
+| drop the within-manifest refusal | the repeated id |
+| drop the cross-fixture refusal | the id repeated across fixtures |
+| drop the family-shape refusal | the id with no family |
+
+`test_rejects_a_fragment_emitted_under_a_LONGER_scenario_id` now yields **two**
+findings rather than one — the row is not emitted, and the suite labels a
+scenario the manifest does not declare, both true of that output — so its
+assertion names each finding instead of counting them, which is what stops a
+later cut that adds a third from having to edit a number.
+
 ## v0.35.138 — a mention that binds nothing is not a use by construction
 
 PR #897's review, against `v0.35.123`: *"a consumer containing only a bare

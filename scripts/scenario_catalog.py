@@ -63,6 +63,20 @@ MANIFEST_ROW = re.compile(
 SUITE_DECL = re.compile(r"^#\s*Suite:\s*([a-z][a-z0-9_]*)\s*$")
 # The bracket form a trace fixture uses for its scenario ids: `[RH-001] ...`.
 BRACKET_ID = re.compile(r"^\[([A-Z]+-\d+)\]")
+#: A scenario id's canonical shape: an upper-case family prefix and a number.
+#: Both manifests use it for EVERY row, and requiring it is what makes the
+#: reverse reconciliation (`emitted_scenario_ids`) non-vacuous: the family is
+#: what bounds that scan's domain, so an id with no family would silently take a
+#: manifest out of it (`v0.35.139`).
+SCENARIO_ID = re.compile(r"^([A-Z]+)-\d+$")
+#: **Where a scenario id may appear to be a LABEL**, written once because two
+#: questions ask it: whether a manifest row's fragment names its own scenario
+#: (`fragment_names_scenario`) and which scenarios a producer's output claims to
+#: trace (`emitted_scenario_ids`).  A second spelling would be free to disagree
+#: about what a label position is, and the two directions would then reconcile
+#: different relations.  `{id}` is substituted with an escaped id or with a
+#: capturing group for the family.
+LABEL_POSITION = r"(?:^|\[){id}[a-z]?(?![0-9A-Za-z-])"
 
 
 class Manifest:
@@ -132,13 +146,46 @@ def fragment_names_scenario(scenario_id: str, fragment: str) -> bool:
     than guessed: `TPH-001a empty builder valid` (the label is the fragment) and
     `robin-hood check passed [RH-001a ...]` (the label is bracketed).  Requiring
     one of them is this project's *require a canonical spelling and refuse the
-    rest* rule, and it costs the tree nothing -- all 19 live fragments sit at a
+    rest* rule, and it costs the tree nothing -- every live fragment sits at a
     label position -- so a suite that emits `PASS: TPH-001a ...` spells the
     fragment as the label rather than the gate widening to a third position.
     """
-    pattern = re.compile(r"(?:^|\[)" + re.escape(scenario_id)
-                         + r"[a-z]?(?![0-9A-Za-z-])")
+    pattern = re.compile(LABEL_POSITION.format(id=re.escape(scenario_id)))
     return pattern.search(fragment) is not None
+
+
+#: The reverse of `fragment_names_scenario`: every id a producer's output puts at
+#: a label position, for the families given.  Built from `LABEL_POSITION`, so the
+#: two directions cannot disagree about where a label sits.
+#:
+#: `re.MULTILINE` is what makes that sharing real, because the two directions ask
+#: the pattern at different SCOPES.  The forward direction is handed ONE LINE (see
+#: `check_fragments`), so its `^` means the start of a line; this is handed a whole
+#: output, where an unflagged `^` would mean the start of the DOCUMENT -- a
+#: different relation, at the one point this cut exists to make single.  Measured:
+#: it admits nothing on this tree, since `Testing.expectCond` prints
+#: `<tag> check passed [<label>]` and both producers use it, so every live label is
+#: bracketed.  `test_the_emitted_extractor_reads_the_families_it_is_given` is
+#: therefore what pins it, with a line-start label no suite emits today.
+EMITTED_LABEL = re.compile(LABEL_POSITION.format(id=r"([A-Z]+-\d+)"), re.MULTILINE)
+
+
+def emitted_scenario_ids(output_text: str, families: set[str]) -> set[str]:
+    """Every scenario id `output_text` labels, restricted to `families`.
+
+    The domain bound is what lets this be asked at all: an ordinary output line
+    may carry anything, so a scan for *every* label-shaped token would report
+    whatever a suite happens to print.  Restricting to the families the
+    manifest's own rows declare asks the question the manifest is a claim about
+    -- *these scenarios* -- and cannot fire on output that is not about them.
+
+    It is still an over-approximation in the safe direction: a line that happens
+    to bracket `RH-999` is reported, which is a false MISSING ROW rather than a
+    false pass, and a suite that means it should add the row.
+    """
+    return {scenario_id
+            for scenario_id in EMITTED_LABEL.findall(output_text)
+            if (m := SCENARIO_ID.match(scenario_id)) and m.group(1) in families}
 
 
 def classify_fixture(path: Path) -> FixtureShape:
@@ -152,6 +199,7 @@ def classify_fixture(path: Path) -> FixtureShape:
     the only silent skip and the only correct one.
     """
     rows: list[tuple[str, str, str]] = []
+    seen_ids: dict[str, int] = {}
     suite: str | None = None
     suite_lineno = 0
     malformed: list[str] = []
@@ -186,12 +234,40 @@ def classify_fixture(path: Path) -> FixtureShape:
             malformed.append(f"line {lineno} is not a row: {stripped!r}")
             continue
         scenario_id, subsystem, fragment = match.groups()
+        if SCENARIO_ID.match(scenario_id) is None:
+            # `v0.35.139`: the FAMILY is what bounds the reverse reconciliation's
+            # scan of the producer's output, so an id without one would take this
+            # manifest out of that scan's domain silently -- the shape of defect
+            # the reverse direction exists to close, arriving through its own
+            # domain.  Every live row already matches, so requiring it is free.
+            malformed.append(
+                f"line {lineno}: scenario id {scenario_id!r} is not "
+                f"`<FAMILY>-<number>` — the family is what bounds the scan that "
+                f"reconciles the producer's emitted scenarios back to this "
+                f"manifest, so an id without one leaves the manifest out of it"
+            )
+            continue
         if not fragment_names_scenario(scenario_id, fragment):
             malformed.append(
                 f"line {lineno}: row {scenario_id}'s expected_trace_fragment "
                 f"does not name {scenario_id}: {fragment!r}"
             )
             continue
+        if scenario_id in seen_ids:
+            # PR #897's review, `v0.35.139`: a repeated id is not a harmless
+            # duplicate row.  The registry is keyed by id and can supply ONE
+            # metadata entry, `scenario_ids_in` returns a SET so the repetition
+            # is invisible to `validate-registry`, and `check_fragments` loops
+            # rows, so two rows can both be credited to the same emitted line --
+            # two declarations, one scenario, and nothing that could report it.
+            malformed.append(
+                f"line {lineno} repeats scenario id {scenario_id}, first "
+                f"declared on line {seen_ids[scenario_id]} — the registry is "
+                f"keyed by id and can describe one scenario per id, and the id "
+                f"set both later checks read collapses the two"
+            )
+            continue
+        seen_ids[scenario_id] = lineno
         rows.append((scenario_id, subsystem, fragment))
 
     declares = suite is not None
@@ -269,14 +345,31 @@ def fixture_ids_and_errors(paths: list[Path]) -> tuple[set[str], list[str]]:
     """
     ids: set[str] = set()
     errors: list[str] = []
+    declared_by: dict[str, Path] = {}
     for path in paths:
         if not path.exists():
             continue
         found, error = scenario_ids_in(path)
         if error is not None:
             errors.append(error)
-        else:
-            ids |= found
+            continue
+        # `|=` is where a CROSS-fixture repeat disappears (PR #897's review,
+        # `v0.35.139`).  `classify_fixture` refuses a repeat within one manifest;
+        # two fixtures declaring one id collapse here instead, and the registry
+        # -- keyed by id -- then describes one of the two scenarios while
+        # `validate-registry` compares sets and reports agreement.
+        for scenario_id in sorted(found):
+            first = declared_by.get(scenario_id)
+            if first is not None:
+                errors.append(
+                    f"{path}: scenario id {scenario_id} is already declared by "
+                    f"{first} — the registry is keyed by id and can describe "
+                    f"one scenario per id, and the union both commands read "
+                    f"collapses the two"
+                )
+                continue
+            declared_by[scenario_id] = path
+        ids |= found
     return ids, errors
 
 
@@ -912,7 +1005,7 @@ def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
     scenario at a label position, asked through the one function that owns the
     question rather than through a second spelling of it.  It costs the tree
     nothing, measured: `expectCond` emits `{tag} check passed [{label}]`, so the
-    id sits immediately inside a `[` on every one of the 19 live rows' lines.
+    id sits immediately inside a `[` on every live row's line.
 
     That a row's fragment names its own scenario is still `classify_fixture`'s
     question and is asked before any suite runs -- a cross-wired row is a
@@ -924,6 +1017,7 @@ def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
         errors.append(f"{manifest.path}: no manifest rows — the check would pass vacuously")
         return errors
     lines = output_text.splitlines()
+    declared = {row[0] for row in manifest.rows}
     for scenario_id, _subsystem, fragment in manifest.rows:
         if not any(fragment in line and fragment_names_scenario(scenario_id, line)
                    for line in lines):
@@ -932,6 +1026,23 @@ def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
                 f"by `lake exe {manifest.suite}` on a line naming {scenario_id} at a "
                 f"label position: {fragment!r}"
             )
+    # ...AND THE OTHER DIRECTION (PR #897's review, `v0.35.139`).  The loop above
+    # asks only whether every ROW is traced, so a suite that adds a labelled
+    # scenario without adding its row passes: every old fragment still matches,
+    # and `validate-registry` sees only the id set the manifest itself declares.
+    # The manifest claims to enumerate its producer's scenarios, and that claim
+    # was made by nothing -- measured on the live tree, where
+    # `two_phase_arch_suite` had emitted `TPH-015` under thirteen sub-case labels
+    # and no row since it was written.
+    families = {m.group(1) for row in manifest.rows
+                if (m := SCENARIO_ID.match(row[0]))}
+    for scenario_id in sorted(emitted_scenario_ids(output_text, families) - declared):
+        errors.append(
+            f"{manifest.path}: `lake exe {manifest.suite}` labels scenario "
+            f"{scenario_id}, which this manifest does not declare — the manifest "
+            f"is what the scenario registry enumerates, so an emitted scenario "
+            f"with no row is one the registry silently stops describing"
+        )
     return errors
 
 

@@ -1020,6 +1020,11 @@ scenarios:
     function: tph014a_frozenSchedule/tph014b_frozenYield/tph014c_scheduleNoEligible
     subsystem: TwoPhaseArch
     description: "RunQueue operations in frozen state"
+  TPH-015:
+    source: tests/TwoPhaseArchSuite.lean
+    function: tph015a_bootSucceeds/tph015b_postBootHasVSpaceRoot/tph015c_postBootWxInvariantHolds/tph015d_asidTableHasBootRoot/tph015e_noBootVSpaceCompat/tph015f_objIdCollisionRejected/tph015g_admissionWitness/tph015h_simBootVSpaceRoot/tph015i_vspaceRootInInitialObjectsRejected/tph015j_sentinelBootVSpaceObjIdRejected/tph015k_unsafeBootVSpaceRejected/tph015l_nonCanonicalVAddrRejected
+    subsystem: TwoPhaseArch
+    description: "boot VSpaceRoot threading through bootFromPlatformChecked"
   SCN-NOTIF-BADGE-DELIVERY:
     source: tests/OperationChainSuite.lean
     function: chain22NotificationBadgeDelivery
