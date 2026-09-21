@@ -3982,7 +3982,10 @@ private theorem restoreToReady_getElem_eq_of_quiescent
   | some tcb =>
       rw [SystemState.updateTcb_eq_of_some hLk]
       dsimp only []
-      have hSame : ({ tcb with ipcState := .ready, queuePrev := none, queueNext := none, queuePPrev := none, pendingReceiveReply := none } : TCB) = tcb := by
+      -- Stated over the shared clear (`TCB.restoredToReady`, `v0.35.134`) rather
+      -- than over a copy of its field list, so a field added to the restore
+      -- reaches this proof instead of leaving it quietly weaker.
+      have hSame : tcb.restoredToReady = tcb := by
         have h1 := hQ.ready tcb hLk
         have h2 := hQ.noNext tcb hLk
         have h3 := hQ.noPrev tcb hLk

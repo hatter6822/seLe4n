@@ -1611,8 +1611,49 @@ PR #873 round 15: the thread also **enters the run queue**, for the reason its
 suspending counterpart leaves it.  Skipping the insert left a resumed thread
 `.ready` and absent from every `byPriority` bucket, which is precisely the state
 `frozenChooseThread` cannot select from — resumed in name, unschedulable in
-fact.  If the resumed thread has higher priority than current, `current` is
-cleared to force rescheduling. -/
+fact.
+
+**And it mirrors the live resume's three scheduling steps** (`v0.35.134`).  All
+three were absent, and each is a divergence from `resumeThread` on a state the
+frozen surface reaches.  They were found by sweeping the question PR #897's
+review asked of `frozenComputeMaxWaiterPriority` — *which priority does this
+surface read* — one function over, which is why they are one cut with it.
+
+1. **The field clear is `TCB.restoredToReady`** (`Model/Object/Types.lean`), the
+   live `restoreToReady`'s own function rather than a second list of fields.
+   This set `ipcState := .ready` and stopped, so the three intrusive-queue links
+   and the stashed receive Reply survived the resume.  The stashed Reply is the
+   sharper half: `replyIsStashed` stays true, so lifecycle cleanup of that Reply
+   answers `revocationRequired` with no receive pending — the defect PR #822's
+   review added the live clear for, alive here because the clear had no name to
+   call.
+
+2. **`pipBoost` is recomputed from the blocking graph** (live H3b).  While the
+   thread was `.Inactive`, threads may have blocked on it or stopped blocking on
+   it, so a carried-over boost is stale in both directions: too high and the
+   thread runs at an inherited band nobody is waiting for, too low and the
+   inversion priority inheritance exists to prevent is live.  It is computed on
+   the **cleared** state, as live computes it after `restoreToReady`, so a thread
+   whose own `ipcState` recorded it as blocked on itself does not count itself.
+
+3. **The preemption comparison reads `TCB.boostedPriority`**, which is what the
+   live comparison's `resolveEffectivePrioDeadline` resolves to
+   (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`).  It compared
+   `tcb'.priority` against `curTcb.priority` — the **bases** — so the two
+   surfaces disagreed in both directions whenever either thread carried a boost:
+   a boosted resumed thread failed to preempt the lower-priority thread its boost
+   exists to get ahead of, and an unboosted resumed thread preempted a boosted
+   current one.  No fixture could see it (none of the three frozen resume
+   scenarios set `current` at all, so the branch was unexecuted) and no
+   differential could reach it (`.tcbResume` is outside `FrozenOpBranch.all`,
+   which covers the IPC syscalls).
+
+Clearing `current` **is** the frozen spelling of the live re-enqueue-then-
+schedule: dispatch here is `current := some tid` with the thread left in its
+bucket, so clearing it makes the outgoing thread selectable again, exactly as
+`frozenHandleYield` documents.  The enqueue runs after the comparison where live
+runs it before; the order is immaterial, because the enqueue touches only
+`byPriority` and the comparison reads only the two TCBs. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1620,25 +1661,35 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     | some tcb =>
       if tcb.threadState != .Inactive then .error .illegalState
       else
-        let tcb' := { tcb with threadState := .Ready, ipcState := .ready }
-        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
-        | .ok stored =>
-          -- If resumed thread has higher priority than current, force reschedule
-          let st' := match (stored.scheduler.current) with
-            | some curTid =>
-              match stored.getTcb? curTid with
-              | some curTcb =>
-                if tcb'.priority.val > curTcb.priority.val then
-                  { stored with scheduler := { stored.scheduler with current := none } }
-                else stored
-              | _ => { stored with scheduler := { stored.scheduler with current := none } }
-            | none => stored
-          -- PR #873 round 15: and it re-enters the run queue, which is what
-          -- makes it selectable at all.
-          match frozenEnsureRunnable st' tid with
-          | .error e => .error e
-          | .ok st'' => .ok ((), st'')
+        -- (1) the shared restore, committed first so (2) reads a state in which
+        -- the resumed thread is no longer recorded as blocked on anything.
+        match frozenWithObjectStored st tid.toObjId (.tcb tcb.restoredToReady) with
         | .error e => .error e
+        | .ok stCleared =>
+          -- (2) the boost re-derived from the post-restore blocking graph.
+          let tcb' := { tcb.restoredToReady with
+                          threadState := .Ready
+                          pipBoost := frozenComputeMaxWaiterPriority stCleared tid }
+          match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
+          | .ok stored =>
+            -- (3) preemption on the EFFECTIVE priority, off the record just
+            -- stored, so the refreshed boost is the one compared.
+            let st' := match (stored.scheduler.current) with
+              | some curTid =>
+                match stored.getTcb? curTid with
+                | some curTcb =>
+                  if tcb'.boostedPriority.val > curTcb.boostedPriority.val then
+                    { stored with scheduler := { stored.scheduler with current := none } }
+                  else stored
+                | _ => { stored with scheduler := { stored.scheduler with current := none } }
+              | none => stored
+            -- PR #873 round 15: and it re-enters the run queue, which is what
+            -- makes it selectable at all -- at the bucket `tcb'.boostedPriority`
+            -- names, which (2) may have moved.
+            match frozenEnsureRunnable st' tid with
+            | .error e => .error e
+            | .ok st'' => .ok ((), st'')
+          | .error e => .error e
 
 -- ============================================================================
 -- D2-L: Frozen priority management operations

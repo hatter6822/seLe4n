@@ -603,10 +603,28 @@ has none -- `computeMaxWaiterPriority`'s frozen counterpart.
 
 "Effective" is `TCB.boostedPriority`, the same accessor the frozen run queue
 buckets by, so a boost computed here and the bucket it lands a thread in cannot
-disagree.  (The live version reads `effectiveSchedParams`, which additionally
-consults the waiter's SchedContext; this surface has no scheduling-parameter
-resolution and buckets by the TCB alone, so consulting one here would be a
-*second* answer to the question `frozenEnsureRunnable` already decides.) -/
+disagree -- **and it is the live reading too**, not an approximation of it.  The
+live `computeMaxWaiterPriority` reads `effectiveSchedParams`, whose priority
+component is `TCB.boostedPriority` at every binding since `v0.35.133` gave a base
+priority one home, which is what lets a surface that resolves no scheduling
+parameters answer the same question by reading the same field.
+`FrozenOps.Agreement.frozenComputeMaxWaiterPriority_eq_live_reading` states that
+outright -- quantified over **every** live state, since the reading turns out to
+read none of it -- so a cut that sends either side back to consulting a
+SchedContext fails to elaborate.
+
+Until `v0.35.134` this paragraph said the live version "additionally consults the
+waiter's SchedContext" and presented the frozen reading as a deliberate
+simplification.  That was true of `v0.35.132` and PR #897's review reported the
+pair as a divergence against it; `v0.35.133` closed it and swept neither the
+prose nor the missing pin, which is this project's own *sweep the forward-looking
+prose* rule unrun at the cut that made it stale.
+
+**What is still not pinned** is the enumeration and the fold order: the live fold
+runs over `objectIndex.filterMap` and this one over a `FrozenMap.fold`, so the
+two visit the same waiters in different orders under `objectIndexSetComplete`.
+The result is order-insensitive (it is a maximum), but nothing here says so --
+that composite is the differential's, not a theorem's. -/
 def frozenComputeMaxWaiterPriority (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
     : Option SeLe4n.Priority :=
   (frozenWaitersOf st tid).foldl (fun acc waiterTid =>

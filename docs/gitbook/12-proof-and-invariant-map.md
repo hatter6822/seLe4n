@@ -701,6 +701,23 @@ platform rather than with the lock.
 > thread where it was. **Delivery is still owed to WS-BP BP7**: a staged frame
 > reaches no hardware register while `contextRestoreSeamLive` is `false`.
 
+> **The frozen execute phase reads the same priority, and the same field
+> clear** (`v0.35.134`). PR #897's review reported the frozen waiter fold as
+> reading a different priority from the live one; it did against `v0.35.132`,
+> and `v0.35.133`'s one-home collapse closed it while leaving nothing in the
+> tree saying so. `effectiveSchedParams_fst_eq_boostedPriority` and
+> `frozenComputeMaxWaiterPriority_eq_live_reading` are the two halves of saying
+> it, the second quantified over every live state because the reading reads
+> none of it. Sweeping the same question found `frozenResumeThread` reading the
+> wrong priority in three places — a four-field-short restore, no `pipBoost`
+> recompute, and a preemption test on the two **bases** rather than the
+> effective priorities, so the surfaces disagreed both ways whenever either
+> thread carried an inherited boost. The live field clear is now
+> `TCB.restoredToReady`, called by both surfaces: it had been spelled inline
+> inside `updateTcb`'s lambda, so the mirror could only copy its field list.
+> Canonical: [`CLAUDE.md`](../../CLAUDE.md) and
+> [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §R5.D.
+
 ## 4. Per-core (SMP) lifts
 
 Every bundle above has a per-core form that quantifies over `CoreId` and reads

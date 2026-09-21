@@ -1753,76 +1753,21 @@ private theorem saveOutgoingContext_preserves_schedContext_lookup
 
 /-- AK2-B: `saveOutgoingContext` preserves `effectiveBucketPriority` for any
 TCB — it only modifies the outgoing TCB's registerContext, which
-`effectiveBucketPriority` doesn't inspect. -/
+`effectiveBucketPriority` doesn't inspect.
+
+**`v0.35.134`: 70 lines of store reasoning became one citation.**  The proof
+established, by case analysis over what the outgoing key holds before and
+after, that the two SchedContext lookups agree — an obligation
+`effectiveBucketPriority_frame_weak` demanded and which the accessor stopped
+having a use for when `v0.35.133` collapsed its body to `TCB.boostedPriority`.
+`effectiveBucketPriority_congr` is unconditional, so the `hObjInv` argument is
+dead too; it is kept so every caller is unchanged, which is what keeps this
+cut confined to the theorem family. -/
 private theorem saveOutgoingContext_effectiveBucketPriority_eq
-    (st : SystemState) (tcb : TCB) (hObjInv : st.objects.invExt) :
+    (st : SystemState) (tcb : TCB) (_hObjInv : st.objects.invExt) :
     effectiveBucketPriority (saveOutgoingContext st) tcb
-      = effectiveBucketPriority st tcb := by
-  apply effectiveBucketPriority_frame_weak
-  intros scId _
-  by_cases hLook : ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc)
-  · left
-    obtain ⟨sc, hSc⟩ := hLook
-    exact ⟨sc, hSc, saveOutgoingContext_preserves_schedContext_lookup st scId sc hSc hObjInv⟩
-  · right
-    have hLookN : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc) := by
-      intro sc hE; exact hLook ⟨sc, hE⟩
-    refine ⟨hLookN, ?_⟩
-    -- Post-state: if saveOut produced a `.schedContext` at scId.toObjId, the
-    -- input must also have had one — contradiction.
-    intro sc hE
-    by_cases hNe : ∀ outTid, (st.scheduler.currentOnCore bootCoreId) = some outTid → outTid.toObjId ≠ scId.toObjId
-    · have hPreserved : (saveOutgoingContext st).objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
-        saveOutgoingContext_preserves_lookup_of_ne st scId.toObjId hNe hObjInv
-      rw [hPreserved] at hE
-      exact hLookN sc hE
-    · -- At scId.toObjId = outTid.toObjId, the post-state holds a .tcb (not
-      -- a .schedContext). Contradict with hE.
-      have hWitness : ∃ outTid, (st.scheduler.currentOnCore bootCoreId) = some outTid ∧
-          outTid.toObjId = scId.toObjId :=
-        Classical.byContradiction fun h =>
-          hNe fun outTid hCurX hEqX => h ⟨outTid, hCurX, hEqX⟩
-      obtain ⟨outTid, hCur, hEq⟩ := hWitness
-      -- The outgoing TCB's ObjId IS scId.toObjId. `st.objects[outTid.toObjId]?`
-      -- must hold a TCB (currentThreadValid would tell us but we don't have
-      -- that here; however if it holds any non-TCB, saveOut is a no-op there,
-      -- and then hE says `some (.schedContext sc) = st.objects[scId.toObjId]?`
-      -- which contradicts hLookN). Split cases:
-      rw [← hEq] at hE
-      -- hE now: (saveOut st).objects[outTid.toObjId]? = some (.schedContext sc)
-      cases hOut : st.objects[outTid.toObjId]? with
-      | none =>
-        -- saveOut is no-op when outgoing TCB is missing
-        have : (saveOutgoingContext st).objects[outTid.toObjId]? = none := by
-          unfold saveOutgoingContext; rw [hCur]; dsimp only
-          rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hOut])]
-          exact hOut
-        rw [this] at hE; exact absurd hE (by simp)
-      | some outObj =>
-        cases outObj with
-        | tcb outTcb =>
-          -- saveOut inserts .tcb at outTid.toObjId, hE says .schedContext
-          have : (saveOutgoingContext st).objects[outTid.toObjId]?
-              = some (.tcb { outTcb with registerContext := st.machine.regs }) := by
-            unfold saveOutgoingContext
-            rw [hCur]; dsimp only
-            rw [SystemState.updateTcb_eq_of_some
-              ((SystemState.getTcb?_eq_some_iff st outTid outTcb).mpr hOut)]
-            dsimp only
-            simp only [RHTable_getElem?_eq_get?]
-            rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects _ _ hObjInv]
-          rw [this] at hE; exact absurd hE (by simp)
-        | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-          -- saveOut is no-op when outgoing isn't a TCB; hE reduces to original
-          -- st.objects[outTid.toObjId]? which is non-.schedContext by hOut, or
-          -- is .schedContext sc. We must contradict hLookN.
-          have hPres : (saveOutgoingContext st).objects[outTid.toObjId]?
-              = st.objects[outTid.toObjId]? := by
-            unfold saveOutgoingContext; rw [hCur]; dsimp only
-            rw [SystemState.updateTcb_eq_self_of_none (by simp [SystemState.getTcb?, hOut])]
-          rw [hPres] at hE
-          rw [hEq] at hE
-          exact hLookN sc hE
+      = effectiveBucketPriority st tcb :=
+  effectiveBucketPriority_congr st (saveOutgoingContext st) tcb
 
 /-- Helper: `schedulerPriorityMatch` transfers through `saveOutgoingContext` because
 the scheduler (runQueue) is unchanged, TCB fields (priority, pipBoost,

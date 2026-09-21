@@ -81,16 +81,17 @@ def restoreToReadyStaging (st : SystemState) (tid : SeLe4n.ThreadId)
   -- rewritten in place, no bookkeeping touched, the identity when `tid`
   -- resolves to no TCB.
   st.updateTcb tid fun tcb' =>
-    let cleared : TCB := { tcb' with
-        ipcState := .ready
-        queuePrev := none
-        queueNext := none
-        queuePPrev := none
-        -- PR #822 review: cancelling/restoring a (server-first) receive also
-        -- relinquishes its stashed reply object, else `replyIsStashed` keeps the
-        -- Reply permanently in-use and later lifecycle cleanup of it returns
-        -- `revocationRequired` even though no receive is still pending.
-        pendingReceiveReply := none }
+    -- **`TCB.restoredToReady` (`Model/Object/Types.lean`) is the field clear**,
+    -- named where the record is so the frozen resume calls the same one instead
+    -- of carrying its own list of fields (`v0.35.134`); it was spelled inline
+    -- here, so `frozenResumeThread` cleared `ipcState` alone and left the three
+    -- queue links and the stashed Reply set.  The PR #822 review's
+    -- `pendingReceiveReply` clear is a member of it: cancelling or restoring a
+    -- (server-first) receive also relinquishes its stashed reply object, else
+    -- `replyIsStashed` keeps the Reply permanently in-use and later lifecycle
+    -- cleanup of it returns `revocationRequired` even though no receive is still
+    -- pending.
+    let cleared : TCB := tcb'.restoredToReady
     match frame with
     | some f => cleared.withReturnFrame f
     | none => cleared

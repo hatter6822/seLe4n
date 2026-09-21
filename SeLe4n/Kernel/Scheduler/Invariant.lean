@@ -290,79 +290,43 @@ this helper used to need is this theorem. -/
 @[simp] theorem effectiveBucketPriority_eq (st : SystemState) (tcb : TCB) :
     effectiveBucketPriority st tcb = tcb.boostedPriority := rfl
 
-/-- AK2-B: Unbound threads' effective priority equals the legacy
-`TCB.boostedPriority`. -/
-@[simp] theorem effectiveBucketPriority_of_unbound
-    (st : SystemState) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := rfl
+/-- **The bucket is insensitive to the store, so the frame is a congruence.**
 
-/-- AK2-B: When a bound thread's SchedContext is missing (unreachable under
-`schedContextBindingConsistent`), `effectiveBucketPriority` falls back to
-`TCB.boostedPriority`. -/
-theorem effectiveBucketPriority_of_bound_sc_missing
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (hBound : tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner)
-    (hMiss : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := rfl
-
-/-- WS-OD (v0.35.3): a **donated** thread's bucket priority is the legacy
-`TCB.boostedPriority` unconditionally — no SchedContext is read, so
-unlike the `.bound` case this needs no lookup hypothesis.  The `.donated`
-half of `effectiveBucketPriority_of_bound_sc_missing`, sharpened. -/
-@[simp] theorem effectiveBucketPriority_of_donated
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (owner : SeLe4n.ThreadId)
-    (hDonated : tcb.schedContextBinding = .donated scId owner) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := rfl
-
-/-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
-does not produce `.schedContext _`, then the `.bound scId`/`.donated scId _`
-arm of `effectiveBucketPriority` falls through to `tcb.priority`. -/
-@[simp] theorem effectiveBucketPriority_lookup_non_sc
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (hNonSc : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
-    (match (st.objects[scId.toObjId]? : Option KernelObject) with
-      | some (.schedContext sc) => sc.priority
-      | _ => tcb.priority) = tcb.priority := by
-  cases hLook : (st.objects[scId.toObjId]? : Option KernelObject) with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | schedContext sc => exact absurd hLook (hNonSc sc)
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-    | reply _ => rfl
-
-/-- AK2-B: Frame lemma — `effectiveBucketPriority` is preserved whenever the
-thread's SchedContext object lookup agrees. -/
-theorem effectiveBucketPriority_frame
-    (st st' : SystemState) (tcb : TCB)
-    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
-      st'.objects[scId.toObjId]? = st.objects[scId.toObjId]?) :
+`effectiveBucketPriority` reads the TCB and nothing else, so "preserved
+whenever the thread's SchedContext lookup agrees" is a statement with a dead
+hypothesis: the conclusion holds for *any* two states.  Stated at the strength
+the accessor has. -/
+theorem effectiveBucketPriority_congr (st st' : SystemState) (tcb : TCB) :
     effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := rfl
 
-section
-set_option linter.unusedSimpArgs false
-
-/-- AK2-B: Weaker frame lemma — `effectiveBucketPriority` is preserved
-whenever BOTH lookups produce non-SchedContext values (so both fall through
-to `tcb.priority`) OR the SchedContext lookups agree exactly. This handles
-invariant-violating aliasing gracefully: if an ObjId happens to hold a `.tcb`
-both before and after a `saveOutgoingContext` (invariant violation — SC's
-ObjId should never be a TCB), the fall-through arm gives the same value. -/
-theorem effectiveBucketPriority_frame_weak
-    (st st' : SystemState) (tcb : TCB)
-    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
-      (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
-             st'.objects[scId.toObjId]? = some (.schedContext sc)) ∨
-      ((∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) ∧
-       (∀ sc, st'.objects[scId.toObjId]? ≠ some (.schedContext sc)))) :
-    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := rfl
-
-end
+-- **Six theorems stood here and are DELETED at `v0.35.134`** -- the sweep
+-- `v0.35.133` owed its own sibling family and did not run.
+--
+-- That cut collapsed this accessor's body to `TCB.boostedPriority` and deleted
+-- `resolveEffectivePrioDeadline`'s three arm-specific readings for the stated
+-- reason that *every arm-specific reading the resolver used to need is the
+-- unconditional theorem*.  The identical family over **this** accessor was left
+-- standing one file over, with hypotheses the collapse had made dead:
+--
+--   * `effectiveBucketPriority_of_unbound`, `_of_bound_sc_missing`,
+--     `_of_donated` -- each `effectiveBucketPriority_eq` under a binding
+--     hypothesis nothing reads.  A name like `_of_bound_sc_missing` kept past
+--     its hypothesis does not merely repeat the unconditional lemma, it
+--     *teaches a false dependency*: a reader concludes the bucket still turns
+--     on whether a SchedContext resolves.
+--   * `effectiveBucketPriority_lookup_non_sc` -- a lemma about the expression
+--     `match … | some (.schedContext sc) => sc.priority | _ => tcb.priority`,
+--     which this accessor no longer contains and which occurs nowhere else.  A
+--     theorem whose subject is gone is the tautological pin this project
+--     retires: it reads in a report exactly like a check that decides
+--     something.
+--   * `effectiveBucketPriority_frame` and `_frame_weak` -- replaced by the
+--     unconditional `effectiveBucketPriority_congr` above, which is strictly
+--     stronger; `_frame_weak`'s one consumer
+--     (`Scheduler/Operations/Preservation.lean`) cites the congruence.
+--
+-- All six were `rfl`, five had no consumer at all, and three carried
+-- `unused variable` warnings that said so.  Tier 3 negatives refuse each name.
 
 
 -- ============================================================================

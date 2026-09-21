@@ -582,7 +582,11 @@ private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
   let tcb := { mkTcb 1 .Ready with
     ipcState := .blockedOnSend ⟨50⟩,
     queuePrev := some ⟨3⟩, queueNext := some ⟨4⟩,
-    queuePPrev := some .endpointHead }
+    queuePPrev := some .endpointHead,
+    -- `v0.35.134`: the fifth field `TCB.restoredToReady` clears was asserted by
+    -- nothing, which is how the frozen mirror came to omit it for as long as it
+    -- did -- a clear nobody measures is a clear nobody notices missing.
+    pendingReceiveReply := some ⟨7⟩ }
   let st := mkState [(⟨1⟩, .tcb tcb)]
   let st' := restoreToReady st tid
   match st'.objects[tid.toObjId]? with
@@ -591,6 +595,7 @@ private def sr028_restoreToReadyClearsIpcFields : IO Unit := do
     expect "queuePrev cleared" tcb'.queuePrev.isNone
     expect "queueNext cleared" tcb'.queueNext.isNone
     expect "queuePPrev cleared" tcb'.queuePPrev.isNone
+    expect "stashed receive Reply relinquished" tcb'.pendingReceiveReply.isNone
     -- threadState is preserved (restoreToReady only touches IPC fields)
     expect "threadState preserved" (tcb'.threadState == tcb.threadState)
   | _ => throw <| IO.userError "TCB not found after restoreToReady"
@@ -652,6 +657,148 @@ private def sr031_resumeLowerPriorityKeepsCurrent : IO Unit := do
       ((st'.scheduler.runQueueOnCore SeLe4n.Kernel.Concurrency.bootCoreId).contains bTid)
   | .error e => throw <| IO.userError s!"SR-031 resume should succeed, got {repr e}"
 
+
+-- ============================================================================
+-- `v0.35.134`: the frozen resume mirrors the live resume's scheduling steps
+-- ============================================================================
+--
+-- The live side has had SR-026, SR-027b, SR-030 and SR-031 for the boost
+-- recompute and the preemption since R5.B and PR #811; the frozen side had
+-- none, and `frozenResumeThread` performed neither step.  None of SR-010,
+-- SR-020 or SR-021 sets `scheduler.current`, so the comparison branch was
+-- unexecuted, and `.tcbResume` is outside `FrozenOpBranch.all`, so no
+-- differential reached it either.  These are the twins.
+
+/-- The **retired** frozen restore: `ipcState := .ready` and nothing else, which
+is what `frozenResumeThread` cleared until `v0.35.134`.  It lives here and
+nowhere else -- the code is deleted, the evidence is kept -- and it is computed
+beside the live clear so SR-032 is known to discriminate rather than merely to
+pass. -/
+private def retiredFrozenResumeClear (tcb : TCB) : TCB :=
+  { tcb with ipcState := .ready }
+
+/-- The **retired** frozen preemption reading: the two **base** priorities. -/
+private def retiredFrozenPreempts (resumed current : TCB) : Bool :=
+  resumed.priority.val > current.priority.val
+
+/-- The live reading, which is what `resolveEffectivePrioDeadline` resolves to
+(`resolveEffectivePrioDeadline_fst_eq_boostedPriority`). -/
+private def liveFrozenPreempts (resumed current : TCB) : Bool :=
+  resumed.boostedPriority.val > current.boostedPriority.val
+
+/-- SR-032: the frozen resume clears **every** field `TCB.restoredToReady`
+clears, not `ipcState` alone.  The stashed receive Reply is the one that matters
+beyond hygiene: left set, `replyIsStashed` keeps that Reply permanently in use. -/
+private def sr032_frozenResumeClearsEveryRestoredField : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let stale := { mkTcb 1 .Inactive with
+    ipcState := .blockedOnSend ⟨50⟩,
+    queuePrev := some ⟨3⟩, queueNext := some ⟨4⟩,
+    queuePPrev := some .endpointHead,
+    pendingReceiveReply := some ⟨7⟩ }
+  -- The retired clear leaves four of the five fields set, so the assertions
+  -- below are known to separate the two readings.
+  let retired := retiredFrozenResumeClear stale
+  expect "the retired frozen clear leaves the queue links set"
+    (retired.queuePrev.isSome && retired.queueNext.isSome && retired.queuePPrev.isSome)
+  expect "the retired frozen clear leaves the stashed Reply set"
+    retired.pendingReceiveReply.isSome
+  let fst := mkFrozenState [(⟨1⟩, .tcb stale)]
+  match frozenResumeThread tid fst with
+  | .ok ((), fst') =>
+    match fst'.getTcb? tid with
+    | some tcb' =>
+      expect "frozen resume: ipcState is ready" (tcb'.ipcState == .ready)
+      expect "frozen resume: queuePrev cleared" tcb'.queuePrev.isNone
+      expect "frozen resume: queueNext cleared" tcb'.queueNext.isNone
+      expect "frozen resume: queuePPrev cleared" tcb'.queuePPrev.isNone
+      expect "frozen resume: stashed receive Reply relinquished"
+        tcb'.pendingReceiveReply.isNone
+      expect "frozen resume: threadState is Ready" (tcb'.threadState == .Ready)
+    | _ => throw <| IO.userError "frozen TCB not found after resume"
+  | .error e => throw <| IO.userError s!"frozen resume should succeed, got {repr e}"
+
+/-- SR-033: the frozen resume re-derives `pipBoost` from the blocking graph --
+the frozen twin of SR-026 (over-boost) and SR-027b (under-boost).  Both
+directions, because a carried-over boost is wrong in both: too high and the
+thread runs at an inherited band nobody is waiting for, too low and the
+inversion priority inheritance exists to prevent is live. -/
+private def sr033_frozenResumeRecomputesPipBoost : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let epId : SeLe4n.ObjId := ⟨50⟩
+  -- (a) over-boost: a stale boost with no waiter left must be cleared.
+  let staleBoosted := { mkTcb 1 .Inactive with pipBoost := some ⟨90⟩ }
+  let fstA := mkFrozenState [(⟨1⟩, .tcb staleBoosted)]
+  match frozenResumeThread tid fstA with
+  | .ok ((), fstA') =>
+    match fstA'.getTcb? tid with
+    | some tcb' =>
+      expect "(a) frozen resume clears a stale boost when no waiter remains"
+        tcb'.pipBoost.isNone
+    | _ => throw <| IO.userError "frozen TCB not found (a)"
+  | .error e => throw <| IO.userError s!"frozen resume (a) failed: {repr e}"
+  -- (b) under-boost: a waiter acquired while Inactive must raise the boost.
+  let waiter := { mkTcb 2 .Ready 90 with
+                    ipcState := .blockedOnReply epId (some tid) }
+  let unboosted := mkTcb 1 .Inactive
+  let fstB := mkFrozenState [(⟨1⟩, .tcb unboosted), (⟨2⟩, .tcb waiter)]
+  match frozenResumeThread tid fstB with
+  | .ok ((), fstB') =>
+    match fstB'.getTcb? tid with
+    | some tcb' =>
+      expect "(b) frozen resume re-derives the boost from the blocking graph"
+        (tcb'.pipBoost == some ⟨90⟩)
+      expect "(b) and the re-derived boost moves the effective priority"
+        (tcb'.boostedPriority == (⟨90⟩ : SeLe4n.Priority))
+    | _ => throw <| IO.userError "frozen TCB not found (b)"
+  | .error e => throw <| IO.userError s!"frozen resume (b) failed: {repr e}"
+
+/-- SR-034: the frozen resume's preemption test reads the **effective** priority
+-- the frozen twin of SR-030 / SR-031, and the half that separates the two
+readings.  Both directions, computing the retired base reading beside the live
+one, because the two disagree both ways: a boosted resumed thread must preempt a
+higher-**based** current thread, and a plain resumed thread must not preempt a
+boosted one. -/
+private def sr034_frozenResumePreemptsOnEffectivePriority : IO Unit := do
+  let tid : SeLe4n.ThreadId := ⟨1⟩
+  let curTid : SeLe4n.ThreadId := ⟨3⟩
+  let epId : SeLe4n.ObjId := ⟨50⟩
+  -- (a) base 10 + an earned boost of 90 against a current thread at base 50.
+  let waiter := { mkTcb 2 .Ready 90 with
+                    ipcState := .blockedOnReply epId (some tid) }
+  let resumed := mkTcb 1 .Inactive 10
+  let current := mkTcb 3 .Ready 50
+  let boostedResumed := { resumed with pipBoost := some ⟨90⟩ }
+  expect "(a) the retired base reading does NOT preempt"
+    (retiredFrozenPreempts boostedResumed current == false)
+  expect "(a) the live effective reading DOES preempt"
+    (liveFrozenPreempts boostedResumed current)
+  let fstA0 := mkFrozenState
+    [(⟨1⟩, .tcb resumed), (⟨2⟩, .tcb waiter), (⟨3⟩, .tcb current)]
+  let fstA := { fstA0 with
+                  scheduler := { fstA0.scheduler with current := some curTid } }
+  match frozenResumeThread tid fstA with
+  | .ok ((), fstA') =>
+    expect "(a) frozen resume clears current, as the live resume reschedules"
+      fstA'.scheduler.current.isNone
+  | .error e => throw <| IO.userError s!"frozen resume (a) failed: {repr e}"
+  -- (b) base 90 with no boost against a current thread at base 10 boosted to 95.
+  let boostedCurrent := { mkTcb 3 .Ready 10 with pipBoost := some ⟨95⟩ }
+  let plainResumed := mkTcb 1 .Inactive 90
+  expect "(b) the retired base reading DOES preempt"
+    (retiredFrozenPreempts plainResumed boostedCurrent)
+  expect "(b) the live effective reading does NOT preempt"
+    (liveFrozenPreempts plainResumed boostedCurrent == false)
+  let fstB0 := mkFrozenState
+    [(⟨1⟩, .tcb plainResumed), (⟨3⟩, .tcb boostedCurrent)]
+  let fstB := { fstB0 with
+                  scheduler := { fstB0.scheduler with current := some curTid } }
+  match frozenResumeThread tid fstB with
+  | .ok ((), fstB') =>
+    expect "(b) frozen resume keeps current: a boosted thread is not preempted"
+      (fstB'.scheduler.current == some curTid)
+  | .error e => throw <| IO.userError s!"frozen resume (b) failed: {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
@@ -702,4 +849,8 @@ def main : IO Unit := do
   IO.println "--- PR #811: resumeThread preemption re-enqueues the caller ---"
   sr030_resumeHigherPriorityReenqueuesCaller
   sr031_resumeLowerPriorityKeepsCurrent
-  IO.println "=== All D1 suspend/resume tests passed (32 tests) ==="
+  IO.println "--- v0.35.134: the frozen resume mirrors the live resume ---"
+  sr032_frozenResumeClearsEveryRestoredField
+  sr033_frozenResumeRecomputesPipBoost
+  sr034_frozenResumePreemptsOnEffectivePriority
+  IO.println "=== All D1 suspend/resume tests passed (35 tests) ==="

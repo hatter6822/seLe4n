@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.133` (`lakefile.toml`) |
+| **Package version** | `0.35.134` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,021 across 334 Lean files |
-| **Test LoC** | 80,339 across 70 Lean test suites |
-| **Proved declarations** | 13,127 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 396,157 across 334 Lean files |
+| **Test LoC** | 80,490 across 70 Lean test suites |
+| **Proved declarations** | 13,126 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -3944,6 +3944,33 @@ for the per-sub-task narrative.
   with `clearTcbIpcFields_eq_restoreToReady` bridging the two names,
   until `v0.35.64` deleted both: nothing named them, and a retired
   spelling kept beside the live one is what this project removes.
+  **The field clear itself became a named function at `v0.35.134`**:
+  `restoreToReadyStaging` spelled it inline inside `updateTcb`'s lambda,
+  so it had no name a second surface could call and `frozenResumeThread`
+  carried its own list four fields short — including
+  `pendingReceiveReply`, whose survival keeps `replyIsStashed` true and
+  so makes lifecycle cleanup of that Reply answer
+  `revocationRequired` with no receive pending.  `TCB.restoredToReady`
+  (`SeLe4n/Model/Object/Types.lean`, beside `TCB.boostedPriority` and
+  `TCB.blockingServer?`) is that function and both surfaces call it, so
+  a field added to the restore reaches both by construction.
+* **`v0.35.134` — the frozen resume's three scheduling steps**: the same
+  cut found `frozenResumeThread` performing none of the live resume's
+  scheduling work — the clear above, the `pipBoost` recompute from the
+  post-restore blocking graph (live H3b), and a preemption test on the
+  **effective** rather than the base priority (live H5).  The last
+  disagreed with the live kernel in both directions whenever either
+  thread carried an inherited boost.  The shared readings are now
+  theorems rather than coincidences:
+  `effectiveSchedParams_fst_eq_boostedPriority`
+  (`Scheduler/Operations/Selection.lean`) states that the resolver's
+  priority component **is** `TCB.boostedPriority` at every binding,
+  derived from the existing pair bridge, and
+  `frozenComputeMaxWaiterPriority_eq_live_reading`
+  (`FrozenOps/Agreement.lean`) carries it across to the frozen waiter
+  fold, quantified over every live state because the reading reads none
+  of it.  Witnesses: `tests/SuspendResumeSuite.lean` SR-032/033/034,
+  each computing the retired reading beside the live one.
 * **R5.E (DEEP-SCH-04) — surface `.missingSchedContext`**:
   `timerTickBudget` rejects with `KernelError.missingSchedContext`
   (new discriminant 52) when a bound-budget thread references an
@@ -3987,9 +4014,14 @@ All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 A `SchedContext` is a first-class kernel object containing CPU budget, period,
 priority, deadline, and domain parameters for CBS (Constant Bandwidth Server)
 scheduling. Threads bind to SchedContexts via the `schedContextBinding` field
-(unbound | bound | donated). The `threadSchedulingParams` accessor resolves
-effective scheduling parameters from the bound SchedContext or falls back to
-legacy TCB fields.
+(unbound | bound | donated). `effectiveSchedParams`
+(`Scheduler/Operations/Selection.lean`) is the canonical accessor: the
+**deadline** comes from the SchedContext the thread runs on, the **domain**
+from the one it owns, and the **priority** from the thread's own field at
+every binding, since `v0.35.133` gave a base priority one home.  (A second
+accessor, `threadSchedulingParams`, stood in `Model/Object/Structures.lean`
+as the Z1-N migration bridge and still read the reservation's priority; it had
+no consumer and is deleted at `v0.35.134` — PR #897's review.)
 
 Key types: `Budget` (CPU time in ticks), `Period` (replenishment period),
 `Bandwidth` (budget/period pair for admission control), `ReplenishmentEntry`

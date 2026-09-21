@@ -1,3 +1,122 @@
+## v0.35.134 — the frozen resume reads the priority the live resume reads
+
+PR #897's review reported `frozenComputeMaxWaiterPriority` as diverging from the
+live `computeMaxWaiterPriority`: the live fold reads `effectiveSchedParams`,
+which for a `.bound` waiter took the priority from its *reservation*, while the
+frozen fold reads `TCB.boostedPriority`.  **The finding was valid against
+`v0.35.132` and is closed by `v0.35.133`** — giving a base priority one home made
+`effectiveSchedParams`'s priority component `tcb.boostedPriority` at every
+binding, so the two surfaces now read the same field.  What `v0.35.133` did not
+do is *say* so: the frozen docstring still asserted the divergence, and nothing
+in the tree related the two readings, so the next cut to touch either had no way
+to find out it was breaking the other.
+
+`effectiveSchedParams_fst_eq_boostedPriority` (`Scheduler/Operations/Selection.lean`)
+is the live half, **derived** from the existing pair bridge rather than re-split
+over the arms so the two resolvers cannot part.
+`frozenComputeMaxWaiterPriority_eq_live_reading` (`FrozenOps/Agreement.lean`) is
+the cross-surface half, stated at the level of the **fold** and quantified over
+*every* live state — which is the content, since the live reading turns out to
+read none of it.  Naming only the accessor equality would have been a fact about
+two functions neither theorem is about.  It is mutation-verified: replacing its
+proof with `rfl` alone fails, so the rewrite is load-bearing rather than
+decorative.
+
+**And sweeping that question — *which priority does this surface read* — found
+`frozenResumeThread` one function over reading the wrong one, in three places.**
+Each is a live divergence from `resumeThread`, and none of them was reachable by
+anything the tree runs: all three existing frozen-resume scenarios (SR-010,
+SR-020, SR-021) leave `scheduler.current` unset, so the preemption branch was
+never executed, and `.tcbResume` is outside `FrozenOpBranch.all`, so no
+differential could reach it either.  The live side has had SR-026, SR-027b,
+SR-030 and SR-031 for exactly these steps since R5.B and PR #811.
+
+1. **The field clear was four fields short.**  Live `restoreToReady` clears
+   `ipcState`, the three intrusive-queue links and `pendingReceiveReply`; the
+   frozen resume cleared `ipcState` and stopped.  A surviving
+   `pendingReceiveReply` keeps `replyIsStashed` true, so lifecycle cleanup of
+   that Reply answers `revocationRequired` with no receive pending — the defect
+   PR #822's review added the live clear for, alive on the mirror because the
+   clear had **no name to call**: it was spelled inline inside `updateTcb`'s
+   lambda.  `TCB.restoredToReady` (`Model/Object/Types.lean`, beside
+   `TCB.boostedPriority` and `TCB.blockingServer?`) is that function, and both
+   surfaces call it, so a field added to the restore reaches both by
+   construction.
+
+2. **`pipBoost` was not re-derived.**  Live H3b recomputes it from the
+   post-restore blocking graph, because threads may have blocked on the resumed
+   thread or stopped blocking on it while it was `.Inactive`; the frozen resume
+   carried the pre-suspend value.  Stale in both directions — too high and the
+   thread runs at an inherited band nobody is waiting for, too low and the
+   inversion priority inheritance exists to prevent is live.
+
+3. **The preemption test compared the two BASE priorities.**  Live compares
+   `(resolveEffectivePrioDeadline …).1`, which is `TCB.boostedPriority`
+   unconditionally.  So the surfaces disagreed in **both** directions whenever
+   either thread carried a boost: a boosted resumed thread failed to preempt the
+   lower-**based** current thread its boost exists to get ahead of, and an
+   unboosted resumed thread preempted a boosted current one.
+
+Clearing `current` is left as it was: it **is** the frozen spelling of the live
+re-enqueue-then-schedule, since frozen dispatch is `current := some tid` with the
+thread left in its bucket (`frozenHandleYield` documents the convention).  That
+was checked rather than assumed.
+
+**Witnesses.**  `tests/SuspendResumeSuite.lean` SR-032/033/034 are the frozen
+twins, each computing the **retired** reading beside the live one so the
+assertions are known to discriminate — the retired clear and the retired base
+comparison live in that suite and nowhere else, which a Tier 3 negative enforces.
+All three are mutation-verified: reverting each fix fails its own scenario and
+no other.  SR-028 gained the `pendingReceiveReply` assertion it never had, which
+is how the live clear's fifth field came to be droppable in the first place: a
+clear nobody measures is a clear nobody notices missing.
+
+**And the stated reason says what the gap costs.**  `frozenOpUncheckedReason`
+records `.tcbResume` as *"live entry is not Kernel-shaped; adapter owed"*, which
+is true and which read as a formality; it now carries the measurement, because a
+stated reason bounds nothing — it only says who owes the work.
+
+**And the review found a SIXTH reader, against `v0.35.133` itself.**
+`threadSchedulingParams` (`Model/Object/Structures.lean`) is the Z1-N "migration
+bridge between monolithic TCB scheduling and first-class SchedContext objects",
+and its `.bound` / `.donated` arm returned `sc.priority` — so a caller of the
+root-imported model API would schedule at the stale reservation band the collapse
+exists to make harmless.  The reviewer asked for the priority component to be
+collapsed; the remedy here is **deletion**, decided on measurement: it had *zero*
+consumers anywhere in the tree — not a call, not a proof, not a test — so
+collapsing it would have produced a fourth reading nobody asks, which is this
+project's own *a retention justification that names a consumer which does not
+exist* shape.  The migration its docstring named is over.  A budget component is
+the one thing it answered that `effectiveSchedParams` does not, and every live
+budget predicate reads `SchedContext.budgetRemaining` directly.
+
+**And asking the same question of the rest of the tree found the theorem family
+`v0.35.133` did not sweep.**  That cut deleted `resolveEffectivePrioDeadline`'s
+three arm-specific readings, for the stated reason that a name like `_of_agree`
+kept past its hypothesis *teaches a false dependency*.  The identical family over
+`effectiveBucketPriority` was left standing one file over, its hypotheses made
+dead by the same collapse: `_of_unbound`, `_of_bound_sc_missing` and `_of_donated`
+are `effectiveBucketPriority_eq` under a binding hypothesis nothing reads;
+`_lookup_non_sc` is about an expression shape the accessor no longer contains and
+which occurs nowhere else — a theorem whose subject is gone, which reads in a
+report exactly like a check that decides something; and `_frame` / `_frame_weak`
+demanded that two SchedContext lookups agree, of an accessor that reads no store.
+All six are deleted for the unconditional `effectiveBucketPriority_congr`, five
+had no consumer at all, and three carried `unused variable` warnings saying so.
+The one consumer, `saveOutgoingContext_effectiveBucketPriority_eq`, loses **70
+lines** of case analysis over what the outgoing key holds before and after, and
+becomes one citation.
+
+**Two stale claims swept.**  `TCB.boostedPriority`'s own docstring still said a
+`.bound` thread is scheduled at its reservation's priority "raised by the same
+boost", which `v0.35.133` made false one file away; and `docs/codebase_map.json`
+had been stale since `v0.35.131`, which is a **red CI lane on this PR** (Tier 2's
+documentation-sync step, failing on three consecutive heads).  The map is
+regenerated and its figures propagated to the README, the spec, the eleven
+locales and the four GitBook surfaces.
+
+Refs: docs/REGISTERED_DEBT.md table C (frozen differential coverage)
+
 ## v0.35.133 — one home for a thread's base priority
 
 The registered closure for the priority-band divergence, and it closes it

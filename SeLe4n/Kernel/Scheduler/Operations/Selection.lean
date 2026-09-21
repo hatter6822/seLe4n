@@ -491,6 +491,33 @@ theorem effectiveSchedParams_total (st : SystemState) (tcb : TCB) :
     ∃ triple, effectiveSchedParams st tcb = triple :=
   ⟨_, rfl⟩
 
+/-- **The resolver's priority component IS `TCB.boostedPriority`**, at every
+binding and whatever the store holds -- `resolveEffectivePrioDeadline_fst_eq_boostedPriority`'s
+sibling for the triple-valued resolver, and the fact that makes the frozen
+surface able to answer the same question.
+
+`v0.35.133` gave a base priority one home, so all five of this helper's arms
+compose the boost against `tcb.priority`; the deadline and the domain still come
+from a SchedContext on some of them, which is why this is stated on the first
+component alone.  **Derived** from the pair bridge above rather than re-split
+over the arms, so the two resolvers cannot come to disagree about the priority
+without this failing to elaborate.
+
+Its consumer is `FrozenOps.Agreement`'s
+`frozenComputeMaxWaiterPriority_eq_live_reading`: the frozen waiter fold reads
+`TCB.boostedPriority` directly because that surface resolves no scheduling
+parameters, and that is the *same* reading only while this holds.  PR #897's
+review reported the pair as a divergence, correctly against `v0.35.132` and no
+longer against `v0.35.133` -- with nothing in the tree saying so, which is what
+this closes. -/
+theorem effectiveSchedParams_fst_eq_boostedPriority (st : SystemState) (tcb : TCB) :
+    (effectiveSchedParams st tcb).1 = tcb.boostedPriority := by
+  have hPair := effectiveSchedParams_priority_deadline_eq_resolve st tcb
+  have hFst : (effectiveSchedParams st tcb).1 = (resolveEffectivePrioDeadline st tcb).1 :=
+    congrArg Prod.fst hPair
+  rw [hFst, resolveEffectivePrioDeadline_fst_eq_boostedPriority]
+
+
 /-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.
 
 When a thread is re-inserted into the RunQueue (budget refill, yield, bind),

@@ -1302,11 +1302,17 @@ at **eight** sites across the live tree and the frozen surface, which is this
 project's own one-question-two-answers hazard at the level of an expression; it
 is one function now, and every site that asks the question calls it.
 
-It is `Priority.raisedBy` at the thread's **own** base, which is the base for an
-`.unbound` or `.donated` thread.  A `.bound` thread is scheduled at its
-*reservation's* priority raised by the same boost, so `effectiveSchedParams`
-calls `Priority.raisedBy` directly on `sc.priority` there rather than going
-through this -- the boost is the same, the base is not. -/
+It is `Priority.raisedBy` at the thread's **own** base, **at every binding**.
+Until `v0.35.133` a `.bound` thread was scheduled at its *reservation's*
+priority raised by the same boost, so `effectiveSchedParams` called
+`Priority.raisedBy` directly on `sc.priority` there and this paragraph said the
+boost was shared and the base was not.  With one home for a base priority there
+is no second base to raise: `effectiveSchedParams_fst_eq_boostedPriority` and
+`resolveEffectivePrioDeadline_fst_eq_boostedPriority`
+(`Scheduler/Operations/Selection.lean`) state that both resolvers' priority
+component **is** this accessor, unconditionally -- which is what lets the frozen
+surface, whose store holds the live `TCB` and which resolves no scheduling
+parameters at all, read the same priority by reading the same field. -/
 @[inline] def TCB.boostedPriority (tcb : TCB) : SeLe4n.Priority :=
   tcb.priority.raisedBy tcb.pipBoost
 
@@ -1355,6 +1361,45 @@ theorem TCB.boostedPriority_congr {a b : TCB}
     (hp : a.priority = b.priority) (hb : a.pipBoost = b.pipBoost) :
     a.boostedPriority = b.boostedPriority := by
   simp only [TCB.boostedPriority_eq, hp, hb]
+
+/-- **A thread restored to the runnable shape** -- the field clear performed on a
+thread whose blocking IPC ends, as a function of the record.
+
+The live `restoreToReadyStaging` (`Lifecycle/Suspend.lean`) spelled this inline
+inside `updateTcb`'s lambda, so it had no name and no second surface could call
+it: `frozenResumeThread` cleared `ipcState` alone and left the three intrusive
+queue links and the stashed receive Reply set, which is this project's
+*one question answered in two places* with one of the places four fields short.
+The stashed Reply is the sharper half -- `replyIsStashed` then keeps that Reply
+permanently in use, so lifecycle cleanup of it answers `revocationRequired` with
+no receive pending, which is the very defect PR #822's review added the clear
+for.  Both surfaces call this now, so a field added to the restore reaches both
+by construction rather than by whoever remembers the other one.
+
+What it deliberately does **not** touch is `threadState`, `pipBoost` or
+`registerContext`.  The first two are the caller's, and the callers disagree: a
+resume writes `.Ready` and recomputes the boost from the blocking graph, a
+cancellation writes neither.  The third is what `restoreToReadyStaging`'s frame
+argument stages on top, which is why that helper takes one and this does not. -/
+@[inline] def TCB.restoredToReady (tcb : TCB) : TCB :=
+  { tcb with
+      ipcState := .ready
+      queuePrev := none
+      queueNext := none
+      queuePPrev := none
+      pendingReceiveReply := none }
+
+/-- Transparent to `simp`, for the reason `TCB.boostedPriority_eq` above is: a
+proof that unfolded the inline record update reduces this exactly as it reduced
+that, so single-sourcing the clear costs no existing proof. -/
+@[simp] theorem TCB.restoredToReady_eq (tcb : TCB) :
+    tcb.restoredToReady =
+      { tcb with
+          ipcState := .ready
+          queuePrev := none
+          queueNext := none
+          queuePPrev := none
+          pendingReceiveReply := none } := rfl
 
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.

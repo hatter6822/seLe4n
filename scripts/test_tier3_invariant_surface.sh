@@ -17386,4 +17386,77 @@ run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQu
 # to surface -- and stops deciding the priority with it.
 run_check "INVARIANT" bash -lc 'rg -n -U "def getCurrentPriorityChecked[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/SchedContext/PriorityManagement.lean | rg -F "| some _  => .ok tcb.priority"'
 
+# ---------------------------------------------------------------------------
+# `v0.35.134`: THE FROZEN RESUME MIRRORS THE LIVE RESUME, AND THE SHARED
+# READINGS ARE STATED
+#
+# PR #897's review reported `frozenComputeMaxWaiterPriority` as diverging from
+# the live `computeMaxWaiterPriority`.  It did, against `v0.35.132`; `v0.35.133`
+# closed it by giving a base priority one home and left nothing in the tree
+# saying so.  Sweeping the question the review asked -- *which priority does the
+# frozen surface read* -- found `frozenResumeThread` one function over reading
+# the wrong one, and reading it in three places.
+# ---------------------------------------------------------------------------
+# (1) THE SHARED FIELD CLEAR EXISTS, beside the record it reads, and clears all
+# five fields.  A frozen mirror carrying its own list is how four of them went
+# missing.
+run_check "INVARIANT" rg -F -n 'def TCB.restoredToReady (tcb : TCB) : TCB :=' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "ipcState := .ready"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePrev := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queueNext := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "queuePPrev := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^@\[inline\] def TCB.restoredToReady[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/Object/Types.lean | rg -F "pendingReceiveReply := none"'
+# ...and BOTH surfaces call it rather than spelling the list.  The negatives are
+# what make the positives a sharing claim rather than a presence check: an
+# inlined copy beside the call satisfies every positive above.
+run_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F ".restoredToReady"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def restoreToReadyStaging[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Lifecycle/Suspend.lean | rg -F "pendingReceiveReply := none"'
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".tcb tcb.restoredToReady"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "ipcState := .ready"'
+# (2) THE FROZEN RESUME RE-DERIVES THE BOOST from the blocking graph, on the
+# CLEARED state -- a thread its own `ipcState` recorded as blocked on itself
+# must not count itself, which is why the order is pinned and not just the call.
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F "pipBoost := frozenComputeMaxWaiterPriority stCleared tid"'
+# (3) AND ITS PREEMPTION TEST READS THE EFFECTIVE PRIORITY, not the two bases.
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".boostedPriority.val > curTcb.boostedPriority.val"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "^def frozenResumeThread[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Operations.lean | rg -F ".priority.val > curTcb.priority.val"'
+# (4) THE SHARED READINGS ARE THEOREMS, so a cut that sends either side back to
+# consulting a SchedContext fails to elaborate rather than diverging silently.
+run_check "INVARIANT" rg -F -n 'theorem effectiveSchedParams_fst_eq_boostedPriority' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -F -n 'theorem frozenComputeMaxWaiterPriority_eq_live_reading' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -F -n 'theorem frozenResumePreemptionReading_eq_live' SeLe4n/Kernel/FrozenOps/Agreement.lean
+# ...and the frozen waiter fold still reads the accessor the live fold resolves
+# to.  Without this the agreement theorem could be satisfied by changing BOTH
+# sides, which is not what it claims.
+run_check "INVARIANT" bash -lc 'rg -n -U "^def frozenComputeMaxWaiterPriority[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/FrozenOps/Core.lean | rg -F "let prio := waiterTcb.boostedPriority"'
+# (5) THE RETIRED READINGS LIVE IN THE WITNESS THAT REFUTES THEM, AND NOWHERE
+# ELSE -- the evidence kept, the code deleted.
+run_check "INVARIANT" rg -F -n 'private def retiredFrozenResumeClear' tests/SuspendResumeSuite.lean
+run_check "INVARIANT" rg -F -n 'private def retiredFrozenPreempts' tests/SuspendResumeSuite.lean
+run_negative_check "INVARIANT" rg -n 'retiredFrozenResumeClear|retiredFrozenPreempts' SeLe4n/
+
+# ---------------------------------------------------------------------------
+# `v0.35.134`: THE READERS AND THEOREMS `v0.35.133`'s COLLAPSE DID NOT SWEEP
+#
+# PR #897's review found `threadSchedulingParams` still returning `sc.priority`
+# from the root-imported model API.  It had zero consumers, so the remedy is
+# deletion; and asking the same question of the rest of the tree found the
+# `effectiveBucketPriority` theorem family carrying the hypotheses the body
+# collapse had made dead -- the identical sweep `v0.35.133` ran on
+# `resolveEffectivePrioDeadline`'s family and not on this one.
+# ---------------------------------------------------------------------------
+# (1) THE FOURTH READING IS GONE, tree-wide: a reader that takes a thread's
+# band from its reservation schedules at a stale mirror.
+run_negative_check "INVARIANT" rg -n 'threadSchedulingParams' SeLe4n/
+run_negative_check "INVARIANT" rg -n 'threadSchedulingParams' tests/
+# (2) THE BUCKET'S FRAME IS A CONGRUENCE, and the six hypothesis-carrying
+# theorems it replaces must not come back.
+run_check "INVARIANT" rg -F -n 'theorem effectiveBucketPriority_congr (st st'"'"' : SystemState) (tcb : TCB) :' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_negative_check "INVARIANT" rg -n 'effectiveBucketPriority_of_unbound|effectiveBucketPriority_of_donated|effectiveBucketPriority_of_bound_sc_missing' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n 'effectiveBucketPriority_lookup_non_sc' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n 'effectiveBucketPriority_frame_weak|effectiveBucketPriority_frame\b' SeLe4n/ tests/
+# ...and the one consumer cites the congruence rather than re-deriving the
+# store agreement the accessor no longer reads.
+run_check "INVARIANT" bash -lc 'rg -n -U "^private theorem saveOutgoingContext_effectiveBucketPriority_eq[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Preservation.lean | rg -F "effectiveBucketPriority_congr st (saveOutgoingContext st) tcb"'
+
 finalize_report
