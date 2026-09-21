@@ -1,3 +1,252 @@
+## v0.35.155 — a LINE is not the declaration, and one decision drawn from two subjects
+
+Two findings from PR #897's review, and both are this file's own *the view you
+read depends on the question* one unit down: each gate asked the right question
+of the wrong span of text.
+
+### A line is not the declaration — and both enforced store zeros were evaded by a line break
+
+`v0.35.153` over-approximated `lean_store_read_census`'s qualified branch **to
+the line**, because a regex cannot balance parentheses and a bounded nesting
+depth is the enumeration this tree retires.  The reasoning was right and the
+**unit** was wrong: Lean wraps a long call, so
+
+```lean
+  let t := RHTable.insert
+    st.objects k v
+```
+
+— ordinary formatting, legal Lean — matched **nothing**.  Measured on the
+patterns directly: `WRITE.search` and `READ.search` both return `False` for the
+wrapped form and `True` for the same call on one line, in both the `RHTable` and
+`FrozenMap` spellings.  So an executable raw object-table write could sit
+outside `STORE_WRITE_CODE = 0` while the gate printed the zero, and `READ` had
+the same hole.
+
+**The unit is the DECLARATION**, spelled the way this tree's Tier 3 anchors
+already spell a bounded gap: a run of characters none of which begins a
+**column-0 line**.  A Lean declaration header sits at column 0, so the gap
+provably cannot leave the declaration it started in and cannot pair an operation
+in one declaration with a projection in the next.  It is one lazy alternation
+rather than a nested quantifier, so it is linear over a five-thousand-line
+module.
+
+Measured before taking it: over all 405 tracked `.lean` files the widened gap
+admits **zero** matches the line-bounded one did not — reads, writes and sweeps
+alike — and every live figure is byte-identical (`STORE_READ_SPEC=4844`,
+`STORE_WRITE_SPEC=302`, `STORE_SWEEP_CODE=11`, `STORE_INDIRECT_CODE=13`, both
+enforced zeros still zero).  The widening is free, so every witness is planted.
+
+`_WHITESPACE_PLACEMENTS` is the axis, at **all** of its values — same line,
+continuation line, continuation after a blank line — with `_DECLARATION_CROSSING`
+as its negative, because a gap that reaches a continuation is one whitespace
+class away from reaching the next declaration's.  Both mutations are caught:
+reverting to the line bound reports 16 unrecognised spellings, and widening to
+any character reports 8 declaration crossings.
+
+### One decision drawn from two subjects — a resolved threshold was never executed
+
+`select_changed_anchors` computed `kind` from the anchor **alone** and compared
+it against `SEARCHING_KINDS`, while `missing` and `substitutes` beside it were
+computed from the command **with its prelude**.  So a fully resolved
+`CIBUNDLE_CONJUNCTS=$(sed … | grep -o '∧' | wc -l); run_check "INVARIANT" test
+"${CIBUNDLE_CONJUNCTS}" -ge 5` reached `defer:tool`: deleting enough conjuncts
+from that bundle left the changed-file sweep green while direct Tier 3 failed.
+`v0.35.152` had fixed exactly this split for `related` — the *provenance*
+question — and not for `kind`, the *executability* one, which is **a fix applied
+at one site and not its sibling**.
+
+**Recomputing `kind` is not the remedy, and the measurement says so.**  A
+compound `NAME=$( … ); run_check …` is not a line the classifier parses at all,
+so every such anchor would become `fail:unparsed` — failing Tier 0 on ten
+anchors that are correctly deferred.  Of the **eleven** anchors with a resolved
+producer, exactly **two** are genuinely runnable (`CIBUNDLE_CONJUNCTS`,
+`NI_CTORS` — the two the producer mechanism was written for); the other nine are
+an array assignment the continuation fold truncates (`THEOREM_CHECK_TARGETS=(`),
+an **empty** array (`shell_files_args=()`, where the tool would run with no
+arguments and *pass*), a side-effecting `mktemp` feeding a build, or a directory
+constant feeding a redirection into the tree.
+
+So this is round 16's exit — **require a canonical spelling and refuse the
+rest**.  `executable_threshold` admits a producer that is one command
+substitution whose every pipeline head is in a named read-only set, with no
+redirection and no nesting, feeding a `test "${NAME}" -op <n>` anchor.  Two
+details the first draft got wrong and the measurement corrected: the body's
+closing parenthesis is the **last** character, not the first seen, because a
+`sed` pattern may hold `\(theorem\|def\)` and `[^)]*` stopped inside it —
+refusing `NI_CTORS`, one of the two anchors the contract exists for; and the
+pipeline is split on a **lexed word**, through the module's own `_shell_words`,
+because a `sed` pattern holds `\|` and a `grep` pattern holds `| ` inside
+quotes.
+
+**The now-executed anchor decides**: deleting the `∧`s from
+`capabilityInvariantBundle` makes the resolved command fail, where before it was
+deferred and the sweep reported clean.
+
+### Validation
+
+Thirteen new `executable_threshold` cases (three admitted, ten refused, one per
+reason) plus a **wiring** case — the predicate's cases exercise it directly, so a
+disposition branch that never consults it would leave every one of them passing.
+Six token-preserving mutations, each caught by its own case: unwire the
+predicate, restore the `[^)]*` body bound, split the pipeline on the character,
+drop the redirection refusal, drop the threshold requirement, and revert the
+census gap to the line.  Thirty self-test cases in `select_changed_anchors`, all
+passing.  Fifteen Tier 3 anchors, three of them negatives over the retired
+spellings.
+
+## v0.35.154 — a DELIMITER that can occur in the data is not a delimiter, and a VIEW answers one question
+
+PR #897's review reported that `select_changed_anchors`' two `git` listings are
+not NUL-framed.  **Sweeping the question rather than the reported spelling found
+three more, and the worst of them is in the gate that blocks commits.**
+
+A tracked path is a byte string: it may hold any byte but NUL and `/`.  Without
+`-z`, git prints one containing a newline, a quote or a backslash in its
+C-quoted form — `"tests/a\nb.lean"`, quotes and all — and a line-reading
+consumer takes that spelling for the path.  What happens next depends on the
+consumer, and both live cases fail **open**:
+
+- **`select_changed_anchors`** relates a path that does not exist to every
+  anchor target, matches none, and reports a **clean sweep** while running
+  nothing the real change invalidates.
+- **`scripts/pre-commit-lean-build.sh`** — measured, not reasoned.  Staging
+  `$'a\nb.lean'` containing `theorem bad : True := by sorry`:
+
+  ```
+  element: \"a\\nb.lean\"
+  \"a\\nb.lean\" -> sorry lines: <NONE>        # before
+  $'a\nb.lean'  -> sorry lines: 1:theorem bad : True := by sorry   # after
+  ```
+
+  `git show ":\"a\\nb.lean\""` resolves to no object, the grep has no input, and
+  the hook whose stated job is to *block a `sorry`* passes it silently.  Three
+  listings there, all `mapfile -t` over an unframed stream.
+
+**One reader per surface.**  `_nul_split` for Python (and `_git` decodes with
+`surrogateescape`, because a path byte that is not valid UTF-8 must round-trip
+rather than raise); `staged_paths_into` for the hook, using `read -r -d ''`
+rather than `mapfile -d ''` deliberately — the latter needs bash 4.4 and this
+hook runs on contributors' machines.  The `.lake/` exclusion became a path test,
+because piping a NUL-framed listing through a line filter undoes the framing.
+
+### The rule gets a check, not a third telling
+
+`v0.35.150` found this class in `indexed_source`'s own `cat-file --batch` loop,
+swept seven sibling listings, and **missed five** — the two the review then
+reported, and the three only a sweep for the *question* would find.
+`unframed_path_listings` is the check, in the module that already owns "run git
+correctly", wired into the self-test Tier 0 runs.
+
+It **resolves each line into the structure it stands for**, because two drafts
+of it cried wolf on this tree's own diagnostics.  Matching lines reported an
+error string naming the command it explains, a Tier 3 anchor quoting the call,
+and a membership test.  Matching every string argument of a call then reported
+six fixture-builder calls whose arguments merely *include* an unrelated
+`"diff"` and an unrelated `"--cached"` — **a set standing in for a sequence,
+which is this tree's own presence-for-relation defect inside the check written
+to close one.**  So an argv is contiguous and identified structurally: a list
+argument whose first element is `"git"`, or a call whose callee's name ends in
+`git`; for shell, a command whose *head* word is `git`.  `--error-unmatch` is
+deliberately not a listing option — it prints nothing and is a predicate whose
+answer is the exit status.
+
+### Validation
+
+Ten synthetic witnesses plus the live sweep: the two unframed shapes reported,
+the same two with `-z` not, and the three shapes that *spell* an invocation
+without being one — a diagnostic string, a call whose arguments merely include
+the words, and a quoted anchor pattern.  The live tree is clean, so every
+witness is planted, which is why the check runs them before the sweep.  Before
+the fix it reported exactly the five real sites and nothing else.
+
+### ...and the check's own domain was a name resemblance
+
+Found by **this cut's own anchor sweep**, not by a review.  `_python_git_argvs`
+recognised a git invocation two ways: a list argument whose first element is
+`"git"`, or **a callee whose name ends in `git`**.  The second is a resemblance,
+and the measurement retired it — over the tracked `scripts/*.py` there are **30**
+functions that run git and **6** unframed listing call sites that reach one
+through a helper named `g`, every one of which the check reported as clean.
+That is *a helper the scanner cannot see is a spelling that evades the metric*,
+inside the check written to close a domain miss.
+
+`_git_wrapper_names` is the relation: a function whose body starts a process
+whose argv begins with the literal `"git"` **is** a git wrapper, whatever it is
+called.  Intra-module, because that is what `ast` can decide — a wrapper
+imported from elsewhere is out of reach, and the name test is **kept beside it**
+as a pin for that case rather than replaced, the two being complementary.  The
+six sites it exposed are in `select_changed_anchors`' own self-test; they are
+**fixed**, not exempted, because an exemption is the enumeration this check
+exists to retire — the harness now asks git for paths the same way the readers
+it tests do.
+
+Two planted cases decide it, plus a control: a listing through `g` is reported,
+the same call with `-z` is not, and a same-shaped helper running `hg` is not a
+wrapper at all.  Reverting to the name test fails the first; dropping the
+`argv[0] == "git"` test fails the control.  Twenty-one Tier 3 anchors across the
+two halves.
+
+### The view you read depends on the QUESTION, and one function asks two
+
+The second finding of the same round, in `scripts/scenario_catalog.py`'s
+`check_fixture_consumers` — the gate `v0.35.116` added so that
+`tests/fixtures/README.md`'s `Used by` column is a claim something checks rather
+than prose.  It asks a consumer **two** questions and read **one** view for
+both:
+
+- *Where is the fixture path mentioned?*  Needs string contents **kept**,
+  because a fixture path **is** a string literal.
+- *Is this occurrence of the bound name a read?*  Needs them **gone**, because a
+  name inside a string literal is not a read.
+
+With the path-preserving view answering both, a consumer spelling
+
+```sh
+FIXTURE="tests/fixtures/foo.expected"
+echo "FIXTURE"          # a string, not a read
+```
+
+counted the literal `FIXTURE` inside `echo`'s argument as a use of the binding.
+So a fixture could be listed in the README, hashed, **named in a gate that never
+opens it**, and still validate its row — which is `v0.35.109`'s own finding
+(*a checksum is not a comparison*) one column over, in the check written to
+close it.
+
+**`v0.35.152` had already established that the two policies differ** — it gave
+`strip_shell` a `keep_quoted` parameter for exactly this reason — and then used
+only one of them.  This is that cut's own distinction, applied at the second
+asker: `CONSUMER_IDENTIFIER_VIEWS` is the same four suffixes with string
+contents blanked, byte-aligned with the path view, so the mention is *located*
+in one and the read *counted* in the other at the same offsets.
+`python_code_view` gained a `blank_strings` parameter rather than a second
+Python lexer — the policy is the caller's question, not the view's, which is the
+shape `strip_shell` took two cuts earlier and the one `code_no_strings` has
+carried for Rust all along.
+
+#### The domain is derived, and the first draft proved why
+
+`consumer_view_domain_violations` reconciles the two tables in both directions,
+because a suffix one classifies and the other does not is a consumer this gate
+half-reads.  Its **first draft iterated the union of the two tables** — and a
+suffix missing from *both* is in neither set, so the union does not iterate it
+and the check is silent about exactly the drop it exists to catch.  Mutating it
+(deleting `.lean` from the identifier table) was reported by **nothing**.  The
+domain is now derived from what `consumer_code_view` can *answer* —
+`CONSUMER_VIEWS` plus the shared overlay's own `_STRIPPERS` — so the third
+question ("is this suffix answerable at all?") has one owner.
+
+#### Validation
+
+Seven new unit tests (98 in the file, all passing); four token-preserving
+mutations, each caught — restore the path view for the read question, restore
+the first-draft union domain, drop the call-site threading (where the
+parameter's default silently restores the superseded reading), and disable
+`blank_strings`.  The live gate is unmoved: 30 files, 15 `Used by` claims, same
+verdict before and after, so the widening admits nothing on this tree and every
+witness is planted.  Thirteen further Tier 3 anchors, two of them negatives over
+the retired spellings, both mutation-verified in each direction.
+
 ## v0.35.153 — a receiver may NEST, and a type may be QUALIFIED
 
 Two holes in the two enforced store zeros, reported in PR #897's review, and

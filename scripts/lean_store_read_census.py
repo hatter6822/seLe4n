@@ -233,13 +233,40 @@ def _method_branch(kinds: tuple[str, ...]) -> str:
     return rf"\.objects{_RECV_CLOSE}\.{_op_alternation(kinds)}"
 
 
-def _qualified_branch(kinds: tuple[str, ...]) -> str:
-    """`RHTable.insert st.objects k v`, over-approximated to the line.
+#: The gap between a qualified operation's NAME and its receiver projection.
+#:
+#: **A line is not the declaration** (`v0.35.155`, PR #897's review).  `v0.35.153`
+#: over-approximated this branch to the LINE, because a regex cannot balance
+#: parentheses and a bounded nesting depth is the enumeration this tree retires.
+#: The line was the wrong unit: Lean wraps a long call, so
+#: `RHTable.insert\n  st.objects k v` -- ordinary formatting, legal Lean -- matched
+#: NOTHING, and an executable raw write could sit outside `STORE_WRITE_CODE = 0`
+#: while the gate printed the zero.  `READ` had the same hole, so both enforced
+#: zeros were evaded by one line break.
+#:
+#: The unit is the DECLARATION, spelled the way this tree's Tier 3 anchors spell a
+#: bounded gap: any run of characters none of which begins a COLUMN-0 line.  A Lean
+#: declaration header sits at column 0, so the gap provably cannot leave the
+#: declaration it started in and cannot pair an operation in one declaration with a
+#: projection in the next.  It is written as one lazy alternation rather than a
+#: nested quantifier, so it is linear and cannot backtrack catastrophically over a
+#: five-thousand-line module.
+#:
+#: Measured before taking it: over all 405 tracked `.lean` files the widened gap
+#: admits **zero** matches the line-bounded one did not, for reads, writes and
+#: sweeps alike -- so it costs the tree nothing and every witness is planted.
+_DECL_GAP = r"(?:[^\n]|\n(?!\S))*?"
 
-    ONE owner, for the reason `_method_branch` gives.
+
+def _qualified_branch(kinds: tuple[str, ...]) -> str:
+    """`RHTable.insert st.objects k v`, over-approximated to the DECLARATION.
+
+    ONE owner, for the reason `_method_branch` gives -- and the gap is
+    `_DECL_GAP`, which reaches a wrapped call's continuation line and stops at
+    the next column-0 line.
     """
     return (rf"\b(?:RHTable|FrozenMap)\.{_op_alternation(kinds)}{_NAME_END}"
-            rf"[^\n]*?\.objects\b")
+            rf"{_DECL_GAP}\.objects\b")
 
 
 # `st.objects[k]?` is the subscript spelling of the keyed read and has no
@@ -551,6 +578,30 @@ _RECEIVER_SHAPES = (
     ("NESTED APPLICATION", "(f (spliceOutMidQueueNode st tid))"),
 )
 
+#: ...and every PLACEMENT of the whitespace between a qualified operation's name
+#: and its receiver, which is the third axis of the same crossing.
+#:
+#: **A line is not the declaration** (`v0.35.155`, PR #897's review).  `v0.35.153`
+#: took the axes for the access from Lean's grammar and enumerated *where the
+#: receiver may be bracketed* while leaving *where the whitespace may be* at one
+#: value -- and Lean wraps a long call, so `RHTable.insert\n  st.objects k v` was
+#: outside BOTH enforced zeros.  The grammar's values are: the same line, a
+#: continuation line, and a continuation after a blank line; its one NEGATIVE is a
+#: return to column 0, which starts a new declaration and must not be crossed.
+#: All four are rows, because a gap that reaches a continuation line is one
+#: whitespace class away from reaching the next declaration's.
+_WHITESPACE_PLACEMENTS = (
+    ("SAME LINE", " "),
+    ("CONTINUATION LINE", "\n    "),
+    ("CONTINUATION AFTER A BLANK LINE", "\n\n    "),
+)
+
+#: ...and the placement that must NOT be spanned: a return to column 0 begins a
+#: new Lean declaration, so an operation in one declaration must never pair with a
+#: projection in the next.  Its probe holds every token of the positive rows and
+#: moves only the newline's indentation, which is the mutation this axis is for.
+_DECLARATION_CROSSING = ("COLUMN-0 CONTINUATION", "\n")
+
 #: ...and every spelling of the object-table TYPE, which is the same substitution
 #: one derivation over: `_TABLE_TYPE` feeds `table_receivers`, so a binder whose
 #: type this does not recognise binds no receiver and its keyed accesses are in
@@ -591,6 +642,11 @@ def branch_symmetry_violations() -> list[str]:
     parenthesised, seven positions ask that question, and a reconciliation that
     names two of them is the presence check this file spends its length retiring.
 
+    Since `v0.35.155` the crossing carries a fourth axis,
+    `_WHITESPACE_PLACEMENTS`, with `_DECLARATION_CROSSING` as its negative: a
+    qualified call's receiver may sit on a continuation line, and the gap must
+    reach it without reaching the next declaration's.
+
     Since `v0.35.153` it is a CROSSING of three axes rather than one list, and
     each axis is taken from Lean's grammar rather than from a finding:
     `_OPERATION_SPELLINGS` x `_RECEIVER_SHAPES` for the access, and
@@ -618,6 +674,27 @@ def branch_symmetry_violations() -> list[str]:
                         f"`{op}` is classified `{kind}` and the {what} spelling "
                         f"with a {shape} receiver `{probe.strip()}` is not "
                         f"recognised")
+        # ...crossed with WHERE the whitespace sits, since Lean wraps a long
+        # call and a gap bounded to the line matches nothing across the wrap.
+        # Only the qualified spelling has a gap to place; the method spelling's
+        # receiver precedes its operation, so it has no row here.
+        for place, ws in _WHITESPACE_PLACEMENTS:
+            probe = f"  let t := RHTable.{op}{ws}st.objects k v"
+            if not pat.search(probe):
+                out.append(
+                    f"`{op}` is classified `{kind}` and the QUALIFIED spelling "
+                    f"with its receiver on a {place} is not recognised -- Lean "
+                    f"wraps a long call, so this is ordinary formatting")
+        # ...and the negative of the same axis: every token held fixed, the
+        # newline's indentation removed, so the receiver begins a NEW
+        # declaration.  A gap that spans this pairs an operation in one
+        # declaration with a projection in the next.
+        place, ws = _DECLARATION_CROSSING
+        crossing = f"  let t := RHTable.{op}{ws}def other := st.objects k v"
+        if pat.search(crossing):
+            out.append(
+                f"`{op}`'s QUALIFIED branch spans a {place}, so it pairs an "
+                f"operation in one declaration with a projection in the next")
     # ...and the TYPE axis, which decides the indirect census's whole domain: a
     # binder this does not recognise binds no receiver, so its keyed accesses are
     # in neither population.  Both directions, because a qualifier that admitted

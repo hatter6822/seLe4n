@@ -126,6 +126,7 @@ sys.path.insert(0, str(REPO_ROOT / "scripts"))
 # one-question-two-answers hazard at the point where it is cheapest to avoid.
 from check_anchor_consistency import (  # noqa: E402
     HELPER_NAME_RE,
+    SEARCH_TOOLS,
     TIER_SCRIPT_GLOB,
     classify_line,
     logical_lines,
@@ -133,6 +134,112 @@ from check_anchor_consistency import (  # noqa: E402
 
 #: Kinds whose subject is the text of a file, so the sweep can decide them.
 SEARCHING_KINDS = frozenset({"anchor", "filtered"})
+
+#: Command heads a producer's body may use, beyond the classifier's own
+#: `SEARCH_TOOLS`.  **Named rather than derived**, for the reason
+#: `indexed_source.PROCESS_RUNNERS` gives: whether a tool has an effect beyond
+#: reading its input is a fact about that tool, not about any spelling here.  The
+#: set therefore fails CLOSED -- a head outside it leaves the anchor deferred.
+READ_ONLY_FILTERS = frozenset({
+    "sed", "awk", "wc", "sort", "uniq", "head", "tail", "cut", "tr", "cat",
+    "comm", "nl", "basename", "dirname", "true", "printf", "echo",
+})
+
+#: A `VAR=value` prefix on a command, which shell allows and which is not the
+#: command's head.
+_ASSIGNMENT_PREFIX = re.compile(r"^[A-Za-z_][A-Za-z_0-9]*=")
+
+#: A producer the sweep may EXECUTE: `NAME=$( <pipeline> )`, nothing else.
+#:
+#: **A resolved anchor's executability is a question about the RESOLVED command,
+#: and the classifier's `kind` is not that question** (`v0.35.155`, PR #897's
+#: review).  `kind` was computed from the anchor ALONE and then compared against
+#: `SEARCHING_KINDS`, while `missing` and `substitutes` beside it were computed
+#: from the command with its prelude -- one decision drawn from two subjects.  So
+#: a resolved threshold check reached `defer:tool` however complete its producer
+#: was, and deleting enough conjuncts from a bundle left the changed-file sweep
+#: green while direct Tier 3 failed.  `v0.35.152` had fixed the same split for
+#: `related` (the provenance question) and not for `kind` (the executability
+#: one), which is *a fix applied at one site and not its sibling*.
+#:
+#: Recomputing `kind` is NOT the remedy, and the measurement says so: a compound
+#: `NAME=$( … ); run_check …` is not a line the classifier parses at all, so every
+#: such anchor would become `fail:unparsed` -- failing Tier 0 on ten anchors that
+#: are correctly deferred.  This is round 16's exit instead: **require a canonical
+#: spelling and refuse the rest.**  A producer qualifies when it is a single
+#: command substitution whose every command head reads and does not write, with no
+#: redirection; the nine that do not are an array assignment folded to a broken or
+#: empty prefix (`THEOREM_CHECK_TARGETS=(`, `shell_files_args=()`), a
+#: side-effecting `mktemp` feeding a build, or a directory constant feeding a
+#: write -- each of which the sweep must not run, and an empty array is the worst
+#: of them because the tool would run with no arguments and PASS.
+#: The closing parenthesis is the LAST character, not the first one seen: a
+#: `sed` pattern may hold `\(theorem\|def\)`, and a body bounded by `[^)]*`
+#: stopped inside it -- so `NI_CTORS`, one of the two anchors this contract is
+#: for, stayed deferred by its own alternation.  A nested `$(` is refused
+#: separately, which is what keeps the greedy bound from spanning two
+#: substitutions.
+_EXECUTABLE_PRODUCER = re.compile(
+    r"^[A-Za-z_][A-Za-z_0-9]*=\$\((?P<body>.*)\)$")
+
+#: ...and the anchor it may feed: a threshold `test` on that one variable.  The
+#: only non-searching anchor shape whose subject is still the text of a file --
+#: the producer reads the file and the test compares what it found.
+_THRESHOLD_ANCHOR = re.compile(
+    r"""^run_check\s+"[A-Z]+"\s+test\s+"\$\{[A-Za-z_][A-Za-z_0-9]*\}"\s+"""
+    r"""-(?:eq|ne|lt|le|gt|ge)\s+[0-9]+\s*$""")
+
+
+def executable_threshold(prelude: list[str], command: str) -> bool:
+    """Is `prelude; command` a producer-fed threshold the sweep may run?
+
+    Both halves must take their canonical spelling: the producer a single
+    command substitution over reading tools with no redirection, and the anchor a
+    `test` on the one variable it binds.  Anything else is deferred, because the
+    remaining shapes on this tree are an array assignment the fold truncates, a
+    `mktemp` with a side effect, and a redirection into the tree.
+
+    Measured when it landed: of eleven anchors with a resolved producer, exactly
+    **two** qualify (`CIBUNDLE_CONJUNCTS`, `NI_CTORS`) -- which are the two the
+    producer mechanism was written for -- and nine stay deferred.
+    """
+    if len(prelude) != 1 or not _THRESHOLD_ANCHOR.match(command.strip()):
+        return False
+    m = _EXECUTABLE_PRODUCER.match(prelude[0].strip())
+    if m is None:
+        return False
+    body = m.group("body")
+    if "$(" in body or "`" in body:
+        return False
+    try:
+        words = _shell_words(body)
+    except UnlexableCommand:
+        return False                   # cannot read it, so will not run it
+    # The PIPELINE is split on a bare `|` WORD, never on the character: a `sed`
+    # pattern holds `\|` and a `grep` pattern holds `| ` inside quotes, and
+    # splitting the text would make each of those a stage whose head is not a
+    # tool.  `_shell_words` is the tree's own lexer, so this asks the question
+    # bash asks.
+    allowed = READ_ONLY_FILTERS | set(SEARCH_TOOLS)
+    stage: list[str] = []
+    stages = [stage]
+    for w in words:
+        if w in ("|", "||", "&&", ";", "&"):
+            if w != "|":
+                return False           # only a plain pipeline is admitted
+            stage = []
+            stages.append(stage)
+            continue
+        if w.startswith((">", "<")) or w in (">", ">>", "<"):
+            return False               # a redirection is a write or an input
+        stage.append(w)
+    for st in stages:
+        while st and _ASSIGNMENT_PREFIX.match(st[0]):
+            st = st[1:]                # a leading VAR=value prefix
+        if not st or st[0].strip("'\"") not in allowed:
+            return False
+    return True
+
 
 #: Variables `check_changed_file_anchors.sh` defines, and therefore the only ones
 #: a swept anchor may reference.  `REPO_ROOT` comes from `test_lib.sh` and
@@ -672,12 +779,18 @@ def select(
             prov = "glob"
         else:
             continue
+        anchor_only = command
         if prelude:
             # The producer runs, then the anchor, in one `eval` -- so the sweep's
             # verdict is the tier suite's own rather than a deferral.  `;` rather
             # than a newline, because the executor reads TAB-separated rows.
             command = "; ".join(prelude + [command])
-        if kind == "unparsed":
+        if prelude and executable_threshold(prelude, anchor_only):
+            # A canonically-spelled producer feeding a threshold `test`: the
+            # subject is still the text of a file, reached through the variable
+            # the producer binds, so the sweep can decide it and must.
+            disposition = "sweep"
+        elif kind == "unparsed":
             disposition = "fail:unparsed"
         elif kind not in SEARCHING_KINDS:
             disposition = "defer:tool"
@@ -714,9 +827,32 @@ def _git(*args: str, cwd: pathlib.Path | None = None) -> tuple[int, str, str]:
     reader to reproduce it by hand.
     """
     r = subprocess.run(
-        ["git", *args], cwd=cwd or REPO_ROOT, capture_output=True, text=True
+        ["git", *args], cwd=cwd or REPO_ROOT, capture_output=True,
+        # A tracked path is a byte string, not text: it may hold any byte but
+        # NUL and `/`.  `surrogateescape` round-trips one that is not valid
+        # UTF-8 instead of raising, so a path this gate cannot pretty-print is
+        # still a path it can compare (`v0.35.154`).
+        encoding="utf-8", errors="surrogateescape",
     )
     return r.returncode, r.stdout, r.stderr
+
+
+def _nul_split(out: str) -> list[str]:
+    """A NUL-framed git listing's entries.
+
+    **A DELIMITER that can occur in the data is not a delimiter** (`v0.35.154`,
+    PR #897's review).  Without `-z`, git prints a path holding a newline, a
+    quote or a backslash in its C-quoted form -- `"tests/a\\nb.lean"`, quotes and
+    all -- and a line-splitting reader takes that spelling for the path.  This
+    gate then relates a path that does not exist to every anchor target, matches
+    none, and reports a clean sweep while running nothing the real change
+    invalidates: fail-OPEN, and silent.
+
+    NUL is the one byte a path cannot contain, which is why `-z` is the framing
+    and why the split is on it rather than on lines.  A trailing empty field is
+    the terminator, not an entry.
+    """
+    return [p for p in out.split("\0") if p]
 
 
 def _names(*args: str) -> list[str]:
@@ -733,7 +869,7 @@ def _names(*args: str) -> list[str]:
     the contract ("**failing** rather than answering 'nothing' when none
     applies") this branch used to violate.
     """
-    code, out, err = _git("diff", "--no-renames", "--name-only", *args)
+    code, out, err = _git("diff", "--no-renames", "-z", "--name-only", *args)
     if code != 0:
         raise UnknownChangeSet(
             f"FAIL: changed-file anchor sweep — `git diff --no-renames "
@@ -742,7 +878,7 @@ def _names(*args: str) -> list[str]:
             f"derivation and sweep a different cut's change set."
             + (f"\n  git said: {err.strip()}" if err.strip() else "")
         )
-    return [l for l in out.splitlines() if l.strip()]
+    return _nul_split(out)
 
 
 def _untracked(repo: pathlib.Path | None = None) -> list[str]:
@@ -760,7 +896,8 @@ def _untracked(repo: pathlib.Path | None = None) -> list[str]:
     indistinguishable from "this cut adds no file", and the derivation order
     turns that into the very fall-through the paragraph above describes.
     """
-    code, out, err = _git("ls-files", "--others", "--exclude-standard", cwd=repo)
+    code, out, err = _git("ls-files", "--others", "--exclude-standard", "-z",
+                          cwd=repo)
     if code != 0:
         raise UnknownChangeSet(
             f"FAIL: changed-file anchor sweep — `git ls-files --others "
@@ -769,7 +906,7 @@ def _untracked(repo: pathlib.Path | None = None) -> list[str]:
             f"derivation and sweep a different cut's change set."
             + (f"\n  git said: {err.strip()}" if err.strip() else "")
         )
-    return [l for l in out.splitlines() if l.strip()]
+    return _nul_split(out)
 
 
 def changed_paths() -> tuple[list[str], str, str]:
@@ -1302,6 +1439,19 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
                 raise AssertionError(f"git {a}: {r.stderr}")
             return r.stdout
 
+        def g_paths(*a):
+            """A path listing, NUL-framed, split the way production splits.
+
+            The harness asks git for paths the same way the readers it tests do
+            (`v0.35.154`).  A fixture that lists paths unframed asserts nothing
+            about a path holding a newline -- and it is a member of the very
+            population `indexed_source.unframed_path_listings` measures, so
+            leaving it here would mean either a gate reporting its own harness
+            or an exemption, and an exemption is the enumeration that check
+            exists to retire.
+            """
+            return _nul_split(g(*a, "-z"))
+
         g("init", "-q", "-b", "main")
         (root / "keep.lean").write_text("a\n")
         (root / "gone.lean").write_text("b\n")
@@ -1312,14 +1462,14 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         (root / "new.lean").write_text("c" * 200 + "\n")
         (root / "old.lean").unlink()
         g("add", "-A")
-        names = g("diff", "--no-renames", "--name-only", "--cached", "HEAD").split()
+        names = g_paths("diff", "--no-renames", "--name-only", "--cached", "HEAD")
         for expect in ("gone.lean", "old.lean", "new.lean"):
             if expect not in names:
                 return _fail(
                     f"`--no-renames` change set {names} omits {expect}; a deleted "
                     f"or renamed file's anchors would go unswept"
                 )
-        detected = g("diff", "--name-only", "--cached", "HEAD").split()
+        detected = g_paths("diff", "--name-only", "--cached", "HEAD")
         if "old.lean" in detected:
             return _fail(
                 "rename detection was already off in this git, so this case "
@@ -1332,14 +1482,14 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         #     files while reporting a clean run.  This gate reported exactly that
         #     on its own first run, over the two files that add it.
         (root / "brand_new.lean").write_text("d\n")
-        both = g("diff", "--name-only", "--cached", "HEAD").split()
-        both += g("diff", "--name-only").split()
+        both = g_paths("diff", "--name-only", "--cached", "HEAD")
+        both += g_paths("diff", "--name-only")
         if "brand_new.lean" in both:
             return _fail(
                 "`git diff` reported an untracked file, so this case asserts "
                 "nothing about why `--others` is needed"
             )
-        others = g("ls-files", "--others", "--exclude-standard").split()
+        others = g_paths("ls-files", "--others", "--exclude-standard")
         if "brand_new.lean" not in others:
             return _fail(
                 f"`--others --exclude-standard` change set {others} omits an "
@@ -1348,7 +1498,7 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
             )
         (root / ".gitignore").write_text("ignored.lean\n")
         (root / "ignored.lean").write_text("e\n")
-        others = g("ls-files", "--others", "--exclude-standard").split()
+        others = g_paths("ls-files", "--others", "--exclude-standard")
         if "ignored.lean" in others:
             return _fail(
                 "`--exclude-standard` did not honour `.gitignore`, so build "
@@ -1632,6 +1782,87 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         if resolve_producers(
                 prods["test_tier9_fixture.sh"], 2, {"N", "MISSING"}) is not None:
             return _fail("an unbound variable resolved to a partial prelude")
+
+    # 15c. ...AND A RESOLVED PRODUCER FEEDING A THRESHOLD IS EXECUTED, not
+    #      deferred.  `kind` was computed from the anchor ALONE and compared
+    #      against `SEARCHING_KINDS`, while `missing` and `substitutes` beside it
+    #      were computed from the command WITH its prelude -- one decision drawn
+    #      from two subjects -- so a fully resolved `test "${N}" -ge 5` reached
+    #      `defer:tool` and the sweep logged a deferral where Tier 3 fails.
+    #      Measured: of eleven anchors with a resolved producer, exactly two take
+    #      this shape, and both were deferred.
+    THRESHOLD_CASES = [
+        # (name, producer, anchor, executable?)
+        ("the canonical shape",
+         "N=$(grep -c foo SeLe4n/Kernel/Fake.lean)",
+         'run_check "INVARIANT" test "${N}" -ge 5', True),
+        # The `NI_CTORS` shape: an ALTERNATION inside the `sed` pattern, whose
+        # `)` a body bounded by `[^)]*` stopped at -- so one of the two anchors
+        # this contract exists for was refused by its own pattern.
+        ("a sed pattern holding a parenthesised alternation",
+         r"""N=$(sed -n '/^a/,/^\(b\|c\)/p' F.lean | grep -c '^| ')""",
+         'run_check "INVARIANT" test "${N}" -ge 20', True),
+        # A `|` inside a QUOTED pattern is not a pipeline separator; splitting
+        # the text rather than the lexed words made its stage's head a fragment.
+        ("a quoted pipe inside a grep pattern",
+         """N=$(grep -c 'a | b' F.lean)""",
+         'run_check "INVARIANT" test "${N}" -ge 1', True),
+        # The nine that must stay deferred, one per reason.
+        ("an EMPTY array producer (the tool would run with no arguments)",
+         "shell_files_args=()",
+         'run_check "HYGIENE" test "${shell_files_args}" -ge 1', False),
+        ("an array producer the continuation fold TRUNCATES",
+         "THEOREM_CHECK_TARGETS=(",
+         'run_check "HYGIENE" test "${THEOREM_CHECK_TARGETS}" -ge 1', False),
+        ("a side-effecting `mktemp` producer",
+         'D="$(mktemp -d)"',
+         'run_check "TRACE" test "${D}" -ge 1', False),
+        ("a redirection in the producer body",
+         "N=$(grep -c foo F.lean > /tmp/x)",
+         'run_check "INVARIANT" test "${N}" -ge 5', False),
+        ("a NESTED command substitution",
+         "N=$(grep -c foo $(basename F.lean))",
+         'run_check "INVARIANT" test "${N}" -ge 5', False),
+        ("a `&&` rather than a plain pipeline",
+         "N=$(grep -c foo F.lean && rm -rf /)",
+         'run_check "INVARIANT" test "${N}" -ge 5', False),
+        ("a tool outside the read-only set",
+         "N=$(lake build 2)",
+         'run_check "BUILD" test "${N}" -ge 5', False),
+        # ...and the ANCHOR half: a producer may be perfect and the anchor still
+        # not be a threshold, which is the other way this contract can be wrong.
+        ("a perfect producer feeding a NON-threshold anchor",
+         "N=$(grep -c foo F.lean)",
+         'run_check "HYGIENE" python3 check.py "${N}"', False),
+        ("...and one feeding a `test` on a DIFFERENT shape",
+         "N=$(grep -c foo F.lean)",
+         'run_check "INVARIANT" test -f "${N}"', False),
+    ]
+    for name, producer, command, want in THRESHOLD_CASES:
+        got = executable_threshold([producer], command)
+        if got != want:
+            return _fail(
+                f"executable_threshold on {name}: got {got}, want {want} "
+                f"(producer {producer!r}, anchor {command!r})")
+
+    # 15d. ...AND THE PREDICATE IS WIRED, which the cases above cannot see: they
+    #      exercise `executable_threshold` directly, so a disposition branch that
+    #      never consults it would leave every one of them passing while the
+    #      anchor went back to `defer:tool`.  An unwitnessed condition is
+    #      indistinguishable from a wrong one.
+    with tempfile.TemporaryDirectory() as tmp:
+        fake = pathlib.Path(tmp)
+        (fake / "test_tier9_fixture.sh").write_text(
+            "N=$(grep -c foo SeLe4n/Kernel/Fake.lean)\n"
+            'run_check "INVARIANT" test "${N}" -ge 5\n')
+        invs = anchor_invocations(fake)
+        prods = anchor_producers(fake)
+        rows = select(invs, ["SeLe4n/Kernel/Fake.lean"], set(), prods)
+        if len(rows) != 1 or rows[0][4] != "sweep":
+            return _fail(
+                f"a resolved threshold anchor was not dispositioned `sweep`: "
+                f"{rows}; the producer's verdict must reach the disposition, or "
+                f"the sweep logs a deferral where Tier 3 fails")
 
     print(
         f"SELF-TEST PASS: changed-file anchor selection — {_case_count()} cases: "

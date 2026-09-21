@@ -235,6 +235,206 @@ def parse_batch(out: bytes, wanted: list[str]) -> dict[str, str]:
 # are the ones where git fails and a result is still demanded.
 # ---------------------------------------------------------------------------
 
+#: A git subcommand that LISTS PATHS.  Derived from what each one prints rather
+#: than from where a defect was found: these are the subcommands whose output is
+#: one path per record, so the record separator has to be one a path cannot hold.
+PATH_LISTING_SUBCOMMANDS = frozenset({
+    "ls-files", "ls-tree", "diff", "diff-index", "diff-tree", "status",
+})
+
+#: The options that make such an invocation PRINT a bare path list.
+#:
+#: `--error-unmatch` is deliberately absent: it prints nothing on success and is
+#: a membership PREDICATE whose answer is the exit status, so its record
+#: separator is not a question anyone asks.  An option that does not make git
+#: print paths does not need them framed.
+PATH_LISTING_OPTIONS = frozenset({
+    "--name-only", "--name-status", "--others", "--cached", "--modified",
+    "--deleted", "--porcelain",
+})
+
+#: ...and the framing that makes the record separator NUL.
+NUL_FRAMING = frozenset({"-z", "-Z", "--null"})
+
+
+PROCESS_RUNNERS = frozenset({"run", "Popen", "check_output", "check_call",
+                            "call"})
+"""The `subprocess` entry points that start a process.
+
+Named rather than derived because they are another library's surface, not this
+tree's: a runner it gains is a line in this set, and one it does not have cannot
+be invented by any spelling here.
+"""
+
+
+def _git_wrapper_names(tree) -> "set[str]":
+    """The module's own functions that run git, by what their bodies DO.
+
+    A function whose body starts a process whose argv begins with the literal
+    `"git"` is a git wrapper, whatever it is called -- so a call to it carries a
+    git argv even though nothing in the call site says `git`.  Measured on the
+    tracked `scripts/*.py`: 30 such functions, and six unframed listing call
+    sites that reach one through a helper named `g`.
+
+    Intra-module, deliberately: `ast` can decide which names this file binds and
+    cannot decide what an imported name denotes, so a wrapper imported from
+    elsewhere is outside this derivation.  The caller keeps a name test beside
+    it for that case, which over-approximates and therefore fails toward
+    reporting.
+    """
+    import ast
+    out: "set[str]" = set()
+    for fn in ast.walk(tree):
+        if not isinstance(fn, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            continue
+        for node in ast.walk(fn):
+            if not isinstance(node, ast.Call):
+                continue
+            callee = node.func
+            name = (callee.attr if isinstance(callee, ast.Attribute)
+                    else getattr(callee, "id", ""))
+            if name not in PROCESS_RUNNERS:
+                continue
+            argvs = list(node.args) + [k.value for k in node.keywords
+                                       if k.arg in (None, "args")]
+            for arg in argvs:
+                if not isinstance(arg, (ast.List, ast.Tuple)) or not arg.elts:
+                    continue
+                head = arg.elts[0]
+                if isinstance(head, ast.Constant) and head.value == "git":
+                    out.add(fn.name)
+    return out
+
+
+def _python_git_argvs(text: str):
+    """`(line, argv)` for every call in `text` that runs git, via `ast`.
+
+    **A quoted message is not an invocation, and a call's whole string-argument
+    SET is not its argv.**  Matching the line reported
+    `f"FAIL: ... \\`git ls-files --others "` -- an error string naming the command
+    it explains.  Matching every string argument of a call then reported six
+    fixture-builder calls whose arguments happen to include an unrelated `"diff"`
+    and an unrelated `"--cached"`: that is a set standing in for a sequence,
+    which is this tree's own presence-for-relation defect inside the check
+    written to close one.
+
+    So an argv is CONTIGUOUS and is identified two ways, both structural: a
+    list or tuple argument whose first element is `"git"`
+    (`subprocess.run(["git", ...])`), or a call to a **git wrapper**, whose
+    positional string arguments are the argv with the subcommand first.
+
+    **A wrapper is DERIVED, not named** (`v0.35.154`, found by this cut's own
+    anchor sweep).  The first draft recognised a wrapper by its callee's final
+    name component ending in `git` -- a resemblance, and the measurement is what
+    retired it: over the tracked `scripts/*.py` there are **30** functions that
+    run git and **6** unframed listing call sites reaching one of them through a
+    helper named `g`, every one of which this check reported as clean.  That is
+    *a helper the scanner cannot see is a spelling that evades the metric*, in the
+    check written to close a domain miss.  `_git_wrapper_names` is the relation:
+    a function whose body runs a process whose argv begins with the literal
+    `"git"` IS a git wrapper, whatever it is called, and the resolution is
+    intra-module because that is what `ast` can decide -- a wrapper imported from
+    elsewhere is out of reach and the docstring says so rather than the check
+    guessing.  The name test is KEPT beside it, as a pin for the cross-module
+    case the derivation cannot see; the two are complementary, not redundant.
+
+    A file that does not parse yields nothing -- the same answer as "contains no
+    call", and the caller's domain comes from the git index, which
+    `indexed_contents` already refuses to read past.
+    """
+    import ast
+    try:
+        tree = ast.parse(text)
+    except SyntaxError:
+        return
+    wrappers = _git_wrapper_names(tree)
+
+    def strings(seq):
+        return [e.value for e in seq
+                if isinstance(e, ast.Constant) and isinstance(e.value, str)]
+
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        line = getattr(node, "lineno", 0)
+        for a in node.args:
+            if isinstance(a, (ast.List, ast.Tuple)):
+                words = strings(a.elts)
+                if words and words[0] == "git":
+                    yield line, words[1:]
+        fn = node.func
+        name = fn.attr if isinstance(fn, ast.Attribute) else getattr(fn, "id", "")
+        if name and (name in wrappers
+                     or name.lower().rstrip("_").endswith("git")):
+            words = strings(node.args)
+            if words:
+                yield line, words
+
+
+def _shell_git_argvs(text: str):
+    """`(line, [words])` for every command in `text` whose HEAD word is `git`.
+
+    **A quoted pattern is not an invocation either.**  A Tier 3 anchor spells the
+    very call this check is about inside an `rg` pattern; requiring `git` to be a
+    command HEAD -- at the start, or after a `|`, `&&`, `;`, `(`, `<(`, `$(` --
+    is what tells the two apart, and it is the same question `test_lib.sh`'s own
+    classifier asks of an anchor's head.
+    """
+    import re
+    head = re.compile(r"(?:^|[|&;(]|\$\(|<\()\s*(?:!\s*)?git\s+(?P<rest>[^\n|&;)]*)")
+    for n, line in enumerate(text.splitlines(), 1):
+        for m in head.finditer(line):
+            words = [w.strip("'\"") for w in m.group("rest").split()]
+            if words:
+                yield n, words
+
+
+def unframed_path_listings(root: "pathlib.Path") -> list[str]:
+    """Every tracked script that lists paths from git without NUL framing.
+
+    **A DELIMITER THAT CAN OCCUR IN THE DATA IS NOT A DELIMITER.**  A tracked
+    path is a byte string that may hold any byte but NUL and `/`, and git prints
+    one containing a newline, a quote or a backslash in its C-quoted form --
+    `"tests/a\\nb.lean"`, quotes and all.  A line-reading consumer then takes
+    that spelling for the path, and what happens next depends on the consumer:
+    `select_changed_anchors` relates a path that does not exist to every anchor
+    target, matches none, and reports a CLEAN SWEEP; the pre-commit hook asks
+    `git show ":<quoted>"`, gets nothing, and its `sorry` check passes.  Both
+    fail OPEN and both are silent.  Measured on the hook before the fix: a
+    staged `$'a\\nb.lean'` holding `theorem bad : True := by sorry` produced no
+    finding at all.
+
+    **This check exists because the rule had already been swept once.**
+    `v0.35.150` found the class in this module's own `cat-file --batch` loop,
+    swept seven sibling listings, and missed five -- the two
+    `select_changed_anchors` sites PR #897's review then reported, and three in
+    the pre-commit hook that only a sweep for the *question* would find.  A rule
+    restated twice gets a check rather than a third telling.
+
+    It reads the git INDEX, so what it checks is what is being committed, and it
+    resolves each line into the structure it stands for -- a Python call's
+    argument list, a shell command's head -- because a diagnostic string and a
+    Tier 3 anchor both spell an invocation without being one.
+    """
+    out: list[str] = []
+    paths = listed_at(str(root), ":", "scripts/*.py", "scripts/*.sh", "*.sh")
+    for rel, text in sorted(indexed_contents(str(root), paths).items()):
+        walk = _python_git_argvs if rel.endswith(".py") else _shell_git_argvs
+        for line, words in walk(text):
+            ws = set(words)
+            if not (ws & PATH_LISTING_SUBCOMMANDS):
+                continue
+            if not (ws & PATH_LISTING_OPTIONS):
+                continue
+            if ws & NUL_FRAMING:
+                continue
+            out.append(
+                f"{rel}:{line}: lists paths from git without NUL framing "
+                f"(`-z`), so a path holding a newline, a quote or a backslash "
+                f"arrives C-quoted and is taken for the path: {' '.join(words)[:90]}")
+    return out
+
+
 def _self_test() -> int:
     import os
     import subprocess as sp
@@ -433,6 +633,84 @@ def _self_test() -> int:
               False, "returned quietly")
     miss = parse_batch(b":x missing\0", ["x"])
     check("a `missing` line is an ANSWER, not a refusal", miss == {}, miss)
+
+    # ---------------------------------------------------------------------
+    # The NUL-framing discipline (`v0.35.154`).  Its witnesses are synthetic,
+    # because the live tree is clean and a check that cannot fire is
+    # indistinguishable from one that is wrong; the live sweep then runs after
+    # them, so the tree is held to what the witnesses pin.
+    # ---------------------------------------------------------------------
+    import pathlib as _pl
+
+    for name, py, want in [
+        ("an unframed `git diff --name-only` is reported",
+         'subprocess.run(["git", "diff", "--name-only"])', True),
+        ("...and the same call with `-z` is not",
+         'subprocess.run(["git", "diff", "-z", "--name-only"])', False),
+        ("an unframed `_git(\"ls-files\", \"--others\")` is reported",
+         '_git("ls-files", "--others")', True),
+        ("...and the same helper call with `-z` is not",
+         '_git("ls-files", "--others", "-z")', False),
+        # The three shapes that spell an invocation WITHOUT being one -- each
+        # was reported by a line-matching draft of this check.
+        ("a diagnostic STRING naming the command is not an invocation",
+         'x = f"FAIL: `git ls-files --others` exited {code}"', False),
+        ("a call whose string arguments merely INCLUDE the words is not an argv",
+         'subprocess.run(["git", "add", "-A"], env={"D": "diff", "C": "--cached"})',
+         False),
+        ("an `--error-unmatch` membership test needs no framing",
+         '_git("ls-files", "--error-unmatch", path)', False),
+        # **A wrapper is what a function DOES, not what it is called.**  This
+        # pair is the whole measurement of the derived-wrapper widening: on the
+        # live tree the resemblance-based draft missed six real sites reached
+        # through a helper named `g`, and with those fixed the tree is clean, so
+        # the case has to be planted.  `g` gives the scanner nothing -- no
+        # `git` in its name, no literal argv at the call -- and is recognised
+        # only because its BODY runs a process whose argv begins with "git".
+        ("a listing through a wrapper whose NAME says nothing is reported",
+         'def g(*a):\n'
+         '    return subprocess.run(["git", *a])\n'
+         'g("ls-files", "--others")\n', True),
+        ("...and the same wrapper call with `-z` is not",
+         'def g(*a):\n'
+         '    return subprocess.run(["git", *a])\n'
+         'g("ls-files", "--others", "-z")\n', False),
+        # The control that keeps the derivation from becoming "any helper": a
+        # function of the same shape that runs something else is not a wrapper,
+        # so a listing-shaped call to it is not a git invocation.
+        ("a same-shaped helper that runs something else is NOT a wrapper",
+         'def g(*a):\n'
+         '    return subprocess.run(["hg", *a])\n'
+         'g("diff", "--name-only")\n', False),
+    ]:
+        got = bool(list(
+            (line, argv) for line, argv in _python_git_argvs(py)
+            if set(argv) & PATH_LISTING_SUBCOMMANDS
+            and set(argv) & PATH_LISTING_OPTIONS
+            and not (set(argv) & NUL_FRAMING)))
+        check(f"nul-framing '{name}'", got == want, f"got {got}, want {want}")
+
+    for name, sh, want in [
+        ("an unframed shell `git diff --cached --name-only` is reported",
+         'mapfile -t A < <(git diff --cached --name-only)', True),
+        ("...and the same command with `-z` is not",
+         'while read -r -d "" f; do :; done < <(git diff --cached -z --name-only)',
+         False),
+        ("a quoted PATTERN naming the command is not an invocation",
+         "run_check \"INVARIANT\" rg -F -n 'git diff --cached --name-only' f.py",
+         False),
+    ]:
+        got = bool(list(
+            (line, words) for line, words in _shell_git_argvs(sh)
+            if set(words) & PATH_LISTING_SUBCOMMANDS
+            and set(words) & PATH_LISTING_OPTIONS
+            and not (set(words) & NUL_FRAMING)))
+        check(f"nul-framing '{name}'", got == want, f"got {got}, want {want}")
+
+    live = unframed_path_listings(_pl.Path(REPO_ROOT if "REPO_ROOT" in globals()
+                                           else "."))
+    check("nul-framing 'the tree lists no paths from git unframed'",
+          not live, "\n    ".join(live))
 
     if failures:
         print(f"FAIL: indexed_source --self-test — {len(failures)} case(s) failed")

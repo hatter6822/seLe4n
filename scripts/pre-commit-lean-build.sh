@@ -35,12 +35,40 @@ fi
 # runs the verifier).  This needs no Lean toolchain, so it precedes the lake
 # check below.
 PRE_COMMIT_REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || true)"
+# ---------------------------------------------------------------------------
+# A DELIMITER THAT CAN OCCUR IN THE DATA IS NOT A DELIMITER (`v0.35.154`,
+# PR #897's review, found by sweeping the reported `select_changed_anchors.py`
+# sites rather than patching them).
+#
+# A tracked path is a byte string: it may hold any byte but NUL and `/`.
+# Without `-z`, git prints one containing a newline, a quote or a backslash in
+# its C-quoted form -- `"tests/a\nb.lean"`, quotes and all -- and a line-reading
+# consumer takes that spelling for the path.  MEASURED on this hook before the
+# fix: staging `$'a\nb.lean'` containing `theorem bad : True := by sorry` made
+# the sorry check report NOTHING, because `git show ":\"a\\nb.lean\""` resolves
+# to no object and the grep then has no input.  The gate whose stated job is to
+# block a `sorry` passed it, silently.
+#
+# NUL is the one byte a path cannot contain, so `-z` is the framing.  `read -d
+# ''` rather than `mapfile -d ''` deliberately: the latter needs bash 4.4 and
+# this hook runs on contributors' machines.
+# ---------------------------------------------------------------------------
+staged_paths_into() {
+    # $1 = name of the array to fill; remaining args = extra `git diff` operands.
+    local _target="$1"; shift
+    local _path
+    eval "${_target}=()"
+    while IFS= read -r -d '' _path; do
+        eval "${_target}+=(\"\${_path}\")"
+    done < <(git diff --cached -z --name-only --diff-filter=ACMR "$@" || true)
+}
+
 if [ -n "${PRE_COMMIT_REPO_ROOT}" ] \
    && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/version_locations.sh" ] \
    && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/check_version_sync.sh" ]; then
     # shellcheck source=scripts/version_locations.sh
     source "${PRE_COMMIT_REPO_ROOT}/scripts/version_locations.sh"
-    mapfile -t STAGED_FOR_VERSION < <(git diff --cached --name-only --diff-filter=ACMR || true)
+    staged_paths_into STAGED_FOR_VERSION
     VERSION_FILE_STAGED=0
     if [ "${#STAGED_FOR_VERSION[@]}" -gt 0 ]; then
         for _staged in "${STAGED_FOR_VERSION[@]}"; do
@@ -74,7 +102,7 @@ fi
 if [ -n "${PRE_COMMIT_REPO_ROOT}" ] \
    && [ -f "${PRE_COMMIT_REPO_ROOT}/scripts/check_identifier_naming.py" ] \
    && command -v python3 &>/dev/null; then
-    mapfile -t STAGED_FOR_NAMING < <(git diff --cached --name-only --diff-filter=ACMR || true)
+    staged_paths_into STAGED_FOR_NAMING
     NAMING_CODE_STAGED=0
     if [ "${#STAGED_FOR_NAMING[@]}" -gt 0 ]; then
         for _staged in "${STAGED_FOR_NAMING[@]}"; do
@@ -101,7 +129,13 @@ if ! command -v lake &>/dev/null; then
 fi
 
 # AA2-C (H-5): Use bash array to avoid word-splitting on filenames with spaces.
-mapfile -t STAGED_LEAN_FILES < <(git diff --cached --name-only --diff-filter=ACMR -- '*.lean' | grep -v '^\.lake/' || true)
+staged_paths_into _STAGED_LEAN_ALL -- '*.lean'
+STAGED_LEAN_FILES=()
+for _f in ${_STAGED_LEAN_ALL+"${_STAGED_LEAN_ALL[@]}"}; do
+    # `.lake/` is build output.  A path test, not a `grep` over the framed
+    # stream: piping the listing through a line filter would undo the framing.
+    case "${_f}" in .lake/*) ;; *) STAGED_LEAN_FILES+=("${_f}") ;; esac
+done
 
 if [ "${#STAGED_LEAN_FILES[@]}" -eq 0 ]; then
     exit 0

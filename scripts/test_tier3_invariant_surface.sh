@@ -16637,7 +16637,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def changed_paths[^\n]*(\n([ \t][^\n]
 # (`v0.35.147` repoints it again for the same reason: `_git` now returns its
 # stderr as well, because a gate that says only "git failed" sends a reader to
 # reproduce it by hand.  The RELATION is unchanged and is still what is pinned.)
-run_check "INVARIANT" rg -F -n 'code, out, err = _git("ls-files", "--others", "--exclude-standard", cwd=repo)' scripts/select_changed_anchors.py
+# (`v0.35.154` repoints it a third time, for the third time with the RELATION
+# unchanged: the listing is NUL-framed now, because a tracked path may hold a
+# newline and an unframed listing hands back its C-quoted spelling.)
+run_check "INVARIANT" bash -lc 'rg -U -n "code, out, err = _git\(\"ls-files\", \"--others\", \"--exclude-standard\", \"-z\",[^\n]*(\n([ \t][^\n]*)?)*cwd=repo\)" scripts/select_changed_anchors.py'
 # ...AND THE SAME FACT REACHES `added_anchor_lines` (`v0.35.140`, PR #897's
 # review).  `changed_paths` knew `git diff` cannot see an untracked file and this
 # function, twenty lines below, asked `git diff` anyway -- so every anchor in a
@@ -16869,7 +16872,11 @@ run_negative_check "INVARIANT" rg -F -n -- '--extra-fixtures' scripts/test_tier0
 # NON-BINDING occurrence: a second assignment to the name is an occurrence and
 # not a use, so the superseded reading passed a path spelled, overwritten and
 # never opened.
-run_check "INVARIANT" rg -F -n '            if word_read_occurrences(view, name) > 0:' scripts/scenario_catalog.py
+# (RETIRED at `v0.35.154`, not deleted silently: the read question now reads the
+# IDENTIFIER view, and the v0.35.154 anchor over
+# `word_read_occurrences(idents if idents is not None else view, name) > 0`
+# pins this line AND its argument, so it strictly subsumes this one.  Keeping
+# both would be two positives over one subject.)
 run_check "INVARIANT" rg -F -n 'if CONSUMER_APPLICATION.search(head[operators[-1]:]):' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scripts/scenario_catalog.py
@@ -18296,7 +18303,10 @@ run_check "INVARIANT" rg -F -n 'CONSUMER_VIEWS = {' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'def consumer_view_overlap_violations() -> list[str]:' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'def strip_shell(text: str, keep_quoted: bool = False) -> str:' scripts/check_identifier_naming.py
 run_check "INVARIANT" rg -F -n 'out.append(span if (keep_quoted or is_command_payload(text, i))' scripts/check_identifier_naming.py
-run_check "INVARIANT" rg -F -n 'def python_code_view(text: str) -> str:' scripts/rust_code_view.py
+# (`v0.35.154` repoints this at the USE rather than the signature: the claim
+# here is *not a third lexer*, which is a fact about what `CONSUMER_VIEWS`
+# reaches for, and the signature is pinned by that cut's own anchor.)
+run_check "INVARIANT" rg -F -n '    ".py": rust_code_view.python_code_view,' scripts/scenario_catalog.py
 #
 # A locale prefix is collation-only only ahead of a tool the locale cannot
 # reach.  Measured: GNU grep answers 0 under `LC_ALL=C` and 1 under
@@ -18322,12 +18332,15 @@ run_check "INVARIANT" rg -F -n '            command = "; ".join(prelude + [comma
 # receiver shape reaches it; the QUALIFIED branch spelled its receiver as a FLAT
 # paren group, so `RHTable.erase ((st)).objects k` and
 # `RHTable.erase (f (g st)).objects k` matched nothing.  It over-approximates to
-# the LINE now -- a regex cannot balance parentheses and a bounded depth is the
+# the DECLARATION -- a regex cannot balance parentheses and a bounded depth is the
 # enumeration this tree retires -- and the direction is the one a violations
-# census must fail in.
+# census must fail in.  (`v0.35.155` repoints this: the LINE was the wrong unit,
+# since Lean wraps a long call and the wrapped form matched nothing.  The
+# RELATION is unchanged and is what is pinned -- a qualified operation reaching
+# its receiver's projection over a bound it cannot escape.)
 run_check "INVARIANT" rg -F -n 'def _method_branch(kinds: tuple[str, ...]) -> str:' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -F -n 'def _qualified_branch(kinds: tuple[str, ...]) -> str:' scripts/lean_store_read_census.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def _qualified_branch[^\n]*(\n([ \t][^\n]*)?)*\[\^\\\\n\]\*\?\\\\\.objects" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def _qualified_branch[^\n]*(\n([ \t][^\n]*)?)*\{_DECL_GAP\}\\\\.objects" scripts/lean_store_read_census.py'
 # ...and the retired FLAT receiver must not come back INSIDE that owner.  Bounded
 # to the declaration, because the self-test's mutation cases carry the retired
 # spelling by design -- that is what makes them decide it.
@@ -18366,5 +18379,137 @@ run_check "INVARIANT" bash -lc 'rg -U -n "for what, binder in _NOT_TABLE_TYPE_SP
 # stated design decision that keeps a 12-conjunct bundle's transports
 # DEFINITIONAL, and the migration was implemented before being reverted.
 run_check "INVARIANT" rg -F -n '("SeLe4n/Kernel/CrossSubsystem.lean", "collectQueueMembers", "param", "read"): 1,' scripts/lean_store_read_census.py
+
+# ============================================================================
+# v0.35.154 -- a DELIMITER that can occur in the data is not a delimiter
+# ============================================================================
+#
+# A tracked path is a byte string that may hold any byte but NUL and `/`.
+# Without `-z`, git prints one holding a newline, a quote or a backslash in its
+# C-quoted form and a line-reading consumer takes that spelling for the path.
+# MEASURED on the pre-commit hook: a staged `$'a\nb.lean'` containing
+# `theorem bad : True := by sorry` produced NO finding, because
+# `git show ":\"a\\nb.lean\""` resolves to no object.  The gate whose stated job
+# is to block a `sorry` passed it, silently.
+run_check "INVARIANT" rg -F -n 'def _nul_split(out: str) -> list[str]:' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'code, out, err = _git("diff", "--no-renames", "-z", "--name-only", *args)' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'errors="surrogateescape",' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'staged_paths_into() {' scripts/pre-commit-lean-build.sh
+run_check "INVARIANT" rg -F -n 'done < <(git diff --cached -z --name-only --diff-filter=ACMR "$@" || true)' scripts/pre-commit-lean-build.sh
+# ...and the `.lake/` filter is a PATH test, never a `grep` over the framed
+# stream: piping a NUL-framed listing through a line filter undoes the framing.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n 'case "${_f}" in .lake/*) ;; *) STAGED_LEAN_FILES+=("${_f}") ;; esac' scripts/pre-commit-lean-build.sh
+run_negative_check "INVARIANT" rg -F -n "mapfile -t STAGED_LEAN_FILES" scripts/pre-commit-lean-build.sh
+#
+# ...and the rule gets a CHECK rather than a third telling: `v0.35.150` found
+# this class in `indexed_source`'s own `cat-file` loop, swept seven siblings and
+# missed five.  It resolves each line into the structure it stands for -- a
+# Python call's contiguous argv, a shell command's head -- because a diagnostic
+# string and a Tier 3 anchor both spell an invocation without being one.
+run_check "INVARIANT" rg -F -n 'def unframed_path_listings(root: "pathlib.Path") -> list[str]:' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'def _python_git_argvs(text: str):' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'def _shell_git_argvs(text: str):' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'PATH_LISTING_SUBCOMMANDS = frozenset({' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'NUL_FRAMING = frozenset({"-z", "-Z", "--null"})' scripts/indexed_source.py
+run_check "INVARIANT" bash -lc 'rg -U -n "if words and words\[0\] == \x22git\x22:" scripts/indexed_source.py'
+# ...and `--error-unmatch` must stay OUT of the listing options: it prints
+# nothing and is a membership predicate whose answer is the exit status.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "PATH_LISTING_OPTIONS = frozenset\(\{[^\n]*(\n([ \t][^\n]*)?)*error-unmatch" scripts/indexed_source.py'
+run_check "INVARIANT" rg -F -n "check(\"nul-framing 'the tree lists no paths from git unframed'\"," scripts/indexed_source.py
+# ...and a git WRAPPER is what a function DOES, not what it is called.  The
+# first draft recognised one by its callee's name ending in `git` -- a
+# resemblance, and the measurement is what retired it: 30 functions in the
+# tracked scripts run git, and SIX unframed listing call sites reached one
+# through a helper named `g`, every one reported clean.  That is *a helper the
+# scanner cannot see is a spelling that evades the metric*, inside the check
+# written to close a domain miss; found by this cut's own anchor sweep.
+run_check "INVARIANT" rg -F -n 'def _git_wrapper_names(tree) -> "set[str]":' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'PROCESS_RUNNERS = frozenset({"run", "Popen", "check_output", "check_call",' scripts/indexed_source.py
+run_check "INVARIANT" bash -lc 'rg -U -n "if isinstance\(head, ast\.Constant\) and head\.value == \x22git\x22:[^\n]*(\n([ \t][^\n]*)?)*out\.add\(fn\.name\)" scripts/indexed_source.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "if name and \(name in wrappers[^\n]*(\n([ \t][^\n]*)?)*endswith\(\x22git\x22\)\):" scripts/indexed_source.py'
+# ...and the harness asks git the way the readers it tests do, so the gate is
+# never reporting its own fixture and no exemption is needed.
+run_check "INVARIANT" rg -F -n 'return _nul_split(g(*a, "-z"))' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -F -n 'g("ls-files", "--others", "--exclude-standard").split()' scripts/select_changed_anchors.py
+#
+# ----------------------------------------------------------------------------
+# v0.35.154 -- the view you read depends on the QUESTION, and one function
+#              asks two
+# ----------------------------------------------------------------------------
+#
+# `check_fixture_consumers` asks two questions of one consumer: *where is the
+# fixture path mentioned*, which needs string contents KEPT because a path IS a
+# string literal, and *is this occurrence of the bound name a read*, which needs
+# them GONE because a name inside a string is not a read.  Reading one view for
+# both credited `FIXTURE="foo.expected"` followed by nothing but
+# `echo "FIXTURE"` as a consumer, so a fixture could be named in the README,
+# spelled in a gate, never opened, and still validate its `Used by` row.
+run_check "INVARIANT" rg -F -n 'CONSUMER_IDENTIFIER_VIEWS = {' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'def consumer_identifier_view(consumer: Path) -> str:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'raise UnclassifiedConsumerSuffix(' scripts/scenario_catalog.py
+# ...and the READ is counted in the identifier view, never in the path view.
+run_check "INVARIANT" bash -lc 'rg -U -n "if word_read_occurrences\(idents if idents is not None else view,[^\n]*(\n([ \t][^\n]*)?)*name\) > 0:" scripts/scenario_catalog.py'
+run_negative_check "INVARIANT" rg -F -n 'word_read_occurrences(view, name)' scripts/scenario_catalog.py
+# ...and the call site threads it, or the parameter's default silently restores
+# the superseded reading.
+run_check "INVARIANT" rg -F -n 'idents = consumer_identifier_view(repo_root / n)' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(view, row.fixture, idents)' scripts/scenario_catalog.py
+# ...and the two tables are reconciled over a DERIVED domain, not over their own
+# union: a suffix missing from BOTH is in neither set, so a union would not
+# iterate it and the check would be silent about exactly the drop it exists to
+# catch.  Found by mutating this function's own first draft.
+run_check "INVARIANT" rg -F -n 'def consumer_view_domain_violations() -> list[str]:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'answerable = set(CONSUMER_VIEWS) | set(lean_code_view._STRIPPERS)' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n 'for suffix in sorted(set(CONSUMER_VIEWS) | set(CONSUMER_IDENTIFIER_VIEWS)):' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'errors += consumer_view_domain_violations()' scripts/scenario_catalog.py
+# ...and the string-blanking policy is the CALLER's parameter, the shape
+# `strip_shell` took at `v0.35.152`, so the tree keeps one Python lexer.
+run_check "INVARIANT" rg -F -n 'def python_code_view(text: str, blank_strings: bool = False) -> str:' scripts/rust_code_view.py
+run_check "INVARIANT" bash -lc 'rg -U -n "if blank_strings and isinstance\(node, ast\.Constant\)[^\n]*(\n([ \t][^\n]*)?)*isinstance\(node\.value, str\):" scripts/rust_code_view.py'
+
+# ============================================================================
+# v0.35.155 -- a LINE is not the declaration, and a resolved anchor's
+#              EXECUTABILITY is a question about the resolved command
+# ============================================================================
+#
+# `v0.35.153` over-approximated the store census's qualified branch to the LINE,
+# because a regex cannot balance parentheses.  The line is the wrong unit: Lean
+# wraps a long call, so `RHTable.insert\n  st.objects k v` -- ordinary
+# formatting -- matched NOTHING and an executable raw write could sit outside
+# `STORE_WRITE_CODE = 0` while the gate printed the zero.  `READ` had the same
+# hole.  The unit is the DECLARATION, spelled as the bounded gap this tree's
+# anchors already use: a run of characters none of which begins a column-0 line.
+run_check "INVARIANT" rg -F -n '_DECL_GAP = r"(?:[^\n]|\n(?!\S))*?"' scripts/lean_store_read_census.py
+run_check "INVARIANT" bash -lc 'rg -U -n "return \(rf\x22.b\(\?:RHTable\|FrozenMap\)[^\n]*(\n([ \t][^\n]*)?)*rf\x22\{_DECL_GAP\}..objects.b\x22\)" scripts/lean_store_read_census.py'
+run_negative_check "INVARIANT" rg -F -n 'rf"[^\n]*?\.objects\b")' scripts/lean_store_read_census.py
+# ...and the axis is enumerated at all of its values, with its negative: a gap
+# that reaches a continuation line is one whitespace class away from reaching
+# the next declaration's.
+run_check "INVARIANT" rg -F -n '_WHITESPACE_PLACEMENTS = (' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '_DECLARATION_CROSSING = ("COLUMN-0 CONTINUATION", "\n")' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'for place, ws in _WHITESPACE_PLACEMENTS:' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'place, ws = _DECLARATION_CROSSING' scripts/lean_store_read_census.py
+#
+# ...and the sweep's disposition is computed from ONE subject.  `kind` was
+# computed from the anchor ALONE and compared against `SEARCHING_KINDS`, while
+# `missing` and `substitutes` beside it were computed from the command WITH its
+# prelude -- so a fully resolved `test "${N}" -ge 5` reached `defer:tool`, and
+# deleting bundle conjuncts left the changed-file sweep green while direct Tier
+# 3 failed.  Measured: of eleven anchors with a resolved producer, exactly two
+# take the executable shape and both were deferred.
+run_check "INVARIANT" rg -F -n 'def executable_threshold(prelude: list[str], command: str) -> bool:' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'if prelude and executable_threshold(prelude, anchor_only):' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'READ_ONLY_FILTERS = frozenset({' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n '_THRESHOLD_ANCHOR = re.compile(' scripts/select_changed_anchors.py
+# ...the body's closing parenthesis is the LAST character, since a `sed` pattern
+# may hold `\(theorem\|def\)` and `[^)]*` stopped inside it -- which refused one
+# of the two anchors this contract exists for.
+run_check "INVARIANT" bash -lc 'rg -U -n "_EXECUTABLE_PRODUCER = re\.compile\([^\n]*(\n([ \t][^\n]*)?)*\?P<body>\.\*" scripts/select_changed_anchors.py'
+run_negative_check "INVARIANT" rg -F -n '(?P<body>[^)]*)' scripts/select_changed_anchors.py
+# ...and the pipeline is split on a lexed WORD, never on the character: a `sed`
+# pattern holds `\|` and a `grep` pattern holds `| ` inside quotes.
+run_check "INVARIANT" rg -F -n '        words = _shell_words(body)' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -F -n 'for stage in body.split("|"):' scripts/select_changed_anchors.py
 
 finalize_report

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.153.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.155.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3390,6 +3390,60 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   traceback and skipped every case after it, so one mutation masked another until
   the harness started reporting exceptions as case failures.
 
+  **And the sweep found five more, one of them in the gate that blocks
+  commits — so the rule gets a CHECK** (PR #897's review, `v0.35.154`).
+  `v0.35.150` swept seven sibling listings for this class; the review then
+  reported two it had missed, and sweeping the *question* rather than the
+  reported spelling found three more.  The worst is
+  `scripts/pre-commit-lean-build.sh`, whose `sorry` check reads three
+  `mapfile -t` listings: staging `$'a\nb.lean'` holding
+  `theorem bad : True := by sorry` produced **no finding**, because
+  `git show ":\"a\\nb.lean\""` resolves to no object, so the gate whose stated
+  job is to block a `sorry` passed it silently.  `select_changed_anchors` fails
+  the same way in the other direction — a path that does not exist matches no
+  anchor target, and the sweep reports **clean** while running nothing the real
+  change invalidates.
+
+  This file already said *the sweep is run, not stated*, and restating it a third
+  time is the move that had failed twice.  `indexed_source.unframed_path_listings`
+  is the check, in the module that already owns "run git correctly", wired into
+  the self-test Tier 0 runs.  Three things it records.  **A NUL-framed stream
+  cannot be piped through a line filter**, so the hook's `.lake/` exclusion became
+  a path test rather than a `grep`; the framing is undone by the first consumer
+  that splits on newlines.  **A path byte that is not valid UTF-8 must
+  round-trip**, so the Python reader decodes with `surrogateescape` rather than
+  raising on the one input the framing exists for.  And **the check resolves each
+  line into the structure it stands for**, because two drafts of it cried wolf on
+  this tree's own text: matching lines reported a diagnostic string, a Tier 3
+  anchor quoting the call and a membership predicate, and matching every string
+  argument of a call then reported six fixture builders whose arguments merely
+  *include* an unrelated `"diff"` and an unrelated `"--cached"` — **a set standing
+  in for a sequence, which is this file's own presence-for-relation defect inside
+  the check written to close one.**  An argv is contiguous and identified
+  structurally: a list whose first element is `"git"`, a callee whose name ends in
+  `git`, or a shell command whose *head* word is `git`.  `--error-unmatch` is
+  deliberately not a listing option — it prints nothing and is a predicate whose
+  answer is the exit status.
+
+  **And the check's OWN domain was a name resemblance, found by this cut's
+  anchor sweep rather than by a review.**  `_python_git_argvs` recognised an
+  invocation as a list argument whose first element is `"git"` **or a callee
+  whose name ends in `git`** — and the second is a resemblance.  Measured over
+  the tracked `scripts/*.py`: **30** functions run git, and **6** unframed
+  listing call sites reach one through a helper named `g`, every one reported
+  clean.  That is *a helper the scanner cannot see is a spelling that evades the
+  metric*, inside the check written to close a domain miss, on its first day.
+  `_git_wrapper_names` is the relation — a function whose body starts a process
+  whose argv begins with the literal `"git"` IS a git wrapper, whatever it is
+  called — resolved **intra-module**, because that is what `ast` can decide, with
+  the name test **kept beside it** as a pin for the cross-module case rather than
+  replaced.  The six sites are **fixed, not exempted**: an exemption is the
+  enumeration the check exists to retire, so the harness asks git for paths the
+  way the readers it tests do.  And the control is what keeps the derivation from
+  becoming *any helper* — a same-shaped function running `hg` is not a wrapper,
+  so dropping the `argv[0] == "git"` test fails a case rather than passing
+  silently.
+
   **And the fail-closed fix's CALLER was admitting what it could not read**
   (`v0.35.150`, found by CI rather than by review).  Making a derivation raise
   moves the question to whoever decided it was available, and
@@ -3564,6 +3618,79 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the table is what keeps the predicate unable to mention a non-object field.
   It is recorded in the indirect floor with that measurement.  *When a
   measurement kills the plan, that is the measurement working.*
+
+  **And the view you read depends on the QUESTION, so one function that asks two
+  needs two** (PR #897's review, `v0.35.154`).  The rule above is about a *value*
+  a scanner could not read; this is about a scanner that read the right value
+  through the wrong policy.  `check_fixture_consumers` asks a consumer *where is
+  the fixture path mentioned*, which needs string contents **kept** because a
+  path IS a string literal, and *is this occurrence of the bound name a read*,
+  which needs them **gone** because a name inside a string is not a read.  One
+  view answered both, so a consumer spelling `FIXTURE="foo.expected"` and then
+  nothing but `echo "FIXTURE"` credited the literal as a use — a fixture could be
+  listed in the README, hashed, named in a gate that never opens it, and still
+  validate its `Used by` row, which is `v0.35.109`'s own *a checksum is not a
+  comparison* one column over, in the check written to close it.
+
+  **`v0.35.152` had already established that the two policies differ** — it gave
+  `strip_shell` a `keep_quoted` parameter for exactly this reason — and used only
+  one of them; this is that cut's own distinction applied at the second asker.
+  Three things follow.  The blanking policy is a **parameter of the caller's
+  question, not a second lexer**: `python_code_view` gained `blank_strings`, the
+  shape `strip_shell` took two cuts earlier and the one `code_no_strings` has
+  carried for Rust all along, so the tree keeps one Python lexer.  The two views
+  are **byte-aligned**, which is what lets the mention be located in one and the
+  read counted in the other at the same offsets.  And **the reconciliation's
+  domain is derived, not the union of the two tables**: the first draft iterated
+  `set(A) | set(B)`, so a suffix missing from *both* was in neither set and the
+  check was silent about exactly the drop it exists to catch — deleting `.lean`
+  from the identifier table was reported by **nothing**, which the mutation run
+  said and no amount of reading it would have.  The domain is now what
+  `consumer_code_view` can *answer* (`CONSUMER_VIEWS` plus the shared overlay's
+  own `_STRIPPERS`), so "is this suffix answerable at all" has one owner.
+
+  **And a LINE is not the declaration, nor is ONE decision drawn from two
+  subjects** (PR #897's review, `v0.35.155`).  Two more of this family, and both
+  are *the view you read depends on the question* at the level of the SPAN a gate
+  reads.  `v0.35.153` over-approximated the store census's qualified branch to the
+  LINE — correct reasoning, wrong unit: Lean wraps a long call, so
+  `RHTable.insert\n  st.objects k v` matched **nothing** and an executable raw
+  write could sit outside `STORE_WRITE_CODE = 0` while the gate printed the zero,
+  with `READ` holding the same hole.  The unit is the **declaration**, spelled as
+  the bounded gap this tree's anchors already use — a run of characters none of
+  which begins a column-0 line, which a Lean declaration header always does — and
+  written as one lazy alternation so it is linear rather than a nested quantifier.
+  Measured before taking it: over all 405 tracked `.lean` files it admits **zero**
+  matches the line bound did not, so the widening is free and every witness is
+  planted.  `_WHITESPACE_PLACEMENTS` is the axis at all three of its values with
+  `_DECLARATION_CROSSING` as its negative, because a gap that reaches a
+  continuation line is one whitespace class away from reaching the next
+  declaration's.
+
+  The sibling is the same substitution in a *disposition*:
+  `select_changed_anchors` computed `kind` from the anchor ALONE and compared it
+  against `SEARCHING_KINDS`, while `missing` and `substitutes` beside it were
+  computed from the command WITH its prelude — so a fully resolved threshold
+  `test "${N}" -ge 5` reached `defer:tool`, and deleting bundle conjuncts left the
+  changed-file sweep green while direct Tier 3 failed.  `v0.35.152` had fixed that
+  split for `related`, the *provenance* question, and not for `kind`, the
+  *executability* one.  **Recomputing `kind` is not the remedy and the measurement
+  says so**: a compound `NAME=$( … ); run_check …` is not a line the classifier
+  parses, so every such anchor would become `fail:unparsed` and fail Tier 0 on ten
+  anchors that are correctly deferred.  Of eleven anchors with a resolved producer
+  exactly **two** are runnable; the nine others are an array assignment the fold
+  truncates, an EMPTY array (where the tool would run with no arguments and
+  *pass*), a side-effecting `mktemp` feeding a build, or a redirection into the
+  tree.  So round 16's exit again — **require a canonical spelling and refuse the
+  rest** — with two details the measurement corrected: the substitution's closing
+  parenthesis is the LAST character, since a `sed` pattern holds
+  `\(theorem\|def\)` and a `[^)]*` bound stopped inside it, refusing one of the
+  two anchors the contract exists for; and the pipeline is split on a **lexed
+  word** through the module's own `_shell_words`, because a `sed` pattern holds
+  `\|` and a `grep` pattern holds `| ` inside quotes.  **And the predicate needs a
+  WIRING case of its own**: cases that exercise it directly leave a disposition
+  branch which never consults it passing, which is *an unwitnessed condition is
+  indistinguishable from a wrong one* at the point where a fix is plugged in.
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded

@@ -1481,5 +1481,57 @@ class TestTreeState(unittest.TestCase):
                 "tests/fixtures/robin_hood_smoke.expected").returncode, 1)
 
 
+
+class ConsumerIdentifierViewTests(unittest.TestCase):
+    """`v0.35.154`: the READ question reads a view with strings blanked.
+
+    A fixture path IS a string literal, so locating the mention needs them kept;
+    a name inside a string is NOT a read, so counting the read needs them gone.
+    With one view for both, `FIXTURE="foo.expected"` followed by nothing but
+    `echo "FIXTURE"` credited the literal as a use.
+    """
+
+    def _verdict(self, suffix: str, body: str):
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / ("g" + suffix)
+            p.write_text(body, encoding="utf-8")
+            return sc.fixture_mention_consumed(
+                sc.consumer_code_view(p), "foo.expected",
+                sc.consumer_identifier_view(p))
+
+    def test_a_shell_STRING_naming_the_variable_is_not_a_read(self) -> None:
+        self.assertIs(self._verdict(
+            ".sh", 'FIXTURE="foo.expected"\necho "FIXTURE"\n'), False)
+
+    def test_a_python_STRING_naming_the_variable_is_not_a_read(self) -> None:
+        self.assertIs(self._verdict(
+            ".py", 'FIXTURE = "foo.expected"\nprint("FIXTURE")\n'), False)
+
+    # ...and the controls, which keep the refusal about the STRING rather than
+    # about binding a path at all -- four of the five live consumer idioms bind
+    # one and read it elsewhere, so a rule that refused those refuses the tree.
+    def test_CONTROL_a_quoted_shell_expansion_is_still_a_read(self) -> None:
+        self.assertIs(self._verdict(
+            ".sh", 'FIXTURE="foo.expected"\ncmp "$FIXTURE" out\n'), True)
+
+    def test_CONTROL_a_bare_shell_expansion_is_still_a_read(self) -> None:
+        self.assertIs(self._verdict(
+            ".sh", 'FIXTURE="foo.expected"\ncat $FIXTURE\n'), True)
+
+    def test_CONTROL_a_python_name_in_argument_position_is_still_a_read(self) -> None:
+        self.assertIs(self._verdict(
+            ".py", 'FIXTURE = "foo.expected"\nopen(FIXTURE)\n'), True)
+
+    def test_the_two_view_tables_classify_the_same_suffixes(self) -> None:
+        self.assertEqual(sc.consumer_view_domain_violations(), [])
+
+    def test_a_suffix_with_no_identifier_view_is_REFUSED(self) -> None:
+        with tempfile.TemporaryDirectory() as d:
+            p = Path(d) / "g.md"
+            p.write_text('FIXTURE = "foo.expected"\n', encoding="utf-8")
+            with self.assertRaises(sc.UnclassifiedConsumerSuffix):
+                sc.consumer_identifier_view(p)
+
+
 if __name__ == "__main__":
     unittest.main()

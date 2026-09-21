@@ -627,6 +627,30 @@ CONSUMER_VIEWS = {
     ".sh": lambda text: check_identifier_naming.strip_shell(text, keep_quoted=True),
 }
 
+#: ...and the SAME suffixes with string contents blanked, byte-aligned with the
+#: table above.
+#:
+#: **The view you read depends on the question, and this function asks two**
+#: (`v0.35.154`, PR #897's review).  *Where is the fixture path mentioned* needs
+#: string contents KEPT, because a fixture path **is** a string literal.  *Is this
+#: occurrence of the bound name a read* needs them GONE, because a name inside a
+#: string is not a read -- and with one view for both,
+#: `FIXTURE="foo.expected"` followed by nothing but `echo "FIXTURE"` counted the
+#: literal as a use, so a path could be spelled, never opened, and still validate
+#: its `Used by` row.
+#:
+#: `v0.35.152` introduced `strip_shell`'s `keep_quoted` parameter *because* the
+#: two policies differ, and then used only one of them: this is that cut's own
+#: distinction, applied at the second asker.  Both views are byte-aligned with
+#: each other and with the source, which is what lets one locate a mention and
+#: the other decide an occurrence at the same offsets.
+CONSUMER_IDENTIFIER_VIEWS = {
+    ".py": lambda text: rust_code_view.python_code_view(text, blank_strings=True),
+    ".sh": check_identifier_naming.strip_shell,
+    ".lean": lambda text: lean_code_view.strip(text, blank_strings=True),
+    ".rs": rust_code_view.code_no_strings,
+}
+
 
 def consumer_code_view(consumer: Path) -> str:
     """`consumer`'s source as the tree's code view for its language reads it.
@@ -706,6 +730,30 @@ CONSUMER_OPERAND = re.compile(r"[A-Za-z0-9_)\]}]")
 #: from being blanked: a prefix begins a word.
 CONSUMER_STRING_PREFIX = re.compile(
     r"(?<![A-Za-z_0-9])(?:[rRbBfFuU]{1,2})(?=#*[\"'])")
+
+
+def consumer_identifier_view(consumer: Path) -> str:
+    """`consumer`'s source with string contents blanked too, byte-aligned.
+
+    The companion to `consumer_code_view`, for the one question that needs the
+    other policy: *is this occurrence of the bound name a READ*.  A name inside a
+    string literal is not, and reading the path-preserving view let
+    `FIXTURE="foo.expected"` followed by nothing but `echo "FIXTURE"` credit the
+    literal as a use -- so a path could be spelled, never opened, and still
+    validate its row (PR #897's review, `v0.35.154`).
+
+    Same suffixes, same refusal, same reconciliation: a suffix
+    `consumer_code_view` classifies and this one does not is a gate defect, which
+    `consumer_view_domain_violations` reports.
+    """
+    text = consumer.read_text(encoding="utf-8", errors="replace")
+    own = CONSUMER_IDENTIFIER_VIEWS.get(consumer.suffix)
+    if own is not None:
+        return own(text)
+    raise UnclassifiedConsumerSuffix(
+        f"{consumer}: no identifier view for `{consumer.suffix}`, so whether an "
+        f"occurrence of a bound name is a READ cannot be decided; classify the "
+        f"suffix in CONSUMER_IDENTIFIER_VIEWS or the claim is one nothing checks")
 
 
 def consumer_mention_head(lines: list[str], index: int, at: int) -> str:
@@ -905,7 +953,8 @@ def fixture_mentions_in(line: str, fixture: str) -> list[int]:
     return [m.start() for m in pattern.finditer(line)]
 
 
-def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
+def fixture_mention_consumed(view: str, fixture: str,
+                             idents: str | None = None) -> bool | None:
     """Does `view` mention `fixture` somewhere that is not a dead binding?
 
     `None` -- the view does not mention it at all.  `True` -- at least one mention
@@ -934,6 +983,15 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
     "Consumed" means an occurrence of the bound name that is **not another
     binding of it** (`word_read_occurrences`, `v0.35.150`): counting any second
     occurrence let a path be spelled, overwritten and never opened.
+
+    ...and **not an occurrence inside a string literal** (`v0.35.154`, PR #897's
+    review).  `idents` is the same source with string contents blanked and byte
+    offsets preserved; the mention is located in `view`, where a fixture path IS
+    a string literal, and the read is counted in `idents`, where a name in one is
+    not a read.  Reading one view for both credited
+    `FIXTURE="foo.expected"` / `echo "FIXTURE"` as a consumer.  It defaults to
+    `view` so a caller that has only the one view gets the pre-fix reading
+    explicitly rather than by omission.
     """
     lines = view.splitlines()
     mentioned = False
@@ -952,7 +1010,13 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
                         consumer_mention_head(lines, index, at)):
                     return True
                 continue
-            if word_read_occurrences(view, name) > 0:
+            # **The READ question reads the IDENTIFIER view** (`v0.35.154`):
+            # a name inside a string literal is not a read, and asking the
+            # path-preserving view credited `echo "FIXTURE"` as one.  The two
+            # views are byte-aligned, so the mention located above and the
+            # occurrence counted here are offsets in the same file.
+            if word_read_occurrences(idents if idents is not None else view,
+                                     name) > 0:
                 return True
     return False if mentioned else None
 
@@ -1064,10 +1128,11 @@ def check_fixture_consumers(directory: Path, readme: Path,
         for n in named:
             try:
                 view = consumer_code_view(repo_root / n)
+                idents = consumer_identifier_view(repo_root / n)
             except UnclassifiedConsumerSuffix:
                 unclassified.append(n)
                 continue
-            verdict = fixture_mention_consumed(view, row.fixture)
+            verdict = fixture_mention_consumed(view, row.fixture, idents)
             if verdict:
                 readers.append(n)
             elif verdict is False:
@@ -1137,6 +1202,37 @@ def consumer_suffix_classification_violations(
             f"so drop it or name the gate that needs it")
     problems.extend(consumer_view_overlap_violations())
     return problems
+
+
+def consumer_view_domain_violations() -> list[str]:
+    """The two consumer views classify the SAME suffixes.
+
+    `consumer_code_view` locates a fixture mention and
+    `consumer_identifier_view` decides whether an occurrence of the bound name
+    is a read; a suffix one classifies and the other does not is a consumer this
+    gate half-reads -- it would find the mention and then raise on the read, or
+    find no mention at all.  Reconciled in both directions, because a stale
+    entry in either table reads exactly like coverage (`v0.35.154`).
+    """
+    out: list[str] = []
+    # **The domain is DERIVED from what `consumer_code_view` can answer**, not
+    # from the union of the two tables: a suffix missing from BOTH is in neither
+    # set, so a union would not iterate it and the check would be silent about
+    # exactly the drop it exists to catch.  Found by mutating this function's own
+    # first draft -- deleting `.lean` from the identifier table was reported by
+    # nothing (`v0.35.154`).
+    answerable = set(CONSUMER_VIEWS) | set(lean_code_view._STRIPPERS)
+    for suffix in sorted(answerable | set(CONSUMER_IDENTIFIER_VIEWS)):
+        path = suffix in answerable
+        ident = suffix in CONSUMER_IDENTIFIER_VIEWS
+        if path != ident:
+            have = "the path view" if path else "CONSUMER_IDENTIFIER_VIEWS"
+            want = "CONSUMER_IDENTIFIER_VIEWS" if path else "the path view"
+            out.append(
+                f"`{suffix}` is classified by {have} and not by {want}, so a "
+                f"consumer with that suffix is half-read: one of the two "
+                f"questions this gate asks of it has no view")
+    return out
 
 
 def consumer_view_overlap_violations() -> list[str]:
@@ -1537,6 +1633,7 @@ def main() -> int:
         consumer_errors, claims = check_fixture_consumers(directory, readme)
         errors += consumer_errors
         errors += consumer_suffix_classification_violations(readme)
+        errors += consumer_view_domain_violations()
         if errors:
             print("fixture index check failed:", file=sys.stderr)
             for error in errors:
