@@ -209,6 +209,102 @@ class UnlexableCommand(ValueError):
     """Raised when the shell-quoting walk cannot finish a quoted span."""
 
 
+#: The shell's glob metacharacters.  A word carrying one is a **pattern over
+#: paths**, so a changed path relates to it by matching rather than by the
+#: substring test the `path` rule applies.
+_GLOB_META = frozenset("*?[")
+
+
+def _glob_pattern(value: str) -> "re.Pattern | None":
+    r"""`value` as a path-matching regex, or `None` when it carries no glob.
+
+    **Shell semantics, not `fnmatch`'s**: `*` and `?` do not cross a `/`.  That is
+    the whole difference between selecting the anchors a change invalidates and
+    selecting most of Tier 3 — `tests/*PlatformSuite.lean` must match
+    `tests/Ak9PlatformSuite.lean`, and `*.lean` must name a *top-level* file rather
+    than every `.lean` in the tree, which is what `fnmatch` would make it.
+
+    **A bracket expression widens to `[^/]` rather than being translated.**  A
+    glob's `[a-z]` matches one character from a set, so one character that is not a
+    slash is a superset of it — the over-approximating direction — and it keeps this
+    function from compiling a fragment of an `rg` pattern as a regex character
+    class, which is neither this function's question nor safe to get wrong.  An
+    unterminated `[` is a literal, as a shell reads it.
+
+    Over-approximation is the safe direction throughout and is deliberately left
+    in: an `rg` **pattern** argument may also carry a `*`, and translating one
+    yields a regex a changed path is very unlikely to match — and when one does,
+    the cost is an anchor run that Tier 3 runs anyway.
+    """
+    if not (_GLOB_META & set(value)):
+        return None
+    out: list[str] = []
+    i, n = 0, len(value)
+    while i < n:
+        c = value[i]
+        if c == "*":
+            out.append("[^/]*")
+        elif c == "?":
+            out.append("[^/]")
+        elif c == "[":
+            j = i + 1
+            if j < n and value[j] in "!^":
+                j += 1
+            if j < n and value[j] == "]":
+                j += 1
+            while j < n and value[j] != "]":
+                j += 1
+            if j >= n:
+                out.append(re.escape(c))
+            else:
+                out.append("[^/]")
+                i = j + 1
+                continue
+        else:
+            out.append(re.escape(c))
+        i += 1
+    try:
+        return re.compile("".join(out))
+    except re.error:
+        return None
+
+
+def glob_targets(command: str, _depth: int = 0) -> list["re.Pattern"]:
+    """Every glob a shell would expand in `command`, as path-matching regexes.
+
+    Read off the word **values** rather than the raw text, for the reason
+    `expanding_text` reads its own question there: a quoted `'tests/*.lean'` is one
+    word whose value is the pattern, and the raw line is not it.  A `-c` script
+    word is descended into, since an inner shell expands the globs in it.
+
+    A command this walk cannot lex contributes its whitespace-split raw tokens
+    instead of nothing: dropping them is the fail-open direction for a module that
+    decides which checks run, and over-selecting costs a run.
+    """
+    if _depth > _MAX_SHELL_DEPTH:
+        return []
+    try:
+        words = _shell_words(command)
+    except UnlexableCommand:
+        out: list[re.Pattern] = []
+        for w in command.split():
+            g = _glob_pattern(w.strip("'" + '"'))
+            if g is not None:
+                out.append(g)
+        return out
+    scripts = _script_word_indices(words)
+    out: list[re.Pattern] = []
+    for idx, word in enumerate(words):
+        _outer, value = _word_parts(word)
+        if idx in scripts:
+            out.extend(glob_targets(value, _depth + 1))
+            continue
+        g = _glob_pattern(value)
+        if g is not None:
+            out.append(g)
+    return out
+
+
 #: Commands whose `-c` argument is a SCRIPT an inner shell re-lexes.  A `$` the
 #: outer shell protected with single quotes expands *there*, so a view that blanked
 #: it would read `bash -lc 'rg -n "p" "${TRACE_OUTPUT}"'` as reading no variable —
@@ -453,7 +549,21 @@ def select(
 
     `added` names anchor lines the cut introduced or changed, by `(script, line)`.
     Provenance is reported so a failure says *why* an anchor was run, which is what
-    a reader needs in order to judge whether the selection is right; disposition is
+    a reader needs in order to judge whether the selection is right.
+
+    **An anchor's target may be a PATTERN, and `glob` is the provenance for one**
+    (PR #897's review, `v0.35.142`).  `path` is a substring test and `dir` requires
+    a delimited literal directory, so a target spelled `tests/*PlatformSuite.lean`
+    matched neither: after the optional `tests/` slash the `dir` lookahead sees a
+    `*` and rejects.  Two such targets are live here (`tests/*PlatformSuite.lean`,
+    `scripts/*cascade_check_monotonic.sh`), so a change to `Ak9PlatformSuite.lean`
+    selected **none** of the anchors over it and the changed-file sweep ran nothing
+    that a change to that suite invalidates.  The remedy is the rule `CLAUDE.md`
+    states for every scanner here: resolve the text into the structure it stands
+    for.  A glob is a pattern over paths, so the changed paths are matched against
+    it (`glob_targets`, `_glob_pattern`).
+
+    Disposition is
     `sweep`, `defer:tool`, `defer:var:<NAME>…`, `defer:subst`, `fail:unparsed` or
     `fail:unlexable`.  The two `fail:` dispositions are the explicit default
     branches: an invocation this gate cannot read is a check nobody runs, which is
@@ -476,6 +586,10 @@ def select(
             prov = "path"
         elif any(d.search(command) for d in dirs):
             prov = "dir"
+        elif _GLOB_META & set(command) and any(
+            g.fullmatch(pth) for g in glob_targets(command) for pth in exact
+        ):
+            prov = "glob"
         else:
             continue
         if kind == "unparsed":
@@ -769,6 +883,15 @@ _COMMANDS = [
      """run_check "I" rg -n x SeLe4n/Kernel/IPC/Foo.lean # it's fine"""),
     ("t3.sh", 56,
      """run_check "I" bash -lc "rg -n '${X}' SeLe4n/Kernel/IPC/Foo.lean\""""),
+    # --- The GLOB rows (PR #897's review, `v0.35.142`).  Two such targets are live
+    # in Tier 3 (`tests/*PlatformSuite.lean`, `scripts/*cascade_check_monotonic.sh`),
+    # and neither the substring `path` rule nor the delimited-literal `dir` rule
+    # matched one, so a change to a matching suite selected NONE of the anchors
+    # over it.  Row 61 is the same pattern inside a `-c` script, which the word
+    # values have to be read through.
+    ("t3.sh", 60, 'run_check "I" rg -n "g" tests/*PlatformSuite.lean'),
+    ("t3.sh", 61,
+     """run_check "I" bash -lc 'rg -n "h" tests/*PlatformSuite.lean'"""),
 ]
 
 #: …and the kinds the classifier must give them, asserted so a change to
@@ -783,7 +906,7 @@ _EXPECTED_KINDS = {
     10: "anchor", 11: "anchor", 12: "anchor", 13: "anchor", 14: "anchor",
     20: "anchor", 21: "plain", 30: "anchor", 40: "filtered", 41: "unparsed",
     50: "anchor", 51: "anchor", 52: "anchor", 53: "anchor", 54: "filtered",
-    55: "anchor", 56: "anchor",
+    55: "anchor", 56: "anchor", 60: "anchor", 61: "anchor",
 }
 
 _INV = [
@@ -925,6 +1048,25 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
     #     every discovered suite, not Tier 3 alone.
     if picked(["docs/spec/SELE4N_SPEC.md"]) != {("t0.sh", 20, "path", "sweep")}:
         return _fail("a prose anchor in another tier suite was not selected")
+
+    # 11b. A GLOB target is a PATTERN over paths (PR #897's review, `v0.35.142`).
+    #      `path` is a substring test and `dir` requires a delimited literal
+    #      directory, so `tests/*PlatformSuite.lean` matched neither and a change to
+    #      a matching suite selected none of the anchors over it -- two such targets
+    #      are live in Tier 3.  Row 61 is the same pattern inside a `-c` script, so
+    #      the word VALUES have to be read through.
+    if picked(["tests/Ak9PlatformSuite.lean"]) != {
+        ("t3.sh", 60, "glob", "sweep"), ("t3.sh", 61, "glob", "sweep")
+    }:
+        return _fail("a glob-targeted anchor was not selected by a matching path")
+
+    # 11c. ...and `*` does not cross a `/`, which is shell semantics and not
+    #      `fnmatch`'s.  Without it `tests/*PlatformSuite.lean` would match a path
+    #      at any depth and `*.lean` would select most of Tier 3 -- an
+    #      over-selection large enough to make the sweep useless.  The CONTROL is
+    #      case 1 beside it: an ordinary path still selects by `path`/`dir` alone.
+    if picked(["tests/nested/Ak9PlatformSuite.lean"]) != set():
+        return _fail("a glob matched ACROSS a `/`, which is not shell semantics")
 
     # 12. An empty change set with no added anchors selects nothing.  The refusal
     #     belongs to the *derivation* (case 14), not to the selection.
@@ -1177,7 +1319,9 @@ def self_test() -> int:  # noqa: C901 — one assertion per rule, deliberately f
         "folded and its continuation attributed, a deletion and a rename both "
         "contributing their OLD path, an untracked file in the change set while an "
         "ignored one is not, a literal `$` in four quotings swept while a real one "
-        "is deferred by name from either shell, an expanding `$(…)` deferred by "
+        "is deferred by name from either shell, a GLOB target matched as a "
+        "pattern over paths while `*` does not cross a `/`, "
+        "an expanding `$(…)` deferred by "
         "reason, an unlexable command failing distinguishably, the `'…'\"'\"'…'` "
         "idiom lexed as one word whose reassembled value keeps its quote, and an "
         "untracked tier suite's anchors reported as added while a tracked "

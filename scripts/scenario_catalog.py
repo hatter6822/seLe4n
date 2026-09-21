@@ -64,10 +64,14 @@ SUITE_DECL = re.compile(r"^#\s*Suite:\s*([a-z][a-z0-9_]*)\s*$")
 # The bracket form a trace fixture uses for its scenario ids: `[RH-001] ...`.
 BRACKET_ID = re.compile(r"^\[([A-Z]+-\d+)\]")
 #: A scenario id's canonical shape: an upper-case family prefix and a number.
-#: Both manifests use it for EVERY row, and requiring it is what makes the
-#: reverse reconciliation (`emitted_scenario_ids`) non-vacuous: the family is
-#: what bounds that scan's domain, so an id with no family would silently take a
-#: manifest out of it (`v0.35.139`).
+#: Both manifests use it for EVERY row, and requiring it of a row is what keeps a
+#: manifest's declared set comparable with what the reverse reconciliation reads
+#: out of its producer -- that scan reports every label-position id of this shape
+#: (`emitted_scenario_ids`), so a row spelled outside it would be declared and
+#: never matched.  Until `v0.35.142` the family also *bounded* that scan's domain,
+#: which is why this shape was required; the bound is gone (it was derived from
+#: the manifest, so a NEW family defined itself out of the scan) and the shape
+#: requirement stays for the reason above.
 SCENARIO_ID = re.compile(r"^([A-Z]+)-\d+$")
 #: **Where a scenario id may appear to be a LABEL**, written once because two
 #: questions ask it: whether a manifest row's fragment names its own scenario
@@ -165,27 +169,37 @@ def fragment_names_scenario(scenario_id: str, fragment: str) -> bool:
 #: different relation, at the one point this cut exists to make single.  Measured:
 #: it admits nothing on this tree, since `Testing.expectCond` prints
 #: `<tag> check passed [<label>]` and both producers use it, so every live label is
-#: bracketed.  `test_the_emitted_extractor_reads_the_families_it_is_given` is
-#: therefore what pins it, with a line-start label no suite emits today.
+#: bracketed.  `test_the_emitted_extractor_reads_every_family` is therefore what
+#: pins it, with a line-start label no suite emits today.
 EMITTED_LABEL = re.compile(LABEL_POSITION.format(id=r"([A-Z]+-\d+)"), re.MULTILINE)
 
 
-def emitted_scenario_ids(output_text: str, families: set[str]) -> set[str]:
-    """Every scenario id `output_text` labels, restricted to `families`.
+def emitted_scenario_ids(output_text: str) -> set[str]:
+    """Every scenario id `output_text` labels, whatever family it names.
 
-    The domain bound is what lets this be asked at all: an ordinary output line
-    may carry anything, so a scan for *every* label-shaped token would report
-    whatever a suite happens to print.  Restricting to the families the
-    manifest's own rows declare asks the question the manifest is a claim about
-    -- *these scenarios* -- and cannot fire on output that is not about them.
+    **The domain is the output, not the manifest** (PR #897's review,
+    `v0.35.142`).  `v0.35.139` bounded this by the families the manifest's own
+    rows declare, on the ground that an ordinary output line may carry anything.
+    That bound is derived from the very thing the scan exists to contradict: a
+    producer that adds its FIRST scenario in a new family -- an `RH-*` suite that
+    starts emitting `[NEW-001a ...]` -- names a family no row declares, so the
+    filter discarded it and the reconciliation passed over a scenario with no row
+    and no registry entry.  A domain derived from the answer is the enumeration
+    this reconciliation was written to retire, one level up.
 
-    It is still an over-approximation in the safe direction: a line that happens
-    to bracket `RH-999` is reported, which is a false MISSING ROW rather than a
-    false pass, and a suite that means it should add the row.
+    **What the bound was guarding against is measured at zero.**  Over both live
+    producers the label-position scan finds 12 and 8 ids and the family filter
+    drops **none** of them, because `Testing.expectCond` brackets every label and
+    every bracketed label is a scenario id.  So the bound cost the tree nothing
+    and bought it nothing but the hole.
+
+    It remains an over-approximation in the safe direction: a line that happens to
+    bracket `XX-999` is reported, which is a false MISSING ROW rather than a false
+    pass, and a suite that means it should add the row.
     """
     return {scenario_id
             for scenario_id in EMITTED_LABEL.findall(output_text)
-            if (m := SCENARIO_ID.match(scenario_id)) and m.group(1) in families}
+            if SCENARIO_ID.match(scenario_id)}
 
 
 def classify_fixture(path: Path) -> FixtureShape:
@@ -615,6 +629,17 @@ CONSUMER_LOOKBACK = 3
 #: PR #897's review found `fixture_mention_consumed` crediting as a use.
 CONSUMER_OPERAND = re.compile(r"[A-Za-z0-9_)\]}]")
 
+#: A string literal's own PREFIX, which is part of the literal and not an
+#: identifier (PR #897's review, `v0.35.142`).  `r"foo.expected"` standing alone
+#: leaves a head of `r"`, and the operand test above reads the `r` as a consuming
+#: identifier -- so the standalone-literal refusal `v0.35.138` added was one
+#: spelling wide, and `f"`, `b"`, `u"`, the two-letter Python combinations and
+#: Rust's `r#"` all walked around it.  The lookbehind is what keeps a genuine
+#: identifier that merely ENDS in one of these letters (`dir"…"`, `include_str!`)
+#: from being blanked: a prefix begins a word.
+CONSUMER_STRING_PREFIX = re.compile(
+    r"(?<![A-Za-z_0-9])(?:[rRbBfFuU]{1,2})(?=#*[\"'])")
+
 
 def consumer_mention_head(lines: list[str], index: int, at: int) -> str:
     """The text preceding the fixture mention at `lines[index][:at]`.
@@ -660,7 +685,11 @@ def consumer_mention_is_operand(head: str) -> bool:
     An identifier or a closing delimiter before the mention is what a consumer
     looks like in all four of the languages this rule serves: a callee, a command,
     a macro, or the end of one.  Whitespace, quotes and opening delimiters consume
-    nothing.  It **over-approximates** deliberately and says so: a mention inside a
+    nothing -- and neither does a string literal's own **prefix**, which
+    `CONSUMER_STRING_PREFIX` removes before the question is asked: `r"`, `f"`,
+    `b"`, `u"`, the two-letter Python combinations and Rust's `r#"` are part of
+    the literal, and reading their letter as an identifier is what made the
+    `v0.35.138` refusal one spelling wide (PR #897's review).  It **over-approximates** deliberately and says so: a mention inside a
     list literal at the start of a line reads as an operand from its second element
     on, and a shell comment is not stripped (the view for `.sh` is raw, which
     `consumer_code_view` already states).  The direction is what matters -- the
@@ -668,7 +697,7 @@ def consumer_mention_is_operand(head: str) -> bool:
     too many and never one too few, and the case it now refuses is the one a
     gate-shaped file cannot reach by accident.
     """
-    return bool(CONSUMER_OPERAND.search(head))
+    return bool(CONSUMER_OPERAND.search(CONSUMER_STRING_PREFIX.sub(" ", head)))
 
 
 def consumer_bound_name(lines: list[str], index: int, at: int) -> str | None:
@@ -1034,9 +1063,7 @@ def check_fragments(manifest: Manifest, output_text: str) -> list[str]:
     # was made by nothing -- measured on the live tree, where
     # `two_phase_arch_suite` had emitted `TPH-015` under thirteen sub-case labels
     # and no row since it was written.
-    families = {m.group(1) for row in manifest.rows
-                if (m := SCENARIO_ID.match(row[0]))}
-    for scenario_id in sorted(emitted_scenario_ids(output_text, families) - declared):
+    for scenario_id in sorted(emitted_scenario_ids(output_text) - declared):
         errors.append(
             f"{manifest.path}: `lake exe {manifest.suite}` labels scenario "
             f"{scenario_id}, which this manifest does not declare — the manifest "

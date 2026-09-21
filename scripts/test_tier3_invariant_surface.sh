@@ -17659,11 +17659,14 @@ run_check "INVARIANT" rg -F -n '    def test_the_operand_question_is_asked_of_th
 run_check "INVARIANT" rg -F -n 'LABEL_POSITION = r"(?:^|\[){id}[a-z]?(?![0-9A-Za-z-])"' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    pattern = re.compile(LABEL_POSITION.format(id=re.escape(scenario_id)))' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'EMITTED_LABEL = re.compile(LABEL_POSITION.format(id=r"([A-Z]+-\d+)"), re.MULTILINE)' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -F -n 'def emitted_scenario_ids(output_text: str, families: set[str]) -> set[str]:' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fragments[^\n]*(\n([ \t][^\n]*)?)*for scenario_id in sorted\(emitted_scenario_ids\(output_text, families\) - declared\):" scripts/scenario_catalog.py'
-# ...bounded to the manifest's OWN families, which is what makes the reverse scan
-# askable: an ordinary output line may carry anything.
-run_check "INVARIANT" bash -lc 'rg -U -n "def check_fragments[^\n]*(\n([ \t][^\n]*)?)*families = \{m.group\(1\) for row in manifest.rows" scripts/scenario_catalog.py'
+run_check "INVARIANT" rg -F -n 'def emitted_scenario_ids(output_text: str) -> set[str]:' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def check_fragments[^\n]*(\n([ \t][^\n]*)?)*for scenario_id in sorted\(emitted_scenario_ids\(output_text\) - declared\):" scripts/scenario_catalog.py'
+# ...over the PRODUCER'S OUTPUT and not over the manifest's own families
+# (`v0.35.142`, PR #897's review).  The family bound was derived from the set the
+# scan exists to contradict, so a producer's FIRST scenario in a new family named
+# no declared family and was discarded; measured, the bound dropped NONE of the
+# 12 and 8 live label-position ids.  It must not come back.
+run_negative_check "INVARIANT" rg -F -n 'families = {m.group(1) for row in manifest.rows' scripts/scenario_catalog.py
 # ...and the label position must not be re-spelled: a second pattern would be
 # free to disagree, and the two directions would reconcile different relations.
 run_negative_check "INVARIANT" rg -F -n 're.compile(r"(?:^|\[)" + re.escape(scenario_id)' scripts/scenario_catalog.py
@@ -17684,9 +17687,10 @@ run_check "INVARIANT" rg -F -n '        if SCENARIO_ID.match(scenario_id) is Non
 # ...with the rejecting cases, the domain-bound control, and the two-fixture
 # control that stops the union refusal from being "refuse any second fixture".
 run_check "INVARIANT" rg -F -n '    def test_rejects_an_EMITTED_scenario_with_no_row(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_an_emitted_label_of_ANOTHER_family_is_not_this_manifest_s(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_an_emitted_label_of_ANOTHER_family_IS_reported(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_reports_a_scenario_in_a_family_no_row_declares(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_an_emitted_id_NOT_at_a_label_position_is_not_a_claim(self) -> None:' scripts/tests/test_scenario_catalog.py
-run_check "INVARIANT" rg -F -n '    def test_the_emitted_extractor_reads_the_families_it_is_given(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_the_emitted_extractor_reads_every_family(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_a_repeated_scenario_id_is_an_ERROR(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_a_scenario_id_repeated_ACROSS_fixtures_is_an_ERROR(self) -> None:' scripts/tests/test_scenario_catalog.py
 run_check "INVARIANT" rg -F -n '    def test_two_fixtures_with_DISJOINT_ids_are_accepted(self) -> None:' scripts/tests/test_scenario_catalog.py
@@ -17746,5 +17750,49 @@ run_prose_negative_check "INVARIANT" rg -F -n 'donation accounting holds at ever
 # ...and the register row is OPEN, not struck through.
 run_prose_negative_check "INVARIANT" rg -F -n '| ~~The removal does not preserve the donation accounting' docs/REGISTERED_DEBT.md
 run_prose_check "INVARIANT" rg -F -n 'redirect is guarded by a PROXY for ownership' docs/REGISTERED_DEBT.md
+
+# --------------------------------------------------------------------------
+# `v0.35.142` (PR #897's review): three gate domains were derived from a
+# RESEMBLANCE, so each silently dropped what fell outside it.
+# --------------------------------------------------------------------------
+# (1) A changed-file selector that matches an anchor's target by SUBSTRING sees
+# `tests/Foo.lean` in `rg PAT tests/Foo.lean` and nothing at all in
+# `rg PAT tests/*.lean`, so a glob-targeted anchor got no diff provenance and was
+# selected on no changed path.  The glob is read off the word VALUES -- a quoted
+# `'tests/*.lean'` is one word whose value IS the pattern -- and a `-c` script is
+# descended into, since an inner shell expands the globs in it.
+run_check "INVARIANT" rg -F -n '_GLOB_META = frozenset("*?[")' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -F -n 'def glob_targets(command: str, _depth: int = 0) -> list["re.Pattern"]:' scripts/select_changed_anchors.py
+run_check "INVARIANT" bash -lc 'rg -U -n "elif _GLOB_META & set\(command\) and any\([^\n]*(\n([ \t][^\n]*)?)*prov = \"glob\"" scripts/select_changed_anchors.py'
+# ...and a command this walk cannot lex contributes its raw tokens rather than
+# nothing, because dropping them is the fail-OPEN direction for a module that
+# decides which checks run.
+run_check "INVARIANT" bash -lc 'rg -U -n "    except UnlexableCommand:[^\n]*(\n([ \t][^\n]*)?)*for w in command.split\(\):" scripts/select_changed_anchors.py'
+# (2) A fixture mention is an OPERAND only where nothing binds it, and a string
+# PREFIX is not a binder: `let _ = r"a.expected"` reads `r` as an identifier, so
+# the mention looked bound and the consumer went uncredited.  A prefix begins a
+# word, which is what keeps `dir"..."` and `include_str!` from being blanked.
+run_check "INVARIANT" rg -F -n 'CONSUMER_STRING_PREFIX = re.compile(' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'return bool(CONSUMER_OPERAND.search(CONSUMER_STRING_PREFIX.sub(" ", head)))' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_string_literal_PREFIX_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_a_prefixed_standalone_literal_is_not_a_consumer(self) -> None:' scripts/tests/test_scenario_catalog.py
+# (3) A PREFILTER is not the SIGNAL, and the askers scan returned early on one.
+# `_probe_signal` is written for a probe's OWN text, where the import begins a
+# line; asked of a whole Python file it is false for `PROBE = """import SeLe4n`,
+# which is the commonest spelling there is.  It survives for the two questions
+# that genuinely are about a line start, and the FILE question is the wider one.
+run_check "INVARIANT" rg -F -n 'def _probe_prefilter(text: str) -> bool:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    """Could this FILE embed a probe?  Strictly wider than' scripts/check_declaration_kind_askers.py
+# ...and it must not be a gate on the scan again: the only thing it decides is
+# whether a file that does not PARSE is a refusal.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def embedded_lean\(path: str, text: str\)[^\n]*(\n([ \t][^\n]*)?)*if not _probe_prefilter\(text\):\n        return \[\]\n    try:" scripts/check_declaration_kind_askers.py'
+# ...and a plain-name call that BUILDS a probe out of a literal is refused rather
+# than read as an inline probe: the literal is a template, so its constructor
+# count is the UNSUBSTITUTED one while the probe handed to Lean decides the
+# question -- invisible in both directions at once.  The structural difference is
+# whether the result is used.
+run_check "INVARIANT" rg -F -n 'def _probe_building_calls(tree: ast.AST) -> list[ast.Call]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    out.extend((call, "builder") for call in _probe_building_calls(tree))' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    "builder": "a probe-signalling literal is handed to a plain-name call whose "' scripts/check_declaration_kind_askers.py
 
 finalize_report

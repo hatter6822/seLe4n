@@ -360,17 +360,24 @@ class TestFragmentRelation(unittest.TestCase):
             self.assertIn("RH-003", errors[0])
             self.assertIn("does not declare", errors[0])
 
-    def test_an_emitted_label_of_ANOTHER_family_is_not_this_manifest_s(self) -> None:
-        """The domain bound, and what makes the reverse direction askable at all.
+    def test_an_emitted_label_of_ANOTHER_family_IS_reported(self) -> None:
+        """`v0.35.142`: the scan's domain is the producer's OUTPUT.
 
-        An ordinary output line may carry anything, so a scan for every
-        label-shaped token would report whatever a suite happens to print.  The
-        families the manifest's own rows declare are what bound it — `TPH-015` is
-        not a Robin Hood scenario and this manifest makes no claim about it.
+        Until this cut the families the manifest's own rows declare bounded the
+        scan, so this case asserted `[]` — and that bound is derived from the very
+        set the scan exists to contradict, so a producer's FIRST scenario in a new
+        family defined itself out of it.  The manifest is a claim about what *its*
+        producer traces, so a label-position id it does not declare is a finding
+        whatever family it names: either the row is missing or the label is wrong.
+        Measured before choosing: over both live producers the family filter
+        dropped **none** of the 12 and 8 label-position ids, so the bound cost the
+        tree nothing and bought it only the hole.
         """
         with tempfile.TemporaryDirectory() as d:
             other = OUTPUT + "two-phase check passed [TPH-015a boot succeeds]\n"
-            self.assertEqual(sc.check_fragments(self._manifest(d), other), [])
+            errors = sc.check_fragments(self._manifest(d), other)
+            self.assertEqual(len(errors), 1, errors)
+            self.assertIn("TPH-015", errors[0])
 
     def test_an_emitted_id_NOT_at_a_label_position_is_not_a_claim(self) -> None:
         """Both directions read one `LABEL_POSITION`, so a mid-line mention is no
@@ -380,14 +387,34 @@ class TestFragmentRelation(unittest.TestCase):
             mention = OUTPUT + "robin-hood check passed [RH-002b get (covers RH-003)]\n"
             self.assertEqual(sc.check_fragments(self._manifest(d), mention), [])
 
-    def test_the_emitted_extractor_reads_the_families_it_is_given(self) -> None:
-        """The predicate, directly, in both directions — so the reverse scan is
-        pinned at its own function rather than only through a whole check."""
+    def test_the_emitted_extractor_reads_every_family(self) -> None:
+        """The predicate, directly — the scan's domain is the OUTPUT.
+
+        `v0.35.139` bounded this by the manifest's own families, which is a domain
+        derived from the thing the scan exists to contradict: a producer's FIRST
+        scenario in a new family named no declared family and was discarded.  The
+        line-start id and the parenthesised mention are what pin `LABEL_POSITION`
+        at this function rather than only through a whole check.
+        """
         text = "a [RH-001a x]\nb [TPH-002c y]\nRH-003a z\nq (covers RH-009) r\n"
-        self.assertEqual(sc.emitted_scenario_ids(text, {"RH"}),
-                         {"RH-001", "RH-003"})
-        self.assertEqual(sc.emitted_scenario_ids(text, {"TPH"}), {"TPH-002"})
-        self.assertEqual(sc.emitted_scenario_ids(text, set()), set())
+        self.assertEqual(sc.emitted_scenario_ids(text),
+                         {"RH-001", "TPH-002", "RH-003"})
+        self.assertEqual(sc.emitted_scenario_ids(""), set())
+
+    def test_reports_a_scenario_in_a_family_no_row_declares(self) -> None:
+        """THE decisive case for `v0.35.142`: a NEW family.
+
+        Under the family bound this passed — `NEW` is in no row, so the filter
+        discarded the emitted id and the reconciliation saw nothing.  The control
+        is `test_rejects_a_renamed_label` beside it, which the bound did catch, so
+        this case is known to be about the *domain* rather than about the scan.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            fresh = OUTPUT + "robin-hood check passed [NEW-001a a brand new family]\n"
+            errors = sc.check_fragments(self._manifest(d), fresh)
+            self.assertEqual(len(errors), 1, errors)
+            self.assertIn("NEW-001", errors[0])
+            self.assertIn("does not declare", errors[0])
 
     def test_rejects_a_renamed_label(self) -> None:
         """THE decisive case, and the drift that actually shipped.
@@ -1033,6 +1060,38 @@ class TestFixtureConsumers(unittest.TestCase):
         self.assertTrue(sc.consumer_mention_is_operand('include_str!("'))
         self.assertTrue(sc.consumer_mention_is_operand('compareAgainst "'))
         self.assertTrue(sc.consumer_mention_is_operand('diff "${X}" '))
+
+    def test_a_string_literal_PREFIX_is_not_a_consumer(self) -> None:
+        """PR #897's review, `v0.35.142`: the standalone-literal refusal was one
+        spelling wide.
+
+        A consumer whose whole content is `r"foo.expected"` leaves a head of `r"`,
+        and the operand test read that `r` as a consuming identifier — so every
+        prefixed literal walked around `v0.35.138`'s refusal and a README row could
+        again name a file that merely *contains* the fixture name.  The CONTROLS
+        are what make this about the prefix rather than about the letter: a
+        genuine identifier ENDING in one of those letters still consumes, and so
+        does a prefixed literal that really is an argument.
+        """
+        for head in ('r"', 'f"', 'b"', 'u"', 'rb"', 'BR"', "rf'", 'r#"', 'r##"'):
+            self.assertFalse(sc.consumer_mention_is_operand(head), head)
+        for head in ('dir"', 'include_str!(r"', 'read_to_string(f"', 'cat r"'):
+            self.assertTrue(sc.consumer_mention_is_operand(head), head)
+
+    def test_a_prefixed_standalone_literal_is_not_a_consumer(self) -> None:
+        """The same finding through the whole check, with its accepting control.
+
+        Preserving: the file mentions the fixture, at the same offset, in the same
+        `.rs` shape — only the literal's prefix differs from the accepting case.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            # No preceding continuation token, so the look-back joins nothing —
+            # `consumer_mention_head` would otherwise carry an enclosing `{` in,
+            # which the docstring already records as an over-approximation.
+            dead = 'let _n = 1;\nr"a.expected";\n'
+            live = 'let _n = 1;\nlet _s = include_str!(r"a.expected");\n'
+            self.assertIs(sc.fixture_mention_consumed(dead, "a.expected"), False)
+            self.assertIs(sc.fixture_mention_consumed(live, "a.expected"), True)
 
     def test_the_bound_name_is_found_across_a_continuation(self) -> None:
         """A `def … :=` whose string is on the NEXT line still binds its name.

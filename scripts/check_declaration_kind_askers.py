@@ -278,6 +278,9 @@ _REFUSAL_REASONS = {
               "position where the template has written part of a `ConstantInfo` "
               "constructor against it, so the constructor the probe decides is "
               "not in any located text",
+    "builder": "a probe-signalling literal is handed to a plain-name call whose "
+               "RESULT the program uses, so the call builds the probe and the "
+               "located literal is not the text it runs",
 }
 
 
@@ -663,9 +666,23 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
     question.  Refusing on the marker alone here would refuse all four of this tree's
     real probes, whose holes carry data; refusing on nothing would leave the hole.
 
-    A `Call` on a plain name is excluded by `_string_assembly_shapes`, so a probe
-    handed straight to a helper is read rather than refused.  Measured: **zero**
-    refusals of any of the three reasons on the tracked tree, so all three are
+    `builder` -- `v0.35.142` (PR #897's review), and the fourth reason exists because
+    the exclusion above was a hole.  `_string_assembly_shapes` deliberately does not
+    treat a `Call` on a plain NAME as an assembly: a probe handed straight to
+    `run_probe(<literal>)` is its argument, not a part of a string the call builds.
+    But `PROBE = build_probe(<a probe literal>, "opaque")` is
+    the same shape with the opposite meaning -- the call *builds* the probe, and the
+    literal is located as an inline one, so its import marker is accounted for, its
+    constructor count is **zero**, and the asker that decides `.opaqueInfo` at
+    runtime is invisible in both directions at once.  What separates the two is
+    whether the program USES the call's result: a probe handed to a runner is a bare
+    expression statement, and a probe *built* by a call is assigned, returned or
+    passed on.  So a plain-name call whose result is used and whose arguments carry
+    a probe-signalling literal is refused.
+
+    Measured: **zero** refusals of any of the four reasons on the tracked tree -- the
+    only probe-signalling literals passed to plain-name calls are two `print`
+    diagnostics, which are statement-level and so not builders -- so all four are
     planted today.
     """
     consts = _module_string_bindings(tree)
@@ -684,6 +701,35 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
         elif (LEAN_PROBE_MARKER.search(holed)
                 and _constructor_completing_holes(holed)):
             out.append((node, "splice"))
+    out.extend((call, "builder") for call in _probe_building_calls(tree))
+    return out
+
+
+def _probe_building_calls(tree: ast.AST) -> list[ast.Call]:
+    """Plain-name calls that BUILD a probe out of a literal handed to them.
+
+    A `Call` on a plain `Name` is not a string assembly (`_string_assembly_shapes`
+    says why), so its literal argument reaches the bare-constant branch and is
+    located as an inline probe -- which is right when the call CONSUMES the probe
+    and wrong when it builds one.  The structural difference is whether the result
+    is used: `run_probe(<literal>)` is a bare expression statement, while
+    `PROBE = build_probe(<template>, "opaque")` assigns, returns or passes its
+    result on.  A method call is excluded because it is already an assembly, and a
+    `Name` argument is excluded because the constant it names is a subject of its
+    own.
+    """
+    bare = {id(node.value) for node in ast.walk(tree)
+            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)}
+    out: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
+            continue
+        if id(node) in bare:
+            continue
+        args = list(node.args) + [kw.value for kw in node.keywords]
+        if any(isinstance(a, ast.Constant) and isinstance(a.value, str)
+               and _probe_signal(a.value) for a in args):
+            out.append(node)
     return out
 
 
@@ -742,11 +788,22 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     keyed on "some fragment is not a literal" would also refuse the readable
     `HEADER + <literal>` shape.
     """
-    if not _probe_prefilter(text):
-        return []
     try:
         tree = ast.parse(text)
     except SyntaxError as exc:
+        # **The prefilter decides only whether an UNPARSEABLE file is a refusal**
+        # (PR #897's review, `v0.35.142`).  It used to gate the parse itself, and
+        # that is the shape `v0.35.132` retired one level up: a prefilter must be
+        # strictly WIDER than the predicate it stands in for, and no raw-text test
+        # can be wider than "the AST reconstructs a probe" -- a probe assembled as
+        # `"im" + "port SeLe4n ... .opaque" + "Info"` carries neither complete
+        # token in its source, so both signals were false and the FILE was skipped
+        # before it was parsed.  Parsing every tracked Python source costs
+        # milliseconds and removes the class; what the prefilter still answers is
+        # the one question it can, on a file this scanner could not parse at all:
+        # whether to refuse it or to pass over it.
+        if not _probe_prefilter(text):
+            return []
         raise UnreadableProbe(
             f"{path} embeds Lean (an `import Lean`/`import SeLe4n` line, or a "
             f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
@@ -1073,6 +1130,12 @@ ASKER_REASONS: dict[str, str] = {
         "THIS GATE'S OWN FIXTURE for the refusal direction on a project-importing "
         "probe -- the case the old marker could see NEITHER way, since it neither "
         "located the probe nor had a marker to refuse on.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CALL_CONSUMED_PROBE":
+        "THIS GATE'S OWN FIXTURE (`v0.35.142`, PR #897's review): the CONTROL for "
+        "the plain-name-call refusal beside it -- the same shape with the call's "
+        "RESULT unused, which is a probe handed straight to a runner and must be "
+        "READ.  Without it the refusal would read as \"a marker-bearing literal may "
+        "not be a call argument\", which refuses this tree's own inline-probe idiom.",
     "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROBE":
         "THIS GATE'S OWN FIXTURE for the reported defect (`v0.35.124`): a probe "
         "passed INLINE, beside an assigned one.  Two counts, and both are "
@@ -1220,6 +1283,9 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     },
     # `v0.35.124`: the inline and assembled shapes, located since the probe domain
     # became every string constant rather than every assignment value.
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_CALL_CONSUMED_PROBE": {
+        "opaqueInfo": 1,
+    },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_INLINE_PROBE": {
         "ctorInfo": 1, "opaqueInfo": 1,
     },
@@ -1818,6 +1884,55 @@ private def mangled (ci : ConstantInfo) : Bool :=
 
 def build():
     return PROBE_TEMPLATE.upper()
+'''
+
+#: PR #897's review, `v0.35.142`: a probe whose markers are SPLIT across fragments,
+#: so its raw source carries neither a complete `import SeLe4n` nor a complete
+#: constructor.  The superseded file-level prefilter answered "no probe here" and
+#: `embedded_lean` returned before parsing, so the asker was outside the inventory
+#: with the gate reporting the tree clean.  Reconstructing the assembly is what sees
+#: it; the fragments are all literals, so it READS rather than refuses.
+_FIXTURE_SPLIT_MARKER_PROBE = '''\
+PROBE = ("im" + """port SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .opaque""" + """Info _ => true | _ => false
+""")
+'''
+
+#: PR #897's review, `v0.35.142`: a probe BUILT by a plain-name call.  The literal is
+#: the call's argument rather than a part of a string the call builds, so it is
+#: located as an inline probe -- its import marker accounted for and its constructor
+#: count zero -- while the text the program runs decides `.opaqueInfo`.  What
+#: separates it from the read case is that the call's RESULT is used.
+_FIXTURE_CALL_BUILT_PROBE = '''\
+def build_probe(template, kind):
+    return template.replace("@KIND@", kind)
+
+
+PROBE = build_probe("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+""", "opaque")
+'''
+
+#: The CONTROL for the one above: the same shape with the call's result UNUSED, which
+#: is a probe handed straight to a runner.  Without it the refusal would read as "a
+#: marker-bearing literal may not be a call argument", which would refuse this tree's
+#: own inline-probe idiom.
+_FIXTURE_CALL_CONSUMED_PROBE = '''\
+def run_probe(source):
+    return source
+
+
+run_probe("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .opaqueInfo _ => true | _ => false
+""")
 '''
 
 #: The RESOLUTION residue, closed.  A template whose name is bound twice -- here at
@@ -2775,6 +2890,59 @@ def _self_test() -> int:
             print("      Refusing a pass-through rejects correct code.")
             return 1
 
+    # (35) PR #897's review, `v0.35.142`: the prefilter gated the PARSE, and no
+    #      raw-text test can be wider than "the AST reconstructs a probe".  A probe
+    #      whose markers are SPLIT across fragments carries neither a complete
+    #      `import SeLe4n` nor a complete constructor in its source, so both signals
+    #      were false and the file was skipped before it was parsed -- an asker
+    #      outside the inventory with the gate reporting the tree clean.  The
+    #      assertion is that the new subject is REPORTED, because the fragments are
+    #      all literals and the assembly reads rather than refuses.
+    with tempfile.TemporaryDirectory() as root:
+        spl = "scripts/split_marker_gate.py"
+        _fixture(root, {**base, spl: _FIXTURE_SPLIT_MARKER_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(spl in p and "not a recorded asker" in p for p in problems):
+            print("FAIL: --self-test — a probe whose markers are SPLIT across")
+            print(f"      fragments was not seen: {problems}.  The file-level")
+            print("      prefilter must not gate the parse, or a reassembled")
+            print("      probe is outside the inventory with the gate green.")
+            return 1
+
+    # (36) ...and the plain-name call that BUILDS a probe, which
+    #      `_string_assembly_shapes` deliberately does not treat as an assembly.
+    #      The literal is then located as an inline probe -- marker accounted for,
+    #      constructor count zero -- while the text the program runs decides
+    #      `.opaqueInfo`.  Invisible in both directions at once, which is what makes
+    #      a domain miss unfindable by reading a failure.
+    with tempfile.TemporaryDirectory() as root:
+        bld = "scripts/call_built_gate.py"
+        _fixture(root, {**base, bld: _FIXTURE_CALL_BUILT_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(bld in p and "refuses to read partially" in p
+                   for p in problems):
+            print("FAIL: --self-test — a probe BUILT by a plain-name call was not")
+            print(f"      refused: {problems}.  Its located literal is not the")
+            print("      text the call builds, so its constructor count is zero")
+            print("      against a probe that decides the question.")
+            return 1
+
+    # (37) ...and its CONTROL, which is what keeps (36) from refusing this tree's own
+    #      inline-probe idiom.  The same shape with the call's result UNUSED is a
+    #      probe handed straight to a runner, and it must be READ under its enclosing
+    #      declaration.  A mutation dropping the result-used condition refuses this
+    #      and passes (36).
+    with tempfile.TemporaryDirectory() as root:
+        run = "scripts/call_consumed_gate.py"
+        _fixture(root, {**base, run: _FIXTURE_CALL_CONSUMED_PROBE})
+        got = {k: v for k, v in _capture_fixture(root).items()
+               if k.startswith(run)}
+        if list(got.values()) != [{"opaqueInfo": 1}]:
+            print("FAIL: --self-test — a probe handed straight to a runner was not")
+            print(f"      read: {got}.  Refusing it rejects correct code, and the")
+            print("      refusal in (36) is about the call's RESULT being used.")
+            return 1
+
     found = capture()
     print(f"[declaration-kind] SELF-TEST PASS: the capture reads the Lean view "
           f"of both a `.lean` file and a probe embedded in Python; a new "
@@ -2795,8 +2963,11 @@ def _self_test() -> int:
           f"template that SPLICES a constructor -- by `.replace`, `.format`, `%` or "
           f"concatenation -- is refused, as is an unmodelled transform of probe text "
           f"and a template whose name is bound twice, while a substitution whose "
-          f"value is a literal is RECONSTRUCTED and its constructor recorded; the "
-          f"live tree is clean at {len(found)} subject(s).")
+          f"value is a literal is RECONSTRUCTED and its constructor recorded; a "
+          f"probe whose markers are SPLIT across fragments is seen (the file-level "
+          f"prefilter no longer gates the PARSE) and one BUILT by a plain-name call "
+          f"is refused while the same shape with the call's result unused is read; "
+          f"the live tree is clean at {len(found)} subject(s).")
     return 0
 
 

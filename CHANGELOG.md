@@ -1,3 +1,92 @@
+## v0.35.142 — four scanners whose DOMAIN was derived from a resemblance
+
+PR #897's four remaining review findings are one defect in four costumes, and it
+is the one `CLAUDE.md` names *a recognised set is not a derived set*: each scanner
+decided **whether something is a subject** by a resemblance — a head character, a
+raw-text substring, a literal path, a family the answer itself declares — and what
+fell outside was silently dropped rather than refused. A domain miss is invisible
+by construction: the element is never examined, no count moves, and the gate goes
+on printing PASS.
+
+**`select_changed_anchors.py` — an anchor's target may be a PATTERN.** `path` is a
+substring test and `dir` requires a delimited literal directory, so a target
+spelled `tests/*PlatformSuite.lean` matched neither: after the optional `tests/`
+slash the `dir` lookahead sees a `*` and rejects. Two such targets are live in
+Tier 3 (`tests/*PlatformSuite.lean`, `scripts/*cascade_check_monotonic.sh`), so a
+change to `Ak9PlatformSuite.lean` selected **none** of the anchors over it and the
+changed-file sweep ran nothing that change invalidates. `glob_targets` reads the
+glob off the word **values** (so a quoted pattern and a `-c` script are seen) and
+`_glob_pattern` translates it with **shell** semantics — `*` and `?` do not cross a
+`/`, which is the difference between selecting the anchors a change invalidates
+and selecting most of Tier 3. A bracket expression widens to `[^/]`, the
+over-approximating direction, rather than compiling a fragment of an `rg` pattern
+as a regex character class. Measured: 7 glob rows for `Ak9PlatformSuite.lean`, 1
+for the cascade script, zero spurious rows on an ordinary Lean path.
+
+**`scenario_catalog.py` — the reverse scan's domain was derived from the manifest.**
+`emitted_scenario_ids` was bounded by the families the manifest's own rows declare,
+which is the set the scan exists to contradict: a producer adding its FIRST
+scenario in a new family named no declared family and was discarded, so the
+reconciliation passed over a scenario with no row and no registry entry. Measured
+before choosing: over both live producers the filter drops **none** of the 12 and 8
+label-position ids, so the bound cost the tree nothing and bought it only the hole.
+It is gone; the id **shape** requirement stays, for the reason it is now stated at.
+
+**`scenario_catalog.py` — a string literal's PREFIX is not an identifier.**
+`v0.35.138` refused a standalone literal as a fixture consumer by asking whether
+anything before it can consume a value; a consumer whose whole content is
+`r"foo.expected"` leaves a head of `r"`, and the `r` read as a consuming
+identifier. So `r`, `f`, `b`, `u`, the two-letter Python combinations and Rust's
+`r#"` all walked around that refusal. `CONSUMER_STRING_PREFIX` removes a prefix
+that BEGINS a word before the question is asked, with controls for an identifier
+that merely ends in one of those letters and for a prefixed literal that really is
+an argument.
+
+**`check_declaration_kind_askers.py` — a PREFILTER gated the PARSE.** `v0.35.132`
+established that a prefilter must be strictly WIDER than the predicate it stands in
+for; no raw-text test can be wider than *the AST reconstructs a probe*. A probe
+assembled as `"im" + "port SeLe4n … .opaque" + "Info"` carries neither complete
+token in its source, so both signals were false and `embedded_lean` returned before
+parsing — a body-kind asker outside the inventory with the gate reporting the tree
+clean. The prefilter now decides only whether an **unparseable** file is a refusal
+or a skip. Parsing every tracked Python source costs milliseconds and the widening
+admits **nothing** on the live tree: 64 matches over 27 subjects before and after.
+The gate now reports 65 over 28 because of the one registered control fixture this
+cut plants, which is the whole of the difference.
+
+**…and a plain-name call may BUILD a probe rather than consume one.**
+`_string_assembly_shapes` deliberately excludes a `Call` on a plain `Name`, because
+a probe handed straight to `run_probe(<literal>)` is its argument. `PROBE =
+build_probe(<template>, "opaque")` is the same shape with the opposite meaning: the
+literal is located as an inline probe — import marker accounted for, constructor
+count **zero** — while the text the program runs decides `.opaqueInfo`. What
+separates them is whether the program uses the call's **result**, which is
+structural: a probe handed to a runner is a bare expression statement.
+`_probe_building_calls` refuses the builder; the CONTROL beside it is the consumed
+form, which must still be read. Measured: the only probe-signalling literals passed
+to plain-name calls on this tree are two `print` diagnostics, which are
+statement-level — so both cases are planted and the refusal admits nothing that was
+being read.
+
+**Every fix is mutation-tested.** Restoring the prefilter's early return, dropping
+the builder refusal, dropping its result-used condition, dropping the glob
+provenance, giving `*` `fnmatch` semantics, and reading the raw command instead of
+the word values are each caught by a named case. The scenario-catalog pair is
+covered by four new unit cases, two of which retire an assertion that **was** the
+bound: `test_an_emitted_label_of_ANOTHER_family_is_not_this_manifest_s` asserted
+`[]` for exactly the shape this cut reports.
+
+Fourteen Tier 3 anchors: the glob provenance and its fail-open token fallback,
+the prefix stripper and its two witnesses, the prefilter's narrowed question and
+a negative refusing the early return's revival, and the builder refusal with its
+reason.  The family bound's own negative and the three repointed emitted-scan
+anchors sit in the `v0.35.139` block, beside the direction they correct.
+
+**Touched**: `scripts/select_changed_anchors.py`, `scripts/scenario_catalog.py`,
+`scripts/check_declaration_kind_askers.py`,
+`scripts/tests/test_scenario_catalog.py`,
+`scripts/test_tier3_invariant_surface.sh`.
+
 ## v0.35.141 — the donation pop's rebindability guard is a proxy, and its decline is a transfer
 
 **PR #897's review, measured and retracted.** HP10.7's `donationOriginRebindable`
