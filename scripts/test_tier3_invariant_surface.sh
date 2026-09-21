@@ -16777,8 +16777,11 @@ run_negative_check "INVARIANT" rg -F -n -- '--extra-fixtures' scripts/test_tier0
 # READS the fixture -- and the unit test's own positive fixture was that shape, so
 # every rejecting case beside it failed for the wrong reason.  Requiring a read AT
 # the mention is refuted by measurement: all five live idioms bind the path and
-# read the name elsewhere.  What is decidable is that a BINDING is consumed.
-run_check "INVARIANT" rg -F -n 'if name is None or word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
+# read the name elsewhere.  What is decidable is that a BINDING is consumed --
+# and, since `v0.35.138`, that an UNBOUND mention is an operand of something;
+# this line used to conflate the two, so the anchor is repointed at the branch
+# that survives rather than deleted.
+run_check "INVARIANT" rg -F -n '        if word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'if CONSUMER_APPLICATION.search(head[operators[-1]:]):' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scripts/scenario_catalog.py
@@ -17561,6 +17564,32 @@ run_check "INVARIANT" rg -F -n '    def test_the_consumer_check_also_refuses_a_m
 # ...and the README states the contract it is governed by, since that table is
 # hand-written and its shape is now a checked claim about it.
 run_prose_check "INVARIANT" rg -F -n "**One fixture per row, and the \`Hash\` cell holds only that fixture's own" tests/fixtures/README.md
+
+
+# --------------------------------------------------------------------------
+# `v0.35.138` (PR #897's review): a mention that binds NOTHING is not a use by
+# construction -- a standalone literal binds nothing and consumes nothing.
+# --------------------------------------------------------------------------
+# `v0.35.123` closed the dead-binding half and left the other in a DEFAULT, so a
+# consumer whose whole content is `"foo.expected"` satisfied the claim that it
+# reads the fixture.  The two questions have one function each now, over ONE
+# head, so a second lookback cannot disagree about where the head begins.
+run_check "INVARIANT" rg -F -n 'def consumer_mention_head(lines: list[str], index: int, at: int) -> str:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'def consumer_mention_is_operand(head: str) -> bool:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    head = consumer_mention_head(lines, index, at)' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'CONSUMER_OPERAND = re.compile(' scripts/scenario_catalog.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mention_consumed[^\n]*(\n([ \t][^\n]*)?)*if consumer_mention_is_operand\(" scripts/scenario_catalog.py'
+# ...and the retired unconditional credit must not come back.  The subject is the
+# RELATION -- `name is None` reaching `return True` with nothing between them --
+# so the negative is bounded to this declaration rather than tree-wide, because
+# the neighbouring `word_occurrences` branch legitimately returns `True`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def fixture_mention_consumed[^\n]*(\n([ \t][^\n]*)?)*if name is None or word_occurrences" scripts/scenario_catalog.py'
+# ...with the rejecting case, its CONTROL at the same bare position, and the
+# predicate pinned in both directions: M2 (accept everything) and M3 (accept
+# nothing) each fail a different set, so neither direction is unwitnessed.
+run_check "INVARIANT" rg -F -n '    def test_rejects_a_STANDALONE_LITERAL(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_accepts_that_same_literal_with_a_CALLEE_in_front(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_the_operand_question_is_asked_of_the_HEAD(self) -> None:' scripts/tests/test_scenario_catalog.py
 
 
 finalize_report

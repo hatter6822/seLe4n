@@ -1,3 +1,63 @@
+## v0.35.138 — a mention that binds nothing is not a use by construction
+
+PR #897's review, against `v0.35.123`: *"a consumer containing only a bare
+expression such as `"foo.expected"` still returns `True`: `consumer_bound_name`
+yields `None`, and this branch treats every unbound mention as a use. A new
+golden fixture can therefore be indexed, hashed, and assigned to a consumer that
+never opens or compares it while `check-fixture-index` passes."*
+
+Exact, and it is that cut's own defect in the branch that cut left as a
+**default**.  `v0.35.123` closed the *dead-binding* half — `UNUSED_FIXTURE =
+"foo.expected"` spells the path and opens nothing — and reasoned the other half
+away in a docstring: *"`None` means the mention binds nothing — an `include_str!`
+argument, a comparison, a call — which is a USE by construction."*  That is an
+**enumeration standing in for a derivation**, and it is missing a member: a
+standalone literal binds nothing and consumes nothing.  So the very claim
+`v0.35.123` was written to make — *this gate reads the fixture* — was satisfiable
+by the other branch, one line away.
+
+### The two halves are two questions, so they are two functions
+
+`consumer_bound_name` answers *what does this mention bind*, and nothing it can
+see says whether anything consumes it.  `consumer_mention_is_operand` answers
+*does anything on the head consume the value* — an identifier or a closing
+delimiter before the mention, which is what a consumer looks like in all four of
+the languages this rule serves (a callee, a command, a macro, or the end of one).
+Whitespace, quotes and opening delimiters consume nothing.
+
+Both read **one** head: `consumer_mention_head` is the lookback join, hoisted out
+of `consumer_bound_name`, because a second lookback would be free to disagree
+with the first about where the head begins.
+
+The predicate **over-approximates** and says so: a mention inside a
+line-initial list literal reads as an operand from its second element on, and a
+shell comment is not stripped (the view for `.sh` is raw, which
+`consumer_code_view` already states).  The direction is what matters — the
+question is whether to *credit* a mention, so an over-approximation credits one
+too many and never one too few — and the case it now refuses is one a
+gate-shaped file cannot reach by accident.
+
+**Free on the live tree**: 30 files and 15 `Used by` claims, both unchanged, so
+every shipped consumer idiom still validates.
+
+### Three mutations, three distinct failure sets, both directions witnessed
+
+| mutation | fails |
+|---|---|
+| restore the unconditional credit | the standalone literal |
+| the operand predicate accepts everything | the standalone literal; the predicate's own verdicts |
+| the operand predicate accepts nothing | the `include_str!` idiom; the callee control; all five live idioms; the predicate's own verdicts |
+
+The **control** is what makes the refusal about consumption rather than about
+position: the same literal, at the same bare position, in the same file shape,
+with one identifier in front of it.  Without it the rejecting case is satisfied
+by a rule that refuses every line-initial mention — which M3 shows is not a
+hypothetical, since that rule breaks five live consumers.
+
+The negative anchor is **bounded to the declaration** rather than tree-wide,
+because the neighbouring `word_occurrences` branch legitimately returns `True`
+and a file-wide refusal of `return True` would fire on a clean tree.
+
 ## v0.35.137 — one fixture per README row, so both fixture questions are about the same file
 
 PR #897's review, against `v0.35.116`'s fixture catalogue: *"When the `Fixture`

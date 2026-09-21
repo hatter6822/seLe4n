@@ -790,6 +790,15 @@ class TestFixtureConsumers(unittest.TestCase):
     #: A mention that binds NO name -- an argument -- which is a use by
     #: construction and must not need a second occurrence.
     INLINE = 'def main : IO Unit := compareAgainst "a.expected"\n'
+    #: A STANDALONE LITERAL: it binds no name and nothing consumes it, so
+    #: `consumer_bound_name` answers `None` and the pre-`v0.35.138` reading
+    #: credited it as a use by construction.  This is what the file a gate
+    #: *mentions* a fixture in without ever opening it looks like.
+    STANDALONE = 'def f : Nat := 0\n"a.expected"\n'
+    #: The control for it: the SAME bare position, with a callee in front, which
+    #: is what makes the refusal about consumption rather than about the mention
+    #: sitting at the start of a line.
+    STANDALONE_CONSUMED = 'def f : Nat := 0\ncompareAgainst "a.expected"\n'
     SILENT = "def f : Nat := 0\n"
     COMMENTED = "-- the gate compares a.expected\ndef f : Nat := 0\n"
     MANIFEST_FIXTURE = (
@@ -855,6 +864,47 @@ class TestFixtureConsumers(unittest.TestCase):
             self.assertEqual(
                 self._case(d, "a.expected", "x\n", "`gates/r.lean`",
                            {"gates/r.lean": self.INLINE}), [])
+
+    def test_rejects_a_STANDALONE_LITERAL(self) -> None:
+        """PR #897's review, `v0.35.138`: `v0.35.123` closed the dead-binding half
+        and left the other in a default.
+
+        A mention that binds no name was credited unconditionally, which is true
+        of an argument, a comparison and a call and **false of a standalone
+        literal** -- so a consumer whose content is `"a.expected"` and nothing
+        else passed the same claim by the other branch, and a new golden fixture
+        could be indexed, hashed and assigned to a gate that never opens it.
+
+        Preserving: the path is spelled, in full, in a real repository file the
+        row names -- exactly as the accepted `include_str!` idiom spells it.  Only
+        the thing that would consume it is missing.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                                {"gates/r.lean": self.STANDALONE})
+            self.assertTrue(errors)
+
+    def test_accepts_that_same_literal_with_a_CALLEE_in_front(self) -> None:
+        """The control, and what makes the refusal about consumption: the mention
+        is at the same bare position, in the same file shape, and the only
+        difference is the identifier that consumes it.  Without this the rejecting
+        case above is satisfied by a rule that refuses every line-initial
+        mention."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                           {"gates/r.lean": self.STANDALONE_CONSUMED}), [])
+
+    def test_the_operand_question_is_asked_of_the_HEAD(self) -> None:
+        """Both verdicts, directly, so the split is pinned at the predicate rather
+        than only through a whole check: whitespace, quotes and opening delimiters
+        consume nothing; an identifier or a closing delimiter does."""
+        self.assertFalse(sc.consumer_mention_is_operand('  "'))
+        self.assertFalse(sc.consumer_mention_is_operand(""))
+        self.assertFalse(sc.consumer_mention_is_operand('  ("'))
+        self.assertTrue(sc.consumer_mention_is_operand('include_str!("'))
+        self.assertTrue(sc.consumer_mention_is_operand('compareAgainst "'))
+        self.assertTrue(sc.consumer_mention_is_operand('diff "${X}" '))
 
     def test_the_bound_name_is_found_across_a_continuation(self) -> None:
         """A `def … :=` whose string is on the NEXT line still binds its name.

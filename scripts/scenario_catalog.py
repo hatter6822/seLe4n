@@ -515,6 +515,67 @@ CONSUMER_APPLICATION = re.compile(
 #: and joining unboundedly would attribute one.
 CONSUMER_CONTINUATIONS = (":=", "=", "(", ",", "[", "{", "+", "\\")
 CONSUMER_LOOKBACK = 3
+#: Something on this line, before the mention, that can CONSUME the value:
+#: an identifier (a callee, a command, a macro), or a closing delimiter (the
+#: end of one).  A head of nothing but whitespace, quotes and opening
+#: delimiters consumes nothing, which is the standalone-literal case
+#: PR #897's review found `fixture_mention_consumed` crediting as a use.
+CONSUMER_OPERAND = re.compile(r"[A-Za-z0-9_)\]}]")
+
+
+def consumer_mention_head(lines: list[str], index: int, at: int) -> str:
+    """The text preceding the fixture mention at `lines[index][:at]`.
+
+    Joins preceding lines only while they end in a continuation token, at most
+    `CONSUMER_LOOKBACK` of them, so a path bound on the line after its `:=` is
+    read with its binder.
+
+    One owner, because two questions are asked of this text -- *what does the
+    mention bind* (`consumer_bound_name`) and *is it consumed by anything*
+    (`consumer_mention_is_operand`) -- and a second lookback would be free to
+    disagree with this one about where the head begins.
+    """
+    head = lines[index][:at]
+    taken = 0
+    j = index - 1
+    while taken < CONSUMER_LOOKBACK and j >= 0:
+        previous = lines[j].strip()
+        if not previous:
+            j -= 1
+            continue
+        if not previous.endswith(CONSUMER_CONTINUATIONS):
+            break
+        head = previous + " " + head
+        taken += 1
+        j -= 1
+    return head
+
+
+def consumer_mention_is_operand(head: str) -> bool:
+    """Does anything on `head` consume the value the mention introduces?
+
+    The second half of the `None` verdict `consumer_bound_name` returns, split out
+    at `v0.35.138` because PR #897's review found the two halves conflated: that
+    verdict means *the mention binds no name*, and the caller read it as *so it is
+    a use by construction*, which is true of an argument, a comparison and a call
+    and **false of a standalone literal**.  A consumer whose whole content is
+    `"foo.expected"` therefore satisfied the claim that it reads the fixture, so a
+    new golden fixture could be indexed, hashed and assigned to a gate that never
+    opens it with `check-fixture-index` green -- the `v0.35.123` dead-binding
+    defect one branch over, in the branch that fix left as a default.
+
+    An identifier or a closing delimiter before the mention is what a consumer
+    looks like in all four of the languages this rule serves: a callee, a command,
+    a macro, or the end of one.  Whitespace, quotes and opening delimiters consume
+    nothing.  It **over-approximates** deliberately and says so: a mention inside a
+    list literal at the start of a line reads as an operand from its second element
+    on, and a shell comment is not stripped (the view for `.sh` is raw, which
+    `consumer_code_view` already states).  The direction is what matters -- the
+    question is whether to credit a mention, so an over-approximation credits one
+    too many and never one too few, and the case it now refuses is the one a
+    gate-shaped file cannot reach by accident.
+    """
+    return bool(CONSUMER_OPERAND.search(head))
 
 
 def consumer_bound_name(lines: list[str], index: int, at: int) -> str | None:
@@ -533,25 +594,17 @@ def consumer_bound_name(lines: list[str], index: int, at: int) -> str | None:
     * `FIXTURE="${REPO_ROOT}/tests/fixtures/…"`                 -> `FIXTURE`
     * a `def … : String :=` whose string is on the NEXT line    -> the def's name
 
-    `None` means the mention binds nothing -- an `include_str!` argument, a
-    comparison, a call -- which is a USE by construction and needs no second
-    occurrence.  That is the right default rather than a lenient one: what the
-    caller is ruling out is a *dead binding*, and a mention that binds no name
-    cannot be one.
+    `None` means the mention binds nothing.  **It does not mean the mention is a
+    use**, and reading it as one was the defect PR #897's review found
+    (`v0.35.138`): an `include_str!` argument, a comparison and a call all bind
+    nothing and are uses, and a **standalone literal** binds nothing and is not,
+    so a consumer whose whole content is `"foo.expected"` satisfied the claim that
+    it reads the fixture.  `consumer_mention_is_operand` is the half that decides
+    that, and it is a separate function because it answers a separate question --
+    this one is *what does the mention bind*, and nothing here can say whether
+    anything consumes it.
     """
-    head = lines[index][:at]
-    taken = 0
-    j = index - 1
-    while taken < CONSUMER_LOOKBACK and j >= 0:
-        previous = lines[j].strip()
-        if not previous:
-            j -= 1
-            continue
-        if not previous.endswith(CONSUMER_CONTINUATIONS):
-            break
-        head = previous + " " + head
-        taken += 1
-        j -= 1
+    head = consumer_mention_head(lines, index, at)
     operators = [
         m.start() for m in re.finditer(r":=|=", head)
         # `==`, `!=`, `<=`, `>=` are comparisons, not bindings; `:=` is caught by
@@ -588,12 +641,18 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
     """Does `view` mention `fixture` somewhere that is not a dead binding?
 
     `None` -- the view does not mention it at all.  `True` -- at least one mention
-    is a use, or binds a name the view reads again.  `False` -- every mention binds
-    a name nothing else in the file reads, so the path is spelled and never opened.
+    is consumed by something, or binds a name the view reads again.  `False` --
+    every mention is a dead binding or a standalone literal, so the path is
+    spelled and never opened.
 
     The claim `check_fixture_consumers` used to make was satisfied by the mention
     alone, so `UNUSED_FIXTURE = "foo.expected"` passed while the PASS line said the
-    row names a gate that *reads* the fixture.
+    row names a gate that *reads* the fixture.  `v0.35.123` closed the binding
+    half and left the other in a default: a mention that binds nothing was credited
+    unconditionally, which is true of an argument and false of a **standalone
+    literal** -- so a consumer whose whole content is `"foo.expected"` passed the
+    same claim by the other branch (PR #897's review, `v0.35.138`).  Both halves
+    are now decided, and the two questions have one function each.
 
     **Why not require a read AT the mention**, measured rather than reasoned: all
     five live consumer idioms bind the path to a name and read it elsewhere, so the
@@ -612,7 +671,14 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
             continue
         mentioned = True
         name = consumer_bound_name(lines, index, at)
-        if name is None or word_occurrences(view, name) > 1:
+        if name is None:
+            # Binds nothing -- an argument, a comparison, a call, or a STANDALONE
+            # LITERAL, and only the first three are uses (`v0.35.138`).
+            if consumer_mention_is_operand(
+                    consumer_mention_head(lines, index, at)):
+                return True
+            continue
+        if word_occurrences(view, name) > 1:
             return True
     return False if mentioned else None
 
