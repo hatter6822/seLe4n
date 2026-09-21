@@ -106,8 +106,8 @@ theorem enqueueRunnableOnCore_preserves_projection
     cases st.getTcb? tid with
     | none => exact Or.inl rfl
     | some t => exact Or.inr ⟨t, rfl⟩
-  · simp only [enqueueRunnableOnCore, hTcb]
-  · simp only [enqueueRunnableOnCore, hTcb]
+  · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]
+  · simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · rfl
     · simp only [projectState]

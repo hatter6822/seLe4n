@@ -943,6 +943,9 @@ express delegation — `diffB` *is* the recorded server in every fixture here, w
 is exactly why the round-15 operation differential could not see the divergence
 round 22 found. -/
 private def diffDelegate : SeLe4n.ThreadId := ⟨65⟩
+/-- **`v0.35.61`**: a thread id the fixtures store nothing under, so a
+`donationOrigin` naming it is a **stale** origin -- FO-044's third half. -/
+private def diffStaleOrigin : SeLe4n.ThreadId := ⟨68⟩
 
 /-- The actors share one CSpace root holding the operand capability at slot 0.
 
@@ -998,6 +1001,66 @@ private def diffAddNotification (ist : IntermediateState) (id : SeLe4n.ObjId)
 private def diffAddReply (ist : IntermediateState) (rid : SeLe4n.ReplyId)
     (r : SeLe4n.Kernel.Reply) : IntermediateState :=
   Builder.createObject ist rid.toObjId (.reply r) (fun _ h => nomatch h) (fun _ h => nomatch h)
+
+private def diffAddSchedContext (ist : IntermediateState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) : IntermediateState :=
+  Builder.createObject ist scId.toObjId (.schedContext sc)
+    (fun _ h => nomatch h) (fun _ h => nomatch h)
+
+/-! ### Driving the live SchedContext binding operations
+
+`schedContextBind` / `schedContextUnbind` take `ValidObjId` / `ValidThreadId`, so
+a scenario that wants to compare them against their frozen mirrors has to promote
+its ids first.  Both helpers answer `none` for "did not run" -- an unpromotable id
+or a refusal -- and every consumer pairs its assertion with a control asserting
+`isSome`, so a silent `none` cannot read as agreement. -/
+private def liveSchedContextBindState (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (tid : SeLe4n.ThreadId) : Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  let vTid ← tid.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+private def liveSchedContextUnbindState (st : SystemState)
+    (scId : SeLe4n.SchedContextId) : Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextUnbind vSc st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+/-- The recorded origin of a live reservation; the outer `none` is "no such
+reservation", which is a different answer from "no loan is recorded". -/
+private def originOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
+
+/-- ...and its frozen counterpart, over the **same** `SchedContext` record. -/
+private def frozenOriginOf (st : FrozenSystemState) (scId : SeLe4n.SchedContextId) :
+    Option (Option SeLe4n.ThreadId) := (st.getSchedContext? scId).map (·.donationOrigin)
+
+/-- **WS-HP HP8.1**: the donated scheduling context the FO-042 halves below move.
+
+Held by the recorded server, owed back to the answered caller, and — in the
+donating half — recorded as heading the answered frame's stack, which is what
+makes the head-driven trigger fire. -/
+private def diffScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 66
+
+private def diffDonatedSc (head? : Option SeLe4n.ReplyId) : SeLe4n.Kernel.SchedContext :=
+  { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some diffB, scReply := head?, isActive := true }
+
+/-- **WS-HP HP4.7**: a reservation the *answered caller* holds in its own right.
+
+The recipient guard's subject: a caller that acquired a scheduling context while
+blocked is one whose binding the pop must not overwrite, and under the head-driven
+trigger nothing the operation reads rules that state out. -/
+private def diffOwnScId : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofNat 67
+
+private def diffCallerOwnSc : SeLe4n.Kernel.SchedContext :=
+  { scId := diffOwnScId, budget := ⟨80⟩, period := ⟨800⟩, priority := ⟨30⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨40⟩,
+    boundThread := some diffA, isActive := true }
 
 /-! ### Comparing like layers
 
@@ -1383,6 +1446,505 @@ private def differentialEndpointReplyOperationAgrees : IO Unit := do
       (liveWithTaint .reply diffDelegate (SeLe4n.CPtr.ofNat 0)
         (liveReplySpine diffDelegate diffA msg) delegated.state))
 
+/-- FO-042 (**WS-HP HP8.1**): **the operation with a donation actually on the
+stack**, and the state on which the two candidate triggers part company.
+
+FO-041 above compares the whole `.reply` operation, and through four review
+rounds not one of its halves gave the recorded server a `.donated` binding — so
+the donation pop the round-13 finding *added to this surface* has never been
+executed by a differential, on either side.  A leg that is never taken is not
+compared; that is this project's own *a witness drawn from a finding tests the
+finding*, one level in: the fixtures grew to exhibit delegation, a stale boost and
+a missing guard, and nobody went back and made the pop fire.
+
+The two halves here are the pop and its trigger.
+
+**The pop.**  The answered caller's Reply *heads* the donated context and the
+context names it back, so both surfaces resolve a holder and hand the reservation
+to the answered caller.  The controls assert the pre-state really is donating and
+the post-state really moved it — agreement between two identities would otherwise
+read exactly like agreement between two pops.
+
+**The trigger.**  `HP4` made the live operation read the answered **frame**
+(`replyFrameHeadHolder?`) where it had read the recorded server's `.donated`
+binding, and until HP8.1 this surface still read the binding.  The second half is
+a state where those two readings **disagree**: the server holds a donation and
+the answered frame heads nothing.  The retired reading would pop here; the live
+operation does not, and the frozen composite must not either.  The assertions
+name both facts, so the choice of trigger is measured rather than described —
+and that is also the mutation that decides it, since it keeps every token of the
+donation and changes only which artefact records the stack. -/
+private def differentialEndpointReplyDonationAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let rid : SeLe4n.ReplyId := ⟨506⟩
+  -- The answered caller: blocked on its reply, holding the frame, and `.unbound`
+  -- because it donated its context away at the `Call`.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server: holds the donation, runnable, and carrying the boost the
+  -- reversion must clear, so the two live steps are both observable.
+  let server : TCB := { diffTcb 63 with
+    pipBoost := some ⟨200⟩, schedContextBinding := .donated diffScId diffA }
+  -- ### Half one: the frame HEADS the context, so both sides pop.
+  let heading := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId (diffDonatedSc (some rid))
+  expect "FO-042 control: the answered frame heads the donated context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? heading.state rid == some (diffScId, diffB))
+  expect "FO-042 control: ...and the frozen surface reads the same frame"
+    (frozenReplyFrameHeadHolder? (freeze heading) rid == some (diffScId, diffB))
+  expect "FO-042 control: the recorded server starts holding the donation"
+    (match (freeze heading).getTcb? diffB with
+     | some t => t.schedContextBinding == .donated diffScId diffA
+     | none   => false)
+  expect "FO-042 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg heading.state).toOption.isSome
+  expect "FO-042 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze heading)).toOption.isSome
+  -- The pop really happened: the reservation is back on its owner and the holder
+  -- is unbound.  Asserted on the LIVE side, so the agreement below is agreement
+  -- with a pop rather than between two no-ops.
+  expect "FO-042: the live pop returns the context to the answered caller"
+    (match (liveReplySpine diffB diffA msg heading.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false) &&
+         (match post.getTcb? diffB with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-042: the frozen reply OPERATION agrees with the live one, donation and all"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze heading))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) heading.state))
+  -- ### Half two: the TRIGGERS DISAGREE.  Same donation, no stack frame.
+  let unheaded := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA })
+    diffScId (diffDonatedSc none)
+  expect "FO-042 control: the binding-driven reading FIRES here (the server is donated)"
+    (match (freeze unheaded).getTcb? diffB with
+     | some t => t.schedContextBinding == .donated diffScId diffA
+     | none   => false)
+  expect "FO-042 control: ...while the head-driven reading does NOT (no frame heads it)"
+    (SeLe4n.Kernel.replyFrameHeadHolder? unheaded.state rid == none
+      && frozenReplyFrameHeadHolder? (freeze unheaded) rid == none)
+  expect "FO-042: the live operation performs no pop on that state"
+    (match (liveReplySpine diffB diffA msg unheaded.state).toOption with
+     | some (_, post) =>
+         match post.getTcb? diffB with
+         | some t => t.schedContextBinding == .donated diffScId diffA
+         | none   => false
+     | none => false)
+  expect "FO-042: and the frozen composite follows the LIVE trigger, not the retired one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze unheaded))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) unheaded.state))
+  -- ### Half three: the RECIPIENT GUARD.  Same donation on the stack, but the
+  -- answered caller has acquired a reservation of its own while blocked, so the
+  -- pop would overwrite it.  The live pop refuses (`donationRecipientAcceptable`,
+  -- WS-HP HP4.6) and the frozen one must too — a mirror missing a live guard
+  -- succeeds where the kernel refuses, which is the direction that matters.
+  -- The guard is head-driven-specific: under the binding-driven reading the
+  -- recipient was the binding's own recorded owner, which the operation had
+  -- already seen hold nothing, so this half could not have existed before HP4.
+  let ownCaller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := .bound diffOwnScId }
+  let bound := diffAddSchedContext (diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) ownCaller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId (diffDonatedSc (some rid))) diffOwnScId diffCallerOwnSc
+  expect "FO-042 control: the trigger still fires on this state"
+    (SeLe4n.Kernel.replyFrameHeadHolder? bound.state rid == some (diffScId, diffB)
+      && frozenReplyFrameHeadHolder? (freeze bound) rid == some (diffScId, diffB))
+  expect "FO-042 control: ...and the answered caller already holds a reservation"
+    (match (freeze bound).getTcb? diffA with
+     | some t => t.schedContextBinding == .bound diffOwnScId
+     | none   => false)
+  expect "FO-042: the live pop REFUSES to overwrite it"
+    (liveReplySpine diffB diffA msg bound.state).toOption.isNone
+  expect "FO-042: and the frozen composite refuses it too, with the same error"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze bound))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) bound.state))
+  -- ### Half four: the SENTINEL HOLDER.  A SchedContext bound to thread 0 is a
+  -- malformed state no live invariant admits — and `Model.freeze` would copy one
+  -- verbatim, which is what this surface's guards exist for.  The live pop
+  -- promotes the holder through `ThreadId.toValid?` and answers
+  -- `.invalidArgument`; the frozen one refuses on `holder.isReserved`, which is
+  -- the same condition in this surface's own vocabulary (`frozenLookupTcb` is
+  -- defined by it, and `isReserved` is exactly `= sentinel`).
+  let sentinelSc : SeLe4n.Kernel.SchedContext :=
+    { diffDonatedSc (some rid) with boundThread := some ⟨0⟩ }
+  let sentinelHeld := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId sentinelSc
+  expect "FO-042 control: the trigger resolves a SENTINEL holder on both surfaces"
+    (SeLe4n.Kernel.replyFrameHeadHolder? sentinelHeld.state rid == some (diffScId, ⟨0⟩)
+      && frozenReplyFrameHeadHolder? (freeze sentinelHeld) rid == some (diffScId, ⟨0⟩))
+  expect "FO-042: the live pop refuses a sentinel holder"
+    (liveReplySpine diffB diffA msg sentinelHeld.state).toOption.isNone
+  expect "FO-042: and the frozen composite refuses it with the same error"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sentinelHeld))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) sentinelHeld.state))
+
+/-- FO-043 (**WS-HP HP8.2**): **a MIDDLE frame**, which is the only shape on which
+splicing and severing differ.
+
+HP8.2 makes the frozen removal splice, and every scenario above kept passing
+byte-identically when it did — which is the finding, not the reassurance.  A
+two-frame stack's lower frame is its *bottom*, so both policies write the same
+value into the frame above; the whole of FO-031 and FO-041/042 sits on stacks of
+depth ≤ 2, so none of them can tell a spliced removal from a severed one.  Landing
+HP8 on their evidence would have been HP5.5's gap on this surface: *a sweep for
+fixtures that would break is not a sweep for fixtures that would exercise, and
+only the second measures a flip.*
+
+**The shape.**  Three frames, bottom → cut → top, with the *cut* frame the one
+the reply answers:
+
+* `bottomRid` is the bottom: `prev = none`, `next = some (.frame midRid)`.
+* `midRid` is the answered caller's own reply object: `prev = some bottomRid`,
+  `next = some (.frame topRid)`.
+* `topRid` heads the donated context, and the context names it back.
+
+So the removal takes a frame out of the middle.  After a **splice** the top frame
+names the bottom and the bottom names the top back — the stack stays connected and
+the reservation goes on travelling outward.  After a **sever** the top frame's
+`prev` is cleared and the bottom is dropped from the stack for good, which is the
+loss WS-HP exists to close.  The two write different values at two different keys,
+so the assertions below discriminate; the last one is the mutation that decides it,
+since it spells the retired sever's own values.
+
+**No pop fires here, and that is correct.**  The cut frame heads nothing — the
+*top* frame does — so `frozenReplyFrameHeadHolder?` answers `none` and the
+donation stays where it is.  A middle reply removes a frame and moves no
+reservation, which is exactly why the removal's connectivity is the whole content
+of this scenario.
+
+**And the splice's THIRD store is not observable through the composite, which is
+why the last half asserts it on the primitive.**  Measured rather than assumed:
+with `rid.prev := none` deleted the whole suite still passes, because the
+`Reply.consumed` that follows clears the cut frame's links anyway on a frame that
+heads nothing.  So an assertion about the cut frame's `prev` taken from the
+composite's post-state is testing `consumed`, not the splice — an inert witness
+reading as coverage, which is this project's own hazard.  The store is
+load-bearing all the same (it is seL4's `reply_unlink` downward half, and without
+it the cut frame keeps a `prev` nothing names back), and it would become
+*observable* the moment `consumed` changed, so the half below drives
+`frozenSpliceReplyFrameOut` directly with no consume after it. -/
+private def differentialEndpointReplyMiddleFrameSplices : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨17⟩], caps := #[], badge := none }
+  let bottomRid : SeLe4n.ReplyId := ⟨507⟩
+  let midRid    : SeLe4n.ReplyId := ⟨508⟩
+  let topRid    : SeLe4n.ReplyId := ⟨509⟩
+  -- The answered caller holds the MIDDLE frame.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some midRid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server, holding the donation the TOP frame heads.
+  let server : TCB := { diffTcb 63 with
+    schedContextBinding := .donated diffScId diffA }
+  let chain := diffAddSchedContext (diffAddReply (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb (diffAddEndpoint mkEmptyIntermediateState diffEpId {})
+      caller) server)
+    bottomRid { replyId := bottomRid, caller := some diffDelegate,
+                next := some (.frame midRid) })
+    midRid { replyId := midRid, caller := some diffA, prev := some bottomRid,
+             next := some (.frame topRid) })
+    topRid { replyId := topRid, caller := some diffB, prev := some midRid,
+             next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some topRid) with scReply := some topRid }
+  -- The pre-state really is a three-frame stack, on both surfaces.
+  expect "FO-043 control: the cut frame sits between two others (live)"
+    (match chain.state.getReply? midRid with
+     | some r => r.prev == some bottomRid && r.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+     | none   => false)
+  expect "FO-043 control: ...and the frozen copy carries the same links"
+    (match (freeze chain).getReply? midRid with
+     | some r => r.prev == some bottomRid && r.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+     | none   => false)
+  -- The cut frame heads NOTHING: the top frame does, so no pop fires and the
+  -- removal's connectivity is the whole of what this scenario measures.
+  expect "FO-043 control: the cut frame heads no context, so no pop fires"
+    (SeLe4n.Kernel.replyFrameHeadHolder? chain.state midRid == none
+      && frozenReplyFrameHeadHolder? (freeze chain) midRid == none)
+  expect "FO-043 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg chain.state).toOption.isSome
+  expect "FO-043 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain)).toOption.isSome
+  -- **The live side really splices.**  Asserted here so the agreement below is
+  -- agreement with a splice rather than between two severs.
+  expect "FO-043: the live removal SPLICES — the top frame names the bottom"
+    (match (liveReplySpine diffB diffA msg chain.state).toOption with
+     | some (_, post) =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none
+          | none   => false)
+     | none => false)
+  -- ...and the frozen composite agrees with it, link for link.
+  expect "FO-043: the frozen removal splices the same way"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none
+          | none   => false)
+     | none => false)
+  expect "FO-043: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg (freeze chain))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) chain.state))
+  -- **NEGATIVE — the retired sever's own values**, spelled so that a revert of
+  -- HP8.2 fails here rather than passing quietly.  Under the sever the top
+  -- frame's `prev` is cleared and the bottom frame keeps naming the cut frame it
+  -- can no longer reach, which is the state that drops every frame below a cut.
+  expect "FO-043 NEGATIVE: the frozen removal does NOT sever the top frame"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         !(match post.getReply? topRid with
+           | some t => t.prev == none
+           | none   => false)
+     | none => false)
+  expect "FO-043 NEGATIVE: ...nor leaves the bottom frame naming the cut frame"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA midRid msg
+              (freeze chain)).toOption with
+     | some (_, post) =>
+         !(match post.getReply? bottomRid with
+           | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame midRid)
+           | none   => false)
+     | none => false)
+  -- ### The primitive, with no consume after it.
+  --
+  -- All three stores at once, where the composite can only show two: the cut
+  -- frame's own `prev := none` is the store `Reply.consumed` would mask, so this
+  -- is the only place a deletion of it fails.  The live counterpart is asserted
+  -- beside it, so the two are compared store for store rather than each against
+  -- its own expectation.
+  expect "FO-043: the frozen PRIMITIVE writes all three links, the cut frame's own included"
+    (match (frozenSpliceReplyFrameOut (freeze chain) midRid).toOption with
+     | some post =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false)
+     | none => false)
+  expect "FO-043: ...exactly as the live primitive does"
+    (match (SeLe4n.Kernel.spliceReplyFrameOut chain.state midRid).toOption with
+     | some post =>
+         (match post.getReply? topRid with
+          | some t => t.prev == some bottomRid
+          | none   => false) &&
+         (match post.getReply? bottomRid with
+          | some b => b.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false) &&
+         (match post.getReply? midRid with
+          | some m => m.prev == none && m.next == some (SeLe4n.Kernel.ReplyStackLink.frame topRid)
+          | none   => false)
+     | none => false)
+
+/-- FO-044 (**WS-HP HP10.8**): **the pop's recipient is the recorded ORIGIN**, on
+a state where that is not the answered caller.
+
+HP10.7 flipped the live arm and this scenario is why the frozen arm had to flip
+with it: `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true` is a
+machine-checked claim that the two programs are run beside each other, and a
+window in which the live one redirects and the mirror does not makes that claim an
+over-claim rather than a failing test — every existing scenario keeps passing,
+because none of them records an origin that differs from the answered caller.
+
+**Three halves, and the second is what makes the first decisive.**  A selector that
+fired unconditionally — handing the reservation to whatever the origin field says
+regardless of the guards — would pass a half that only checks "the origin gets
+it", so the second half fixes the origin *at* the answered caller and requires the
+identity.  That is the shape §3.9b was built against, one surface over.  The third
+(`v0.35.61`) records an origin the store does not hold and requires both surfaces
+to decline it and fall back, because both guards pass such a thread and only the
+resolver's own resolution check can be what declines it.
+
+The stack is a single frame, which is the bottom of its own stack: the redirect
+fires exactly there (`donationOriginRecipient?` answers only at
+`replyStackOuterCaller? = .ok none`), and it is the depth-2 residue's shape after
+the client's frame has been removed. -/
+private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
+  let rid : SeLe4n.ReplyId := SeLe4n.ReplyId.ofNat 71
+  let msg : IpcMessage := { registers := #[], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- The answered caller: reply-blocked on the recorded server, holding nothing.
+  let caller : TCB := { diffTcb 62 with
+    ipcState := .blockedOnReply diffEpId (some diffB), replyObject := some rid,
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- The recorded server, holding the donation.
+  let server : TCB := { diffTcb 63 with
+    schedContextBinding := .donated diffScId diffA }
+  -- **The origin**: a thread whose own frame left the stack, so it is awake, holds
+  -- nothing, and is on no stack.  Both guards admit it — which is the state the
+  -- depth-2 defect leaves behind.
+  let origin : TCB := { diffTcb 65 with
+    schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
+  -- ### Half one: the origin DIFFERS from the answered caller.
+  let redirected := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffDelegate }
+  expect "FO-044 control: the answered frame heads the donated context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? redirected.state rid == some (diffScId, diffB))
+  expect "FO-044 control: ...and it is the BOTTOM of its stack, where the redirect fires"
+    (match SeLe4n.Kernel.replyStackOuterCaller? redirected.state diffScId with
+     | .ok none => true
+     | _        => false)
+  expect "FO-044 control: the recorded origin is NOT the answered caller"
+    (!(diffDelegate == diffA))
+  -- **The live arm redirects** (HP10.7), asserted here so the agreement below is
+  -- agreement with a redirect rather than between two unredirected pops.
+  expect "FO-044: the live resolver answers the recorded origin"
+    (SeLe4n.Kernel.donationOriginRecipient? redirected.state diffScId == some diffDelegate)
+  expect "FO-044: ...and so does the frozen one"
+    (frozenDonationOriginRecipient? (freeze redirected) diffScId == some diffDelegate)
+  expect "FO-044 control: the live operation succeeds"
+    (liveReplySpine diffB diffA msg redirected.state).toOption.isSome
+  expect "FO-044 control: and so does the frozen composite"
+    (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected)).toOption.isSome
+  -- **PAYOFF**: the reservation settles on the ORIGIN, on both surfaces — not on
+  -- the answered caller, which is what stack reachability alone would name.
+  expect "FO-044: the live pop binds the context to the ORIGIN"
+    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffDelegate with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044: ...and the frozen pop binds it to the same thread"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze redirected)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffDelegate with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  -- NEGATIVE: and the answered caller does NOT receive it, on either surface.  A
+  -- mirror that ignored the origin would bind `diffA` and pass every control above.
+  expect "FO-044 NEGATIVE: the answered caller is left unbound (live)"
+    (match (liveReplySpine diffB diffA msg redirected.state).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-044 NEGATIVE: ...and unbound on the frozen surface too"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze redirected)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+          | none   => false)
+     | none => false)
+  expect "FO-044: and the whole frozen OPERATION agrees with the live one"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze redirected))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) redirected.state))
+  -- ### Half two: the origin IS the answered caller, so the redirect is the
+  -- identity.  A selector that fired unconditionally passes half one and breaks
+  -- this, which is what makes the pair decisive rather than merely green.
+  let sameOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
+  -- **The resolver DECLINES here, and that is the point.**  The answered caller is
+  -- `.blockedOnReply` at the state the resolver reads — it is waiting on this very
+  -- reply — so `donationOriginRebindable` refuses it and the recipient comes from
+  -- the FALLBACK rather than from the origin field.  The outcome is the same
+  -- thread by a different route, which is exactly what makes this half
+  -- discriminating: a selector that fired unconditionally would answer
+  -- `some diffA`, pass every outcome assertion, and fail this one.
+  expect "FO-044 half two: the resolver DECLINES a reply-blocked origin"
+    (frozenDonationOriginRecipient? (freeze sameOrigin) diffScId == none
+      && SeLe4n.Kernel.donationOriginRecipient? sameOrigin.state diffScId == none)
+  expect "FO-044 half two: ...so the recipient is the answered caller by FALLBACK, on both surfaces"
+    (SeLe4n.Kernel.replyDonationRecipient sameOrigin.state diffScId diffA == diffA
+      && frozenReplyDonationRecipient (freeze sameOrigin) diffScId diffA == diffA)
+  expect "FO-044 half two: the answered caller receives the reservation (frozen)"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze sameOrigin)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044 half two: and the operations still agree"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze sameOrigin))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) sameOrigin.state))
+  -- ### Half three (`v0.35.61`, the post-landing audit): the origin no longer
+  -- RESOLVES, so it is not a candidate on either surface.  Both guards pass a
+  -- thread with no TCB (their `_of_none` arms), so a resolver that consulted the
+  -- guards alone would name `diffStaleOrigin` and the pop's own lookup would then
+  -- refuse the whole reply -- a refusal where the design promises a fallback.
+  -- Reachable only through a stale field, which `clearDonationOriginReferences`
+  -- prevents; the differential pins the two surfaces to one reading of "stale".
+  let staleOrigin := diffAddSchedContext (diffAddReply (diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server)
+    rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
+    diffScId { diffDonatedSc (some rid) with donationOrigin := some diffStaleOrigin }
+  expect "FO-044 half three control: the recorded origin resolves to no thread on either surface"
+    ((SeLe4n.Kernel.lookupTcb staleOrigin.state diffStaleOrigin).isNone
+      && (frozenLookupTcb (freeze staleOrigin) diffStaleOrigin).isNone)
+  expect "FO-044 half three control: ...and both guards admit it, vacuously, on both surfaces"
+    (SeLe4n.Kernel.donationRecipientAcceptable staleOrigin.state diffStaleOrigin
+      && SeLe4n.Kernel.donationOriginRebindable staleOrigin.state diffStaleOrigin
+      && frozenDonationRecipientAcceptable (freeze staleOrigin) diffStaleOrigin
+      && frozenDonationOriginRebindable (freeze staleOrigin) diffStaleOrigin)
+  expect "FO-044 half three: both resolvers DECLINE a stale origin"
+    (SeLe4n.Kernel.donationOriginRecipient? staleOrigin.state diffScId == none
+      && frozenDonationOriginRecipient? (freeze staleOrigin) diffScId == none)
+  expect "FO-044 half three: ...so the reply SUCCEEDS on both surfaces (a fallback, not a refusal)"
+    ((liveReplySpine diffB diffA msg staleOrigin.state).toOption.isSome
+      && (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+            (freeze staleOrigin)).toOption.isSome)
+  expect "FO-044 half three: ...binding the reservation to the answered caller (frozen)"
+    (match (frozenEndpointReplyWithDonationReturn diffB diffA rid msg
+              (freeze staleOrigin)).toOption with
+     | some (_, post) =>
+         (match post.getTcb? diffA with
+          | some t => t.schedContextBinding == .bound diffScId
+          | none   => false)
+     | none => false)
+  expect "FO-044 half three: and the operations agree"
+    (frozenRunAgrees unitResultAgrees
+      (frozenEndpointReplyWithDonationReturn diffB diffA rid msg (freeze staleOrigin))
+      (liveWithTaint .reply diffB (SeLe4n.CPtr.ofNat 0)
+        (liveReplySpine diffB diffA msg) staleOrigin.state))
+
 /-- FO-035: **a receive that dequeues a `.blockedOnCall` caller** (PR #873
 round 17).
 
@@ -1471,6 +2033,733 @@ private def differentialRefusalsAgree : IO Unit := do
       (frozenNotificationWait missing diffA (freeze ist))
       (liveWithTaint .notificationWait diffA (SeLe4n.CPtr.ofNat 0)
         (SeLe4n.Kernel.notificationWait missing diffA) ist.state))
+
+/-- **`v0.35.59`** — the retired frozen guard, computed beside the live one.
+
+`frozenQueueRemove` refused only `tcb.queuePPrev.isNone` where
+`endpointQueueRemoveDual` refuses four things.  The spelling lives here, private
+to the witness that refutes it, so `FO-045` below is known to **discriminate**
+rather than merely to pass — the pattern WS-HP HP5.5 set and HP7 generalised. -/
+private def isNoneOnlyFrozenRemovalGuard (tcb : TCB) : Bool :=
+  !tcb.queuePPrev.isNone
+
+/-- `.illegalState`, matched rather than compared: neither removal's result type
+carries `BEq` (a `SystemState` does not), and what these scenarios are about is
+the refusal. -/
+private def refusesIllegalState {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .illegalState => true
+  | _ => false
+
+/-- `.endpointQueueEmpty`, the code the live removal answers for a thread carrying
+no `queuePPrev`.  Matched for the same reason as `refusesIllegalState`. -/
+private def refusesQueueEmpty {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .endpointQueueEmpty => true
+  | _ => false
+
+/-- FO-045 (**WS-RR RR8.5**): **the mirror refuses what the kernel refuses.**
+
+RR8.4 unified what the two removals *write* and registered what they *refuse* as
+debt: `dualQueueRemovalGuard` sat in the IPC layer, which `FrozenOps`
+deliberately does not import, so the mirror could not carry it and
+**succeeded where the kernel refuses**.  On a differential surface that is the
+direction that matters — `frozenRunAgrees` compares outcomes, so a mirror more
+permissive than its subject reports agreement on states the kernel never reaches
+and says nothing at all about the ones it declines.  RR8.5 moved the guard to
+the model beside the fields it reads, and this is the measurement that the move
+had an effect.
+
+The state is a two-member send queue whose **tail field disagrees with the
+removed thread's `queueNext`** — `diffA` is the head with no successor and is
+not the tail — which is exactly the shape RR8.4's `queueTailPairAgrees` factor
+exists to refuse, and one `intrusiveQueueWellFormed` admits (the bundle
+constrains a queue's head and its tail and relates them nowhere).
+
+Four assertions, and the last two are what make the first two mean something.
+The retired `isNone`-only guard **admits** this state while the live guard
+refuses it, so the fixture is known to sit on the side of the divergence; then
+both removals answer `.illegalState`.  Without the retired reading computed here
+the scenario would pass identically against a guard that refused everything, and
+without the control it would pass against a fixture no removal could ever
+accept. -/
+private def differentialRemovalGuardRefusalsAgree : IO Unit := do
+  -- `diffA` heads the send queue, carries `.endpointHead`, and has NO successor;
+  -- the queue's tail names `diffB`.  So the tail field and `queueNext` disagree.
+  let tcbA : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := some .endpointHead,
+        queueNext := none }
+  let tcbB : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffA,
+        queuePPrev := some (.tcbNext diffA),
+        queueNext := none }
+  let ep : Endpoint :=
+    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+  let ist := diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState tcbA) tcbB)
+    diffEpId ep
+  let q : IntrusiveQueue := ep.sendQ
+
+  -- (1) the fixture sits on the side of the divergence: the retired reading
+  -- ADMITS it, so the live guard's refusal is the thing being mirrored.
+  expect "FO-045 control: the retired isNone-only frozen guard ADMITS this state"
+    (isNoneOnlyFrozenRemovalGuard tcbA == true)
+  expect "FO-045: ...while the live guard refuses it, on the tail factor"
+    (SeLe4n.Model.dualQueueRemovalGuard q diffA tcbA .endpointHead == false)
+  expect "FO-045 control: ...and specifically the TAIL factor, the others holding"
+    ((SeLe4n.Model.queueTailPairAgrees q diffA tcbA == false)
+      && (SeLe4n.Model.queuePPrevHeadPositionAgrees q diffA .endpointHead == true))
+
+  -- (2) both removals refuse, with the same error.
+  expect "FO-045: the live dual removal refuses with .illegalState"
+    (refusesIllegalState (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA ist.state))
+  expect "FO-045: ...and the frozen mirror refuses it too, identically"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffA (freeze ist)))
+
+/-- FO-046 (**`v0.35.59`**): **the guard was one of four refusals, not the whole
+set** — the three the mirror still lacked once it carried the guard.
+
+`FO-045` measured the guard and would have passed with the other three missing,
+which is what the first attempt at this fix shipped: it carried the *named*
+condition and left its unnamed neighbours behind.  A mirror reached through a
+shared name while refusing a **subset** of the set reads exactly like agreement.
+So each half here sits on a state that passes everything the previous half checks
+and is refused by exactly one more thing — which is the only way a refusal is
+attributable to the condition it is about rather than to a guard that refuses
+everything.
+
+The three:
+
+* **Populated boundaries.**  An **empty** queue with `pprev = .tcbNext p`.  The
+  guard *passes* — `q.head ≠ some tid` holds vacuously for `none`, the link pair
+  agrees, and the tail pair agrees because `q.tail = some tid` and
+  `queueNext = none` are both false — and `endpointQueueRemoveDual` refuses it on
+  a check that had no name until `queueBoundariesEmpty`.  This is the state the
+  guard-only mirror would have removed a node from a queue that has none.
+
+* **Predecessor reciprocity.**  A queue whose second member names a predecessor
+  that does not name it back.  `dualQueueRemovalEnabled` passes; the live removal
+  refuses `.illegalState` when the resolved `prevTcb.queueNext` is not `tid`,
+  where the mirror patched it unconditionally — repairing a one-sided link the
+  kernel declines to touch.
+
+* **The error code.**  A thread with no `queuePPrev` at all.  The live removal
+  answers `.endpointQueueEmpty` and the mirror answered `.illegalState`, and
+  `frozenRunAgrees` compares codes — so this one was visible to the differential
+  and invisible only because nothing drove both sides to it. -/
+private def differentialRemovalRefusalSetAgrees : IO Unit := do
+  -- ── (1) populated boundaries: an EMPTY queue, `pprev = .tcbNext` ──
+  let tcbEmptyQ : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffB,
+        queuePPrev := some (.tcbNext diffB),
+        queueNext := some diffB }
+  let epEmpty : Endpoint := { sendQ := {}, receiveQ := {} }
+  let istEmpty := diffAddEndpoint (diffAddTcb mkEmptyIntermediateState tcbEmptyQ) diffEpId epEmpty
+  expect "FO-046 control: the guard itself ADMITS an empty queue with a .tcbNext back-pointer"
+    (SeLe4n.Model.dualQueueRemovalGuard epEmpty.sendQ diffA tcbEmptyQ (.tcbNext diffB) == true)
+  expect "FO-046: ...so it is the BOUNDARY half that refuses, not the guard"
+    ((SeLe4n.Model.queueBoundariesEmpty epEmpty.sendQ == true)
+      && (SeLe4n.Model.dualQueueRemovalEnabled epEmpty.sendQ diffA tcbEmptyQ
+            (.tcbNext diffB) == false))
+  expect "FO-046: the live dual removal refuses the empty queue"
+    (refusesIllegalState
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA istEmpty.state))
+  expect "FO-046: ...and the frozen mirror refuses it too"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffA (freeze istEmpty)))
+
+  -- ── (2) predecessor reciprocity: `prevTcb.queueNext` does not name `tid` ──
+  -- `diffA` heads the queue; `diffB` is its tail and names `diffA` as its
+  -- predecessor, but `diffA.queueNext` names nobody.  Removing `diffB` therefore
+  -- passes the whole enabling condition and fails on the predecessor's link.
+  let headNotNaming : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := some .endpointHead,
+        queueNext := none }
+  let tailNamingIt : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := some diffA,
+        queuePPrev := some (.tcbNext diffA),
+        queueNext := none }
+  let epOneSided : Endpoint :=
+    { sendQ := { head := some diffA, tail := some diffB }, receiveQ := {} }
+  let istOneSided :=
+    diffAddEndpoint (diffAddTcb (diffAddTcb mkEmptyIntermediateState headNotNaming) tailNamingIt)
+      diffEpId epOneSided
+  expect "FO-046 control: the enabling condition ADMITS the one-sided link"
+    (SeLe4n.Model.dualQueueRemovalEnabled epOneSided.sendQ diffB tailNamingIt
+      (.tcbNext diffA) == true)
+  expect "FO-046: ...and the predecessor does not name it back"
+    (SeLe4n.Model.queuePredecessorNamesSuccessor headNotNaming diffB == false)
+  expect "FO-046: the live dual removal refuses a non-reciprocating predecessor"
+    (refusesIllegalState
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffB istOneSided.state))
+  expect "FO-046: ...and the frozen mirror refuses it too"
+    (refusesIllegalState (frozenQueueRemove diffEpId false diffB (freeze istOneSided)))
+
+  -- ── (3) the error CODE on the no-back-pointer arm ──
+  let detached : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnSend diffEpId,
+        queuePrev := none,
+        queuePPrev := none,
+        queueNext := none }
+  let istDetached :=
+    diffAddEndpoint (diffAddTcb mkEmptyIntermediateState detached) diffEpId
+      { sendQ := { head := some diffA, tail := some diffA }, receiveQ := {} }
+  expect "FO-046: the live removal answers .endpointQueueEmpty for no back-pointer"
+    (refusesQueueEmpty
+      (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId false diffA istDetached.state))
+  expect "FO-046: ...and so does the frozen mirror, which answered .illegalState"
+    (refusesQueueEmpty (frozenQueueRemove diffEpId false diffA (freeze istDetached)))
+
+/-- **The retired frozen neighbour reading**, computed beside the live one.
+
+The three queue primitives resolved their *neighbours* with the bare store read
+while resolving their *principal* through `frozenLookupTcb` two lines above.  The
+spelling lives here, private to the witness that refutes it, so FO-049 is known
+to **discriminate** rather than merely to pass: on the states below this answers
+`some` and `frozenLookupTcb` answers `none`, which is the whole of the
+divergence. -/
+private def rawFrozenNeighbourRead (st : FrozenSystemState) (t : SeLe4n.ThreadId)
+    : Option TCB :=
+  st.getTcb? t
+
+/-- `.objectNotFound`, matched rather than compared, for the reason
+`refusesIllegalState` above is. -/
+private def refusesObjectNotFound {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .objectNotFound => true
+  | _ => false
+
+/-- The queue links a TCB carries, as a triple the two surfaces can be compared
+on.  `IntrusiveQueue` membership is what these halves are about, and reading the
+three fields is what says *which* of them moved. -/
+private def frozenLinksOf (st : FrozenSystemState) (t : SeLe4n.ThreadId)
+    : Option (Option SeLe4n.ThreadId × Option QueuePPrev × Option SeLe4n.ThreadId) :=
+  (st.getTcb? t).map (fun tcb => (tcb.queuePrev, tcb.queuePPrev, tcb.queueNext))
+
+private def liveLinksOf (st : SystemState) (t : SeLe4n.ThreadId)
+    : Option (Option SeLe4n.ThreadId × Option QueuePPrev × Option SeLe4n.ThreadId) :=
+  (st.getTcb? t).map (fun tcb => (tcb.queuePrev, tcb.queuePPrev, tcb.queueNext))
+
+/-- FO-049 (**PR #897 review, and the sweep it opened**): **the frozen queue
+primitives resolve and write their NEIGHBOURS as the live ones do.**
+
+Four halves, and the fourth is the one no review reported.
+
+`frozenQueuePushTail` and `frozenQueueRemove` resolve the thread they are *about*
+through `frozenLookupTcb`, which refuses a reserved id exactly as the live
+`lookupTcb` does.  Their **neighbours** — the queue's tail on an enqueue, the
+predecessor and successor on a removal — were read with the bare `getTcb?`, so a
+queue whose neighbour sits at `ThreadId.sentinel` was accepted here and refused
+by `endpointQueueEnqueue` / `endpointQueueRemoveDual`.  A mirror that succeeds
+where the kernel refuses is the direction that matters on a differential
+surface: `frozenRunAgrees` compares outcomes, so it certifies agreement on
+states the kernel never reaches and says nothing about the states that
+distinguish them.
+
+The **fourth** half is structural rather than a refusal, and it is worse.
+`frozenQueuePopHead` wrote no successor patch at all, where the live
+`endpointQueuePopHead` promotes the successor to head
+(`storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext`).
+The thread the pop *makes* the head therefore went on naming the popped thread
+as its predecessor — which fails `intrusiveQueueWellFormed`'s P2 and, because
+`dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees` factor reads exactly
+that pair, made **every later removal of it `.illegalState`**: stranded in the
+queue for good.  That is the OD1.1 / OD3.9 class — *a removal that writes one of
+a node's two back-pointers and not the other* — arriving on the surface that has
+no theorems to catch it, and it needs no hand-built state: one ordinary
+`frozenEndpointSend` rendezvous into a **two**-deep receive queue produces it.
+
+Every existing scenario pops from a one-deep queue, where there is no successor
+and the two programs agree by construction.  That is FO-043's lesson on a
+different primitive: *a sweep for fixtures that would break is not a sweep for
+fixtures that would exercise, and only the second measures a flip.*
+
+**Every half runs through the ordinary builder.**  This scenario's first draft
+built the first three by hand, on the asserted ground that `Builder.createObject`
+would not elaborate at a reserved `ObjId`; measured, it does — only
+`BootstrapBuilder.withObject` refuses the slot, and the draft had generalised
+from that.  Building each half as one `IntermediateState` is strictly stronger:
+the state is reachable through the tree's own construction path, and the live and
+frozen views are that state and its own `freeze` rather than two stores assembled
+side by side, whose schedulers would not even correspond. -/
+private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨41⟩], caps := #[], badge := none }
+  let sentinelTid : SeLe4n.ThreadId := SeLe4n.ThreadId.sentinel
+  let epId : SeLe4n.ObjId := ⟨70⟩
+  let mover : SeLe4n.ThreadId := ⟨71⟩
+  let parked (t : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId)
+      (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId) : TCB :=
+    { diffTcb t.toNat with
+        ipcState := .blockedOnSend epId,
+        pendingMessage := some msg,
+        queuePrev := prev, queuePPrev := pprev, queueNext := next }
+  -- One `IntermediateState` per half, through the **ordinary builder**, so each
+  -- is the live state and its own freeze rather than two stores built side by
+  -- side.  `Builder.createObject` accepts a reserved `ObjId` — measured rather
+  -- than assumed, and the opposite of this scenario's first draft, which had
+  -- asserted that it would not elaborate there and built both views by hand.
+  -- (`BootstrapBuilder.withObject` really does refuse the slot, which is what
+  -- that draft had generalised from.)  So the shapes below are reachable through
+  -- the tree's own construction path, and `freeze` derives the frozen scheduler
+  -- from the same state the live side carries — a hand-built pair cannot say
+  -- that, and its two schedulers would differ.
+
+  -- ── (1) the ENQUEUE's tail neighbour ──
+  let aIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId
+      { sendQ := { head := some sentinelTid, tail := some sentinelTid }, receiveQ := {} })
+    (parked sentinelTid none (some .endpointHead) none))
+    { diffTcb mover.toNat with ipcState := .ready }
+  expect "FO-049 control: the store really holds a TCB at the sentinel slot"
+    ((rawFrozenNeighbourRead (freeze aIst) sentinelTid).isSome
+      && (aIst.state.getTcb? sentinelTid).isSome)
+  expect "FO-049 control: ...and BOTH guarded readers refuse it"
+    ((frozenLookupTcb (freeze aIst) sentinelTid).isNone
+      && (SeLe4n.Kernel.lookupTcb aIst.state sentinelTid).isNone)
+  expect "FO-049: the live enqueue refuses a sentinel TAIL"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueEnqueue epId false mover aIst.state))
+  expect "FO-049: ...and so does the frozen enqueue, which ACCEPTED it"
+    (refusesObjectNotFound (frozenQueuePushTail epId false mover (freeze aIst)))
+
+  -- ── (2) the REMOVAL's predecessor ──
+  let bEp : Endpoint :=
+    { sendQ := { head := some sentinelTid, tail := some mover }, receiveQ := {} }
+  let bMover : TCB := parked mover (some sentinelTid) (some (.tcbNext sentinelTid)) none
+  let bIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId bEp)
+    (parked sentinelTid none (some .endpointHead) (some mover))) bMover
+  expect "FO-049 control: the removal's enabling condition ADMITS the predecessor shape"
+    (SeLe4n.Model.dualQueueRemovalEnabled bEp.sendQ mover bMover (.tcbNext sentinelTid))
+  expect "FO-049: the live removal refuses a sentinel PREDECESSOR"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueRemoveDual epId false mover bIst.state))
+  expect "FO-049: ...and so does the frozen removal, which ACCEPTED that predecessor"
+    (refusesObjectNotFound (frozenQueueRemove epId false mover (freeze bIst)))
+
+  -- ── (3) the REMOVAL's successor ──
+  let cEp : Endpoint :=
+    { sendQ := { head := some mover, tail := some sentinelTid }, receiveQ := {} }
+  let cMover : TCB := parked mover none (some .endpointHead) (some sentinelTid)
+  let cIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId cEp) cMover)
+    (parked sentinelTid (some mover) (some (.tcbNext mover)) none)
+  expect "FO-049 control: ...and the successor shape too, so neither is a guard refusal"
+    (SeLe4n.Model.dualQueueRemovalEnabled cEp.sendQ mover cMover .endpointHead)
+  expect "FO-049: the live removal refuses a sentinel SUCCESSOR"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueRemoveDual epId false mover cIst.state))
+  expect "FO-049: ...and so does the frozen removal, which ACCEPTED that successor"
+    (refusesObjectNotFound (frozenQueueRemove epId false mover (freeze cIst)))
+
+  -- ── (4) the POP promotes its successor ──
+  --
+  -- No **sentinel** either: three ordinary thread ids and one rendezvous, which
+  -- is what makes this half the severe one.  The three above need a reserved id
+  -- in the store; this one needs only a receive queue two deep.
+  let recvHead : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnReceive diffEpId,
+        queuePrev := none, queuePPrev := some .endpointHead, queueNext := some diffB }
+  let recvNext : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnReceive diffEpId,
+        queuePrev := some diffA, queuePPrev := some (.tcbNext diffA), queueNext := none }
+  let twoDeep : Endpoint :=
+    { sendQ := {}, receiveQ := { head := some diffA, tail := some diffB } }
+  let ist := diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId twoDeep)
+    recvHead) recvNext) { diffTcb 65 with ipcState := .ready }
+  let behindTheHead := some (some diffA, some (QueuePPrev.tcbNext diffA), none)
+  let promotedToHead := some ((none : Option SeLe4n.ThreadId),
+    some QueuePPrev.endpointHead, (none : Option SeLe4n.ThreadId))
+  expect "FO-049 control: the successor names the head it sits behind, on both surfaces"
+    (liveLinksOf ist.state diffB == behindTheHead
+      && frozenLinksOf (freeze ist) diffB == behindTheHead)
+  let liveSent := SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate msg ist.state
+  let frozenSent := frozenEndpointSend diffEpId diffDelegate msg (freeze ist)
+  expect "FO-049 control: the rendezvous succeeds on both surfaces"
+    (liveSent.toOption.isSome && frozenSent.toOption.isSome)
+  expect "FO-049: the live pop PROMOTES the successor to head"
+    ((liveSent.toOption.map (fun p => liveLinksOf p.2 diffB)) == some promotedToHead)
+  expect "FO-049: ...and so does the frozen pop, which promoted NOTHING"
+    ((frozenSent.toOption.map (fun p => frozenLinksOf p.2 diffB)) == some promotedToHead)
+  expect "FO-049 DIFFERENTIAL: the whole post-rendezvous state agrees, links included"
+    (frozenRunAgrees unitResultAgrees frozenSent
+      (liveWithTaint .send diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate msg) ist.state))
+  -- The PAYOFF: the promoted head is dequeueable.  Before the fix the frozen
+  -- side answered `.illegalState` here for good, which is the consequence the
+  -- link comparison above only implies.
+  expect "FO-049 PAYOFF: a later removal of the promoted head succeeds on both surfaces"
+    ((match liveSent with
+      | .ok (_, post) =>
+          (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId true diffB post).toOption.isSome
+      | .error _ => false)
+     && (match frozenSent with
+         | .ok (_, post) => (frozenQueueRemove diffEpId true diffB post).toOption.isSome
+         | .error _ => false))
+
+/-- FO-047 (**PR #897 review**): **the frozen bind and unbind clear the
+reservation's recorded origin, and the bind refuses what the live bind refuses.**
+
+`SchedContext.donationOrigin` is a field of the **live** record, and `freeze`
+copies a live state's SchedContexts verbatim, so a frozen state taken mid-chain
+really carries one.  WS-HP HP10.4 landed the field's clears on the live side at
+three sites -- `schedContextBind` and both arms of `schedContextUnbind` -- and the
+frozen mirrors kept the history the kernel erases, so
+`frozenDonationOriginRecipient?` could still name a thread whose loan had ended
+and hand it a later bottom-of-stack return.  *A field added to a shared record is
+a sweep of both surfaces.*
+
+The **payoff** half is the assertion worth having: the field is only interesting
+because a resolver reads it, so the control establishes that the resolver names
+the recorded origin before the operation and the payoff that it names nobody
+after.  Asserting the field alone would pass against a mirror whose resolver had
+drifted instead.
+
+The **refusal** halves are the sweep the origin fix owed.  The live bind refuses
+four things; this mirror refused one, so on three concrete states it *succeeded
+where the kernel refuses*.  Each half is paired with a control establishing that
+the live side really refuses, so a shared success cannot read as agreement. -/
+private def differentialSchedContextBindClearsOrigin : IO Unit := do
+  -- The reservation: unbound, heading no stack, carrying an origin from a loan
+  -- that has ended.  `diffB` is stored and `.unbound`, so it passes both of
+  -- `frozenDonationOriginRecipient?`'s guards and the resolver really fires.
+  let scWithOrigin : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := none, donationOrigin := some diffB,
+      isActive := false }
+  let ist := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    diffScId scWithOrigin
+  expect "FO-047 control: the frozen reservation starts with a recorded origin"
+    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
+  expect "FO-047 control: ...and the resolver would redirect a bottom-of-stack return to it"
+    (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? (freeze ist) diffScId
+      == some diffB)
+  expect "FO-047 control: the live bind succeeds on the counterpart state"
+    (liveSchedContextBindState ist.state diffScId diffA).isSome
+  expect "FO-047 control: and so does the frozen bind"
+    (frozenSchedContextBind diffScId.toObjId diffA (freeze ist)).toOption.isSome
+  expect "FO-047: the live bind clears the origin"
+    ((liveSchedContextBindState ist.state diffScId diffA).bind
+      (originOf · diffScId) == some none)
+  expect "FO-047: ...and so does the frozen bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => frozenOriginOf st' diffScId == some none
+     | .error _ => false)
+  expect "FO-047 PAYOFF: ...so the frozen resolver names nobody after the bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') =>
+         (SeLe4n.Kernel.FrozenOps.frozenDonationOriginRecipient? st' diffScId).isNone
+     | .error _ => false)
+  -- **AK2-B**: and the SchedContext's priority reaches the bound TCB, as it does
+  -- live.  Without it every frozen post-bind state falsified
+  -- `boundThreadPriorityConsistent`.
+  expect "FO-047: the frozen bind propagates the reservation's priority to the TCB"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => (st'.getTcb? diffA).map (·.priority) == some ⟨40⟩
+     | .error _ => false)
+  expect "FO-047 control: ...which is the priority the live bind writes too"
+    ((liveSchedContextBindState ist.state diffScId diffA).bind
+      (fun st => (st.getTcb? diffA).map (·.priority)) == some ⟨40⟩)
+  -- **`v0.35.101`: and the bound thread's run-queue BUCKET moves with it.**
+  --
+  -- The eight assertions above all passed while the mirror left `diffA` in
+  -- bucket `0`, which is the shape this suite has now recorded three times: a
+  -- scenario that asserts only what it set out to measure cannot see a
+  -- divergence one field over.  `diffA` is `.ready`, so `diffAddTcb` queues it
+  -- at its TCB priority `0`; the bind propagates the reservation's `40`, and the
+  -- live Z5-G3 step re-buckets there while the frozen mirror wrote the field and
+  -- stopped -- so `frozenChooseThread`, which folds `byPriority`, went on
+  -- ordering the thread at the band the bind had just left.
+  --
+  -- `frozenStateAgrees` compares the buckets **as lists at every key either side
+  -- holds**, so `frozenRunAgrees` over the whole operation is the decisive
+  -- assertion and the per-bucket ones below are what name the offending key when
+  -- it breaks.
+  expect "FO-047 control: diffA starts in bucket 0, its TCB priority"
+    (((freeze ist).scheduler.byPriority.get? ⟨0⟩).getD [] == [diffA, diffB])
+  expect "FO-047: the live bind moves diffA into bucket 40"
+    ((liveSchedContextBindState ist.state diffScId diffA).map
+      (fun st => (st.scheduler.runQueueOnCore bootCoreId).byPriority[(⟨40⟩ : SeLe4n.Priority)]?.getD [])
+      == some [diffA])
+  expect "FO-047 PAYOFF: ...and so does the frozen bind"
+    (match frozenSchedContextBind diffScId.toObjId diffA (freeze ist) with
+     | .ok (_, st') => ((st'.scheduler.byPriority.get? ⟨40⟩).getD [] == [diffA])
+                         && ((st'.scheduler.byPriority.get? ⟨0⟩).getD [] == [diffB])
+     | .error _ => false)
+  expect "FO-047 DIFFERENTIAL: the two post-bind states agree, buckets included"
+    (frozenRunAgrees unitResultAgrees
+      (frozenSchedContextBind diffScId.toObjId diffA (freeze ist))
+      (do
+        let vSc ← match diffScId.toObjId.toValid? with
+                  | some v => pure v
+                  | none => throw KernelError.invalidArgument
+        let vTid ← match diffA.toValid? with
+                   | some v => pure v
+                   | none => throw KernelError.invalidArgument
+        SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid ist.state))
+
+/-- FO-047b: the unbind half — both arms of the live unbind clear the origin. -/
+private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
+  let boundTcb : TCB :=
+    { diffTcb 62 with
+      priority := ⟨40⟩,
+      schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId }
+  let scBoundWithOrigin : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := some diffA, scReply := none, donationOrigin := some diffB,
+      isActive := true }
+  let ist := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState boundTcb) (diffTcb 63))
+    diffScId scBoundWithOrigin
+  expect "FO-047b control: the frozen reservation starts with a recorded origin"
+    (frozenOriginOf (freeze ist) diffScId == some (some diffB))
+  expect "FO-047b control: the live unbind succeeds on the counterpart state"
+    (liveSchedContextUnbindState ist.state diffScId).isSome
+  expect "FO-047b control: and so does the frozen unbind"
+    (frozenSchedContextUnbind diffScId.toObjId (freeze ist)).toOption.isSome
+  expect "FO-047b: the live unbind clears the origin"
+    ((liveSchedContextUnbindState ist.state diffScId).bind
+      (originOf · diffScId) == some none)
+  expect "FO-047b: ...and so does the frozen unbind"
+    (match frozenSchedContextUnbind diffScId.toObjId (freeze ist) with
+     | .ok (_, st') => frozenOriginOf st' diffScId == some none
+     | .error _ => false)
+
+/-- FO-047c: the three refusals the frozen bind did not carry.
+
+Each half drives a state the live bind refuses and asserts the frozen mirror
+refuses it **with the same error code**, beside a control establishing that the
+live side really refuses rather than both sides sharing a success. -/
+private def differentialSchedContextBindRefusalsAgree : IO Unit := do
+  let errOf {α : Type} : Except KernelError α → Option KernelError
+    | .ok _ => none
+    | .error e => some e
+  let frozenErr (r : Except KernelError (Unit × FrozenSystemState)) : Option KernelError :=
+    match r with | .ok _ => none | .error e => some e
+  let liveErr (st : SystemState) : Option KernelError :=
+    match diffScId.toObjId.toValid?, diffA.toValid? with
+    | some vSc, some vTid =>
+        errOf (SeLe4n.Kernel.SchedContextOps.schedContextBind vSc vTid st)
+    | _, _ => none
+  -- (1) the reservation heads a reply stack.
+  let headRid : SeLe4n.ReplyId := ⟨70⟩
+  let headReply : SeLe4n.Kernel.Reply :=
+    { replyId := headRid, caller := some diffB, next := some (.head diffScId) }
+  let scHeading : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := some headRid, isActive := false }
+  let istHeading := diffAddSchedContext (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+    headRid headReply) diffScId scHeading
+  expect "FO-047c control: the live bind refuses a reservation heading a stack"
+    (liveErr istHeading.state == some KernelError.illegalState)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istHeading))
+      == some KernelError.illegalState)
+  -- (2) the thread's domain differs from the reservation's.
+  let otherDomainTcb : TCB := { diffTcb 62 with domain := ⟨1⟩ }
+  let scDomainZero : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := none, isActive := false }
+  let istDomain := diffAddSchedContext
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState otherDomainTcb) (diffTcb 63))
+    diffScId scDomainZero
+  expect "FO-047c control: the live bind refuses a cross-domain bind"
+    (liveErr istDomain.state == some KernelError.invalidArgument)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istDomain))
+      == some KernelError.invalidArgument)
+  -- (3) the thread's own reply frame is on a LIVE stack — reciprocated, so the
+  -- pop that reaches it will write this thread's binding.
+  let ownRid : SeLe4n.ReplyId := ⟨71⟩
+  let aboveRid : SeLe4n.ReplyId := ⟨72⟩
+  let ownReply : SeLe4n.Kernel.Reply :=
+    { replyId := ownRid, caller := some diffA, next := some (.frame aboveRid) }
+  let aboveReply : SeLe4n.Kernel.Reply :=
+    { replyId := aboveRid, caller := some diffB, prev := some ownRid }
+  let owedTcb : TCB :=
+    { diffTcb 62 with
+      replyObject := some ownRid,
+      ipcState := .blockedOnReply diffEpId diffB }
+  let istOwed := diffAddSchedContext (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState owedTcb) (diffTcb 63))
+    ownRid ownReply) aboveRid aboveReply) diffScId scDomainZero
+  expect "FO-047c control: the frame above really answers this one (a LIVE stack)"
+    (SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istOwed) owedTcb)
+  expect "FO-047c control: the live bind refuses a thread owed a context"
+    (liveErr istOwed.state == some KernelError.illegalState)
+  expect "FO-047c: ...and the frozen bind refuses it identically"
+    (frozenErr (frozenSchedContextBind diffScId.toObjId diffA (freeze istOwed))
+      == some KernelError.illegalState)
+  -- ...and the NEGATIVE that keeps the guard from degenerating into "any reply
+  -- link refuses": a frame whose upward link nothing answers is owed nothing, and
+  -- binding it is an operation both sides support.
+  let staleTcb : TCB :=
+    { diffTcb 62 with
+      replyObject := some ownRid,
+      ipcState := .blockedOnReply diffEpId diffB }
+  let staleAbove : SeLe4n.Kernel.Reply := { replyId := aboveRid, caller := some diffB }
+  let istStale := diffAddSchedContext (diffAddReply (diffAddReply
+    (diffAddTcb (diffAddTcb mkEmptyIntermediateState staleTcb) (diffTcb 63))
+    ownRid ownReply) aboveRid staleAbove) diffScId scDomainZero
+  expect "FO-047c control: a stale upward link is NOT a live stack"
+    (!(SeLe4n.Kernel.FrozenOps.frozenReplyFrameOnLiveStack (freeze istStale) staleTcb))
+  -- SUCCESS on both sides, not "no error": `liveErr` answers `none` for an
+  -- unpromotable id as well as for an accepted bind, so the weaker form could
+  -- pass on a fixture the live operation never ran at all.
+  expect "FO-047c NEGATIVE: both sides ADMIT a thread whose frame is off every stack"
+    ((liveSchedContextBindState istStale.state diffScId diffA).isSome
+      && (frozenSchedContextBind diffScId.toObjId diffA (freeze istStale)).toOption.isSome)
+
+/-- **The live `schedContextConfigure`, in the `Option SystemState` shape the
+SchedContext scenarios compare.**  `none` is "did not run" -- an unpromotable id
+or a refusal -- so every consumer pairs its assertion with a control asserting
+`isSome`, as the bind and unbind drivers above do. -/
+private def liveSchedContextConfigureState (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (budget period priority deadline domain : Nat) :
+    Option SystemState := do
+  let vSc ← scId.toObjId.toValid?
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure vSc budget period priority
+          deadline domain st with
+  | .ok (_, st') => some st'
+  | .error _ => none
+
+/-- **The reading `v0.35.105` retired**, spelled here and nowhere else: one gate
+over *both* thread-owned parameters, feeding the re-bucketing writer.  Computed
+beside the live operation in FO-048 so the assertions there are known to
+discriminate rather than merely to pass -- a fixture on which the two readings
+agree would make the whole scenario a statement about the fixture. -/
+private def fusedGateConfigurePropagate (st : FrozenSystemState)
+    (scId : SeLe4n.ObjId) (boundTid : SeLe4n.ThreadId) (priority domain : Nat) :
+    Option FrozenSystemState :=
+  match frozenLookupTcb st boundTid with
+  | none => some st
+  | some boundTcb =>
+    if boundTcb.schedContextBinding.ownScId? != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
+      some st
+    else
+      let boundTcb2 : TCB := { boundTcb with priority := ⟨priority⟩, domain := ⟨domain⟩ }
+      if boundTcb2.priority == boundTcb.priority && boundTcb2.domain == boundTcb.domain then
+        some st
+      else (frozenWriteTcbRebucketed st boundTid boundTcb2).toOption
+
+/-- FO-048 (PR #897 review, `v0.35.105`): **a DOMAIN-ONLY reconfiguration must not
+move the bound thread within its bucket.**
+
+`schedContextConfigureBoundPropagate` is two independently gated writes -- a
+priority half that re-buckets and a domain half that writes in place -- and
+`v0.35.101`'s mirror fused them into one gate over their union feeding
+`frozenWriteTcbRebucketed`.  `RunQueue.insert` appends, so on a domain-only
+reconfigure the queued bound thread moved to its bucket's **tail** at an unchanged
+key while the live operation left it where it was.
+
+**Why a same-priority PEER is the fixture.**  With one thread in the bucket a
+remove-and-reinsert is the identity, so every earlier scenario -- each of which
+parks its actors at one priority and rarely queues two of them -- structurally
+could not see this.  Two threads in one bucket is the shallowest shape on which
+"the thread stayed where it was" is a proposition at all, and it is what
+`frozenChooseThread` reads: it folds the bucket in order, so the two orders name
+different next threads.
+
+**Four combinations, because the gates are two.**  Neither parameter moved (no
+write at all), domain only (the defect), priority only (the re-bucket that must
+*survive* the fix -- a mirror that simply stopped re-bucketing would pass the
+first two and break this), and both.  Each is compared whole with
+`frozenStateAgrees`, not field by field: the divergence this scenario exists for
+is in the run queue, which no per-object assertion about the TCB would have
+reached -- FO-044's lesson, one operation over.
+
+`.schedContextConfigure` is not a `FrozenOpBranch`, so no `frozenRunAgrees`
+scenario could have reached this operation at all; that is the measurement
+`v0.35.96` recorded for the bind's missing refusals, holding again. -/
+private def differentialSchedContextConfigureDomainOnlyKeepsOrder : IO Unit := do
+  let cfgScId : SeLe4n.SchedContextId := diffScId
+  let boundTcb : TCB :=
+    { diffTcb 62 with schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound cfgScId }
+  let peerTcb : TCB := diffTcb 63
+  let cfgSc : SeLe4n.Kernel.SchedContext :=
+    { scId := cfgScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨0⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
+      replenishments := [{ amount := ⟨100⟩, eligibleAt := 1000 }],
+      boundThread := some diffA }
+  let ist := diffAddTcb (diffAddTcb
+    (diffAddSchedContext mkEmptyIntermediateState cfgScId cfgSc) boundTcb) peerTcb
+  let liveAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
+    (liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom).map
+      (fun st => (st.scheduler.runQueueOnCore bootCoreId).atPriority ⟨at_⟩)
+  let frozenAt (prio dom at_ : Nat) : Option (List SeLe4n.ThreadId) :=
+    (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption.map
+      (fun r => (r.2.scheduler.byPriority.get? ⟨at_⟩).getD [])
+  let agreesAt (prio dom : Nat) : Bool :=
+    match liveSchedContextConfigureState ist.state cfgScId 100 1000 prio 0 dom,
+          (frozenSchedContextConfigure cfgScId.toObjId 100 1000 prio 0 dom (freeze ist)).toOption with
+    | some l, some f => frozenStateAgrees f.2 l
+    | _, _ => false
+  -- CONTROLS: both actors really are in one bucket, in this order, before anything
+  -- runs -- and the frozen copy of the pre-state agrees, so a divergence below is
+  -- the operation's and not the freeze's.
+  expect "FO-048 control: the bound thread and its peer share a bucket, in this order"
+    ((ist.state.scheduler.runQueueOnCore bootCoreId).atPriority ⟨0⟩ == [diffA, diffB])
+  expect "FO-048 control: the frozen copy of the pre-state agrees"
+    (frozenStateAgrees (freeze ist) ist.state)
+  expect "FO-048 control: the live domain-only reconfigure runs"
+    ((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).isSome)
+  -- PAYOFF: a domain-only reconfigure leaves the bucket untouched on both sides.
+  expect "FO-048: the live domain-only reconfigure leaves the bucket order alone"
+    (liveAt 0 1 0 == some [diffA, diffB])
+  expect "FO-048: ...and so does the frozen one"
+    (frozenAt 0 1 0 == some [diffA, diffB])
+  expect "FO-048: ...and the two states agree whole"
+    (agreesAt 0 1)
+  -- DECISIVE: the retired fused reading, on this same state, moves the thread to
+  -- the bucket's tail.  Without this the three assertions above would pass on a
+  -- mirror that had never been wrong.
+  expect "FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail"
+    ((fusedGateConfigurePropagate (freeze ist) cfgScId.toObjId diffA 0 1).map
+       (fun st => (st.scheduler.byPriority.get? (⟨0⟩ : SeLe4n.Priority)).getD [])
+       == some [diffB, diffA])
+  -- ...and the domain really did move, so the half that must write still writes.
+  expect "FO-048: the bound thread's domain moved on both surfaces"
+    (((liveSchedContextConfigureState ist.state cfgScId 100 1000 0 0 1).bind
+        (fun st => (st.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1)
+      && ((frozenSchedContextConfigure cfgScId.toObjId 100 1000 0 0 1 (freeze ist)).toOption.bind
+        (fun r => (r.2.getTcb? diffA).map (fun (t : TCB) => t.domain.val)) == some 1))
+  -- CONTROL on the other gate: a PRIORITY-only reconfigure must still re-bucket.
+  -- A mirror that answered the payoff by never re-bucketing passes everything
+  -- above and fails here, which is what makes the fix a narrowing rather than a
+  -- removal.
+  expect "FO-048 control: a priority-only reconfigure re-buckets on the live side"
+    (liveAt 5 0 5 == some [diffA] && liveAt 5 0 0 == some [diffB])
+  expect "FO-048 control: ...and identically on the frozen side"
+    (frozenAt 5 0 5 == some [diffA] && frozenAt 5 0 0 == some [diffB])
+  expect "FO-048: ...and those two states agree whole"
+    (agreesAt 5 0)
+  -- ...and the two remaining combinations of the two gates.
+  expect "FO-048: neither parameter moved — no write, and the states agree"
+    (liveAt 0 0 0 == some [diffA, diffB] && frozenAt 0 0 0 == some [diffA, diffB]
+      && agreesAt 0 0)
+  expect "FO-048: both parameters moved — both effects, and the states agree"
+    (liveAt 5 1 5 == some [diffA] && frozenAt 5 1 5 == some [diffA] && agreesAt 5 1)
 
 /-- FO-036: **a send naming a thread that does not exist** (PR #873 round 17).
 
@@ -1620,10 +2909,24 @@ Kept as its own list because it backs its own claim: the leg list above answers
 `frozenBranchOperationChecked`, and merging them would let a leg scenario
 satisfy an operation claim -- which is exactly the substitution that let
 "reply: checked" stand while the frozen composite was missing three of the live
-operation's steps in three consecutive review rounds. -/
+operation's steps in three consecutive review rounds.
+
+A **relation**, not a map: a branch may carry more than one scenario, and
+`.endpointReplyToBlockedCaller` carries three because they answer different
+questions about the same claim.  FO-041 exercises the operation's shape (the
+revert, the guard, a delegated cap holder) on states carrying no donation; FO-042
+(WS-HP HP8.1) exercises the donation pop itself and the state on which the two
+candidate triggers disagree; FO-043 (WS-HP HP8.2) exercises the *removal* on a
+**middle** frame, the only shape on which splicing and severing differ — every
+other scenario here sits on a stack of depth ≤ 2, where both policies write the
+same value and neither can tell them apart.  Both reconciliation directions below
+are set containment, so a further row adds coverage and claims nothing extra. -/
 private def operationDifferentialScenarios :
     List (SeLe4n.Kernel.FrozenOps.FrozenOpBranch × IO Unit) :=
-  [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees) ]
+  [ (.endpointReplyToBlockedCaller,     differentialEndpointReplyOperationAgrees),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyDonationAgrees),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyMiddleFrameSplices),
+    (.endpointReplyToBlockedCaller,     differentialEndpointReplyRedirectsToOrigin) ]
 
 /-- The claim and the scenarios name the same syscalls, in both directions: a
 scenario for a syscall the table does not claim, or a claim with no scenario,
@@ -1730,6 +3033,13 @@ def main : IO Unit := do
   operationDifferentialScenarios.forM (fun s => s.2)
   differentialTaintedSignalAgrees
   differentialRefusalsAgree
+  differentialRemovalGuardRefusalsAgree
+  differentialRemovalRefusalSetAgrees
+  differentialQueueNeighbourResolutionAgrees
+  differentialSchedContextBindClearsOrigin
+  differentialSchedContextUnbindClearsOrigin
+  differentialSchedContextBindRefusalsAgree
+  differentialSchedContextConfigureDomainOnlyKeepsOrder
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that
   -- stood here read "33 scenarios" against 40 distinct `FO-` ids and 34 runner

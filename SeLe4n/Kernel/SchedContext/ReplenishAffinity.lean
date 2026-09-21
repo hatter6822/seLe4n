@@ -180,6 +180,75 @@ theorem replenishQueueAffinityConsistentOnCore_transfer (st base : SystemState) 
     exact hCons scId t (hSub _ hMem) scS hB tid
       (by rw [← Option.some.inj hMapEq]; exact hTid)
 
+
+/-- WS-SM SM5.H.5: the SMP form's congruence — the per-core congruence at every
+core.  A migration's destination is chosen per state, so a consumer that must
+transport the whole-state invariant across a step writing neither replenish
+queues nor objects-read-through-`getSchedContext?`/`determineTargetCore` reaches
+for this rather than iterating the per-core form by hand. -/
+theorem replenishQueueAffinityConsistent_smp_congr {st st' : SystemState}
+    (hRepl : ∀ c, st'.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c)
+    (hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId)
+    (hTgt : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid) :
+    replenishQueueAffinityConsistent_smp st' ↔ replenishQueueAffinityConsistent_smp st :=
+  ⟨fun h c => (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mp (h c),
+   fun h c => (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mpr (h c)⟩
+
+/-- **WS-RR RR8.11: the core a scheduling context's replenishments must sit on.**
+
+This is `replenishQueueAffinityConsistentOnCore`'s own reading, made a function:
+the invariant demands of every entry naming `scId` that the home of `scId`'s
+**bound thread** be the entry's core, so that home *is* the destination any
+migration of `scId` must aim at.  `fallback` answers the two shapes on which the
+invariant constrains nothing — the context resolving to no object, and a context
+bound to no thread — where the antecedent `sc.boundThread = some tid` is
+unsatisfiable, so no entry can distinguish the choices.
+
+**Why a migration reads this rather than the thread it expects to rebind to.**
+A caller that knows which thread it is *about* to bind `scId` to can pass that
+thread's home, and that is right exactly when the rebind commits.  Where the
+rebinding step can refuse — the cancellation reclaim, whose guards are fail-closed
+(WS-RR RR8.11) — the expected thread is a **proxy** for the bound thread and the
+proxy is wrong on precisely the refused states: the migration then moves entries
+to a core no thread bound to `scId` is homed on, which is the invariant's own
+negation.  Reading the fact instead makes the refused case a *self*-migration,
+which `migrateSchedContextReplenishment_noop` collapses to the identity, and makes
+the destination obligation (`hHome` of
+`migrateSchedContextReplenishment_preserves_affinityConsistent_smp`) free.
+
+Every caller passes the migration's **source** core as `fallback`, so the two
+unconstrained shapes are no-ops too rather than pointless moves. -/
+def replenishHomeOfSchedContext (st : SystemState) (scId : SchedContextId)
+    (fallback : CoreId) : CoreId :=
+  match st.getSchedContext? scId with
+  | none => fallback
+  | some sc =>
+    match sc.boundThread with
+    | none => fallback
+    | some tid => determineTargetCore st tid
+
+/-- WS-RR RR8.11: **the destination obligation, discharged by construction.**
+This is literally `migrateSchedContextReplenishment_preserves_affinityConsistent_smp`'s
+`hHome` at `toCore := replenishHomeOfSchedContext st scId fallback`, and it takes
+no hypothesis — which is the whole point of resolving the destination from the
+bound thread rather than from the thread a caller expects to bind. -/
+theorem replenishHomeOfSchedContext_spec (st : SystemState) (scId : SchedContextId)
+    (fallback : CoreId) :
+    ∀ sc, st.getSchedContext? scId = some sc →
+      ∀ tid, sc.boundThread = some tid →
+        determineTargetCore st tid = replenishHomeOfSchedContext st scId fallback := by
+  intro sc hSc tid hBound
+  simp only [replenishHomeOfSchedContext, hSc, hBound]
+
+/-- WS-RR RR8.11: the destination at a context bound to a thread. -/
+theorem replenishHomeOfSchedContext_eq_of_bound (st : SystemState)
+    (scId : SchedContextId) (fallback : CoreId) (sc : SeLe4n.Kernel.SchedContext)
+    (tid : SeLe4n.ThreadId) (hSc : st.getSchedContext? scId = some sc)
+    (hBound : sc.boundThread = some tid) :
+    replenishHomeOfSchedContext st scId fallback = determineTargetCore st tid :=
+  (replenishHomeOfSchedContext_spec st scId fallback sc hSc tid hBound).symm
+
 -- ============================================================================
 -- §2  Membership decomposition for `ReplenishQueue.insertSorted` / `.remove`
 -- ============================================================================
@@ -480,5 +549,65 @@ theorem migrateSchedContextReplenishment_preserves_affinityConsistent_smp
           st scId fromCore toCore hEq hConsFrom
       · exact migrateSchedContextReplenishment_preserves_affinityConsistentOnCore_other
           st scId fromCore toCore c hFrom hTo (hConsOther c hFrom hTo)
+
+/-- **WS-RR RR8.11: migrating a rebound scheduling context to its own new home
+restores affinity consistency on every core.**
+
+The general form of what every rebinding-then-migrating transition owes, stated so
+the *destination* is `replenishHomeOfSchedContext` of the post-rebind state rather
+than a core the caller expects the rebind to produce.  Four things the rebinding
+step must supply, and none of them is "the rebind succeeded": that it wrote no
+replenish queue (`hRepl`), that it wrote no *other* scheduling context
+(`hOther`), that it moved no thread's home core (`hTgt`), and that the migration's
+**source** is where the invariant currently puts this context — spelled as the
+pre-state binding and its home (`hSrcGet` / `hSrcBound` / `hSrcHome`) rather than
+as an implication, because a context that resolves to nothing or is bound to no
+thread constrains no entry and so cannot locate the entries a migration would
+move.
+
+`hHome`, the obligation that the destination is right, is
+`replenishHomeOfSchedContext_spec` and costs nothing. -/
+theorem migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp
+    (st st' : SystemState) (scId : SchedContextId) (fromCore : CoreId)
+    (srcSc : SeLe4n.Kernel.SchedContext) (srcTid : SeLe4n.ThreadId)
+    (hRepl : ∀ c, st'.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c)
+    (hOther : ∀ scId₀, scId₀ ≠ scId → st'.getSchedContext? scId₀ = st.getSchedContext? scId₀)
+    (hTgt : ∀ tid, determineTargetCore st' tid = determineTargetCore st tid)
+    (hSrcGet : st.getSchedContext? scId = some srcSc)
+    (hSrcBound : srcSc.boundThread = some srcTid)
+    (hSrcHome : determineTargetCore st srcTid = fromCore)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp
+      (migrateSchedContextReplenishment st' scId fromCore
+        (replenishHomeOfSchedContext st' scId fromCore)) := by
+  have hOtherCons : ∀ (c : CoreId) (scId₀ : SchedContextId) (t : Nat),
+      (scId₀, t) ∈ (st'.scheduler.replenishQueueOnCore c).entries → scId₀ ≠ scId →
+        ∀ sc₀, st'.getSchedContext? scId₀ = some sc₀ →
+          ∀ tid, sc₀.boundThread = some tid → determineTargetCore st' tid = c := by
+    intro c scId₀ t hMem hne sc₀ hSc₀ tid hB
+    rw [hRepl c] at hMem
+    rw [hOther scId₀ hne] at hSc₀
+    rw [hTgt tid]
+    exact hCons c scId₀ t hMem sc₀ hSc₀ tid hB
+  have hConfined : ∀ (c : CoreId) (t : Nat),
+      (scId, t) ∈ (st'.scheduler.replenishQueueOnCore c).entries → c = fromCore := by
+    intro c t hMem
+    rw [hRepl c] at hMem
+    rw [← hSrcHome]
+    exact (hCons c scId t hMem srcSc hSrcGet srcTid hSrcBound).symm
+  refine migrateSchedContextReplenishment_preserves_affinityConsistent_smp st' scId fromCore _
+    (fun c' hFrom _ => ?_) ?_ (fun scId₀ t hMem hne sc₀ hSc₀ tid hB =>
+      hOtherCons fromCore scId₀ t hMem hne sc₀ hSc₀ tid hB)
+    (replenishHomeOfSchedContext_spec st' scId fromCore)
+  · intro scId₀ t hMem sc₀ hSc₀ tid hB
+    by_cases hk : scId₀ = scId
+    · subst hk; exact absurd (hConfined c' t hMem) (fun hc => hFrom hc.symm)
+    · exact hOtherCons c' scId₀ t hMem hk sc₀ hSc₀ tid hB
+  · intro scId₀ t hMem sc₀ hSc₀ tid hB
+    by_cases hk : scId₀ = scId
+    · rw [hk] at hSc₀
+      exact replenishHomeOfSchedContext_spec st' scId fromCore sc₀ hSc₀ tid hB
+    · exact hOtherCons _ scId₀ t hMem hk sc₀ hSc₀ tid hB
 
 end SeLe4n.Kernel

@@ -91,22 +91,17 @@ theorem cspaceRevoke_local_target_reduction
                 {
                   st.lifecycle with
                     objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                    capabilityRefs :=
-                      let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
-                      (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
-                        fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                 }
             }
-          -- M-P01: After fused revoke, extract objects equality via storeObject + revokeAndClearRefsState
+          -- The revoke IS the store of the filtered CNode; `storedState` spells its
+          -- post-state with the displaced-CNode lookup (`hObj`) already resolved.
           cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
           | error e => simp [hObj, hStore] at hStep
           | ok pair =>
             obtain ⟨_, stMid⟩ := pair
             simp [hObj, hStore] at hStep
-            -- M-P01: Objects are preserved through revokeAndClearRefsState (only lifecycle changes)
             have hObjEq : st'.objects = storedState.objects := by
-              have hFused := revokeAndClearRefsState_preserves_objects cn addr.slot parent.target addr.cnode stMid
-              unfold storeObject at hStore; cases hStore; simp_all [storedState, revokedObj]
+              unfold storeObject at hStore; cases hStore; subst hStep; simp [storedState, revokedObj]
             have hLookupStored :
                 SystemState.lookupSlotCap storedState { cnode := addr.cnode, slot := slot } = some cap := by
               have hEq := SystemState.lookupSlotCap_eq_of_objects_eq st' storedState
@@ -274,22 +269,16 @@ theorem cspaceRevoke_preserves_source
                     {
                       st.lifecycle with
                         objectTypes := st.lifecycle.objectTypes.insert addr.cnode revokedObj.objectType
-                        capabilityRefs :=
-                          let cleared := st.lifecycle.capabilityRefs.filter (fun ref _ => ref.cnode ≠ addr.cnode)
-                          (cn.revokeTargetLocal addr.slot parent.target).slots.fold (init := cleared)
-                            fun refs slot cap => refs.insert { cnode := addr.cnode, slot := slot } cap.target
                     }
                 }
-              -- M-P01: After fused revoke, extract objects equality
+              -- The revoke IS the store of the filtered CNode; see the first site.
               cases hStore : storeObject addr.cnode (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
               | error e => simp [hLookup, hObj, hStore] at hStep
               | ok pair =>
                 obtain ⟨_, stMid⟩ := pair
                 simp [hLookup, hObj, hStore] at hStep
-                -- M-P01: Objects are preserved through revokeAndClearRefsState (only lifecycle changes)
                 have hObjEq : st'.objects = storedState.objects := by
-                  have hFused := revokeAndClearRefsState_preserves_objects cn addr.slot parent.target addr.cnode stMid
-                  unfold storeObject at hStore; cases hStore; simp_all [storedState, revokedObj]
+                  unfold storeObject at hStore; cases hStore; subst hStep; simp [storedState, revokedObj]
                 have hCap : SystemState.lookupSlotCap st addr = some parent :=
                   (cspaceLookupSlot_ok_iff_lookupSlotCap st addr parent).1 hLookup
                 have hRevokePres := CNode.lookup_revokeTargetLocal_source_eq_lookup cn addr.slot parent.target hUniq

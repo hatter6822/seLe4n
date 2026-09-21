@@ -14,6 +14,14 @@ import SeLe4n.Platform.RPi5.VSpaceBoot
 import SeLe4n.Kernel.Architecture.CacheModel
 import SeLe4n.Kernel.Architecture.ExceptionModel
 import SeLe4n.Kernel.Architecture.TimerModel
+-- AG6-C/AG6-D: the ARMv8 `VSpaceBackend` instance and its refinement proof,
+-- integrated into no execution path (`SELE4N_SPEC.md` §8.15.1, item 4:
+-- "test-anchored, not production-imported") and, until `v0.35.76`, in no
+-- library root either -- built by `tests/WxDefenseSuite.lean` alone, which put
+-- it outside every Tier 1 census's environment.  Staged so that CI builds it on
+-- every PR and the censuses see it; §8.15.1's roadmap item 3 (the RPi5
+-- `VSpaceBackend` selection) is what would promote it.
+import SeLe4n.Kernel.Architecture.VSpaceARMv8
 -- AN9-C / AN9-A / AN9-B: hardware-binding closure modules
 import SeLe4n.Kernel.Architecture.BarrierComposition
 import SeLe4n.Kernel.Architecture.TlbCacheComposition
@@ -164,6 +172,17 @@ import SeLe4n.Kernel.Concurrency.LockSet
 -- each footprint because the bounds cite `Locks/Deadlock.lean`, whose WCRT and
 -- deadlock models no kernel image links.
 import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds
+-- WS-RR RR7.41's walk-interior CSpace footprint, staged at `v0.35.76` for the
+-- reason the RR7.18 bounds above are: its conflict theorem
+-- (`cspaceWalk_conflicts_with_delete`) is stated against SM3.E's
+-- `ktiSharesConflictingLock`, so its chain runs through `Locks/Serializability`
+-- -> `Locks/Deadlock`, which no kernel image links.  Its header claimed
+-- PRODUCTION from `v0.34.90` while no library root imported it, and the
+-- store-access census's domain reconciliation found it.  A proof links into no
+-- image and CI builds it here on every PR; the live seam consumes it nowhere --
+-- `abiEntryGate` refuses a multi-level walk and the root-only footprint is
+-- complete (`v0.34.91`).
+import SeLe4n.Kernel.Capability.CSpaceWalkFootprint
 -- WS-SM SM4.C: per-core scheduler invariant migration.  Lifts every
 -- per-core scheduler invariant predicate to an explicit `(c : CoreId)`
 -- parameter (plan §5.3/§5.6), exports the aggregate
@@ -324,8 +343,12 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTimerInventory
 -- `chooseThreadOnCore_always_succeeds` (+ the `idleThreadEnqueuedOnCore` discharge
 -- predicate, its constructive establishment, and the end-to-end non-vacuity
 -- witness), and the SM5.E.4 `idleThread_core_locality` (affinity-based + frame
--- companion).  The idle *definitions* live in `Platform.Boot` (SM4.G); SM5.I's
--- per-core dispatch loop is the first runtime exerciser.
+-- companion).  The idle *TCB* and its identities live in
+-- `Kernel/Scheduler/IdleThread.lean` and the enqueue primitive
+-- `enqueueIdleThreadOnCore` in the production module
+-- `Kernel/Scheduler/Operations/IdleEnqueue.lean` (v0.35.68: it is what the
+-- boot runs), which this module consumes; SM5.I's per-core dispatch loop is
+-- the first runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreIdle
 -- WS-SM SM5.E: the per-core idle-aware dispatcher (`scheduleOrIdleOnCore`, the
 -- SM5.I dispatch-loop seed) establishment theorems — the headline
@@ -513,7 +536,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyNI
 -- `cancelIpcBlockingOnCore_{,ready_}cancellation_NI{,_smp}` +
 -- `cancelDonatedDonationOnCore_cancellation_NI{,_smp}` + the ∀-core
 -- replenish-queue / migration projection frames.  Every SM6.E-new state
--- effect (home-core deschedule, rqCore-parametrised purge, replenishment
+-- effect (placement deschedule, rqCore-parametrised purge, replenishment
 -- migration) is discharged substantively; the composites consume the
 -- single-core teardown/return projection obligations that the production
 -- closure forms (`suspendThread_preserves_projection` G3/G5) document.

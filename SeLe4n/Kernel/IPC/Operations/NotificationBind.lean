@@ -54,7 +54,7 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -70,9 +70,10 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  `dualQueueRemovalEnabled`
+          -- carries the guard, whose own `match pprev` the unfold puts inside the
+          -- `if` condition, so `split` would take it before the `if`.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -127,7 +128,7 @@ theorem endpointQueueRemoveDual_preserves_objects_invExt
                 | some prevTcb =>
                   dsimp only [hLookupP]; split
                   · simp
-                  · rename_i _ _ _ stAp heqAp
+                  · rename_i _ _ stAp heqAp
                     split at heqAp
                     · simp at heqAp
                     · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with

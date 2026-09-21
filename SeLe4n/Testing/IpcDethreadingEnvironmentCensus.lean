@@ -1,6 +1,7 @@
 import Lean.Elab.Command
 import Lean.Meta.Basic
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 -- WS-RR RR7.22 (residual): the cancellation sweep's bundle lives outside the
 -- staged closure -- it is production, reachable from the library root -- so the
 -- census imports it directly.  Without this its `_preserves_ipcInvariantFull`
@@ -9,6 +10,11 @@ import SeLe4n.Platform.Staged
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+-- WS-RR RR8.10: the arm-complete cancellation bundle and its cross-core lift.
+-- The production root already reaches it; this census elaborates only what it
+-- imports itself, so a bundle statement outside *this* closure is invisible to
+-- the semantic layer even while Tier 0's text scan counts it.
+import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 
 /-!
 # The elaborator-backed de-threading census
@@ -105,10 +111,11 @@ private def measuredConjuncts : MetaM NameSet := do
   let mut frontier : List Name := []
   for (n, info) in env.constants.toList do
     if isFamilyForm n then
-      if let .defnInfo d := info then
-        let heads ← lambdaTelescope d.value fun _ body =>
-          pure (andLeafHeads body {})
-        frontier := heads.toList ++ frontier
+      if SeLe4n.Testing.DeclarationKind.bodyBearing info then
+        if let some value := info.value? (allowOpaque := true) then
+          let heads ← lambdaTelescope value fun _ body =>
+            pure (andLeafHeads body {})
+          frontier := heads.toList ++ frontier
   let mut conjuncts : NameSet := {}
   while frontier ≠ [] do
     let name :: rest := frontier | break
@@ -116,12 +123,14 @@ private def measuredConjuncts : MetaM NameSet := do
     if conjuncts.contains name || isFamilyForm name then
       continue
     conjuncts := conjuncts.insert name
-    if let some (.defnInfo nested) := env.find? name then
-      let heads ← lambdaTelescope nested.value fun _ body =>
-        pure (andLeafHeads body {})
-      for h in heads.toList do
-        if !conjuncts.contains h then
-          frontier := h :: frontier
+    if let some nested := env.find? name then
+      if SeLe4n.Testing.DeclarationKind.bodyBearing nested then
+        if let some value := nested.value? (allowOpaque := true) then
+          let heads ← lambdaTelescope value fun _ body =>
+            pure (andLeafHeads body {})
+          for h in heads.toList do
+            if !conjuncts.contains h then
+              frontier := h :: frontier
   return conjuncts
 
 /-- The subset of `targets` that `e` entails applied to the state `s'`.

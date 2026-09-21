@@ -265,166 +265,68 @@ theorem boostedPriority_no_pip (tcb : TCB)
     tcb.boostedPriority = tcb.priority := by
   simp [TCB.boostedPriority, hNoPip]
 
-/-- AK2-B (S-H04) helper: SC-aware effective priority.
-Mirrors `(resolveEffectivePrioDeadline st tcb).1` from Selection.lean
-without the import cycle: for SchedContext-bound threads with the SC
-present, uses the SC's base priority; otherwise falls back to TCB
-`priority`. PIP boost is applied uniformly as the final step.
+/-- AK2-B (S-H04) helper: the bucket a thread is keyed by.
 
-Under the AK2-B Option B propagation invariant (`schedContextBind` /
-`schedContextConfigure` propagate `sc.priority → tcb.priority`),
-`effectiveBucketPriority st tcb = tcb.boostedPriority` for all
-bound threads, so `schedulerPriorityMatch` (TCB-based) and
-`effectiveParamsMatchRunQueue` (SC-based) agree. The helper is retained as
-a utility for future use (AK2-A full Option A fusion deferred). -/
-def effectiveBucketPriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
-  let base : SeLe4n.Priority := match tcb.schedContextBinding with
-    | .unbound => tcb.priority
-    | .bound scId =>
-      -- Reads through `getSchedContext?`.  The AN10-B note that stood here
-      -- deferred this on the ground that the downstream invariant proofs
-      -- case-split on the raw shape and migrating would cascade "without
-      -- proof-correctness benefit".  The cascade is real and it is a
-      -- *simplification*: those splits enumerate the seven non-SchedContext
-      -- constructors, and the accessor has already collapsed all seven into
-      -- its own `none`, so each becomes two arms.
-      match st.getSchedContext? scId with
-      | some sc => sc.priority
-      | none => tcb.priority
-    -- WS-OD (v0.35.3): a donee runs at its **own** base priority, so this arm
-    -- reads no SchedContext at all — the `SchedContextBinding.ownScId?`
-    -- classification, mirrored here because `Invariant.lean` sits below
-    -- `Selection.lean` and cannot call `resolveEffectivePrioDeadline`.  The two
-    -- are held together by `effectiveBucketPriority_eq_resolveEffective`.
-    | .donated _ _ => tcb.priority
-  -- The ninth copy of "a base raised by an inherited boost", and the one a
-  -- grep for `Nat.max tcb.priority.val` did not find because its base is a
-  -- `let`.  `Priority.raisedBy` (`Prelude.lean`) is the reading.
-  base.raisedBy tcb.pipBoost
+**WS-RR (`v0.35.133`): this was the THIRD copy of the priority resolver, and
+the one-home collapse retires its body.**  It mirrored
+`resolveEffectivePrioDeadline`'s classification here because `Invariant.lean`
+sits below `Selection.lean` and cannot call it — a second implementation kept
+in step by `effectiveBucketPriority_eq_resolveEffective`, which is the shape
+this project spends its length retiring and which it kept only because the base
+had two homes to choose between.
 
-/-- AK2-B: Unbound threads' effective priority equals the legacy
-`TCB.boostedPriority`. -/
-@[simp] theorem effectiveBucketPriority_of_unbound
-    (st : SystemState) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := by
-  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
-  simp [hUnbound]
+With `TCB.priority` the only home there is nothing to classify: the bucket is
+`TCB.boostedPriority` at every binding, the import-cycle objection has no
+subject, and the pin against `resolveEffectivePrioDeadline` becomes the
+statement that both are that accessor.  The name is kept because the run-queue
+invariants are stated over it and it says *which* question is being asked; what
+is gone is the second answer. -/
+def effectiveBucketPriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
+  tcb.boostedPriority
 
-/-- AK2-B: When a bound thread's SchedContext is missing (unreachable under
-`schedContextBindingConsistent`), `effectiveBucketPriority` falls back to
-`TCB.boostedPriority`. -/
-theorem effectiveBucketPriority_of_bound_sc_missing
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (hBound : tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner)
-    (hMiss : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := by
-  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
-  rcases hBound with hB | ⟨owner, hB⟩
-  · rw [hB]
-    -- Two arms, not eight: `getSchedContext?` has already collapsed the six
-    -- other constructors and the absent key into its own `none`.
-    cases hLookup : st.getSchedContext? scId with
-    | none => simp
-    | some sc =>
-      exact absurd ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hLookup) (hMiss sc)
-  · -- WS-OD (v0.35.3): the `.donated` arm reads no SchedContext at all, so it
-    -- *is* the fallback and `hMiss` has nothing to discharge.  Stated by
-    -- `effectiveBucketPriority_of_donated` without the hypothesis.
-    simp [hB]
+/-- The collapse, stated: the bucket is the thread's own boosted priority,
+whatever the binding and whatever the store holds.  Every arm-specific reading
+this helper used to need is this theorem. -/
+@[simp] theorem effectiveBucketPriority_eq (st : SystemState) (tcb : TCB) :
+    effectiveBucketPriority st tcb = tcb.boostedPriority := rfl
 
-/-- WS-OD (v0.35.3): a **donated** thread's bucket priority is the legacy
-`TCB.boostedPriority` unconditionally — no SchedContext is read, so
-unlike the `.bound` case this needs no lookup hypothesis.  The `.donated`
-half of `effectiveBucketPriority_of_bound_sc_missing`, sharpened. -/
-@[simp] theorem effectiveBucketPriority_of_donated
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (owner : SeLe4n.ThreadId)
-    (hDonated : tcb.schedContextBinding = .donated scId owner) :
-    effectiveBucketPriority st tcb = tcb.boostedPriority := by
-  unfold effectiveBucketPriority TCB.boostedPriority SystemState.getSchedContext?
-  simp [hDonated]
+/-- **The bucket is insensitive to the store, so the frame is a congruence.**
 
-/-- AK2-B helper: auxiliary "falls through to base" lemma. If a map lookup
-does not produce `.schedContext _`, then the `.bound scId`/`.donated scId _`
-arm of `effectiveBucketPriority` falls through to `tcb.priority`. -/
-@[simp] theorem effectiveBucketPriority_lookup_non_sc
-    (st : SystemState) (tcb : TCB) (scId : SchedContextId)
-    (hNonSc : ∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) :
-    (match (st.objects[scId.toObjId]? : Option KernelObject) with
-      | some (.schedContext sc) => sc.priority
-      | _ => tcb.priority) = tcb.priority := by
-  cases hLook : (st.objects[scId.toObjId]? : Option KernelObject) with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | schedContext sc => exact absurd hLook (hNonSc sc)
-    | tcb _ | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _
-    | reply _ => rfl
+`effectiveBucketPriority` reads the TCB and nothing else, so "preserved
+whenever the thread's SchedContext lookup agrees" is a statement with a dead
+hypothesis: the conclusion holds for *any* two states.  Stated at the strength
+the accessor has. -/
+theorem effectiveBucketPriority_congr (st st' : SystemState) (tcb : TCB) :
+    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := rfl
 
-/-- AK2-B: Frame lemma — `effectiveBucketPriority` is preserved whenever the
-thread's SchedContext object lookup agrees. -/
-theorem effectiveBucketPriority_frame
-    (st st' : SystemState) (tcb : TCB)
-    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
-      st'.objects[scId.toObjId]? = st.objects[scId.toObjId]?) :
-    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := by
-  unfold effectiveBucketPriority
-  cases hBind : tcb.schedContextBinding with
-  | unbound => rfl
-  | bound scId =>
-    have hEq : st'.objects[scId.toObjId]? = st.objects[scId.toObjId]? :=
-      hSc scId (Or.inl hBind)
-    simp only [SystemState.getSchedContext?_congr_at hEq]
-  -- WS-OD (v0.35.3): the `.donated` arm reads no object store, so the frame
-  -- hypothesis is not needed on this branch.
-  | donated _ _ => rfl
-
-section
-set_option linter.unusedSimpArgs false
-
-/-- AK2-B: Weaker frame lemma — `effectiveBucketPriority` is preserved
-whenever BOTH lookups produce non-SchedContext values (so both fall through
-to `tcb.priority`) OR the SchedContext lookups agree exactly. This handles
-invariant-violating aliasing gracefully: if an ObjId happens to hold a `.tcb`
-both before and after a `saveOutgoingContext` (invariant violation — SC's
-ObjId should never be a TCB), the fall-through arm gives the same value. -/
-theorem effectiveBucketPriority_frame_weak
-    (st st' : SystemState) (tcb : TCB)
-    (hSc : ∀ scId, (tcb.schedContextBinding = .bound scId ∨
-      ∃ owner, tcb.schedContextBinding = .donated scId owner) →
-      (∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
-             st'.objects[scId.toObjId]? = some (.schedContext sc)) ∨
-      ((∀ sc, st.objects[scId.toObjId]? ≠ some (.schedContext sc)) ∧
-       (∀ sc, st'.objects[scId.toObjId]? ≠ some (.schedContext sc)))) :
-    effectiveBucketPriority st' tcb = effectiveBucketPriority st tcb := by
-  unfold effectiveBucketPriority
-  cases hBind : tcb.schedContextBinding with
-  | unbound => simp only [hBind]
-  | bound scId =>
-    simp only [hBind]
-    rcases hSc scId (Or.inl hBind) with ⟨sc, hOld, hNew⟩ | ⟨hOldN, hNewN⟩
-    · simp only [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hOld,
-        (SystemState.getSchedContext?_eq_some_iff st' scId sc).mpr hNew]
-    · -- Neither state holds a SchedContext at `scId`, so both sides take the
-      -- accessor's `none` arm.  The body is already unfolded here, so this
-      -- discharges the two lookups directly rather than rewriting with the
-      -- whole-function lemma, whose left-hand side is no longer present.
-      have hNone : ∀ (s : SystemState),
-          (∀ sc, s.objects[scId.toObjId]? ≠ some (.schedContext sc)) →
-          s.getSchedContext? scId = none := by
-        intro s hMiss
-        cases h : s.getSchedContext? scId with
-        | none => rfl
-        | some sc =>
-          exact absurd ((SystemState.getSchedContext?_eq_some_iff s scId sc).mp h) (hMiss sc)
-      simp only [hNone st hOldN, hNone st' hNewN]
-  -- WS-OD (v0.35.3): the `.donated` arm reads no object store.
-  | donated _ _ => rfl
-
-end
+-- **Six theorems stood here and are DELETED at `v0.35.134`** -- the sweep
+-- `v0.35.133` owed its own sibling family and did not run.
+--
+-- That cut collapsed this accessor's body to `TCB.boostedPriority` and deleted
+-- `resolveEffectivePrioDeadline`'s three arm-specific readings for the stated
+-- reason that *every arm-specific reading the resolver used to need is the
+-- unconditional theorem*.  The identical family over **this** accessor was left
+-- standing one file over, with hypotheses the collapse had made dead:
+--
+--   * `effectiveBucketPriority_of_unbound`, `_of_bound_sc_missing`,
+--     `_of_donated` -- each `effectiveBucketPriority_eq` under a binding
+--     hypothesis nothing reads.  A name like `_of_bound_sc_missing` kept past
+--     its hypothesis does not merely repeat the unconditional lemma, it
+--     *teaches a false dependency*: a reader concludes the bucket still turns
+--     on whether a SchedContext resolves.
+--   * `effectiveBucketPriority_lookup_non_sc` -- a lemma about the expression
+--     `match … | some (.schedContext sc) => sc.priority | _ => tcb.priority`,
+--     which this accessor no longer contains and which occurs nowhere else.  A
+--     theorem whose subject is gone is the tautological pin this project
+--     retires: it reads in a report exactly like a check that decides
+--     something.
+--   * `effectiveBucketPriority_frame` and `_frame_weak` -- replaced by the
+--     unconditional `effectiveBucketPriority_congr` above, which is strictly
+--     stronger; `_frame_weak`'s one consumer
+--     (`Scheduler/Operations/Preservation.lean`) cites the congruence.
+--
+-- All six were `rfl`, five had no consumer at all, and three carried
+-- `unused variable` warnings that said so.  Tier 3 negatives refuse each name.
 
 
 -- ============================================================================
@@ -829,27 +731,31 @@ theorem default_schedContextBindingConsistent :
 -- Z4-P: effectiveParamsMatchRunQueue invariant
 -- ============================================================================
 
-/-- Z4-P: For every runnable thread, the RunQueue's cached priority matches
-the effective priority from SchedContext resolution. This extends
-`schedulerPriorityMatch` to the SchedContext world — when a thread is bound
-to a SchedContext, the RunQueue entry reflects the SchedContext's priority. -/
+/-- Z4-P: for every run-queue member, the RunQueue's cached `threadPriority`
+entry is that thread's **base** priority.
+
+WS-RR (`v0.35.133`): this used to be a three-armed case analysis on the binding,
+whose `.bound` arm demanded the recorded bucket equal the RESERVATION's
+`priority` — the SchedContext-aware reading its Z4-P docstring described.  With
+`TCB.priority` the base's one home that arm says what the other two say, so the
+binding analysis is gone and with it the raw SchedContext read it needed.
+
+Two things the collapse changed, and neither is cosmetic.  The `.bound` arm's
+inner `match` had a `| _ => True` fallback, so a bound thread whose reservation
+did **not** resolve was silently excused from the bucket claim: a default arm is
+a decision, and that one excused a case nobody chose to excuse.  And under two
+homes this predicate and `schedulerPriorityMatch` were jointly unsatisfiable for
+any bound thread whose mirror had drifted (`sc.priority ≠ tcb.priority`) — the
+S-H04 over-constraint the fusion docstring above records — so the collapse is
+what makes the pair satisfiable rather than merely tidier.
+
+It stays the PIP-unaware sibling of `schedulerPriorityMatch`, which reads
+`TCB.boostedPriority`; the two agree exactly on an unboosted thread. -/
 def effectiveParamsMatchRunQueue (st : SystemState) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore bootCoreId) →
     match st.objects[tid.toObjId]? with
     | some (.tcb tcb) =>
-      match tcb.schedContextBinding with
-      | .unbound =>
-        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
-      | .bound scId =>
-        match st.objects[scId.toObjId]? with
-        | some (.schedContext sc) =>
-          (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some sc.priority
-        | _ => True
-      -- WS-OD (v0.35.3): a donee is bucketed at its **own** base priority, so
-      -- its recorded bucket is the `.unbound` arm's — the donor's reservation
-      -- supplies budget, deadline and domain, never the scheduling band.
-      | .donated _ _ =>
-        (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority
     | _ => True
 
 /-- Z4-P: Default state has empty run queue — vacuously true. -/
@@ -866,10 +772,41 @@ theorem default_effectiveParamsMatchRunQueue :
 -- ============================================================================
 
 /-- AE3-A/U-11: For every thread bound to a SchedContext, the thread's domain
-must match the SchedContext's domain. This invariant is established by the
-domain check in `schedContextBind` (AE3-A2) and preserved by all binding-
-modifying operations (unbind/cancelDonation clear `.bound`; donation uses
-`.donated` not `.bound`). -/
+must match the SchedContext's domain.  Established by the domain check in
+`schedContextBind` (AE3-A2), which refuses a cross-domain bind outright, and
+maintained by `schedContextConfigureBoundPropagate`, which moves both homes
+under `schedContextConfigurePropagates`.
+
+**WS-RR (`v0.35.136`): it is NOT an invariant, and the enumeration that stood
+here said otherwise.**  *"Preserved by all binding-modifying operations
+(unbind/cancelDonation clear `.bound`; donation uses `.donated` not `.bound`)"*
+was written before the donation **pop** existed, and `returnDonatedSchedContext`
+is a binding-modifying operation that installs `.bound` — writing neither
+`TCB.domain` nor `SchedContext.domain`.  So the agreement survives a loan only
+while nothing moves either home during it, and `schedContextConfigure` on a
+**donated** reservation moves one: its propagation is gated on the donee's
+`ownScId?`, which is `none`, so `sc.domain` changes alone and the pop then
+rebinds the origin under it.  `tests/PriorityManagementSuite.lean`'s
+WS-RR-PRIO-09 drives exactly that, through two live operations, with
+WS-RR-PRIO-10 as the unreconfigured control.
+
+Neither reconciliation is available to the pop: writing `tcb.domain :=
+sc.domain` would **migrate a thread's partition** on an IPC reply, at the
+instance of a holder of a capability on the reservation rather than on the
+thread — the crossing WS-OD `v0.35.3` closed on the other side — and writing
+`sc.domain := tcb.domain` would silently retune a reservation its capability's
+holder had just configured.  So this is a fact about its two writers, as
+`boundThreadPriorityConsistent` is about its three, and the residue is
+registered in `docs/REGISTERED_DEBT.md` table C with the model change that
+closes it.
+
+**Nothing reads it.**  Since `v0.35.136` every arm of `effectiveSchedParams`
+reports `tcb.domain` (`effectiveSchedParams_domain_eq`) and every live domain
+filter reads `tcb.domain` directly (`chooseBestRunnableInDomainEffective`), so a
+stale mirror changes no scheduling decision — which is what makes the residue a
+verification gap rather than a partition break.  It stays a conjunct of
+`schedulerInvariantBundleExtended`, whose scope is the boot and scheduler
+surface: no IPC transition claims that bundle. -/
 def boundThreadDomainConsistent (st : SystemState) : Prop :=
   ∀ (tid : ThreadId) (scId : SchedContextId),
     match (st.objects[tid.toObjId]? : Option KernelObject) with

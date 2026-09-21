@@ -305,7 +305,19 @@ def projectKernelObject (ctx : LabelingContext) (observer : IfObserver) (obj : K
       -- erasure with the field is what keeps the OD4 push *unobservable* — a
       -- push writes this head, and an un-erased head would make a high caller's
       -- Call visible through a low-visible scheduling context.
+      --
+      -- **WS-HP HP10.3**: strip `donationOrigin` for the third time over the same
+      -- reason, and again in the cut that adds the field.  It is a **ThreadId** —
+      -- the thread that owned this reservation when it first left — so it names a
+      -- possibly-high caller directly, which is the linkage `boundThread` above
+      -- and the `.reply` arm's `caller` below are erased for.  Landing the
+      -- erasure with the field is what keeps the HP10 write unobservable: the
+      -- origin is recorded by a `Call` that donates and cleared when the loan
+      -- ends, so an un-erased origin would make a high client's Call visible
+      -- through a low-visible scheduling context for as long as the loan lasts —
+      -- strictly longer than the `scReply` head, which moves with every push.
       .schedContext { sc with boundThread := none, scReply := none,
+                              donationOrigin := none,
                               lock := SeLe4n.Kernel.Concurrency.RwLockState.unheld }
   | .reply r =>
       -- WS-SM SM6.D (PR #822 review, Reply objects): Strip the Reply object's
@@ -517,8 +529,8 @@ theorem projectKernelObject_reply_caller_invariant
 
 /-- **WS-OD OD2.2 / `v0.35.4`**: the projection is invariant under a Reply's
 `next` link — the `.reply` arm strips it, so a push that writes the head link (or
-a detach that clears the frame above's) is unobservable through a low-visible
-Reply.  Stated per field beside `_caller_invariant` and `_prev_invariant`, because
+a splice that rewrites the links either side of a cut) is unobservable through a
+low-visible Reply.  Stated per field beside `_caller_invariant` and `_prev_invariant`, because
 an erasure with no theorem is one nothing consumes: the OD2.2 sweep found the
 arm had erased every link field from the day it was written while only `caller`
 had a statement. -/
@@ -598,14 +610,39 @@ theorem projectKernelObject_schedContext_scReply_invariant
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]
 
-/-- **WS-OD OD3.2**: the projection is invariant under the whole of the donation
-return's SchedContext write — the rebind and the reply-stack pop together.  The
-pairing of the two fields is the operation's actual write set, so a projection hop
-over it is one rewrite rather than two. -/
+/-- **WS-OD OD3.2**: the projection is invariant under the whole of a donation
+step's SchedContext write — the rebind, the reply-stack link and the recorded
+origin together.  The grouping is the operation's actual write set, so a projection
+hop over it is one rewrite rather than three, and a hop stated over fewer fields
+than the store writes does not apply at all.
+
+**WS-HP HP10.4** widened it from two fields to three rather than adding a second,
+push-specific lemma: the *push* and the *pop* write the same three fields — the
+push records the origin on a first donation and the pop clears it when the loan
+ends — so this is one question with one answer, and a `…PushWrite…` sibling beside
+it would be the duplicate this project retires.  The name does not promise an
+arity; it names the operation class whose write set this is. -/
 theorem projectKernelObject_schedContext_donationWrite_invariant
     (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
-    (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId) :
-    projectKernelObject ctx observer (.schedContext { sc with boundThread := bt, scReply := rid })
+    (bt : Option SeLe4n.ThreadId) (rid : Option SeLe4n.ReplyId)
+    (origin : Option SeLe4n.ThreadId) :
+    projectKernelObject ctx observer
+        (.schedContext { sc with boundThread := bt, scReply := rid,
+                                 donationOrigin := origin })
+      = projectKernelObject ctx observer (.schedContext sc) := by
+  simp [projectKernelObject]
+
+/-- **WS-HP HP10.3**: the projection is invariant under the recorded origin.
+
+Stated on its own account beside the two above, because the origin is written and
+cleared by steps whose write sets are not the donation return's: the `Call` that
+first donates records it, and `schedContextBind` / `schedContextUnbind` /
+`lifecyclePreRetypeCleanup` clear it.  A hop over the donation return's pair would
+not cover any of those. -/
+theorem projectKernelObject_schedContext_donationOrigin_invariant
+    (ctx : LabelingContext) (observer : IfObserver) (sc : SchedContext)
+    (origin : Option SeLe4n.ThreadId) :
+    projectKernelObject ctx observer (.schedContext { sc with donationOrigin := origin })
       = projectKernelObject ctx observer (.schedContext sc) := by
   simp [projectKernelObject]
 
@@ -1135,5 +1172,83 @@ theorem serviceOrchestration_boundary_disjunction
     cases hLookup : lookupService st sid with
     | none => rfl
     | some v => exfalso; exact h ⟨sid, hObs, by simp [hLookup]⟩
+
+-- ============================================================================
+-- §14 What the endpoint admission gate admits onto a single queue
+-- ============================================================================
+
+/-- **WS-RR RR8.8**: the live endpoint admission gate puts an **observable** and a
+**non-observable** thread on the *same* endpoint queue.
+
+This decides how the cancellation path's two standing projection obligations
+(`abortHolderProjectionStable`, `abortHolderWakeHigh`) and the three queue arms'
+`hTeardownProj` can be closed — and it **refutes the remedy all three were
+registered with**.
+
+The live send / call gate is
+`endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)`
+(`endpointSendCrossCoreDispatchChecked`, `endpointCallCrossCoreDispatchChecked`;
+the receive side is its mirror, `endpointReceiveDualChecked`): a thread is
+admitted onto an endpoint's queue when its own label **flows to** the endpoint's,
+not when it *equals* it.  `securityFlowsTo` is a genuine order rather than
+equality — `publicLabel → kernelTrusted` is permitted *by design*, which
+`securityFlowsTo_prevents_label_escalation` states in as many words — so two
+senders with different labels are both admitted onto one endpoint, and an
+observer cleared for the lower one sees exactly one of them.
+
+Two consequences, both load-bearing.
+
+**An endpoint/notification queue label-uniformity invariant cannot be
+established.**  It was registered as the closure for all three obligations, and
+the enqueue's own admission predicate admits a non-uniform queue, so no enqueue
+path can establish it.  Establishing it would mean narrowing the gate to label
+*equality*, which refuses the canonical one-way flow this lattice exists to
+permit — a lower-labelled client sending to a higher-labelled server.  The
+remedy is retracted; see `docs/REGISTERED_DEBT.md`.
+
+**What the gate does give is the other direction, and with one conjunct it
+closes two of the three write classes.**  Every thread on an endpoint's queue
+satisfies `label thread ⊑ endpointLabelOf endpoint`
+(`endpointFlowGate_implies_securityFlowsTo`, which takes no hypothesis at all),
+and `LabelingContextValid.endpointObjectCoherence` (WS-RR RR8.8) carries that on
+to `objectLabelOf endpoint`, which is what `objectObservable` decides visibility
+from — two independent `LabelingContext` fields that nothing related until that
+conjunct.  So an *observable* endpoint has only observable waiters and —
+contrapositively — the endpoint object is non-observable whenever any of its
+waiters is (`endpointObjectHigh_of_admittedThreadHigh`).  That covers the endpoint's own
+`sendQueue` / `recvQueue` boundaries, and the aborted holder's own TCB is
+covered by the same order run through the donating `Call` and the server's
+receive.  What is left is the **queue neighbours**: their labels are constrained
+only against the *endpoint's*, so nothing relates a neighbour to the thread being
+spliced out, and this theorem exhibits the admission in which they differ.
+`queuePrev` / `queuePPrev` / `queueNext` survive `projectKernelObject`, so the
+splice writes an observable field — which is why the remaining closure is to take
+the queue links **out of the TCB** rather than to constrain labels.
+
+The admission is a first-class member of the production labelling family:
+`indexPartitionedLabelingContext base w publicLabel kernelTrusted` differs from
+the shipped `confinedLabelingContext` only in the two labels applied to it, and
+its label obligation is distinctness (`lowerLabel ≠ upperLabel`), not mutual
+non-flow.  The RPi5 binding passes `lowTrusted` / `highUntrusted`, which are
+mutually non-flowing (`lowTrusted_highUntrusted_mutually_isolated`), so *that*
+deployment admits no cross-label endpoint flow and its queues are uniform by
+construction: the gap is in the general claim, not in the shipped
+configuration. -/
+theorem endpointAdmissionAdmitsMixedObservability
+    (ctx : LabelingContext) (observer : IfObserver) (epId : SeLe4n.ObjId)
+    (lowerTid upperTid : SeLe4n.ThreadId)
+    (hNoOverride : ctx.endpointPolicy.endpointPolicy epId = none)
+    (hEndpoint : ctx.endpointLabelOf epId = SecurityLabel.kernelTrusted)
+    (hClearance : observer.clearance = SecurityLabel.publicLabel)
+    (hLower : ctx.threadLabelOf lowerTid = SecurityLabel.publicLabel)
+    (hUpper : ctx.threadLabelOf upperTid = SecurityLabel.kernelTrusted) :
+    endpointFlowGate ctx epId (ctx.threadLabelOf lowerTid) (ctx.endpointLabelOf epId) = true
+      ∧ endpointFlowGate ctx epId (ctx.threadLabelOf upperTid) (ctx.endpointLabelOf epId) = true
+      ∧ threadObservable ctx observer lowerTid = true
+      ∧ threadObservable ctx observer upperTid = false
+      ∧ ctx.threadLabelOf lowerTid ≠ ctx.threadLabelOf upperTid := by
+  refine ⟨?_, ?_, ?_, ?_, ?_⟩ <;>
+    simp only [endpointFlowGate, endpointOverrideAllows, threadObservable,
+      hNoOverride, hEndpoint, hClearance, hLower, hUpper] <;> decide
 
 end SeLe4n.Kernel

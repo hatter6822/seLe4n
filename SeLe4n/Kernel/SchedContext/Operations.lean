@@ -309,6 +309,7 @@ and deadline, which is correct: that is the reservation the caller holds. -/
 def schedContextConfigureBoundPropagate (stStored : SystemState)
     (scId : SeLe4n.SchedContextId)
     (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
+    (hBound : stStored.getTcb? boundTid = some boundTcb)
     (priority domain : Nat) : SystemState :=
   let stProp : SystemState :=
     if boundTcb.priority.val = priority ∨
@@ -317,8 +318,13 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
     else
       let newPri : SeLe4n.Priority := ⟨priority⟩
       let boundTcb2 : TCB := { boundTcb with priority := newPri }
-      let stWithTcb : SystemState := { stStored with
-        objects := stStored.objects.insert boundTid.toObjId (KernelObject.tcb boundTcb2) }
+      -- The bound TCB is handed in, so the write is the typed in-place rewrite
+      -- under the store's witness for it (`v0.35.71`): `schedContextConfigure`
+      -- resolves the thread once, through the witnessed lookup, and passes the
+      -- proof down rather than looking the record up a second time.
+      let stWithTcb : SystemState :=
+        stStored.rewriteObject boundTid.toObjId (KernelObject.tcb boundTcb2)
+          (SystemState.rewriteAdmissible_tcb hBound boundTcb2)
       -- The bucket the thread now belongs in, read off the record that is
       -- being stored: `TCB.boostedPriority` (`Model/Object/Types.lean`) is the
       -- one answer the run queue is keyed by, and taking it from `boundTcb2`
@@ -332,15 +338,20 @@ def schedContextConfigureBoundPropagate (stStored : SystemState)
         { stWithTcb with scheduler :=
           stWithTcb.scheduler.setRunQueueOnCore boundHome rqInserted }
       else stWithTcb
-  match stProp.getTcb? boundTid with
-  | some currentTcb =>
+  -- The domain half reads the record the priority half may have rewritten, so
+  -- it resolves the thread again -- through the witnessed lookup, whose
+  -- witness is its own rewrite's proof -- and writes only when the domain
+  -- moved: the `if` stays outside the rewrite so an unchanged domain is no
+  -- write at all, as before.
+  match stProp.getTcbWitnessed? boundTid with
+  | some ⟨currentTcb, hCurrent⟩ =>
     if currentTcb.domain.val = domain ∨
        ¬ schedContextConfigurePropagates boundTcb scId then stProp
     else
       let newDom : SeLe4n.DomainId := ⟨domain⟩
       let currentTcb2 : TCB := { currentTcb with domain := newDom }
-      { stProp with objects :=
-        stProp.objects.insert boundTid.toObjId (KernelObject.tcb currentTcb2) }
+      stProp.rewriteObject boundTid.toObjId (KernelObject.tcb currentTcb2)
+        (SystemState.rewriteAdmissible_tcb hCurrent currentTcb2)
   | none => stProp
 
 /-- Z5-F3: Configure a SchedContext's scheduling parameters.
@@ -420,11 +431,13 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
             match sc.boundThread with
             | none => .ok ((), stStored)
             | some boundTid =>
-              -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-              match stStored.getTcb? boundTid with
-              | some boundTcb =>
+              -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration;
+              -- witnessed since `v0.35.71`, so the propagation writes the record
+              -- under the store's proof for it.
+              match stStored.getTcbWitnessed? boundTid with
+              | some ⟨boundTcb, hBound⟩ =>
                 .ok ((), schedContextConfigureBoundPropagate stStored scIdTyped boundTid
-                  boundTcb priority domain)
+                  boundTcb hBound priority domain)
               | none => .ok ((), stStored)  -- bound thread's TCB missing: leave as-is
         else
           .error .resourceExhausted
@@ -438,17 +451,20 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 live reply stack — one whose upward link is **answered** by what it names?  Such
 a thread is owed a scheduling context by the pop that reaches its frame.
 
-**The test is reciprocity, not `next.isSome`** (PR #894 review).  `severAtCut`
-leaves the frame *below* the cut with a **stale** upward link: cancelling the
-middle caller of `B → M → H` detaches `H` (`prev := none`) and consumes `M`, but
-`B.next` still reads `some (.frame M)`.  `B` is then on no live stack and is owed
-nothing, so refusing its bind refuses an operation `schedContextBind` documents as
-supported (binding a *blocked* thread).  Presence of the link is not the property;
-the property is that the frame or context above answers this frame.
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  A stale upward
+link is reachable: the splice's below side *degenerates* to the sever when the
+frame below does not reciprocate (`spliceFrameBelow?` answers `none`), and the
+sever leaves the frame below the cut with an upward link nothing answers — under
+`severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
+cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
+`B` is then on no live stack and is owed nothing, so refusing its bind refuses an
+operation `schedContextBind` documents as supported (binding a *blocked* thread).
+Presence of the link is not the property; the property is that the frame or
+context above answers this frame.
 
 That is the same question `donationChainWalk` validates on the way down — a link
 is validated by the target's own upward link, never by its `caller`, because a
-re-linked Reply carries no answer back — and the one `detachReplyFrameAbove`
+re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
 checks before it writes.  Asking it one step is **exact** rather than
 approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
 `headTerminates` make a reciprocated link a link to a frame that is itself on the
@@ -476,8 +492,10 @@ def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
 1. Precondition: SchedContext has no bound thread, TCB is unbound
 2. Set bidirectional binding (sc.boundThread, tcb.schedContextBinding)
 3. Write both updated objects to store
-4. If thread is in RunQueue, remove and re-insert at SchedContext priority
-   to maintain `effectiveParamsMatchRunQueue` invariant
+4. If thread is in RunQueue, remove and re-insert at the propagated priority
+   so the recorded bucket tracks the TCB field step 2 just wrote
+   (`effectiveParamsMatchRunQueue`, which since `v0.35.133` reads that field
+   at every binding rather than the reservation's)
 
 **AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId`, `threadId` is
 `ValidThreadId` for compile-time sentinel rejection on BOTH IDs. -/
@@ -487,8 +505,8 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
     -- the original `_ => .error .objectNotFound` arms collapsed
     -- wrong-variant and absent into the same error code, so migrating to
     -- `none => .error .objectNotFound` is semantics-preserving.
-    match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
-    | some sc =>
+    match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+    | some ⟨sc, hSc⟩ =>
       -- Z5-G1: Precondition check — SchedContext must not already have a bound thread
       if sc.boundThread.isSome then .error .illegalState
       -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
@@ -509,8 +527,9 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           -- live stack (`next.isSome`) is owed a context by the pop that reaches
           -- that frame, and the pop writes its binding; giving it a second
           -- context now would be overwritten by that pop, orphaning this one.
-          -- Refused while the frame is on a stack; a frame the detach cut off
-          -- (`next = none`) is owed nothing, and binding is allowed.
+          -- Refused while the frame is on a stack; a frame with no upward link
+          -- (`next = none`), or one below a severed cut whose link nothing
+          -- answers, is owed nothing, and binding is allowed.
           else if replyFrameOnLiveStack st tcb then .error .illegalState
           else
           -- Z5-G1: Precondition check — TCB must be unbound.
@@ -526,21 +545,46 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           | .unbound =>
             -- Z5-G2: Bidirectional binding
             -- AK2-B option B (S-H04): Propagate SC priority to TCB priority.
-            -- This establishes `tcb.priority = sc.priority` at bind time,
-            -- aligning the base priority component that `schedulerPriorityMatch`
-            -- and `effectiveParamsMatchRunQueue` each read. Without this, the
-            -- two invariants jointly force `tcb.priority = sc.priority` in the
-            -- extended bundle but no operation ever establishes the equality.
-            -- Matches seL4 MCS where bind transfers scheduling authority from
+            -- This establishes `tcb.priority = sc.priority` at bind time.
+            -- Matches seL4 MCS, where bind transfers scheduling authority from
             -- the TCB to its bound SchedContext.
+            --
+            -- **WS-RR (`v0.35.133`): do not read this write as redundant.**  Its
+            -- original justification was that `schedulerPriorityMatch` and
+            -- `effectiveParamsMatchRunQueue` jointly forced `tcb.priority =
+            -- sc.priority` in the extended bundle with no operation establishing
+            -- it.  That is no longer true: with `TCB.priority` the base's one
+            -- home neither predicate reads a reservation, so the pair forces
+            -- nothing here.  What the write is for now is the thing it always
+            -- *did* — it is how a reservation configures its bound thread's
+            -- band, it is what `boundThreadPriorityConsistent` states, and with
+            -- the field the only home the scheduler reads, deleting it would
+            -- make `schedContextBind` silently not apply the band it is being
+            -- asked to apply.
             let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
-            let updatedSc := { sc with boundThread := some vThreadId.val }
-            let updatedTcb := { tcb with
-              schedContextBinding := SchedContextBinding.bound scIdTyped,
-              priority := sc.priority }
-            -- Write both updated objects
-            let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
-            let st2 := { st1 with objects := st1.objects.insert vThreadId.val.toObjId (KernelObject.tcb updatedTcb) }
+            -- **WS-HP HP10.4: a bind ends any loan, so the origin clears.**  The
+            -- thread now *owns* this reservation, which is the state the origin
+            -- records a departure from — so a recorded origin here is residue, and
+            -- leaving it would let a later pop hand the reservation to a thread
+            -- this bind has nothing to do with.  Defense in depth rather than a
+            -- reachable repair: the guard above already refuses a context that
+            -- heads a reply stack, and the pop's bottom arm clears the field when
+            -- a chain unwinds — but "no state reaches this" is an argument about
+            -- every path into the operation, and clearing costs one field write.
+            let updatedSc := { sc with boundThread := some vThreadId.val,
+                                       donationOrigin := none }
+            -- Write both updated objects (`v0.35.71`): the SchedContext under the
+            -- witness its own lookup carries, then the TCB through the typed
+            -- rewrite over the rewritten state -- its lookup is re-resolved
+            -- there, because a witness taken at `st` does not carry across a
+            -- rewrite without `invExt`, which executable code has no proof of.
+            -- The record it writes is the stored one with its binding and
+            -- priority moved: exactly what the raw insert wrote from `tcb`.
+            let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+              (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+            let st2 := st1.updateTcb vThreadId.val fun t =>
+              { t with schedContextBinding := SchedContextBinding.bound scIdTyped,
+                       priority := sc.priority }
             -- Z5-G3: If thread is in RunQueue, remove and re-insert at
             -- SchedContext-derived priority. Under dequeue-on-dispatch, only
             -- runnable-but-not-current threads are in the RunQueue. After bind,
@@ -600,8 +644,8 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
     -- original `_ => .error .objectNotFound` arm collapsed wrong-variant
     -- and absent into the same error code, so migration is
     -- semantics-preserving.
-    match st.getSchedContext? (SchedContextId.ofObjId vScId.val) with
-    | some sc =>
+    match st.getSchedContextWitnessed? (SchedContextId.ofObjId vScId.val) with
+    | some ⟨sc, hSc⟩ =>
       match sc.boundThread with
       | none => .error .illegalState
       | some tid =>
@@ -647,10 +691,9 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           let unbindHome := determineTargetCore st tid
           let runCore? := runningCoreOf? st tid
           let wasCurrent := runCore?.isSome
-          let st0 := match runCore? with
-            | some runCore =>
-                { st with scheduler := st.scheduler.setCurrentOnCore runCore none }
-            | none => st
+          let sched0 := match runCore? with
+            | some runCore => st.scheduler.setCurrentOnCore runCore none
+            | none => st.scheduler
           -- Z5-H2: re-bucket the thread at its post-unbind (legacy) priority.
           --
           -- WS-SM SM8.B (PR #861 review round 14): this used to **remove** the
@@ -671,18 +714,31 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           -- priority, which is the re-bucket the docstring always described.
           let updatedTcb := { tcb with schedContextBinding := SchedContextBinding.unbound }
           let legacyPrio := updatedTcb.boostedPriority
-          let homeQueue := st0.scheduler.runQueueOnCore unbindHome
+          let homeQueue := sched0.runQueueOnCore unbindHome
           let rebucketed := (homeQueue.remove tid).insert tid legacyPrio
-          let st1 :=
-            if tid ∈ homeQueue then
-              { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome rebucketed }
-            else if wasCurrent then
-              { st0 with scheduler := st0.scheduler.setRunQueueOnCore unbindHome rebucketed }
-            else st0
+          let sched1 :=
+            if tid ∈ homeQueue then sched0.setRunQueueOnCore unbindHome rebucketed
+            else if wasCurrent then sched0.setRunQueueOnCore unbindHome rebucketed
+            else sched0
+          -- The scheduler stage is a scheduler-only update of the pre-state
+          -- (`v0.35.71`): its object table IS the pre-state's, definitionally,
+          -- so the witness the SchedContext lookup above carries is the stage's
+          -- own and the rewrite below takes it directly.
+          let st1 : SystemState := { st with scheduler := sched1 }
           -- Z5-H2 cont: Clear both sides of the binding
-          let updatedSc := { sc with boundThread := none, isActive := false }
-          let st2 := { st1 with objects := st1.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
-          let st3 := { st2 with objects := st2.objects.insert tid.toObjId (KernelObject.tcb updatedTcb) }
+          -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
+          -- direction — the reservation stops being owned at all, so a recorded
+          -- departure from ownership has no subject.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
+          let st2 := st1.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+            (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
+          -- The TCB through the typed rewrite over the rewritten state, for the
+          -- reason `schedContextBind` gives: the record it writes is the stored
+          -- one with its binding cleared, which is `updatedTcb` on every state
+          -- the two lookups above admit.
+          let st3 := st2.updateTcb tid fun t =>
+            { t with schedContextBinding := SchedContextBinding.unbound }
           -- Z5-H3: Remove SchedContext from replenish queue.
           -- WS-SM SM8.B (PR #861 review round 17): on `unbindHome`, the same
           -- core this operation already re-buckets the run queue on.  The
@@ -697,8 +753,13 @@ def schedContextUnbind (vScId : ValidObjId) : Kernel Unit :=
           .ok ((), st5)
         -- Bound thread's TCB not found — clear SC side anyway
         | none =>
-          let updatedSc := { sc with boundThread := none, isActive := false }
-          let st1 := { st with objects := st.objects.insert vScId.val (KernelObject.schedContext updatedSc) }
+          -- **WS-HP HP10.4**: and the origin, for the bind's reason in the other
+          -- direction — the reservation stops being owned at all, so a recorded
+          -- departure from ownership has no subject.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
+          let st1 := st.rewriteObject vScId.val (KernelObject.schedContext updatedSc)
+            (SystemState.rewriteAdmissible_schedContext hSc updatedSc)
           -- WS-SM SM8.B (PR #861 review round 17): this arm is reached when the
           -- bound TCB is **already gone from the store**, so there is no
           -- `cpuAffinity` left to read and no home core to name — a
@@ -745,8 +806,8 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
   -- kernel-internal identity fallbacks; self-yield joins that family.
   if fromScId == targetScId then st else
   -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-  match st.getSchedContext? fromScId with
-  | some fromSc =>
+  match st.getSchedContextWitnessed? fromScId with
+  | some ⟨fromSc, hFrom⟩ =>
     match st.getSchedContext? targetScId with
     | some targetSc =>
       -- Z5-I1: Transfer budget from source to target
@@ -754,11 +815,15 @@ def schedContextYieldTo (st : SystemState) (fromScId targetScId : SchedContextId
       let newTargetBudget := min (targetSc.budgetRemaining.val + transferAmount) targetSc.budget.val
       let wasBudgetStarved := targetSc.budgetRemaining.val == 0
       let updatedFrom := { fromSc with budgetRemaining := Budget.zero, isActive := false }
-      let updatedTarget := { targetSc with
-        budgetRemaining := ⟨newTargetBudget⟩
-        isActive := newTargetBudget > 0 }
-      let st1 := { st with objects := st.objects.insert fromScId.toObjId (KernelObject.schedContext updatedFrom) }
-      let st2 := { st1 with objects := st1.objects.insert targetScId.toObjId (KernelObject.schedContext updatedTarget) }
+      -- `v0.35.71`: the source under the witness its lookup carries, the target
+      -- through the typed rewrite over the rewritten state -- the self-yield
+      -- guard above is what makes the second key a different one, and the
+      -- record written is the stored target with the transferred budget,
+      -- which is `targetSc`'s on every state the lookup above admits.
+      let st1 := st.rewriteObject fromScId.toObjId (KernelObject.schedContext updatedFrom)
+        (SystemState.rewriteAdmissible_schedContext hFrom updatedFrom)
+      let st2 := st1.updateSchedContext targetScId fun sc =>
+        { sc with budgetRemaining := ⟨newTargetBudget⟩, isActive := newTargetBudget > 0 }
       -- Z5-I2: If target's bound thread was budget-starved and now has budget,
       -- enqueue it in RunQueue so it becomes schedulable again.
       if wasBudgetStarved && newTargetBudget > 0 then

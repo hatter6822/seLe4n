@@ -388,8 +388,13 @@ def _escapes_blanked(line: str) -> str:
 NON_RUST_KEYWORD_SOURCES: "dict[str, str]" = {}
 
 
-def _python_code_view(text: str) -> str:
+def python_code_view(text: str, blank_strings: bool = False) -> str:
     """`text` with comments and docstrings blanked, byte-aligned, code kept.
+
+    **Public since `v0.35.152`**, because it gained a second asker:
+    `scenario_catalog.consumer_code_view` needs exactly this view to decide
+    whether a Python gate's CODE opens a fixture, and a second Python stripper
+    beside this one is the duplication this module's own rules retire.
 
     **Gates read code, prose reads prose**, applied to this project's own
     scanners.  The subject here is a regex *fragment* -- a string literal that
@@ -405,6 +410,14 @@ def _python_code_view(text: str) -> str:
     docstring wherever it appears, while an f-string, a concatenation or a
     string in argument position is not.  Byte alignment is preserved so the line
     numbers reported are the file's own.
+
+    **`blank_strings` is the caller's question, not this view's** (`v0.35.154`).
+    The default keeps string contents, because the commonest asker wants the text
+    a literal holds -- a regex fragment, a fixture path.  An asker whose question
+    is *is this occurrence of an IDENTIFIER a read* needs them gone, because a
+    name inside a string literal is not a read: that is the `code_no_strings`
+    counterpart this module already has for Rust, and the same one-lexer,
+    policy-as-a-parameter shape `strip_shell` took at `v0.35.152`.
     """
     out = list(text)
 
@@ -432,6 +445,11 @@ def _python_code_view(text: str) -> str:
 
     if tree is not None:
         for node in ast.walk(tree):
+            if blank_strings and isinstance(node, ast.Constant) \
+                    and isinstance(node.value, str):
+                blank(offset(node.lineno, node.col_offset),
+                      offset(node.end_lineno, node.end_col_offset))
+                continue
             if not isinstance(node, ast.Expr):
                 continue
             value = node.value
@@ -481,12 +499,12 @@ def hand_rolled_angle_nesting() -> list[str]:
     rather than implied: it is this file, because this file is where the rule
     lives and where it recurred twice.
 
-    Read over `_python_code_view`, since the docstrings here quote the character
+    Read over `python_code_view`, since the docstrings here quote the character
     in order to explain it -- the same reason `bare_keyword_literals` gives.
     """
     source = Path(__file__)
     text = source.read_text(encoding="utf-8")
-    scrubbed = _python_code_view(text)
+    scrubbed = python_code_view(text)
     owned: tuple[int, int] | None = None
     for node in ast.walk(ast.parse(text)):
         if isinstance(node, ast.FunctionDef) and node.name == "signature_terminator":
@@ -568,7 +586,7 @@ def bare_keyword_literals() -> list[str]:
     seen: set[str] = set()
     for path in _gate_sources():
         text = path.read_text(encoding="utf-8")
-        scrubbed = _python_code_view(text)
+        scrubbed = python_code_view(text)
         hits: list[tuple[int, str]] = []
         # The plain shape, reported verbatim because its message is the clearest.
         for match in _BARE_KEYWORD_LITERAL.finditer(scrubbed):
@@ -755,7 +773,7 @@ def bare_ident_literals() -> list[str]:
     out: list[str] = []
     seen: set[str] = set()
     for path in _gate_sources():
-        scrubbed = _python_code_view(path.read_text(encoding="utf-8"))
+        scrubbed = python_code_view(path.read_text(encoding="utf-8"))
         hits = list(_BARE_IDENT_LITERAL.finditer(scrubbed))
         if path.name in NON_RUST_IDENT_SOURCES:
             if hits:

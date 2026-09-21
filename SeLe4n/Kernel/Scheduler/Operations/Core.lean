@@ -32,12 +32,20 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
      vector that an earlier draft of this work introduced.
   3. **Consumption sites unchanged:** the four production re-enqueue
      sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
-     `switchDomain`) continue to use `tcb.boostedPriority`.
-     Under the propagation invariant this equals
-     `(resolveEffectivePrioDeadline st tcb).1` consulted by selection,
-     eliminating the priority-inversion vector. `schedulerPriorityMatch`
+     `switchDomain`) continue to use `tcb.boostedPriority`, eliminating
+     the priority-inversion vector.
+
+     *WS-RR (`v0.35.133`) narrows what that costs.*  This point used to
+     read that `tcb.boostedPriority` equals the
+     `(resolveEffectivePrioDeadline st tcb).1` selection consults **under
+     the propagation invariant**, and that `schedulerPriorityMatch`
      (TCB-based) and `effectiveParamsMatchRunQueue` (SC-based) agree
-     without requiring invariant fusion.
+     without invariant fusion.  With `TCB.priority` the base's one home
+     both readings are unconditional: the equality is
+     `resolveEffectivePrioDeadline_fst_eq_threadBasePriority` composed with
+     `threadBasePriority_eq`, which assumes nothing, and neither predicate
+     is SC-based any more — `effectiveParamsMatchRunQueue` reads no
+     SchedContext at all, so the two differ only in the PIP boost.
 - AK2-D (S-M02): `timeoutBlockedThreads` errors surfaced via
   `SchedulerState.lastTimeoutErrors` diagnostic field, cleared at each
   `timerTickWithBudget` entry.
@@ -80,10 +88,7 @@ open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
   simp only [saveOutgoingContext]
   cases (st.scheduler.currentOnCore bootCoreId) with
   | none => rfl
-  | some outTid =>
-      cases h : st.getTcb? outTid with
-      | none => simp_all
-      | some _ => simp_all
+  | some outTid => exact SystemState.updateTcb_scheduler _ _ _
 
 @[simp] theorem restoreIncomingContext_scheduler (st : SystemState) (tid : SeLe4n.ThreadId) :
     (restoreIncomingContext st tid).scheduler = st.scheduler := by
@@ -113,8 +118,9 @@ theorem saveOutgoingContext_preserves_tcb
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact ⟨tcb, h⟩
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact ⟨tcb, h⟩
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == oid
@@ -138,8 +144,9 @@ theorem saveOutgoingContext_tcb_fields
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact ⟨tcb, h, rfl, rfl, rfl, rfl, rfl, rfl⟩
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == oid
@@ -164,8 +171,9 @@ theorem saveOutgoingContext_preserves_non_tcb_lookup
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => rfl
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           have hNe : ¬(outTid.toObjId == oid) := by
@@ -191,8 +199,9 @@ theorem saveOutgoingContext_preserves_timeSlicePositive
   | some outTid =>
       dsimp only
       cases hOut : st.getTcb? outTid with
-      | none => exact hOrig
+      | none => rw [SystemState.updateTcb_eq_self_of_none hOut]; exact hOrig
       | some outTcb =>
+          rw [SystemState.updateTcb_eq_of_some hOut]
           dsimp only
           simp only [RHTable_getElem?_eq_get?]; rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
           by_cases hEq : outTid.toObjId == tid.toObjId
@@ -214,11 +223,7 @@ theorem saveOutgoingContext_preserves_objects_invExt
   | none => exact hObjInv
   | some outTid =>
       dsimp only
-      cases hObj : st.getTcb? outTid with
-      | none => simp; exact hObjInv
-      | some outTcb =>
-          dsimp only
-          exact RHTable_insert_preserves_invExt st.objects _ _ hObjInv
+      exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
 /-- `restoreIncomingContext` preserves `timeSlicePositive`. The context restore
 only changes `machine.regs` — objects and scheduler state are unchanged. -/
 private theorem restoreIncomingContext_preserves_timeSlicePositive
@@ -407,12 +412,18 @@ def handleYield : Kernel Unit :=
 -- M-04/WS-E6: Time-slice preemption
 -- ============================================================================
 
-/-- M-04/WS-E6/V5-L: Default time-slice quantum (ticks per scheduling round).
-Factored into a named constant for backward compatibility. New code should
-prefer `st.scheduler.configDefaultTimeSlice` which is configurable per
-scheduler instance. This constant remains for use in contexts where no
-`SchedulerState` is available (e.g., frozen operations). -/
-def defaultTimeSlice : Nat := 5
+-- `defaultTimeSlice : Nat := 5` stood here and is **deleted** at `v0.35.103`.
+-- It was superseded by the per-instance `SchedulerState.configDefaultTimeSlice`
+-- (AC2-C) and retained on a justification that named a consumer which does not
+-- exist: *"for use in contexts where no `SchedulerState` is available (e.g.,
+-- frozen operations)"*.  A `FrozenSystemState` carries a `FrozenSchedulerState`,
+-- so `frozenTimerTick` reads `st.scheduler.configDefaultTimeSlice` like the live
+-- tick below, and measurement put the constant's whole-tree reference count at
+-- zero.  `frozenDefaultTimeSlice`, which carried the mirror-image false claim
+-- (*"retained for backward compatibility in tests that reference this
+-- constant"*, referenced by no test), went in the same cut.  A quantum is read
+-- from `st.scheduler.configDefaultTimeSlice`; a Tier 3 negative refuses either
+-- name coming back.
 
 /-- WS-H12b/H-04 + WS-H12c/H-03: Handle a timer tick with dequeue-on-dispatch
 and inline context switch semantics.
@@ -421,7 +432,7 @@ Behavior:
 1. If no thread is current, advance the machine timer only.
 2. If the current thread's time-slice has not expired (> 1 after decrement),
    decrement and advance the machine timer.
-3. If the time-slice expires (≤ 1), reset it to `defaultTimeSlice`,
+3. If the time-slice expires (≤ 1), reset it to `st.scheduler.configDefaultTimeSlice`,
    re-enqueue the current thread into the run queue, and reschedule.
 
 Under dequeue-on-dispatch, the current thread is NOT in the run queue.
@@ -437,15 +448,17 @@ def timerTick : Kernel Unit :=
         -- No current thread: just advance the timer
         .ok ((), { st with machine := tick st.machine })
     | some tid =>
-        match st.getTcb? tid with
-        | some tcb =>
+        match st.getTcbWitnessed? tid with
+        | some ⟨tcb, h⟩ =>
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset, re-enqueue, reschedule
-              -- AC2-C: Now uses configurable `configDefaultTimeSlice` from scheduler
-              -- state (initialized to `defaultTimeSlice` = 5). Preservation proofs
-              -- carry an `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
+              -- AC2-C: uses the configurable `configDefaultTimeSlice` from scheduler
+              -- state (its own default is 5). Preservation proofs carry an
+              -- `hConfigTS` hypothesis requiring `configDefaultTimeSlice > 0`.
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-              let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine }
+              let st' := { st.rewriteObject tid.toObjId (.tcb tcb')
+                             (SystemState.rewriteAdmissible_tcb h tcb') with
+                           machine := tick st.machine }
               -- WS-H12b: re-enqueue current thread before schedule.
               -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
               -- `tcb.boostedPriority` (priority + PIP boost).
@@ -460,7 +473,9 @@ def timerTick : Kernel Unit :=
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-              .ok ((), { st with objects := st.objects.insert tid.toObjId (.tcb tcb'), machine := tick st.machine })
+              .ok ((), { st.rewriteObject tid.toObjId (.tcb tcb')
+                           (SystemState.rewriteAdmissible_tcb h tcb') with
+                         machine := tick st.machine })
         | none => .error .schedulerInvariantViolation
 
 -- ============================================================================
@@ -476,16 +491,13 @@ def popDueReplenishments (st : SystemState) (now : Nat)
 
 /-- Z4-G2: Refill a single SchedContext's budget via CBS replenishment processing.
 Looks up the SchedContext, calls `processReplenishments` and `cbsUpdateDeadline`,
-writes the updated object back to the store. No-op if the SchedContext is not found
-or is not a SchedContext object. -/
+writes the updated object back to the store through `SystemState.updateSchedContext`
+(the in-place rewrite under the witnessed lookup). No-op if the SchedContext is not
+found or is not a SchedContext object. -/
 def refillSchedContext (st : SystemState) (scId : SeLe4n.SchedContextId)
     (now : Nat) : SystemState :=
-  match st.getSchedContext? scId with
-  | some sc =>
-    let processed := processReplenishments sc now
-    let updated := cbsUpdateDeadline processed now true
-    { st with objects := st.objects.insert scId.toObjId (.schedContext updated) }
-  | none => st
+  st.updateSchedContext scId fun sc =>
+    cbsUpdateDeadline (processReplenishments sc now) now true
 
 /-- Z4-G3: Process all due replenishments and re-enqueue threads whose budget
 was restored. Pops due entries from the replenish queue, refills each
@@ -608,8 +620,16 @@ Dispatches on the current thread's `schedContextBinding`:
   (re-enqueue + reschedule).
 
 Returns `(updatedState, wasPreempted)`. Callers use `wasPreempted` to decide
-whether to call `schedule`. -/
+whether to call `schedule`.
+
+`hTcb` is the witness that `tcb` is the TCB stored at `tid` (`v0.35.67`): the
+TCB writes are `SystemState.rewriteObject` under it, so the update is one
+in-place table insert whose admissibility proof is erased — and the precondition
+the raw insert used to trust silently (a caller passing the stored TCB) is the
+signature's.  A caller supplies it from `getTcbWitnessed?`.  The SchedContext
+writes are the rewrite under the witnessed lookup of the binding's context. -/
 def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hTcb : st.getTcb? tid = some tcb)
     : Except KernelError (SystemState × Bool) :=
   match tcb.schedContextBinding with
   | .unbound =>
@@ -618,8 +638,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
     -- matching the updated `timerTick`. See timerTick for proof chain details.
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
-                           machine := tick st.machine }
+      let st' := { st.rewriteObject tid.toObjId (.tcb tcb')
+                     (SystemState.rewriteAdmissible_tcb hTcb tcb') with
+                   machine := tick st.machine }
       -- AI3-A (M-04) / AK2-A (S-H03): Re-enqueue at
       -- `tcb.boostedPriority`. This is the `.unbound` branch so
       -- `TCB.boostedPriority` is unambiguously correct (no SchedContext
@@ -629,11 +650,12 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       .ok (st'', true)
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb'),
-                      machine := tick st.machine }, false)
+      .ok ({ st.rewriteObject tid.toObjId (.tcb tcb')
+               (SystemState.rewriteAdmissible_tcb hTcb tcb') with
+             machine := tick st.machine }, false)
   | .bound scId | .donated scId _ =>
-    match st.getSchedContext? scId with
-    | some sc =>
+    match st.getSchedContextWitnessed? scId with
+    | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
         -- Z4-F3: Budget exhausted — schedule replenishment and preempt.
         -- CBS semantics: `consumedAmount` is the full remaining budget (not 1 tick),
@@ -645,9 +667,9 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
         let sc' := consumeBudget sc 1
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
-        -- Write updated SchedContext back
-        let st' := { st with
-          objects := st.objects.insert scId.toObjId (.schedContext sc'''),
+        -- Write updated SchedContext back (the in-place rewrite under the witnessed lookup)
+        let st' := { st.rewriteObject scId.toObjId (.schedContext sc''')
+                       (SystemState.rewriteAdmissible_schedContext hSc sc''') with
           machine := tick st.machine }
         -- Insert into system replenish queue for future refill
         let rq := (st'.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
@@ -672,8 +694,8 @@ def timerTickBudget (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
       else
         -- Z4-F2: Budget remains — decrement and continue
         let sc' := consumeBudget sc 1
-        let st' := { st with
-          objects := st.objects.insert scId.toObjId (.schedContext sc'),
+        let st' := { st.rewriteObject scId.toObjId (.schedContext sc')
+                       (SystemState.rewriteAdmissible_schedContext hSc sc') with
           machine := tick st.machine }
         .ok (st', false)
     | none =>
@@ -758,9 +780,9 @@ def timerTickWithBudget : Kernel Unit :=
       -- No current thread: just advance the timer
       .ok ((), { stReplenished with machine := tick stReplenished.machine })
     | some tid =>
-      match stReplenished.getTcb? tid with
-      | some tcb =>
-        match timerTickBudget stReplenished tid tcb with
+      match stReplenished.getTcbWitnessed? tid with
+      | some ⟨tcb, hTcb⟩ =>
+        match timerTickBudget stReplenished tid tcb hTcb with
         | .error e => .error e
         | .ok (st', true) =>
           -- Preempted: reschedule using effective selection
@@ -797,8 +819,8 @@ def handleYieldWithBudget : Kernel Unit :=
           let st' := { st with scheduler := st.scheduler.setRunQueueOnCore bootCoreId rq' }
           scheduleEffective st'
         | .bound scId | .donated scId _ =>
-          match st.getSchedContext? scId with
-          | some sc =>
+          match st.getSchedContextWitnessed? scId with
+          | some ⟨sc, h⟩ =>
             -- Charge remaining budget and schedule replenishment
             let now := st.machine.timer
             let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
@@ -806,9 +828,9 @@ def handleYieldWithBudget : Kernel Unit :=
             let sc'' := scheduleReplenishment sc' now consumedAmount
             -- Insert into replenish queue
             let rq := (st.scheduler.replenishQueueOnCore bootCoreId).insert scId (now + sc.period.val)
-            -- Write updated SchedContext
-            let st' := { st with
-              objects := st.objects.insert scId.toObjId (.schedContext sc''),
+            -- Write updated SchedContext (the in-place rewrite under the witnessed lookup)
+            let st' := { st.rewriteObject scId.toObjId (.schedContext sc'')
+                           (SystemState.rewriteAdmissible_schedContext h sc'') with
               scheduler := st.scheduler.setReplenishQueueOnCore bootCoreId rq }
             -- AG1-A: Re-enqueue thread at effective priority (base + PIP boost)
             let rq' := (st'.scheduler.runQueueOnCore bootCoreId).insert tid (resolveInsertPriority st' tid sc)
@@ -1016,11 +1038,8 @@ def saveOutgoingContextOnCore (st : SystemState) (c : CoreId) : SystemState :=
   match st.scheduler.currentOnCore c with
   | none => st
   | some outTid =>
-      match st.getTcb? outTid with
-      | some outTcb =>
-          let savedTcb : KernelObject := .tcb { outTcb with registerContext := st.machine.regsOnCore c }
-          { st with objects := st.objects.insert outTid.toObjId savedTcb }
-      | none => st
+      -- One TCB rewritten in place through the lookup that is its own witness.
+      st.updateTcb outTid fun outTcb => { outTcb with registerContext := st.machine.regsOnCore c }
 
 /-- WS-SM SM5.D (frame): the per-core context save writes only the object
 store — the scheduler state passes through untouched on every arm. -/
@@ -1029,9 +1048,7 @@ store — the scheduler state passes through untouched on every arm. -/
   unfold saveOutgoingContextOnCore
   split
   · rfl
-  · split
-    · rfl
-    · rfl
+  · exact SystemState.updateTcb_scheduler _ _ _
 
 /-- WS-SM SM5.E (idle-dispatch admission): is core `c`'s idle thread a *safe*
 dispatch target — installed, in core `c`'s active domain, **and admissible on core
@@ -1341,28 +1358,32 @@ queues.
 read-only w.r.t. the shared global tick counter (see the SM5.D section header —
 global-timer ownership). -/
 def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+    (tcb : TCB) (hTcb : st.getTcb? tid = some tcb)
+    : Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
   match tcb.schedContextBinding with
   | .unbound =>
     if tcb.timeSlice ≤ 1 then
       let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-      let st' := { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
+      let st' := st.rewriteObject tid.toObjId (.tcb tcb')
+        (SystemState.rewriteAdmissible_tcb hTcb tcb')
       let rq := (st'.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)
       let st'' := { st' with scheduler := st'.scheduler.setRunQueueOnCore c rq }
       .ok (st'', true, [])
     else
       let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-      .ok ({ st with objects := st.objects.insert tid.toObjId (.tcb tcb') }, false, [])
+      .ok (st.rewriteObject tid.toObjId (.tcb tcb')
+             (SystemState.rewriteAdmissible_tcb hTcb tcb'), false, [])
   | .bound scId | .donated scId _ =>
-    match st.getSchedContext? scId with
-    | some sc =>
+    match st.getSchedContextWitnessed? scId with
+    | some ⟨sc, hSc⟩ =>
       if sc.budgetRemaining.val ≤ 1 then
         let now := st.machine.timer
         let consumedAmount : Budget := ⟨sc.budgetRemaining.val⟩
         let sc' := consumeBudget sc 1
         let sc'' := scheduleReplenishment sc' now consumedAmount
         let sc''' := cbsUpdateDeadline sc'' now true
-        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc''') }
+        let st' := st.rewriteObject scId.toObjId (.schedContext sc''')
+          (SystemState.rewriteAdmissible_schedContext hSc sc''')
         -- WS-SM SM5.H.2: schedule the CBS replenishment via the named primitive
         -- `replenishOnCore` (load-bearing — the live tick calls it, not merely proven
         -- equal); `stReplenished` is defeq to the prior open-coded
@@ -1378,13 +1399,69 @@ def timerTickBudgetOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId
         .ok (st'''', true, timeoutSgis)
       else
         let sc' := consumeBudget sc 1
-        let st' := { st with objects := st.objects.insert scId.toObjId (.schedContext sc') }
+        let st' := st.rewriteObject scId.toObjId (.schedContext sc')
+          (SystemState.rewriteAdmissible_schedContext hSc sc')
         .ok (st', false, [])
-    | _ =>
+    | none =>
       -- R5.E fail-closed: SchedContext lookup failed for a bound-budget thread.
       -- Unreachable under `schedContextStoreConsistent`; surfaced explicitly
       -- rather than advancing on stale budget state.
       .error .missingSchedContext
+
+/-- WS-SM SM5.D.5 (raw-write migration Cut B2): charge core `c`'s current thread
+`tid` one tick, **resolved from the store** — the witnessed lookup
+`getTcbWitnessed?` supplies `timerTickBudgetOnCore` the proof its in-place rewrite
+consumes, and a current thread that resolves to no TCB is a scheduler-invariant
+violation (fail-closed, `.schedulerInvariantViolation`), exactly the arm the tick
+carried inline before.
+
+**Why this is a definition rather than the tick's own `match`.**  The lookup is a
+*dependent* match — the `some ⟨tcb, hTcb⟩` alternative's type names the state
+scrutinised — and Lean elaborates a `let` whose body's type does not depend on it
+as a `have`, so inside `timerTickOnCore` the tick's state `st1` is a `have`-bound
+name.  A dependent match under a `have` binder, and equally a dependent match over
+a stuck projection such as `(timerTickOnCorePrepared st c).1`, is opaque to
+definitional unification: two spellings of the same match tree do not unify, and
+`timerTickOnCore_eq_prepared` — the `rfl` equation every SM5.D.2 headline is a
+corollary of — stopped elaborating with the lookup inline, on every restatement
+except a verbatim copy of the body (measured, not reasoned).  Over a **parameter**
+the match is ordinary, and the tick's own match tree stays non-dependent, which is
+what keeps that equation `rfl`.  The frame every consumer reads is
+`timerTickChargeCurrentOnCore_ok`: a successful charge *is* a successful
+`timerTickBudgetOnCore` at the witnessed TCB. -/
+def timerTickChargeCurrentOnCore (st : SystemState) (c : CoreId) (tid : SeLe4n.ThreadId) :
+    Except KernelError (SystemState × Bool × List (CoreId × SgiKind)) :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, hTcb⟩ => timerTickBudgetOnCore st c tid tcb hTcb
+  | none => .error .schedulerInvariantViolation
+
+/-- A successful charge is a successful `timerTickBudgetOnCore` at the TCB the
+store holds for `tid`, under the store's own witness — the shape every composite
+over the tick destructures. -/
+theorem timerTickChargeCurrentOnCore_ok {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {r : SystemState × Bool × List (CoreId × SgiKind)}
+    (h : timerTickChargeCurrentOnCore st c tid = .ok r) :
+    ∃ (tcb : TCB) (hTcb : st.getTcb? tid = some tcb),
+      timerTickBudgetOnCore st c tid tcb hTcb = .ok r := by
+  unfold timerTickChargeCurrentOnCore at h
+  split at h
+  · rename_i tcb hTcb _
+    exact ⟨tcb, hTcb, h⟩
+  · cases h
+
+/-- The converse: the charge at a resolving thread is the budget tick at its TCB. -/
+theorem timerTickChargeCurrentOnCore_eq {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} (hTcb : st.getTcb? tid = some tcb) :
+    timerTickChargeCurrentOnCore st c tid = timerTickBudgetOnCore st c tid tcb hTcb := by
+  unfold timerTickChargeCurrentOnCore
+  rw [SystemState.getTcbWitnessed?_eq_some hTcb]
+
+/-- A thread the store does not hold cannot be charged. -/
+theorem timerTickChargeCurrentOnCore_none {st : SystemState} {c : CoreId}
+    {tid : SeLe4n.ThreadId} (hNone : st.getTcb? tid = none) :
+    timerTickChargeCurrentOnCore st c tid = .error .schedulerInvariantViolation := by
+  unfold timerTickChargeCurrentOnCore
+  rw [SystemState.getTcbWitnessed?_eq_none hNone]
 
 /-- WS-SM SM5.D.2 (plan §3.4): the per-core timer tick — the full per-core
 analogue of `timerTickWithBudget`.
@@ -1475,31 +1552,28 @@ def timerTickOnCore (st : SystemState) (c : CoreId) :
       else
         .ok (st1, replenishSgis)
   | some tid =>
-      match st1.getTcb? tid with
-      | some tcb =>
-          match timerTickBudgetOnCore st1 c tid tcb with
-          | .error e => .error e
-          | .ok (st2, preempted, timeoutSgis) =>
-              -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
-              -- target-aware; their remote-poke SGIs join the replenish
-              -- drain's in the tick's emission list.
-              if preempted then
-                match scheduleEffectiveOnCore st2 c with
-                | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-              else if localReplenishWake then
-                -- PR #880 round 7: the drain woke a thread on this very core and
-                -- the charge did not preempt — run the receiver-side reschedule
-                -- decision locally (switch only if the refilled candidate
-                -- outranks the running thread; identity otherwise).  The
-                -- preempted arm needs no such step: `scheduleEffectiveOnCore`
-                -- already re-selects over the refilled queue.
-                match handleRescheduleSgiOnCore st2 c with
-                | .error e => .error e
-                | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
-              else
-                .ok (st2, replenishSgis ++ timeoutSgis)
-      | none => .error .schedulerInvariantViolation
+      match timerTickChargeCurrentOnCore st1 c tid with
+      | .error e => .error e
+      | .ok (st2, preempted, timeoutSgis) =>
+          -- PR #880 round 8: the bound-exhausted arm's timeout wakes are
+          -- target-aware; their remote-poke SGIs join the replenish
+          -- drain's in the tick's emission list.
+          if preempted then
+            match scheduleEffectiveOnCore st2 c with
+            | .error e => .error e
+            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
+          else if localReplenishWake then
+            -- PR #880 round 7: the drain woke a thread on this very core and
+            -- the charge did not preempt — run the receiver-side reschedule
+            -- decision locally (switch only if the refilled candidate
+            -- outranks the running thread; identity otherwise).  The
+            -- preempted arm needs no such step: `scheduleEffectiveOnCore`
+            -- already re-selects over the refilled queue.
+            match handleRescheduleSgiOnCore st2 c with
+            | .error e => .error e
+            | .ok st3 => .ok (st3, replenishSgis ++ timeoutSgis)
+          else
+            .ok (st2, replenishSgis ++ timeoutSgis)
 
 -- ─ SM5.D.6 (separate per-core domain-boundary re-dispatch, faithful to the
 --   single-core `switchDomain` / `scheduleDomain` split) ─
@@ -1914,22 +1988,40 @@ theorem threadInactiveFlagConsistent_of_frame_placing (st st' : SystemState)
     exact h oid tcb hPre
 
 
-/-- Placement is read off the two per-core slot families, so pointwise equality
-of both families gives it. -/
-theorem threadPlacedOnSomeCore_congr (st st' : SystemState) (u : SeLe4n.ThreadId)
-    (hCur : ∀ c : CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+/-- **WS-RR RR8.12 (Cut 4)**: placement is a question about `u`'s **own** slots,
+so a step frames it by agreeing *at `u`* — not by leaving the slots equal.
+
+`threadPlacedOnSomeCore_congr` below asks for the `current` slots to be equal,
+which a deschedule of a **different** thread falsifies: the slot that held the
+descheduled thread becomes `none`.  The suspend pipeline's G4 is exactly that
+step, so the equality form cannot frame it and this one can.  The equality form
+is now this one's instance rather than a second reading of the same question. -/
+theorem threadPlacedOnSomeCore_congr_at (st st' : SystemState) (u : SeLe4n.ThreadId)
+    (hCur : ∀ c : CoreId,
+      st'.scheduler.currentOnCore c = some u ↔ st.scheduler.currentOnCore c = some u)
     (hQ : ∀ c : CoreId,
       (u ∈ st'.scheduler.runQueueOnCore c) ↔ (u ∈ st.scheduler.runQueueOnCore c)) :
     threadPlacedOnSomeCore st' u = threadPlacedOnSomeCore st u := by
   have hRunFn : (fun c : CoreId => (st'.scheduler.currentOnCore c) == some u)
       = (fun c : CoreId => (st.scheduler.currentOnCore c) == some u) := by
-    funext c; rw [hCur c]
+    funext c
+    exact Bool.eq_iff_iff.mpr (by simpa using hCur c)
   have hQFn : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains u)
       = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains u) := by
     funext c; exact Bool.eq_iff_iff.mpr (hQ c)
   unfold threadPlacedOnSomeCore threadRunningOnSomeCore threadQueuedOnSomeCore
     runningOnSomeCore runnableOnSomeCore
   rw [hRunFn, hQFn]
+
+/-- Placement is read off the two per-core slot families, so pointwise equality
+of both families gives it — the instance of `threadPlacedOnSomeCore_congr_at`
+where the `current` slots agree outright. -/
+theorem threadPlacedOnSomeCore_congr (st st' : SystemState) (u : SeLe4n.ThreadId)
+    (hCur : ∀ c : CoreId, st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c)
+    (hQ : ∀ c : CoreId,
+      (u ∈ st'.scheduler.runQueueOnCore c) ↔ (u ∈ st.scheduler.runQueueOnCore c)) :
+    threadPlacedOnSomeCore st' u = threadPlacedOnSomeCore st u :=
+  threadPlacedOnSomeCore_congr_at st st' u (fun c => by rw [hCur c]) hQ
 
 
 theorem threadRunningOnSomeCore_of_currentOnCore (st : SystemState) (c : CoreId)
@@ -2035,7 +2127,7 @@ theorem preemptCurrentOnCore_preserves_threadInactiveFlagConsistent
     split
     · exact h
     · split
-      · rename_i prevTcb hPrev
+      · rename_i prevTcb hPrev hW
         exact threadInactiveFlagConsistent_save_and_reenqueue st c prevTid prevTcb _ _
           hObjInv hPrev hCur rfl rfl h
       · exact h
@@ -2064,27 +2156,40 @@ theorem threadQueuedOnSomeCore_eq_true_iff (st : SystemState) (u : SeLe4n.Thread
     fun ⟨c, hc⟩ => ⟨c, SeLe4n.Kernel.Concurrency.mem_allCores c, hc⟩⟩
 
 
-/-- The dispatch step: dequeue `tid` from core `c` and make it current there.
+/-- Placement reads only the scheduler, so a step that writes objects alone
+frames it. -/
+theorem threadPlacedOnSomeCore_of_scheduler_eq (st st' : SystemState)
+    (u : SeLe4n.ThreadId) (h : st'.scheduler = st.scheduler) :
+    threadPlacedOnSomeCore st' u = threadPlacedOnSomeCore st u := by
+  unfold threadPlacedOnSomeCore threadRunningOnSomeCore threadQueuedOnSomeCore
+    runningOnSomeCore runnableOnSomeCore
+  rw [h]
 
-The substantive side conditions are both real properties of the caller, not
-bookkeeping.  `hOutgoing` says the thread this dispatch displaces is queued
-somewhere — which is exactly what `preemptCurrentOnCore` establishes by
-re-enqueueing it, and whose absence would strand a runnable thread as
-`.Inactive`-observable while its stored flag says otherwise.  `hActive` says the
-incoming thread is not one the state classifies inactive: dispatching an
-inactive thread is the other way this relation breaks, and the run-queue
-selection is what rules it out. -/
-theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId)
-    (hOutgoing : ∀ u, u ≠ tid → st.scheduler.currentOnCore c = some u →
-      threadQueuedOnSomeCore st u = true)
-    (hActive : ∀ tcb, st.getTcb? tid = some tcb →
-      inferThreadState st tid tcb ≠ .Inactive)
-    (h : threadInactiveFlagConsistent st) :
-    threadInactiveFlagConsistent
+/-- **WS-RR RR8.12 (Cut 4)**: the typed in-place TCB write is one such step —
+the shape the suspend pipeline's pending-state clear and `.Inactive` write both
+take. -/
+theorem threadPlacedOnSomeCore_updateTcb (st : SystemState) (tid u : SeLe4n.ThreadId)
+    (f : TCB → TCB) :
+    threadPlacedOnSomeCore (st.updateTcb tid f) u = threadPlacedOnSomeCore st u :=
+  threadPlacedOnSomeCore_of_scheduler_eq st _ u (SystemState.updateTcb_scheduler _ _ _)
+
+/-- **WS-RR RR8.12 (Cut 4)**: the dispatch step leaves every **other** thread's
+placement where it was — given the one it displaces is queued somewhere.
+
+The hypothesis is scoped to `u` rather than quantified over every thread current
+on `c`, because that is what the question is about: a step that displaces a
+thread other than `u` cannot unplace `u` however that thread is left.  Stated
+here because `threadInactiveFlagConsistent_dispatch` below asks the same thing of
+the same step and had the argument inline — one question, one answer. -/
+theorem threadPlacedOnSomeCore_dispatch_ne (st : SystemState) (c : CoreId)
+    (tid u : SeLe4n.ThreadId) (hu : u ≠ tid)
+    (hOutgoing : st.scheduler.currentOnCore c = some u →
+      threadQueuedOnSomeCore st u = true) :
+    threadPlacedOnSomeCore
       { st with scheduler :=
           (st.scheduler.setRunQueueOnCore c
-            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } := by
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } u
+      = threadPlacedOnSomeCore st u := by
   have hCur' : ∀ c' : CoreId,
       ((st.scheduler.setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
@@ -2097,12 +2202,12 @@ theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
     · rw [if_neg hc,
         SchedulerState.setCurrentOnCore_currentOnCore_ne _ _ _ _ (fun hEq => hc hEq.symm),
         SchedulerState.setRunQueueOnCore_currentOnCore]
-  have hQ' : ∀ (c' : CoreId) (u : SeLe4n.ThreadId),
-      (u ∈ ((st.scheduler.setRunQueueOnCore c
+  have hQ' : ∀ (c' : CoreId) (v : SeLe4n.ThreadId),
+      (v ∈ ((st.scheduler.setRunQueueOnCore c
         ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
           (some tid)).runQueueOnCore c') ↔
-        (u ∈ st.scheduler.runQueueOnCore c' ∧ (c' = c → u ≠ tid)) := by
-    intro c' u
+        (v ∈ st.scheduler.runQueueOnCore c' ∧ (c' = c → v ≠ tid)) := by
+    intro c' v
     by_cases hc : c' = c
     · subst hc
       rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
@@ -2111,29 +2216,59 @@ theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
     · rw [SchedulerState.setCurrentOnCore_runQueueOnCore,
         SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _ (fun hEq => hc hEq.symm)]
       exact ⟨fun hx => ⟨hx, fun hEq => absurd hEq hc⟩, fun hx => hx.1⟩
-  refine threadInactiveFlagConsistent_of_frame_placing st _ tid
-    (fun oid tcb' hObj => ⟨tcb', hObj, rfl, rfl⟩) ?_ ?_ hActive h
-  · intro u hu
-    apply Bool.eq_iff_iff.mpr
-    rw [threadPlacedOnSomeCore_eq_true_iff, threadPlacedOnSomeCore_eq_true_iff]
-    constructor
-    · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
-      · rw [hCur' c'] at hc'
-        by_cases hc : c' = c
-        · subst hc; rw [if_pos rfl] at hc'; exact absurd (Option.some.inj hc').symm hu
-        · rw [if_neg hc] at hc'; exact Or.inl ⟨c', hc'⟩
-      · exact Or.inr ⟨c', ((hQ' c' u).mp hc').1⟩
-    · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
-      · by_cases hc : c' = c
-        · subst hc
-          have := hOutgoing u hu hc'
-          rw [threadQueuedOnSomeCore_eq_true_iff] at this
-          obtain ⟨c'', hc''⟩ := this
-          exact Or.inr ⟨c'', (hQ' c'' u).mpr ⟨hc'', fun _ => hu⟩⟩
-        · exact Or.inl ⟨c', by rw [hCur' c', if_neg hc]; exact hc'⟩
-      · exact Or.inr ⟨c', (hQ' c' u).mpr ⟨hc', fun _ => hu⟩⟩
-  · rw [threadPlacedOnSomeCore_eq_true_iff]
-    exact Or.inl ⟨c, by rw [hCur' c, if_pos rfl]⟩
+  apply Bool.eq_iff_iff.mpr
+  rw [threadPlacedOnSomeCore_eq_true_iff, threadPlacedOnSomeCore_eq_true_iff]
+  constructor
+  · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
+    · rw [hCur' c'] at hc'
+      by_cases hc : c' = c
+      · subst hc; rw [if_pos rfl] at hc'; exact absurd (Option.some.inj hc').symm hu
+      · rw [if_neg hc] at hc'; exact Or.inl ⟨c', hc'⟩
+    · exact Or.inr ⟨c', ((hQ' c' u).mp hc').1⟩
+  · rintro (⟨c', hc'⟩ | ⟨c', hc'⟩)
+    · by_cases hc : c' = c
+      · subst hc
+        obtain ⟨c'', hc''⟩ := (threadQueuedOnSomeCore_eq_true_iff st u).mp (hOutgoing hc')
+        exact Or.inr ⟨c'', (hQ' c'' u).mpr ⟨hc'', fun _ => hu⟩⟩
+      · exact Or.inl ⟨c', by rw [hCur' c', if_neg hc]; exact hc'⟩
+    · exact Or.inr ⟨c', (hQ' c' u).mpr ⟨hc', fun _ => hu⟩⟩
+
+/-- **WS-RR RR8.12 (Cut 4)**: and the dispatched thread is placed, because it is
+now current.  No hypothesis: the step *is* the placement. -/
+theorem threadPlacedOnSomeCore_dispatch_self (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    threadPlacedOnSomeCore
+      { st with scheduler :=
+          (st.scheduler.setRunQueueOnCore c
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } tid
+      = true := by
+  rw [threadPlacedOnSomeCore_eq_true_iff]
+  refine Or.inl ⟨c, ?_⟩
+  show ((st.scheduler.setRunQueueOnCore c _).setCurrentOnCore c (some tid)).currentOnCore c
+    = some tid
+  rw [SchedulerState.setCurrentOnCore_currentOnCore_self]
+
+/-- The dispatch step: dequeue `tid` from core `c` and make it current there.
+
+The substantive side conditions are both real properties of the caller, not
+bookkeeping.  `hOutgoing` says the thread this dispatch displaces is queued
+somewhere, and `hActive` that the dispatched thread is not one the state
+classifies `.Inactive`. -/
+theorem threadInactiveFlagConsistent_dispatch (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId)
+    (hOutgoing : ∀ u, u ≠ tid → st.scheduler.currentOnCore c = some u →
+      threadQueuedOnSomeCore st u = true)
+    (hActive : ∀ tcb, st.getTcb? tid = some tcb →
+      inferThreadState st tid tcb ≠ .Inactive)
+    (h : threadInactiveFlagConsistent st) :
+    threadInactiveFlagConsistent
+      { st with scheduler :=
+          (st.scheduler.setRunQueueOnCore c
+            ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c (some tid) } :=
+  threadInactiveFlagConsistent_of_frame_placing st _ tid
+    (fun _oid tcb' hObj => ⟨tcb', hObj, rfl, rfl⟩)
+    (fun u hu => threadPlacedOnSomeCore_dispatch_ne st c tid u hu (hOutgoing u hu))
+    (threadPlacedOnSomeCore_dispatch_self st c tid) hActive h
 
 
 /-- The relation reads only the object store and the scheduler slots, so a
@@ -2179,7 +2314,7 @@ theorem preemptCurrentOnCore_objects_frame (st : SystemState) (c : CoreId)
     split
     · intro hObj; exact ⟨tcb', hObj, rfl, rfl⟩
     · split
-      · rename_i prevTcb hPrev
+      · rename_i prevTcb hPrev hW
         intro hObj
         have hObj' : (st.objects.insert prevTid.toObjId
             (.tcb { prevTcb with registerContext := st.machine.regsOnCore c }))[oid]?
@@ -2241,7 +2376,7 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
         unfold preemptCurrentOnCore
         rw [hCurP]
         dsimp only
-        rw [if_neg (by simpa using hu), hPrev]
+        rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
         dsimp only
         show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
         rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
@@ -2263,6 +2398,110 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
       · rw [restoreIncomingContextOnCoreUnlessCurrent_scheduler]
     · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
+
+
+-- ============================================================================
+-- WS-RR RR8.12 (Cut 4) — the scheduling point keeps a placed thread placed
+-- ============================================================================
+--
+-- WS-OD OD1.7's payoff (`wakeAbortedDonationHolder_holder_runnable`) says the
+-- cancellation reclaim leaves the aborted donation holder queued or running.
+-- The guarantee a user sees is that a `.tcbSuspend` does not strand the server
+-- its victim called, and that is the payoff *after the whole suspend pipeline*
+-- — six more stages, of which the last is a scheduling point.  These three are
+-- what that stage needs; the composition is
+-- `suspendThreadOnCore_holder_still_placed` in `IPC/CrossCore/Cancellation.lean`.
+
+/-- **WS-RR RR8.12 (Cut 4)**: a context switch keeps a placed thread placed —
+given that thread resolves to a TCB.
+
+The hypothesis is not bookkeeping; it is the **one** way the switch can strand a
+thread.  It is the side condition RR7.36 states for that same transition's
+inactive-flag preservation, narrowed from *every thread current on `c`* to the
+one thread this frame is about — which is all a per-thread frame can need.
+`preemptCurrentOnCore` re-enqueues the outgoing thread only when its TCB
+resolves — its `none` arm is the identity — and the `setCurrentOnCore` that
+follows then displaces it with nothing to fall back to. -/
+theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
+    (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId)
+    (hTcb : (st.getTcb? u).isSome)
+    (hStep : switchToThreadOnCore st c tid = .ok st')
+    (h : threadPlacedOnSomeCore st u = true) :
+    threadPlacedOnSomeCore st' u = true := by
+  unfold switchToThreadOnCore at hStep
+  split at hStep
+  · split at hStep
+    · have hEq : st' = { (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid) with
+          scheduler := (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid).scheduler.setCurrentOnCore c (some tid) } := by
+        exact (Except.ok.inj hStep).symm
+      subst hEq
+      -- The switch's scheduler is the dispatch shape over the preempted state.
+      have hSched : ({ (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid) with
+          scheduler := (restoreIncomingContextOnCoreUnlessCurrent
+            { preemptCurrentOnCore st c tid with
+                scheduler := (preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid) }
+            c tid).scheduler.setCurrentOnCore c (some tid) } : SystemState).scheduler
+          = ({ preemptCurrentOnCore st c tid with
+                scheduler := ((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+                  (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+                    c (some tid) } : SystemState).scheduler := by
+        show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).scheduler.setCurrentOnCore
+          c (some tid) = _
+        rw [restoreIncomingContextOnCoreUnlessCurrent_scheduler]
+      rw [threadPlacedOnSomeCore_of_scheduler_eq _ _ u hSched]
+      by_cases hu : u = tid
+      · subst hu
+        exact threadPlacedOnSomeCore_dispatch_self (preemptCurrentOnCore st c u) c u
+      · rw [threadPlacedOnSomeCore_dispatch_ne (preemptCurrentOnCore st c tid) c tid u hu ?_,
+          preemptCurrentOnCore_threadPlacedOnSomeCore]
+        · exact h
+        · intro hCurP
+          rw [preemptCurrentOnCore_currentOnCore] at hCurP
+          obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
+          rw [threadQueuedOnSomeCore_eq_true_iff]
+          refine ⟨c, ?_⟩
+          show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
+          unfold preemptCurrentOnCore
+          rw [hCurP]
+          dsimp only
+          rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
+          dsimp only
+          show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
+          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+          exact Or.inr rfl
+    · exact absurd hStep (by simp)
+  · exact absurd hStep (by simp)
+
+/-- **WS-RR RR8.12 (Cut 4)**: the per-core scheduling point keeps a placed thread
+placed.  Its two non-identity arms are the switch above; the rest is the
+identity. -/
+theorem handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore
+    (st st' : SystemState) (c : CoreId) (u : SeLe4n.ThreadId)
+    (hTcb : (st.getTcb? u).isSome)
+    (hStep : handleRescheduleSgiOnCore st c = .ok st')
+    (h : threadPlacedOnSomeCore st u = true) :
+    threadPlacedOnSomeCore st' u = true := by
+  unfold handleRescheduleSgiOnCore at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · rw [← Except.ok.inj hStep]; exact h
+  · split at hStep
+    · rename_i tid _ _
+      exact switchToThreadOnCore_preserves_threadPlacedOnSomeCore st st' c tid u hTcb hStep h
+    · rw [← Except.ok.inj hStep]; exact h
 
 -- ============================================================================
 -- WS-SM SM5.H — Per-core CBS (production operations)

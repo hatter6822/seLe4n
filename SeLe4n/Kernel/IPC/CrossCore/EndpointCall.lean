@@ -74,13 +74,33 @@ def removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
           (if (st.scheduler.currentOnCore c) = some tid then none
             else (st.scheduler.currentOnCore c)) }
 
+/-- **WS-RR RR8.6**: remove `tid` from a placement its caller has already
+resolved — `descheduleAtPlacement`'s body, split out so a transition that must
+declare its footprint *before* it runs can resolve the placement on the
+pre-state and remove at it later, through the one primitive the state-resolved
+form is defined by.  `suspendThreadOnCore` is that transition: its scheduler
+footprint (`suspendThreadOnCoreSchedLockSet`) is declared over `placedCoreOf?`
+of the syscall's pre-state, and nothing between the resolution and this removal
+moves a thread between scheduler slots — the IPC teardown and both donation
+arms write no run queue and no current slot, and the priority-inheritance
+revert re-buckets a chain member inside the queue it already sits in — so the
+pre-resolved placement is the placement the removal finds.
+
+A removal at `none` is the identity: a thread the state places nowhere is on no
+scheduler slot to be taken off. -/
+def descheduleAt (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId) :
+    SystemState :=
+  match placed with
+  | some c => removeRunnableOnCore st tid c
+  | none => st
+
 /-- **Deschedule `tid` wherever it actually is.**
 
 The one step for "take this thread off the scheduler", for the reason round 10
 gave and then did not finish applying: `removeRunnableOnCore` accepts a core
 from *anyone*, so protecting one named wrapper leaves every direct caller free
 to hand it a proxy.  Round 10 removed the core parameter from
-`replyRecvServerDeschedule` and left its sibling arm calling the primitive
+`replyRecvHolderDeschedule` and left its sibling arm calling the primitive
 directly with `determineExecutingCore`'s answer, so the same defect survived
 twenty-five lines away (PR #895 review round 11).
 
@@ -89,9 +109,7 @@ it just computed — still calls `removeRunnableOnCore` directly and should.  Th
 is for the other case: a thread *resolved from the state*, whose placement is a
 fact to look up rather than a parameter to pass. -/
 def descheduleAtPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  match placedCoreOf? st tid with
-  | some c => removeRunnableOnCore st tid c
-  | none => st
+  descheduleAt st tid (placedCoreOf? st tid)
 
 /-- The cores `descheduleAtPlacement` may write, read off the SAME resolver the
 step itself uses — so a footprint and its transition cannot name different
@@ -935,12 +953,618 @@ theorem removeRunnableOnCore_preserves_objects (st : SystemState)
 /-- The step writes no object, at either branch. -/
 @[simp] theorem descheduleAtPlacement_preserves_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objects = st.objects := by
-  unfold descheduleAtPlacement
+  unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_preserves_objects _ _ _
   · rfl
 
-/-- ...and no replenish queue, at either branch.  Both facts are proved HERE
+/-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
+object frame it is derived from, because the SM5.H replenish-affinity invariant
+reads `determineTargetCore` at whichever thread a scheduling context is bound to
+and the cancellation composite ends in this removal. -/
+@[simp] theorem descheduleAtPlacement_determineTargetCore (st : SystemState)
+    (tid x : SeLe4n.ThreadId) :
+    determineTargetCore (descheduleAtPlacement st tid) x = determineTargetCore st x := by
+  refine determineTargetCore_congr st _ x ?_
+  unfold SystemState.getTcb?
+  rw [descheduleAtPlacement_preserves_objects]
+
+-- ============================================================================
+-- WS-RR RR8.12: the home-core frame layer
+-- ============================================================================
+--
+-- **Relocated to production at `v0.35.104`** from
+-- `InformationFlow/NonInterferenceCrossCore.lean`, which is staged and imports
+-- `Kernel.API`.  These eight facts are about **production** primitives -- the
+-- object store, the IPC stores, the dual-queue removals -- and the question they
+-- answer is *is this step a migration?*, which every production scheduler
+-- footprint has to ask before it may name a core at the pre-state.  Living in a
+-- staged module made that answer unreachable from the asker, which is this
+-- project's own layering rule (`v0.35.59`: when a question has one owner and an
+-- asker that cannot see it, the owner is in the wrong layer).  Measured before
+-- moving: all eight had **zero** consumers outside that module, so the
+-- relocation is a pure layering fix rather than a re-homing of live reasoning.
+--
+-- The general fact: a home core is `getTcb?` composed with `cpuAffinity`, so a
+-- store preserves it whenever the store preserves that composite -- which every
+-- IPC-pipeline store does, since none of them is a *migration*.
+
+-- ============================================================================
+-- §1a The home-core frame layer
+-- ============================================================================
+--
+-- Every write set below names `determineTargetCore st _` at the **pre-state**,
+-- but the wake it describes happens several object stores later. Pushing the
+-- target back across those stores is the affinity-stability argument SM6.B makes
+-- for one pipeline (`notificationSignalOnCore_remote_wake_preState`); the
+-- cross-core IPC transitions need it for four more, so it is factored here into
+-- a reusable layer rather than repeated.
+--
+-- The general fact: a home core is `getTcb?` composed with `cpuAffinity`, so a
+-- store preserves it whenever the store preserves that composite — which every
+-- IPC-pipeline store does, since none of them is a *migration*.
+
+/-- SM8.B.2: storing a TCB that agrees with the current one on `cpuAffinity`
+preserves **every** thread's home core. The generic form behind the
+IPC-pipeline frames: an IPC store rewrites `ipcState`, `pendingMessage` or the
+queue links, never the affinity, so it is never a migration. -/
+theorem storeObject_tcb_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb newTcb : TCB) (x : SeLe4n.ThreadId)
+    (hOld : st.getTcb? tid = some tcb)
+    (hAff : newTcb.cpuAffinity = tcb.cpuAffinity)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject tid.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  -- Stated over the typed accessor (AK7 cascade discipline): the raw store form
+  -- is recovered inside the proof, so no caller has to name it.
+  have hRaw := (SystemState.getTcb?_eq_some_iff st tid tcb).mp hOld
+  refine determineTargetCore_congr st st' x ?_
+  by_cases hEq : x.toObjId = tid.toObjId
+  · simp [SystemState.getTcb?, hEq, hRaw,
+      storeObject_objects_eq st st' tid.toObjId (.tcb newTcb) hObjInv hStore, hAff]
+  · simp only [SystemState.getTcb?,
+      storeObject_objects_ne st st' tid.toObjId x.toObjId (.tcb newTcb) hEq hObjInv hStore]
+
+/-- SM8.B.2: storing an **endpoint** over an object that is already an endpoint
+preserves every thread's home core. Note there is no disjointness hypothesis
+and none is needed: at a *different* id the TCB lookup is framed, and at the
+*same* id the lookup fails both before and after (an endpoint is not a TCB), so
+both sides read the unbound default. -/
+theorem storeObject_endpoint_determineTargetCore_eq (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep ep' : Endpoint) (x : SeLe4n.ThreadId)
+    (hPre : st.objects[endpointId]? = some (.endpoint ep))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  by_cases hEq : x.toObjId = endpointId
+  · simp only [SystemState.getTcb?, hEq, hPre,
+      storeObject_objects_eq st st' endpointId (.endpoint ep') hObjInv hStore]
+  · simp only [SystemState.getTcb?,
+      storeObject_objects_ne st st' endpointId x.toObjId (.endpoint ep') hEq hObjInv hStore]
+
+/-- SM8.B.2: storing a **SchedContext** preserves every thread's home core.
+
+The `storeObject_endpoint_determineTargetCore_eq` argument verbatim, and for the
+same reason it needs no disjointness hypothesis: at a different id the TCB
+lookup is framed, and at the *same* id `getTcb?` fails both before and after
+(`SystemState.getTcb?` matches only `some (.tcb _)`, and a SchedContext is not a
+TCB), so both sides read the unbound default.
+
+Added in PR #861 review round 14 for the SchedContext arms: the reroute through
+`determineTargetCore` made them remote writers, and their write sets name the
+home core at the *pre*-state while the transitions compute it after this
+store. -/
+theorem storeObject_schedContext_determineTargetCore_eq (st st' : SystemState)
+    (scObjId : SeLe4n.ObjId) (sc sc' : SchedContext) (x : SeLe4n.ThreadId)
+    (hPre : st.objects[scObjId]? = some (.schedContext sc))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject scObjId (.schedContext sc') st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  by_cases hEq : x.toObjId = scObjId
+  · simp only [SystemState.getTcb?, hEq, hPre,
+      storeObject_objects_eq st st' scObjId (.schedContext sc') hObjInv hStore]
+  · simp only [SystemState.getTcb?,
+      storeObject_objects_ne st st' scObjId x.toObjId (.schedContext sc') hEq hObjInv hStore]
+
+-- The raw-`objects.insert` frames these operations need already exist as SM5.I
+-- atoms in `Scheduler/Operations/PerCoreTickCbsAffinity.lean`, imported above:
+-- `determineTargetCore_insert_tcb` (a TCB insert with unchanged `cpuAffinity`) and
+-- `getTcb?_insert_schedContext_eq` (a SchedContext insert leaves every TCB lookup
+-- alone). They are used rather than re-proved here.
+
+/-- SM8.B.2: the `_fromTcb` IPC store is not a migration either. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (x : SeLe4n.ThreadId)
+    (hOld : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipc msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · next st1 hStore =>
+    simp only [Except.ok.injEq] at hStep
+    subst hStep
+    exact storeObject_tcb_determineTargetCore_eq st st1 tid tcb
+      { tcb with ipcState := ipc, pendingMessage := msg } x hOld rfl hObjInv hStore
+
+/-- SM8.B.2: a queue-link store is not a migration. -/
+theorem storeTcbQueueLinks_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbQueueLinks at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · next tcb hLk =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · next st1 hStore =>
+      simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_tcb_determineTargetCore_eq st st1 tid tcb
+        (tcbWithQueueLinks tcb prev pprev next) x
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hLk)) rfl hObjInv hStore
+
+/-- SM8.B.2: `endpointQueueRemoveDual` is not a migration — the mid-queue splice
+rewrites the endpoint, the removed thread's links and its neighbours', never an
+affinity. Composed from the two directions of the transition's own TCB
+transport: backward gives affinity agreement where the post-state has a TCB,
+forward rules out a TCB appearing or vanishing. -/
+theorem endpointQueueRemoveDual_determineTargetCore_eq (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  cases hPost : st'.getTcb? x with
+  | none =>
+    cases hPre : st.getTcb? x with
+    | none => simp
+    | some tcb =>
+      -- A TCB cannot vanish: the forward transport produces one at the same key.
+      obtain ⟨tcb', hTcb'⟩ := endpointQueueRemoveDual_tcb_forward st st' endpointId
+        isReceiveQ tid x.toObjId tcb hObjInv hStep
+        ((SystemState.getTcb?_eq_some_iff st x tcb).mp hPre)
+      rw [(SystemState.getTcb?_eq_some_iff st' x tcb').mpr hTcb'] at hPost
+      exact absurd hPost (by simp)
+  | some tcb' =>
+    obtain ⟨tcb, hPreRaw, hAff⟩ := endpointQueueRemoveDual_tcb_cpuAffinity_backward st st'
+      endpointId isReceiveQ tid x tcb' hObjInv hStep
+      ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hPost)
+    rw [(SystemState.getTcb?_eq_some_iff st x tcb).mpr hPreRaw]
+    simp [hAff]
+
+/-- SM8.B.2: `storeTcbReceiveComplete` is not a migration — it rewrites the
+receiver's `ipcState`, `pendingMessage` and reply stash, never its affinity. -/
+theorem storeTcbReceiveComplete_determineTargetCore_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbReceiveComplete st tid msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold storeTcbReceiveComplete at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none }) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_tcb_determineTargetCore_eq st pair.2 tid tcb
+        { tcb with ipcState := .ready, pendingMessage := msg, pendingReceiveReply := none } x
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hTcb)) rfl hObjInv hStore
+
+/-- SM8.B.2: `endpointQueuePopHead` is not a migration either — it rewrites the
+endpoint's queue and two threads' link fields, and nothing's affinity. -/
+theorem endpointQueuePopHead_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+    | reply _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp
+      | some headTid =>
+        simp only []
+        cases hLookup : lookupTcb st headTid with
+        | none => simp
+        | some headTcb =>
+          simp only []
+          -- PR #873 round 11: the send-queue message-presence guard --
+          -- a head that fails it errors, so it is not this `.ok`.
+          split
+          · simp
+          cases hStore : storeObject endpointId
+              (.endpoint (if isReceiveQ
+                then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 : pair.2.objects.invExt :=
+              storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hT1 : determineTargetCore pair.2 x = determineTargetCore st x :=
+              storeObject_endpoint_determineTargetCore_eq st pair.2 endpointId ep _ x hObj
+                hObjInv (by rw [hStore])
+            simp only []
+            cases hNext : headTcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, hEq⟩; subst hEq
+                rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st3 headTid none none none
+                      x hInv1 hFinal, hT1]
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none
+                    (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  have hInv2 : st2.objects.invExt :=
+                    storeTcbQueueLinks_preserves_objects_invExt pair.2 st2 nextTid none
+                      (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hLink
+                  have hT2 : determineTargetCore st2 x = determineTargetCore st x := by
+                    rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st2 nextTid none
+                          (some QueuePPrev.endpointHead) nextTcb.queueNext x hInv1 hLink, hT1]
+                  simp only []
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, hEq⟩; subst hEq
+                    rw [storeTcbQueueLinks_determineTargetCore_eq st2 st3 headTid none none
+                          none x hInv2 hFinal, hT2]
+
+/-- **WS-RR RR8.12**: storing a **Reply** preserves every thread's home core.
+
+The fourth member of the `storeObject_*_determineTargetCore_eq` family, and it
+was missing: the three above cover a TCB, an endpoint and a SchedContext, and the
+receive leg's `linkCallerReply` stores a Reply.  `CLAUDE.md`'s *keep the tables
+symmetric* rule is what says to add it rather than to special-case the one caller
+-- an asymmetric family is how a cell stays uncovered until someone needs it.
+
+Needs no disjointness hypothesis, for the same reason its endpoint sibling does
+not: at a different id the TCB lookup is framed, and at the *same* id `getTcb?`
+fails before and after (it matches only `some (.tcb _)`, and a Reply is not a
+TCB), so both sides read the unbound default. -/
+theorem storeObject_reply_determineTargetCore_eq (st st' : SystemState)
+    (replyObjId : SeLe4n.ObjId) (r r' : SeLe4n.Kernel.Reply) (x : SeLe4n.ThreadId)
+    (hPre : st.objects[replyObjId]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject replyObjId (.reply r') st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  by_cases hEq : x.toObjId = replyObjId
+  · simp only [SystemState.getTcb?, hEq, hPre,
+      storeObject_objects_eq st st' replyObjId (.reply r') hObjInv hStore]
+  · simp only [SystemState.getTcb?,
+      storeObject_objects_ne st st' replyObjId x.toObjId (.reply r') hEq hObjInv hStore]
+
+/-- **WS-RR RR8.12**: parking a thread on an endpoint queue is not a migration.
+
+`endpointQueueEnqueue` writes the endpoint's own queue boundary and one or two
+threads' link fields (`storeTcbQueueLinks`), and no path through it touches an
+affinity -- so a receive that *blocks* leaves every home core where it was, which
+is the arm a pre-state scheduler footprint names the executing core on.
+
+The dual of `endpointQueuePopHead_determineTargetCore_eq` above: that one covers
+the rendezvous arm, this one the block arm, and between them the receive leg's
+two shapes are both framed. -/
+theorem endpointQueueEnqueue_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (x : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+    | reply _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hLk : lookupTcb st tid with
+      | none => simp
+      | some tcb =>
+        simp only []
+        split
+        · simp
+        · split
+          · simp
+          · cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+                simp only
+                cases hStore : storeObject endpointId
+                    (.endpoint (if isReceiveQ
+                      then { ep with receiveQ := { head := some tid, tail := some tid } }
+                      else { ep with sendQ := { head := some tid, tail := some tid } })) st with
+                | error e => simp
+                | ok pair =>
+                  simp only
+                  have hInv1 : pair.2.objects.invExt :=
+                    storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  have hT1 : determineTargetCore pair.2 x = determineTargetCore st x :=
+                    storeObject_endpoint_determineTargetCore_eq st pair.2 endpointId ep _ x hObj
+                      hObjInv (by rw [hStore])
+                  cases hLinks : storeTcbQueueLinks pair.2 tid none (some .endpointHead) none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq]
+                    intro hEq; subst hEq
+                    rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st3 tid none
+                          (some .endpointHead) none x hInv1 hLinks, hT1]
+            | some tailTid =>
+                simp only
+                cases hLkT : lookupTcb st tailTid with
+                | none => simp
+                | some tailTcb =>
+                  simp only
+                  cases hStore : storeObject endpointId
+                      (.endpoint (if isReceiveQ
+                        then { ep with receiveQ :=
+                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                            tail := some tid } }
+                        else { ep with sendQ :=
+                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                            tail := some tid } })) st with
+                  | error e => simp
+                  | ok pair =>
+                    simp only
+                    have hInv1 : pair.2.objects.invExt :=
+                      storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                    have hT1 : determineTargetCore pair.2 x = determineTargetCore st x :=
+                      storeObject_endpoint_determineTargetCore_eq st pair.2 endpointId ep _ x hObj
+                        hObjInv (by rw [hStore])
+                    cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev
+                        tailTcb.queuePPrev (some tid) with
+                    | error e => simp
+                    | ok st2 =>
+                      simp only
+                      have hInv2 : st2.objects.invExt :=
+                        storeTcbQueueLinks_preserves_objects_invExt pair.2 st2 tailTid _ _ _
+                          hInv1 hLink1
+                      have hT2 : determineTargetCore st2 x = determineTargetCore st x := by
+                        rw [storeTcbQueueLinks_determineTargetCore_eq pair.2 st2 tailTid
+                          tailTcb.queuePrev tailTcb.queuePPrev (some tid) x hInv1 hLink1, hT1]
+                      cases hLink2 : storeTcbQueueLinks st2 tid (some tailTid)
+                          (some (.tcbNext tailTid)) none with
+                      | error e => simp
+                      | ok st3 =>
+                        simp only [Except.ok.injEq]
+                        intro hEq; subst hEq
+                        rw [storeTcbQueueLinks_determineTargetCore_eq st2 st3 tid (some tailTid)
+                          (some (.tcbNext tailTid)) none x hInv2 hLink2, hT2]
+
+/-- **WS-RR RR8.12**: the bare removal moves no thread's home core either.
+
+`removeRunnableOnCore` writes only `scheduler`, and `determineTargetCore` reads
+`cpuAffinity` through the object store -- so a *pre-state* scheduler footprint
+may name a core that a deschedule-shaped step later writes at, rather than
+assuming the two coincide.  The sibling of
+`descheduleAtPlacement_determineTargetCore` above, at the primitive that one
+composes. -/
+@[simp] theorem removeRunnableOnCore_determineTargetCore (st : SystemState)
+    (tid x : SeLe4n.ThreadId) (c : CoreId) :
+    determineTargetCore (removeRunnableOnCore st tid c) x = determineTargetCore st x := by
+  refine determineTargetCore_congr st _ x ?_
+  unfold SystemState.getTcb?
+  rw [removeRunnableOnCore_preserves_objects]
+
+/-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
+only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/
+theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    determineTargetCore st' x = determineTargetCore st x := by
+  refine determineTargetCore_congr st st' x ?_
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      simp only [SystemState.getTcb?]
+      by_cases hEq2 : x.toObjId = tid.toObjId
+      · rw [hEq2]
+        simp [storeObject_objects_eq' st tid.toObjId _ pair hObjInv hSO,
+              lookupTcb_some_objects st tid tcb hLk]
+      · rw [storeObject_objects_ne' st tid.toObjId x.toObjId _ pair hEq2 hObjInv hSO]
+
+/-- **WS-RR RR8.12**: linking a dequeued caller to its reply object moves no
+thread's home core.
+
+The composite the receive leg's `Call` rendezvous runs, and the fifth member of
+this family: `linkReply` stores a **Reply** (`storeObject_reply_…` above) and the
+second step stores the caller's TCB with only `replyObject` set, so `cpuAffinity`
+is `rfl` on both writes.  Nothing here consults an affinity, which is the whole
+content -- and what lets a *pre-state* scheduler footprint name the home cores a
+later step resolves, rather than assuming the two coincide. -/
+theorem linkCallerReply_determineTargetCore_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hFrame1 : determineTargetCore st1 x = determineTargetCore st x := by
+      unfold SystemState.linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_reply_determineTargetCore_eq st st1 rid.toObjId r
+            { r with caller := some caller } x
+            ((SystemState.getReply?_eq_some_iff st rid r).mp hGetR) hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · have hInv1 :=
+          SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        rw [storeObject_tcb_determineTargetCore_eq st1 st' caller tcb
+          { tcb with replyObject := some rid } x hT rfl hInv1 hStep, hFrame1]
+      · simp at hStep
+
+/-- **WS-RR RR8.12**: and installing the capabilities a parked send was carrying
+moves no thread's home core either.
+
+The last step of the live `.receive` arm's receive leg.  `ipcUnwrapCaps` writes
+CNodes and the CDT, and its own TCB frame holds at *every* key in both directions
+(`ipcUnwrapCaps_preserves_tcb_objects` / `_tcb_backward`), so the whole
+`getTcb?` projection is fixed -- a strictly stronger fact than the affinity this
+needs, which is why no per-field argument appears here. -/
+theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    determineTargetCore st' x = determineTargetCore st x := by
+  have hEq : st'.getTcb? x = st.getTcb? x := by
+    cases hT' : st'.getTcb? x with
+    | none =>
+        cases hT : st.getTcb? x with
+        | none => rfl
+        | some tcb =>
+            have hFwd := ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase
+              grantRight st st' summary x.toObjId tcb
+              ((SystemState.getTcb?_eq_some_iff st x tcb).mp hT) hObjInv hStep
+            simp [(SystemState.getTcb?_eq_some_iff st' x tcb).mpr hFwd] at hT'
+    | some tcb' =>
+        have hBwd := ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight
+          st st' summary x.toObjId tcb' hObjInv hStep
+          ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hT')
+        rw [(SystemState.getTcb?_eq_some_iff st x tcb').mpr hBwd]
+  exact determineTargetCore_congr st st' x (by rw [hEq])
+
+/-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
+frames both at every core frames it.  The pointwise form, because the migration
+frames them per core rather than by handing back the whole scheduler. -/
+theorem placedCoreOf?_congr_of_runQueue_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    placedCoreOf? st' tid = placedCoreOf? st tid := by
+  unfold placedCoreOf?
+  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
+      || st'.scheduler.currentOnCore c == some tid)
+      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid) := by
+    funext c; rw [(h c).1, (h c).2]
+  rw [hp]
+
+/-- ...and the core list it produces moves with it. -/
+theorem descheduleAtPlacementCores_congr_of_runQueue_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    descheduleAtPlacementCores st' tid = descheduleAtPlacementCores st tid := by
+  unfold descheduleAtPlacementCores
+  rw [placedCoreOf?_congr_of_runQueue_current_eq tid h]
+
+/-- The core list is the resolver's answer as a list — the shape a pre-resolved
+removal's write set (`descheduleAt … placed`, confined to `placed.toList`) is
+stated in, so the two spellings of "the cores a placement removal writes" are
+one fact rather than two definitions a reader must compare. -/
+theorem descheduleAtPlacementCores_eq_toList (st : SystemState) (tid : SeLe4n.ThreadId) :
+    descheduleAtPlacementCores st tid = (placedCoreOf? st tid).toList := by
+  unfold descheduleAtPlacementCores
+  cases placedCoreOf? st tid <;> rfl
+
+/-- `placedCoreOf?` reads only `tid`'s membership in each queue and each core's
+current slot, so two states agreeing on those place `tid` alike — finer than
+`placedCoreOf?_congr_of_runQueue_current_eq`, which asks the queues themselves
+to agree, and the form a run-queue insert of some *other* thread satisfies. -/
+theorem placedCoreOf?_congr_of_contains_current_eq {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c : CoreId,
+      (st'.scheduler.runQueueOnCore c).contains tid
+        = (st.scheduler.runQueueOnCore c).contains tid
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    placedCoreOf? st' tid = placedCoreOf? st tid := by
+  unfold placedCoreOf?
+  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
+      || st'.scheduler.currentOnCore c == some tid)
+      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
+      || st.scheduler.currentOnCore c == some tid) := by
+    funext c; rw [(h c).1, (h c).2]
+  rw [hp]
+
+/-- A thread placed on exactly one core — queued or current on `w`, and on no
+other core — is placed there by the resolver.  The `find?` takes the first
+satisfying core, and with one candidate there is no other to take. -/
+theorem placedCoreOf?_eq_some_of_unique (st : SystemState) (tid : SeLe4n.ThreadId)
+    (w : CoreId)
+    (hw : ((st.scheduler.runQueueOnCore w).contains tid
+      || st.scheduler.currentOnCore w == some tid) = true)
+    (hOther : ∀ c : CoreId, c ≠ w →
+      ((st.scheduler.runQueueOnCore c).contains tid
+        || st.scheduler.currentOnCore c == some tid) = false) :
+    placedCoreOf? st tid = some w := by
+  cases hp : placedCoreOf? st tid with
+  | none =>
+    have hIs := placedCoreOf?_isSome_iff st tid
+    rw [hp, Option.isSome_none] at hIs
+    have hAny : (runnableOnSomeCore st tid || runningOnSomeCore st tid) = true := by
+      unfold runnableOnSomeCore runningOnSomeCore
+      rcases Bool.or_eq_true_iff.mp hw with h1 | h2
+      · exact Bool.or_eq_true_iff.mpr (Or.inl
+          (List.any_eq_true.mpr ⟨w, SeLe4n.Kernel.Concurrency.mem_allCores w, h1⟩))
+      · exact Bool.or_eq_true_iff.mpr (Or.inr
+          (List.any_eq_true.mpr ⟨w, SeLe4n.Kernel.Concurrency.mem_allCores w, h2⟩))
+    rw [hAny] at hIs
+    exact absurd hIs Bool.false_ne_true
+  | some x =>
+    have hx := placedCoreOf?_sound st tid x hp
+    by_cases hxw : x = w
+    · rw [hxw]
+    · rw [hOther x hxw] at hx
+      exact absurd hx Bool.false_ne_true
+
+/-- ...and never advances the machine timer, at either branch (`v0.35.37`).  The
+reply path's donation return composes this step, and its `machine` frame reaches
+back to the return through it. -/
+@[simp] theorem descheduleAtPlacement_machine_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).machine = st.machine := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · simp only [removeRunnableOnCore]
+  · rfl
+
+/-- ...and no replenish queue, at either branch.  All three facts are proved HERE
 rather than at each consumer: a caller that re-derives them per core is how the
 `serverCore` parameter got threaded into three proofs and one of them kept it
 after the transition stopped using it. -/
@@ -948,7 +1572,7 @@ after the transition stopped using it. -/
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     (descheduleAtPlacement st tid).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  unfold descheduleAtPlacement
+  unfold descheduleAtPlacement descheduleAt
   split
   · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
   · rfl
@@ -1205,49 +1829,38 @@ slot.
 
 Structurally identical to `cancelDonatedDonationOnCoreSchedLockSet`, and for the
 same reason: it is the same primitive, moving the same SchedContext's
-replenishments between the same two kinds of core. -/
+replenishments between the same two kinds of core.
+
+**WS-RR RR8.12**: spelled through `schedFootprintOfCores`, which is the shared
+answer to "what is a scheduler-domain footprint over these core sets" — an
+empty run set here, because a donation moves replenishments and touches no run
+queue.  Its `_pairwise_le` and `_write_only` come with it. -/
 def applyCallDonationOnCoreSchedLockSet (donorHome doneeHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
-  (SchedLockId.object schedObjStoreLockId, .write) ::
-    sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) donorHome doneeHome
+  schedFootprintOfCores [] [donorHome, doneeHome]
 
 /-- RR2.4: every lock in the donation footprint is acquired in **write** mode
 (the rebinding writes the object store; the migration writes both queues). -/
 theorem applyCallDonationOnCoreSchedLockSet_write_only (donorHome doneeHome : CoreId) :
     ∀ p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome,
-      p.2 = Concurrency.AccessMode.write := by
-  intro p hp
-  simp only [applyCallDonationOnCoreSchedLockSet, List.mem_cons] at hp
-  rcases hp with h | hp
-  · subst h; rfl
-  · unfold sortedSchedCorePair at hp
-    split at hp
-    · simp only [List.mem_cons, List.not_mem_nil, or_false] at hp; subst hp; rfl
-    · split at hp <;>
-        (simp only [List.mem_cons, List.not_mem_nil, or_false] at hp
-         rcases hp with h | h <;> subst h <;> rfl)
+      p.2 = Concurrency.AccessMode.write :=
+  schedFootprintOfCores_write_only _ _
 
 /-- RR2.4: the donor's home-core replenish-queue write lock is in the footprint
 (the migration's source / purge slot). -/
 theorem applyCallDonationOnCoreSchedLockSet_contains_donorHome_write
     (donorHome doneeHome : CoreId) :
     (SchedLockId.replenishQueue ⟨donorHome⟩, Concurrency.AccessMode.write)
-      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome := by
-  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair
-  by_cases hEq : donorHome = doneeHome
-  · simp [hEq]
-  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome :=
+  (mem_schedFootprintOfCores_replenishQueue_iff _ _ donorHome).mpr (by simp)
 
 /-- RR2.4: the donee's home-core replenish-queue write lock is in the footprint
 (the migration's destination). -/
 theorem applyCallDonationOnCoreSchedLockSet_contains_doneeHome_write
     (donorHome doneeHome : CoreId) :
     (SchedLockId.replenishQueue ⟨doneeHome⟩, Concurrency.AccessMode.write)
-      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome := by
-  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair
-  by_cases hEq : donorHome = doneeHome
-  · simp [hEq]
-  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+      ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome :=
+  (mem_schedFootprintOfCores_replenishQueue_iff _ _ doneeHome).mpr (by simp)
 
 /-- **RR2.4's coverage obligation**: the footprint covers
 `migrateSchedContextReplenishmentLockSet` member for member. This is the
@@ -1270,15 +1883,8 @@ theorem applyCallDonationOnCoreSchedLockSet_covers_migration
 acquisition sequence — `object < replenishQueue` across domains, and the two
 replenish endpoints in `CoreId`-ascending order. -/
 theorem applyCallDonationOnCoreSchedLockSet_pairwise_le (donorHome doneeHome : CoreId) :
-    ((applyCallDonationOnCoreSchedLockSet donorHome doneeHome).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjLe : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
-  unfold applyCallDonationOnCoreSchedLockSet
-  rw [List.map_cons, List.pairwise_cons]
-  refine ⟨?_, sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h)⟩
-  intro x hx
-  rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjLe _
+    ((applyCallDonationOnCoreSchedLockSet donorHome doneeHome).map (·.1)).Pairwise (· ≤ ·) :=
+  schedFootprintOfCores_pairwise_le _ _
 
 /-- RR2.4: the donation footprint is within the SM3.D `maxLockSetSize`
 cap — three locks at most (object store plus at most two replenish queues).
@@ -1288,10 +1894,12 @@ theorem applyCallDonationOnCoreSchedLockSet_size_le_maxLockSetSize
     (donorHome doneeHome : CoreId) :
     (applyCallDonationOnCoreSchedLockSet donorHome doneeHome).length
       ≤ Concurrency.maxLockSetSize := by
-  unfold applyCallDonationOnCoreSchedLockSet sortedSchedCorePair Concurrency.maxLockSetSize
-  by_cases hEq : donorHome = doneeHome
-  · simp [hEq]
-  · by_cases hLe : donorHome ≤ doneeHome <;> simp [hEq, hLe]
+  have hSeg := schedFootprintOfCores_length_le (runCores := ([] : List CoreId))
+    (replenishCores := [donorHome, doneeHome])
+  have hN : Concurrency.numCores = 4 := rfl
+  have hM : Concurrency.maxLockSetSize = 24 := rfl
+  unfold applyCallDonationOnCoreSchedLockSet
+  omega
 
 /-- WS-RR RR2.4: the scheduler-domain footprint of the **whole** cross-core
 `.call` dispatch — the union of what its three scheduling effects write:
@@ -1314,9 +1922,7 @@ caveat for the identical walk. -/
 def endpointCallCrossCoreDispatchSchedLockSet
     (executingCore receiverHome donorHome doneeHome : CoreId) :
     List (SchedLockId × Concurrency.AccessMode) :=
-  (SchedLockId.object schedObjStoreLockId, .write) ::
-  (sortedSchedCorePair (fun c => SchedLockId.runQueue ⟨c⟩) executingCore receiverHome
-    ++ sortedSchedCorePair (fun c => SchedLockId.replenishQueue ⟨c⟩) donorHome doneeHome)
+  schedFootprintOfCores [executingCore, receiverHome] [donorHome, doneeHome]
 
 /-- RR2.4: the dispatch footprint's keys form a `SchedLockId`-ascending
 acquisition sequence — the full three-domain ladder `object < runQueue <
@@ -1324,51 +1930,15 @@ replenishQueue`, each same-kind segment `CoreId`-ascending. -/
 theorem endpointCallCrossCoreDispatchSchedLockSet_pairwise_le
     (executingCore receiverHome donorHome doneeHome : CoreId) :
     ((endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome
-      doneeHome).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRQ : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.runQueue (⟨c⟩ : RunQueueLockId) :=
-    fun c => (SchedLockId.object_lt_runQueue _ _).1
-  have hObjRep : ∀ (c : CoreId), SchedLockId.object schedObjStoreLockId
-      ≤ SchedLockId.replenishQueue (⟨c⟩ : ReplenishQueueLockId) :=
-    fun c => (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRQRep : ∀ (c d : CoreId), SchedLockId.runQueue (⟨c⟩ : RunQueueLockId)
-      ≤ SchedLockId.replenishQueue (⟨d⟩ : ReplenishQueueLockId) :=
-    fun c d => (SchedLockId.runQueue_lt_replenishQueue _ _).1
-  unfold endpointCallCrossCoreDispatchSchedLockSet
-  rw [List.map_cons, List.map_append, List.pairwise_cons]
-  refine ⟨?_, ?_⟩
-  · intro x hx
-    rcases List.mem_append.mp hx with hx | hx
-    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRQ _
-    · rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;> exact hObjRep _
-  · rw [List.pairwise_append]
-    refine ⟨sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h),
-      sortedSchedCorePair_pairwise_le _ _ _ (fun c d h => h), ?_⟩
-    intro x hx y hy
-    rcases sortedSchedCorePair_map_fst_mem hx with rfl | rfl <;>
-    rcases sortedSchedCorePair_map_fst_mem hy with rfl | rfl <;> exact hRQRep _ _
+      doneeHome).map (·.1)).Pairwise (· ≤ ·) :=
+  schedFootprintOfCores_pairwise_le _ _
 
 /-- RR2.4: the dispatch footprint is write-only. -/
 theorem endpointCallCrossCoreDispatchSchedLockSet_write_only
     (executingCore receiverHome donorHome doneeHome : CoreId) :
     ∀ p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome,
-      p.2 = Concurrency.AccessMode.write := by
-  intro p hp
-  simp only [endpointCallCrossCoreDispatchSchedLockSet, List.mem_cons] at hp
-  rcases hp with h | hp
-  · subst h; rfl
-  · have hAny : ∀ (f : CoreId → SchedLockId) (a b : CoreId),
-        p ∈ sortedSchedCorePair f a b → p.2 = Concurrency.AccessMode.write := by
-      intro f a b hmem
-      unfold sortedSchedCorePair at hmem
-      split at hmem
-      · simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem; subst hmem; rfl
-      · split at hmem <;>
-          (simp only [List.mem_cons, List.not_mem_nil, or_false] at hmem
-           rcases hmem with h | h <;> subst h <;> rfl)
-    rcases List.mem_append.mp hp with hp | hp
-    · exact hAny _ _ _ hp
-    · exact hAny _ _ _ hp
+      p.2 = Concurrency.AccessMode.write :=
+  schedFootprintOfCores_write_only _ _
 
 /-- **RR2.4 (dispatch-level coverage)**: the whole-dispatch footprint covers the
 donation footprint member for member, hence — by
@@ -1379,11 +1949,7 @@ what keeps the SM3 serializability argument valid across the new write. -/
 theorem endpointCallCrossCoreDispatchSchedLockSet_covers_donation
     (executingCore receiverHome donorHome doneeHome : CoreId) :
     ∀ p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome,
-      p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome := by
-  intro p hp
-  simp only [applyCallDonationOnCoreSchedLockSet, List.mem_cons] at hp
-  rcases hp with h | hp
-  · subst h; exact List.mem_cons_self ..
-  · exact List.mem_cons_of_mem _ (List.mem_append_right _ hp)
+      p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome :=
+  schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
 
 end SeLe4n.Kernel

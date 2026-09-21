@@ -1,6 +1,10 @@
 # WS-N5: Robin Hood suite scenario traceability fixture
 # Format: SCENARIO_ID | SUBSYSTEM | expected_trace_fragment
-# Validated by: scripts/scenario_catalog.py validate-registry --fixture2
+# Suite: robin_hood_suite
+# ID column validated by: scripts/scenario_catalog.py validate-registry
+#   --extra-fixtures (Tier 0, against tests/fixtures/scenario_registry.yaml)
+# Fragment column validated by: scripts/scenario_catalog.py check-fragments
+#   (Tier 2, against this suite's real stdout)
 
 RH-001 | RobinHood | robin-hood check passed [RH-001a empty get? returns none]
 RH-002 | RobinHood | robin-hood check passed [RH-002a insert then get]

@@ -489,21 +489,21 @@ theorem consumeCallerReply_passiveServerIdleFrameOnCore
   exact ⟨tcb, (getTcb?_eq_some_iff st tid tcb).mpr hSt, hSCB.symm.trans hU, hQ, hC, hIS.symm⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** micro-frame: the *detach* frames every core's slice —
-its one write is a `.reply` store, so every TCB is identical and the scheduler
+/-- **WS-RM (`v0.35.6`)** micro-frame: the *splice* frames every core's slice —
+its writes are all `.reply` stores, so every TCB is identical and the scheduler
 is untouched. -/
-theorem detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore
+theorem spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore
     (st : SystemState) (rid : SeLe4n.ReplyId) {c : CoreId}
     (hObjInv : st.objects.invExt) :
-    passiveServerIdleFrameOnCore st (detachReplyFrameAboveOrSelf st rid) c := by
+    passiveServerIdleFrameOnCore st (spliceReplyFrameOutOrSelf st rid) c := by
   refine ⟨fun tid tcb' h hU hQ hC _ => ?_⟩
-  rw [detachReplyFrameAboveOrSelf_scheduler_eq st rid] at hQ hC
+  rw [spliceReplyFrameOutOrSelf_scheduler_eq st rid] at hQ hC
   exact ⟨tcb', (getTcb?_eq_some_iff st tid tcb').mpr
-    (detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv _ tcb'
+    (spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv _ tcb'
       ((getTcb?_eq_some_iff _ tid tcb').mp h)), hU, hQ, hC, rfl⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)** micro-frame: the removal frames it — the detach, then
+/-- **WS-RM (`v0.35.6`)** micro-frame: the removal frames it — the splice, then
 the consume. -/
 theorem removeCallerReplyFrame_passiveServerIdleFrameOnCore
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) {c : CoreId}
@@ -511,9 +511,9 @@ theorem removeCallerReplyFrame_passiveServerIdleFrameOnCore
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
     passiveServerIdleFrameOnCore st st' c := by
   rw [removeCallerReplyFrame_eq] at hStep
-  exact (detachReplyFrameAboveOrSelf_passiveServerIdleFrameOnCore st rid hObjInv).trans
+  exact (spliceReplyFrameOutOrSelf_passiveServerIdleFrameOnCore st rid hObjInv).trans
     (consumeCallerReply_passiveServerIdleFrameOnCore _ st' caller rid
-      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D.2 micro-frame: `cleanupPreReceiveDonation` frames every core's
@@ -1434,9 +1434,9 @@ theorem enqueueRunnableOnCore_mem_old (st : SystemState) (c c' : CoreId)
     (hMem : x ∈ st.scheduler.runQueueOnCore c') :
     x ∈ (enqueueRunnableOnCore st c tid).scheduler.runQueueOnCore c' := by
   cases hTcb : st.getTcb? tid with
-  | none => simp only [enqueueRunnableOnCore, hTcb]; exact hMem
+  | none => simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_none hTcb]; exact hMem
   | some tcb =>
-    simp only [enqueueRunnableOnCore, hTcb]
+    simp only [enqueueRunnableOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
     split
     · exact hMem
     · by_cases hcc : c' = c
@@ -1499,6 +1499,24 @@ theorem removeRunnableOnCore_passiveServerIdleFrame
       · subst hcb
         rw [removeRunnableOnCore_currentOnCore_self, hCur, if_neg (fun h => hEq (Option.some.inj h))]
       · rw [removeRunnableOnCore_currentOnCore_ne st removed c bootCoreId hcb]; exact hCur
+
+/-- `v0.35.37`: the same micro-frame for the **placement-resolved** deschedule,
+which is what the reply path's donation return runs.  Both branches are covered:
+at a resolved core it is the lemma above, and at a thread the state places
+nowhere the step is the identity, which frames everything.
+
+Proved at the step rather than re-derived at each consumer — the reason the
+`_preserves_objects` and `_replenishQueueOnCore` frames live beside
+`descheduleAtPlacement` itself. -/
+theorem descheduleAtPlacement_passiveServerIdleFrame
+    (st : SystemState) (removed : SeLe4n.ThreadId)
+    (hRemoved : ∀ tcb, st.objects[removed.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState) :
+    passiveServerIdleFrame st (descheduleAtPlacement st removed) := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · exact removeRunnableOnCore_passiveServerIdleFrame st removed _ hRemoved
+  · exact ⟨fun tid tcb' h1 h2 h3 h4 h5 => ⟨tcb', h1, h2, h3, h4, rfl⟩⟩
 
 /-- SM6.D.2 micro-frame (cross-core): `removeRunnableOnCore` on core `oc`
 frames every core `c`'s slice given the removed thread is bound or

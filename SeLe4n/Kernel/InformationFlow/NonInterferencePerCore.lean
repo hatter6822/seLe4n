@@ -772,16 +772,6 @@ theorem storeObject_confinedToCore (st st' : SystemState) (oid : SeLe4n.ObjId)
     (storeObject_scheduler_eq st st' oid obj hStep)
     (storeObject_machine_eq st st' oid obj hStep)
 
-/-- Writing one capability reference leaves the scheduler and the machine
-alone. -/
-theorem storeCapabilityRef_confinedToCore (st st' : SystemState) (ref : SlotRef)
-    (target : Option CapTarget) (c₀ : CoreId)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    observableSlotsConfinedToCore st st' c₀ :=
-  observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
-    (storeCapabilityRef_preserves_scheduler st st' ref target hStep)
-    (storeCapabilityRef_preserves_machine st st' ref target hStep)
-
 theorem storeTcbIpcState_confinedToCore (st st' : SystemState) (tid : SeLe4n.ThreadId)
     (ipc : ThreadIpcState) (c₀ : CoreId)
     (hStep : storeTcbIpcState st tid ipc = .ok st') :
@@ -867,8 +857,8 @@ theorem consumeCallerReply_confinedToCore (st st' : SystemState) (caller : SeLe4
     (SystemState.consumeCallerReply_machine_eq st st' caller rid hStep)
 
 /-- **WS-RM (`v0.35.6`)**: the removal touches neither the scheduler nor the
-machine, so it is confined on every core — the detach writes one Reply and the
-consume two objects, none of them scheduler or machine state. -/
+machine, so it is confined on every core — the splice writes only Reply objects
+and the consume two objects, none of them scheduler or machine state. -/
 theorem removeCallerReplyFrame_confinedToCore (st st' : SystemState) (caller : SeLe4n.ThreadId)
     (rid : SeLe4n.ReplyId) (c₀ : CoreId)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
@@ -921,10 +911,12 @@ theorem setCurrentThread_confinedToBootCore (st st' : SystemState)
 theorem saveOutgoingContext_confinedToCore (st : SystemState) (c₀ : CoreId) :
     observableSlotsConfinedToCore st (saveOutgoingContext st) c₀ := by
   refine observableSlotsConfinedToCore_of_scheduler_machine_eq c₀ ?_ ?_ <;>
-    unfold saveOutgoingContext SystemState.getTcb? <;>
+    unfold saveOutgoingContext <;>
     (split
      · rfl
-     · split <;> rfl)
+     · first
+       | exact SystemState.updateTcb_scheduler _ _ _
+       | exact SystemState.updateTcb_machine _ _ _)
 
 /-- `restoreIncomingContext` writes **the boot core's** register bank. -/
 theorem restoreIncomingContext_confinedToBootCore (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1016,7 +1008,7 @@ the boot core's run queue and delegates to `schedule`. -/
 theorem timerTick_confinedToBootCore (st st' : SystemState)
     (hStep : SeLe4n.Kernel.timerTick st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' bootCoreId := by
-  unfold SeLe4n.Kernel.timerTick SystemState.getTcb? at hStep
+  unfold SeLe4n.Kernel.timerTick at hStep
   cases hCur : st.scheduler.currentOnCore bootCoreId with
   | none =>
     simp only [hCur, Except.ok.injEq, Prod.mk.injEq] at hStep
@@ -1026,7 +1018,10 @@ theorem timerTick_confinedToBootCore (st st' : SystemState)
   | some tid =>
     simp only [hCur] at hStep
     split at hStep
-    · split at hStep
+    · -- The witnessed arm: unfold the rewrite so the intermediate states are the
+      -- literals the frame lemmas below read.
+      dsimp only [SystemState.rewriteObject] at hStep
+      split at hStep
       · -- time slice expired: object write + timer + boot-core re-enqueue + schedule
         refine observableSlotsConfinedToCore_trans ?_ (schedule_confinedToBootCore _ st' hStep)
         refine ⟨?_, ?_, ?_, ?_, ?_, fun c _ => rfl⟩ <;> intro c hc <;> simp [Ne.symm hc]
@@ -1606,18 +1601,12 @@ theorem cspaceDeleteSlotCore_confinedToCore (st st' : SystemState) (addr : CSpac
       cases hStore : storeObject addr.cnode (.cnode (cn.remove addr.slot)) st with
       | error e => simp [hStore] at hStep
       | ok pair =>
-        simp only [hStore] at hStep
-        cases hRef : storeCapabilityRef addr none pair.2 with
-        | error e => simp [hRef] at hStep
-        | ok pairR =>
-          simp only [hRef, Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨_, hEq⟩ := hStep
-          subst hEq
-          refine observableSlotsConfinedToCore_trans
-            (storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore) ?_
-          refine observableSlotsConfinedToCore_trans
-            (storeCapabilityRef_confinedToCore pair.2 pairR.2 addr none c₀ hRef) ?_
-          exact detachSlotFromCdt_confinedToCore pairR.2 addr c₀
+        simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep
+        subst hEq
+        refine observableSlotsConfinedToCore_trans
+          (storeObject_confinedToCore st pair.2 addr.cnode _ c₀ hStore) ?_
+        exact detachSlotFromCdt_confinedToCore pair.2 addr c₀
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
       simp [hObj] at hStep
 
@@ -1727,8 +1716,7 @@ theorem cspaceMint_confinedToCore (st st' : SystemState) (src dst : CSpaceAddr)
         simp only [hMint] at hStep
         exact cspaceInsertSlot_confinedToCore st st' dst child c₀ hStep
 
-/-- SM8.B.3: `cspaceRevoke` writes only the object store and the capability
-reference map. -/
+/-- SM8.B.3: `cspaceRevoke` writes only the object store. -/
 theorem cspaceRevoke_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceRevoke addr st = .ok ((), st')) :
     observableSlotsConfinedToCore st st' c₀ := by
@@ -1746,25 +1734,11 @@ theorem cspaceRevoke_confinedToCore (st st' : SystemState) (addr : CSpaceAddr) (
       cases obj with
       | cnode cn =>
         simp only [hObj] at hStep
-        cases hStore : storeObject addr.cnode
-            (.cnode (cn.revokeTargetLocal addr.slot parent.target)) st with
-        | error e => simp [hStore] at hStep
-        | ok pairS =>
-          simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
-          obtain ⟨_, hEq⟩ := hStep
-          subst hEq
-          refine observableSlotsConfinedToCore_trans
-            (storeObject_confinedToCore st pairS.2 addr.cnode _ c₀ hStore) ?_
-          exact observableSlotsConfinedToCore_of_scheduler_machine_eq c₀
-            (revokeAndClearRefsState_preserves_scheduler cn addr.slot parent.target addr.cnode
-              pairS.2)
-            (revokeAndClearRefsState_preserves_machine cn addr.slot parent.target addr.cnode
-              pairS.2)
+        exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStep
       | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
         simp [hObj] at hStep
 
-/-- SM8.B.3: `cspaceMutate` writes only the object store and the capability
-reference map. -/
+/-- SM8.B.3: `cspaceMutate` writes only the object store. -/
 theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
     (rights : AccessRightSet) (badge : Option SeLe4n.Badge) (c₀ : CoreId)
     (hStep : SeLe4n.Kernel.cspaceMutate addr rights badge st = .ok ((), st')) :
@@ -1786,12 +1760,7 @@ theorem cspaceMutate_confinedToCore (st st' : SystemState) (addr : CSpaceAddr)
           cases obj with
           | cnode cn =>
             simp only [hObj] at hStep
-            split at hStep
-            · simp at hStep
-            · next stMid hStore =>
-              refine observableSlotsConfinedToCore_trans
-                (storeObject_confinedToCore st stMid addr.cnode _ c₀ hStore) ?_
-              exact storeCapabilityRef_confinedToCore stMid st' addr _ c₀ hStep
+            exact storeObject_confinedToCore st st' addr.cnode _ c₀ hStep
           | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
           | schedContext _ | reply _ => simp [hObj] at hStep
       · simp at hStep

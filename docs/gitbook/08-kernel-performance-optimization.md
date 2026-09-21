@@ -189,7 +189,7 @@ subsystem. All resolved across Phases 2 and 5.
 
 | Finding | Issue | Resolution | Version |
 |---------|-------|------------|---------|
-| **M-P01** | `cspaceRevokeCdt` double-pass revoke fold | `revokeAndClearRefsState` fuses revoke and clear-refs into single-pass fold | v0.16.15 |
+| **M-P01** | `cspaceRevokeCdt` double-pass revoke fold | `revokeAndClearRefsState` fused revoke and clear-refs into a single-pass fold (retired at v0.35.78 with the capability-reference table it cleared; the revoke stores the swept CNode once) | v0.16.15 |
 | **M-P02** | CDT parent lookup O(E) edge scan | `parentMap : HashMap CdtNodeId CdtNodeId` index for O(1) `parentOf` | v0.16.15 |
 | **M-P03** | Reply lemma duplication across preservation proofs | Extracted shared infrastructure; new field preservation lemmas | v0.16.15 |
 | **M-P04** | `descendantsOf` materializes full O(N+E) set upfront | `processRevokeNode` shared step + `streamingRevokeBFS` BFS loop; `cspaceRevokeCdtStreaming` avoids full materialization | v0.16.19–v0.17.0 |

@@ -437,12 +437,12 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') (scId'' : SchedContextId) :
     st'.getSchedContext? scId'' = st.getSchedContext? scId'' := by
   unfold setThreadCpuAffinity at h
-  simp only [hTcb, Except.ok.injEq] at h
+  simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
   -- Keep `st'` a variable; record only its object-store value.  All object reads
   -- route through the `.get?` method form, so the raw `[·]?` bracket the AK7
   -- store-read census counts never appears in this source.
   have hObjEq : st'.objects = st.objects.insert targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity }) := by
-    rw [← h]
+    rw [← h]; exact SystemState.rewriteObject_objects _ _ _ _
   have hTcbGet : st.objects.get? targetTid.toObjId = some (.tcb tcb) := by
     rw [← RHTable_getElem?_eq_get?]
     exact (SystemState.getTcb?_eq_some_iff st targetTid tcb).mp hTcb
@@ -1283,8 +1283,11 @@ theorem setThreadCpuAffinity_machine (st : SystemState) (targetTid : SeLe4n.Thre
     stSet.machine = st.machine := by
   unfold setThreadCpuAffinity at h
   cases hTcb : st.getTcb? targetTid with
-  | none => simp [hTcb] at h
-  | some tcb => simp only [hTcb, Except.ok.injEq] at h; subst h; rfl
+  | none => simp [SystemState.getTcbWitnessed?_eq_none hTcb] at h
+  | some tcb =>
+      simp only [SystemState.getTcbWitnessed?_eq_some hTcb, Except.ok.injEq] at h
+      subst h
+      exact SystemState.rewriteObject_machine _ _ _ _
 
 /-- WS-SM SM5.H.4 (A5): the full composite preserves replenish-queue **validity**
 on every core.  The affinity write shares `st`'s scheduler, the replenishment
@@ -1402,9 +1405,10 @@ theorem updatePipBoost_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     (c : CoreId) :
     (PriorityInheritance.updatePipBoost st tid).scheduler.replenishQueueOnCore c
       = st.scheduler.replenishQueueOnCore c := by
-  simp only [PriorityInheritance.updatePipBoost, SystemState.getTcb?]
+  simp only [PriorityInheritance.updatePipBoost, PriorityInheritance.updatePipBoostOnCore,
+    SystemState.rewriteObject]
   split
-  · rename_i tcb hObj
+  · rename_i tcb hObj _
     split
     · rfl
     · split
@@ -1441,21 +1445,15 @@ theorem ensureRunnable_replenishQueueOnCore (st : SystemState) (tid : SeLe4n.Thr
     · simp
     · rfl
 
-/-- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
-replenish queue — its state effect is `enqueueRunnableOnCore` (a run-queue
-insert plus a TCB write). -/
-theorem wakeThread_replenishQueueOnCore_local (st : SystemState)
-    (tid : SeLe4n.ThreadId) (ec : CoreId) (c : CoreId) :
-    (wakeThread st tid ec).1.scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c := by
-  show (enqueueRunnableOnCore st (determineTargetCore st tid) tid).scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c
-  unfold enqueueRunnableOnCore
-  split
-  · split
-    · rfl
-    · simp [SeLe4n.Model.SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
-  · rfl
+-- WS-SM (PR #880 round 8, frame): the target-aware wake never touches any
+-- replenish queue -- its state effect is `enqueueRunnableOnCore` (a run-queue
+-- insert plus a TCB write).
+--
+-- WS-SM SM5.H, relocated at **WS-RR RR8.12**: `wakeThread_replenishQueueOnCore`
+-- is declared in `Scheduler/Operations/PerCoreWake.lean`, beside `wakeThread`.
+-- This module is staged, so the production IPC footprints that need the frame in
+-- order to declare an empty replenish segment could not read it; the `_local`
+-- suffix was the signal that the owner was in the wrong layer.
 
 /-- WS-SM SM5.H (frame): timing out one IPC-blocked thread never touches any
 replenish queue.  Its steps are an endpoint-queue removal (scheduler-invariant),
@@ -1482,7 +1480,7 @@ theorem timeoutThread_replenishQueueOnCore (epId : SeLe4n.ObjId) (isReceiveQ : B
         first
           | rw [revertPriorityInheritance_replenishQueueOnCore]
           | skip
-        rw [wakeThread_replenishQueueOnCore_local]
+        rw [wakeThread_replenishQueueOnCore]
         show st2.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c
         rw [hSched2]
 
@@ -1537,10 +1535,11 @@ theorem timerTickBudgetOnCore_bound_exhausted_replenish_eq
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, hBound, hSc, if_pos hBudget, Except.ok.injEq,
+  simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hBound, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Except.ok.injEq,
     Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
@@ -1565,9 +1564,11 @@ does not move a replenishment. -/
 theorem timerTickBudgetOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (st' : SystemState) (b : Bool)
     {sgis : List (CoreId × SgiKind)} (c' : CoreId) (hne : c ≠ c')
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
     st'.scheduler.replenishQueueOnCore c' = st.scheduler.replenishQueueOnCore c' := by
   unfold timerTickBudgetOnCore at hStep
+  dsimp only [SystemState.rewriteObject] at hStep
   split at hStep
   · -- unbound: both arms write objects and (possibly) core `c`'s run queue
     split at hStep <;>
@@ -1608,10 +1609,11 @@ theorem timerTickBudgetOnCore_donated_exhausted_replenish_eq
     (hSc : st.getSchedContext? scId = some sc)
     (hBudget : sc.budgetRemaining.val ≤ 1)
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) (c' : CoreId) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) (c' : CoreId) :
     st'.scheduler.replenishQueueOnCore c'
       = (replenishOnCore st c scId (st.machine.timer + sc.period.val)).scheduler.replenishQueueOnCore c' := by
-  simp only [timerTickBudgetOnCore, hDonated, hSc, if_pos hBudget, Except.ok.injEq,
+  simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hDonated, SystemState.getSchedContextWitnessed?_eq_some hSc, if_pos hBudget, Except.ok.injEq,
     Prod.mk.injEq] at hStep
   obtain ⟨hst, _⟩ := hStep
   subst hst
@@ -1625,11 +1627,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
     (st' : SystemState) (b : Bool) (c' : CoreId)
     (hValid : ∀ c'', replenishQueueValidOnCore st c'')
     {sgis : List (CoreId × SgiKind)}
-    (hStep : timerTickBudgetOnCore st c tid tcb = .ok (st', b, sgis)) :
+    {hW : st.getTcb? tid = some tcb}
+    (hStep : timerTickBudgetOnCore st c tid tcb hW = .ok (st', b, sgis)) :
     replenishQueueValidOnCore st' c' := by
   match hB : tcb.schedContextBinding with
   | .unbound =>
-      simp only [timerTickBudgetOnCore, hB] at hStep
+      simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB] at hStep
       split at hStep <;>
         · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
           obtain ⟨hst, _⟩ := hStep; subst hst
@@ -1641,12 +1644,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_bound_exhausted_replenish_eq
               st c tid tcb scId sc st' b hB hSc hBud hStep c'))]
             exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
-          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
       | none =>
-          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
   | .donated scId owner =>
       match hSc : st.getSchedContext? scId with
@@ -1655,12 +1658,12 @@ theorem timerTickBudgetOnCore_preserves_replenishQueueValidOnCore
           · rw [(replenishQueueValidOnCore_frame (timerTickBudgetOnCore_donated_exhausted_replenish_eq
               st c tid tcb scId owner sc st' b hB hSc hBud hStep c'))]
             exact replenishOnCore_preserves_replenishQueueValid_smp st c scId _ hValid c'
-          · simp only [timerTickBudgetOnCore, hB, hSc, if_neg hBud, Except.ok.injEq,
+          · simp only [timerTickBudgetOnCore, SystemState.rewriteObject, hB, SystemState.getSchedContextWitnessed?_eq_some hSc, if_neg hBud, Except.ok.injEq,
               Prod.mk.injEq] at hStep
             obtain ⟨hst, _⟩ := hStep; subst hst
             refine (replenishQueueValidOnCore_frame ?_).mpr (hValid c'); rfl
       | none =>
-          simp only [timerTickBudgetOnCore, hB, hSc] at hStep
+          simp only [timerTickBudgetOnCore, hB, SystemState.getSchedContextWitnessed?_eq_none hSc] at hStep
           exact absurd hStep (by simp)
 
 -- ============================================================================
@@ -1801,10 +1804,10 @@ theorem setThreadCpuAffinity_getTcb?_self (st : SystemState)
     (h : setThreadCpuAffinity st targetTid affinity = .ok st') :
     st'.getTcb? targetTid = some { tcb with cpuAffinity := affinity } := by
   unfold setThreadCpuAffinity at h
-  rw [hTcb] at h
+  rw [SystemState.getTcbWitnessed?_eq_some hTcb] at h
   simp only [Except.ok.injEq] at h
   subst h
-  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
+  simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
   rw [RobinHood.RHTable.getElem?_insert_self st.objects targetTid.toObjId _ hInv]
 
 /-- WS-SM SM5.H.4 (D15 helper): the affinity write preserves the SM4.C per-core
@@ -1820,7 +1823,10 @@ theorem setThreadCpuAffinity_preserves_schedContextRunQueueConsistent_perCore
   -- The target TCB exists (else the write would have errored).
   obtain ⟨tcbT, hTcbT⟩ : ∃ tcb, st.getTcb? targetTid = some tcb := by
     cases hT : st.getTcb? targetTid with
-    | none => unfold setThreadCpuAffinity at h; rw [hT] at h; simp at h
+    | none =>
+        unfold setThreadCpuAffinity at h
+        rw [SystemState.getTcbWitnessed?_eq_none hT] at h
+        simp at h
     | some tcb => exact ⟨tcb, rfl⟩
   have hSched : st'.scheduler = st.scheduler :=
     setThreadCpuAffinity_preserves_scheduler st targetTid affinity st' h

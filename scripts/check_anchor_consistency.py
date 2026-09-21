@@ -31,11 +31,36 @@ process substitution.  Those pin a property of the composition rather than of a
 pattern, so they have no counterpart to contradict; they are counted and named
 (`--list`) instead of being silently dropped.
 
+**And "composed" means composed, not "quoted through a shell"** (`v0.35.120`).
+The paragraph above was written when the shell-wrapper reader recognised only the
+two *absence* forms (`! rg …`, `if rg …; then … fi`), so everything else inside a
+`bash -lc` fell to `filtered` — and that exclusion carried the justification
+above, which is true of a pipeline and **false** of a bare `rg PATTERN FILE` that
+happens to be quoted through a shell.  Measured: of the 987 invocations filed
+`filtered`, **976 reduced to exactly one (pattern, target)** and 11 were
+genuinely composed.  So this gate compared 4475 of the tree's 5704 anchors — 83%
+— while its PASS line read as coverage of the anchor *set*, and the 17% it
+skipped is exactly the family the bounded-gap rule mandates: a gap pattern
+carries a `\n`, so it cannot be written as a bare argv and every one of those
+anchors is a `bash -lc`.  A shell-quoted search is reduced the same way a bare
+one is now, so the two spellings are one answer rather than two, and 5573
+anchors are compared with 11 honestly excluded.
+
+The class is this file's own (*a recognised set is not a derived set*), inside the
+gate written to keep the anchor set honest, and it failed silently by
+construction: an excluded anchor is never examined, so no count moved and nothing
+read as missing.  What it could not have caught either way is **two positives**
+over one subject — jointly satisfiable in the abstract, since a file may hold two
+matching lines, and unsatisfiable only given a fact about the subject that no
+scanner has (*this file declares that name once*).  That question is decided by
+running the anchor, which is `scripts/check_changed_file_anchors.sh`'s job.
+
 Exit status: 0 when the anchor set is satisfiable, 1 otherwise.
 """
 
 from __future__ import annotations
 
+import os
 import argparse
 import pathlib
 import re
@@ -305,6 +330,77 @@ def _split_short_cluster(tok: str, valued: set[str], bare: set[str]) -> bool:
     return True
 
 
+#: Environment assignments a search may carry and still be reducible to
+#: `(pattern, target)`.  A `NAME=VALUE` prefix is part of the command, so
+#: `LC_ALL=C rg P F` still pins pattern `P` in file `F` -- but only where the
+#: variable cannot change what MATCHES.  `RIPGREP_CONFIG_PATH` and
+#: `GREP_OPTIONS` can (they inject flags), so the set is closed and anything
+#: outside it makes the invocation unreadable rather than silently reduced.
+#:
+#: **And "collation-only" was a claim about these members that is FALSE of a
+#: locale-sensitive tool** (`v0.35.152`, PR #897 review).  POSIX gives `LC_CTYPE`
+#: the character-class question, and `LC_ALL` and `LANG` set it; measured on this
+#: runner, GNU `grep -c '^[[:alpha:]]*$'` over `aeb` spelled with a U+00E9
+#: answers **0** under `LC_ALL=C` and **1** under `LC_ALL=C.UTF-8`.  So a
+#: C-locale negative and a UTF-8 positive over one pattern and one file are two
+#: DIFFERENT searches, and stripping both prefixes collapsed them into one key
+#: and reported a contradiction that is not one -- a gate refusing valid input,
+#: which `v0.35.120` records as a defect in its own right.
+#:
+#: *An exclusion's stated reason is a claim about its members*, so the membership
+#: test is now that relation: the prefix is strippable only ahead of a tool whose
+#: matching the locale cannot reach.  Measured before choosing, and the answer is
+#: per tool rather than per variable -- the same probe under `rg` answers
+#: identically in all three locales, because Rust's regex engine consults no
+#: locale at all.
+LOCALE_ASSIGNMENTS = frozenset({"LC_ALL", "LANG", "LC_CTYPE"})
+
+#: ...and the tools those are inert ahead of.  `rg` alone: `grep`, `egrep` and
+#: `fgrep` are GNU's, and the measurement above is theirs.  A locale-prefixed
+#: `grep` anchor is REFUSED (the caller's `unparsed` arm, a hard failure) rather
+#: than reduced, which is the fail-closed direction for a scanner building
+#: requirements and costs the tree nothing: it carries **zero** locale-prefixed
+#: anchors today, against 6032 `rg` and 3 `grep` invocations.
+LOCALE_INDEPENDENT_SEARCH_TOOLS = frozenset({"rg"})
+
+COLLATION_ONLY_ASSIGNMENTS = frozenset({"LC_COLLATE"}) | LOCALE_ASSIGNMENTS
+
+_ENV_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z_0-9]*)=")
+
+
+def _strip_env_prefix(argv: list[str]) -> list[str] | None:
+    """`argv` without its leading `NAME=VALUE` words, or `None` to refuse it.
+
+    `None` for an assignment outside `COLLATION_ONLY_ASSIGNMENTS`, so an
+    unmodelled variable reaches the caller's `unparsed` arm -- a hard failure --
+    rather than being reduced as though the prefix were absent.  That is the
+    fail-closed direction for a scanner building *requirements*: a requirement
+    dropped is a check nobody runs.
+
+    ...and `None` for a LOCALE assignment ahead of a tool whose matching the
+    locale reaches, which is every one of them but `rg`.  Stripping it would make
+    two different searches share a key; see `LOCALE_ASSIGNMENTS` for the
+    measurement.  The head is read AFTER the prefix, because that is where the
+    tool is.
+    """
+    i = 0
+    locale_seen = False
+    while i < len(argv):
+        m = _ENV_ASSIGNMENT.match(argv[i])
+        if m is None:
+            break
+        if m.group(1) not in COLLATION_ONLY_ASSIGNMENTS:
+            return None
+        locale_seen = locale_seen or m.group(1) in LOCALE_ASSIGNMENTS
+        i += 1
+    rest = argv[i:]
+    if locale_seen and (not rest
+                        or os.path.basename(rest[0])
+                        not in LOCALE_INDEPENDENT_SEARCH_TOOLS):
+        return None
+    return rest
+
+
 def _search_invocation(argv: list[str]):
     """`(pattern, targets)` if `argv` is a plain search, else `None`.
 
@@ -474,7 +570,9 @@ def classify_line(line: str):
       regex failing to match.
     * `filtered` — it *does* search, but composes the result, so no single
       (pattern, target) is pinned.  Counted and reportable, never silently
-      dropped.
+      dropped.  Since `v0.35.120` this means *composed* and no longer "inside a
+      shell wrapper": a plain single search in a `bash -lc` is reduced to an
+      `anchor`, because it pins one pattern in one file whatever quotes it.
     * `unparsed` — it searches and this parser cannot say what it pins.  A hard
       failure: an anchor the gate cannot read is an anchor it cannot compare,
       and reporting PASS over it is the fail-open this gate exists to remove.
@@ -502,10 +600,11 @@ def classify_line(line: str):
         # An unbalanced quote — a form this cannot read.
         return ("unparsed" if searches else "plain", False, None, [], frozenset())
 
-    inv = None if _is_composed(argv) else _search_invocation(argv)
+    bare = None if _is_composed(argv) else _strip_env_prefix(argv)
+    inv = None if bare is None else _search_invocation(bare)
     if inv is not None:
         return ("anchor", bool(m.group("neg")), inv[0], inv[1], inv[2])
-    if argv and argv[0] in SEARCH_TOOLS:
+    if bare and bare[0] in SEARCH_TOOLS:
         return ("unparsed", False, None, [], frozenset())
 
     script = _bash_script(argv)
@@ -521,7 +620,74 @@ def classify_line(line: str):
                 # under `run_negative_check` each flips again.
                 is_neg = asserts_absent != bool(m.group("neg"))
                 return ("anchor", is_neg, inv[0], inv[1], inv[2])
-        return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
+        # `v0.35.120`: A PLAIN SEARCH INSIDE A SHELL WRAPPER IS NOT COMPOSED.
+        #
+        # Until here, any `bash -lc '…'` whose script this function did not
+        # recognise as a *wrapper* fell straight to `filtered` — and `filtered`
+        # is excluded from the comparison on the stated ground that such an
+        # invocation "pins a property of the composition rather than of a
+        # pattern, so it has no counterpart to contradict".  That sentence is
+        # true of a pipeline and **false** of a bare `rg PATTERN FILE` that
+        # happens to be quoted through a shell, which is the form every
+        # multi-line-regex anchor in this tree has to take: the bounded gap
+        # `[^\n]*(\n([ \t][^\n]*)?)*` carries a `\n`, so it cannot be written
+        # as a bare argv.
+        #
+        # Measured before changing anything: of the 987 invocations this branch
+        # filed as `filtered`, **976 reduce to exactly one (pattern, target)**
+        # and 11 are genuinely composed.  So the gate whose whole purpose is
+        # "no two anchors disagree" was comparing 4579 records where it now
+        # compares 5573, and its NEGATIVE half was 470 of 742 — over a third of
+        # the tree's absence pins compared against nothing, while its PASS line
+        # read as coverage of the set.  The skipped family is
+        # precisely the one the bounded-gap rule mandates.  That
+        # is this file's own domain rule (*a recognised set is not a derived
+        # set*) inside the gate written to keep the anchor set honest, and it is
+        # silent by construction: an excluded anchor is never examined, so no
+        # count moves.
+        #
+        # The reduction is the same one a bare argv gets, so a shell-quoted
+        # anchor and an unquoted one are now compared by one answer rather than
+        # by two. `_is_composed` still decides what a composition is, so the 11
+        # keep their honest exclusion.
+        try:
+            inner = _shell_tokens(script)
+        except ValueError:
+            # An unbalanced quote inside the script.  Fail closed if it searches:
+            # "could not read" must not answer the same as "read and clean".
+            return ("unparsed" if SEARCH_TOOL_RE.search(script) else "plain",
+                    False, None, [], frozenset())
+        # `v0.35.147`: `filtered` IS DECIDED, NOT FALLEN INTO.
+        #
+        # `v0.35.120` narrowed this branch by reducing an uncomposed script to
+        # an anchor, and left the *membership* test for `filtered` where it was:
+        # a fall-through from every other arm.  A bucket whose stated reason is
+        # "it composes the result" and whose membership is "nothing else
+        # matched" is this file's own finding one level up — the reason is a
+        # claim about the members, and a default branch is a decision.
+        #
+        # Measured: `LC_ALL=C rg PATTERN FILE` inside a `bash -lc` reduced to
+        # nothing (`LC_ALL=C` heads no option table), was not a `SEARCH_TOOLS`
+        # head either, and so landed in `filtered` — EXCLUDED from the
+        # comparison on a stated ground that is false of it, since an
+        # env-prefixed search is a single search.  The bare-argv branch above
+        # had no such fall-through and answered `unparsed`, so one spelling of
+        # one anchor was compared and the other was not.
+        #
+        # `_is_composed` now decides `filtered` positively and everything else
+        # that searches and does not reduce is `unparsed` — a hard failure,
+        # whatever its head, which is strictly the fail-closed direction and is
+        # what makes an unmodelled prefix visible on the day it is written
+        # rather than silently uncompared.
+        if _is_composed(inner):
+            return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
+                    False, None, [], frozenset())
+        stripped = _strip_env_prefix(inner)
+        reduced = None if stripped is None else _search_invocation(stripped)
+        if reduced is not None:
+            return ("anchor", bool(m.group("neg")),
+                    reduced[0], reduced[1], reduced[2])
+        return ("unparsed" if SEARCH_TOOL_RE.search(script) else "plain",
                 False, None, [], frozenset())
 
     return ("unparsed" if searches else "plain", False, None, [], frozenset())
@@ -1420,6 +1586,208 @@ def self_test() -> int:
             )
             return 1
 
+        # `v0.35.120`: A PLAIN SEARCH QUOTED THROUGH A SHELL IS COMPARED.
+        #
+        # The decisive case, and the one that was silent for the whole of this
+        # gate's life: both anchors are the form 976 live anchors take, so before
+        # the reduction each was filed `filtered` and the pair was never
+        # compared.  The pair is `v0.35.118`'s own shape — a positive anchored at
+        # `^` against a negative that is not — which is exactly what the `^`
+        # normalisation exists for and which the wrapper hid.
+        #
+        # It is spelled without a bounded gap deliberately.  `_literal_runs`
+        # refuses a quantifier or a class, so a gap pattern
+        # (`[^\n]*(\n([ \t][^\n]*)?)*`) is undecomposable and only the
+        # exact-key comparison can reach it — which is the reduction's whole
+        # benefit for that family, and a limitation this gate states rather than
+        # implies.
+        wrapped_p = d / "wrapped_plain.sh"
+        wrapped_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"^def gamma_present\" F.py'\n"
+            "run_negative_check \"INVARIANT\" bash -lc 'rg -n \"def gamma_present\" F.py'\n")
+        both, *_ = find_contradictions([str(wrapped_p)])
+        if both != [("def gamma_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — a contradiction between two plain searches "
+                f"quoted through `bash -lc` was missed (got {both}); that is the "
+                f"form 976 of this tree's anchors take.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and a GENUINELY composed one keeps its honest exclusion.  The two
+        # cases together are what make the widening a narrowing of `filtered`
+        # rather than its deletion: keeping the row a fix does not change is
+        # what distinguishes a fix that generalises from one that merely moves.
+        composed_p = d / "wrapped_composed.sh"
+        composed_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"delta\" F.py | wc -l'\n"
+            "run_negative_check \"INVARIANT\" rg -n 'delta' F.py\n")
+        both, _, _, _, _, filtered_c, _ = find_contradictions([str(composed_p)])
+        if both or len(filtered_c) != 1:
+            print(
+                f"FAIL: --self-test — a piped search was compared rather than "
+                f"counted (contradictions {both}, filtered {filtered_c}); "
+                f"`filtered` must still mean composed.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and an uncomposed search inside a wrapper that this parser cannot
+        # reduce is `unparsed`, which FAILS — the same direction a bare argv
+        # gets, because "could not read" must not answer like "read and clean".
+        unreadable_p = d / "wrapped_unreadable.sh"
+        unreadable_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'rg --colors=never'\n")
+        try:
+            find_contradictions([str(unreadable_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an unreducible search inside a shell "
+                "wrapper did not fail the gate.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # `v0.35.147`: AN ENV PREFIX IS PART OF THE COMMAND.
+        #
+        # The reported case.  `LC_ALL=C` heads no option table, so
+        # `_search_invocation` could not reduce it; it is not a `SEARCH_TOOLS`
+        # head either, so the wrapper branch fell through to `filtered` — the
+        # EXCLUDED bucket, on a stated ground ("it composes the result") that is
+        # false of a single env-prefixed search.  The pair below is a genuine
+        # contradiction that was never compared.
+        envpre_p = d / "wrapped_env_prefix.sh"
+        envpre_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C rg -n \"zeta_present\" F.py'\n"
+            "run_negative_check \"INVARIANT\" rg -n 'zeta_present' F.py\n")
+        both, *_ = find_contradictions([str(envpre_p)])
+        if both != [("zeta_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — an `LC_ALL=C` prefixed search inside a "
+                f"shell wrapper was not reduced (got {both}); a collation "
+                f"assignment cannot change what pattern is pinned in what file.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the BARE argv spelling reduces identically.  Keeping the two
+        # tables symmetric is the rule this gate has paid for before: a fix
+        # applied to one branch and not its sibling leaves the class open.
+        envbare_p = d / "bare_env_prefix.sh"
+        envbare_p.write_text(
+            "run_check \"INVARIANT\" LC_ALL=C rg -n 'eta_present' F.py\n"
+            "run_negative_check \"INVARIANT\" rg -n 'eta_present' F.py\n")
+        both, *_ = find_contradictions([str(envbare_p)])
+        if both != [("eta_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — an `LC_ALL=C` prefixed BARE argv was not "
+                f"reduced (got {both}); the two spellings must reduce alike.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # `v0.35.152`: …and a LOCALE prefix ahead of a locale-SENSITIVE tool is
+        # refused, because there the same two claims are two different searches.
+        # Measured on this runner: GNU `grep -c '^[[:alpha:]]*$'` over a
+        # U+00E9 answers 0 under `LC_ALL=C` and 1 under `LC_ALL=C.UTF-8`, so
+        # reducing both to `(pattern, target)` makes a C-locale negative and a
+        # UTF-8 positive share a key and reports a contradiction that is not one
+        # — a gate refusing valid input.  Token-preserving against the two cases
+        # above: the same prefix, the same pattern, the same file, `grep` for
+        # `rg`.
+        envgrep_p = d / "wrapped_env_prefix_grep.sh"
+        envgrep_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C grep -n \"iota_present\" F.py'\n")
+        try:
+            find_contradictions([str(envgrep_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — a locale prefix ahead of `grep` was "
+                "reduced; `LC_CTYPE` decides what a character class matches "
+                "there, so two locales are two searches.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and an assignment OUTSIDE the closed set is refused rather than
+        # reduced as though it were absent.  `RIPGREP_CONFIG_PATH` injects
+        # flags, so it can change what MATCHES — the one thing a reduction may
+        # not get wrong.
+        envbad_p = d / "wrapped_env_unmodelled.sh"
+        envbad_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'RIPGREP_CONFIG_PATH=x rg -n \"theta\" F.py'\n")
+        try:
+            find_contradictions([str(envbad_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an unmodelled environment assignment was "
+                "reduced rather than refused; only a collation-only variable "
+                "leaves what a search pins unchanged.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and THE RESTRUCTURE ITSELF: an uncomposed search this parser cannot
+        # reduce, whose head is NOT a search tool, is `unparsed` and FAILS.
+        # Before `v0.35.147` that arm fell through to `filtered` — which is how
+        # the env prefix escaped.
+        #
+        # The prefix here is a MODELLED one deliberately, and the two fixtures
+        # are decided by different conditions — which is the only thing that
+        # keeps either of them from being inert.  Measured on both mutants:
+        # restoring the fall-through flips BOTH this case and the unmodelled one
+        # from `unparsed` to `filtered`, but opening
+        # `COLLATION_ONLY_ASSIGNMENTS` flips only the unmodelled one (it then
+        # reduces to an anchor) and leaves this one `unparsed`.  So this case is
+        # the one that survives a widening of the assignment set, and the
+        # unmodelled one is the only one that can see that widening at all.  A
+        # guard whose conjuncts rescue each other hides a dead half.
+        #
+        # With `LC_ALL=C` the strip succeeds and the reduction then fails on its
+        # own merits (no pattern), so the only thing left to decide the outcome
+        # is whether the unreducible remainder falls into `filtered` or into
+        # `unparsed`.  The mutation that decides it keeps every token and
+        # restores the `inner[0] in SEARCH_TOOLS` fall-through, under which
+        # `inner[0]` is the assignment rather than `rg`.
+        fellthrough_p = d / "wrapped_unreducible_head.sh"
+        fellthrough_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C rg --colors=never'\n")
+        try:
+            find_contradictions([str(fellthrough_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an uncomposed, unreducible search whose "
+                "head is not a search tool was tolerated; `filtered` must mean "
+                "COMPOSED and nothing else may fall into it.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the absence-wrapper path is unchanged: `! rg` inside the same
+        # wrapper is still read as a NEGATIVE, so the reduction did not capture
+        # a form the older branch already owned.
+        negwrap_p = d / "wrapped_negation.sh"
+        negwrap_p.write_text(
+            "run_check \"INVARIANT\" bash -lc '! rg -n \"eps\" F.py'\n"
+            "run_check \"INVARIANT\" bash -lc 'rg -n \"eps\" F.py'\n")
+        both, *_ = find_contradictions([str(negwrap_p)])
+        if both != [("eps", "F.py")]:
+            print(
+                f"FAIL: --self-test — the `! rg` wrapper stopped being read as "
+                f"an absence pin (got {both}); the reduction must not shadow it.",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         "PASS: --self-test — planted contradictions were detected in both "
         "quoting styles, in both shell-wrapped spellings, on a second search "
@@ -1436,7 +1804,14 @@ def self_test() -> int:
         "pair reported as ambiguous, in-run overlap still proven), a negative "
         "over a directory contradicted a positive over a file inside it while "
         "the reverse did not, case-insensitivity was compared in the direction "
-        "that implies and skipped in the one that does not, the clean "
+        "that implies and skipped in the one that does not, a plain search "
+        "quoted through `bash -lc` was compared while a piped one stayed "
+        "counted, an unreducible wrapped search failed the gate, a collation "
+        "env prefix was reduced in both the wrapped and the bare spelling "
+        "while the same prefix ahead of locale-sensitive `grep` was refused, "
+        "an unmodelled assignment and an unreducible non-search head "
+        "each failed rather than falling into `filtered`, the `! rg` "
+        "absence wrapper was not shadowed, the clean "
         "set passed, and a commented-out anchor was not counted."
     )
     return 0

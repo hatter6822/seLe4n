@@ -3026,28 +3026,31 @@ before installing an object (`lifecycleRetype`) cannot tell the two apart. -/
 end KernelObject
 
 -- ============================================================================
--- Z1-N: ThreadSchedulingParams — effective scheduling parameter resolution
+-- Z1-N: ThreadSchedulingParams — RETIRED at `v0.35.134` (tombstone only)
 -- ============================================================================
 
-/-- Resolve effective scheduling parameters for a thread.
-
-If the thread has `schedContextBinding = .bound scId` or `.donated scId _`,
-look up the SchedContext from the object store and return its params.
-Otherwise fall back to the TCB's legacy fields (priority, deadline, domain)
-with a synthetic budget from timeSlice.
-
-This is the migration bridge between monolithic TCB scheduling and
-first-class SchedContext objects. -/
-def threadSchedulingParams (tcb : TCB)
-    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
-    : SeLe4n.Priority × SeLe4n.Deadline × SeLe4n.DomainId × Nat :=
-  match tcb.schedContextBinding.scId? with
-  | none => (tcb.priority, tcb.deadline, tcb.domain, tcb.timeSlice)
-  | some scId =>
-    match objects[scId.toObjId]? with
-    | some (.schedContext sc) =>
-      (sc.priority, sc.deadline, sc.domain, sc.budgetRemaining.val)
-    | _ => (tcb.priority, tcb.deadline, tcb.domain, tcb.timeSlice)
+-- **`threadSchedulingParams` stood here and is DELETED at `v0.35.134`** (PR #897
+-- review, against `v0.35.133`).  It was the Z1-N "migration bridge between
+-- monolithic TCB scheduling and first-class SchedContext objects" -- a fourth
+-- reading of *what are a thread's effective scheduling parameters*, beside
+-- `resolveEffectivePrioDeadline`, `effectiveSchedParams` and
+-- `effectiveBucketPriority` -- and its `.bound` / `.donated` arm returned
+-- `sc.priority`, which `v0.35.133` made wrong: with one home for a base
+-- priority, a reader that takes the band from the reservation schedules at a
+-- stale mirror.  The review is right that it is reachable from the root-imported
+-- model API.
+--
+-- **Deleted rather than collapsed, on measurement**: it had *zero* consumers
+-- anywhere in the tree -- not a call, not a proof, not a test -- so the
+-- collapse would have produced a fourth reading nobody asks, which is this
+-- project's own *a retention justification that names a consumer which does not
+-- exist* shape.  The migration its docstring named is over: `effectiveSchedParams`
+-- (`Scheduler/Operations/Selection.lean`) is the canonical call-side API and is
+-- the reading the frozen surface is now pinned against
+-- (`effectiveSchedParams_fst_eq_boostedPriority`).  A budget component, which is
+-- the one thing it answered that `effectiveSchedParams` does not, is read
+-- directly off `SchedContext.budgetRemaining` by every live budget predicate.
+-- A Tier 3 negative refuses its return.
 
 -- ============================================================================
 -- AG8-E: descendantsOf Fuel Sufficiency (F-S05)

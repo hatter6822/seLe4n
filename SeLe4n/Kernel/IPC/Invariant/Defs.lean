@@ -95,7 +95,9 @@ Encodes structural properties of a doubly-linked intrusive queue using local
 boundary/link properties that are directly verifiable without traversal:
 
 1. **Head/tail consistency**: head = none ↔ tail = none.
-2. **Head boundary**: head TCB exists with queuePrev = none.
+2. **Head boundary**: head TCB exists with queuePrev = none and
+   queuePPrev = some .endpointHead (the two link fields are one
+   back-pointer -- WS-RR RR8.3 -- so they are carried together).
 3. **Tail boundary**: tail TCB exists with queueNext = none.
 4. **Doubly-linked forward integrity**: for any TCB with queueNext = some b,
    b exists and b.queuePrev = some a.
@@ -105,13 +107,89 @@ boundary/link properties that are directly verifiable without traversal:
 Properties 4-5 are global over all TCBs in the system state. This is deliberately
 stronger than scoping to queue members: it ensures no TCB anywhere has a dangling
 or inconsistent queue link, which simplifies preservation proofs (no need to
-track queue membership through state transitions). -/
+track queue membership through state transitions).
+
+**P2 carries the head's back-pointer** (PR #897 review, closed at `v0.35.106`).
+`queuePPrev` carries exactly one bit beyond `queuePrev` -- whether the node is
+linked into a queue at all -- and `queuePPrevAgreesWithPrev` is the *pointwise*
+half of that: its `none` arm obliges `queuePrev = none`, which is **necessary and
+not sufficient**, because a queue's *head* also has no predecessor.  So before this
+cut a queue whose head carried `(none, none, none)` -- the shape every link clear
+writes -- satisfied every conjunct of `dualQueueSystemInvariant` while
+`endpointQueueRemoveDual`, whose guard takes a `QueuePPrev` rather than an
+`Option`, refused that head and reported `.endpointQueueEmpty` for the sole member
+of a queue that is not empty.  That member could never leave: the WS-OD OD1.1 /
+OD3.9 stranding class a fourth time, at the one spot RR8.3's pairing and
+`v0.35.99`'s strengthening of it both left open, since a pointwise predicate over
+one TCB structurally cannot say "on no queue".
+
+**Two artefacts answered "is this queue well-formed" and the PROVED one was the
+weaker.**  `SeLe4n/Testing/InvariantChecks.lean`'s `intrusiveQueueWellFormedB` --
+the check every harness state is asserted against -- has required
+`headTcb.queuePPrev = some .endpointHead` since it was written, so the divergence
+sat exactly where the proofs are silent: this project's *one question answered in
+two places* shape, with the Bool right and the Prop wrong.  The state was
+unreachable (`bootSafeEndpointCheck` requires all four boundaries `none`;
+`endpointQueueEnqueue` refuses a thread carrying any link and writes
+`.endpointHead` on a new head; every removal maintains the pair), which is what
+made it a verification gap rather than a live defect -- and a gap the Bool check
+would have caught while the bundle would not.
+`tests/NegativeStateSuite.lean`'s `runDualQueuePPrevPairingChecks` case (5)
+exhibits the state and both readings, and is now the witness that the **bundle**
+refuses it too.
+
+**Folding the clause in needed a fifth conjunct, measured rather than assumed.**
+The obligation lands on `storeTcbQueueLinks_preserves_iqwf`, whose *clearing*
+callers (`storeTcbQueueLinks st tid none none none`, the pop's head unlink) used to
+discharge the head clause with `fun _ _ _ => rfl`: the cleared thread has
+`queuePrev = none`, so the clause survived even if that thread was some *other*
+queue's head.  With the back-pointer in P2 they must prove the cleared thread is
+**not** a head of any queue they transport -- and `endpointQueueNoDup` gives
+disjointness only *within* one endpoint (`sendQ.head ≠ receiveQ.head`), nothing
+across endpoints.  So `endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s
+**fifth conjunct**, which is the extension point RR8.3 built when it wrote the four
+named accessors "before a fifth conjunct arrives".
+
+**It is a consequence of `ipcInvariantCore`, not a new assumption**
+(`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent`, over
+`queueHeadExclusive`): a head's `ipcState` names *its* endpoint and *its* queue
+kind, and a thread has one `ipcState`.  And it is *preserved* without ever reading
+an `ipcState`, which is what keeps it inside this bundle's charter -- every writer
+supplies the two obligations of `endpointQueueHeadDisjoint_of_singleQueueUpdate`
+locally: a pop promotes a successor, which has a predecessor
+(`not_queueHead_of_queuePrev_some`); an enqueue promotes a thread its own guard
+refused a back-pointer to (`not_queueHead_of_queuePPrev_none`, which is the
+strengthened P2 paying for itself); a mid-queue removal and a tail append move no
+head at all.  The two operations that clear a *victim's* links without owning its
+queues -- the notification purge and the reply-path restore -- take the victim's
+off-boundary fact as a stated hypothesis (`hOffEp`), supplied from
+`queueHeadBlockedConsistent` by the composite that holds the whole bundle, because
+a thread blocked on a notification or a reply bounds no endpoint queue.
+
+That leaves this predicate's deliberate boundary-locality intact: it is still
+"local boundary/link properties ... verifiable without traversal", and connectivity
+is still a caller obligation (`dualQueueRemovalGuardHolds`'s `hMem` and
+`hTailLast`, RR8.4's `queueTailPairAgrees` guard, `sweptThreadQueueCoherent`) --
+the head's back-pointer is a boundary fact after all, and what it needed was a
+sibling conjunct about *which* queue a thread heads rather than a traversal.
+
+**The payoff is a retired caller obligation.**  A queue member's `queuePPrev` is
+now derivable rather than hypothesised: at the head from P2, at an interior node
+from `tcbQueueLinkIntegrity`'s forward clause plus the pairing (a node with a
+predecessor cannot carry `none` or `.endpointHead`).  `queuePPrev_of_queueMember`
+is that derivation and `dualQueueRemovalGuardHolds_of_member` is
+`dualQueueRemovalGuardHolds` with `hPPrev` discharged -- the shape RR8.4 reached
+when the tail guard retired WS-OD OD1.3's `spliceRemovedIsTailWhenLast`. -/
 def intrusiveQueueWellFormed (q : IntrusiveQueue) (st : SystemState) : Prop :=
   -- P1: Empty queue consistency — head and tail agree on emptiness
   (q.head = none ↔ q.tail = none) ∧
-  -- P2: Head boundary — head TCB exists with no predecessor
+  -- P2: Head boundary — the head TCB exists, has no predecessor, and its
+  -- back-pointer says so.  The two link fields are one back-pointer (WS-RR
+  -- RR8.3), so they are carried together; `intrusiveQueueWellFormedB` — the
+  -- check every harness state is asserted against — has always required both.
   (∀ hd, q.head = some hd →
-    ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) ∧ tcb.queuePrev = none) ∧
+    ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) ∧ tcb.queuePrev = none ∧
+      tcb.queuePPrev = some .endpointHead) ∧
   -- P3: Tail boundary — tail TCB exists with no successor
   (∀ tl, q.tail = some tl →
     ∃ tcb, st.objects[tl.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = none)
@@ -131,6 +209,46 @@ def tcbQueueLinkIntegrity (st : SystemState) : Prop :=
     st.objects[b.toObjId]? = some (.tcb tcbB) →
     ∀ (a : SeLe4n.ThreadId), tcbB.queuePrev = some a →
       ∃ tcbA, st.objects[a.toObjId]? = some (.tcb tcbA) ∧ tcbA.queueNext = some b)
+
+/-- **WS-RR RR8.3**: system-wide agreement between `queuePPrev` and `queuePrev`
+— the fourth conjunct of `dualQueueSystemInvariant`.
+
+`queuePPrev` carries exactly **one bit** beyond `queuePrev`: whether the node is
+linked into a queue at all.  Everything else it says must agree —
+`.endpointHead` iff there is no predecessor, `.tcbNext p` iff the predecessor is
+`p`.  Nothing stated that before RR8.3, which is why WS-OD OD1.1 and OD3.9 each
+found a removal patching `queuePrev` and leaving `queuePPrev` naming the removed
+thread: no `ipcInvariantFull` conjunct read the field, so a stranded successor —
+which can never leave its endpoint queue again — was invisible to the proofs and
+to the harness alike.
+
+What this conjunct is *for* is `endpointQueueRemoveDual`'s own precondition.  That
+guard asks two things of a node: that its back-pointer agree with `queuePrev`, and
+that it name the endpoint's head field exactly when the node **is** the head.  The
+first half is this conjunct, discharged system-wide and for free; the second is a
+fact about where in the queue the node sits, which no invariant can supply (a
+thread on *no* queue also has `queuePrev = none`).  The split is stated in
+`dualQueueRemovalGuard_eq_position_and_pair` and consumed by
+`dualQueueRemovalGuardHolds`. -/
+def queuePPrevAgreesWithPrev (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tcb.queuePPrevAgreesWithPrev
+
+/-- **WS-RR RR8.3**: the frame that carries the pairing across a transition whose
+every surviving TCB keeps its two link fields — which is most of them, since the
+pair is written only by `tcbWithQueueLinks` and the two unlink updates.
+
+Stated over the *post*-state's TCBs so a transition that removes a thread
+discharges it without an extra hypothesis: what is gone cannot violate anything. -/
+theorem queuePPrevAgreesWithPrev_of_frame {st st' : SystemState}
+    (hFrame : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb'.queuePrev = tcb.queuePrev ∧ tcb'.queuePPrev = tcb.queuePPrev)
+    (h : queuePPrevAgreesWithPrev st) : queuePPrevAgreesWithPrev st' := by
+  intro tid tcb' hTcb'
+  obtain ⟨tcb, hTcb, hPrev, hPPrev⟩ := hFrame tid tcb' hTcb'
+  exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (h tid tcb hTcb)
 
 /-- Transitive closure of the queueNext relation: a path a →⁺ b exists in the
 system state when there is a chain of TCBs whose queueNext fields connect a to b. -/
@@ -179,6 +297,169 @@ theorem QueueNextPath.firstEdge {st : SystemState} {a b : SeLe4n.ThreadId}
   | single _ _ tcb hObj hNext => exact ⟨_, tcb, hObj, hNext⟩
   | cons _ _ _ tcb hObj hNext _ => exact ⟨_, tcb, hObj, hNext⟩
 
+/-- **WS-RR RR8.3**: ...and every `QueueNextPath` *ends* with a `queueNext` edge
+**into** the target — `firstEdge`'s missing sibling.
+
+Reaching it takes an induction where `firstEdge` takes a `cases`, because the
+inductive is written forwards; that asymmetry is why only one of the two existed.
+It is what turns "reachable from the head" into "has a predecessor", which with
+forward link integrity is what says a non-head queue member's `queuePrev` is
+`some _` — the head-position half of `dualQueueRemovalGuardHolds`. -/
+theorem QueueNextPath.lastEdge {st : SystemState} {a b : SeLe4n.ThreadId}
+    (h : QueueNextPath st a b) :
+    ∃ (p : SeLe4n.ThreadId) (tcb : TCB),
+      st.objects[p.toObjId]? = some (.tcb tcb) ∧ tcb.queueNext = some b := by
+  induction h with
+  | single src _ tcb hObj hNext => exact ⟨src, tcb, hObj, hNext⟩
+  | cons _ _ _ _ _ _ _ ih => exact ih
+
+/-- **WS-RR RR8.3**: a queue member's back-pointer *is* consistent — the head
+position half.  A member other than the head has a predecessor
+(`QueueNextPath.lastEdge`), and forward link integrity then gives it a
+`queuePrev`, which the pairing says is `.tcbNext`; conversely a member whose
+back-pointer names a predecessor cannot be the head, because a well-formed queue's
+head has no `queuePrev`.
+
+Membership is spelled the way this tree already spells it
+(`splicePredecessorBlocked_of_path`): the head itself, or reachable from the head.
+Nothing weaker will do — a thread on *no* queue also has `queuePrev = none`, so
+`queuePPrev = .endpointHead` alone cannot say which queue's head it is. -/
+theorem queuePPrevHeadPositionAgrees_of_member {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    queuePPrevHeadPositionAgrees q tid pprev = true := by
+  have hPairAt := dualQueueRemovalGuard_pair_half hPPrev hPair
+  unfold queuePPrevHeadPositionAgrees
+  cases pprev with
+  | endpointHead =>
+      -- `queuePrev = none`, so `tid` has no predecessor; a member with no
+      -- predecessor is the head.
+      have hPrevNone : tcb.queuePrev = none := by
+        simpa [queueLinkPairAgrees] using hPairAt
+      rcases hMem with hHead | ⟨hd, hHead, hPath⟩
+      · simp [hHead]
+      · obtain ⟨pr, prTcb, hPr, hPrNext⟩ := hPath.lastEdge
+        obtain ⟨tcb', hTcb', hPrev⟩ := hLink.1 pr prTcb hPr tid hPrNext
+        rw [hTcb] at hTcb'
+        obtain rfl : tcb = tcb' := KernelObject.tcb.inj (Option.some.inj hTcb')
+        rw [hPrevNone] at hPrev
+        exact absurd hPrev (by simp)
+  | tcbNext prevTid =>
+      -- `queuePrev = some prevTid`, and a well-formed queue's head has none.
+      have hPrevSome : tcb.queuePrev = some prevTid := by
+        simpa [queueLinkPairAgrees] using hPairAt
+      simp only [decide_eq_true_eq, ne_eq]
+      intro hHead
+      obtain ⟨hdTcb, hHdObj, hHdPrev⟩ := hWF.2.1 tid hHead
+      rw [hTcb] at hHdObj
+      obtain rfl : tcb = hdTcb := KernelObject.tcb.inj (Option.some.inj hHdObj)
+      rw [hPrevSome] at hHdPrev
+      exact absurd hHdPrev (by simp)
+
+/-- **PR #897 review (`v0.35.106`)**: a queue member that is **not** the head
+carries a back-pointer, and one that names its own predecessor — so
+`endpointQueueRemoveDual`'s `queuePPrev = none` arm, which reports
+`.endpointQueueEmpty` and can never dequeue the thread, is **unreachable** for an
+interior member.
+
+This is the *interior* half of "a member carries a `queuePPrev`"; the head's half
+is `intrusiveQueueWellFormed`'s P2, which carries `some .endpointHead` since
+`v0.35.106`.  `queuePPrev_of_queueMember` below joins the two, so a caller
+removing **any** member of a well-formed queue discharges
+`dualQueueRemovalGuardHolds`'s `hPPrev` from the bundle rather than supplying it.
+
+The two halves are kept separate because they rest on different facts: this one on
+`tcbQueueLinkIntegrity`'s forward clause plus the pairing, the head's on the
+queue's own boundary clause.  A single proof over both would hide which conjunct a
+future weakening breaks. -/
+theorem queuePPrev_tcbNext_of_reachable {st : SystemState}
+    {hd tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hPath : QueueNextPath st hd tid) :
+    ∃ p, tcb.queuePrev = some p ∧ tcb.queuePPrev = some (.tcbNext p) := by
+  obtain ⟨pr, prTcb, hPr, hPrNext⟩ := hPath.lastEdge
+  obtain ⟨tcb', hTcb', hPrev⟩ := hLink.1 pr prTcb hPr tid hPrNext
+  rw [hTcb] at hTcb'
+  obtain rfl : tcb = tcb' := KernelObject.tcb.inj (Option.some.inj hTcb')
+  refine ⟨pr, hPrev, ?_⟩
+  -- `cases h : e` generalises `e` in the goal as well as in `hPair`, so each
+  -- branch reduces the pairing's own `match` and the surviving one is an equation
+  -- between the two names for the predecessor.
+  cases hPP : tcb.queuePPrev with
+  | none => simp [TCB.queuePPrevAgreesWithPrev, hPP, hPrev] at hPair
+  | some v =>
+      cases v with
+      | endpointHead => simp [TCB.queuePPrevAgreesWithPrev, hPP, hPrev] at hPair
+      | tcbNext q0 =>
+          simp only [TCB.queuePPrevAgreesWithPrev, hPP, hPrev, Option.some.injEq] at hPair
+          simp [hPair]
+
+
+/-- **WS-RR RR8.4**: the free direction of the tail pairing — a tail has no
+successor (`intrusiveQueueWellFormed`'s third clause), so a thread that has one
+is not the tail.
+
+This is the half of `queueTailPairAgrees` the bundle *does* carry; the other half
+is queue connectivity, which it does not, and which `dualQueueRemovalGuardHolds`
+therefore takes as a hypothesis. -/
+theorem queueTailPairAgrees_of_wellFormed {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
+    queueTailPairAgrees q tid tcb = true := by
+  refine queueTailPairAgrees_iff.mpr ⟨fun hTail => ?_, hTailLast⟩
+  obtain ⟨tlTcb, hTlObj, hTlNext⟩ := hWF.2.2 tid hTail
+  rw [hTcb] at hTlObj
+  obtain rfl : tcb = tlTcb := KernelObject.tcb.inj (Option.some.inj hTlObj)
+  exact hTlNext
+
+/-- **WS-RR RR8.3**, extended by **RR8.4**: `endpointQueueRemoveDual`'s own
+precondition, discharged.
+
+This is what the fourth `dualQueueSystemInvariant` conjunct is *for*: the pairing
+half comes from the invariant, system-wide and for free, so a caller that knows
+where in the queue the thread sits knows the removal will not refuse with
+`.illegalState`.  Before RR8.3 the check was an anonymous `let`, there was no
+invariant relating `queuePPrev` to `queuePrev`, and so the precondition could only
+be assumed.
+
+`hTailLast` is the one thing no invariant supplies.  RR8.4 made the removal
+*check* that the queue's tail field and the removed thread's `queueNext` agree,
+because `queueRemoveBoundary` clears the tail on the fact (`q.tail = some tid`)
+rather than on the proxy (`queueNext = none`) and the two part on a state the
+bundle admits — a queued thread with no successor that is not the tail.  Checking
+it means the removal *refuses* that state instead of stranding the queue's real
+tail; the cost is that a caller must now supply the connectivity.  It is the same
+fact WS-OD OD1.3 used to state on every theorem *about* a removal, deleted at
+RR8.4 once the guard discharged it — so the obligation moved from the proofs to
+the call sites, where the caller knows where in the queue the thread sits.  It is
+vacuous for a thread that has a successor, which is every removal from the middle
+or the head of a queue of two or more. -/
+theorem dualQueueRemovalGuardHolds {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hPP : queuePPrevAgreesWithPrev st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
+    dualQueueRemovalGuard q tid tcb pprev = true := by
+  have hPair : tcb.queuePPrevAgreesWithPrev := hPP tid tcb hTcb
+  rw [dualQueueRemovalGuard_eq_position_and_pair,
+    queueTailPairAgrees_of_wellFormed hWF hTcb hTailLast,
+    queuePPrevHeadPositionAgrees_of_member hWF hLink hTcb hPPrev hPair hMem,
+    decide_eq_true (dualQueueRemovalGuard_pair_half hPPrev hPair), Bool.and_self,
+    Bool.and_self]
+
 /-- V4-A: If no TCB has a non-none queueNext, then tcbQueueChainAcyclic holds. -/
 theorem tcbQueueChainAcyclic_of_allNextNone {st : SystemState}
     (h : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
@@ -219,6 +500,217 @@ def dualQueueEndpointWellFormed (epId : SeLe4n.ObjId) (st : SystemState) : Prop 
       intrusiveQueueWellFormed ep.receiveQ st
   | _ => True  -- Non-endpoint objects trivially satisfy
 
+/-- **PR #897 review (`v0.35.106`): a thread heads at most one endpoint queue** —
+`dualQueueSystemInvariant`'s fifth conjunct, and the one fact that makes the
+strengthened head boundary (`intrusiveQueueWellFormed`'s P2) *preservable*.
+
+A queue is an `IntrusiveQueue` record holding thread ids, so nothing in the
+bundle's other four conjuncts forbids two endpoints naming one thread as their
+head: link integrity and acyclicity say nothing about which queue a thread is
+on, and both heads would satisfy P2.  But `endpointQueuePopHead` clears the
+popped thread's links, so on a state where that thread also heads *another*
+queue the clear leaves that queue's head with no back-pointer — the shape
+`endpointQueueRemoveDual` then refuses.  The operation therefore preserves the
+strengthened boundary exactly on states where this holds, which is why the fact
+belongs in the bundle rather than in each caller's hypothesis list.
+
+**It is a consequence of `ipcInvariantCore`, not a new assumption**
+(`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent`, over
+`queueHeadExclusive`): a head's `ipcState` names *its* endpoint and *its* queue
+kind, and a thread has one `ipcState`.  And it is *preserved* without ever
+reading an `ipcState`, which is what keeps it inside this bundle's charter: the
+new head a pop installs has `queuePrev = some <popped>`, and the thread an
+enqueue makes a head has `queuePPrev = none` in the pre-state — each is enough
+to rule the thread out of every other queue's head position through P2.
+
+The queue kind is indexed by `Bool` to match `endpointQueuePopHead` /
+`endpointQueueEnqueue`, which take `isReceiveQ` and read
+`if isReceiveQ then ep.receiveQ else ep.sendQ`; stating it over the two fields
+separately would need four clauses and give consumers a case split the
+operations do not have. -/
+def endpointQueueHeadDisjoint (st : SystemState) : Prop :=
+  ∀ (epA epB : SeLe4n.ObjId) (eA eB : Endpoint) (hd : SeLe4n.ThreadId)
+    (recvA recvB : Bool),
+    st.objects[epA]? = some (.endpoint eA) →
+    st.objects[epB]? = some (.endpoint eB) →
+    (if recvA then eA.receiveQ else eA.sendQ).head = some hd →
+    (if recvB then eB.receiveQ else eB.sendQ).head = some hd →
+    epA = epB ∧ recvA = recvB
+
+/-- The predicate reads endpoint objects and nothing else, so a *backward*
+transport of the endpoints suffices: anything the post-state calls an endpoint
+the pre-state called the same endpoint.  Every operation in this tree that
+writes no endpoint has such a lemma already (`…_endpoint_backward`), which is
+what makes the fifth conjunct a one-line obligation for all of them. -/
+theorem endpointQueueHeadDisjoint_of_endpointBackward {st st' : SystemState}
+    (hBack : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st'.objects[epId]? = some (.endpoint ep) → st.objects[epId]? = some (.endpoint ep))
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  exact h epA epB eA eB hd recvA recvB (hBack epA eA hEpA) (hBack epB eB hEpB) hA hB
+
+/-- ...and the same from plain agreement of the object stores. -/
+theorem endpointQueueHeadDisjoint_of_getElem_eq {st st' : SystemState}
+    (hEq : ∀ (id : SeLe4n.ObjId), st'.objects[id]? = st.objects[id]?)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' :=
+  endpointQueueHeadDisjoint_of_endpointBackward (fun epId ep hEp => by rw [← hEq epId]; exact hEp) h
+
+/-- A thread that heads one endpoint queue is not the head of the *other* queue
+of the same endpoint — the fifth conjunct's same-endpoint instance, which is
+what `endpointQueuePopHead`'s proof needs for the queue it does not pop. -/
+theorem endpointQueueHeadDisjoint.otherKind {st : SystemState}
+    (h : endpointQueueHeadDisjoint st)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {hd : SeLe4n.ThreadId} {recv : Bool}
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hHead : (if recv then ep.receiveQ else ep.sendQ).head = some hd) :
+    (if recv then ep.sendQ else ep.receiveQ).head ≠ some hd := by
+  intro hOther
+  have := (h epId epId ep ep hd recv (!recv) hEp hEp hHead (by
+    cases recv with
+    | false => simpa using hOther
+    | true => simpa using hOther)).2
+  cases recv <;> simp at this
+
+/-- A thread that heads one endpoint's queue heads no queue of any *other*
+endpoint — the cross-endpoint instance. -/
+theorem endpointQueueHeadDisjoint.otherEndpoint {st : SystemState}
+    (h : endpointQueueHeadDisjoint st)
+    {epA epB : SeLe4n.ObjId} {eA eB : Endpoint} {hd : SeLe4n.ThreadId} {recvA recvB : Bool}
+    (hNe : epA ≠ epB)
+    (hEpA : st.objects[epA]? = some (.endpoint eA))
+    (hEpB : st.objects[epB]? = some (.endpoint eB))
+    (hA : (if recvA then eA.receiveQ else eA.sendQ).head = some hd) :
+    (if recvB then eB.receiveQ else eB.sendQ).head ≠ some hd := by
+  intro hB
+  exact hNe (h epA epB eA eB hd recvA recvB hEpA hEpB hA hB).1
+
+/-- **PR #897 review (`v0.35.106`)**: a thread that has a predecessor heads no
+endpoint queue.  This is the fact that lets `endpointQueuePopHead` re-establish
+the fifth conjunct without reading an `ipcState`: the successor it promotes to
+head had `queuePrev = some <popped>`, and P2 says a head has none. -/
+theorem not_queueHead_of_queuePrev_some {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    {tid p : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPrev : tcb.queuePrev = some p)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (recv : Bool)
+    (hEpObj : st.objects[epId]? = some (.endpoint ep)) :
+    (if recv then ep.receiveQ else ep.sendQ).head ≠ some tid := by
+  intro hHead
+  have hWf := hEp epId ep hEpObj
+  unfold dualQueueEndpointWellFormed at hWf
+  rw [hEpObj] at hWf
+  have hBoundary : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) ∧ t.queuePrev = none ∧
+      t.queuePPrev = some .endpointHead := by
+    cases recv with
+    | false => exact hWf.1.2.1 tid (by simpa using hHead)
+    | true => exact hWf.2.2.1 tid (by simpa using hHead)
+  obtain ⟨t, hT, hP, _⟩ := hBoundary
+  rw [hTcb] at hT
+  obtain rfl : tcb = t := KernelObject.tcb.inj (Option.some.inj hT)
+  rw [hPrev] at hP
+  exact absurd hP (by simp)
+
+/-- ...and a thread whose back-pointer is absent heads no endpoint queue either —
+the strengthened P2's own payoff, and what makes `endpointQueueEnqueue`'s guard
+(`queuePPrev.isSome → .illegalState`) sufficient to show the thread it enqueues is
+not already some other queue's head. -/
+theorem not_queueHead_of_queuePPrev_none {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = none)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} (recv : Bool)
+    (hEpObj : st.objects[epId]? = some (.endpoint ep)) :
+    (if recv then ep.receiveQ else ep.sendQ).head ≠ some tid := by
+  intro hHead
+  have hWf := hEp epId ep hEpObj
+  unfold dualQueueEndpointWellFormed at hWf
+  rw [hEpObj] at hWf
+  have hBoundary : ∃ t, st.objects[tid.toObjId]? = some (.tcb t) ∧ t.queuePrev = none ∧
+      t.queuePPrev = some .endpointHead := by
+    cases recv with
+    | false => exact hWf.1.2.1 tid (by simpa using hHead)
+    | true => exact hWf.2.2.1 tid (by simpa using hHead)
+  obtain ⟨t, hT, _, hPP⟩ := hBoundary
+  rw [hTcb] at hT
+  obtain rfl : tcb = t := KernelObject.tcb.inj (Option.some.inj hT)
+  rw [hPPrev] at hPP
+  exact absurd hPP (by simp)
+
+/-- **PR #897 review (`v0.35.106`)**: head-disjointness survives any update whose
+new heads are each accounted for — either the head that (endpoint, kind) already
+had, or a *fresh* one, where "fresh" is whatever the writer can prove and must
+(a) head nothing in the pre-state and (b) pin the (endpoint, kind) uniquely.
+
+Those two obligations are exactly what makes the argument go through, and both
+queue-writer shapes in this tree supply them: a removal promotes the victim's
+successor, so freshness is "this queue's pre-state head was the victim" — unique
+by pre-state disjointness; an enqueue promotes a thread its own guard refused a
+back-pointer to, so freshness is "this is the one queue the operation names".
+`endpointQueueHeadDisjoint_of_singleQueueUpdate` is the second shape packaged, and
+is *derived* from this rather than stated beside it. -/
+theorem endpointQueueHeadDisjoint_of_freshHeads {st st' : SystemState}
+    {freshAt : SeLe4n.ObjId → Bool → SeLe4n.ThreadId → Prop}
+    (hFreshNew : ∀ (k : SeLe4n.ObjId) (r : Bool) (hd : SeLe4n.ThreadId), freshAt k r hd →
+      ∀ (k2 : SeLe4n.ObjId) (e2 : Endpoint) (r2 : Bool), st.objects[k2]? = some (.endpoint e2) →
+        (if r2 then e2.receiveQ else e2.sendQ).head ≠ some hd)
+    (hFreshUnique : ∀ (kA kB : SeLe4n.ObjId) (rA rB : Bool) (hd : SeLe4n.ThreadId),
+      freshAt kA rA hd → freshAt kB rB hd → kA = kB ∧ rA = rB)
+    (hHeads : ∀ (k : SeLe4n.ObjId) (e' : Endpoint) (r : Bool) (hd : SeLe4n.ThreadId),
+      st'.objects[k]? = some (.endpoint e') →
+      (if r then e'.receiveQ else e'.sendQ).head = some hd →
+      (∃ e, st.objects[k]? = some (.endpoint e) ∧
+        (if r then e.receiveQ else e.sendQ).head = some hd) ∨ freshAt k r hd)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  rcases hHeads epA eA recvA hd hEpA hA with ⟨e1, hE1, hH1⟩ | hF1 <;>
+    rcases hHeads epB eB recvB hd hEpB hB with ⟨e2, hE2, hH2⟩ | hF2
+  · exact h epA epB e1 e2 hd recvA recvB hE1 hE2 hH1 hH2
+  · exact absurd hH1 (hFreshNew epB recvB hd hF2 epA e1 recvA hE1)
+  · exact absurd hH2 (hFreshNew epA recvA hd hF1 epB e2 recvB hE2)
+  · exact hFreshUnique epA epB recvA recvB hd hF1 hF2
+
+/-- ...and the single-queue instance, which is what an operation that rewrites one
+queue of one endpoint supplies: freshness is "this is that queue". -/
+theorem endpointQueueHeadDisjoint_of_singleQueueUpdate {st st' : SystemState}
+    {epId : SeLe4n.ObjId} {ep epNew : Endpoint} {recvQ : Bool}
+    (hOther : ∀ (k : SeLe4n.ObjId) (e : Endpoint), k ≠ epId →
+      st'.objects[k]? = some (.endpoint e) → st.objects[k]? = some (.endpoint e))
+    (hPre : st.objects[epId]? = some (.endpoint ep))
+    (hNew : st'.objects[epId]? = some (.endpoint epNew))
+    (hUnchanged : (if recvQ then epNew.sendQ else epNew.receiveQ).head
+      = (if recvQ then ep.sendQ else ep.receiveQ).head)
+    (hRewritten : ∀ hd, (if recvQ then epNew.receiveQ else epNew.sendQ).head = some hd →
+      (if recvQ then ep.receiveQ else ep.sendQ).head = some hd ∨
+        ∀ (k : SeLe4n.ObjId) (e : Endpoint) (r : Bool), st.objects[k]? = some (.endpoint e) →
+          (if r then e.receiveQ else e.sendQ).head ≠ some hd)
+    (h : endpointQueueHeadDisjoint st) : endpointQueueHeadDisjoint st' := by
+  have hAtEp : ∀ (k : SeLe4n.ObjId) (e : Endpoint), k = epId →
+      st'.objects[k]? = some (.endpoint e) → e = epNew := by
+    intro k e hk hEk
+    rw [hk, hNew] at hEk
+    exact (KernelObject.endpoint.inj (Option.some.inj hEk)).symm
+  refine endpointQueueHeadDisjoint_of_freshHeads
+    (freshAt := fun k r hd => (k = epId ∧ r = recvQ) ∧
+      ∀ (k2 : SeLe4n.ObjId) (e2 : Endpoint) (r2 : Bool), st.objects[k2]? = some (.endpoint e2) →
+        (if r2 then e2.receiveQ else e2.sendQ).head ≠ some hd)
+    (fun _ _ _ hF => hF.2)
+    (fun kA kB rA rB _ hA hB => ⟨hA.1.1.trans hB.1.1.symm, hA.1.2.trans hB.1.2.symm⟩)
+    (fun k e' r hd hEk hHk => ?_) h
+  by_cases hk : k = epId
+  · rw [hAtEp k e' hk hEk] at hHk
+    by_cases hrq : r = recvQ
+    · subst hrq
+      rcases hRewritten hd hHk with hL | hN
+      · exact Or.inl ⟨ep, hk ▸ hPre, hL⟩
+      · exact Or.inr ⟨⟨hk, rfl⟩, hN⟩
+    · refine Or.inl ⟨ep, hk ▸ hPre, ?_⟩
+      cases recvQ <;> cases r <;> simp_all
+  · exact Or.inl ⟨e', hOther k e' hk hEk, hHk⟩
+
 /-- WS-H5: System-level dual-queue invariant — all endpoints in the system
 maintain dual-queue well-formedness AND system-wide TCB link integrity holds.
 tcbQueueLinkIntegrity is a system-level property (not per-endpoint) that
@@ -230,8 +722,127 @@ def dualQueueSystemInvariant (st : SystemState) : Prop :=
     st.objects[epId]? = some (.endpoint ep) →
     dualQueueEndpointWellFormed epId st) ∧
   tcbQueueLinkIntegrity st ∧
-  tcbQueueChainAcyclic st
+  tcbQueueChainAcyclic st ∧
+  queuePPrevAgreesWithPrev st ∧
+  endpointQueueHeadDisjoint st
 
+/-- **WS-RR RR8.3**: named accessors for the five conjuncts, so a consumer names
+the fact it wants rather than a projection path.
+
+A positional `⟨hEp, hLink, hAcyclic⟩` is a claim about the conjunction's
+*nesting*, and adding this bundle's fourth conjunct broke ten such sites.  The
+project has paid for that shape twice already at `PlatformConfig.wellFormed`
+(PR #889 review rounds 19 and 22), where the remedy was accessors that depend on
+no nesting; these are that remedy applied here, and `v0.35.106`'s fifth conjunct
+(`endpointQueueHeadDisjoint`) is the measurement that it paid — it shifted no
+projection path, because every consumer reaches for a name. -/
+theorem dualQueueSystemInvariant.endpointsWellFormed {st : SystemState}
+    (h : dualQueueSystemInvariant st) :
+    ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st := by
+  unfold dualQueueSystemInvariant at h; exact h.1
+
+theorem dualQueueSystemInvariant.linkIntegrity {st : SystemState}
+    (h : dualQueueSystemInvariant st) : tcbQueueLinkIntegrity st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.1
+
+theorem dualQueueSystemInvariant.chainAcyclic {st : SystemState}
+    (h : dualQueueSystemInvariant st) : tcbQueueChainAcyclic st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.1
+
+theorem dualQueueSystemInvariant.pprevAgrees {st : SystemState}
+    (h : dualQueueSystemInvariant st) : queuePPrevAgreesWithPrev st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.2.1
+
+/-- **PR #897 review (`v0.35.106`)**: the fifth conjunct's accessor.  The four
+above were written "before a fifth conjunct arrives"; this is it. -/
+theorem dualQueueSystemInvariant.headDisjoint {st : SystemState}
+    (h : dualQueueSystemInvariant st) : endpointQueueHeadDisjoint st := by
+  unfold dualQueueSystemInvariant at h; exact h.2.2.2.2
+
+/-- **WS-RR RR8.3**: the same, from the bundle a caller actually holds.
+
+`endpointQueueRemoveDual`'s callers have `dualQueueSystemInvariant` and an
+endpoint, not three separate facts, and the queue they are unlinking from is one
+of that endpoint's two — so the well-formedness comes out of
+`endpointsWellFormed` at that key rather than being supplied.  Membership stays a
+hypothesis, because no conjunct of the bundle entails it: a thread on **no** queue
+also has `queuePrev = none`, so the invariant cannot say which queue's head a
+`.endpointHead` back-pointer names.  **RR8.4** adds `hTailLast` for the same
+reason one level over — see `dualQueueRemovalGuardHolds`. -/
+theorem dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant {st : SystemState}
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {tcb : TCB} {pprev : QueuePPrev}
+    (hDual : dualQueueSystemInvariant st)
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPPrev : tcb.queuePPrev = some pprev)
+    (hMem : (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some tid ∨
+      ∃ hd, (if isReceiveQ then ep.receiveQ else ep.sendQ).head = some hd ∧
+        QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none →
+      (if isReceiveQ then ep.receiveQ else ep.sendQ).tail = some tid) :
+    dualQueueRemovalGuard (if isReceiveQ then ep.receiveQ else ep.sendQ) tid tcb pprev = true := by
+  have hEpWF := hDual.endpointsWellFormed epId ep hEp
+  unfold dualQueueEndpointWellFormed at hEpWF
+  rw [hEp] at hEpWF
+  have hWF : intrusiveQueueWellFormed (if isReceiveQ then ep.receiveQ else ep.sendQ) st := by
+    cases isReceiveQ with
+    | false => simpa using hEpWF.1
+    | true => simpa using hEpWF.2
+  exact dualQueueRemovalGuardHolds hWF hDual.linkIntegrity hDual.pprevAgrees hTcb hPPrev hMem hTailLast
+
+
+/-- **PR #897 review (`v0.35.106`)**: every member of a well-formed queue carries
+a `queuePPrev`, so `endpointQueueRemoveDual`'s `queuePPrev = none` arm — which
+reports `.endpointQueueEmpty` and can never dequeue the thread — is **unreachable**
+for a member of a queue this bundle admits.
+
+The head's half is `intrusiveQueueWellFormed`'s P2 (`some .endpointHead`, carried
+since `v0.35.106`) and the interior half is `queuePPrev_tcbNext_of_reachable`.
+Before P2 carried the back-pointer only the second was available, so this
+derivation existed for an interior member alone and the head kept a hypothesis
+`dualQueueSystemInvariant` could not discharge. -/
+theorem queuePPrev_of_queueMember {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid) :
+    ∃ pprev, tcb.queuePPrev = some pprev := by
+  rcases hMem with hHead | ⟨hd, hHead, hPath⟩
+  · obtain ⟨hdTcb, hHdObj, _, hHdPPrev⟩ := hWF.2.1 tid hHead
+    rw [hTcb] at hHdObj
+    obtain rfl : tcb = hdTcb := KernelObject.tcb.inj (Option.some.inj hHdObj)
+    exact ⟨.endpointHead, hHdPPrev⟩
+  · obtain ⟨p, _, hPPrev⟩ := queuePPrev_tcbNext_of_reachable hLink hTcb hPair hPath
+    exact ⟨.tcbNext p, hPPrev⟩
+
+/-- **PR #897 review (`v0.35.106`)**: and the guard passes for such a member, with
+the `QueuePPrev` it needs produced rather than supplied.
+
+`dualQueueRemovalGuardHolds` above takes `hPPrev : tcb.queuePPrev = some pprev`
+from its caller; this is that hypothesis **discharged** for any member, head
+included, so the statement is about the member rather than about a field value the
+caller happened to have.  `hMem` and `hTailLast` remain, because queue
+connectivity and the tail's identity are what no conjunct of this bundle
+entails — the shape RR8.4 reached when the tail guard retired WS-OD OD1.3's
+`spliceRemovedIsTailWhenLast`. -/
+theorem dualQueueRemovalGuardHolds_of_member {st : SystemState}
+    {q : IntrusiveQueue} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    (hWF : intrusiveQueueWellFormed q st)
+    (hLink : tcbQueueLinkIntegrity st)
+    (hPP : queuePPrevAgreesWithPrev st)
+    (hTcb : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hMem : q.head = some tid ∨ ∃ hd, q.head = some hd ∧ QueueNextPath st hd tid)
+    (hTailLast : tcb.queueNext = none → q.tail = some tid) :
+    ∃ pprev, tcb.queuePPrev = some pprev ∧
+      dualQueueRemovalGuard q tid tcb pprev = true := by
+  obtain ⟨pprev, hPPrev⟩ :=
+    queuePPrev_of_queueMember hWF hLink hTcb (hPP tid tcb hTcb) hMem
+  exact ⟨pprev, hPPrev,
+    dualQueueRemovalGuardHolds hWF hLink hPP hTcb hPPrev hMem hTailLast⟩
 /-- WS-H12c: IPC invariant — all notifications satisfy notification queue
 well-formedness. The former `endpointInvariant` conjunct (vacuous `True`
 since WS-H12a) has been removed; meaningful dual-queue structural checking
@@ -1508,6 +2119,123 @@ def queueHeadBlockedConsistent (st : SystemState) : Prop :=
     (ep.sendQ.head = some hd →
       tcb.ipcState = .blockedOnSend epId ∨ tcb.ipcState = .blockedOnCall epId)
 
+/-- **PR #897 review (`v0.35.106`): cross-endpoint queue-head exclusivity IS
+derivable — from `queueHeadBlockedConsistent`, which this tree already states.**
+
+A thread has exactly one `ipcState`, and that conjunct says a head's `ipcState`
+names **its** endpoint and **its** queue kind: the `receiveQ` head is
+`.blockedOnReceive epId` and the `sendQ` head is `.blockedOnSend epId` or
+`.blockedOnCall epId`.  So a thread heading two queues would have an `ipcState`
+naming two endpoints, or naming a receive and a send at once — and the
+constructors are injective and distinct.  Hence a thread heads **at most one**
+endpoint queue, across endpoints and across the two queues of one endpoint.
+
+This is what `endpointQueueNoDup`'s disjointness clause states for the
+same-endpoint case (`sendQ.head ≠ receiveQ.head`) and does not state across
+endpoints; the blocking conjunct gives both, and gives the same-endpoint case
+*without* that clause.
+
+**Why it matters, and why it is not in `intrusiveQueueWellFormed`.**  Folding a
+queue head's `queuePPrev` into that predicate's head boundary (P2) needs exactly
+this fact, to prove that a store *clearing* one thread's links cannot break
+another queue's head clause.  But `intrusiveQueueWellFormed` is deliberately
+blocking-agnostic — it is "local boundary/link properties ... verifiable without
+traversal" — and its low-level preservation lemmas
+(`storeTcbQueueLinks_preserves_iqwf`) take only that predicate, so the blocking
+fact is out of scope there.  The back-pointer clause therefore belongs **beside**
+`queueHeadBlockedConsistent` in `ipcInvariantCore`, where every preservation proof
+already has this lemma's hypothesis in hand.  `docs/REGISTERED_DEBT.md` table C
+records the measurement. -/
+theorem queueHeadExclusive {st : SystemState}
+    (hHB : queueHeadBlockedConsistent st)
+    {epA epB : SeLe4n.ObjId} {eA eB : Endpoint} {hd : SeLe4n.ThreadId} {tcb : TCB}
+    (hEpA : st.objects[epA]? = some (.endpoint eA))
+    (hEpB : st.objects[epB]? = some (.endpoint eB))
+    (hTcb : st.objects[hd.toObjId]? = some (.tcb tcb))
+    (hA : eA.receiveQ.head = some hd ∨ eA.sendQ.head = some hd)
+    (hB : eB.receiveQ.head = some hd ∨ eB.sendQ.head = some hd) :
+    epA = epB := by
+  obtain ⟨hRecvA, hSendA⟩ := hHB epA eA hd tcb hEpA hTcb
+  obtain ⟨hRecvB, hSendB⟩ := hHB epB eB hd tcb hEpB hTcb
+  -- Heading *either* queue of an endpoint pins the thread's one `ipcState` to one
+  -- of three constructors, each naming *that* endpoint.
+  have hStateA : tcb.ipcState = .blockedOnReceive epA ∨
+      tcb.ipcState = .blockedOnSend epA ∨ tcb.ipcState = .blockedOnCall epA := by
+    rcases hA with hA | hA
+    · exact Or.inl (hRecvA hA)
+    · rcases hSendA hA with h | h
+      · exact Or.inr (Or.inl h)
+      · exact Or.inr (Or.inr h)
+  have hStateB : tcb.ipcState = .blockedOnReceive epB ∨
+      tcb.ipcState = .blockedOnSend epB ∨ tcb.ipcState = .blockedOnCall epB := by
+    rcases hB with hB | hB
+    · exact Or.inl (hRecvB hB)
+    · rcases hSendB hB with h | h
+      · exact Or.inr (Or.inl h)
+      · exact Or.inr (Or.inr h)
+  -- Nine shapes: the three diagonals are constructor injectivity, the six
+  -- off-diagonals are distinct constructors.
+  rcases hStateA with h1 | h1 | h1 <;> rcases hStateB with h2 | h2 | h2 <;>
+    rw [h1] at h2 <;>
+    simp only [ThreadIpcState.blockedOnReceive.injEq, ThreadIpcState.blockedOnSend.injEq,
+      ThreadIpcState.blockedOnCall.injEq, reduceCtorEq] at h2 <;>
+    exact h2
+
+/-- ...and the same-endpoint corollary: a thread cannot head both of one
+endpoint's queues.  `endpointQueueNoDup` states this as its own clause; the
+blocking conjunct gives it, so the two agree and this is the derivation. -/
+theorem queueHeadKindExclusive {st : SystemState}
+    (hHB : queueHeadBlockedConsistent st)
+    {epId : SeLe4n.ObjId} {ep : Endpoint} {hd : SeLe4n.ThreadId} {tcb : TCB}
+    (hEp : st.objects[epId]? = some (.endpoint ep))
+    (hTcb : st.objects[hd.toObjId]? = some (.tcb tcb))
+    (hRecv : ep.receiveQ.head = some hd) : ep.sendQ.head ≠ some hd := by
+  intro hSend
+  obtain ⟨hR, hS⟩ := hHB epId ep hd tcb hEp hTcb
+  have h1 := hR hRecv
+  rcases hS hSend with h2 | h2 <;> rw [h1] at h2 <;> exact absurd h2 (by simp)
+
+/-- **PR #897 review (`v0.35.106`): the fifth conjunct is a CONSEQUENCE of
+`ipcInvariantCore`, not a new assumption.**
+
+`endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s fifth conjunct and is
+preserved without reading any `ipcState`; this is what says it is also *true*
+wherever the tree already establishes the core bundle, so an establishing site
+pays nothing.  It needs the head boundary as well as the blocking conjunct,
+because `queueHeadBlockedConsistent` is silent about a head whose TCB does not
+resolve and `intrusiveQueueWellFormed`'s P2 is what says it does. -/
+theorem endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent {st : SystemState}
+    (hEp : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
+      st.objects[epId]? = some (.endpoint ep) → dualQueueEndpointWellFormed epId st)
+    (hHB : queueHeadBlockedConsistent st) : endpointQueueHeadDisjoint st := by
+  intro epA epB eA eB hd recvA recvB hEpA hEpB hA hB
+  -- The head TCB resolves, by the head boundary of whichever queue names it.
+  obtain ⟨tcb, hTcb⟩ : ∃ tcb, st.objects[hd.toObjId]? = some (.tcb tcb) := by
+    have hWf := hEp epA eA hEpA
+    unfold dualQueueEndpointWellFormed at hWf
+    rw [hEpA] at hWf
+    cases recvA with
+    | false => obtain ⟨t, hT, _, _⟩ := hWf.1.2.1 hd (by simpa using hA); exact ⟨t, hT⟩
+    | true => obtain ⟨t, hT, _, _⟩ := hWf.2.2.1 hd (by simpa using hA); exact ⟨t, hT⟩
+  have hAor : eA.receiveQ.head = some hd ∨ eA.sendQ.head = some hd := by
+    cases recvA with
+    | false => exact Or.inr (by simpa using hA)
+    | true => exact Or.inl (by simpa using hA)
+  have hBor : eB.receiveQ.head = some hd ∨ eB.sendQ.head = some hd := by
+    cases recvB with
+    | false => exact Or.inr (by simpa using hB)
+    | true => exact Or.inl (by simpa using hB)
+  have hEq : epA = epB := queueHeadExclusive hHB hEpA hEpB hTcb hAor hBor
+  subst hEq
+  obtain rfl : eA = eB := by
+    rw [hEpA] at hEpB; exact KernelObject.endpoint.inj (Option.some.inj hEpB)
+  refine ⟨rfl, ?_⟩
+  cases recvA <;> cases recvB
+  · rfl
+  · exact absurd (by simpa using hA) (queueHeadKindExclusive hHB hEpA hTcb (by simpa using hB))
+  · exact absurd (by simpa using hB) (queueHeadKindExclusive hHB hEpA hTcb (by simpa using hA))
+  · rfl
+
 /-- IPC de-threading D4 (Finding F-2): queue **tail** blocking-state consistency — the dual of
 `queueHeadBlockedConsistent` for the tail boundary.  If a thread is the tail of an endpoint's
 `receiveQ`, it is `.blockedOnReceive` on that endpoint; if it is the tail of `sendQ`, it is
@@ -2027,15 +2755,29 @@ policy justified by a data structure the tree no longer has is a justification
 that has stopped being read. -/
 inductive CancelledMiddleCallerPolicy where
   /-- **Sever at the cut.**  The frame above the cut stops linking down
-  (`detachReplyFrameAbove` writes `prev := none`), so every frame *below* the cut
-  leaves the context's stack; the pop that later reaches the frame above reads
-  `none` and binds that caller `.bound scId`.  `O(1)` at every depth, and the
-  policy this kernel implements.
+  (the removal writes `prev := none`), so every frame *below* the cut leaves the
+  context's stack; the pop that later reaches the frame above reads `none` and
+  binds that caller `.bound scId`.  `O(1)` at every depth, and the policy this
+  kernel implemented up to `v0.35.44`.
 
-  What it costs is **measured** at stack depth three in `tests/SmpIpcSuite.lean`
-  §3.22, not described: at depth two the frame below the cut is the bottom of the
-  stack, so this and `spliceOutTheCut` write the same value into the frame above
-  and the two cannot be told apart. -/
+  What it cost was **measured** at stack depth three in `tests/SmpIpcSuite.lean`
+  §3.22, not described: the reservation settles on a thread strictly inside the
+  chain and its owner is left `.unbound` for good.  At depth two the frame below
+  the cut is the bottom of the stack, so this and `spliceOutTheCut` write the same
+  value into the frame above and the two cannot be told apart there — which is why
+  the splice provably does not reach the depth-2 loss.  That residue is closed by the
+  reservation's recorded **origin** rather than by a removal policy
+  (`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9).
+
+  **This is what seL4-MCS does**, re-verified at `v0.35.40` against upstream
+  source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 — every release that has
+  the function.  `reply_remove`'s non-head branch is
+  `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment
+  *"not the head, remove from middle - break the chain"*: it writes **zero**, not
+  the cut frame's own `replyPrev`.  `v0.35.14` asserted the reverse and cited a
+  line that is in no release; see `CLAUDE.md`'s WS-RM section for what that cost.
+  So this constructor is kept rather than deleted: it names the behaviour this
+  kernel diverged *from*, and upstream still has it. -/
   | severAtCut
   /-- **Splice the cut frame out.**  The ordinary doubly-linked-list removal: the
   frame above takes the cut frame's own `prev`, the frame below takes its `next`.
@@ -2043,17 +2785,20 @@ inductive CancelledMiddleCallerPolicy where
   outward to the thread that owns it — strictly better accounting, and also
   `O(1)`.
 
-  **This is what seL4-MCS does**, confirmed against its source at `v0.35.14`
-  rather than assumed: `reply_remove`'s non-head branch writes
-  `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
-  reply->replyPrev`, so the frame above inherits the cut frame's own outward
-  pointer and every frame below stays reachable from the head.  `severAtCut` is
-  therefore a **divergence** from upstream and not an inheritance of it — which
-  is the opposite of what this file asserted before that check.
+  **This is an improvement on seL4-MCS, not what it does** (`v0.35.40`).  Upstream
+  `severAtCut`s — see that constructor for the C and the revisions it was read at
+  — so upstream strands the reservation at depth ≥ 3 as well, and `v0.35.14`'s
+  claim to the contrary was reconstructed rather than read.  What this policy buys
+  is therefore a property neither kernel has today, which is the whole of WS-HP's
+  value and does not depend on the attribution.
 
-  `cancelledMiddleCallerPolicy`'s third reason is why this kernel diverges, and
-  it is a property of **when this kernel pops** rather than of the splice
-  itself. -/
+  **The policy this kernel implements since `v0.35.45`** (WS-HP HP6).  What it
+  needed was not the splice — `Reply.next` has been there since `v0.35.4` — but a
+  pop whose *trigger* is head-ness rather than the recorded server's binding, since
+  the splice re-heads a frame whose recorded server is by then gone and `.unbound`.
+  HP4 and HP5 moved the trigger; this row takes the splice.  `O(1)`, like the
+  sever: the removal writes the two frames either side of the cut and the cut
+  frame's own downward link, and no walk. -/
   | spliceOutTheCut
   /-- **Reclaim to the cancelled thread.**  The cancellation reaches the
   context's real holder through `SchedContext.scReply` / `boundThread` and hands
@@ -2064,112 +2809,139 @@ inductive CancelledMiddleCallerPolicy where
   | reclaimToCancelledThread
   deriving DecidableEq, Repr
 
-/-- **WS-OD OD5.2: this kernel severs at the cut.**
+/-- **WS-HP HP6.8: this kernel splices the cut frame out.**
 
-Chosen for three reasons, in order of weight.
+`v0.35.45`.  Up to `v0.35.44` it severed, and the reason was never a preference
+for the sever: it was that this kernel decided whether a reply pops a donation
+from the **recorded server's binding** rather than from whether the answered frame
+heads a context, and `severAtCut` is exactly what kept those two facts equivalent.
+WS-HP HP4 and HP5 moved the trigger onto the frame; with that done the splice is
+strictly better on every axis the sever was chosen for.
 
-1. **It is what the pop already does**, so the depth-1 head case and the
-   depth-`n` middle case are one program rather than two:
-   `replyStackOuterCaller?` answers `none` in both, and
-   `cancelledMiddleCaller_severs_at_cut` proves the pop's *effect* is the same
-   one.  The alternative needs a second transition and a second set of bundle
-   proofs for a state the first one already reaches.
-2. **It is `O(1)`.**  The alternative walks the frames between the cancelled
-   thread and the holder; a `LockSet` is capped at `maxLockSetSize` and a chain
-   is not, so a reclaim that traverses the chain could not be given a footprint
-   at all -- the same argument OD3.7 makes for the pop's single frame of
-   lookahead.
-3. **It keeps this kernel's pop trigger sound**, which is the reason that
-   actually carries the decision and the one a reader must not mistake for an
-   appeal to upstream.  This kernel decides whether a reply pops a donation from
-   the **recorded server's binding** (`endpointReplyServerDonation?`, resolved
-   through `recordedReplyServer?`), *not* from whether the answered frame heads a
-   context.  Under `severAtCut` those two facts stay equivalent: a frame heads a
-   context exactly while the server it recorded still holds the donation, since a
-   server that donated onward pushed a new head, and the frames below a cut leave
-   the stack altogether rather than waiting to be re-headed.
+Read against the three reasons the sever was chosen for, each now measured rather
+than inherited.
 
-   `spliceOutTheCut` breaks the equivalence.  It re-heads a frame whose recorded
-   server is by then gone and `.unbound`, so answering that frame runs **no** pop;
-   `Reply.consumed` keeps a head's links; and the resulting state is a consumed
-   frame heading a context while a live `.donated` holder still names its owner —
-   exactly what `replyStackOuterCaller?_of_consumed_frame` refuses, and the object
-   pinning `v0.35.4` closed.  The three coherence facts the reply path carries as
-   *stated* pre-state hypotheses — `replyStackHeadIsAnsweredReply`,
-   `replyDonationOwnerIsAnsweredCaller` and `answeredHeadContextIsServerDonation`
-   — are that equivalence in the form their consumers need, and no invariant in
-   this tree entails them.
+1. **It is still one program, not two.**  `replyStackOuterCaller?` answers `none`
+   at the bottom of a stack and `some outer` at a frame that has one below it, and
+   the splice only moves which of those two a cut produces:
+   `replyStackOuterCaller?_follows_policy` is the consumer, and
+   `cancelledMiddleCaller_splices_at_cut` proves the pop's *effect* — the
+   reservation leaves the cut bound `.donated scId outer`, still owed outward,
+   instead of settling `.bound scId` on the thread immediately above the cut.  No
+   second transition and no second set of bundle proofs: the pop is the pop.
+2. **It is `O(1)`.**  The removal writes three Reply objects — the frame above, the
+   frame below, and the cut frame's own downward link — and walks nothing, so the
+   footprint argument that ruled out `reclaimToCancelledThread` (a `LockSet` is
+   capped at `maxLockSetSize` and a chain is not) does not touch it.  The cost is
+   one declared write member, `maxLockSetSize` 22 → 23 (HP3.5).
+3. **The trigger it needs is live.**  `applyReplyDonation` and
+   `cancelledCallerDonation?` both read the answered caller's own reply *frame*
+   (`replyFrameHeadHolder?`), so a frame that heads no context simply does not pop
+   and an orphan head — a head whose recorded reply server is gone and `.unbound` —
+   is popped on the strength of the link rather than of a binding nobody holds.
+   That orphan head is **reachable from this cut onward**, which is what let HP7
+   (`v0.35.46`) delete the coherence predicate the binding-driven pop stood on: a
+   stated fact the live kernel refutes is not a weaker obligation but a false one.
+   The theorem that named the state went with it, and the evidence is now an
+   executed witness — `tests/SmpCrossCoreReplySuite.lean` builds the orphan head
+   and computes both readings on it.
 
-   So taking the splice means moving the pop's *trigger* to head-ness and its
-   *source* to `SchedContext.boundThread`, which is a workstream rather than a
-   field write.  It is registered in `docs/REGISTERED_DEBT.md` with a closure
-   target, not left as an unexamined preference.
+**What this buys, measured.**  At reply-stack depth three
+(`tests/SmpIpcSuite.lean` §3.22) the reservation of a client whose reply
+capability a callee delegated to a confederate now travels outward to the client
+that owns it, where under the sever it settled on a thread strictly inside the
+chain and the owner was left `.unbound` for good.  That is a **fairness** property
+neither this kernel nor seL4-MCS had: upstream's `reply_remove` severs too
+(`severAtCut`'s own docstring quotes the C and the five revisions it was read at),
+so this is an improvement on upstream rather than parity with it.
 
-   **And this is a divergence from seL4-MCS, stated as one.**  Until `v0.35.14`
-   this file asserted the opposite — that severing was upstream's structural
-   answer.  Checked against the source, `reply_remove`'s non-head branch splices
-   (`next->replyPrev = reply->replyPrev`), so every frame below a cut stays on
-   the stack there and the reservation goes on travelling outward.  The
-   divergence costs what `tests/SmpIpcSuite.lean` §3.22 measures, it is registered
-   in `docs/REGISTERED_DEBT.md` with an owner and a closure target, and v1.0.0
-   must not claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  A
-   `reply_remove_tcb` reference elsewhere in this tree names an operation's
-   *shape*; it is not evidence about what upstream writes.
+**What it does not buy, and where that is tracked.**  At depth **two** the frame
+below the cut is the stack's bottom, so both policies write `none` into the frame
+above and the splice provably cannot reach the loss: the delegate answers the
+client out of order, the client's frame leaves the stack, and the later in-order
+pop binds the reservation to the *intermediate* caller.  Closing that needed the
+reservation's **origin** recorded on the `SchedContext` rather than derived from
+stack reachability, and WS-HP HP10.9 (`v0.35.53`) landed it:
+`donationAccountingPreserved_atCallDepthTwo` is the payoff — **under its own two
+guard hypotheses**, which is the whole of what that theorem claims.
 
-   Before `v0.35.4` the same policy was implemented by *leaving the cut frame on
-   the stack* with its `caller` consumed and letting the pop read a consumed
-   frame as the bottom.  That frame then headed the stack forever: nothing
-   popped it, so its Reply object and the context could never be retyped and the
-   Reply could never be linked again — an ordinary `.tcbSuspend` of a client
-   whose server nested a call burned one of the server's Reply objects per round.
-   The detach is what closes that; the resolver now **refuses** a consumed frame
-   (`replyStackOuterCaller?_of_consumed_frame`, `.error .illegalState`) rather
-   than reading it as the bottom.
+**And one of those hypotheses is false on a reachable state** (PR #897's review,
+`v0.35.141`).  `donationOriginRebindable` refuses a client that is
+`.blockedOnReply`, and a client answered out of order and re-called is exactly
+that while owning nothing — its Call donated no reservation, being `.unbound`.  The
+pop then falls back to the answered caller and the depth-2 loss is live again, so
+**a completed call chain does not return a client's reservation at every depth**.
+Measured at `tests/SmpIpcSuite.lean` §3.25's COST group; registered in
+`docs/REGISTERED_DEBT.md` table C.
 
-What it costs is measured rather than hidden.  Neither the cut thread nor the
-chain's **original** owner gets the scheduling context back: it settles on the
-caller immediately above the cut, bound `.bound scId` outright, and **no later
-pop carries it below the cut** -- the frames below left the stack, and a `.bound`
-holder is not a donation, so nothing pops it.  At stack depth three
-(`tests/SmpIpcSuite.lean` §3.22) that owner is two hops outside the cut and the
-reservation settles on a thread strictly inside the chain, where the *same* stack
-unwound in order delivers it outward still owed; depth three is the shallowest
-stack on which this is visible at all.
+**And no object is pinned by a cut, at either policy.**  A frame the removal takes
+off a stack carries no `.head` link, so consuming its caller clears it outright
+(`Reply.consumed`'s non-head branch) — and since this cut the removal clears the
+cut frame's own `prev` itself, which is seL4's `reply_unlink` downward half, so
+`donationChainWellFormed` is preserved **outright** across the removal rather than
+transiently broken (`spliceReplyFrameOut_preserves_donationChainWellFormed`,
+`removeCallerReplyFrame_preserves_donationChainWellFormed`).  Before `v0.35.4` the
+sever was implemented by *leaving the cut frame on the stack* with its `caller`
+consumed and letting the pop read a consumed frame as the bottom; that frame then
+headed the stack forever and an ordinary `.tcbSuspend` of a client whose server
+nested a call burned one of the server's Reply objects per round.  The resolver
+**refuses** a consumed frame now (`replyStackOuterCaller?_of_consumed_frame`,
+`.error .illegalState`) rather than reading it as the bottom.
 
-The authority needed is the authority to unblock the thread being cut -- a
-suspend right over it, or possession of its reply capability, which a callee's
-confederate may legitimately hold.  It is a **fairness** divergence, not a safety
-one: the resulting state satisfies `donationOwnerValid` and `passiveServerIdle`,
-no budget is lost to the system, and -- since `v0.35.4` -- no object is pinned,
-because a frame cut off the stack carries no `.head` link and so is cleared
-outright when its own caller is consumed (`Reply.consumed`'s non-head branch,
-exercised in §3.22). -/
-def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .severAtCut
+The authority needed to reach a middle removal at all is the authority to unblock
+the thread being cut — a suspend right over it, or possession of its reply
+capability, which a callee's confederate may legitimately hold. -/
+def cancelledMiddleCallerPolicy : CancelledMiddleCallerPolicy := .spliceOutTheCut
 
 /-- WS-OD OD5.2: and the decision is checkable, not merely declared -- a cut that
-switched the policy has to change this line and the two theorems that read it. -/
+switched the policy has to change this line and the two theorems that read it.
+
+WS-HP HP6.8 is that cut, and it did: the constant, this line,
+`replyStackOuterCaller?_follows_policy` and `cancelledMiddleCaller_splices_at_cut`
+all moved together, and `severAtCut_pop_leaves_no_head` -- whose first conjunct was
+this equality at the old value -- was deleted, because a theorem whose conclusion
+is now false cannot be restated, only retired. -/
 @[simp] theorem cancelledMiddleCallerPolicy_eq :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut := rfl
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut := rfl
 
-/-- **WS-OD OD5.2 / `v0.35.4`: the resolver implements `severAtCut` at the cut.**
+/-- **WS-HP HP6.8: the resolver implements `spliceOutTheCut` at the cut.**
 
-After the detach the frame above the cut has no `prev` — it is the bottom of the
-stack it heads — so the resolver answers `none` at it and the pop binds its
-caller outright.  Stated against the policy constant, so the policy has a
-consumer rather than being a name nothing reads; a cut that chose
-`reclaimToCancelledThread` would have to make this false.  The companion
-`replyStackOuterCaller?_of_consumed_frame` is the *other* half of the same
-decision: a frame that was left below a head with its caller consumed — the
-pre-`v0.35.4` implementation of the policy — is refused, never read as the
-bottom. -/
+A middle removal leaves the frame above the cut linking down to the frame *below*
+it (`removeCallerReplyFrame_splices_reciprocally`), so when the pop later reaches
+that frame the resolver follows the surviving link and answers the caller waiting
+there — and the pop hands the reservation on to it, still owed outward, rather than
+binding the thread immediately above the cut outright.
+
+Stated against the policy constant, so the policy has a consumer rather than being
+a name nothing reads; a cut that chose `severAtCut` or
+`reclaimToCancelledThread` would have to make this false.  Up to `v0.35.44` this
+theorem said the opposite — `hCut : r.prev = none` and `.ok none` — which is the
+sever, and the sever's form survives as `replyStackOuterCaller?_of_bottom_head`,
+still reached at the genuine bottom of a stack.
+
+The companion `replyStackOuterCaller?_of_consumed_frame` is the *other* half of the
+same decision, and it is what makes the splice safe rather than merely better: a
+frame left below a head with its caller consumed — the pre-`v0.35.4`
+implementation of the sever — is **refused**, never read as the bottom.  The
+splice re-heads a frame whose own caller is still live, so it never produces that
+state; the refusal is what says so rather than an argument a reader has to
+reconstruct. -/
 theorem replyStackOuterCaller?_follows_policy (st : SystemState)
     (scId : SeLe4n.SchedContextId) (sc : SchedContext) (rid : SeLe4n.ReplyId) (r : Reply)
+    (below : SeLe4n.ReplyId) (b : Reply) (outer : SeLe4n.ThreadId)
     (hSc : st.getSchedContext? scId = some sc)
     (hHead : donationHeadOf? st scId sc = .ok (some (rid, r)))
-    (hCut : r.prev = none) :
-    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.severAtCut ∧
-      replyStackOuterCaller? st scId = .ok none :=
-  ⟨rfl, replyStackOuterCaller?_of_bottom_head st scId sc rid r hSc hHead hCut⟩
+    (hCut : r.prev = some below)
+    (hBelow : st.getReply? below = some b)
+    (hRecip : b.next = some (.frame rid))
+    (hCaller : b.caller = some outer) :
+    cancelledMiddleCallerPolicy = CancelledMiddleCallerPolicy.spliceOutTheCut ∧
+      replyStackOuterCaller? st scId = .ok (some outer) := by
+  refine ⟨rfl, ?_⟩
+  unfold replyStackOuterCaller?
+  rw [hSc]
+  simp only [hHead, hCut, hBelow, hRecip, bne_self_eq_false, Bool.false_eq_true, if_false,
+    hCaller]
 
 /-- Z7-H': Donation-owner uniqueness.  No two **distinct** threads name the same `owner` in a
 `.donated _ owner` binding.  Semantically: a thread becomes a donation `owner` only by donating
@@ -2349,7 +3121,7 @@ context whose stack it heads (`next : Option ReplyStackLink`, `.frame` / `.head`
 — and the context records the top of the stack (`SchedContext.scReply`).  The
 context is therefore recorded **at the head only**, which is what makes taking a
 frame out of the *middle* of a stack an `O(1)` operation on three objects
-(`detachReplyFrameAbove`) rather than a walk clearing a per-frame context field
+(`spliceReplyFrameOut`) rather than a walk clearing a per-frame context field
 on every frame below the cut — the walk this kernel's first design refused to
 pay for, and then paid for by leaving frames dead on the stack forever.
 
@@ -2368,11 +3140,13 @@ stop mentioning it and keep passing.
 it names (`prevLinkReciprocal`: that frame's `next` is `.frame` of the one
 above), and every head is answered by its context (`headLinkReciprocal` /
 `headLinkResolves`).  The converse — every upward `.frame` link answered by a
-`prev` — is deliberately **not** required: a frame the detach cut off keeps an
-upward link naming a Reply that has since been consumed (`Reply.consumed`), and
-nothing reads an upward link without checking the answer.  Every walk and every
-pop validator follows `prev` and validates the target's `next`, so a stale upward
-link in a cut-off part is never trusted and never reached from a head. -/
+`prev` — is deliberately **not** required: a frame below a *severed* cut — the
+degenerate arm of the splice, taken when the frame below does not reciprocate —
+keeps an upward link naming a Reply that has since been consumed
+(`Reply.consumed`), and nothing reads an upward link without checking the answer.
+Every walk and every pop validator follows `prev` and validates the target's
+`next`, so a stale upward link below a severed cut is never trusted and never
+reached from a head. -/
 
 /-- WS-OD OD2.4 / `v0.35.4`: the reply-stack data an object carries **as a
 Reply** — the link down to the frame below it and the link up to the frame above
@@ -2708,8 +3482,10 @@ theorem donationChainWalk_mem_prev (st : SystemState) :
 /-- **A walk survives clearing one member's `prev`.**  If the post-state agrees
 with the pre-state on every member's links, except that some members have had
 their `prev` cleared with `next` kept, the post-state walk exists: it follows the
-same frames and stops at the first cleared one.  This is what the cancellation's
-`O(1)` detach costs the chain invariant — a shorter stack, never a broken one. -/
+same frames and stops at the first cleared one.  This is what the splice's
+degenerate (severed) arm costs the chain invariant — a shorter stack, never a
+broken one; the reciprocating arm reconnects the stack instead
+(`spliceReplyFrameOut_preserves_donationChainWellFormed`). -/
 theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
     ∀ (fuel : Nat) (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
       (chain : List SeLe4n.ReplyId),
@@ -2747,6 +3523,131 @@ theorem donationChainWalk_exists_of_agree_or_cut {st st' : SystemState} :
           unfold replyStackLinksAt? SystemState.getObject?; rw [hRq']; simp [hPrev', hNext', hrq]
         rw [hLinks]
         simp [hNext0]
+
+
+/-- **WS-HP HP6.4: a walk survives a `reply_remove` *splice*.**  Where the
+post-state agrees with the pre-state on every frame's links except that one frame
+`rid` has been taken out of the middle — the frame above it now names the frame
+below it, that frame now answers the frame above, and `rid` itself has lost its
+downward link — the post-state walk exists with the same fuel: it follows the same
+frames with `rid` skipped, so it is one shorter and never a broken one.
+
+The `agree_or_cut` form above cannot state this.  There the removal *cleared* the
+frame above's `prev`, which stops the walk; here it is **redirected**, which is
+neither agreement nor a cut, and the walk continues past it.
+
+**One walk does not survive, and it is exactly the step the splice deletes**:
+arriving at the frame below with `expect = .frame rid`, the step the removed frame
+used to make.  That is the excluded pair in the first conjunct, and no walk from a
+context *head* takes it once the frame above stops naming `rid` — which is why the
+second conjunct, the skip itself, is what the head case reads. -/
+theorem donationChainWalk_exists_of_splice {st st' : SystemState}
+    {rid above below : SeLe4n.ReplyId}
+    {aNext : Option ReplyStackLink} {bPrev : Option SeLe4n.ReplyId}
+    (hNeBR : below ≠ rid)
+    (hAgree : ∀ q : SeLe4n.ReplyId, q ≠ above → q ≠ below → q ≠ rid →
+      replyStackLinksAt? st' q = replyStackLinksAt? st q)
+    (hAPre : replyStackLinksAt? st above = some (some rid, aNext))
+    (hAPost : replyStackLinksAt? st' above = some (some below, aNext))
+    (hRPre : replyStackLinksAt? st rid = some (some below, some (.frame above)))
+    (hRPost : replyStackLinksAt? st' rid = some (none, some (.frame above)))
+    (hBPre : replyStackLinksAt? st below = some (bPrev, some (.frame rid)))
+    (hBPost : replyStackLinksAt? st' below = some (bPrev, some (.frame above))) :
+    ∀ (fuel : Nat),
+      (∀ (expect : ReplyStackLink) (rid? : Option SeLe4n.ReplyId)
+          (chain : List SeLe4n.ReplyId),
+          donationChainWalk st expect fuel rid? = some chain →
+          ¬(expect = .frame rid ∧ rid? = some below) →
+          ∃ chain', donationChainWalk st' expect fuel rid? = some chain') ∧
+      (∀ chain : List SeLe4n.ReplyId,
+          donationChainWalk st (.frame rid) fuel (some below) = some chain →
+          ∃ chain', donationChainWalk st' (.frame above) fuel (some below) = some chain') := by
+  intro fuel
+  induction fuel with
+  | zero =>
+    refine ⟨?_, ?_⟩
+    · intro expect rid? chain h _
+      cases rid? with
+      | none => exact ⟨[], by simp⟩
+      | some _ => cases h
+    · intro chain h; cases h
+  | succ n ih =>
+    obtain ⟨ihP, ihQ⟩ := ih
+    refine ⟨?_, ?_⟩
+    · intro expect rid? chain h hNot
+      cases rid? with
+      | none => exact ⟨[], by simp⟩
+      | some q =>
+        obtain ⟨r, tail, hR, hNext, hRec, rfl⟩ := donationChainWalk_succ_some h
+        have hQLinks : replyStackLinksAt? st q = some (r.prev, r.next) := by
+          unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
+        by_cases hqA : q = above
+        · -- The frame above the cut: its `next` is unchanged, its `prev` redirected.
+          have hQPre : replyStackLinksAt? st q = some (some rid, aNext) := by
+            rw [hqA]; exact hAPre
+          have hQPost : replyStackLinksAt? st' q = some (some below, aNext) := by
+            rw [hqA]; exact hAPost
+          have hPair := Option.some.inj (hQLinks.symm.trans hQPre)
+          have hPrevRid : r.prev = some rid := congrArg Prod.fst hPair
+          have hNextEq : r.next = aNext := congrArg Prod.snd hPair
+          rw [hPrevRid] at hRec
+          cases n with
+          | zero => exact absurd hRec (by simp)
+          | succ m =>
+            obtain ⟨r2, tail2, hR2, _, hRec2, rfl⟩ := donationChainWalk_succ_some hRec
+            have hR2Links : replyStackLinksAt? st rid = some (r2.prev, r2.next) := by
+              unfold replyStackLinksAt? SystemState.getObject?; rw [hR2]; rfl
+            have hBelowEq : r2.prev = some below :=
+              congrArg Prod.fst (Option.some.inj (hR2Links.symm.trans hRPre))
+            rw [hBelowEq] at hRec2
+            obtain ⟨c2, hc2⟩ := ihQ tail2
+              (donationChainWalk_mono_le st hRec2 (m + 1) (Nat.le_succ m))
+            refine ⟨q :: c2, ?_⟩
+            rw [donationChainWalk_succ, hQPost]
+            simp only []
+            rw [if_pos (hNextEq.symm.trans hNext), hqA, hc2]
+            rfl
+        · by_cases hqB : q = below
+          · -- The frame below the cut: the pre-walk can only have arrived from `rid`.
+            have hQPre : replyStackLinksAt? st q = some (bPrev, some (.frame rid)) := by
+              rw [hqB]; exact hBPre
+            have hNextRid : r.next = some (.frame rid) :=
+              congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
+            exact absurd ⟨Option.some.inj (hNext.symm.trans hNextRid), hqB ▸ rfl⟩ hNot
+          · by_cases hqR : q = rid
+            · -- The cut frame itself: its `prev` is gone, so the post-walk stops there.
+              have hQPre : replyStackLinksAt? st q = some (some below, some (.frame above)) := by
+                rw [hqR]; exact hRPre
+              have hQPost : replyStackLinksAt? st' q = some (none, some (.frame above)) := by
+                rw [hqR]; exact hRPost
+              have hNextAbove : r.next = some (.frame above) :=
+                congrArg Prod.snd (Option.some.inj (hQLinks.symm.trans hQPre))
+              refine ⟨[q], ?_⟩
+              rw [donationChainWalk_succ, hQPost]
+              simp only []
+              rw [if_pos (hNextAbove.symm.trans hNext)]
+              simp
+            · -- Every other frame: links agree, so the post-walk steps identically.
+              obtain ⟨c', hc'⟩ := ihP (.frame q) r.prev tail hRec
+                (by intro hBad; exact hqR (ReplyStackLink.frame.inj hBad.1))
+              refine ⟨q :: c', ?_⟩
+              rw [donationChainWalk_succ, hAgree q hqA hqB hqR, hQLinks]
+              simp only []
+              rw [if_pos hNext, hc']
+              rfl
+    · intro chain h
+      obtain ⟨r, tail, hR, _, hRec, rfl⟩ := donationChainWalk_succ_some h
+      have hBLinks : replyStackLinksAt? st below = some (r.prev, r.next) := by
+        unfold replyStackLinksAt? SystemState.getObject?; rw [hR]; rfl
+      have hPrevEq : r.prev = bPrev :=
+        congrArg Prod.fst (Option.some.inj (hBLinks.symm.trans hBPre))
+      obtain ⟨c', hc'⟩ := ihP (.frame below) r.prev tail hRec
+        (by intro hBad; exact hNeBR (ReplyStackLink.frame.inj hBad.1))
+      refine ⟨below :: c', ?_⟩
+      rw [donationChainWalk_succ, hBPost]
+      simp only [if_true]
+      rw [← hPrevEq, hc']
+      rfl
 
 theorem donationChainFrom_mem (st : SystemState) (scId : SeLe4n.SchedContextId) :
     ∀ (fuel : Nat) (rid? : Option SeLe4n.ReplyId) (chain : List SeLe4n.ReplyId),
@@ -3012,7 +3913,7 @@ answer to one question a reader of the stack asks.
 **What is deliberately absent**: any converse for upward `.frame` links (a
 cut-off part keeps stale ones, see the section docstring) and any completeness
 clause over a per-frame context field — a frame below the head does not know its
-context, which is exactly what makes the detach `O(1)`.
+context, which is exactly what makes the splice `O(1)`.
 
 **Not a conjunct of `ipcInvariantFull`.**  That bundle has exactly twenty
 conjuncts and a family of theorems whose size a Tier-0 gate holds equal to the
@@ -4223,6 +5124,34 @@ theorem donationOwnerValidExcept_of_donationOwnerValid
   obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hReply⟩ := h tid tcb scId owner hTcb hBind
   exact ⟨hSc, ownerTcb, hOwner, hUnbound, Or.inr hReply⟩
 
+/-- **WS-HP HP10.7: a rebindable origin is named as owner by no live donation.**
+
+The fact the reply path's redirect rests on, and the reason
+`donationOriginRebindable` exists beside `donationRecipientAcceptable` rather than
+being folded into it.  The recipient guard asks that the origin hold no binding of
+its **own**; this asks that no *other* thread's binding be counting on it — two
+different questions, and the redirect would falsify `donationOwnerValid` without
+the second (see `donationOriginRebindable` for the reachable sequence).
+
+Stated against the **relaxed** invariant because that is what the reply path has:
+`donationOwnerValidExcept st relaxed` drops the reply-blocked clause at one thread,
+so an origin distinct from that thread still gets the full reading — and where the
+two coincide the redirect is the identity, so nothing is owed. -/
+theorem donationOriginRebindable_no_owner
+    {st : SystemState} {origin relaxed : SeLe4n.ThreadId}
+    (hDOV : donationOwnerValidExcept st relaxed)
+    (hNe : origin ≠ relaxed)
+    (h : donationOriginRebindable st origin = true) :
+    ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId' origin := by
+  intro tid tcb scId' hObj hBind
+  obtain ⟨_, ownerTcb, hOwnerObj, _, hCase⟩ := hDOV tid tcb scId' origin hObj hBind
+  rcases hCase with hEq | ⟨epId, replyTarget, hIpc⟩
+  · exact hNe hEq
+  · exact donationOriginRebindable_not_blockedOnReply st
+      ((SystemState.getTcb?_eq_some_iff st origin ownerTcb).mpr hOwnerObj) h epId replyTarget hIpc
+
 /-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
 the relaxed thread — the state the donation return leaves behind, and the state a
 reply that carried no donation was in all along. -/
@@ -4451,6 +5380,13 @@ def objectStoreAgrees (st st' : SystemState) : Prop :=
 theorem objectStoreAgrees.refl (st : SystemState) : objectStoreAgrees st st :=
   fun _ => rfl
 
+/-- A transition that leaves the object store pointwise alone preserves it. -/
+theorem queuePPrevAgreesWithPrev_of_storeAgrees {st st' : SystemState}
+    (hA : objectStoreAgrees st st') (h : queuePPrevAgreesWithPrev st) :
+    queuePPrevAgreesWithPrev st' :=
+  queuePPrevAgreesWithPrev_of_frame
+    (fun tid tcb' hTcb' => ⟨tcb', by rw [← hA]; exact hTcb', rfl, rfl⟩) h
+
 theorem objectStoreAgrees.symm {st st' : SystemState}
     (h : objectStoreAgrees st st') : objectStoreAgrees st' st :=
   fun k => (h k).symm
@@ -4478,8 +5414,8 @@ theorem intrusiveQueueWellFormed_of_storeAgrees {st st' : SystemState}
   obtain ⟨hEmpty, hHead, hTail⟩ := h
   refine ⟨hEmpty, ?_, ?_⟩
   · intro hd hHd
-    obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
-    exact ⟨tcb, by rw [hA]; exact hTcb, hPrev⟩
+    obtain ⟨tcb, hTcb, hPrev, hPP⟩ := hHead hd hHd
+    exact ⟨tcb, by rw [hA]; exact hTcb, hPrev, hPP⟩
   · intro tl hTl
     obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
     exact ⟨tcb, by rw [hA]; exact hTcb, hNext⟩
@@ -4515,9 +5451,11 @@ theorem tcbQueueChainAcyclic_of_storeAgrees {st st' : SystemState}
 theorem dualQueueSystemInvariant_of_storeAgrees {st st' : SystemState}
     (hA : objectStoreAgrees st st') (h : dualQueueSystemInvariant st) :
     dualQueueSystemInvariant st' := by
-  obtain ⟨hEp, hLinks, hAcyc⟩ := h
+  obtain ⟨hEp, hLinks, hAcyc, hPP, hHD⟩ := h
   refine ⟨?_, tcbQueueLinkIntegrity_of_storeAgrees hA hLinks,
-    tcbQueueChainAcyclic_of_storeAgrees hA hAcyc⟩
+    tcbQueueChainAcyclic_of_storeAgrees hA hAcyc,
+    queuePPrevAgreesWithPrev_of_storeAgrees hA hPP,
+    endpointQueueHeadDisjoint_of_getElem_eq hA hHD⟩
   intro epId ep hLk
   have hLk0 : st.objects[epId]? = some (.endpoint ep) := by rw [← hA]; exact hLk
   have := hEp epId ep hLk0
@@ -4717,6 +5655,160 @@ theorem ipcInvariantFull_of_exceptDonationOwner {st : SystemState}
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
    h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-! ### WS-RR RR8.7 — the bundle relaxed at a woken caller's reply linkage
+
+`replyCallerLinkageReciprocal`'s second direction says that a Reply whose `caller`
+names a thread has that thread `.blockedOnReply`.  Every path that answers a
+caller therefore passes through a state where it is **false at exactly one
+thread**: the caller has been woken and its reply link has not yet been torn down.
+The cancellation's reply arm is such a path (`restoreToReadyCancelled` before
+`consumeReplyLink`), and so is the live reply leg.
+
+Before this the tree stated the teardown's bundle result the other way round —
+the *full* bundle of the pre-state together with the caller already woken — and
+those two are **contradictory**, so `consumeCallerReply_preserves_ipcInvariantFull`
+and `removeCallerReplyFrame_preserves_ipcInvariantFull` had premises no state
+could satisfy and asserted nothing.  Both are deleted; this predicate is what
+their content becomes, and `consumeReplyLink_closes_exceptReplyLinkage` is the
+statement that survives.
+
+The relaxation is the **narrowest** one that admits the state: at the woken thread
+the reciprocal pair is still required to exist, and only the blocking clause is
+dropped.  Clause 1 and `blockedOnReplyHasReplyObject` are untouched, because
+waking a caller costs neither. -/
+def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.replyObject = some rid →
+      ∃ r, st.objects[rid.toObjId]? = some (.reply r) ∧ r.caller = some tid) ∧
+  (∀ (rid : SeLe4n.ReplyId) (r : Reply) (tid : SeLe4n.ThreadId),
+      st.objects[rid.toObjId]? = some (.reply r) →
+      r.caller = some tid →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
+        (tid = woken ∨ ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
+          tcb.ipcState = .blockedOnReply ep rt)) ∧
+  blockedOnReplyHasReplyObject st
+
+/-- WS-RR RR8.7: **a relaxed linkage with nothing referencing the woken thread is
+the full linkage.**  This is what the reply-link teardown supplies: it clears the
+one Reply that named the caller, and under the relaxed clause it is the only one
+that could (a second would force the caller's single `replyObject` to name two
+Reply objects). -/
+theorem replyCallerLinkage_of_except_of_unreferenced {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : replyCallerLinkageExcept st woken)
+    (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
+    replyCallerLinkage st := by
+  refine ⟨⟨h.1, ?_⟩, h.2.2⟩
+  intro rid r tid hR hC
+  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2.1 rid r tid hR hC
+  rcases hCase with hEq | hBlk
+  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
+  · exact ⟨tcb, hT, hRO, hBlk⟩
+
+/-- **WS-RR RR8.7: `ipcInvariantFull` with the reply linkage relaxed at one woken
+caller** — the honest statement about the state a reply path reaches between
+waking its caller and tearing that caller's reply link down.
+
+It stands to the reply-link teardown as `ipcInvariantFullExceptDonationOwner`
+stands to the bare reply and `ipcInvariantFullExceptMembership` to the bare
+splice.  Use `ipcInvariantFull_of_exceptReplyLinkage` to recover the full bundle
+once the link is gone. -/
+def ipcInvariantFullExceptReplyLinkage (st : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop :=
+  ipcInvariant st ∧ dualQueueSystemInvariant st ∧ allPendingMessagesBounded st ∧
+  badgeWellFormed st ∧ blockedThreadsPendingMessageConsistent st ∧
+  endpointQueueNoDup st ∧ ipcStateQueueMembershipConsistent st ∧
+  queueNextBlockingConsistent st ∧ queueHeadBlockedConsistent st ∧
+  blockedThreadTimeoutConsistent st ∧
+  donationChainAcyclic st ∧ donationOwnerValid st ∧
+  passiveServerIdle st ∧ donationBudgetTransfer st ∧
+  blockedOnReplyHasTarget st ∧ replyCallerLinkageExcept st woken ∧
+  pendingReceiveReplyWellFormed st ∧ donationOwnerUnique st ∧
+  endpointQueueTailBlockedConsistent st ∧
+  queueNextTargetBlocked st
+
+/-- **WS-RR RR8.7: the superseded hypothesis set was contradictory, and this is
+the pin that it must not come back.**
+
+The reply-link teardown's bundle theorems used to ask for the *full* bundle of the
+state they run on **and** that the answered caller was no longer `.blockedOnReply`.
+Those two cannot both hold: reciprocity's second direction says a Reply whose
+`caller` names a thread has that thread `.blockedOnReply`.  So the premises were
+unsatisfiable and the theorems asserted nothing, while their names and docstrings
+read as coverage of the teardown.
+
+Nothing in the tree can catch that shape by counting: the de-threading gate asks
+whether a conjunct is bound on a *post*-state and says nothing about whether the
+pre-state hypotheses are jointly satisfiable.  A theorem is the only check that
+fires, so this is one — and it is decisive rather than illustrative, because it
+would fail to elaborate the moment anyone weakened reciprocity in a way that made
+the old pairing consistent again. -/
+theorem replyCallerLinkage_refutes_woken_linked_caller {st : SystemState}
+    {caller : SeLe4n.ThreadId} {rid : SeLe4n.ReplyId} {r0 : Reply}
+    (hRCL : replyCallerLinkage st)
+    (hGetR0 : st.objects[rid.toObjId]? = some (.reply r0))
+    (hLinked : r0.caller = some caller)
+    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt) :
+    False := by
+  obtain ⟨tcb, hTcb, _, ep, rt, hBlk⟩ := hRCL.1.2 rid r0 caller hGetR0 hLinked
+  exact hCallerWoken tcb hTcb ep rt hBlk
+
+/-- WS-RR RR8.7: the relaxed bundle plus the full reply linkage is the full
+bundle. -/
+theorem ipcInvariantFull_of_exceptReplyLinkage {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken)
+    (hRCL : replyCallerLinkage st) :
+    ipcInvariantFull st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, hRCL,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+
+/-- WS-RR RR8.7: the relaxed bundle's fifteen structural conjuncts are
+`ipcInvariantCore` verbatim — the relaxation is the sixteenth. -/
+theorem ipcInvariantFullExceptReplyLinkage.toCore {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    ipcInvariantCore st :=
+  ⟨h.1, h.2.1, h.2.2.1, h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   h.2.2.2.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1⟩
+
+/-- WS-RR RR8.7: the relaxed sixteenth conjunct. -/
+theorem ipcInvariantFullExceptReplyLinkage.replyCallerLinkageExcept {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.replyCallerLinkageExcept st woken :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+/-- WS-RR RR8.7: the relaxed bundle's remaining named projections. -/
+theorem ipcInvariantFullExceptReplyLinkage.pendingReceiveReplyWellFormed {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.pendingReceiveReplyWellFormed st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.donationOwnerUnique {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.donationOwnerUnique st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.endpointQueueTailBlockedConsistent
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.endpointQueueTailBlockedConsistent st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1
+
+theorem ipcInvariantFullExceptReplyLinkage.queueNextTargetBlocked {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : ipcInvariantFullExceptReplyLinkage st woken) :
+    _root_.SeLe4n.Kernel.queueNextTargetBlocked st :=
+  h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2
 
 /-- WS-RR RR3.12: the relaxed bundle's own `donationOwnerValidExcept` projection. -/
 theorem ipcInvariantFullExceptDonationOwner.donationOwnerValidExcept
@@ -5161,6 +6253,21 @@ theorem cleanupPreReceiveDonation_scheduler_eq
       | ok st' =>
         obtain ⟨n, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hReturn
         exact returnDonatedSchedContext_scheduler_eq st st' receiver scId originalOwner n hPop
+
+/-- **WS-RR RR8.12**: and so does the `Checked` variant the live receive path
+runs.
+
+A corollary through `cleanupPreReceiveDonationChecked_ok_eq_cleanup`, not a second
+case analysis: the two variants are pointwise equal on `.ok` (AK1-A), so the
+defensive twin's frame *is* this one.  Re-deriving it from the checked body would
+be a second answer to a question the bridge already settles, and the two could
+then disagree about a branch. -/
+theorem cleanupPreReceiveDonationChecked_scheduler_eq
+    (st st' : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
+    st'.scheduler = st.scheduler :=
+  (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h) ▸
+    cleanupPreReceiveDonation_scheduler_eq st receiver
 
 /-- AI4-A: cleanupPreReceiveDonation preserves objects.invExt. -/
 theorem cleanupPreReceiveDonation_preserves_objects_invExt
@@ -5761,6 +6868,113 @@ theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except
       owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
       (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
 
+
+/-- **WS-HP HP10.7: `donationOwnerValid`, with the RECIPIENT split from the
+binding's recorded owner.**
+
+The generalisation the reply path's redirect needs.  Every pop before HP10.7
+handed the reservation to the thread the holder's own `.donated scId owner`
+binding named, so one thread played three roles at once — the operation's
+`originalOwner` argument, the binding's recorded owner, and the relaxation point
+of `donationOwnerValidExcept`.  At the bottom of a reply stack the redirect makes
+the first of those the reservation's recorded **origin**, and the three come
+apart.
+
+Two hypotheses replace what the conflation used to supply for free, and each
+names the fact it stands for rather than a thread:
+
+* `hRecipientStored` — the recipient resolves to a TCB.  The pop's own
+  `lookupTcb` witnesses this on success; it is a hypothesis here so the lemma
+  says what it needs instead of re-deriving it.
+* `hNoOwner` — **no live binding names the recipient as its owner**.  This is the
+  load-bearing one, and it is exactly what `donationOriginRebindable_no_owner`
+  delivers.  Without it the redirect is unsound rather than merely unproved: a
+  thread that is `.unbound` (so it passes `donationRecipientAcceptable`) may
+  still be the owner some other thread's `.donated` binding is counting on, and
+  writing `.bound scId` there falsifies that binding's owner clause.  The
+  conflated form got this from `donationOwnerUnique` for free, because the
+  recipient *was* the server's own recorded owner.
+
+`hUnique` still does the other half of the old argument — that a surviving
+donation's owner is not the **binding's** owner — because the relaxed invariant's
+escape disjunct is keyed there, not at the recipient.
+
+The conflated form is the instance `recipient = bindingOwner`
+(`returnDonatedSchedContext_establishes_donationOwnerValid_of_except`), which is
+every pop this tree performed before HP10.7 and every one where the redirect is
+the identity. -/
+theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (bindingOwner recipient : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (stcb : TCB)
+    (hServerObj : st.objects[serverTid.toObjId]? = some (.tcb stcb))
+    (hServerBind : stcb.schedContextBinding = .donated scId bindingOwner)
+    (hUnique : donationOwnerUnique st)
+    (hInv : donationOwnerValidExcept st bindingOwner)
+    (hRecipientStored : ∃ rTcb, st.objects[recipient.toObjId]? = some (.tcb rTcb))
+    (hNoOwner : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
+      st.objects[tid.toObjId]? = some (.tcb tcb) →
+      tcb.schedContextBinding ≠ .donated scId' recipient)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuter : donationReturnOuterValid st serverTid recipient newOwner?)
+    (h : returnDonatedSchedContext st serverTid scId recipient newOwner? = .ok st') :
+    donationOwnerValid st' := by
+  intro tid tcb scId' owner' hTcb hBinding
+  have hBack := returnDonatedSchedContext_tcb_schedContextBinding_backward st st' serverTid scId
+    recipient hObjInv newOwner? h tid.toObjId tcb hTcb
+  have hTidNS : tid.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hBack.1 hEq] at hBinding; cases hBinding
+  by_cases hTidO : tid.toObjId = recipient.toObjId
+  · exact returnDonatedSchedContext_donationOwnerValid_at_target st st' serverTid scId
+      recipient hObjInv newOwner? hOuter h tid tcb scId' owner' hTcb
+      (hBack.2.1 hTidNS hTidO) hBinding hTidO
+  have hTidNO : tid.toObjId ≠ recipient.toObjId := hTidO
+  obtain ⟨tcb0, hTcb0, hBind0⟩ := hBack.2.2 hTidNS hTidNO
+  have hBind0' : tcb0.schedContextBinding = .donated scId' owner' := hBind0.trans hBinding
+  obtain ⟨⟨sc', hSc', hBound'⟩, ⟨ownerTcb, hOwner0, hUnbound0, hCase0⟩⟩ :=
+    hInv tid tcb0 scId' owner' hTcb0 hBind0'
+  obtain ⟨⟨scS, hScS, hBoundS⟩, _⟩ :=
+    hInv serverTid stcb scId bindingOwner hServerObj hServerBind
+  obtain ⟨rTcb, hRecipObj⟩ := hRecipientStored
+  have hScIdNe : scId'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hSc'
+    obtain rfl := KernelObject.schedContext.inj (Option.some.inj hSc')
+    rw [hBoundS] at hBound'
+    exact hTidNS (by rw [(Option.some.inj hBound').symm])
+  -- The recipient is a TCB slot, so `tid`'s SchedContext is not it.
+  have hScNeO : scId'.toObjId ≠ recipient.toObjId := by
+    intro hEq; rw [hEq, hRecipObj] at hSc'; cases hSc'
+  have hScNeS : scId'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hSc'; cases hSc'
+  have hOwnerNS : owner'.toObjId ≠ serverTid.toObjId := by
+    intro hEq; rw [hEq, hServerObj] at hOwner0
+    obtain rfl := KernelObject.tcb.inj (Option.some.inj hOwner0)
+    rw [hServerBind] at hUnbound0; cases hUnbound0
+  -- **The redirect's own hypothesis**: no surviving donation names the recipient.
+  have hOwnerNO : owner'.toObjId ≠ recipient.toObjId := by
+    intro hEq
+    have hOwnerEq : owner' = recipient := ThreadId.toObjId_injective owner' recipient hEq
+    exact hNoOwner tid tcb0 scId' hTcb0 (hOwnerEq ▸ hBind0')
+  -- And the relaxed disjunct is keyed at the BINDING's owner, which uniqueness excludes.
+  have hOwnerNB : owner' ≠ bindingOwner := by
+    intro hOwnerEq
+    have := hUnique tid serverTid tcb0 stcb scId' scId bindingOwner hTcb0 hServerObj
+      (hOwnerEq ▸ hBind0') hServerBind
+    exact hTidNS (by rw [this])
+  have hOwnerNSc : owner'.toObjId ≠ scId.toObjId := by
+    intro hEq; rw [hEq, hScS] at hOwner0; cases hOwner0
+  obtain ⟨ep, rt, hReply0⟩ : ∃ epId replyTarget,
+      ownerTcb.ipcState = .blockedOnReply epId replyTarget :=
+    hCase0.resolve_left hOwnerNB
+  refine ⟨⟨sc', ?_, hBound'⟩, ⟨ownerTcb, ?_, hUnbound0, ep, rt, hReply0⟩⟩
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
+      scId'.toObjId hScIdNe hScNeO hScNeS
+      (fun r hr => by rw [hSc'] at hr; cases hr)]; exact hSc'
+  · rw [returnDonatedSchedContext_objects_ne st st' serverTid scId recipient hObjInv newOwner? h
+      owner'.toObjId hOwnerNSc hOwnerNO hOwnerNS
+      (fun r hr => by rw [hOwner0] at hr; cases hr)]; exact hOwner0
+
 /-- IPC de-threading D6: `returnDonatedSchedContext` preserves `donationOwnerValid` — the
 unrelaxed instance of the establisher above (the full invariant implies the relaxed one at
 every thread). -/
@@ -6194,8 +7408,8 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
     dualQueueSystemInvariant (cleanupPreReceiveDonation st receiver) := by
   exact cleanupPreReceiveDonation_frame_helper st receiver hInv
     fun scId originalOwner newOwner? st' hRet => by
-      obtain ⟨hDQWF, hLink, hAcyc⟩ := hInv
-      refine ⟨?_, ?_, ?_⟩
+      obtain ⟨hDQWF, hLink, hAcyc, hPP, hHD⟩ := hInv
+      refine ⟨?_, ?_, ?_, ?_, ?_⟩
       · -- dualQueueEndpointWellFormed for all endpoints in st'
         intro epId ep hEp'
         have hEpPre := returnDonatedSchedContext_endpoint_backward st st' receiver scId originalOwner hObjInv newOwner? hRet epId ep hEp'
@@ -6211,11 +7425,11 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
           intro q ⟨hEmpty, hHead, hTail⟩
           refine ⟨hEmpty, ?_, ?_⟩
           · intro hd hHd
-            obtain ⟨tcb, hTcb, hPrev⟩ := hHead hd hHd
-            obtain ⟨tcb', hTcb', _, hQP', _, _⟩ :=
-              returnDonatedSchedContext_tcb_queue_forward st st' receiver scId originalOwner hObjInv newOwner? hRet
-                hd.toObjId tcb hTcb
-            exact ⟨tcb', hTcb', hQP' ▸ hPrev⟩
+            obtain ⟨tcb, hTcb, hPrev, hPP⟩ := hHead hd hHd
+            obtain ⟨tcb', hTcb', sb, rfl⟩ :=
+              returnDonatedSchedContext_tcb_rewrite st st' receiver scId originalOwner hObjInv
+                newOwner? hRet hd.toObjId tcb hTcb
+            exact ⟨_, hTcb', hPrev, hPP⟩
           · intro tl hTl
             obtain ⟨tcb, hTcb, hNext⟩ := hTail tl hTl
             obtain ⟨tcb', hTcb', hQN', _, _, _⟩ :=
@@ -6250,6 +7464,25 @@ theorem cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant
         intro tid hPath'
         exact hAcyc tid
           (QueueNextPath_backward_of_returnDonatedSchedContext st st' receiver scId originalOwner hObjInv newOwner? hRet tid tid hPath')
+      · -- WS-RR RR8.3: `queuePPrevAgreesWithPrev` in st'.  The donation return's
+        -- three stores rewrite a `SchedContext`'s `boundThread` and two TCBs'
+        -- `schedContextBinding`; the link pair is untouched, so the shared
+        -- binding rewrite discharges the frame with two `rfl`s.  It reads that
+        -- rewrite directly rather than the four-field
+        -- `returnDonatedSchedContext_tcb_queue_backward` beside it, because that
+        -- lemma enumerates `queueNext`/`queuePrev`/`ipcState`/`pendingMessage`
+        -- and omits `queuePPrev` — the very field-enumeration gap this conjunct
+        -- exists to close, one level down.
+        refine queuePPrevAgreesWithPrev_of_frame (fun tid tcb' hTcb' => ?_) hPP
+        obtain ⟨tcb, hPre, sb, rfl⟩ :=
+          returnDonatedSchedContext_tcb_rewrite_backward st st' receiver scId originalOwner
+            newOwner? hObjInv hRet tid.toObjId tcb' hTcb'
+        exact ⟨tcb, hPre, rfl, rfl⟩
+      · -- **PR #897 review**: the donation return writes no endpoint, so the
+        -- fifth conjunct transports backward at every endpoint key.
+        exact endpointQueueHeadDisjoint_of_endpointBackward
+          (fun epId ep hEp' => returnDonatedSchedContext_endpoint_backward st st' receiver scId
+            originalOwner hObjInv newOwner? hRet epId ep hEp') hHD
 
 /-- AI4-A: cleanupPreReceiveDonation preserves endpointQueueNoDup. -/
 theorem cleanupPreReceiveDonation_preserves_endpointQueueNoDup
@@ -6426,6 +7659,36 @@ theorem schedContext_ne_tcb_at_objId
   rw [hSc] at hTcb
   cases hTcb
 
+-- ============================================================================
+-- WS-HP HP2.3 — why the policy flip may not precede the trigger flip
+-- ============================================================================
+--
+-- `severAtCut_pop_leaves_no_head` lived here from `v0.35.36` to `v0.35.44`.  It
+-- said that at a **severed** cut the pop leaves the context heading nothing --
+-- the frames below the cut having left the stack -- which is what let this
+-- kernel decide the pop from the recorded server's `.donated` binding: a frame
+-- headed a context exactly while that server still held the donation.  Its first
+-- conjunct was `cancelledMiddleCallerPolicy = .severAtCut`, so **HP6.8 deleted
+-- it rather than restating it**: a theorem whose conclusion has become false can
+-- only be retired, and restating it at the new policy would have been a
+-- different proposition wearing the same name.
+--
+-- The ordering it enforced was respected.  HP4 (`v0.35.38`) and HP5
+-- (`v0.35.39`) moved the reply and cancellation triggers onto the answered
+-- frame's own `.head` link, and only then did HP6.8 (`v0.35.45`) write
+-- `cancelledMiddleCallerPolicy := .spliceOutTheCut`.  What survives, and is now
+-- reachable rather than hypothetical, is the pair that names the state the
+-- splice creates and the old trigger could not serve:
+-- the orphan-head pair in `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`.
+-- Those are what let **HP7** (`v0.35.46`) delete the coherence predicate, and HP7
+-- then deleted them too: the first negated the predicate and so could not outlive
+-- it, and the second named the binding-driven resolver no footprint reads any
+-- more.  Their content is an executed witness now —
+-- `tests/SmpCrossCoreReplySuite.lean` builds the orphan head and computes both
+-- readings on it.  This comment stays rather than the deletions being silent: a
+-- reader arriving at a citation of a retired name needs to find out what replaced
+-- it.
+
 /-- AK1-A (I-H01): `returnDonatedSchedContext` succeeds under
     `donationOwnerValid` combined with non-reservation of the participant
     thread IDs and the pop's head validation.  This is the structural
@@ -6455,14 +7718,22 @@ theorem schedContext_ne_tcb_at_objId
 
     All four `storeObject` calls are unconditional `.ok` (see
     `Model/State.lean`). -/
-theorem returnDonatedSchedContext_ok_under_invariants
+theorem returnDonatedSchedContext_ok_of_boundAndRecipient
     (st : SystemState) (receiver : SeLe4n.ThreadId)
     (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (sc : SeLe4n.Kernel.SchedContext) (ownerTcb : TCB)
     (hObjInv : st.objects.invExt)
-    (hDOV : donationOwnerValid st)
     (hHeadRes : donationHeadResolves st scId)
     (hLk : lookupTcb st receiver = some recvTcb)
-    (hBind : recvTcb.schedContextBinding = .donated scId owner)
+    -- The context this pop hands back, and the thread it is bound to.  Under the
+    -- HEAD-driven trigger both fall straight out of `replyFrameHeadHolder?`; under
+    -- the binding-driven one they come from `donationOwnerValid`.
+    (hScObj : st.objects[scId.toObjId]? = some (.schedContext sc))
+    (hScBound : sc.boundThread = some receiver)
+    -- The recipient, and the fact HP4.6's guard asks of it.
+    (hOwnerObj : st.objects[owner.toObjId]? = some (.tcb ownerTcb))
+    (hOwnerUnbound : ownerTcb.schedContextBinding = .unbound)
+    (hOwnerNeRecv : owner ≠ receiver)
     (hRecvNotRes : ¬receiver.isReserved = true)
     (hOwnerNotRes : ¬owner.isReserved = true)
     (newOwner? : Option SeLe4n.ThreadId)
@@ -6473,20 +7744,13 @@ theorem returnDonatedSchedContext_ok_under_invariants
     -- the pre-state rather than the four-clause obligation consumers used to carry.
     (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
     ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
-  -- Recover hypotheses from donationOwnerValid.
   have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
     lookupTcb_some_objects st receiver recvTcb hLk
-  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, _, _⟩ :=
-    hDOV receiver recvTcb scId owner hRecvObj hBind
   -- Type-disjointness of SchedContext vs TCB objIds.
   have hScNeOwner : scId.toObjId ≠ owner.toObjId :=
     schedContext_ne_tcb_at_objId st scId owner sc ownerTcb hScObj hOwnerObj
   have hScNeRecv : scId.toObjId ≠ receiver.toObjId :=
     schedContext_ne_tcb_at_objId st scId receiver sc recvTcb hScObj hRecvObj
-  -- owner ≠ receiver (self-donation excluded).
-  have hOwnerNeRecv : owner ≠ receiver :=
-    donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
-      hDOV hRecvObj hBind
   have hOwnerObjIdNeRecv : owner.toObjId ≠ receiver.toObjId := by
     intro heq; exact hOwnerNeRecv (SeLe4n.ThreadId.toObjId_injective _ _ heq)
   -- WS-OD OD3.2: the pop's head validation, and the Reply it resolved.
@@ -6503,11 +7767,25 @@ theorem returnDonatedSchedContext_ok_under_invariants
   -- hypothesis — the pop refuses an outer caller it cannot validate, so a claim
   -- that it succeeds owes that fact.  The order is the operation's own.
   rw [if_neg (by simp [hOuterOk])]
+  -- **WS-HP HP4.6**: ...and then the recipient guard, discharged from the same
+  -- `donationOwnerValid` witness: a donation's owner is `.unbound`, which is
+  -- exactly what the guard asks.  That is why the guard costs nothing on any
+  -- path that resolves its recipient from a binding.
+  rw [if_neg (by
+    have hLkOwner : lookupTcb st owner = some ownerTcb := by
+      unfold lookupTcb SystemState.getTcb?
+      rw [Bool.eq_false_iff.mpr hOwnerNotRes]
+      simp only [Bool.false_eq_true, if_false]
+      rw [hOwnerObj]
+    simp [donationRecipientAcceptable_eq_of_some st owner ownerTcb hLkOwner, hOwnerUnbound])]
   rw [hHead]
   simp only []
+  -- **WS-RR RR8**: the record the store receives is `donationReturnSchedContext`
+  -- -- HP10.4's bottom-arm origin clear and the priority mirror included, since
+  -- it is one definition rather than a literal this proof has to reproduce.
   generalize hS1 : storeObject scId.toObjId
-      (.schedContext { sc with boundThread := some owner,
-                               scReply := head?.bind (fun p => p.2.prev) }) st = result1
+      (.schedContext (donationReturnSchedContext sc owner
+        (head?.bind (fun p => p.2.prev)) newOwner?)) st = result1
   match result1, hS1 with
   | .ok pair1, hS1 =>
     have hInv1 : pair1.2.objects.invExt :=
@@ -6575,6 +7853,48 @@ theorem returnDonatedSchedContext_ok_under_invariants
       | .ok pair4, hS4 =>
         simp only []
         exact ⟨_, rfl⟩
+
+/-- **The pop succeeds, from a `.donated` binding** — the instance of
+`returnDonatedSchedContext_ok_of_boundAndRecipient` at the BINDING-driven reading.
+
+Every fact the general form takes is a consequence of `donationOwnerValid` applied
+to the binding: the context is bound to the thread holding the donation, the
+recorded owner is a stored `.unbound` TCB, and the two are distinct because a
+thread cannot donate to itself
+(`donationOwnerValid_excludes_self_donation`).
+
+**WS-HP HP5.2 split this from the general form rather than adding a second proof.**
+The cancellation reclaim's trigger is head-driven since HP5.1, so it holds
+`sc.boundThread = some holder` directly and no binding at all — and the binding is
+what this shape derives the same four facts *from*.  Deriving them twice would be
+one question with two answers; deriving them once and instantiating twice is what
+lets the head-driven caller supply the two facts it has from the trigger and the
+recipient's `.unbound` from wherever it can — which for
+`returnDonationToCancelledCaller_no_donation_to_victim` is the residual binding the
+refused branch puts in its hands, so no hypothesis beyond the re-keyed coherence fact
+is needed at all. -/
+theorem returnDonatedSchedContext_ok_under_invariants
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hDOV : donationOwnerValid st)
+    (hHeadRes : donationHeadResolves st scId)
+    (hLk : lookupTcb st receiver = some recvTcb)
+    (hBind : recvTcb.schedContextBinding = .donated scId owner)
+    (hRecvNotRes : ¬receiver.isReserved = true)
+    (hOwnerNotRes : ¬owner.isReserved = true)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (hOuterOk : outerCallerAcceptable st receiver owner newOwner? = true) :
+    ∃ st', returnDonatedSchedContext st receiver scId owner newOwner? = .ok st' := by
+  have hRecvObj : st.objects[receiver.toObjId]? = some (.tcb recvTcb) :=
+    lookupTcb_some_objects st receiver recvTcb hLk
+  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb, hOwnerObj, hOwnerUnbound, _⟩ :=
+    hDOV receiver recvTcb scId owner hRecvObj hBind
+  exact returnDonatedSchedContext_ok_of_boundAndRecipient st receiver recvTcb scId owner
+    sc ownerTcb hObjInv hHeadRes hLk hScObj hScBound hOwnerObj hOwnerUnbound
+    (donationOwnerValid_excludes_self_donation st receiver recvTcb scId owner
+      hDOV hRecvObj hBind)
+    hRecvNotRes hOwnerNotRes newOwner? hOuterOk
 
 /-- AK1-A (I-H01): `cleanupPreReceiveDonationChecked` never errors under
     `ipcInvariantFull` combined with non-reservation of the participant

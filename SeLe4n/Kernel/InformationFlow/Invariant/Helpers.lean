@@ -63,7 +63,7 @@ private theorem storeObject_preserves_projectObjectIndex
   · rw [List.filter_cons]; simp [hOidHigh]
 
 /-- WS-F3: cspaceInsertSlot at a non-observable CNode preserves the projected object index.
-Follows from storeObject + storeCapabilityRef frame lemmas. -/
+Follows from the store's frame lemma. -/
 theorem cspaceInsertSlot_preserves_projectObjectIndex
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hOidHigh : objectObservable ctx observer addr.cnode = false)
@@ -81,17 +81,8 @@ theorem cspaceInsertSlot_preserves_projectObjectIndex
           | some _ => simp [hLookup] at hStep
           | none =>
               simp [hLookup] at hStep
-              cases hStore : storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st with
-              | error e => simp [hStore] at hStep
-              | ok pair =>
-                  obtain ⟨_, stMid⟩ := pair
-                  simp [hStore] at hStep
-                  have hMid := storeObject_preserves_projectObjectIndex ctx observer st stMid
-                    addr.cnode _ hOidHigh hStore
-                  have hRef := storeCapabilityRef_preserves_objectIndex stMid st' addr (some cap.target) hStep
-                  rw [show projectObjectIndex ctx observer st' = stMid.objectIndex.filter (objectObservable ctx observer) from by
-                    simp [projectObjectIndex, hRef]]
-                  exact hMid
+              exact storeObject_preserves_projectObjectIndex ctx observer st st'
+                addr.cnode _ hOidHigh hStep
 
 -- ============================================================================
 -- Shared non-interference proof infrastructure
@@ -204,30 +195,6 @@ theorem storeObject_at_unobservable_preserves_lowEquivalent
     simpa [projectServiceRegistry] using hSvcRegLow
   unfold lowEquivalent
   simp [projectState, hObj', hRun', hCur', hSvc', hDom', hIrq', hIdx', hDTR, hDS, hDSI, hMR, hMem, hSvcReg]
-
-/-- M-P01: revokeAndClearRefsState preserves the observer projection. -/
-theorem revokeAndClearRefsState_preserves_projectState
-    (ctx : LabelingContext) (observer : IfObserver)
-    (cn : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget)
-    (cnodeId : SeLe4n.ObjId) (st : SystemState) :
-    projectState ctx observer (revokeAndClearRefsState cn sourceSlot target cnodeId st) =
-      projectState ctx observer st := by
-  simp only [projectState]; congr 1
-  · funext oid; simp [projectObjects, revokeAndClearRefsState_preserves_objects, SystemState.getObject?]
-  · simp [projectRunnable, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectCurrent, revokeAndClearRefsState_preserves_scheduler]
-  · funext sid; simp [projectServicePresence, revokeAndClearRefsState_lookupService]
-  · simp [projectActiveDomain, revokeAndClearRefsState_preserves_scheduler]
-  · funext irq; simp [projectIrqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
-  · simp [projectObjectIndex, revokeAndClearRefsState_preserves_objectIndex]
-  · simp [projectDomainTimeRemaining, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectDomainSchedule, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectDomainScheduleIndex, revokeAndClearRefsState_preserves_scheduler]
-  · simp [projectMachineRegs, revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_machine]
-  · exact projectMemory_eq_of_memory_eq ctx observer _ st
-      (by rw [revokeAndClearRefsState_preserves_machine])
-  · exact projectServiceRegistry_eq_of_services_eq ctx observer _ st
-      (revokeAndClearRefsState_preserves_services cn sourceSlot target cnodeId st)
 
 -- ============================================================================
 -- WS-E3/H-09: Multi-step operation helpers for non-interference
@@ -685,23 +652,71 @@ theorem storeDonationFramePush_preserves_projection
       (hC1 old.toObjId (by rw [hOldObj]; intro hx; cases hx))
       hInv1 hS2, hP1]
 
-/-- `v0.35.4`: the cancellation's `O(1)` detach preserves the projection — its one
-write clears a Reply's `prev`, which `projectKernelObject` strips. -/
-theorem detachReplyFrameAbove_preserves_projection
+/-- `v0.35.4`: the `O(1)` removal preserves the projection — **WS-HP HP6.5**: its
+one or two writes move a Reply's stack links, and `projectKernelObject` strips
+both, so the removal is unobservable through a low-visible Reply.
+
+The frame below the cut is written at the *intermediate* state, so its index
+membership is read there and carried forward by the first store — the shape
+`storeDonationFramePush_preserves_projection` already uses for its own second
+write, and the reason this gained `hSetInv` when the sever became a splice. -/
+theorem spliceReplyFrameOut_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt)
-    (h : detachReplyFrameAbove st rid = .ok st') :
+    (h : spliceReplyFrameOut st rid = .ok st') :
     projectState ctx observer st' = projectState ctx observer st := by
-  rcases detachReplyFrameAbove_cases h with rfl | ⟨_, above, a, _, _, hA, _, hS⟩
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩
   · rfl
   · have hAObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hA
-    exact storeObject_projectionStable_preserves_projection ctx observer st st' above.toObjId
-      _ (.reply a) hAObj
-      (projectKernelObject_reply_prev_invariant ctx observer a none)
-      (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
-      hObjInv hS
+    rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
+      ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+    · exact storeObject_projectionStable_preserves_projection ctx observer st st' above.toObjId
+        _ (.reply a) hAObj
+        (projectKernelObject_reply_prev_invariant ctx observer a none)
+        (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
+        hObjInv hS1
+    · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
+      have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
+      have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
+      have hRObj := (SystemState.getReply?_eq_some_iff _ _ _).mp hR
+      have hP1 : projectState ctx observer s1 = projectState ctx observer st :=
+        storeObject_projectionStable_preserves_projection ctx observer st s1 above.toObjId
+          _ (.reply a) hAObj
+          (projectKernelObject_reply_prev_invariant ctx observer a (some below))
+          (hIdxComplete above.toObjId (by rw [hAObj]; intro hx; cases hx))
+          hObjInv hS1
+      have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      have hSetInv1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _
+        hSetInv hS1
+      have hC1 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete st s1 _ _ hObjInv
+        hSetInv hIdxComplete hS1
+      have hBObj1 : s1.objects[below.toObjId]? = some (.reply b) := by
+        rw [SeLe4n.Model.storeObject_objects_ne st s1 above.toObjId below.toObjId _
+          (fun hEq => hNe (SeLe4n.ReplyId.toObjId_injective _ _ hEq)) hObjInv hS1]
+        exact (SystemState.getReply?_eq_some_iff _ _ _).mp hB
+      have hP2 : projectState ctx observer s2 = projectState ctx observer s1 :=
+        storeObject_projectionStable_preserves_projection ctx observer s1 s2 below.toObjId
+          _ (.reply b) hBObj1
+          (projectKernelObject_reply_next_invariant ctx observer b (some (.frame above)))
+          (hC1 below.toObjId (by rw [hBObj1]; intro hx; cases hx))
+          hInv1 hS2
+      have hInv2 := SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2
+      have hC2 := SeLe4n.Model.storeObject_preserves_objectIndexSetComplete s1 s2 _ _ hInv1
+        hSetInv1 hC1 hS2
+      have hRObj2 : s2.objects[rid.toObjId]? = some (.reply r) := by
+        rw [SeLe4n.Model.storeObject_objects_ne s1 s2 below.toObjId rid.toObjId _
+          (fun hEq => hNeBR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hInv1 hS2,
+          SeLe4n.Model.storeObject_objects_ne st s1 above.toObjId rid.toObjId _
+            (fun hEq => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv hS1]
+        exact hRObj
+      rw [storeObject_projectionStable_preserves_projection ctx observer s2 st' rid.toObjId
+        _ (.reply r) hRObj2
+        (projectKernelObject_reply_prev_invariant ctx observer r none)
+        (hC2 rid.toObjId (by rw [hRObj2]; intro hx; cases hx))
+        hInv2 hS3, hP2, hP1]
 
 /-- WS-SM SM6.D (#7.1 fold): writing only a Reply object's `caller` back-link (the
 fold's atomic `linkCallerReply` reply-write) preserves `projectState`
@@ -813,38 +828,69 @@ theorem consumeCallerReply_preserves_projection
       rw [storeObject_preserves_projection ctx observer st1 st' caller.toObjId _
             hCallerObjHigh hObjInv1 hStep, hProj1]
 
-/-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its one
-write clears a Reply's `prev`, which `projectKernelObject` strips. -/
-theorem detachReplyFrameAboveOrSelf_preserves_projection
+/-- WS-RM (`v0.35.6`): the fold preserves the projection unconditionally — its
+writes move a Reply's stack links, which `projectKernelObject` strips. -/
+theorem spliceReplyFrameOutOrSelf_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hIdxComplete : ∀ oid, st.objects[oid]? ≠ none → st.objectIndexSet.contains oid = true)
+    (hSetInv : st.objectIndexSet.table.invExt)
     (hObjInv : st.objects.invExt) :
-    projectState ctx observer (detachReplyFrameAboveOrSelf st rid)
+    projectState ctx observer (spliceReplyFrameOutOrSelf st rid)
       = projectState ctx observer st := by
-  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]
-  · exact detachReplyFrameAbove_preserves_projection ctx observer hIdxComplete hObjInv h
+  · exact spliceReplyFrameOut_preserves_projection ctx observer hIdxComplete hSetInv hObjInv h
 
 /-- WS-RM (`v0.35.6`): the fold preserves index-set completeness — it stores at a
 key that already resolves, so the set it would have to name already names it. -/
-theorem detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete
+theorem spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete
     (st : SystemState) (rid : SeLe4n.ReplyId)
     (hObjInv : st.objects.invExt)
     (hObjSetInv : st.objectIndexSet.table.invExt)
     (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
-    SeLe4n.Model.objectIndexSetComplete (detachReplyFrameAboveOrSelf st rid) := by
-  rcases detachReplyFrameAboveOrSelf_cases st rid with h | h
+    SeLe4n.Model.objectIndexSetComplete (spliceReplyFrameOutOrSelf st rid) := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hIdxComplete
-  · rcases detachReplyFrameAbove_cases h with hEq | ⟨_, above, a, _, _, _, _, hS⟩
+  · rcases spliceReplyFrameOut_cases h with hEq | ⟨r, above, a, _, _, hA, _, hS⟩
     · rw [hEq]; exact hIdxComplete
-    · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
-        hObjSetInv hIdxComplete hS
+    · rcases spliceReplyFrameStores_cases hS with ⟨_, hS1⟩ |
+        ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+      · exact storeObject_preserves_objectIndexSetComplete st _ above.toObjId _ hObjInv
+          hObjSetInv hIdxComplete hS1
+      · have hInv1 := SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+        have hSetInv1 := SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt st s1 _ _
+          hObjSetInv hS1
+        have hC1 := storeObject_preserves_objectIndexSetComplete st s1 above.toObjId _ hObjInv
+          hObjSetInv hIdxComplete hS1
+        exact storeObject_preserves_objectIndexSetComplete s2 _ rid.toObjId _
+          (SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hInv1 hS2)
+          (SeLe4n.Model.storeObject_preserves_objectIndexSet_invExt s1 s2 _ _ hSetInv1 hS2)
+          (storeObject_preserves_objectIndexSetComplete s1 s2 below.toObjId _ hInv1
+            hSetInv1 hC1 hS2) hS3
+
+/-- WS-RR RR8.5: the thread-keyed fold preserves index-set completeness — the
+`OrSelf` lemma under the victim's own `replyObject`.  The reply arm's projection
+composite needs completeness at the state the consume runs on, now that the
+consume writes through `storeObject`. -/
+theorem spliceThreadReplyFrameOut_preserves_objectIndexSetComplete
+    (st : SystemState) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hObjSetInv : st.objectIndexSet.table.invExt)
+    (hIdxComplete : SeLe4n.Model.objectIndexSetComplete st) :
+    SeLe4n.Model.objectIndexSetComplete (spliceThreadReplyFrameOut st tcb) := by
+  unfold spliceThreadReplyFrameOut
+  cases tcb.replyObject with
+  | none => exact hIdxComplete
+  | some rid =>
+    exact spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv
+      hObjSetInv hIdxComplete
 
 /-- **WS-RM (`v0.35.6`): `removeCallerReplyFrame` preserves the projection** under
-exactly the hypothesis the consume alone needed.  The detach half is
-unconditional (`projectKernelObject` erases `Reply.prev`), so taking the frame off
-its stack costs the information-flow surface one rewrite and no new obligation. -/
+exactly the hypothesis the consume alone needed.  The splice half is
+unconditional (`projectKernelObject` erases both stack links), so taking the frame
+off its stack costs the information-flow surface one rewrite per write and no new
+obligation — the index-set invariant it now threads was already a hypothesis. -/
 theorem removeCallerReplyFrame_preserves_projection
     (ctx : LabelingContext) (observer : IfObserver)
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -856,10 +902,11 @@ theorem removeCallerReplyFrame_preserves_projection
     projectState ctx observer st' = projectState ctx observer st := by
   rw [removeCallerReplyFrame_eq] at hStep
   rw [consumeCallerReply_preserves_projection ctx observer _ st' caller rid hCallerObjHigh
-      (detachReplyFrameAboveOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
+      (spliceReplyFrameOutOrSelf_preserves_objectIndexSetComplete st rid hObjInv hObjSetInv
         hIdxComplete)
-      (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
-  exact detachReplyFrameAboveOrSelf_preserves_projection ctx observer st rid hIdxComplete hObjInv
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep]
+  exact spliceReplyFrameOutOrSelf_preserves_projection ctx observer st rid hIdxComplete
+    hObjSetInv hObjInv
 
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves the low-observer
 projection when both the caller and server objects are non-observable (high).  It
@@ -1076,6 +1123,11 @@ theorem cspaceRevoke_preserves_lowEquivalent
               simp [hL₂, hC₂, storeObject] at hStep₂
               cases hStep₁; cases hStep₂
               unfold lowEquivalent projectState
+              -- `v0.35.78`: the post-state is `storeObject`'s record itself (the
+              -- revoke stores once), so its `scheduler` and `services` fields are
+              -- `s₁`'s / `s₂`'s definitionally and `congr 1` closes the runnable,
+              -- current and services components from `hRunLow`, `hCurLow` and
+              -- `hSvcLow` by assumption; the bullets below are the rest.
               congr 1
               · funext oid
                 by_cases hObs : objectObservable ctx observer oid
@@ -1084,33 +1136,20 @@ theorem cspaceRevoke_preserves_lowEquivalent
                   have hBase : projectObjects ctx observer s₁ oid = projectObjects ctx observer s₂ oid :=
                     congrFun hObjLow oid
                   simp [projectObjects, hObs, SystemState.getObject?] at hBase ⊢
-                  rw [revokeAndClearRefsState_preserves_objects, revokeAndClearRefsState_preserves_objects]
                   simp only [RHTable_getElem?_eq_get?]
                   rw [RHTable_getElem?_insert _ _ _ hObjInv₁, RHTable_getElem?_insert _ _ _ hObjInv₂]
                   simp [Ne.symm hNe]
                   exact hBase
                 · simp [projectObjects, hObs]
-              · simp only [projectRunnable]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
-                simpa [projectRunnable] using hRunLow
-              · simp only [projectCurrent]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
-                simpa [projectCurrent] using hCurLow
-              · funext sid
-                simp only [projectServicePresence, revokeAndClearRefsState_lookupService]
-                exact congrFun (congrArg ObservableState.services hLow) sid
               · -- activeDomain
                 simp only [projectActiveDomain]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.activeDomain hLow
               · -- irqHandlers
                 funext irq
                 simp only [projectIrqHandlers]
-                rw [revokeAndClearRefsState_preserves_irqHandlers, revokeAndClearRefsState_preserves_irqHandlers]
                 exact congrFun (congrArg ObservableState.irqHandlers hLow) irq
               · -- objectIndex
                 simp only [projectObjectIndex]
-                rw [revokeAndClearRefsState_preserves_objectIndex, revokeAndClearRefsState_preserves_objectIndex]
                 have hIdx := congrArg ObservableState.objectIndex hLow
                 -- Both sides: if objectIndexSet.contains addr.cnode then idx else addr.cnode :: idx
                 -- Since hCNodeHigh filters addr.cnode out, prepending it is invisible
@@ -1121,27 +1160,21 @@ theorem cspaceRevoke_preserves_lowEquivalent
                 · rw [List.filter_cons, List.filter_cons]; simp [hCNodeHigh]; exact hIdx
               · -- domainTimeRemaining
                 simp only [projectDomainTimeRemaining]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainTimeRemaining hLow
               · -- domainSchedule
                 simp only [projectDomainSchedule]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainSchedule hLow
               · -- domainScheduleIndex
                 simp only [projectDomainScheduleIndex]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler]
                 exact congrArg ObservableState.domainScheduleIndex hLow
               · -- machineRegs
                 simp only [projectMachineRegs]
-                rw [revokeAndClearRefsState_preserves_scheduler, revokeAndClearRefsState_preserves_scheduler,
-                    revokeAndClearRefsState_preserves_machine, revokeAndClearRefsState_preserves_machine]
                 exact congrArg ObservableState.machineRegs hLow
               · -- R5-C.1: memory
-                funext paddr; simp only [projectMemory,
-                  revokeAndClearRefsState_preserves_machine]
+                funext paddr; simp only [projectMemory]
                 exact congrFun (congrArg ObservableState.memory hLow) paddr
               · -- V6-E: serviceRegistry
-                funext sid; simp only [projectServiceRegistry, revokeAndClearRefsState_lookupService]
+                funext sid; simp only [projectServiceRegistry]
                 exact congrFun (congrArg ObservableState.serviceRegistry hLow) sid
 
 -- ============================================================================

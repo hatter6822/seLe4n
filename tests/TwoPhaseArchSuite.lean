@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n
+import SeLe4n.Testing.Helpers
 import SeLe4n.Testing.StateBuilder
 import SeLe4n.Model.FrozenState
 import SeLe4n.Model.Builder
@@ -56,11 +57,22 @@ open SeLe4n.Kernel.Architecture
 
 namespace SeLe4n.Testing.TwoPhaseArchSuite
 
-private def expect (label : String) (cond : Bool) : IO Unit := do
-  if cond then
-    IO.println s!"two-phase check passed [{label}]"
-  else
-    throw <| IO.userError s!"two-phase check FAILED [{label}]"
+/-- This suite's assertion is `SeLe4n.Testing.expectCond` at this suite's tag.
+
+`SeLe4n/Testing/Helpers.lean` states in as many words that "all test suites
+should import this module rather than defining private copies of these
+functions", and this suite carried a private copy that differed only in the
+capitalisation of its failure word.
+
+Every label carries its scenario id and a letter indexing the assertion within
+that scenario (`TPH-001a`, `TPH-001b`, ...) — running across the scenario's
+sub-functions in declaration order, so two assertions that print the same text
+(`timer advanced`, at `TPH-006a` and `TPH-006d`) are distinguishable.  That is
+the convention `tests/fixtures/two_phase_arch_smoke.expected` asserts in its
+`expected_trace_fragment` column, and `scripts/test_tier2_trace.sh` checks the
+relation against this suite's real output. -/
+private def expect (label : String) (cond : Bool) : IO Unit :=
+  SeLe4n.Testing.expectCond "two-phase" label cond
 
 /-- Helper: construct a minimal test TCB. -/
 private def mkTcb (tid : Nat) (prio : Nat := 0) (dom : Nat := 0) : TCB :=
@@ -84,10 +96,10 @@ private def mkFrozenState (objs : List (ObjId × FrozenKernelObject))
 private def tph001a_emptyBuilder : IO Unit := do
   let ist := mkEmptyIntermediateState
   -- Empty state must have allTablesInvExtK (proven at compile time)
-  expect "empty builder valid" true
+  expect "TPH-001a empty builder valid" true
   -- Empty state has no objects
-  expect "empty objects" (ist.state.objects.size == 0)
-  expect "empty IRQs" (ist.state.irqHandlers.size == 0)
+  expect "TPH-001b empty objects" (ist.state.objects.size == 0)
+  expect "TPH-001c empty IRQs" (ist.state.irqHandlers.size == 0)
 
 /-- TPH-001b: Builder.createObject inserts and preserves invariants. -/
 private def tph001b_builderPipeline : IO Unit := do
@@ -96,22 +108,22 @@ private def tph001b_builderPipeline : IO Unit := do
   let tcb1 := KernelObject.tcb (mkTcb 1 10 0)
   let ist1 := Builder.createObject ist ⟨1⟩ tcb1
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  expect "one object" (ist1.state.objects.size == 1)
-  expect "object findable" ((ist1.state.objects[(⟨1⟩ : ObjId)]?).isSome)
+  expect "TPH-001d one object" (ist1.state.objects.size == 1)
+  expect "TPH-001e object findable" ((ist1.state.objects[(⟨1⟩ : ObjId)]?).isSome)
   -- Create a second TCB
   let tcb2 := KernelObject.tcb (mkTcb 2 5 0)
   let ist2 := Builder.createObject ist1 ⟨2⟩ tcb2
     (fun _ h => nomatch h) (fun _ h => nomatch h)
-  expect "two objects" (ist2.state.objects.size == 2)
-  expect "both findable" ((ist2.state.objects[(⟨1⟩ : ObjId)]?).isSome &&
+  expect "TPH-001f two objects" (ist2.state.objects.size == 2)
+  expect "TPH-001g both findable" ((ist2.state.objects[(⟨1⟩ : ObjId)]?).isSome &&
     (ist2.state.objects[(⟨2⟩ : ObjId)]?).isSome)
 
 /-- TPH-001c: Builder.registerIrq preserves invariants. -/
 private def tph001c_builderIrq : IO Unit := do
   let ist := mkEmptyIntermediateState
   let ist' := Builder.registerIrq ist (SeLe4n.Irq.ofNat 3) ⟨100⟩
-  expect "IRQ registered" (Option.isSome (ist'.state.irqHandlers[(SeLe4n.Irq.ofNat 3)]?))
-  expect "IRQ table size 1" (ist'.state.irqHandlers.size == 1)
+  expect "TPH-001h IRQ registered" (Option.isSome (ist'.state.irqHandlers[(SeLe4n.Irq.ofNat 3)]?))
+  expect "TPH-001i IRQ table size 1" (ist'.state.irqHandlers.size == 1)
 
 -- ============================================================================
 -- TPH-003: Freeze Populated State — Full Pipeline Lookup Equivalence
@@ -132,19 +144,19 @@ private def tph003_freezePopulated : IO Unit := do
   -- Freeze
   let fss := freeze ist3
   -- Verify objects lookup equivalence
-  expect "frozen objects size 2" (fss.objects.data.size == 2)
-  expect "frozen obj 1 exists" (Option.isSome (fss.objects.get? ⟨1⟩))
-  expect "frozen obj 2 exists" (Option.isSome (fss.objects.get? ⟨2⟩))
-  expect "frozen obj 99 none" (Option.isNone (fss.objects.get? ⟨99⟩))
+  expect "TPH-003a frozen objects size 2" (fss.objects.data.size == 2)
+  expect "TPH-003b frozen obj 1 exists" (Option.isSome (fss.objects.get? ⟨1⟩))
+  expect "TPH-003c frozen obj 2 exists" (Option.isSome (fss.objects.get? ⟨2⟩))
+  expect "TPH-003d frozen obj 99 none" (Option.isNone (fss.objects.get? ⟨99⟩))
   -- Verify IRQ handler lookup equivalence
-  expect "frozen IRQ 7 exists" (Option.isSome (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 7)))
-  expect "frozen IRQ 99 none" (Option.isNone (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 99)))
+  expect "TPH-003e frozen IRQ 7 exists" (Option.isSome (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 7)))
+  expect "TPH-003f frozen IRQ 99 none" (Option.isNone (fss.irqHandlers.get? (SeLe4n.Irq.ofNat 99)))
   -- Verify object types
   match fss.objects.get? ⟨1⟩ with
-  | some obj => expect "obj 1 is TCB" (FrozenKernelObject.objectType obj == .tcb)
+  | some obj => expect "TPH-003g obj 1 is TCB" (FrozenKernelObject.objectType obj == .tcb)
   | none => throw <| IO.userError "obj 1 missing"
   match fss.objects.get? ⟨2⟩ with
-  | some obj => expect "obj 2 is endpoint" (FrozenKernelObject.objectType obj == .endpoint)
+  | some obj => expect "TPH-003h obj 2 is endpoint" (FrozenKernelObject.objectType obj == .endpoint)
   | none => throw <| IO.userError "obj 2 missing"
 
 -- ============================================================================
@@ -161,8 +173,8 @@ private def tph005a_sendBlocks : IO Unit := do
   | .ok ((), fst') =>
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
-          expect "message pending" (tcb.pendingMessage.isSome)
+          expect "TPH-005a sender blocked" (tcb.ipcState == .blockedOnSend ⟨10⟩)
+          expect "TPH-005b message pending" (tcb.pendingMessage.isSome)
       | none => throw <| IO.userError "sender TCB missing"
   | .error _ => throw <| IO.userError "send should succeed"
 
@@ -175,7 +187,7 @@ private def tph005b_receiveBlocks : IO Unit := do
   | .ok (_, fst') =>
       match frozenLookupTcb fst' ⟨2⟩ with
       | some tcb =>
-          expect "receiver blocked" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
+          expect "TPH-005c receiver blocked" (tcb.ipcState == .blockedOnReceive ⟨10⟩)
       | none => throw <| IO.userError "receiver TCB missing"
   | .error _ => throw <| IO.userError "receive should succeed"
 
@@ -195,13 +207,13 @@ private def tph005c_callBlocksForReply : IO Unit := do
       -- Receiver should have been unblocked with the message
       match frozenLookupTcb fst' ⟨2⟩ with
       | some rTcb =>
-          expect "receiver unblocked" (rTcb.ipcState == .ready)
-          expect "receiver got message" (rTcb.pendingMessage.isSome)
+          expect "TPH-005d receiver unblocked" (rTcb.ipcState == .ready)
+          expect "TPH-005e receiver got message" (rTcb.pendingMessage.isSome)
       | none => throw <| IO.userError "receiver TCB missing"
       -- Caller should be blocked on reply
       match frozenLookupTcb fst' ⟨3⟩ with
       | some cTcb =>
-          expect "caller blocked on reply" (
+          expect "TPH-005f caller blocked on reply" (
             match cTcb.ipcState with
             | .blockedOnReply _ _ => true
             | _ => false)
@@ -219,13 +231,13 @@ private def tph006a_timerTickActive : IO Unit := do
     scheduler := { emptyFrozenState.scheduler with current := some ⟨1⟩ } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
-      expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "TPH-006a timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
       -- Time slice should be decremented (3 → 2)
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "time slice decremented" (tcb.timeSlice == 2)
+          expect "TPH-006b time slice decremented" (tcb.timeSlice == 2)
       | none => throw <| IO.userError "TCB missing after tick"
-      expect "current preserved" ((fst'.scheduler.current) == some ⟨1⟩)
+      expect "TPH-006c current preserved" ((fst'.scheduler.current) == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"tick should succeed: {toString e}"
 
 /-- TPH-006b: Timer tick with expired time slice — preemption and reschedule. -/
@@ -252,16 +264,16 @@ private def tph006b_timerTickExpiry : IO Unit := do
     } }
   match frozenTimerTick fst with
   | .ok ((), fst') =>
-      expect "timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
+      expect "TPH-006d timer advanced" (fst'.machine.timer == fst.machine.timer + 1)
       -- After expiry: current was cleared, frozenSchedule ran.
       -- The thread's time slice was reset to configDefaultTimeSlice (5).
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
-          expect "time slice reset" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
+          expect "TPH-006e time slice reset" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
       | none => throw <| IO.userError "TCB missing after expiry"
       -- frozenSchedule was called after clearing current. Thread 1 is the
       -- only eligible thread (domain 0, .ready), so it should be re-selected.
-      expect "thread re-selected" ((fst'.scheduler.current) == some ⟨1⟩)
+      expect "TPH-006f thread re-selected" ((fst'.scheduler.current) == some ⟨1⟩)
   | .error e => throw <| IO.userError s!"expiry should succeed: {toString e}"
 
 /-- TPH-006c: Timer tick expiry with non-default configDefaultTimeSlice (MED-01
@@ -292,8 +304,8 @@ private def tph006c_timerTickExpiryCustomConfig : IO Unit := do
       match frozenLookupTcb fst' ⟨1⟩ with
       | some tcb =>
           -- Must reset to 12 (the config value), NOT 5 (the old default)
-          expect "time slice reset to custom config" (tcb.timeSlice == 12)
-          expect "time slice uses config field" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
+          expect "TPH-006g time slice reset to custom config" (tcb.timeSlice == 12)
+          expect "TPH-006h time slice uses config field" (tcb.timeSlice == fst.scheduler.configDefaultTimeSlice)
       | none => throw <| IO.userError "TCB missing after expiry"
   | .error e => throw <| IO.userError s!"custom config expiry should succeed: {toString e}"
 
@@ -329,14 +341,14 @@ private def tph010_commutativity : IO Unit := do
   let objB := fssB'.objects.get? ⟨1⟩
 
   -- Both paths should yield the same object type and key properties
-  expect "both paths find object" (Option.isSome objA && Option.isSome objB)
+  expect "TPH-010a both paths find object" (Option.isSome objA && Option.isSome objB)
   match objA, objB with
   | some a, some b =>
-    expect "same object type" (FrozenKernelObject.objectType a == FrozenKernelObject.objectType b)
+    expect "TPH-010b same object type" (FrozenKernelObject.objectType a == FrozenKernelObject.objectType b)
     match a, b with
     | FrozenKernelObject.tcb ta, FrozenKernelObject.tcb tb =>
-      expect "same priority" (ta.priority == tb.priority)
-      expect "same time slice" (ta.timeSlice == tb.timeSlice)
+      expect "TPH-010c same priority" (ta.priority == tb.priority)
+      expect "TPH-010d same time slice" (ta.timeSlice == tb.timeSlice)
     | _, _ => throw <| IO.userError "expected TCBs"
   | _, _ => throw <| IO.userError "both should find object"
 
@@ -357,19 +369,19 @@ private def tph012_preallocatedSlot : IO Unit := do
     (⟨2⟩, .tcb (mkTcb 2 5 0)),
     (⟨3⟩, .endpoint { sendQ := {}, receiveQ := {} })]
   -- Verify pre-allocated slot exists
-  expect "slot exists" (fst.objects.get? ⟨1⟩ |>.isSome)
+  expect "TPH-012a slot exists" (fst.objects.get? ⟨1⟩ |>.isSome)
   -- "Retype": replace placeholder with real object via FrozenMap.set
   match fst.objects.set ⟨1⟩ (.tcb realTcb) with
   | some objects' =>
     let fst' := { fst with objects := objects' }
     match fst'.objects.get? ⟨1⟩ with
     | some (.tcb tcb) =>
-      expect "retyped priority" (tcb.priority == ⟨10⟩)
-      expect "retyped tid" (tcb.tid == ⟨1⟩)
+      expect "TPH-012b retyped priority" (tcb.priority == ⟨10⟩)
+      expect "TPH-012c retyped tid" (tcb.tid == ⟨1⟩)
     | _ => throw <| IO.userError "expected TCB after retype"
     -- Other slots unaffected
-    expect "slot 2 preserved" (fst'.objects.get? ⟨2⟩ |>.isSome)
-    expect "slot 3 preserved" (fst'.objects.get? ⟨3⟩ |>.isSome)
+    expect "TPH-012d slot 2 preserved" (fst'.objects.get? ⟨2⟩ |>.isSome)
+    expect "TPH-012e slot 3 preserved" (fst'.objects.get? ⟨3⟩ |>.isSome)
   | none => throw <| IO.userError "set should succeed"
 
 -- ============================================================================
@@ -403,7 +415,7 @@ private def tph014a_frozenSchedule : IO Unit := do
   match frozenSchedule fst with
   | .ok ((), fst') =>
       -- A thread should have been selected
-      expect "thread selected" ((fst'.scheduler.current).isSome)
+      expect "TPH-014a thread selected" ((fst'.scheduler.current).isSome)
   | .error e => throw <| IO.userError s!"schedule should succeed: {toString e}"
 
 /-- TPH-014b: Frozen yield — re-enqueue current and reschedule. -/
@@ -430,7 +442,7 @@ private def tph014b_frozenYield : IO Unit := do
   | .ok ((), fst') =>
       -- After yield: current was cleared, then schedule picked a thread
       -- Thread 1 should be re-selected (only eligible thread)
-      expect "yield succeeded" true
+      expect "TPH-014b yield succeeded" true
   | .error e => throw <| IO.userError s!"yield should succeed: {toString e}"
 
 /-- TPH-014c: Frozen schedule with no eligible threads — current stays none. -/
@@ -456,7 +468,7 @@ private def tph014c_scheduleNoEligible : IO Unit := do
     } }
   match frozenSchedule fst with
   | .ok ((), fst') =>
-      expect "no thread selected" ((fst'.scheduler.current) == none)
+      expect "TPH-014c no thread selected" ((fst'.scheduler.current) == none)
   | .error e => throw <| IO.userError s!"should succeed: {toString e}"
 
 -- ============================================================================
@@ -481,7 +493,7 @@ private def tph015BootConfig : PlatformConfig :=
     its ObjId does not collide with any (empty) initialObjects entry. -/
 private def tph015a_bootSucceeds : IO Unit := do
   match bootFromPlatformChecked tph015BootConfig with
-  | .ok _ => expect "boot succeeds with rpi5BootVSpaceRoot" true
+  | .ok _ => expect "TPH-015a boot succeeds with rpi5BootVSpaceRoot" true
   | .error e =>
       throw <| IO.userError s!"tph015a: bootFromPlatformChecked failed: {e}"
 
@@ -495,7 +507,7 @@ private def tph015b_postBootHasVSpaceRoot : IO Unit := do
       let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
       match ist.state.objects[oid]? with
       | some (KernelObject.vspaceRoot vsr) =>
-          expect "post-boot objects has rpi5BootVSpaceRoot at reserved ObjId"
+          expect "TPH-015b post-boot objects has rpi5BootVSpaceRoot at reserved ObjId"
             (vsr.asid == SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot.asid)
       | some other =>
           throw <| IO.userError s!"tph015b: object at {repr oid} is not a VSpaceRoot: {repr other}"
@@ -520,7 +532,7 @@ private def tph015c_postBootWxInvariantHolds : IO Unit := do
       | some (KernelObject.vspaceRoot vsr) =>
           let allWxCompliant : Bool :=
             vsr.mappings.fold true (fun acc _ entry => acc && entry.2.wxCompliant)
-          expect "post-boot rpi5BootVSpaceRoot satisfies wxExclusiveInvariant"
+          expect "TPH-015c post-boot rpi5BootVSpaceRoot satisfies wxExclusiveInvariant"
             allWxCompliant
       | _ =>
           throw <| IO.userError "tph015c: no boot VSpaceRoot found"
@@ -538,7 +550,7 @@ private def tph015d_asidTableHasBootRoot : IO Unit := do
       let oid := SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId
       match ist.state.asidTable[asid]? with
       | some recordedOid =>
-          expect "post-boot asidTable maps boot VSpace ASID to reserved ObjId"
+          expect "TPH-015d post-boot asidTable maps boot VSpace ASID to reserved ObjId"
             (recordedOid == oid)
       | none =>
           throw <| IO.userError "tph015d: asidTable does not register boot VSpace ASID"
@@ -561,9 +573,9 @@ private def tph015e_noBootVSpaceCompat : IO Unit := do
       let absent : Bool := match ist.state.objects[oid]? with
         | some (KernelObject.vspaceRoot _) => false
         | _ => true
-      expect "bootVSpaceRoot = none yields no VSpace at reserved ObjId" absent
+      expect "TPH-015e bootVSpaceRoot = none yields no VSpace at reserved ObjId" absent
       -- Stronger: object store should be empty since initialObjects is empty.
-      expect "bootVSpaceRoot = none yields empty object store"
+      expect "TPH-015f bootVSpaceRoot = none yields empty object store"
         (ist.state.objects.size == 0)
   | .error e =>
       throw <| IO.userError s!"tph015e: bootFromPlatformChecked (no boot VSpace) failed: {e}"
@@ -595,7 +607,7 @@ private def tph015f_objIdCollisionRejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "tph015f: ObjId collision should be rejected, but boot succeeded"
   | .error _ =>
-      expect "ObjId collision between initialObjects and bootVSpaceRoot rejected" true
+      expect "TPH-015g ObjId collision between initialObjects and bootVSpaceRoot rejected" true
 
 /-- TPH-015i (audit fix for Issue #2): VSpaceRoot in `initialObjects`
     rejected.  The `noVSpaceRootsInInitialObjects` gate forbids
@@ -622,7 +634,7 @@ private def tph015i_vspaceRootInInitialObjectsRejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "tph015i: VSpaceRoot in initialObjects should be rejected, but boot succeeded"
   | .error _ =>
-      expect "VSpaceRoot in initialObjects rejected (audit fix Issue #2)" true
+      expect "TPH-015h VSpaceRoot in initialObjects rejected (audit fix Issue #2)" true
 
 /-- TPH-015j (audit fix for Issue #3): Sentinel ObjId for boot
     VSpaceRoot rejected.  The `bootVSpaceRootObjIdNonSentinel` gate
@@ -642,7 +654,7 @@ private def tph015j_sentinelBootVSpaceObjIdRejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "tph015j: sentinel boot VSpace ObjId should be rejected, but boot succeeded"
   | .error _ =>
-      expect "sentinel boot VSpace ObjId rejected (audit fix Issue #3)" true
+      expect "TPH-015i sentinel boot VSpace ObjId rejected (audit fix Issue #3)" true
 
 /-- TPH-015k (audit fix): Boot-safety gate rejects malformed boot
     VSpaceRoot.  An empty-mappings root fails `bootSafeVSpaceRootCheck`
@@ -665,7 +677,7 @@ private def tph015k_unsafeBootVSpaceRejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "tph015k: unsafe boot VSpace (empty mappings) should be rejected, but boot succeeded"
   | .error _ =>
-      expect "unsafe boot VSpace rejected by bootVSpaceRootSafe gate" true
+      expect "TPH-015j unsafe boot VSpace rejected by bootVSpaceRootSafe gate" true
 
 /-- TPH-015l (third-audit fix for canonical-VAddr gap): Boot-safety
     gate rejects boot VSpaceRoots whose mappings contain a
@@ -700,7 +712,7 @@ private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
   | .ok _ =>
       throw <| IO.userError "tph015l: non-canonical vaddr boot VSpace should be rejected, but boot succeeded"
   | .error _ =>
-      expect "non-canonical vaddr boot VSpace rejected by vaddrCanonical conjunct" true
+      expect "TPH-015k non-canonical vaddr boot VSpace rejected by vaddrCanonical conjunct" true
 
 /-- TPH-015g: Witness theorem connection.  The Bool-level admission
     witness `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` evaluates
@@ -708,7 +720,7 @@ private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
     proven-W^X-compliant boot VSpaceRoot is admitted by the boot
     pipeline's runtime gate. -/
 private def tph015g_admissionWitness : IO Unit := do
-  expect "bootSafeObjectCheck admits rpi5BootVSpaceRoot at runtime"
+  expect "TPH-015l bootSafeObjectCheck admits rpi5BootVSpaceRoot at runtime"
     (bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot))
 
@@ -717,7 +729,7 @@ private def tph015g_admissionWitness : IO Unit := do
     boot-safety check, providing parity between the RPi5 hardware
     binding and the simulation harness. -/
 private def tph015h_simBootVSpaceRoot : IO Unit := do
-  expect "bootSafeObjectCheck admits simBootVSpaceRoot"
+  expect "TPH-015m bootSafeObjectCheck admits simBootVSpaceRoot"
     (bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.Sim.simBootVSpaceRoot))
 

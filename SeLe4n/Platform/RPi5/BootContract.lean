@@ -42,16 +42,11 @@ open SeLe4n.Model
 
     Object-type metadata consistency: the default (initial) object store is
     empty — no pre-existing kernel objects at boot time. This models the
-    assumption that ATF/U-Boot do not pre-populate the kernel's object store.
-
-    Capability-ref metadata consistency: the default capability reference table
-    is empty — no pre-existing capability derivations at boot time. -/
+    assumption that ATF/U-Boot do not pre-populate the kernel's object store. -/
 def rpi5BootContract : BootBoundaryContract :=
   {
     objectTypeMetadataConsistent :=
       (default : SystemState).objects.size = 0
-    capabilityRefMetadataConsistent :=
-      (default : SystemState).lifecycle.capabilityRefs.size = 0
     -- AJ3-D (M-19) / AK9-B (P-H02): RPi5 boots with empty initial object
     -- store. The boot sequence populates objects from PlatformConfig.
     -- Verifiable structural fact about the default state, not a vacuous `True`.
@@ -85,11 +80,6 @@ theorem rpi5BootContract_irqRangeValid_holds :
 /-- WS-H15b: RPi5 boot contract predicates are satisfied by the default state. -/
 theorem rpi5BootContract_objectType_holds : rpi5BootContract.objectTypeMetadataConsistent := by
   show ({} : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject).size = 0
-  rfl
-
-/-- WS-H15b: RPi5 boot contract capability ref predicate holds for default state. -/
-theorem rpi5BootContract_capabilityRef_holds : rpi5BootContract.capabilityRefMetadataConsistent := by
-  show ({} : SeLe4n.Kernel.RobinHood.RHTable SlotRef CapTarget).size = 0
   rfl
 
 /-- WS-H15b/A-41: RPi5 interrupt contract with GIC-400 range validation.

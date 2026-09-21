@@ -84,36 +84,34 @@ theorem timerTickOnCore_replenishQueueOnCore_ne (st : SystemState) (c : CoreId)
       exact hPrep
   · -- a current thread: the budget charge, then at most one re-dispatch
     split at hTick
-    · rename_i tcb _
+    · simp at hTick
+    · rename_i st3 preempted timeoutSgis hBudget
+      obtain ⟨tcb, hTcb, hBudget⟩ := timerTickChargeCurrentOnCore_ok hBudget
+      have hSt3 : st3.scheduler.replenishQueueOnCore c'
+          = st.scheduler.replenishQueueOnCore c' := by
+        rw [timerTickBudgetOnCore_replenishQueueOnCore_ne _ c _ tcb st3 preempted c' hne
+          hBudget, hPrep]
       split at hTick
-      · simp at hTick
-      · rename_i st3 preempted timeoutSgis hBudget
-        have hSt3 : st3.scheduler.replenishQueueOnCore c'
-            = st.scheduler.replenishQueueOnCore c' := by
-          rw [timerTickBudgetOnCore_replenishQueueOnCore_ne _ c _ tcb st3 preempted c' hne
-            hBudget, hPrep]
-        split at hTick
+      · split at hTick
+        · simp at hTick
+        · rename_i st4 hSched
+          simp only [Except.ok.injEq] at hTick
+          subst hTick
+          rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
+            SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
+            scheduleEffectiveOnCore_replenishQueueOnCore st3 c st4 c' hSched, hSt3]
+      · split at hTick
         · split at hTick
           · simp at hTick
-          · rename_i st4 hSched
+          · rename_i st4 hSgi
             simp only [Except.ok.injEq] at hTick
             subst hTick
             rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
               SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
-              scheduleEffectiveOnCore_replenishQueueOnCore st3 c st4 c' hSched, hSt3]
-        · split at hTick
-          · split at hTick
-            · simp at hTick
-            · rename_i st4 hSgi
-              simp only [Except.ok.injEq] at hTick
-              subst hTick
-              rw [show ((st4, (timerTickOnCorePrepared st c).2.1 ++ timeoutSgis) :
-                SystemState × List (CoreId × SgiKind)).1 = st4 from rfl,
-                handleRescheduleSgiOnCore_replenishQueueOnCore st3 c st4 c' hSgi, hSt3]
-          · simp only [Except.ok.injEq] at hTick
-            subst hTick
-            exact hSt3
-    · simp at hTick
+              handleRescheduleSgiOnCore_replenishQueueOnCore st3 c st4 c' hSgi, hSt3]
+        · simp only [Except.ok.injEq] at hTick
+          subst hTick
+          exact hSt3
 
 /-- **WS-RR RR7.39 (frame)**: the run-loop step writes no replenish queue but its
 own core's — the tick's frame carried through the fail-closed core decode and the

@@ -10,6 +10,13 @@
 #                             zero, so this is a prohibition rather than a
 #                             ceiling anyone may re-anchor.
 #   * `STORE_READ_SPEC`     — the same reads in propositions (diagnostic).
+#   * `STORE_WRITE_CODE`    — raw object-table writes (`objects.insert` /
+#                             `objects.erase`, either spelling) in executable
+#                             positions outside the registered store primitives.
+#                             SHOULD-STAY-ZERO metric (`v0.35.76`): the raw-write
+#                             migration drove every executable write onto the
+#                             primitives, so this too is a prohibition.
+#   * `STORE_WRITE_SPEC`    — the same writes in propositions (diagnostic).
 #   * `GETTCB_ADOPTION`,
 #     `GETSCHEDCTX_ADOPTION` — typed-helper call sites in production / tests.
 #                             SHOULD-GROW metric (every commit ≥ baseline floor).
@@ -120,6 +127,18 @@ RAW_MATCH_AWK='
 # so it can be checked without touching the repository.  Each case names the
 # shape it pins; the one-line case is the round-4 finding, kept so the window
 # cannot silently close over the discriminator again.
+# A census total is the sum of its own site rows -- ONE derivation for the four
+# scalars (`v0.35.76`), keyed by the row prefix, so the write pair cannot be
+# derived from the read rows (or the reverse) by a copy that names the wrong
+# prefix.  The monotonic gate re-asserts the same relation on every capture;
+# what it cannot see on a tree where both executable totals are zero is a
+# derivation reading the OTHER census's rows, so the self-test below feeds this
+# function rows whose four sums all differ.
+census_total() {
+  local key="$1" rows="$2"
+  printf '%s\n' "$rows" | awk -F'|' -v key="^${key}=" '$0 ~ key {s += $NF} END {print s + 0}'
+}
+
 if [[ "${1:-}" == "--self-test" ]]; then
   fx="$(mktemp -d)"
   trap 'rm -rf "$fx"' EXIT
@@ -219,6 +238,32 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_sites "two separate matches are two sites" TwoSites.lean 2
   st_sites "a one-line match counts as a site" OneLine.lean 1
   st_sites "a file with no classified match has no site" OutsideWindow.lean 0
+  # The four census totals come from four DIFFERENT row prefixes.  Every sum
+  # here is distinct, so a derivation reading a sibling's rows -- the mutation
+  # the live monotonic check cannot see while both executable totals are
+  # zero -- answers the wrong number.
+  st_rows="$(printf '%s\n' \
+    'STORE_READ_CODE_SITE=A.lean|f|1' 'STORE_READ_CODE_SITE=B.lean|g|2' \
+    'STORE_READ_SPEC_SITE=A.lean|p|7' \
+    'STORE_WRITE_CODE_SITE=A.lean|w|5' \
+    'STORE_WRITE_SPEC_SITE=A.lean|q|4' 'STORE_WRITE_SPEC_SITE=C.lean|r|7' \
+    'RAW_SITE=A.lean|f|tcb|9')"
+  st_total() {
+    local name="$1" key="$2" want="$3" got
+    got="$(census_total "$key" "$st_rows")"
+    if [[ "$got" == "$want" ]]; then
+      echo "  OK   self-test: $name"
+      st_ok=$(( st_ok + 1 ))
+    else
+      echo "  FAIL self-test: $name -- expected $want, got $got" >&2
+      st_fail=1
+    fi
+  }
+  st_total "the read code total is the sum of its own rows" STORE_READ_CODE_SITE 3
+  st_total "the read spec total is the sum of its own rows" STORE_READ_SPEC_SITE 7
+  st_total "the write code total is the sum of its own rows" STORE_WRITE_CODE_SITE 5
+  st_total "the write spec total is the sum of its own rows" STORE_WRITE_SPEC_SITE 11
+  st_total "a key with no rows totals zero" STORE_NONE_SITE 0
   if [[ "$st_fail" -ne 0 ]]; then
     echo "raw-match scanner self-test: FAILED" >&2
     exit 1
@@ -400,10 +445,14 @@ RAW_MATCH_UNCLASSIFIED=$(( RAW_MATCH_ALL - RAW_MATCH_CLASSIFIED_SITES ))
 
 # The two scalars, derived from the census rows so the totals and the
 # inventory cannot diverge.
-STORE_READ_CODE=$(printf '%s\n' "${STORE_READ_ROWS}" \
-  | awk -F'|' '/^STORE_READ_CODE_SITE=/ {s += $NF} END {print s + 0}')
-STORE_READ_SPEC=$(printf '%s\n' "${STORE_READ_ROWS}" \
-  | awk -F'|' '/^STORE_READ_SPEC_SITE=/ {s += $NF} END {print s + 0}')
+STORE_READ_CODE=$(census_total STORE_READ_CODE_SITE "${STORE_READ_ROWS}")
+STORE_READ_SPEC=$(census_total STORE_READ_SPEC_SITE "${STORE_READ_ROWS}")
+# The write census, from the same rows (`v0.35.76`): the migratable population
+# of raw object-table writes is enforced at zero exactly as the read one is,
+# with the five store primitives and one planted witness registered in the
+# census rather than exempted here.
+STORE_WRITE_CODE=$(census_total STORE_WRITE_CODE_SITE "${STORE_READ_ROWS}")
+STORE_WRITE_SPEC=$(census_total STORE_WRITE_SPEC_SITE "${STORE_READ_ROWS}")
 
 # Typed-helper adoption (kernel + tests + harness; excludes the helper
 # definition file itself).
@@ -434,8 +483,13 @@ count_adoption() {
     | awk -F: '{s += $2} END {print s + 0}'
 }
 
-GETTCB_ADOPTION=$(count_adoption "getTcb\?")
-GETSCHEDCTX_ADOPTION=$(count_adoption "getSchedContext\?")
+# The witnessed lookups (`getTcbWitnessed?` / `getSchedContextWitnessed?`,
+# v0.35.65) ARE the typed helpers, carrying their own equation
+# (`getTcbWitnessed?_val`): a consumer reading through one reads through the
+# typed helper, so each counts as an adoption of the helper it witnesses.  The
+# whole-symbol guards still exclude the lemma names about them.
+GETTCB_ADOPTION=$(count_adoption "getTcb(Witnessed)?\?")
+GETSCHEDCTX_ADOPTION=$(count_adoption "getSchedContext(Witnessed)?\?")
 GETENDPOINT_ADOPTION=$(count_adoption "getEndpoint\?")
 GETNOTIFICATION_ADOPTION=$(count_adoption "getNotification\?")
 GETUNTYPED_ADOPTION=$(count_adoption "getUntyped\?")
@@ -488,6 +542,7 @@ raw_match_vspaceroot     = $RAW_MATCH_VSPACEROOT
 raw_match_total          = $RAW_MATCH_TOTAL
 raw_match_unclassified   = $RAW_MATCH_UNCLASSIFIED
 store_read_spec          = $STORE_READ_SPEC (diagnostic)
+store_write_spec         = $STORE_WRITE_SPEC (diagnostic)
 
 ## Typed-helper adoption (should-grow)
 
@@ -517,6 +572,7 @@ kerrormatrix_rows        = $KERRORMATRIX_ROWS
 sorry_count              = $SORRY_COUNT
 axiom_count              = $AXIOM_COUNT
 store_read_code          = $STORE_READ_CODE
+store_write_code         = $STORE_WRITE_CODE
 
 ## Machine-diffable block
 ##
@@ -527,12 +583,14 @@ store_read_code          = $STORE_READ_CODE
 ## leaves a per-file row unmoved, which is the movement the inventory exists to
 ## catch.
 ##
-## STORE_READ_CODE_SITE rows get no inventory floor, because STORE_READ_CODE is
-## enforced at zero and at zero a cardinality and a set say the same thing.
+## STORE_READ_CODE_SITE and STORE_WRITE_CODE_SITE rows get no inventory floor,
+## because STORE_READ_CODE and STORE_WRITE_CODE are enforced at zero and at zero
+## a cardinality and a set say the same thing.
 ## They are emitted anyway, for two reasons: the gate asserts that the total is
 ## their sum, so a capture claiming "none" beside a live row is refused as a
 ## defect rather than passed; and when the zero is broken they are what tells
-## the reader WHERE.  STORE_READ_SPEC_SITE rows are recorded but not enforced.
+## the reader WHERE.  STORE_READ_SPEC_SITE and STORE_WRITE_SPEC_SITE rows are
+## recorded but not enforced.
 ## The scalars below are derived from these rows.
 
 $(printf '%s\n' "${RAW_MATCH_ROWS}" | awk 'NF {print "RAW_SITE=" $1 "|" $2 "|" $3 "|" $4}')
@@ -549,6 +607,8 @@ RAW_MATCH_TOTAL=$RAW_MATCH_TOTAL
 RAW_MATCH_UNCLASSIFIED=$RAW_MATCH_UNCLASSIFIED
 STORE_READ_CODE=$STORE_READ_CODE
 STORE_READ_SPEC=$STORE_READ_SPEC
+STORE_WRITE_CODE=$STORE_WRITE_CODE
+STORE_WRITE_SPEC=$STORE_WRITE_SPEC
 GETTCB_ADOPTION=$GETTCB_ADOPTION
 GETSCHEDCTX_ADOPTION=$GETSCHEDCTX_ADOPTION
 GETENDPOINT_ADOPTION=$GETENDPOINT_ADOPTION

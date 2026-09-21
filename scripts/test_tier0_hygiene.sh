@@ -175,6 +175,19 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
 # A plan's numbering, counts and cross-references are relational data kept in
+# `v0.35.147`: the SHARED git derivation, run before the four gates that read
+# it.  Four Tier 0 gates derive their whole domain from the index, and each
+# answered a FAILED run with an EMPTY one -- `[]` / `{}`, which is also what a
+# clean scan of an empty tree returns, so the caller iterated over nothing and
+# the gate printed PASS.  `indexed_source` raises instead, and its self-test
+# runs FIRST for the reason every other self-test here does: a shared derivation
+# that has stopped refusing fails silently in four places at once, and naming it
+# at the source beats four downstream mysteries.  Its two decisive cases are the
+# ones git will not produce on demand -- a truncated batch stream and an
+# unreadable header, where the superseded parsers returned the PREFIX they had
+# managed to read.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
+
 # prose.  They drifted in five consecutive cuts -- declared totals of
 # 126/143/145/146/149 against the real row count, references to rows that a
 # renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
@@ -355,6 +368,35 @@ run_check "HYGIENE" "${SCRIPT_DIR}/test_gate_skip_accounting.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_consistency.py" --self-test
 
+# `v0.35.122`: ...and whether each anchor over a file THIS CUT CHANGES still
+# decides as declared.  The gate above asks whether two anchors CONTRADICT; it
+# cannot ask whether a positive is currently SATISFIED, and for the bounded-gap
+# family -- now this tree's dominant anchor form -- it is structurally limited to
+# exact-key matching, because `_literal_runs` refuses a quantifier or a class.
+#
+# `CLAUDE.md` states the remedy as a PROCEDURE, with the `rg` command and the
+# arithmetic ("seconds against tens of minutes").  Four consecutive cuts then
+# shipped an anchor it would have caught, each found fifty minutes into the Full
+# lane: `v0.35.116` (three anchors silent after a move), `v0.35.118` (a retired
+# line a positive pinned), `v0.35.119` (a renamed loop binding -- and Tier 3
+# stopped there, so that cut's own 21 new anchors never ran), `v0.35.121` (a
+# retired inline spelling).  A rule restated four times is owed a check.
+#
+# The selection is derived from git and the execution goes through the tier
+# suites' own `run_check`, so this gate and Tier 3 cannot disagree about any
+# anchor.  `run_gate_check` rather than `run_check` because it is a sub-tier that
+# writes its own report -- the shape Tier 4 uses for the SMP boot-check -- and,
+# usefully, `run_gate_check` is not itself an anchor spelling, so the sweep can
+# never select and re-enter this line.
+# Pass `--continue` through, so a broken anchor does not stop the sweep at the
+# first one when the caller asked for every failure in one pass.
+anchor_sweep_args=()
+if [[ "${CONTINUE_MODE:-0}" -eq 1 ]]; then anchor_sweep_args+=("--continue"); fi
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/select_changed_anchors.py" --self-test
+run_gate_check "HYGIENE" "${SCRIPT_DIR}/check_changed_file_anchors.sh" --controls
+run_gate_check "HYGIENE" "${SCRIPT_DIR}/check_changed_file_anchors.sh" \
+  "${anchor_sweep_args[@]+"${anchor_sweep_args[@]}"}"
+
 # AN10-D: AK7 cascade monotonicity gate. Reads scripts/store_reader_hygiene_baseline.txt
 # and rejects regressions on any AK7 cascade metric (the raw-read site
 # inventory, typed-helper adoption, storeObjectKindChecked adoption, sentinel
@@ -393,10 +435,35 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_no_orphan_fields.sh"
 
 run_check "HYGIENE" python3 -m unittest scripts.tests.test_generate_codebase_map
 
-# WS-I1/R-03: Scenario registry validation — every fixture ID must be in the registry and vice versa.
-run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry \
-  --extra-fixtures tests/fixtures/robin_hood_smoke.expected \
-  tests/fixtures/two_phase_arch_smoke.expected
+# v0.35.109: witnesses for the scenario-traceability manifest machinery — the
+# row-shape classifier, the fail-closed producer declaration, and the fragment
+# relation `scripts/test_tier2_trace.sh` checks.  A gate whose own mechanism is
+# unpinned fails silently, which is how 19 of 19 manifest fragments came to name
+# lines no suite printed.
+run_check "HYGIENE" python3 -m unittest scripts.tests.test_scenario_catalog
+
+# WS-I1/R-03: Scenario registry validation — every fixture ID must be in the
+# registry and vice versa.  The manifests it reconciles beyond the trace fixture
+# are DERIVED (`manifest_fixture_paths`), not hand-listed here: `list-manifests`
+# and Tier 2's `check-fragments` both derive theirs, so a third manifest reached
+# this gate from nowhere and its ids could be absent from the registry with every
+# gate green.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" validate-registry
+
+# v0.35.111: every `tests/fixtures/*.expected` file that DECLARES manifest
+# intent is a well-formed scenario-traceability manifest — every non-comment line
+# a row, every row's fragment naming its own scenario, a producer declared.  That
+# question needs no build, so it is asked here rather than waiting for Tier 2:
+# `check_fixture_index`'s sibling defect was a silent `continue` over a file that
+# declares a producer and does not parse, which was swept as golden output while
+# the gate reported PASS.  Tier 2 runs the same discovery again, for the list.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" list-manifests
+
+# v0.35.109: every file under `tests/fixtures/` is a row of that directory's
+# README table, naming the gate that compares it — or is classified with a
+# reason.  The table is the only place a reader learns which gate compares a
+# given fixture, it is hand-written, and it had two omissions.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/scenario_catalog.py" check-fixture-index
 
 # AN4-A (H-02): enforce `SeLe4n.Kernel.Internal.lifecycleRetypeObject` consumer allowlist.
 # The internal retype primitive bypasses `lifecyclePreRetypeCleanup` and
@@ -506,5 +573,21 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_lock_ceiling_figures.py"
 # decisive case keeps the anchor and the definition and adds only a reader.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_anchor_symbol_liveness.py"
+
+# "Does this declaration carry a body" had SIX answers across six artefacts
+# (`v0.35.114`, `v0.35.115`), four of them matching the definition constructor
+# alone and wildcarding the rest, so an `opaque` -- executable, and the spelling
+# this tree's foreign surface uses seventy-odd times -- was silently outside four
+# derived domains at once.  `v0.35.114` gave the question one owner and wrote the
+# rule into CLAUDE.md; the fifth and sixth askers were then found by SWEEPING the
+# tree, not by reading the rule, and the enumeration that opened `v0.35.115` said
+# "five".  Neither a fix nor a paragraph reaches the site nobody has written yet,
+# which is this project's own "when a rule has been restated twice, the third
+# response is not prose".  Domain derived over both places this tree writes Lean:
+# `.lean` files, and probe strings a Python gate hands to `lake env lean`.
+# Self-test first, and its decisive case keeps every recorded subject and adds a
+# new one -- the shape each of the six findings had.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_declaration_kind_askers.py" --self-test
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_declaration_kind_askers.py"
 
 finalize_report

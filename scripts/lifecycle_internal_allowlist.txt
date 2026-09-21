@@ -43,6 +43,16 @@ SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # exactly as the preservation theorems above do.
 SeLe4n/Kernel/CrossSubsystem.lean
 
+# WS-RR RR8.12 (third cut): the reachability census pins, by name, every
+# definition that transforms kernel state and that no committing `@[export]`
+# reaches — and `Internal.lifecycleRetypeObject` is one of them.  The entry is a
+# *pin*, not a call: the census derives the set from the environment and this
+# file is the list that makes a change to it visible, so the name appears in a
+# `List Name` and nowhere else.  It is the same shape as the proof-chain entries
+# above — a gate that must state the internal def in order to check something
+# about it — rather than a dispatch that could have called a wrapper instead.
+SeLe4n/Testing/KernelTransitionReachabilityCensus.lean
+
 # Test harness (negative branches + direct internal-step exercise).
 SeLe4n/Testing/MainTraceHarness.lean
 tests/NegativeStateSuite.lean

@@ -9,6 +9,13 @@
 > `v0.35.4` reply-stack cut.
 > **Sub-task count**: 26 across 6 phases (RM1..RM6), each phase numbered in the
 > order it is to be implemented
+> **Names below are this workstream's own** and were retired by WS-HP HP6.1 at
+> `v0.35.41`, which renamed the removal family for the splice it becomes:
+> `detachReplyFrameAbove{,OrSelf}` → `spliceReplyFrameOut{,OrSelf}`,
+> `detachFrameAboveThreadReply` → `spliceThreadReplyFrameOut`,
+> `detachCancelledCallerFrame` (already retired by RM1.1 here) →
+> `spliceThreadReplyFrameOut`.  The rows are left as they landed; read the
+> mapping rather than searching for the old spellings.
 
 ## 1. Phase goal
 
@@ -122,7 +129,11 @@ are mutually exclusive and no *reachable* footprint grows.  The bounds that
 record this are `lockSet_endpointReplyRecvOnCore_size_le_eighteen` (unconditional,
 from PR #894's own sender/pre-return mutual exclusion) and `…_size_le_seventeen`
 (under the owner merge); RM3.5 must show **both** unmoved, not the retired
-`…_size_le_fifteen`, which this cut's own widening superseded.
+`…_size_le_fifteen`, which this cut's own widening superseded.  (WS-HP HP6.2 at
+`v0.35.44` retired `…_size_le_seventeen` itself — its owner merge occurs on no
+state the head-driven trigger reaches — and made the eighteen unconditional in
+the same cut.  This paragraph records what RM measured; the live figure is the
+eighteen alone.)
 
 ## 4. Sequencing
 
@@ -159,7 +170,7 @@ Inert: nothing calls the new step, so the whole tree must still build unchanged.
 | RM1.2 | `removeCallerReplyFrame (caller) (rid) : Kernel Unit` — seL4's `reply_remove` non-head branch then `reply_unlink`: the detach folded to identity on error (a non-reciprocating upward link means "nothing above me on my stack", which the chain relation permits by design since it is stated downward), then `SystemState.consumeCallerReply`.  Ships with `removeCallerReplyFrame_eq_consume_of_no_frame_above`, the definitional equality that makes every later repair a case split whose `none` branch is the existing proof verbatim  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
 | RM1.3 | Its read/write algebra, each entry a composition of `detachReplyFrameAbove`'s existing fifteen lemmas with `consumeCallerReply`'s: `_isOk`, `_objects_frame` (three keys), `_nonTcbNonReply_agree`, `_tcb_forward` / `_tcb_backward`, the `getReply?` readings, `_scheduler_eq`, `_machine_eq`, `_cdt_eq`, `_preserves_objects_invExt`.  No new argument is invented — both halves already carry every lemma this needs  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` | M |
 | RM1.4 | `removeCallerReplyFrame_preserves_projection` and its per-core wrapper: one rewrite over the unconditional `detachReplyFrameAbove_preserves_projection` and the existing consume lemma.  No observability hypothesis is added, because the only field the detach writes is erased by `projectKernelObject_reply_prev_invariant`  **LANDED v0.35.6** | `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean`, `SeLe4n/Kernel/IPC/CrossCore/EndpointCallNiPerCore.lean` | S |
-| RM1.5 | `removeCallerReplyFrame_preserves_ipcInvariantFull` — the existing consume theorem plus a `prev`-only transport at a third key.  Cheap by construction (§3.2): no conjunct reads `prev` or `next`, and the two that read `caller` are untouched  **LANDED v0.35.6** | `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` | M |
+| RM1.5 | `removeCallerReplyFrame_preserves_ipcInvariantFull` — the existing consume theorem plus a `prev`-only transport at a third key.  Cheap by construction (§3.2): no conjunct reads `prev` or `next`, and the two that read `caller` are untouched  **LANDED v0.35.6; RETIRED AS VACUOUS v0.35.80.**  §3.2's reasoning is sound about the *splice* and this row applied it to the *composite*, which also consumes the caller link — so the theorem inherited the consume's premises, and those are contradictory: it asked for the full bundle of a state together with that state's answered caller not being `.blockedOnReply`, which `replyCallerLinkage`'s second direction refutes.  Its premises held on no state, so it asserted nothing while its name read as coverage.  WS-RR RR8.7 deleted it behind a tombstone, pinned the contradiction with `replyCallerLinkage_refutes_woken_linked_caller`, and repointed the consume onto the relaxed pre-state `ipcInvariantFullExceptReplyLinkage`.  The splice's own bundle statement is owed and registered | `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` | M |
 
 **Acceptance**: `lake build` is byte-for-byte unaffected outside the new
 declarations, and `removeCallerReplyFrame_eq_consume_of_no_frame_above` holds by
@@ -335,12 +346,16 @@ document existing.
   in-order contrast on the same stack delivering it outward still owed.  §3.20
   keeps the depth-two halves.
 
-  It is also a **confirmed divergence from seL4-MCS** (checked against upstream
-  source at `v0.35.14`, where this plan previously claimed the behaviour was
-  inherited): `reply_remove`'s non-head branch splices, so the frames below a cut
-  stay reachable from the head there.  Recovering the accounting means moving the
-  pop's trigger to head-ness; registered in `docs/REGISTERED_DEBT.md` with owner
-  WS-CB and closure target before v1.0.0.
+  It is **what seL4-MCS does too** — this plan's original text was right, and
+  `v0.35.14`'s "correction" of it was the error, withdrawn at `v0.35.40` after
+  re-reading upstream at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0:
+  `reply_remove`'s non-head branch writes
+  `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the comment
+  *"not the head, remove from middle - break the chain"*.  So the cost above is
+  upstream's cost too, and recovering the accounting is an improvement on it: it
+  means moving the pop's trigger to head-ness and then taking the splice,
+  registered in `docs/REGISTERED_DEBT.md` with owner **WS-HP** and closure target
+  before v1.0.0.
 
 ## 10. What closing this workstream found
 
@@ -389,8 +404,9 @@ is retired and split:
 Each carries its own `_preserves_ipcInvariantFull` and
 `_preserves_replenishQueueAffinityConsistent_smp`, stated at the state its own
 step runs on; `PerCoreDonationStep` gains a constructor for each in place of the
-fused one.  `replyRecvPostPopState` / `replyRecvPoppedContext` are total
-accessors over the pop, so the staged dispatch payoff's hypothesis pack stays
+fused one.  `replyRecvPostPopState` / `replyRecvPoppedDonation` are total
+accessors over the pop (the second was `replyRecvPoppedContext` until
+`v0.35.149`, when the pop's result became the `(context, holder)` pair), so the staged dispatch payoff's hypothesis pack stays
 flat and pre-state-computable while its receive-leg fields move to the post-pop
 state.
 

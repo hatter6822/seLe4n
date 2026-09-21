@@ -121,13 +121,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from indexed_source import (  # noqa: E402  (needs the path insert above)
+    indexed_contents as _indexed_contents,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINE_REL = "scripts/identifier_naming_baseline.json"
 BASELINE_PATH = REPO_ROOT / BASELINE_REL
 
 
 def index_contents(paths: list[str]) -> dict[str, str]:
-    """Read every path's STAGED content, in one `git cat-file --batch`.
+    """Read every path's STAGED content, through `indexed_source`.
 
     `git ls-files` enumerates the index, so reading the working tree
     alongside it checks a state that is not the one being committed: a
@@ -136,31 +141,20 @@ def index_contents(paths: list[str]) -> dict[str, str]:
     the violation.  The docstring promises the pre-commit case runs
     against the index, so it does.
 
-    In CI the two agree (a fresh checkout has an empty diff), which is
-    why this is a correctness fix rather than a behaviour change there.
-    One batched subprocess keeps it to a single fork for the whole tree
-    rather than one per file.
+    **The `cat-file --batch` loop is not written out here** (PR #897's
+    review, `v0.35.150`).  `v0.35.147` collapsed two copies of it onto
+    `indexed_source.indexed_contents` and this THIRD one was not swept,
+    so it kept all three of the defects that module exists to close: the
+    request was framed by NEWLINES, which a tracked path may contain --
+    one such path split into two requests, and the walk then paired each
+    response with the wrong path and lost its readable neighbour too; a
+    short stream `break`, returning the PREFIX it had managed to parse,
+    which is indistinguishable from the whole domain; and `len(header) <
+    3`, which reads an unreadable header as git's own `missing` answer.
+    Every one of them makes this gate report a clean tree over files it
+    never scanned.  One question, one answer.
     """
-    request = "".join(f":{p}\n" for p in paths).encode()
-    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO_ROOT,
-                          input=request, capture_output=True)
-    out, pos, result = proc.stdout, 0, {}
-    for path in paths:
-        nl = out.find(b"\n", pos)
-        if nl < 0:
-            break
-        header = out[pos:nl].split()
-        if len(header) < 3:            # "missing" -- unmerged or gone
-            pos = nl + 1
-            continue
-        size = int(header[2])
-        blob = out[nl + 1:nl + 1 + size]
-        pos = nl + 1 + size + 1        # trailing newline after the blob
-        try:
-            result[path] = blob.decode("utf-8")
-        except UnicodeDecodeError:
-            continue                   # binary: path still gets scanned
-    return result
+    return _indexed_contents(str(REPO_ROOT), paths)
 
 
 def read_tracked(rel: str) -> str | None:
@@ -821,10 +815,11 @@ def backtick_substitution_end(text: str, at: int) -> int:
     return -1
 
 
-def backtick_substitution_view(text: str, at: int, end: int) -> str:
+def backtick_substitution_view(text: str, at: int, end: int,
+                               keep_quoted: bool = False) -> str:
     """The code view of the `` ` … ` `` spanning `[at, end)`: its body lexed
     by `strip_shell` recursively, the delimiters kept, length preserved."""
-    return "`" + strip_shell(text[at + 1:end - 1]) + "`"
+    return "`" + strip_shell(text[at + 1:end - 1], keep_quoted) + "`"
 
 
 def command_substitution_end(text: str, at: int) -> int:
@@ -1005,7 +1000,8 @@ def keep_expansions(span: str) -> str:
     return "".join(out)
 
 
-def command_substitution_view(text: str, at: int, end: int) -> str:
+def command_substitution_view(text: str, at: int, end: int,
+                              keep_quoted: bool = False) -> str:
     """The code view of the `$( ... )` spanning `[at, end)`: its body lexed
     by `strip_shell` recursively, so the commands inside survive while the
     comments inside are blanked, and nested substitutions get the same
@@ -1013,7 +1009,7 @@ def command_substitution_view(text: str, at: int, end: int) -> str:
     `# note` inside `X=$(echo ok # note\n)` as code -- a gate reading prose
     as code again, one level down.  Byte-aligned: the delimiters are kept
     and `strip_shell` preserves length."""
-    return "$(" + strip_shell(text[at + 2:end - 1]) + ")"
+    return "$(" + strip_shell(text[at + 2:end - 1], keep_quoted) + ")"
 
 
 # A here-document operator: `<<` or `<<-`, then the terminator word, bare,
@@ -1029,8 +1025,19 @@ HEREDOC_OPEN = re.compile(
 )
 
 
-def strip_shell(text: str) -> str:
+def strip_shell(text: str, keep_quoted: bool = False) -> str:
     """Shell: blank `#` comments and KEEP every quoted span.
+
+    **`keep_quoted` is the double-quote POLICY, and it is a parameter because
+    the lexing is one question and the policy is the caller's** (`v0.35.152`,
+    PR #897 review).  The default is this gate's own question -- which tokens are
+    identifiers -- for which a double-quoted span is message text and only its
+    expansions survive.  A caller asking what the CODE SAYS (does this script
+    open that fixture?) needs the span verbatim, since a path is exactly the
+    message text this gate discards; `scenario_catalog.consumer_code_view` passes
+    `True`.  Writing a second shell lexer for that is what this project forbids,
+    and `strip_hash` is not it either: a naive `#` scan blanks a `#` inside a
+    string, so the quote-state machine below is the part that must be shared.
 
     Routing `.sh` through the Python stripper blanked quoted text as
     prose, so `echo "${phase5_helper}"` became invisible -- a regression,
@@ -1087,7 +1094,7 @@ def strip_shell(text: str) -> str:
                     j = n if j < 0 else j
                     line = text[i:j]
                     if (line.lstrip("\t") if dash else line) == term:
-                        out.append(strip_shell(text[body_start:i]))
+                        out.append(strip_shell(text[body_start:i], keep_quoted))
                         out.append(line)
                         if j < n:
                             out.append("\n")
@@ -1096,7 +1103,7 @@ def strip_shell(text: str) -> str:
                     i = j + 1 if j < n else n
                 else:
                     # Unterminated: the body runs to the end of the text.
-                    out.append(strip_shell(text[body_start:n]))
+                    out.append(strip_shell(text[body_start:n], keep_quoted))
             pending = []
         elif (text.startswith("<<", i) and not text.startswith("<<<", i)
               and (i == 0 or text[i - 1] != "<")
@@ -1104,9 +1111,11 @@ def strip_shell(text: str) -> str:
             pending.append((m.group(2) or m.group(3) or m.group(4), bool(m.group(1))))
             out.append(m.group(0)); i = m.end()
         elif text.startswith("$(", i) and (end := command_substitution_end(text, i)) > 0:
-            out.append(command_substitution_view(text, i, end)); i = end
+            out.append(command_substitution_view(text, i, end, keep_quoted))
+            i = end
         elif text[i] == "`" and (end := backtick_substitution_end(text, i)) > 0:
-            out.append(backtick_substitution_view(text, i, end)); i = end
+            out.append(backtick_substitution_view(text, i, end, keep_quoted))
+            i = end
         elif (m := SHELL_EXPANSION.match(text, i)):
             out.append(m.group(0)); i = m.end()
         elif text[i] == "#" and (i == 0 or text[i - 1] in " \t\n;&|("):
@@ -1126,7 +1135,7 @@ def strip_shell(text: str) -> str:
                     j += 1; break
                 j += 1
             span = text[i:j]
-            out.append(span if is_command_payload(text, i)
+            out.append(span if (keep_quoted or is_command_payload(text, i))
                        else keep_expansions(span))
             i = j
         else:

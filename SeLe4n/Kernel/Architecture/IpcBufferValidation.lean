@@ -127,8 +127,8 @@ def setIPCBufferOp (st : SystemState) (vtid : ValidThreadId)
     | some tcb =>
       -- AH3-B (L-08): Delegate to `storeObject` instead of manual struct-with.
       -- `storeObject` handles objects/objectIndex/objectIndexSet/lifecycle/asidTable
-      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op and capabilityRefs
-      -- filter is a no-op (TCBs are never CNodes), producing identical state.
+      -- uniformly. For TCB-to-TCB updates, asidTable is a no-op (TCBs are never
+      -- VSpace roots), producing identical state.
       let tcb' := { tcb with ipcBuffer := addr }
       match storeObject vtid.val.toObjId (.tcb tcb') st with
       | .ok ((), st') => .ok st'
@@ -324,24 +324,6 @@ theorem setIPCBufferOp_asidTable_eq
         (SystemState.getTcb?_eq_some_iff st vtid.val tcb).mp hLookup
       unfold storeObject at hOk; simp only [] at hOk; cases hOk
       simp only [hRaw]
-    · contradiction
-
-/-- D3-F/AH3-B: `setIPCBufferOp` delegates to `storeObject`, which applies the
-    standard capability-ref cleanup (filtering refs where the stored object's
-    ObjId is the CNode). For TCB objects this is a no-op in well-formed states
-    since TCBs are never CNodes — no `CapabilityRef` entries have `ref.cnode =
-    tid.toObjId`. The filtered result is the canonical `storeObject` behavior. -/
-theorem setIPCBufferOp_capabilityRefs_cleaned
-    (st st' : SystemState) (vtid : ValidThreadId) (addr : VAddr)
-    (hOk : setIPCBufferOp st vtid addr = .ok st') :
-    st'.lifecycle.capabilityRefs =
-      st.lifecycle.capabilityRefs.filter (fun ref _ => decide (ref.cnode ≠ vtid.val.toObjId)) := by
-  unfold setIPCBufferOp at hOk
-  split at hOk
-  · contradiction
-  · split at hOk
-    · rename_i tcb _
-      unfold storeObject at hOk; simp only [] at hOk; cases hOk; rfl
     · contradiction
 
 /-- D3-F: `setIPCBufferOp` determinism — the operation is a pure function

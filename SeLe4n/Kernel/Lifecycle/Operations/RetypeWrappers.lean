@@ -1209,12 +1209,17 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained
         (retypeShootdownAsidList_mem_destroyed hRoot) stBase
 
 /-- **WS-SM SM7.F.4(b)(iii)** (the CSpaceAddr sibling — PR #844 review closure):
-the initiator-atomic form of the **CSpaceAddr-authority** production retype
-entry point `lifecycleRetypeWithCleanupShootdown` (`API.lean` entry-point table).
-Like the Direct-cap wrapper, it retires the destroyed ASID on the initiator's own
-`perCoreTlb` view (`retypeInitiatorDrain`) atomically with the `.aside1` round the
-base wrapper posts to the remote targets — so the CSpaceAddr production path is
-initiator-atomic too, not just the Direct-cap one.  Trace-safe (`perCoreTlb ∉
+the initiator-atomic form of the **CSpaceAddr-authority** retype
+`lifecycleRetypeWithCleanupShootdown`.  Like the Direct-cap wrapper, it retires
+the destroyed ASID on the initiator's own `perCoreTlb` view
+(`retypeInitiatorDrain`) atomically with the `.aside1` round the base wrapper
+posts to the remote targets — so the CSpaceAddr path is initiator-atomic too,
+not just the Direct-cap one.
+
+Said *"production path"* until WS-RR RR8.12's reachability census measured that
+no committing `@[export]` reaches this family; the symmetry it keeps with the
+Direct-cap form is the point, and the Direct-cap form is the one a syscall
+runs.  Trace-safe (`perCoreTlb ∉
 projectState`). -/
 def lifecycleRetypeWithCleanupShootdownPerCore
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
@@ -1829,9 +1834,22 @@ def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
     (lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap
       target newObj)
 
-/-- **WS-SM SM7.D.1** (**the live `.lifecycleRetype` seam**, CSpaceAddr
-authority): the CSpaceAddr sibling, symmetric with the Direct-cap form so the
-two production retype entry points cannot drift. -/
+/-- **WS-SM SM7.D.1**, CSpaceAddr authority: the CSpaceAddr sibling of the live
+seam, symmetric with the Direct-cap form so the two cannot drift.
+
+**Not itself a production entry point**, and this docstring said it was until
+WS-RR RR8.12's reachability census (`SeLe4n/Testing/KernelTransitionReachability\
+Census.lean`) measured that no committing `@[export]` reaches it.  The ABI
+resolves a capability at the seam — `syscallResolveCap` runs before dispatch and
+`syscallDelegates .lifecycleRetype` names the Direct form — so there is one
+authority form a syscall can present and this is not it.  What it is is the
+verification surface for the CSpaceAddr path, which is worth having and is a
+different claim.
+
+The correction matters beyond this file: *"the live seam"* on a definition
+nothing reaches is the same reading that let WS-RR RR8.12's denial-of-service
+survive two cuts, where `CancellationBundle`'s header called a composite no
+production path calls "the live `.tcbSuspend` dispatch". -/
 def lifecycleRetypeWithCleanupShootdownPerCoreIcache
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
     (authority : CSpaceAddr) (target : SeLe4n.ObjId)

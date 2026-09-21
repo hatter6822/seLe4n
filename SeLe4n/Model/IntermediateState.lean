@@ -54,14 +54,14 @@ The four proof fields guarantee:
    RHTable satisfies `slotsUnique` (invExt ∧ size < capacity ∧ 4 ≤ capacity).
 3. **`hPerObjectMappings`** — for every VSpaceRoot in the object store, its
    `mappings` RHTable satisfies `invExt`.
-4. **`hLifecycleConsistent`** — lifecycle metadata (objectTypes, capabilityRefs)
-   is mutually consistent with the object store. -/
+4. **`hLifecycleConsistent`** — lifecycle metadata (`objectTypes`) is
+   consistent with the object store. -/
 structure IntermediateState where
   state : SystemState
   hAllTables : state.allTablesInvExtK
   hPerObjectSlots : perObjectSlotsInvariant state
   hPerObjectMappings : perObjectMappingsInvariant state
-  hLifecycleConsistent : SystemState.lifecycleMetadataConsistent state
+  hLifecycleConsistent : SystemState.objectTypeMetadataConsistent state
 
 /-- Q3-A: The empty object store satisfies the per-object CNode slots invariant
 (vacuously — no objects exist). -/
@@ -89,7 +89,7 @@ def mkEmptyIntermediateState : IntermediateState where
   hAllTables := default_allTablesInvExtK
   hPerObjectSlots := perObjectSlotsInvariant_default
   hPerObjectMappings := perObjectMappingsInvariant_default
-  hLifecycleConsistent := default_systemState_lifecycleConsistent
+  hLifecycleConsistent := default_systemState_objectTypeMetadataConsistent
 
 /-- Q3-A: `mkEmptyIntermediateState` is well-formed. -/
 theorem mkEmptyIntermediateState_valid :
@@ -97,7 +97,7 @@ theorem mkEmptyIntermediateState_valid :
     e.state.allTablesInvExtK ∧
     perObjectSlotsInvariant e.state ∧
     perObjectMappingsInvariant e.state ∧
-    SystemState.lifecycleMetadataConsistent e.state :=
+    SystemState.objectTypeMetadataConsistent e.state :=
   ⟨mkEmptyIntermediateState.hAllTables,
    mkEmptyIntermediateState.hPerObjectSlots,
    mkEmptyIntermediateState.hPerObjectMappings,

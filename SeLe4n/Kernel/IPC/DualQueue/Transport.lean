@@ -1098,16 +1098,22 @@ def endpointQueueRemoveDual
             match tcb.queuePPrev with
             | none => .error .endpointQueueEmpty
             | some pprev =>
-                if q.head.isNone || q.tail.isNone then
+                -- WS-RR RR8.3: the check is `dualQueueRemovalGuard`, a named
+                -- definition, so `dualQueueRemovalGuardHolds` discharges *this*
+                -- condition rather than a second spelling of it.  It was an
+                -- anonymous `let` here, which is why no caller could state that
+                -- it had established the precondition.
+                --
+                -- `v0.35.59`: and the *whole* store-free precondition is one
+                -- definition, `dualQueueRemovalEnabled`, because naming only the
+                -- half an invariant discharges is what let the frozen mirror
+                -- carry a **subset** of the refusal set while reading a shared
+                -- name.  The populated-boundaries check was a second, unnamed
+                -- `if` here; a state with an empty queue and `pprev = .tcbNext p`
+                -- passes the guard and is refused only by it.
+                if !dualQueueRemovalEnabled q tid tcb pprev then
                   .error .illegalState
                 else
-                  let pprevConsistent : Bool :=
-                    match pprev with
-                    | .endpointHead => q.head = some tid && tcb.queuePrev.isNone
-                    | .tcbNext prevTid => q.head ≠ some tid && tcb.queuePrev = some prevTid
-                  if !pprevConsistent then
-                    .error .illegalState
-                  else
                     let applyPrev : Except KernelError SystemState :=
                       match pprev with
                       | .endpointHead =>
@@ -1120,7 +1126,13 @@ def endpointQueueRemoveDual
                           match lookupTcb st prevTid with
                           | none => .error .objectNotFound
                           | some prevTcb =>
-                              if prevTcb.queueNext ≠ some tid then
+                              -- `v0.35.59`: the check is
+                              -- `queuePredecessorNamesSuccessor`, which the frozen
+                              -- mirror reads too.  It needs a store lookup, so it
+                              -- cannot fold into `dualQueueRemovalEnabled` -- each
+                              -- side resolves its own `prevTcb` and both ask the
+                              -- same question of it.
+                              if !queuePredecessorNamesSuccessor prevTcb tid then
                                 .error .illegalState
                               else
                                 match storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
@@ -1129,13 +1141,6 @@ def endpointQueueRemoveDual
                     match applyPrev with
                   | .error e => .error e
                   | .ok st1 =>
-                      let newTail : Option SeLe4n.ThreadId :=
-                        match tcb.queueNext with
-                        | some _ => q.tail
-                        | none =>
-                            match pprev with
-                            | .endpointHead => none
-                            | .tcbNext prevTid => some prevTid
                       let st2Result : Except KernelError SystemState :=
                         match tcb.queueNext with
                         | none => .ok st1
@@ -1146,11 +1151,21 @@ def endpointQueueRemoveDual
                       match st2Result with
                       | .error e => .error e
                       | .ok st2 =>
-                          let q' : IntrusiveQueue :=
-                            if q.head = some tid then
-                              { head := tcb.queueNext, tail := newTail }
-                            else
-                              { head := q.head, tail := newTail }
+                          -- WS-RR RR8.4: `queueRemoveBoundary`, the one definition
+                          -- of what a removal writes to the queue's boundaries,
+                          -- shared with `endpointQueueRemove`.  This arm used to
+                          -- *infer* the new tail from `pprev` — `none` at the head,
+                          -- the predecessor otherwise, and `q.tail` untouched
+                          -- whenever the thread had a successor — which asks
+                          -- `queueNext = none`, a **proxy** for tail-ness, where
+                          -- `q.tail = some tid` is the fact.  On a state the bundle
+                          -- admits and connectivity refutes (a queued thread with
+                          -- no successor that is not the tail) the two part, and
+                          -- the inference cleared the tail and stranded the
+                          -- queue's real one.  The guard's `queueTailPairAgrees`
+                          -- factor refuses that state outright, which is what
+                          -- retires OD1.3's stated connectivity hypothesis.
+                          let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
                           let ep' : Endpoint := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
                           match storeObject endpointId (.endpoint ep') st2 with
                           | .error e => .error e
@@ -1169,7 +1184,7 @@ theorem endpointQueueRemoveDual_scheduler_eq
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1185,9 +1200,12 @@ theorem endpointQueueRemoveDual_scheduler_eq
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1240,7 +1258,7 @@ theorem endpointQueueRemoveDual_scheduler_eq
                 · simp
                 · -- split introduced heq✝ : (if ... then .error else match storeTcbQueueLinks ... with ...) = .ok st''✝
                   -- and the goal uses st''✝. Resolve heq✝ to extract the actual state.
-                  rename_i _ _ _ stAp heqAp
+                  rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
@@ -1300,7 +1318,7 @@ theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     f st' = f st := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1316,9 +1334,12 @@ theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1371,7 +1392,7 @@ theorem endpointQueueRemoveDual_frame {α : Type} (f : SystemState → α)
                 · simp
                 · -- split introduced heq✝ : (if ... then .error else match storeTcbQueueLinks ... with ...) = .ok st''✝
                   -- and the goal uses st''✝. Resolve heq✝ to extract the actual state.
-                  rename_i _ _ _ stAp heqAp
+                  rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcb.queueNext with
@@ -1440,7 +1461,7 @@ theorem endpointQueueRemoveDual_tcb_forward
     (hStep : endpointQueueRemoveDual endpointId isSendQ tid st = .ok ((), st'))
     (hTcb : st.objects[oid]? = some (.tcb tcb)) :
     ∃ tcb', st'.objects[oid]? = some (.tcb tcb') := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1457,9 +1478,12 @@ theorem endpointQueueRemoveDual_tcb_forward
         | some pprev =>
           simp only []
           generalize (if isSendQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1520,7 +1544,7 @@ theorem endpointQueueRemoveDual_tcb_forward
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbTid.queueNext with
@@ -1580,7 +1604,7 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hEp : st'.objects[oid]? = some (.endpoint ep)) :
     st.objects[oid]? = some (.endpoint ep) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1596,9 +1620,12 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then epOrig.receiveQ else epOrig.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1657,7 +1684,7 @@ theorem endpointQueueRemoveDual_endpoint_backward_ne
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbTid.queueNext with
@@ -1715,7 +1742,7 @@ theorem endpointQueueRemoveDual_notification_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hNtfn : st'.objects[oid]? = some (.notification ntfn)) :
     st.objects[oid]? = some (.notification ntfn) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1731,9 +1758,12 @@ theorem endpointQueueRemoveDual_notification_backward
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then epOrig.receiveQ else epOrig.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1796,7 +1826,7 @@ theorem endpointQueueRemoveDual_notification_backward
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbTid.queueNext with
@@ -1861,7 +1891,7 @@ theorem endpointQueueRemoveDual_tcb_ipcState_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -1877,9 +1907,12 @@ theorem endpointQueueRemoveDual_tcb_ipcState_backward
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -1944,7 +1977,7 @@ theorem endpointQueueRemoveDual_tcb_ipcState_backward
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbTid.queueNext with
@@ -2013,7 +2046,7 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st'))
     (hTcb' : st'.objects[anyTid.toObjId]? = some (.tcb tcb')) :
     ∃ tcb, st.objects[anyTid.toObjId]? = some (.tcb tcb) ∧ tcb.cpuAffinity = tcb'.cpuAffinity := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
   | some obj => cases obj with
@@ -2029,9 +2062,12 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  With the two
+          -- preconditions collapsed into `dualQueueRemovalEnabled`, unfolding the
+          -- guard exposes the guard's own `match pprev` *inside* the `if`
+          -- condition, and `split` takes that before the `if` -- so the
+          -- constructor split has to come first.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -2096,7 +2132,7 @@ theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbTid.queueNext with
@@ -2715,124 +2751,32 @@ def endpointReplyRecv
 -- WS-L3/L3-D: Tail consistency theorems for endpointQueueRemoveDual
 -- ============================================================================
 
-/-- WS-L3/L3-D1: When removing a non-tail thread (queueNext = some _) from a
-dual queue, the post-state endpoint queue tail equals the pre-state tail.
-The newTail computation in endpointQueueRemoveDual returns q.tail unchanged
-when tcb.queueNext is Some. -/
-theorem endpointQueueRemoveDual_preserves_tail_of_nonTail
-    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
-    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcbR : TCB)
-    (nextTid : SeLe4n.ThreadId)
-    (hObj : st.objects[endpointId]? = some (.endpoint ep))
-    (hTcb : lookupTcb st tid = some tcbR)
-    (hNonTail : tcbR.queueNext = some nextTid)
-    (hObjInv : st.objects.invExt)
-    (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
-    ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
-      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
-      (if isReceiveQ then ep.receiveQ.tail else ep.sendQ.tail) := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
-  rw [hObj]; simp only []
-  rw [hTcb]; simp only []
-  cases hPPrev : tcbR.queuePPrev with
-  | none => simp
-  | some pprev =>
-    simp only []
-    generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-    split
-    · simp
-    · cases pprev with
-      | endpointHead =>
-        simp only []
-        split
-        · simp
-        · cases hStore1 : storeObject endpointId _ st with
-          | error e => simp
-          | ok pair1 =>
-          simp only []; simp only [hNonTail]
-          cases hLookupN : lookupTcb pair1.2 nextTid with
-          | none => simp
-          | some nextTcb =>
-          simp only []; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
-          | error e => simp
-          | ok st2 =>
-          simp only []; cases hStore2 : storeObject endpointId _ st2 with
-          | error e => simp
-          | ok pair2 =>
-          simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
-          | error e => simp
-          | ok st4 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hEq⟩; subst hEq
-            have hNeTidEp : endpointId ≠ tid.toObjId :=
-              fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
-            have hInvS1 := storeObject_preserves_objects_invExt' st endpointId _ pair1 hObjInv hStore1
-            have hInvL := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInvS1 hLink
-            have hInvS2 := storeObject_preserves_objects_invExt' st2 endpointId _ pair2 hInvL hStore2
-            rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
-                storeObject_objects_eq' st2 endpointId _ pair2 hInvL hStore2]
-            refine ⟨_, rfl, ?_⟩
-            cases isReceiveQ <;> simp_all
-      | tcbNext prevTid =>
-        dsimp only
-        split
-        · simp
-        · cases hLookupP : lookupTcb st prevTid with
-          | none => simp
-          | some prevTcb =>
-          dsimp only [hLookupP]; split
-          · simp
-          · rename_i _ _ _ stAp heqAp
-            split at heqAp
-            · simp at heqAp
-            · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbR.queueNext with
-              | error e => simp [hLink0] at heqAp
-              | ok stPrev =>
-              simp [hLink0] at heqAp; subst heqAp
-              simp only [hNonTail]
-              cases hLookupN : lookupTcb stPrev nextTid with
-              | none => simp
-              | some nextTcb =>
-              dsimp only [hLookupN]; cases hLink1 : storeTcbQueueLinks stPrev nextTid _ _ nextTcb.queueNext with
-              | error e => simp
-              | ok st2 =>
-              dsimp only [hLink1]; cases hStore2 : storeObject endpointId _ st2 with
-              | error e => simp
-              | ok pair2 =>
-              dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
-              | error e => simp
-              | ok st4 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
-                have hNeTidEp : endpointId ≠ tid.toObjId :=
-                  fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
-                have hInvP := storeTcbQueueLinks_preserves_objects_invExt _ _ prevTid _ _ _ hObjInv hLink0
-                have hInvL1 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInvP hLink1
-                have hInvS2 := storeObject_preserves_objects_invExt' st2 endpointId _ pair2 hInvL1 hStore2
-                rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
-                    storeObject_objects_eq' st2 endpointId _ pair2 hInvL1 hStore2]
-                refine ⟨_, rfl, ?_⟩
-                cases isReceiveQ <;> simp_all
+/-- **WS-RR RR8.4**: the dual removal writes `queueRemoveBoundary` at the
+endpoint — the relation that pins it to the one definition of what a removal
+writes to a queue's boundaries, shared with `endpointQueueRemove`.
 
-/-- WS-L3/L3-D2: Complete characterization of tail behavior when removing
-the tail thread (queueNext = none). The new tail is either:
-- `none` when pprev = endpointHead (thread was sole element)
-- `some prevTid` when pprev = tcbNext prevTid (predecessor becomes tail) -/
-theorem endpointQueueRemoveDual_tail_update
+This replaces WS-L3's `endpointQueueRemoveDual_preserves_tail_of_nonTail` and
+`endpointQueueRemoveDual_tail_update`, which split on the removed thread's
+`queueNext` and described the *inferred* tail this cut retires — the second of
+them stating it as "the new tail is what `pprev` says", which is true only where
+the removed thread is the tail and so needed OD1.3's connectivity fact.  Neither
+had a consumer anywhere in the tree: they were the specification of an inference,
+and the inference is gone.  One
+hypothesis-free statement about the whole queue subsumes both, and it is what
+makes a fourth removal impossible to spell differently. -/
+theorem endpointQueueRemoveDual_writes_queueRemoveBoundary
     (st st' : SystemState) (endpointId : SeLe4n.ObjId)
     (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (ep : Endpoint) (tcbR : TCB)
     (hObj : st.objects[endpointId]? = some (.endpoint ep))
     (hTcb : lookupTcb st tid = some tcbR)
-    (hIsTail : tcbR.queueNext = none)
     (hObjInv : st.objects.invExt)
     (hStep : endpointQueueRemoveDual endpointId isReceiveQ tid st = .ok ((), st')) :
     ∃ ep', st'.objects[endpointId]? = some (.endpoint ep') ∧
-      (if isReceiveQ then ep'.receiveQ.tail else ep'.sendQ.tail) =
-      match tcbR.queuePPrev with
-      | some .endpointHead => none
-      | some (.tcbNext prevTid) => some prevTid
-      | none => none := by
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep; revert hStep
+      (if isReceiveQ then ep'.receiveQ else ep'.sendQ) =
+        queueRemoveBoundary (if isReceiveQ then ep.receiveQ else ep.sendQ) tid tcbR := by
+  have hNeTidEp : endpointId ≠ tid.toObjId :=
+    fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep; revert hStep
   rw [hObj]; simp only []
   rw [hTcb]; simp only []
   cases hPPrev : tcbR.queuePPrev with
@@ -2840,9 +2784,10 @@ theorem endpointQueueRemoveDual_tail_update
   | some pprev =>
     simp only []
     generalize hQ : (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-    split
-    · simp
-    · cases pprev with
+    -- `v0.35.59`: `cases pprev` precedes the `split` -- see the sibling proofs
+    -- above.  The collapsed `dualQueueRemovalEnabled` puts the guard's own
+    -- `match pprev` inside the `if` condition, so `split` would take it first.
+    cases pprev with
       | endpointHead =>
         simp only []
         split
@@ -2850,23 +2795,46 @@ theorem endpointQueueRemoveDual_tail_update
         · cases hStore1 : storeObject endpointId _ st with
           | error e => simp
           | ok pair1 =>
-          simp only []; simp only [hIsTail]
-          cases hStore2 : storeObject endpointId _ pair1.2 with
-          | error e => simp
-          | ok pair2 =>
-          simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
-          | error e => simp
-          | ok st4 =>
-            simp only [Except.ok.injEq, Prod.mk.injEq]
-            intro ⟨_, hEq⟩; subst hEq
-            have hNeTidEp : endpointId ≠ tid.toObjId :=
-              fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
-            have hInvS1 := storeObject_preserves_objects_invExt' st endpointId _ pair1 hObjInv hStore1
-            have hInvS2 := storeObject_preserves_objects_invExt' pair1.2 endpointId _ pair2 hInvS1 hStore2
-            rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
-                storeObject_objects_eq' pair1.2 endpointId _ pair2 hInvS1 hStore2]
-            refine ⟨_, rfl, ?_⟩
-            cases isReceiveQ <;> simp_all
+          simp only []
+          have hInvS1 := storeObject_preserves_objects_invExt' st endpointId _ pair1 hObjInv hStore1
+          cases hNext : tcbR.queueNext with
+          | none =>
+            simp only []
+            cases hStore2 : storeObject endpointId _ pair1.2 with
+            | error e => simp
+            | ok pair2 =>
+            simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+            | error e => simp
+            | ok st4 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              intro ⟨_, hEq⟩; subst hEq
+              have hInvS2 := storeObject_preserves_objects_invExt' pair1.2 endpointId _ pair2 hInvS1 hStore2
+              rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
+                  storeObject_objects_eq' pair1.2 endpointId _ pair2 hInvS1 hStore2]
+              refine ⟨_, rfl, ?_⟩
+              cases isReceiveQ <;> simp_all
+          | some nextTid =>
+            simp only []
+            cases hLookupN : lookupTcb pair1.2 nextTid with
+            | none => simp
+            | some nextTcb =>
+            simp only []; cases hLink : storeTcbQueueLinks pair1.2 nextTid _ _ nextTcb.queueNext with
+            | error e => simp
+            | ok st2 =>
+            simp only []; cases hStore2 : storeObject endpointId _ st2 with
+            | error e => simp
+            | ok pair2 =>
+            simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+            | error e => simp
+            | ok st4 =>
+              simp only [Except.ok.injEq, Prod.mk.injEq]
+              intro ⟨_, hEq⟩; subst hEq
+              have hInvL := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInvS1 hLink
+              have hInvS2 := storeObject_preserves_objects_invExt' st2 endpointId _ pair2 hInvL hStore2
+              rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
+                  storeObject_objects_eq' st2 endpointId _ pair2 hInvL hStore2]
+              refine ⟨_, rfl, ?_⟩
+              cases isReceiveQ <;> simp_all
       | tcbNext prevTid =>
         dsimp only
         split
@@ -2876,30 +2844,52 @@ theorem endpointQueueRemoveDual_tail_update
           | some prevTcb =>
           dsimp only [hLookupP]; split
           · simp
-          · rename_i _ _ _ stAp heqAp
+          · rename_i _ _ stAp heqAp
             split at heqAp
             · simp at heqAp
             · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev prevTcb.queuePPrev tcbR.queueNext with
               | error e => simp [hLink0] at heqAp
               | ok stPrev =>
               simp [hLink0] at heqAp; subst heqAp
-              simp only [hIsTail]
-              cases hStore2 : storeObject endpointId _ stPrev with
-              | error e => simp
-              | ok pair2 =>
-              dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
-              | error e => simp
-              | ok st4 =>
-                simp only [Except.ok.injEq, Prod.mk.injEq]
-                intro ⟨_, hEq⟩; subst hEq
-                have hNeTidEp : endpointId ≠ tid.toObjId :=
-                  fun h => by rw [h] at hObj; rw [lookupTcb_some_objects st tid tcbR hTcb] at hObj; cases hObj
-                have hInvP := storeTcbQueueLinks_preserves_objects_invExt _ _ prevTid _ _ _ hObjInv hLink0
-                have hInvS2 := storeObject_preserves_objects_invExt' stPrev endpointId _ pair2 hInvP hStore2
-                rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
-                    storeObject_objects_eq' stPrev endpointId _ pair2 hInvP hStore2]
-                refine ⟨_, rfl, ?_⟩
-                cases isReceiveQ <;> simp_all
+              have hInvP := storeTcbQueueLinks_preserves_objects_invExt _ _ prevTid _ _ _ hObjInv hLink0
+              cases hNext : tcbR.queueNext with
+              | none =>
+                simp only []
+                cases hStore2 : storeObject endpointId _ stPrev with
+                | error e => simp
+                | ok pair2 =>
+                dsimp only [hStore2]; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                | error e => simp
+                | ok st4 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  have hInvS2 := storeObject_preserves_objects_invExt' stPrev endpointId _ pair2 hInvP hStore2
+                  rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
+                      storeObject_objects_eq' stPrev endpointId _ pair2 hInvP hStore2]
+                  refine ⟨_, rfl, ?_⟩
+                  cases isReceiveQ <;> simp_all
+              | some nextTid =>
+                simp only []
+                cases hLookupN : lookupTcb stPrev nextTid with
+                | none => simp
+                | some nextTcb =>
+                simp only []; cases hLink1 : storeTcbQueueLinks stPrev nextTid _ _ nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                simp only []; cases hStore2 : storeObject endpointId _ st2 with
+                | error e => simp
+                | ok pair2 =>
+                simp only []; cases hFinal : storeTcbQueueLinks pair2.2 tid none none none with
+                | error e => simp
+                | ok st4 =>
+                  simp only [Except.ok.injEq, Prod.mk.injEq]
+                  intro ⟨_, hEq⟩; subst hEq
+                  have hInvL1 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _ hInvP hLink1
+                  have hInvS2 := storeObject_preserves_objects_invExt' st2 endpointId _ pair2 hInvL1 hStore2
+                  rw [storeTcbQueueLinks_preserves_objects_ne _ _ tid _ _ _ endpointId hNeTidEp hInvS2 hFinal,
+                      storeObject_objects_eq' st2 endpointId _ pair2 hInvL1 hStore2]
+                  refine ⟨_, rfl, ?_⟩
+                  cases isReceiveQ <;> simp_all
 
 -- ============================================================================
 -- WS-L3/L3-A: Enqueue-dequeue round-trip theorems

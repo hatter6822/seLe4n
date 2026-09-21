@@ -175,6 +175,72 @@ def frozenRunAgrees {α β : Type}
 compare, and saying so takes an argument rather than a wildcard. -/
 def unitResultAgrees : Unit → Unit → Bool := fun _ _ => true
 
+/-! ## The readings the two surfaces share, stated rather than assumed
+
+A state comparison catches a frozen transition that *computes* something else.
+It cannot catch a frozen transition that reads the same field for a different
+reason, and then goes on reading it after the live side stops — which is how a
+mirror drifts without any scenario changing.  Where a reading is shared, the
+sharing is a theorem here.
+
+`frozenRunAgrees` above is the behavioural half; this is the definitional one,
+and unlike that half it needs no fixture to be decisive. -/
+
+/-- **The frozen waiter fold reads a waiter's priority exactly as the live one
+does** -- and it reads no live state at all doing it, which is why a surface with
+no scheduling-parameter resolution can reproduce the live answer.
+
+The live `computeMaxWaiterPriority` reads `effectiveSchedParams`, whose priority
+component is `TCB.boostedPriority` at every binding since `v0.35.133` gave a base
+priority one home (`effectiveSchedParams_fst_eq_boostedPriority`); the frozen
+fold reads that accessor directly.  Quantifying over **every** `ls` is the
+content: the live reading is a function of the waiter's record alone, so
+substituting it into the frozen fold changes nothing.
+
+PR #897's review reported the two as diverging, correctly against `v0.35.132`,
+where the live reading took a `.bound` waiter's priority from its reservation and
+this one did not.  `v0.35.133` closed that and left nothing in the tree saying
+so, so the next cut to touch either reading had no way to find out it was
+breaking the other.  Stated at the level of the **fold**, not of the accessor, so
+a change to either side fails to elaborate: naming only the accessor equality
+would be a fact about two functions neither of which this theorem is about.
+
+What it deliberately does not say is that the two folds *agree on a state*.  They
+enumerate their waiters differently -- `waitersOf` over `objectIndex.filterMap`,
+`frozenWaitersOf` over a `FrozenMap.fold` -- so the visit orders differ, and the
+result is order-insensitive only because it is a maximum.  That composite is the
+differential's to check; this is the reading. -/
+theorem frozenComputeMaxWaiterPriority_eq_live_reading
+    (fs : FrozenSystemState) (ls : SystemState) (tid : SeLe4n.ThreadId) :
+    frozenComputeMaxWaiterPriority fs tid
+      = (frozenWaitersOf fs tid).foldl (fun acc waiterTid =>
+          match fs.getTcb? waiterTid with
+          | some waiterTcb =>
+              let prio := (effectiveSchedParams ls waiterTcb).1
+              match acc with
+              | none => some prio
+              | some curMax => some ⟨Nat.max curMax.val prio.val⟩
+          | none => acc) none := by
+  simp only [frozenComputeMaxWaiterPriority, effectiveSchedParams_fst_eq_boostedPriority]
+  rfl
+
+/-- **And the frozen resume compares the same priority the live resume compares**
+(`v0.35.134`).  `resumeThread`'s preemption test is
+`(resolveEffectivePrioDeadline st tcb).1`, which is `TCB.boostedPriority`
+unconditionally; `frozenResumeThread` compared `TCB.priority` -- the **base** --
+until this cut, so the two surfaces disagreed in both directions whenever either
+thread carried an inherited boost.
+
+Stated over the accessor rather than over the transition because the two
+transitions differ in more than the comparison (the live one re-enqueues the
+outgoing thread and calls `schedule`; the frozen spelling of that is clearing
+`current`), so an equality of the programs is false while an equality of the
+*readings* is the whole of what was wrong. -/
+theorem frozenResumePreemptionReading_eq_live
+    (ls : SystemState) (tcb : TCB) :
+    tcb.boostedPriority = (resolveEffectivePrioDeadline ls tcb).1 :=
+  (resolveEffectivePrioDeadline_fst_eq_boostedPriority ls tcb).symm
+
 /-! ## The obligation: claiming coverage means running both
 
 `frozenOpCoverage` (`FrozenOps/Operations.lean`) already says, for every
@@ -559,9 +625,15 @@ def frozenOpUncheckedReason : SyscallId → String
   -- These two are not `Kernel`-shaped on the live side: `suspendThread` and
   -- `resumeThreadOnCore` take a `ValidThreadId` and answer an `Except` over the
   -- state directly, so running them beside the frozen pair needs an adapter
-  -- rather than a scenario.  Named rather than dropped.
-  | .tcbSuspend => "live entry is not Kernel-shaped; adapter owed"
-  | .tcbResume => "live entry is not Kernel-shaped; adapter owed"
+  -- rather than a scenario.  Named rather than dropped -- and `v0.35.134`
+  -- measured what the gap costs, so the reason says so rather than reading as a
+  -- formality: `frozenResumeThread` was found performing **none** of the live
+  -- resume's three scheduling steps (the shared field clear, the boost
+  -- recompute, the effective-priority preemption test), and it was found by
+  -- reading the two bodies side by side rather than by any check.  A stated
+  -- reason bounds nothing; it only says who owes the work.
+  | .tcbSuspend => "live entry is not Kernel-shaped; adapter owed (v0.35.134 found 3 divergences in its sibling)"
+  | .tcbResume => "live entry is not Kernel-shaped; adapter owed (v0.35.134 fixed 3 divergences found by reading, not by a check)"
   | _ => ""
 
 /-- **The interlock.**  Every syscall `frozenOpCoverage` claims a frozen

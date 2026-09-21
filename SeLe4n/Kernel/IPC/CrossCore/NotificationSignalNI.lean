@@ -294,23 +294,13 @@ theorem notificationWaitOnCore_block_path_NI_smp
 -- cross-core wake — but `endpointQueueRemoveDual` had none, and it is what
 -- dequeues the bound TCB from its endpoint.
 
-/-- **WS-RR RR7.22**: the label hypothesis an endpoint splice needs.
-
-`endpointQueueRemoveDual` writes exactly four objects: the endpoint (twice on
-the head path), the removed thread's own TCB, and the two queue neighbours
-whose links it patches.  This names all four, and names the neighbours *through
-the pre-state lookup* rather than as extra arguments — so a caller supplies one
-hypothesis instead of remembering which two threads the splice will touch,
-which is the shape that makes an under-stated hypothesis possible. -/
-def endpointSpliceHigh (ctx : LabelingContext) (observer : IfObserver)
-    (st : SystemState) (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) : Prop :=
-  objectObservable ctx observer endpointId = false
-    ∧ objectObservable ctx observer tid.toObjId = false
-    ∧ ∀ tcb : TCB, lookupTcb st tid = some tcb →
-        (∀ p : SeLe4n.ThreadId, tcb.queuePPrev = some (.tcbNext p) →
-            objectObservable ctx observer p.toObjId = false)
-          ∧ (∀ n : SeLe4n.ThreadId, tcb.queueNext = some n →
-              objectObservable ctx observer n.toObjId = false)
+-- WS-RR RR8.8: `endpointSpliceHigh` moved to
+-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`, beside
+-- `objects_insert_preserves_projection_high` -- the lemma its every clause is
+-- consumed by.  The cancellation reclaim's abort prefix asks the *same*
+-- question of the *same* removal's write set, and this module is not in that
+-- module's import closure, so the predicate had one owner that one of its two
+-- askers could not reach.  The predicate moves; its consumers below stay.
 
 /-- **WS-RR RR7.22**: an endpoint splice confined to high objects is invisible,
 and leaves the object store's external invariant intact.
@@ -353,7 +343,7 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
     fun s s' t qp qpp qn ht hi h =>
       ⟨storeTcbQueueLinks_preserves_projection ctx observer s s' t qp qpp qn ht hi h,
        storeTcbQueueLinks_preserves_objects_invExt s s' t qp qpp qn hi h⟩
-  unfold endpointQueueRemoveDual SystemState.getObject? at hStep
+  unfold endpointQueueRemoveDual dualQueueRemovalEnabled dualQueueRemovalGuard SystemState.getObject? at hStep
   revert hStep
   cases hObj : st.objects[endpointId]? with
   | none => simp
@@ -371,9 +361,10 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
         | some pprev =>
           simp only []
           generalize (if isReceiveQ then ep.receiveQ else ep.sendQ) = q
-          split
-          · simp
-          · cases pprev with
+          -- `v0.35.59`: `cases pprev` precedes the `split`.  `dualQueueRemovalEnabled`
+          -- carries the guard, whose own `match pprev` the unfold puts inside the
+          -- `if` condition, so `split` would take it before the `if`.
+          cases pprev with
             | endpointHead =>
               simp only []
               split
@@ -429,7 +420,7 @@ theorem endpointQueueRemoveDual_preserves_projection_and_invExt
                 | some prevTcb =>
                 dsimp only [hLookupP]; split
                 · simp
-                · rename_i _ _ _ stAp heqAp
+                · rename_i _ _ stAp heqAp
                   split at heqAp
                   · simp at heqAp
                   · cases hLink0 : storeTcbQueueLinks st prevTid prevTcb.queuePrev

@@ -14,30 +14,43 @@ import SeLe4n.Kernel.Lifecycle.Invariant.SuspendPreservation
 # Lifecycle Invariant Preservation Proofs
 
 This module contains invariant definitions and preservation theorems for the
-lifecycle (object retype) subsystem, including identity/aliasing, capability-reference,
-and stale-reference exclusion invariants.
+lifecycle (object retype) subsystem: the identity/aliasing invariant over the
+object-type metadata, the untyped-memory invariants, and their preservation
+through retype and scrub.
 
 ## Proof scope qualification (F-16)
 
 **Substantive preservation theorems** (high assurance — prove invariant preservation
 over *changed* state after a *successful* operation):
 - `lifecycleRetypeObject_preserves_lifecycleInvariantBundle`
-- `lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant`
-- `lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant`
+- `retypeFromUntyped_preserves_lifecycleInvariantBundle`
+- `retypeFromUntyped_preserves_untypedMemoryInvariant`
 
-**Structural / bridge theorems** (high assurance — prove decomposition and composition
-relationships between invariant layers):
-- `lifecycleCapabilityRefObjectTargetBacked_of_exact`
-- `lifecycleInvariantBundle_of_metadata_consistent`
-- `lifecycleMetadataConsistent_of_lifecycleInvariantBundle`
-- `lifecycleCapabilityRefObjectTargetTypeAligned_of_exact`
-- `lifecycleCapabilityRefNoTypeAliasConflict_of_exact` (AN4-B replaces `_of_identity`)
-- `lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle`
-- `lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle`
+## `v0.35.78`: the capability-reference family is retired
 
-All theorems in this module are substantive: they prove structural decomposition
-properties or invariant preservation over state modified by successful retype
-operations. There are no error-case preservation theorems in this module.
+Until `v0.35.78` this module carried a second layer — `lifecycleCapabilityRefExact`,
+`lifecycleCapabilityRefObjectTargetBacked`, `lifecycleCapabilityRefReplyCapBacked`,
+`lifecycleCapabilityRefObjectTargetTypeAligned`,
+`lifecycleCapabilityRefNoTypeAliasConflict`, and the bundles
+`lifecycleCapabilityReferenceInvariant`, `lifecycleStaleReferenceExclusionInvariant`
+and `lifecycleIdentityStaleReferenceInvariant` built over them — every one stated
+through `SystemState.lookupCapabilityRefMeta`, the "lifecycle metadata view" of a
+capability slot's target.  That reader was *defined* as
+`(lookupSlotCap st ref).map Capability.target`, a read of the object store, so
+each predicate in the layer was a tautology (exactness: `x = x`; backing: a slot
+that resolves resolves; type alignment and alias-freedom: instances of
+`objectTypeMetadataConsistent` and of the determinism of a lookup) and every
+theorem *about* the layer consumed no hypothesis.  The table the reader was named
+for (`LifecycleMetadata.capabilityRefs`) is retired with it — see
+`Model/State.lean` — and the one substantive fact the layer had restated,
+reply-cap backing, is owned where it always was: the capability layer's
+step-preserved `replyCapPointsToValidReply`.  The lifecycle bundle is therefore
+its identity/aliasing layer, and a conjunct added to it is one this module can
+preserve rather than one it can only restate.
+
+All theorems in this module are substantive: they prove invariant preservation
+over state modified by successful retype operations. There are no error-case
+preservation theorems in this module.
 -/
 
 namespace SeLe4n.Kernel
@@ -63,97 +76,14 @@ should project `hIdAlias` directly as the identity witness. -/
 abbrev lifecycleIdentityAliasingInvariant (st : SystemState) : Prop :=
   lifecycleIdentityTypeExact st
 
-/-- M4-A step-3 capability-reference invariant: lifecycle slot-reference metadata exactly tracks
-concrete capability-slot targets. -/
-def lifecycleCapabilityRefExact (st : SystemState) : Prop :=
-  SystemState.capabilityRefMetadataConsistent st
-
-/-- M4-A step-3 capability-reference invariant: every metadata object-target reference is backed by
-an actual slot capability carrying that same object target.
-
-**W6-K (H-3 downgraded to LOW): Enforcement chain for metadata backing.**
-This invariant is maintained by contract discipline, not automatic enforcement:
-1. `lifecyclePreRetypeCleanup` orchestrates three cleanup steps —
-   `cleanupTcbReferences`, `cleanupEndpointServiceRegistrations`, and
-   `detachCNodeSlots` — clearing all scheduler/service/CDT references for the
-   target object before any retype occurs.
-2. `lifecycleRetypeObject` only creates new metadata after cleanup completes.
-3. All retype paths go through `lifecycleRetypeDirectWithCleanup` which
-   calls cleanup before retyping — there is no path that bypasses cleanup.
-4. The `lifecycleRetypeObject_preserves_lifecycleInvariantBundle` theorem
-   proves retype preserves the full invariant bundle (including this predicate),
-   and the cleanup-before-retype ordering ensures no stale references remain.
-The alternative (automatic enforcement via a runtime check before every metadata
-write) was considered and rejected: it would add O(n) overhead per operation
-with no additional safety, since the proof chain already guarantees correctness. -/
-def lifecycleCapabilityRefObjectTargetBacked (st : SystemState) : Prop :=
-  ∀ ref oid,
-    SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
-    ∃ cap, SystemState.lookupSlotCap st ref = some cap ∧ cap.target = .object oid
-
-/-- WS-SM SM6.D / PR #822 review (#02/#13 — "cover replyCap targets in lifecycle invariants"):
-the reply-cap analogue of `lifecycleCapabilityRefObjectTargetBacked`.  With `CapTarget.replyCap`
-now naming a first-class `ReplyId`, a CSpace slot whose metadata is `.replyCap rid` must resolve
-to an actual `.reply` object (`getReply? rid ≠ none`), exactly as the live `.reply` path requires
-— otherwise the lifecycle stale-reference family would admit a dangling reply cap that the runtime
-rejects.
-
-The *binding* enforcement lives in `capabilityInvariantBundle.replyCapPointsToValidReply`
-(PR #822 #1.a, the step-preserved 7th conjunct); this lifecycle-layer predicate is **provably
-implied** by it — see `lifecycleCapabilityRefReplyCapBacked_of_replyCapPointsToValidReply`
-(`Capability/Invariant/Defs.lean`, the layer that sees both) — so the stale-reference family is no
-longer blind to reply caps even though the reply-backing fact itself is owned by the capability
-layer.  (It is therefore *not* added to the Lifecycle-layer bundles, whose construction derives
-from `lifecycleInvariantBundle` and cannot reach the capability layer.) -/
-def lifecycleCapabilityRefReplyCapBacked (st : SystemState) : Prop :=
-  ∀ ref rid,
-    SystemState.lookupCapabilityRefMeta st ref = some (.replyCap rid) →
-    st.getReply? rid ≠ none
-
-/-- Lifecycle capability-reference constraint bundle (separate from identity/aliasing constraints). -/
-def lifecycleCapabilityReferenceInvariant (st : SystemState) : Prop :=
-  lifecycleCapabilityRefExact st ∧ lifecycleCapabilityRefObjectTargetBacked st
-
-/-- M4-B stale-reference exclusion component: any object-target capability reference agrees with
-object-type metadata whenever that object identity is present.
-
-**AN4-I (LOW) — SMP-assumption cross-reference**: like the CSpace lookup
-semantics (`cspaceLookupMultiLevel` — see AN4-D / H-05 SMP-precondition
-predicate `resolvedCnodeStillValid`), this predicate assumes the
-capability-reference table does not concurrently mutate between the
-metadata lookup and the kernel-object lookup. On a single core the
-assumption is discharged unconditionally; under SMP it becomes a
-critical-section obligation tracked by the AN9-D interrupt-disable
-bracket and the AN12-B SMP inventory. -/
-def lifecycleCapabilityRefObjectTargetTypeAligned (st : SystemState) : Prop :=
-  ∀ ref oid obj,
-    SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
-    st.objects[oid]? = some obj →
-    SystemState.lookupObjectTypeMeta st oid = some obj.objectType
-
-/-- M4-B stale-reference exclusion component: capability-object references inherit the same
-identity non-aliasing guarantee used by lifecycle identity metadata. -/
-def lifecycleCapabilityRefNoTypeAliasConflict (st : SystemState) : Prop :=
-  ∀ ref oid ty₁ ty₂,
-    SystemState.lookupCapabilityRefMeta st ref = some (.object oid) →
-    SystemState.lookupObjectTypeMeta st oid = some ty₁ →
-    SystemState.lookupObjectTypeMeta st oid = some ty₂ →
-    ty₁ = ty₂
-
-/-- M4-B stale-reference exclusion family built from narrow, composable components. -/
-def lifecycleStaleReferenceExclusionInvariant (st : SystemState) : Prop :=
-  lifecycleCapabilityRefObjectTargetBacked st ∧
-    lifecycleCapabilityRefObjectTargetTypeAligned st ∧
-    lifecycleCapabilityRefNoTypeAliasConflict st
-
-/-- M4-B link point: stale-reference exclusion explicitly depends on identity/aliasing constraints
-rather than replacing them with a monolithic definition. -/
-def lifecycleIdentityStaleReferenceInvariant (st : SystemState) : Prop :=
-  lifecycleIdentityAliasingInvariant st ∧ lifecycleStaleReferenceExclusionInvariant st
-
-/-- Full lifecycle invariant bundle for M4-A step-3 with explicit layering separation. -/
+/-- Full lifecycle invariant bundle for M4-A step-3.  Since `v0.35.78` it is the
+identity/aliasing layer alone — the capability-reference layer it was conjoined
+with was a family of tautologies (see the module docstring) — and it keeps its
+name as the lifecycle subsystem's bundle: `proofLayerInvariantBundle` and
+`serviceLifecycleCapabilityInvariantBundle` name it, and a conjunct the
+subsystem earns joins it here. -/
 def lifecycleInvariantBundle (st : SystemState) : Prop :=
-  lifecycleIdentityAliasingInvariant st ∧ lifecycleCapabilityReferenceInvariant st
+  lifecycleIdentityAliasingInvariant st
 
 -- AN4-B (H-03): `lifecycleIdentityNoTypeAliasConflict_of_exact` was the
 -- implication witness bridging `lifecycleIdentityTypeExact` to the deleted
@@ -161,88 +91,6 @@ def lifecycleInvariantBundle (st : SystemState) : Prop :=
 -- predicate has been removed, the implication's target has disappeared and the
 -- theorem is no longer needed. Proof-chain consumers now reason directly from
 -- `lifecycleIdentityTypeExact`.
-
-theorem lifecycleCapabilityRefObjectTargetBacked_of_exact
-    (st : SystemState)
-    (hExact : lifecycleCapabilityRefExact st) :
-    lifecycleCapabilityRefObjectTargetBacked st := by
-  intro ref oid hMeta
-  rw [hExact ref] at hMeta
-  cases hLookup : SystemState.lookupSlotCap st ref with
-  | none => simp [hLookup] at hMeta
-  | some cap =>
-      have hTarget : cap.target = .object oid := by
-        simpa [hLookup] using hMeta
-      exact ⟨cap, rfl, hTarget⟩
-
-theorem lifecycleInvariantBundle_of_metadata_consistent
-    (st : SystemState)
-    (hMeta : SystemState.lifecycleMetadataConsistent st) :
-    lifecycleInvariantBundle st := by
-  rcases hMeta with ⟨hObjType, hCapRef⟩
-  refine ⟨?_, ?_⟩
-  · -- AN4-B: the identity/aliasing bundle collapses to the exactness witness.
-    exact hObjType
-  · exact ⟨hCapRef, lifecycleCapabilityRefObjectTargetBacked_of_exact st hCapRef⟩
-
-theorem lifecycleMetadataConsistent_of_lifecycleInvariantBundle
-    (st : SystemState)
-    (hInv : lifecycleInvariantBundle st) :
-    SystemState.lifecycleMetadataConsistent st := by
-  rcases hInv with ⟨hObjType, hCapRef⟩
-  rcases hCapRef with ⟨hCapRefExact, _hBacked⟩
-  exact ⟨hObjType, hCapRefExact⟩
-
-theorem lifecycleCapabilityRefObjectTargetTypeAligned_of_exact
-    (st : SystemState)
-    (hObjType : lifecycleIdentityTypeExact st) :
-    lifecycleCapabilityRefObjectTargetTypeAligned st := by
-  intro ref oid obj _hMeta hObj
-  simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
-    SystemState.lookupObjectTypeMeta, hObj] using hObjType oid
-
-/-- AN4-B (H-03): derive `lifecycleCapabilityRefNoTypeAliasConflict` directly
-from `lifecycleIdentityTypeExact`. This replaces
-`lifecycleCapabilityRefNoTypeAliasConflict_of_identity` (whose hypothesis
-`lifecycleIdentityNoTypeAliasConflict` was removed as a redundant bundle
-conjunct). The proof inlines the former two-step chain via the shared
-"deterministic lookup of the same id agrees" argument. -/
-theorem lifecycleCapabilityRefNoTypeAliasConflict_of_exact
-    (st : SystemState)
-    (hExact : lifecycleIdentityTypeExact st) :
-    lifecycleCapabilityRefNoTypeAliasConflict st := by
-  intro _ref oid ty₁ ty₂ _hMeta hTy₁ hTy₂
-  cases hObj : st.objects[oid]? with
-  | none =>
-      have hNone : SystemState.lookupObjectTypeMeta st oid = none := by
-        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
-          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
-      rw [hNone] at hTy₁
-      contradiction
-  | some obj =>
-      have hMeta : SystemState.lookupObjectTypeMeta st oid = some obj.objectType := by
-        simpa [lifecycleIdentityTypeExact, SystemState.objectTypeMetadataConsistent,
-          SystemState.lookupObjectTypeMeta, hObj] using hExact oid
-      rw [hMeta] at hTy₁ hTy₂
-      cases hTy₁
-      cases hTy₂
-      rfl
-
-theorem lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle
-    (st : SystemState)
-    (hInv : lifecycleInvariantBundle st) :
-    lifecycleStaleReferenceExclusionInvariant st := by
-  rcases hInv with ⟨hObjType, hCapRef⟩
-  rcases hCapRef with ⟨_hCapRefExact, hBacked⟩
-  refine ⟨hBacked, ?_, ?_⟩
-  · exact lifecycleCapabilityRefObjectTargetTypeAligned_of_exact st hObjType
-  · exact lifecycleCapabilityRefNoTypeAliasConflict_of_exact st hObjType
-
-theorem lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle
-    (st : SystemState)
-    (hInv : lifecycleInvariantBundle st) :
-    lifecycleIdentityStaleReferenceInvariant st := by
-  refine ⟨hInv.1, lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st hInv⟩
 
 theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
     (st st' : SystemState)
@@ -256,39 +104,8 @@ theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle
     lifecycleInvariantBundle st' := by
   rcases lifecycleRetypeObject_ok_as_storeObject st st' authority target newObj hStep with
     ⟨_, _, _, _, _, _, hStore⟩
-  have hMeta : SystemState.lifecycleMetadataConsistent st :=
-    lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
-  have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
-    storeObject_preserves_lifecycleMetadataConsistent st st' target newObj hMeta hObjInv hObjTypesInv hStore
-  exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
-
-theorem lifecycleRetypeObject_preserves_lifecycleStaleReferenceExclusionInvariant
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : lifecycleInvariantBundle st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    lifecycleStaleReferenceExclusionInvariant st' := by
-  have hBundle' : lifecycleInvariantBundle st' :=
-    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hObjInv hObjTypesInv hStep
-  exact lifecycleStaleReferenceExclusionInvariant_of_lifecycleInvariantBundle st' hBundle'
-
-theorem lifecycleRetypeObject_preserves_lifecycleIdentityStaleReferenceInvariant
-    (st st' : SystemState)
-    (authority : CSpaceAddr)
-    (target : SeLe4n.ObjId)
-    (newObj : KernelObject)
-    (hInv : lifecycleInvariantBundle st)
-    (hObjInv : st.objects.invExt)
-    (hObjTypesInv : st.lifecycle.objectTypes.invExt)
-    (hStep : lifecycleRetypeObject authority target newObj st = .ok ((), st')) :
-    lifecycleIdentityStaleReferenceInvariant st' := by
-  have hBundle' : lifecycleInvariantBundle st' :=
-    lifecycleRetypeObject_preserves_lifecycleInvariantBundle st st' authority target newObj hInv hObjInv hObjTypesInv hStep
-  exact lifecycleIdentityStaleReferenceInvariant_of_lifecycleInvariantBundle st' hBundle'
+  exact storeObject_preserves_objectTypeMetadataConsistent st st' target newObj hInv hObjInv
+    hObjTypesInv hStore
 
 -- ============================================================================
 -- WS-F2: Untyped Memory Model Invariants
@@ -356,17 +173,17 @@ theorem storeObject_preserves_untypedWatermarkInvariant_ne
 
 /-- WS-F2: `retypeFromUntyped` preserves lifecycle metadata consistency.
 Both `storeObject` calls maintain metadata. -/
-theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
+theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent
     (st st' : SystemState)
     (authority : CSpaceAddr)
     (untypedId childId : SeLe4n.ObjId)
     (newObj : KernelObject)
     (allocSize : Nat)
-    (hMeta : SystemState.lifecycleMetadataConsistent st)
+    (hMeta : SystemState.objectTypeMetadataConsistent st)
     (hObjInv : st.objects.invExt)
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    SystemState.lifecycleMetadataConsistent st' := by
+    SystemState.objectTypeMetadataConsistent st' := by
   rcases retypeFromUntyped_ok_decompose st st' authority untypedId childId newObj allocSize hStep with
     ⟨_ut, ut', _cap, stLookup, stUt, _offset, _hObj, _hNotDev, _hAllocSz,
      hLookup, _hAuth, _hAlloc, hStoreUt, hStoreChild⟩
@@ -378,9 +195,9 @@ theorem retypeFromUntyped_preserves_lifecycleMetadataConsistent
     have hStoreUt' := hStoreUt
     unfold storeObject at hStoreUt'; cases hStoreUt'
     exact RHTable_insert_preserves_invExt st.lifecycle.objectTypes _ _ hObjTypesInv
-  have hMetaUt : SystemState.lifecycleMetadataConsistent stUt :=
-    storeObject_preserves_lifecycleMetadataConsistent st stUt untypedId (.untyped ut') hMeta hObjInv hObjTypesInv hStoreUt
-  exact storeObject_preserves_lifecycleMetadataConsistent stUt st' childId newObj hMetaUt hObjInvUt hObjTypesInvUt hStoreChild
+  have hMetaUt : SystemState.objectTypeMetadataConsistent stUt :=
+    storeObject_preserves_objectTypeMetadataConsistent st stUt untypedId (.untyped ut') hMeta hObjInv hObjTypesInv hStoreUt
+  exact storeObject_preserves_objectTypeMetadataConsistent stUt st' childId newObj hMetaUt hObjInvUt hObjTypesInvUt hStoreChild
 
 /-- WS-F2: `retypeFromUntyped` preserves the full lifecycle invariant bundle. -/
 theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
@@ -393,13 +210,9 @@ theorem retypeFromUntyped_preserves_lifecycleInvariantBundle
     (hObjInv : st.objects.invExt)
     (hObjTypesInv : st.lifecycle.objectTypes.invExt)
     (hStep : retypeFromUntyped authority untypedId childId newObj allocSize st = .ok ((), st')) :
-    lifecycleInvariantBundle st' := by
-  have hMeta : SystemState.lifecycleMetadataConsistent st :=
-    lifecycleMetadataConsistent_of_lifecycleInvariantBundle st hInv
-  have hMeta' : SystemState.lifecycleMetadataConsistent st' :=
-    retypeFromUntyped_preserves_lifecycleMetadataConsistent
-      st st' authority untypedId childId newObj allocSize hMeta hObjInv hObjTypesInv hStep
-  exact lifecycleInvariantBundle_of_metadata_consistent st' hMeta'
+    lifecycleInvariantBundle st' :=
+  retypeFromUntyped_preserves_objectTypeMetadataConsistent
+    st st' authority untypedId childId newObj allocSize hInv hObjInv hObjTypesInv hStep
 
 /-- WS-F2: `retypeFromUntyped` preserves the untyped memory invariant.
 The source untyped's allocate operation preserves watermark validity,
@@ -586,10 +399,9 @@ theorem retypeFromUntyped_preserves_untypedMemoryInvariant_auto
 /-- S6-D: `scrubObjectMemory` preserves the lifecycle invariant bundle.
 
     Memory scrubbing only modifies `machine.memory` — it does not touch the
-    object store, lifecycle metadata, capabilities, or slots. All lifecycle
-    invariants (`lifecycleIdentityTypeExact`, `lifecycleCapabilityRefExact`,
-    etc.) operate on `objects` and `lifecycle` fields, so they are trivially
-    preserved. -/
+    object store, lifecycle metadata, capabilities, or slots. The lifecycle
+    invariant (`lifecycleIdentityTypeExact`) operates on the `objects` and
+    `lifecycle` fields, so it is trivially preserved. -/
 theorem scrubObjectMemory_preserves_lifecycleInvariantBundle
     (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
     (hInv : lifecycleInvariantBundle st) :
@@ -604,19 +416,5 @@ theorem scrubObjectMemory_preserves_lifecycleInvariantBundle
   -- unchanged by scrubObjectMemory. The scrubbed state's objects/lifecycle/cdt
   -- are definitionally equal to the original, so the invariant transfers directly.
   exact hInv
-
-/-- S6-D: `scrubObjectMemory` preserves the stale-reference exclusion invariant. -/
-theorem scrubObjectMemory_preserves_lifecycleStaleReferenceExclusionInvariant
-    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (hInv : lifecycleStaleReferenceExclusionInvariant st) :
-    lifecycleStaleReferenceExclusionInvariant (scrubObjectMemory st objectId objType) :=
-  hInv
-
-/-- S6-D: `scrubObjectMemory` preserves the full identity + stale-reference bundle. -/
-theorem scrubObjectMemory_preserves_lifecycleIdentityStaleReferenceInvariant
-    (st : SystemState) (objectId : SeLe4n.ObjId) (objType : KernelObjectType)
-    (hInv : lifecycleIdentityStaleReferenceInvariant st) :
-    lifecycleIdentityStaleReferenceInvariant (scrubObjectMemory st objectId objType) :=
-  hInv
 
 end SeLe4n.Kernel

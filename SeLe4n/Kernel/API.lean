@@ -103,7 +103,7 @@ Previously it was just an import barrel (finding L-01); it now defines:
 | `endpointSendDual`, `endpointReceiveDual` | IPC (dual-queue) | Stable |
 | `endpointReply`, `endpointCall`, `endpointReplyRecv` | IPC | Stable |
 | `lifecycleRetypeObject`, `lifecycleRevokeDeleteRetype` | Lifecycle | Internal (proof helpers — use `lifecycleRetypeWithCleanup` for production) |
-| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown`, `lifecycleRetypeWithCleanupShootdownPerCore` | Lifecycle (WS-H2 / WS-SM SM7.B.11 / SM7.F.4(b)(iii)) | Stable (production entry point with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets — SMP callers use it; the **`…PerCore`** form is the initiator-atomic variant that additionally retires the destroyed ASID on the initiator's own `perCoreTlb` view via the shared `retypeInitiatorDrain`, symmetric with the Direct-cap `lifecycleRetypeDirectWithCleanupShootdownPerCore` the live `.lifecycleRetype` dispatch routes through) |
+| `lifecycleRetypeWithCleanup`, `lifecycleRetypeWithCleanupShootdown`, `lifecycleRetypeWithCleanupShootdownPerCore` | Lifecycle (WS-H2 / WS-SM SM7.B.11 / SM7.F.4(b)(iii)) | Stable (the **CSpaceAddr-authority** retype family, with cleanup + scrubbing; the `Shootdown` form adds the SM7.B.11 TLB round for live `.vspaceRoot` targets.  **Not on an executed path** — WS-RR RR8.12's reachability census measures that no committing `@[export]` reaches this family, because the ABI resolves a capability at the seam and so presents the Direct-cap form; this row said "SMP callers use it" while the same row named the Direct-cap form as what the live dispatch routes through, which is the self-contradiction the census turned into a measurement; the **`…PerCore`** form is the initiator-atomic variant that additionally retires the destroyed ASID on the initiator's own `perCoreTlb` view via the shared `retypeInitiatorDrain`, symmetric with the Direct-cap `lifecycleRetypeDirectWithCleanupShootdownPerCore` the live `.lifecycleRetype` dispatch routes through) |
 | `retypeFromUntyped` | Lifecycle (WS-F2) | Stable |
 | `registerService`, `revokeService`, `lookupServiceByCap` | Service (WS-Q1) | Stable |
 | `adapterAdvanceTimer`, `adapterWriteRegister`, `adapterReadMemory` | Architecture | Stable |
@@ -800,39 +800,102 @@ nothing runs between the two.  At depth 1 the stack is empty and the resolver
 answers `none`, so that call is the pre-OD4 body verbatim
 (`returnDonatedSchedContextResolved_eq_legacy_of_no_stack`).
 
-WS-RR RR2.20: the return moves the context's binding from the recorded server to
-`owner`, so its pending CBS replenishments must follow (SM5.H.4).  Both endpoints
-are read from this hop's **pre**-state, which is sound because
+WS-RR RR2.20: the return moves the context's binding from its holder to the
+answered caller, so its pending CBS replenishments must follow (SM5.H.4).  Both
+endpoints are read from this hop's **pre**-state, which is sound because
 `returnDonatedSchedContextValid` never writes a `cpuAffinity`
-(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`). -/
-def replyRecvPopDonation (recordedServer : SeLe4n.ThreadId) :
-    Kernel (Option SeLe4n.SchedContextId) :=
+(`returnDonatedSchedContext_getTcb?_cpuAffinity_eq`).
+
+**WS-HP HP4.5: this pop is head-driven too, and it has to be.**  The `.reply`
+arm's pop reads the answered frame (`replyFrameHeadHolder?`); leaving this one
+reading the recorded server's `.donated` binding would be one question answered
+two ways on the two arms that ask it, and the two answers diverge on exactly the
+state HP6 creates.  Here the frame needs no resolving: `rid` **is** the reply
+capability the arm was invoked with, and `target` is the caller it answers, so
+this arm is cleaner than `.reply`'s — which has to recover the frame from
+`answeredReplyObject?` because its dispatch does not carry the capability.
+
+Two arms rather than four, and what they mean changed: a frame heading no
+scheduling context is the identity (where the binding reading said "this server
+holds no donation"), and a holder or caller that will not promote to a
+`ValidThreadId` is `.invalidArgument`.  The pre-HP4.5 `.objectNotFound` arm — an
+unresolvable recorded server — is gone with the lookup it guarded; it was
+unreachable, since the recorded server defaults to the invoking receiver, whose
+TCB exists by the time the reply leg has succeeded.
+
+**The result carries the HOLDER, and that is the whole of PR #897's second
+finding.**  What this pop makes `.unbound` is the answered frame's head context's
+own `boundThread`; what the post-receive half descheduled was
+`recordedReplyServer?`, the server the answered caller recorded when it *Called*.
+HP4.5 above repointed the **trigger** onto the frame and left the **deschedule**
+on the binding-era proxy, and HP6.8's splice is what makes the two disagree: a
+spliced middle caller leaves an orphan head, so the context's bound thread is no
+longer the thread the caller recorded.  Measured on the live body — the holder
+ended `.unbound` and still queued (`hasSufficientBudget` is unconditionally `true`
+for an unbound thread, so it runs at its legacy TCB band charged to no
+reservation), while an unrelated thread that still held its own reservation was
+taken off its run queue and left `.ready`, which OD1.7 enumerates as
+unrecoverable.  So the pair travels with the arm selector rather than beside it:
+one `Option`, so a consumer cannot hold the context and the holder apart and pass
+a different thread to the deschedule than the one this pop unbound.
+
+The `.reply` arm's two pops (`applyReplyDonation`, `applyReplyDonationOnCore`)
+have always descheduled `holder`; this is the fourth site of the same question,
+and it was the only one answering it with a proxy. -/
+def replyRecvPopDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) :
+    Kernel (Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) :=
   fun st =>
-    match lookupTcb st recordedServer with
-    | none => .error .objectNotFound
-    | some srvTcb =>
-        match srvTcb.schedContextBinding with
-        | .donated oldScId owner =>
-            match recordedServer.toValid?, owner.toValid? with
-            | some srvV, some ownerV =>
-                match returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val with
-                | .error e => .error e
-                | .ok st1' =>
-                    .ok (some oldScId, migrateSchedContextReplenishment st1' oldScId
-                      (determineTargetCore st recordedServer) (determineTargetCore st owner))
-            | _, _ => .error .invalidArgument
-        | _ => .ok (none, st)
+    match replyFrameHeadHolder? st rid with
+    | some (oldScId, holder) =>
+        -- The two `toValid?` matches are the sentinel refusals and nothing
+        -- else: after them the pop and the migration read `holder` and
+        -- `target` themselves (`v0.35.61` -- the return took `holderV.val` and
+        -- the migration `holder`, one thread under two spellings, and every
+        -- proof over this step carried a `toValid?_some_val_eq` rewrite to
+        -- reconcile them).
+        match holder.toValid?, target.toValid? with
+        | some _, some _ =>
+            -- **WS-HP HP10.7**: the recipient at the bottom of the stack is the
+            -- reservation's recorded origin, and the migration's DESTINATION is
+            -- that thread's home core rather than the answered caller's.  Both
+            -- read `replyDonationRecipient`, which is the identity wherever no
+            -- origin is recorded -- so this is the pre-HP10.7 body verbatim on
+            -- every state before HP10.4 recorded one.  `oldScId` is in scope
+            -- here, so these are the same expressions the live `.reply` spine
+            -- resolves through `replyDonationRecipientHome`
+            -- (`replyDonationRecipientHome_of_head` is the tie).  One binding,
+            -- because "which thread receives the context" is one question and
+            -- the return and the migration must not be free to answer it twice.
+            let recipient := replyDonationRecipient st oldScId target
+            match returnDonatedSchedContextResolved st holder oldScId recipient with
+            | .error e => .error e
+            | .ok st1' =>
+                .ok (some (oldScId, holder), migrateSchedContextReplenishment st1' oldScId
+                  (determineTargetCore st holder)
+                  (determineTargetCore st recipient))
+        | _, _ => .error .invalidArgument
+    | none => .ok (none, st)
 
-/-- The recorded server's deschedule on the Call arm of `replyRecvPostReceiveDonation`.
+/-- The deschedule of the thread the pop unbound, on the Call arm of
+`replyRecvPostReceiveDonation`.
 
-The pop has already returned the recorded server's donated context, so it is
-passive unless the receive leg hands it a new one — and the new one goes to the
-**receiver** `tid`, which is the recorded server exactly when the reply
-capability was **not** delegated.  So this is the identity on a non-delegated
-reply (the server keeps running on the new request's budget) and the deschedule
-on a delegated one, where the server would otherwise stay queued while
-`.unbound` and run at its legacy TCB priority charged to no reservation
-(PR #895 review round 8).
+The pop has already returned that thread's donated context, so it is passive
+unless the receive leg hands it a new one — and the new one goes to the
+**receiver** `tid`.  So this is the identity when the holder *is* the receiver
+(it keeps running on the new request's budget) and a real deschedule otherwise,
+where the holder would stay queued while `.unbound` and run at its legacy TCB
+priority charged to no reservation (PR #895 review round 8).
+
+**The argument is the HOLDER, not `recordedReplyServer?`** (PR #897 review).  Both
+were `recordedServer` until then, which is the thread the answered caller recorded
+when it *Called* — a proxy for the thread the pop unbounds, and one HP6.8's splice
+falsifies: an orphan head leaves the context bound to a thread the caller never
+recorded.  Measured on the live body, that descheduled a bystander still holding
+its own reservation (stranding it `.ready` off every queue) while leaving the
+actual holder runnable and unbudgeted.  The holder now arrives inside the arm
+selector `replyRecvPopDonation` returns, so no caller can supply a different
+thread.  The two coincide on every non-delegated reply, which is why this is the
+identity there (`replyRecvHolderDeschedule_eq_of_holder_eq_recordedServer`).
 
 Named rather than inlined so the relation has one spelling and its own frames:
 the two facts its consumers need are stated directly below each of them.
@@ -853,63 +916,129 @@ and `placedCoreOf?` is that witness.  Taking it as a parameter is what let a
 core computed for the priority-inheritance walk decide a run-queue removal, so
 the parameter is gone — a caller cannot pass the wrong core to a function that
 does not accept one. -/
-def replyRecvServerDeschedule (tid recordedServer : SeLe4n.ThreadId)
+def replyRecvHolderDeschedule (tid holder : SeLe4n.ThreadId)
     (st : SystemState) : SystemState :=
-  if recordedServer = tid then st
-  else descheduleAtPlacement st recordedServer
+  if holder = tid then st
+  else descheduleAtPlacement st holder
+
+/-- The step is the identity when the holder *is* the receiver: the receive leg's
+new donation goes to `tid`, so a holder that is the receiver regains a
+reservation immediately and must stay runnable. -/
+@[simp] theorem replyRecvHolderDeschedule_eq_self_of_receiver (tid holder : SeLe4n.ThreadId)
+    (st : SystemState) (h : holder = tid) :
+    replyRecvHolderDeschedule tid holder st = st := by
+  unfold replyRecvHolderDeschedule; rw [if_pos h]
+
+/-- ...and otherwise it is the placement-resolved deschedule, at the holder. -/
+theorem replyRecvHolderDeschedule_eq_deschedule_of_ne (tid holder : SeLe4n.ThreadId)
+    (st : SystemState) (h : holder ≠ tid) :
+    replyRecvHolderDeschedule tid holder st = descheduleAtPlacement st holder := by
+  unfold replyRecvHolderDeschedule; rw [if_neg h]
+
+/-- **PR #897 review: the thread the post-receive half deschedules is the one the
+pop unbound.**
+
+The pop's result carries `replyFrameHeadHolder?`'s own second component -- the
+`boundThread` of the context the answered frame heads -- so the deschedule and the
+rebinding are two halves of one resolution rather than two readings that happen to
+agree.  That is the relation `recordedReplyServer?` was a proxy for, and the one
+HP6.8's splice falsifies: on an orphan head the context's bound thread is not the
+server the answered caller recorded, and descheduling the latter strands a
+bystander that still holds its own reservation while leaving the former runnable
+and unbudgeted. -/
+theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (st st' : SystemState)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : replyRecvPopDonation rid target st = .ok (some (scId, holder), st')) :
+    replyFrameHeadHolder? st rid = some (scId, holder) := by
+  unfold replyRecvPopDonation at h
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none => rw [hHead] at h; simp at h
+  | some pair =>
+    obtain ⟨scId0, holder0⟩ := pair
+    rw [hHead] at h
+    simp only [] at h
+    cases hHV : holder0.toValid? with
+    | none => rw [hHV] at h; simp only [] at h; cases h
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at h; simp only [] at h; cases h
+      | some targetV =>
+        rw [hHV, hTV] at h
+        simp only [] at h
+        cases hRet : returnDonatedSchedContextResolved st holder0 scId0
+            (replyDonationRecipient st scId0 target) with
+        | error e => rw [hRet] at h; simp only [] at h; cases h
+        | ok st1' =>
+          rw [hRet] at h
+          have hPair : some (scId0, holder0) = some (scId, holder) :=
+            (by simpa using h : some (scId0, holder0) = some (scId, holder) ∧ _).1
+          -- `cases hHead : …` has already rewritten the goal's left-hand side,
+          -- so what remains is the pair equality the pop's result carries.
+          exact hPair
 
 /-- **WS-RM (`v0.35.6`): the post-receive half** — everything the donation
 resolution cannot decide until the receive leg has run.
 
-`returned?` is the context `replyRecvPopDonation` handed back, and it is passed
-rather than re-derived because the pop has already cleared the binding that used
-to select this arm: reading it here would put every reply on the
+`returned?` is the **(context, holder)** pair `replyRecvPopDonation` handed back,
+and it is passed rather than re-derived because the pop has already cleared the
+binding that used to select this arm: reading it here would put every reply on the
 never-donated path.
 
 * If the receive rendezvoused with a **Call** — `nextThread` is now
   `.blockedOnReply`, a freshly dequeued request whose donation the queued `Call`
   deferred — the new client's context is donated to the **receiver** `tid`
   (`applyRendezvousCallDonation`, the step `.receive` performs too, WS-OD OD3.6),
-  so the passive server keeps running on the new request's budget; that donation
-  migrates its own replenishments.  **On a DELEGATED reply `tid` is not the
-  recorded server**, which therefore receives nothing here — so it is descheduled
-  on this arm too, exactly as on the one below.
+  so a receiver that is itself the holder keeps running on the new request's
+  budget; that donation migrates its own replenishments.  **When the holder is not
+  `tid`** it receives nothing here — so it is descheduled on this arm too, exactly
+  as on the one below.
 * Otherwise (a plain `Send` rendezvous, or the server blocked with no waiter) the
-  now-passive `recordedServer` is descheduled on its own core.
+  now-passive **holder** is descheduled at its placement.
 
-A recorded server that held **no** donated context needs no donation change — its
-run-queue state is left to the receive leg.  Every arm reverts the reply leg's
+A reply that popped **no** context needs no donation change — the run-queue state
+is left to the receive leg.  Every arm reverts the reply leg's
 priority-inheritance boost through the cross-core chain walk from
-`recordedServer`. -/
+`recordedServer`.
+
+**Two threads, two questions** (PR #897 review).  `recordedServer` is
+`recordedReplyServer?` of the answered caller — the thread it recorded when it
+*Called* — and it is the right start for the **chain walk**, which keys on
+waiters rather than on donations (WS-HP HP7 kept that resolver for exactly this).
+It is the **wrong** thread to deschedule: what the pop unbounds is the answered
+frame's head context's `boundThread`, and HP6.8's splice makes the two differ on
+reachable states.  Both deschedule arms therefore name the holder the pop
+returned and both walks keep `recordedServer`; the two coincide on every
+non-delegated reply, so this is the pre-fix body verbatim there. -/
 def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
     (nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
-    (returned? : Option SeLe4n.SchedContextId) : Kernel Unit :=
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) : Kernel Unit :=
   fun st =>
     match returned? with
     | none =>
         .ok ((), (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1)
-    | some _ =>
+    | some (_, holder) =>
         if rendezvousDequeuedCall st nextThread then
             -- New Call: donate to the RECEIVER `tid`, not the (possibly delegated)
             -- recorded server.  WS-RR RR2.20: via the cross-core form, so the new
             -- client's replenishments migrate to the receiver's home core as well.
             --
-            -- **...and `tid` IS the recorded server only on a NON-delegated
-            -- reply** (PR #895 review round 8).  When the reply capability was
-            -- delegated the two differ, the recorded server receives nothing
-            -- here, and the pop has already made it `.unbound` — so leaving it
-            -- queued would run it at its legacy TCB priority charged to no
-            -- reservation, which is WS-OD OD3.6's defect on the delegated path.
-            -- `passiveServerIdle` cannot see it: that conjunct is conditioned on
-            -- the thread already being descheduled, so an unbound thread that is
-            -- still queued satisfies it vacuously.
+            -- **...and `tid` IS the HOLDER only when the pop unbound the receiver
+            -- itself** (PR #895 review round 8, re-keyed at PR #897's).  Where the
+            -- two differ the holder receives nothing here, and the pop has already
+            -- made it `.unbound` — so leaving it queued would run it at its legacy
+            -- TCB priority charged to no reservation, which is WS-OD OD3.6's
+            -- defect on the delegated path.  `passiveServerIdle` cannot see it:
+            -- that conjunct is conditioned on the thread already being
+            -- descheduled, so an unbound thread that is still queued satisfies it
+            -- vacuously.
             --
             -- The deschedule runs on the PRE-donation state, because it is a
             -- consequence of the pop rather than of the new donation, and
             -- `removeRunnableOnCore` writes no object — so every object-level
             -- fact the donation needs transports across it unchanged.
             match applyRendezvousCallDonation
-                (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
+                (replyRecvHolderDeschedule tid holder st) tid nextThread with
             | .error e => .error e
             | .ok st2 =>
                 .ok ((), (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer serverCore).1)
@@ -923,40 +1052,54 @@ def replyRecvPostReceiveDonation (tid recordedServer : SeLe4n.ThreadId)
             -- from the sibling arm above and left this one, because the fix
             -- protected a named wrapper while `removeRunnableOnCore` still
             -- accepted a core from anyone.  Both arms call one step now.
+            --
+            -- **...and on the HOLDER** (PR #897 review): the thread this arm
+            -- makes passive is the one the pop unbound, and `recordedServer` is
+            -- a *different* thread on an orphan head.  Descheduling it stranded a
+            -- bystander that still held its own reservation while the real holder
+            -- stayed runnable and unbudgeted.  The walk below still starts at
+            -- `recordedServer`, because that one keys on waiters.
             .ok ((), (PriorityInheritance.propagatePipChainCrossCore
-              (descheduleAtPlacement st recordedServer) recordedServer serverCore).1)
+              (descheduleAtPlacement st holder) recordedServer serverCore).1)
 
 /-- **WS-RM (`v0.35.6`)**: the pop preserves object-store integrity — the return
 is a store chain over existing keys and the replenishment migration writes no
 object at all. -/
-theorem replyRecvPopDonation_preserves_objects_invExt (recordedServer : SeLe4n.ThreadId)
-    (st st' : SystemState) (returned? : Option SeLe4n.SchedContextId)
+theorem replyRecvPopDonation_preserves_objects_invExt (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
+    (st st' : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (hObjInv : st.objects.invExt)
-    (hStep : replyRecvPopDonation recordedServer st = .ok (returned?, st')) :
+    (hStep : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     st'.objects.invExt := by
   unfold replyRecvPopDonation at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · split at hStep
-    · next oldScId owner _ =>
-      split at hStep
-      · next srvV ownerV _ _ =>
-        split at hStep
-        · exact absurd hStep (by simp)
-        · next st1' hRet =>
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at hStep
+      exact (by simpa using hStep : none = returned? ∧ st = st').2 ▸ hObjInv
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at hStep
+    simp only [] at hStep
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at hStep; simp only [] at hStep; cases hStep
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at hStep; simp only [] at hStep; cases hStep
+      | some targetV =>
+        rw [hHV, hTV] at hStep
+        simp only [] at hStep
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+              (replyDonationRecipient st oldScId target) with
+        | error e => rw [hRet] at hStep; simp only [] at hStep; cases hStep
+        | ok st1' =>
+          rw [hRet] at hStep
           obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
           have hEq : migrateSchedContextReplenishment st1' oldScId
-              (determineTargetCore st recordedServer) (determineTargetCore st owner) = st' :=
-            (by simpa using hStep : some oldScId = returned? ∧ _).2
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
+            (by simpa using hStep : some (oldScId, holder) = returned? ∧ _).2
           rw [← hEq, migrateSchedContextReplenishment_objects]
           exact returnDonatedSchedContext_preserves_objects_invExt st st1' _ _ _ hObjInv n hPopN
-      · next hNo =>
-        exfalso
-        revert hStep
-        rcases hSV : recordedServer.toValid? with _ | srvV <;>
-          rcases hOV : owner.toValid? with _ | ownerV <;> simp_all
-    · have hEq : st = st' := (by simpa using hStep : none = returned? ∧ _).2
-      rw [← hEq]; exact hObjInv
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the pop restores replenish-queue affinity
 consistency on every core.**
@@ -968,56 +1111,47 @@ falsifies it from the instant it commits unless the replenishment migrates with
 the binding, which is exactly what this step's second half does.  A same-core
 hand-off costs nothing (`migrateSchedContextReplenishment_noop`). -/
 theorem replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
-    (recordedServer : SeLe4n.ThreadId) (st st' : SystemState)
-    (returned? : Option SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) (st st' : SystemState)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
-    (h : replyRecvPopDonation recordedServer st = .ok (returned?, st')) :
+    (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     replenishQueueAffinityConsistent_smp st' := by
   unfold replyRecvPopDonation at h
-  cases hSrv : lookupTcb st recordedServer with
-  | none => rw [hSrv] at h; cases h
-  | some srvTcb =>
-    rw [hSrv] at h; simp only [] at h
-    cases hBind : srvTcb.schedContextBinding with
-    | unbound =>
-        rw [hBind] at h; simp only [] at h
-        exact (by simpa using h : none = returned? ∧ st = st').2 ▸ hCons
-    | bound _ =>
-        rw [hBind] at h; simp only [] at h
-        exact (by simpa using h : none = returned? ∧ st = st').2 ▸ hCons
-    | donated oldScId owner =>
-      rw [hBind] at h; simp only [] at h
-      cases hSrvV : recordedServer.toValid? with
-      | none => rw [hSrvV] at h; simp only [] at h; cases h
-      | some srvV =>
-        cases hOwnerV : owner.toValid? with
-        | none => rw [hSrvV, hOwnerV] at h; simp only [] at h; cases h
-        | some ownerV =>
-          rw [hSrvV, hOwnerV] at h; simp only [] at h
-          have hSrvEq : srvV.val = recordedServer :=
-            SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
-          have hOwnerEq : ownerV.val = owner :=
-            SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContextResolved st recordedServer oldScId owner with
-          | error e =>
-              rw [show returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val
-                    = returnDonatedSchedContextResolved st recordedServer oldScId owner by
-                  simp only [hSrvEq, hOwnerEq], hRet] at h
-              simp only [] at h
-              cases h
-          | ok st1' =>
-              rw [show returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val
-                    = returnDonatedSchedContextResolved st recordedServer oldScId owner by
-                  simp only [hSrvEq, hOwnerEq], hRet] at h
-              simp only [] at h
-              obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-              have hEq : migrateSchedContextReplenishment st1' oldScId
-                  (determineTargetCore st recordedServer) (determineTargetCore st owner) = st' :=
-                (by simpa using h : some oldScId = returned? ∧ _).2
-              rw [← hEq]
-              exact returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
-                st st1' recordedServer oldScId owner _ _ hObjInv hCons rfl rfl n hPopN
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at h
+      exact (by simpa using h : none = returned? ∧ st = st').2 ▸ hCons
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at h
+    simp only [] at h
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at h; simp only [] at h; cases h
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at h; simp only [] at h; cases h
+      | some targetV =>
+        rw [hHV, hTV] at h
+        simp only [] at h
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
+        | error e =>
+            rw [hRet] at h
+            simp only [] at h
+            cases h
+        | ok st1' =>
+            rw [hRet] at h
+            simp only [] at h
+            obtain ⟨n, _, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+            have hEq : migrateSchedContextReplenishment st1' oldScId
+                (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target)) = st' :=
+              (by simpa using h : some (oldScId, holder) = returned? ∧ _).2
+            rw [← hEq]
+            exact returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp
+              st st1' holder oldScId (replyDonationRecipient st oldScId target) _ _
+              hObjInv hCons rfl rfl n hPopN
 
 /-- **WS-RR RR2.20 / WS-RM (`v0.35.6`): the post-receive half restores it too.**
 Its re-donation is the third live hand-off, and it migrates its own
@@ -1025,7 +1159,7 @@ replenishments for the same reason; the deschedule and the chain walk write no
 replenish queue at all. -/
 theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_smp
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
-    (returned? : Option SeLe4n.SchedContextId) (st st' : SystemState) (u : Unit)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt)
     (hCons : replenishQueueAffinityConsistent_smp st)
     (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
@@ -1037,33 +1171,30 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
     fun s hInv hc =>
       propagatePipChainCrossCore_preserves_replenishQueueAffinityConsistent_smp s recordedServer
         serverCore _ hInv hc
-  have hDesched : ∀ (s : SystemState), replenishQueueAffinityConsistent_smp s →
-      replenishQueueAffinityConsistent_smp (removeRunnableOnCore s recordedServer serverCore) :=
-    fun s hc c => (replenishQueueAffinityConsistentOnCore_frame
-      (removeRunnableOnCore_replenishQueueOnCore _ _ _ _)
-      (removeRunnableOnCore_preserves_objects _ _ _)).mpr (hc c)
-  have hDeschedInv : ∀ (s : SystemState), s.objects.invExt →
-      (removeRunnableOnCore s recordedServer serverCore).objects.invExt := by
-    intro s hInv; rw [removeRunnableOnCore_preserves_objects]; exact hInv
   -- ...and the same two facts for the step BOTH arms now run, proved once at
   -- the step itself rather than per core at each consumer (round 11).
-  have hDAInv : ∀ (s : SystemState), s.objects.invExt →
-      (descheduleAtPlacement s recordedServer).objects.invExt := by
-    intro s hInv; rw [descheduleAtPlacement_preserves_objects]; exact hInv
-  have hDA : ∀ (s : SystemState), replenishQueueAffinityConsistent_smp s →
-      replenishQueueAffinityConsistent_smp (descheduleAtPlacement s recordedServer) :=
-    fun s hc c => (replenishQueueAffinityConsistentOnCore_frame
+  -- **Quantified over the thread** (PR #897 review): both arms deschedule the
+  -- HOLDER the pop returned, not `recordedServer`, so a helper fixed at the
+  -- latter would not apply to the step either arm runs.
+  have hDAInv : ∀ (s : SystemState) (t : SeLe4n.ThreadId), s.objects.invExt →
+      (descheduleAtPlacement s t).objects.invExt := by
+    intro s t hInv; rw [descheduleAtPlacement_preserves_objects]; exact hInv
+  have hDA : ∀ (s : SystemState) (t : SeLe4n.ThreadId),
+      replenishQueueAffinityConsistent_smp s →
+      replenishQueueAffinityConsistent_smp (descheduleAtPlacement s t) :=
+    fun s t hc c => (replenishQueueAffinityConsistentOnCore_frame
       (descheduleAtPlacement_replenishQueueOnCore _ _ _)
       (descheduleAtPlacement_preserves_objects _ _)).mpr (hc c)
   unfold replyRecvPostReceiveDonation at h
   cases returned? with
   | none => simp only [] at h; cases h; exact hPip st hObjInv hCons
-  | some scId =>
+  | some pair =>
+    obtain ⟨_scId, holder⟩ := pair
     simp only [] at h
     cases hCall : rendezvousDequeuedCall st nextThread with
     | false =>
         rw [hCall] at h; simp only [Bool.false_eq_true, if_false] at h; cases h
-        exact hPip _ (hDAInv _ hObjInv) (hDA _ hCons)
+        exact hPip _ (hDAInv _ _ hObjInv) (hDA _ _ hCons)
     | true =>
         rw [hCall] at h; simp only [if_true] at h
         -- The deschedule runs first on this arm, so the donation's own
@@ -1074,19 +1205,19 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
         -- again when the server is placed nowhere.  Both facts transport across
         -- all three because `removeRunnableOnCore` writes no object and no
         -- replenish queue whatever core it is given.
-        have hSObj : (replyRecvServerDeschedule tid recordedServer st).objects.invExt := by
-          unfold replyRecvServerDeschedule
+        have hSObj : (replyRecvHolderDeschedule tid holder st).objects.invExt := by
+          unfold replyRecvHolderDeschedule
           split
           · exact hObjInv
-          · exact hDAInv _ hObjInv
+          · exact hDAInv _ _ hObjInv
         have hSCons : replenishQueueAffinityConsistent_smp
-            (replyRecvServerDeschedule tid recordedServer st) := by
-          unfold replyRecvServerDeschedule
+            (replyRecvHolderDeschedule tid holder st) := by
+          unfold replyRecvHolderDeschedule
           split
           · exact hCons
-          · exact hDA _ hCons
+          · exact hDA _ _ hCons
         cases hDon : applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
+            (replyRecvHolderDeschedule tid holder st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
         | ok st2 =>
             rw [hDon] at h; simp only [] at h; cases h
@@ -1123,21 +1254,36 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (hDonorHome : determineTargetCore st callerVtid.val = donorHome)
       (hDoneeHome : determineTargetCore st receiverVtid.val = doneeHome)
       (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st')
-  /-- The reply returns a donated SchedContext to its original owner. -/
-  | reply (replierVtid : SeLe4n.ValidThreadId)
-      (executingCore replierHome ownerHome : Concurrency.CoreId)
-      (hReplierHome : determineTargetCore st replierVtid.val = replierHome)
-      (hOwnerHome : ∀ scId owner, replyDonationReturn? st replierVtid.val = some (scId, owner) →
-          determineTargetCore st owner = ownerHome)
-      (hStep : applyReplyDonationOnCore st replierVtid executingCore replierHome ownerHome
+  /-- The reply returns a donated SchedContext to the caller it answers.
+
+  **WS-HP HP4.4**: the two home hypotheses swap conditionality with the trigger
+  flip -- the answered caller is the operation's own argument and so the
+  *destination*, while the *source* is the holder the head-driven trigger
+  resolves.  See `applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp`
+  for why getting this backwards typechecks and migrates the wrong queue. -/
+  | reply (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+      (holderHome ownerHome : Concurrency.CoreId)
+      (hHolderHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+          determineTargetCore st holder = holderHome)
+      -- **WS-HP HP10.7**: the destination is the REDIRECTED recipient, so this is
+      -- quantified over the trigger's answer exactly as `hHolderHome` is.  HP4.3
+      -- made the two swap conditionality; the redirect makes both conditional,
+      -- because the thread that gains the reservation is no longer the argument.
+      (hOwnerHome : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+          determineTargetCore st (replyDonationRecipient st scId targetVtid.val) = ownerHome)
+      (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome
           = .ok st')
-  /-- `.replyRecv` returns the answered client's context before its receive leg. -/
-  | replyRecvPop (recordedServer : SeLe4n.ThreadId)
-      (returned? : Option SeLe4n.SchedContextId)
-      (hStep : replyRecvPopDonation recordedServer st = .ok (returned?, st'))
+  /-- `.replyRecv` returns the answered client's context before its receive leg.
+
+  **WS-HP HP4.5**: keyed on the answered frame and the answered caller, like the
+  `.reply` arm above -- here the frame needs no resolving, because `rid` is the
+  reply capability the arm was invoked with. -/
+  | replyRecvPop (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+      (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+      (hStep : replyRecvPopDonation rid target st = .ok (returned?, st'))
   /-- …and donates the next request's context after it. -/
   | replyRecvPostReceive (tid recordedServer nextThread : SeLe4n.ThreadId)
-      (serverCore : Concurrency.CoreId) (returned? : Option SeLe4n.SchedContextId) (u : Unit)
+      (serverCore : Concurrency.CoreId) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (u : Unit)
       (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
           = .ok (u, st'))
 
@@ -1165,13 +1311,13 @@ theorem donation_perCore_consistent (st st' : SystemState)
   | call callerVtid receiverVtid donorHome doneeHome hDonorHome hDoneeHome h =>
       exact applyCallDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
         st st' callerVtid receiverVtid donorHome doneeHome hObjInv hCons hDonorHome hDoneeHome h
-  | reply replierVtid executingCore replierHome ownerHome hReplierHome hOwnerHome h =>
+  | reply rid targetVtid holderHome ownerHome hHolderHome hOwnerHome h =>
       exact applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
-        st st' replierVtid executingCore replierHome ownerHome hObjInv hCons hReplierHome
+        st st' rid targetVtid holderHome ownerHome hObjInv hCons hHolderHome
         hOwnerHome h
-  | replyRecvPop recordedServer returned? h =>
+  | replyRecvPop rid target returned? h =>
       exact replyRecvPopDonation_preserves_replenishQueueAffinityConsistent_smp
-        recordedServer st st' returned? hObjInv hCons h
+        rid target st st' returned? hObjInv hCons h
   | replyRecvPostReceive tid recordedServer nextThread serverCore returned? u h =>
       exact replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_smp
         tid recordedServer nextThread serverCore returned? st st' u hObjInv hCons h
@@ -1192,94 +1338,126 @@ SM5.H replenishment migration:
   `hStackValid` supplies through `donationReturnOuterValid_of_stackValid`
   (WS-OD OD3.4 -- the pop validates what it hands out, and OD4.3 removed the
   `hBottom` condition that used to confine it to depth 1);
-* `passiveServerIdle` needs the recorded server's own `ipcState` to be one the
-  predicate permits, which is `hServerIdleAllowed`;
+* `passiveServerIdle` needs the holder's own `ipcState` to be one the predicate
+  permits, which is `hHolderIdleAllowed`;
 * the migration writes only `schedContexts` and the replenishment queue, so it
-  is a `descheduleFrame` over an unchanged object store. -/
+  is a `descheduleFrame` over an unchanged object store.
+
+**WS-HP HP4.5**: both pre-state conditions are quantified over the head-driven
+trigger, exactly as the `.reply` arm's are -- the thread the pop unbinds is read
+off `SchedContext.boundThread` rather than supplied, so an unconditional fact
+about the operation's argument would be a fact about the wrong thread.
+`hHolderDonation` is the binding half, and HP7 (`v0.35.46`) did **not** retire it:
+the trigger answers `(context, holder)` off a `.head` link and says nothing about
+`holder`'s binding, so this is the one stated fact the head-driven reading still
+needs.  What HP7 retired were the binding-driven readings, whose content the trigger
+does witness. -/
 theorem replyRecvPopDonation_preserves_ipcInvariantFull
-    (recordedServer : SeLe4n.ThreadId) (st st' : SystemState)
-    (returned? : Option SeLe4n.SchedContextId)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId) (st st' : SystemState)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
-    (hServerIdleAllowed : ∀ tcb, st.getTcb? recordedServer = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
+    (hHolderDonation : replyFrameHeadHolderDonation st rid target)
+    (hHolderIdleAllowed : ∀ scId holder,
+        replyFrameHeadHolder? st rid = some (scId, holder) →
+        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the return resolves its new owner from the context's reply
     -- stack; this is the obligation that resolution carries.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
-    (h : replyRecvPopDonation recordedServer st = .ok (returned?, st')) :
+    (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     ipcInvariantFull st' := by
   unfold replyRecvPopDonation at h
-  cases hSrv : lookupTcb st recordedServer with
-  | none => rw [hSrv] at h; cases h
-  | some srvTcb =>
-    rw [hSrv] at h; simp only [] at h
-    have hSrvGet : st.getTcb? recordedServer = some srvTcb :=
-      (SystemState.getTcb?_eq_some_iff st recordedServer srvTcb).mpr
-        (lookupTcb_some_objects st recordedServer srvTcb hSrv)
-    cases hBind : srvTcb.schedContextBinding with
-    | unbound =>
-        rw [hBind] at h; simp only [Except.ok.injEq, Prod.mk.injEq] at h
-        exact h.2 ▸ hInv
-    | bound _ =>
-        rw [hBind] at h; simp only [Except.ok.injEq, Prod.mk.injEq] at h
-        exact h.2 ▸ hInv
-    | donated oldScId owner =>
-      rw [hBind] at h; simp only [] at h
-      cases hSrvV : recordedServer.toValid? with
-      | none => rw [hSrvV] at h; simp only [] at h; cases h
-      | some srvV =>
-        cases hOwnerV : owner.toValid? with
-        | none => rw [hSrvV, hOwnerV] at h; simp only [] at h; cases h
-        | some ownerV =>
-          rw [hSrvV, hOwnerV] at h; simp only [] at h
-          have hSrvEq : srvV.val = recordedServer :=
-            SeLe4n.ThreadId.toValid?_some_val_eq recordedServer srvV hSrvV
-          have hOwnerEq : ownerV.val = owner :=
-            SeLe4n.ThreadId.toValid?_some_val_eq owner ownerV hOwnerV
-          cases hRet : returnDonatedSchedContextResolved st recordedServer oldScId owner with
-          | error e =>
-              rw [show returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val
-                    = returnDonatedSchedContextResolved st recordedServer oldScId owner by
-                  simp only [hSrvEq, hOwnerEq], hRet] at h
-              simp only [] at h
-              cases h
-          | ok st1' =>
-              rw [show returnDonatedSchedContextResolved st srvV.val oldScId ownerV.val
-                    = returnDonatedSchedContextResolved st recordedServer oldScId owner by
-                  simp only [hSrvEq, hOwnerEq], hRet] at h
-              simp only [Except.ok.injEq, Prod.mk.injEq] at h
-              obtain ⟨n, hResN, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
-              have hRetW : replyDonationReturn? st recordedServer = some (oldScId, owner) := by
-                simp [replyDonationReturn?, hSrv, hBind]
-              obtain ⟨pTcb, hPPre, hPB, oTcb, hOPre, hNe⟩ :=
-                replyDonationReturn?_some_char st recordedServer oldScId owner
-                  (donationOwnerValidExcept_of_donationOwnerValid owner hInv.donationOwnerValid)
-                  hRetW
-              have hRetV : returnDonatedSchedContext st srvV.val oldScId owner n = .ok st1' := by
-                rw [hSrvEq]; exact hPopN
-              have hRetWV : replyDonationReturn? st srvV.val = some (oldScId, owner) := by
-                rw [hSrvEq]; exact hRetW
-              have hOuterValid : donationReturnOuterValid st srvV.val owner n :=
-                donationReturnOuterValid_of_stackValid (hStackValid oldScId srvV.val owner) hResN
-              have hInv1' : ipcInvariantFull st1' :=
-                returnDonatedSchedContext_preserves_ipcInvariantFull st st1' srvV oldScId owner
-                  hObjInv hInv hRetWV
-                  (by intro tcb hTcb; rw [hSrvEq] at hTcb; exact hServerIdleAllowed tcb hTcb)
-                  n hOuterValid hRetV
-              -- The migration is invisible to every bundle reading.
-              have hObjsM : (migrateSchedContextReplenishment st1' oldScId
-                  (determineTargetCore st recordedServer)
-                  (determineTargetCore st owner)).objects = st1'.objects :=
-                migrateSchedContextReplenishment_objects st1' oldScId _ _
-              have hRqM := migrateSchedContextReplenishment_runQueue_current_eq st1' oldScId
-                (determineTargetCore st recordedServer) (determineTargetCore st owner)
-                Concurrency.bootCoreId
-              have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
-                  (determineTargetCore st recordedServer) (determineTargetCore st owner)) :=
-                ipcInvariantFull_of_descheduleFrame st1' _ hInv1' hObjsM
-                  (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
-              exact h.2 ▸ hInvM
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at h
+      simp only [Except.ok.injEq, Prod.mk.injEq] at h
+      exact h.2 ▸ hInv
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at h
+    simp only [] at h
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at h; simp only [] at h; cases h
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at h; simp only [] at h; cases h
+      | some targetV =>
+        rw [hHV, hTV] at h
+        simp only [] at h
+        have hHEq : holderV.val = holder :=
+          SeLe4n.ThreadId.toValid?_some_val_eq holder holderV hHV
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
+        | error e =>
+            rw [hRet] at h
+            simp only [] at h
+            cases h
+        | ok st1' =>
+            rw [hRet] at h
+            simp only [Except.ok.injEq, Prod.mk.injEq] at h
+            obtain ⟨n, hResN, hPopN⟩ := returnDonatedSchedContextResolved_ok_decompose hRet
+            have hRetW : replyDonationReturn? st holder = some (oldScId, target) :=
+              hHolderDonation oldScId holder hHead
+            have hRetV : returnDonatedSchedContext st holderV.val oldScId
+                (replyDonationRecipient st oldScId target) n = .ok st1' := by
+              rw [hHEq]; exact hPopN
+            have hRetWV : replyDonationReturn? st holderV.val = some (oldScId, target) := by
+              rw [hHEq]; exact hRetW
+            have hIdleV : ∀ tcb, st.getTcb? holderV.val = some tcb →
+                passiveServerIdleAllowed tcb.ipcState := by
+              intro tcb hTcb
+              rw [hHEq] at hTcb
+              exact hHolderIdleAllowed oldScId holder hHead tcb hTcb
+            -- **WS-HP HP10.7**: three cases, as in the `.reply` spine — no origin,
+            -- an origin that *is* the answered caller, and a distinct origin, the
+            -- last taking the generalised bundle under the redirect's own guard.
+            have hInv1' : ipcInvariantFull st1' := by
+              by_cases hNoOrigin : donationOriginRecipient? st oldScId = none
+              · rw [replyDonationRecipient_eq_of_no_origin st oldScId target hNoOrigin] at hRetV
+                exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
+                  target hObjInv hInv hRetWV hIdleV n
+                  (donationReturnOuterValid_of_stackValid
+                    (hStackValid oldScId holderV.val target) hResN) hRetV
+              · obtain ⟨o, hOrigin⟩ : ∃ o, donationOriginRecipient? st oldScId = some o := by
+                  cases hc : donationOriginRecipient? st oldScId with
+                  | none => exact absurd hc hNoOrigin
+                  | some o => exact ⟨o, rfl⟩
+                have hRecipEq : replyDonationRecipient st oldScId target = o :=
+                  replyDonationRecipient_eq_origin st hOrigin
+                by_cases hSame : o = target
+                · rw [hRecipEq, hSame] at hRetV
+                  exact returnDonatedSchedContext_preserves_ipcInvariantFull st st1' holderV oldScId
+                    target hObjInv hInv hRetWV hIdleV n
+                    (donationReturnOuterValid_of_stackValid
+                      (hStackValid oldScId holderV.val target) hResN) hRetV
+                · rw [hRecipEq] at hRetV
+                  exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
+                    st st1' holderV oldScId target o hObjInv
+                    (ipcInvariantFullExceptDonationOwner_of_full target hInv) hRetWV
+                    (donationOriginRebindable_no_owner
+                      (donationOwnerValidExcept_of_donationOwnerValid target
+                        hInv.donationOwnerValid)
+                      hSame (donationOriginRecipient?_rebindable st hOrigin))
+                    hIdleV n
+                    (donationReturnOuterValid_of_stackValid
+                      (hStackValid oldScId holderV.val o) hResN) hRetV
+            -- The migration is invisible to every bundle reading.
+            have hObjsM : (migrateSchedContextReplenishment st1' oldScId
+                (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target))).objects
+                  = st1'.objects :=
+              migrateSchedContextReplenishment_objects st1' oldScId _ _
+            have hRqM := migrateSchedContextReplenishment_runQueue_current_eq st1' oldScId
+              (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target))
+              Concurrency.bootCoreId
+            have hInvM : ipcInvariantFull (migrateSchedContextReplenishment st1' oldScId
+                (determineTargetCore st holder)
+                (determineTargetCore st (replyDonationRecipient st oldScId target))) :=
+              ipcInvariantFull_of_descheduleFrame st1' _ hInv1' hObjsM
+                (passiveServerIdleFrame.of_objects_scheduler_eq hObjsM hRqM.1 hRqM.2)
+            exact h.2 ▸ hInvM
 
 /-- **WS-RM RM5.2**: the state `.replyRecv`'s receive leg runs on — the reply
 leg's committed state with the donation pop applied.
@@ -1294,36 +1472,45 @@ obligation with no consumer, never a claim about a state the kernel reaches
 
 Derived from the transition rather than restated, so the accessor and the step
 cannot disagree about which state the receive leg sees. -/
-def replyRecvPostPopState (recordedServer : SeLe4n.ThreadId) (st1 : SystemState) : SystemState :=
-  match replyRecvPopDonation recordedServer st1 with
+def replyRecvPostPopState (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st1 : SystemState) : SystemState :=
+  match replyRecvPopDonation rid target st1 with
   | .error _ => st1
   | .ok (_, st1p) => st1p
 
-/-- **WS-RM RM5.2**: the scheduling context the pop handed back, as a total
-accessor.  `none` on the refusal arm for the reason above — the post-receive step
-never runs there. -/
-def replyRecvPoppedContext (recordedServer : SeLe4n.ThreadId) (st1 : SystemState) :
-    Option SeLe4n.SchedContextId :=
-  match replyRecvPopDonation recordedServer st1 with
+/-- **WS-RM RM5.2**: the donation the pop handed back — the scheduling context
+**and the thread it unbound** — as a total accessor.  `none` on the refusal arm
+for the reason above: the post-receive step never runs there.
+
+Renamed from `replyRecvPoppedDonation` at PR #897's review, with the pair the pop
+now returns: an accessor called "context" that answers a `(context, holder)` pair
+is a name that no longer describes what it is, and the holder is the load-bearing
+half — it is the thread the post-receive half deschedules. -/
+def replyRecvPoppedDonation (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st1 : SystemState) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match replyRecvPopDonation rid target st1 with
   | .error _ => none
   | .ok (returned?, _) => returned?
 
-@[simp] theorem replyRecvPostPopState_eq_of_ok (recordedServer : SeLe4n.ThreadId)
-    (st1 st1p : SystemState) (returned? : Option SeLe4n.SchedContextId)
-    (h : replyRecvPopDonation recordedServer st1 = .ok (returned?, st1p)) :
-    replyRecvPostPopState recordedServer st1 = st1p := by
+@[simp] theorem replyRecvPostPopState_eq_of_ok (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
+    (st1 st1p : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (h : replyRecvPopDonation rid target st1 = .ok (returned?, st1p)) :
+    replyRecvPostPopState rid target st1 = st1p := by
   unfold replyRecvPostPopState; rw [h]
 
-@[simp] theorem replyRecvPoppedContext_eq_of_ok (recordedServer : SeLe4n.ThreadId)
-    (st1 st1p : SystemState) (returned? : Option SeLe4n.SchedContextId)
-    (h : replyRecvPopDonation recordedServer st1 = .ok (returned?, st1p)) :
-    replyRecvPoppedContext recordedServer st1 = returned? := by
-  unfold replyRecvPoppedContext; rw [h]
+@[simp] theorem replyRecvPoppedDonation_eq_of_ok (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
+    (st1 st1p : SystemState) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (h : replyRecvPopDonation rid target st1 = .ok (returned?, st1p)) :
+    replyRecvPoppedDonation rid target st1 = returned? := by
+  unfold replyRecvPoppedDonation; rw [h]
 
-theorem replyRecvPostPopState_eq_of_error (recordedServer : SeLe4n.ThreadId)
+theorem replyRecvPostPopState_eq_of_error (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
     (st1 : SystemState) (e : KernelError)
-    (h : replyRecvPopDonation recordedServer st1 = .error e) :
-    replyRecvPostPopState recordedServer st1 = st1 := by
+    (h : replyRecvPopDonation rid target st1 = .error e) :
+    replyRecvPostPopState rid target st1 = st1 := by
   unfold replyRecvPostPopState; rw [h]
 
 /-- **WS-RM RM5.2**: the post-receive donation step preserves the IPC invariant
@@ -1339,23 +1526,33 @@ The second half of the split.  Three arms, each a result that already exists:
   own bundle lemma discharges the donor-blocked obligation *from* the guard the
   arm branches on (`rendezvousDequeuedCall_blockedOnReply`), so the six-way
   `ipcState` case split collapses to the `Bool` the operation reads;
-* a context was returned and nothing rendezvoused -- the server is descheduled
-  and then walked, and the deschedule is a `descheduleFrame` whose
-  `passiveServerIdle` side condition is exactly `hServerIdleAllowed`.
+* a context was returned and nothing rendezvoused -- the **holder** is
+  descheduled and then the recorded server is walked, and the deschedule is a
+  `descheduleFrame` whose `passiveServerIdle` side condition is exactly
+  `hHolderIdleAllowed`.
 
 `hReceiverNotOwner` is stated at *this* step's pre-state (the receive leg's
 committed state), not at the reply leg's: the pop no longer runs between them,
 so there is nothing to transport it across, and the fused statement's
 `hReceiverNotAwaitingReply` -- which existed only to carry it through the pop's
-binding trichotomy -- has no subject here. -/
+binding trichotomy -- has no subject here.
+
+**`hHolderIdleAllowed` is conditioned on the arm selector** (PR #897 review).  It
+was `hServerIdleAllowed`, stated unconditionally at `recordedServer` -- the thread
+the step used to deschedule.  Both arms deschedule the holder now, and the holder
+exists only on the `some` arm, so the obligation is stated exactly where it
+arises: given the pair the pop returned, the thread it names is in a state
+`passiveServerIdle` permits.  On the `none` arm nothing is descheduled and the
+hypothesis has no premise to discharge. -/
 theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
-    (returned? : Option SeLe4n.SchedContextId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
     (st st' : SystemState) (u : Unit)
     (hObjInv : st.objects.invExt)
     (hInv : ipcInvariantFull st)
-    (hServerIdleAllowed : ∀ tcb, st.getTcb? recordedServer = some tcb →
-        passiveServerIdleAllowed tcb.ipcState)
+    (hHolderIdleAllowed : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+        returned? = some (scId, holder) →
+        ∀ tcb, st.getTcb? holder = some tcb → passiveServerIdleAllowed tcb.ipcState)
     (hReceiverNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
         (scId : SeLe4n.SchedContextId),
         st.getTcb? tid' = some tcb → tcb.schedContextBinding ≠ .donated scId tid)
@@ -1368,27 +1565,31 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
       simp only [Except.ok.injEq, Prod.mk.injEq] at h
       exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull st recordedServer
         serverCore _ hObjInv hInv
-  | some scId =>
+  | some pair =>
+    obtain ⟨scIdP, holder⟩ := pair
+    have hIdle : ∀ tcb, st.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState := hHolderIdleAllowed scIdP holder rfl
     simp only [] at h
     cases hCall : rendezvousDequeuedCall st nextThread with
     | false =>
         rw [hCall] at h; simp only [Bool.false_eq_true, if_false, Except.ok.injEq,
           Prod.mk.injEq] at h
         -- Both arms run `descheduleAtPlacement` now, so this branch splits on
-        -- the resolver exactly as the Call arm below does (round 11).
-        have hDesched : ipcInvariantFull (descheduleAtPlacement st recordedServer) := by
-          unfold descheduleAtPlacement
+        -- the resolver exactly as the Call arm below does (round 11) -- and on
+        -- the HOLDER, which is the thread the pop unbound (PR #897 review).
+        have hDesched : ipcInvariantFull (descheduleAtPlacement st holder) := by
+          unfold descheduleAtPlacement descheduleAt
           split
           · rename_i c _
             refine ipcInvariantFull_of_descheduleFrame _ _ hInv
               (removeRunnableOnCore_preserves_objects _ _ _)
-              (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer c ?_)
+              (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
             intro tcb hTcb
             right
-            exact hServerIdleAllowed tcb
-              ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
+            exact hIdle tcb
+              ((SystemState.getTcb?_eq_some_iff _ holder tcb).mpr hTcb)
           · exact hInv
-        have hDeschedInvExt : (descheduleAtPlacement st recordedServer).objects.invExt := by
+        have hDeschedInvExt : (descheduleAtPlacement st holder).objects.invExt := by
           rw [descheduleAtPlacement_preserves_objects]; exact hObjInv
         exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
           serverCore _ hDeschedInvExt hDesched
@@ -1398,32 +1599,32 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
         -- donation's object-level hypotheses transport verbatim; what it does
         -- write is the run queue, which is the `descheduleFrame` the false arm
         -- below already discharges from `hServerIdleAllowed`.
-        have hObjEq : (replyRecvServerDeschedule tid recordedServer st).objects
+        have hObjEq : (replyRecvHolderDeschedule tid holder st).objects
             = st.objects := by
-          unfold replyRecvServerDeschedule
+          unfold replyRecvHolderDeschedule
           split
           · rfl
           · exact descheduleAtPlacement_preserves_objects _ _
-        have hSObj : (replyRecvServerDeschedule tid recordedServer st).objects.invExt := by
+        have hSObj : (replyRecvHolderDeschedule tid holder st).objects.invExt := by
           rw [hObjEq]; exact hObjInv
         have hSInv : ipcInvariantFull
-            (replyRecvServerDeschedule tid recordedServer st) := by
-          unfold replyRecvServerDeschedule descheduleAtPlacement
+            (replyRecvHolderDeschedule tid holder st) := by
+          unfold replyRecvHolderDeschedule descheduleAtPlacement descheduleAt
           split
           · exact hInv
           · split
             · rename_i c _
               refine ipcInvariantFull_of_descheduleFrame _ _ hInv
                 (removeRunnableOnCore_preserves_objects _ _ _)
-                (removeRunnableOnCore_passiveServerIdleFrame _ recordedServer c ?_)
+                (removeRunnableOnCore_passiveServerIdleFrame _ holder c ?_)
               intro tcb hTcb
               right
-              exact hServerIdleAllowed tcb
-                ((SystemState.getTcb?_eq_some_iff _ recordedServer tcb).mpr hTcb)
+              exact hIdle tcb
+                ((SystemState.getTcb?_eq_some_iff _ holder tcb).mpr hTcb)
             · exact hInv
         have hSNotOwner : ∀ (tid' : SeLe4n.ThreadId) (tcb : TCB)
             (scId : SeLe4n.SchedContextId),
-            (replyRecvServerDeschedule tid recordedServer st).getTcb? tid'
+            (replyRecvHolderDeschedule tid holder st).getTcb? tid'
               = some tcb → tcb.schedContextBinding ≠ .donated scId tid := by
           intro tid' tcb scId hTcb
           refine hReceiverNotOwner tid' tcb scId ?_
@@ -1431,21 +1632,21 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
           rw [hObjEq] at hTcb
           exact hTcb
         cases hDon : applyRendezvousCallDonation
-            (replyRecvServerDeschedule tid recordedServer st) tid nextThread with
+            (replyRecvHolderDeschedule tid holder st) tid nextThread with
         | error e => rw [hDon] at h; simp only [] at h; cases h
         | ok st2 =>
             rw [hDon] at h; simp only [Except.ok.injEq, Prod.mk.injEq] at h
             -- The guard reads a TCB, and the deschedule writes no object, so the
             -- arm the donation takes is the arm the guard selected.
             have hCallD : rendezvousDequeuedCall
-                (replyRecvServerDeschedule tid recordedServer st) nextThread = true := by
+                (replyRecvHolderDeschedule tid holder st) nextThread = true := by
               unfold rendezvousDequeuedCall at hCall ⊢
               rw [lookupTcb_congr_getElem (s1 := st)
-                (s2 := replyRecvServerDeschedule tid recordedServer st)
+                (s2 := replyRecvHolderDeschedule tid holder st)
                 (fun k => by rw [hObjEq]) nextThread]
               exact hCall
             have hStep : applyReceiveRendezvousDonation
-                (replyRecvServerDeschedule tid recordedServer st)
+                (replyRecvHolderDeschedule tid holder st)
                 tid nextThread = .ok st2 := by
               unfold applyReceiveRendezvousDonation
               rw [hCallD]
@@ -1528,7 +1729,9 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
         -- `linkCallerReply` and the server-first stash both refused
         -- `.replyCapInvalid` and no passive server whose client had donated could
         -- ever complete a `seL4_ReplyRecv`.
-        match replyRecvPopDonation recordedServer st1 with
+        -- **WS-HP HP4.5**: keyed on the frame the reply capability names and the
+        -- caller it answers, so this arm and the `.reply` arm ask one question.
+        match replyRecvPopDonation rid prevCaller st1 with
         | .error e => .error e
         | .ok (returnedSc?, st1p) =>
         -- WS-RA RA.B.5b: capture the send-queue head the receive leg will
@@ -1574,6 +1777,131 @@ def replyRecvBody (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (rid : SeLe4n.Re
                               executingCore)
                             prevCaller 0)
                           wokenSender?)
+
+
+-- ============================================================================
+-- WS-RR RR8.12 Cut 8b: the `.replyRecv` arm's per-core write sets
+-- ============================================================================
+--
+-- Relocated from the STAGED `InformationFlow/NonInterferenceCrossCore.lean` at
+-- `v0.35.145`, beside the transitions they describe.  A write set declared in a
+-- staged module is one a **production** scheduler-domain footprint cannot read,
+-- and Cut 7's rule is that an arm's footprint is `schedFootprintOfCores` of the
+-- arm's own SM8.B write set rather than of a second resolution of the same cores
+-- -- so the footprint and the confinement claim cannot name different cores.
+-- That is the same layering correction Cuts 5 and 7 made four times over: *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  The CONFINEMENT theorems stay in the staged module, because
+-- `observableSlotsConfinedToCores` is its predicate.
+--
+-- They keep the `SeLe4n.Kernel` namespace they were declared in, so the move
+-- renames nothing and every reference in the tree is untouched.
+
+/-- SM8.B.2: the tail the post-receive half's non-rendezvous arm takes —
+deschedule the now-passive **holder** at its placement, then revert the
+**recorded server's** chain from the post-deschedule state.
+
+Two threads, because the arm performs two steps that ask different questions
+(PR #897 review): the deschedule is about the thread the pop unbound and the walk
+about the thread the answered caller recorded.  A write set that named one thread
+for both would be false of exactly the orphan head HP6.8's splice produces. -/
+def replyRecvDescheduleAndWalkWriteSet (holder recordedServer : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+  -- The deschedule's cores come from the SAME resolver the step uses, not from
+  -- `serverCore`: this arm removed the server at `determineExecutingCore`'s
+  -- answer until round 11, so the footprint named a core the transition did not
+  -- write and omitted the one it did.
+  descheduleAtPlacementCores st holder
+    ++ pipChainWriteSet (descheduleAtPlacement st holder)
+      recordedServer serverCore
+      (descheduleAtPlacement st holder).objectIndex.length
+/-- **PR #895 review round 8**: the cores `replyRecvHolderDeschedule` may write.
+
+None when the holder *is* the receiver, where the step is the identity because
+the receiver keeps the new request's budget; the holder's own placement
+otherwise, where it is a real deschedule.  Keyed on the holder since PR #897's
+review, with the step it mirrors. -/
+def replyRecvHolderDescheduleWriteSet (tid holder : SeLe4n.ThreadId)
+    (st : SystemState) : List Concurrency.CoreId :=
+  if holder = tid then []
+  else descheduleAtPlacementCores st holder
+/-- SM8.B.2 / WS-RR RR2.20 / **WS-RM (`v0.35.6`)**: **the cores the post-receive
+half may write**, mirroring its own control flow.  Three shapes: the
+never-donated arm walks the chain from its pre-state; the rendezvous arm donates
+(per-core silent) and walks from the post-donation state; the remaining arm
+deschedules the recorded server on its own core first.  The fail-closed arm
+produces no post-state at all, so its entry is `[]` and the confinement theorem's
+hypothesis rules it out.
+
+The arm is selected by `returned?` — the context the pop handed back — rather
+than by re-reading a binding the pop has already cleared, which is the same
+reason the transition takes it as an argument. -/
+def replyRecvPostReceiveDonationWriteSet (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st : SystemState) : List Concurrency.CoreId :=
+  match returned? with
+  | none => pipChainWriteSet st recordedServer serverCore st.objectIndex.length
+  | some (_, holder) =>
+      if rendezvousDequeuedCall st nextThread then
+        match applyRendezvousCallDonation
+            (replyRecvHolderDeschedule tid holder st) tid nextThread with
+        | .error _ => []
+        | .ok st2 =>
+            -- The deschedule's cores come FIRST, because it runs first: the
+            -- holder is taken off its own core before the new client's context
+            -- is donated to the invoker (PR #895 review round 8).  A footprint
+            -- that omitted them would be false of exactly that arm.
+            replyRecvHolderDescheduleWriteSet tid holder st ++
+              pipChainWriteSet st2 recordedServer serverCore st2.objectIndex.length
+      else replyRecvDescheduleAndWalkWriteSet holder recordedServer serverCore st
+/-- SM8.B.2: **the cores the live `.replyRecv` may write** — the answered
+caller's home core, the receive leg's set at the reply's post-state, the
+donation leg's set at the receive's post-state, and (**WS-OD OD3.14**) the
+receive leg's priority hand-off at the donation return's post-state. Each leg is
+read at the state that leg actually runs at, which is the discipline
+`endpointCallDispatchChainWriteSet` established: reading a later leg at `st`
+would name a different chain.
+
+The fourth leg is empty on every **non-delegated** reply, because there the
+donation return's own walk already started at the receiver and OD3.14's gate
+makes this step the identity — so no pin taken against the three-leg set moves
+on any state a non-delegated `.replyRecv` reaches. -/
+def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+  determineTargetCore st prevCaller ::
+    (match endpointReplyOnCore receiver prevCaller msg executingCore st with
+     | (_, .error _) => []
+     | (st1, .ok _) =>
+        -- **WS-RM (`v0.35.6`)**: the pop runs between the legs and writes no core
+        -- (`replyRecvPopDonation_confinedToCores`), so it contributes nothing here
+        -- — but the states the later legs branch on are its post-state, and a
+        -- write set that mirrors a transition has to read the states it reads.
+        -- **WS-HP HP4.5**: keyed on the frame and the answered caller, as the
+        -- transition is.
+        (match replyRecvPopDonation replyId prevCaller st1 with
+         | .error _ => []
+         | .ok (returnedSc?, st1p) =>
+            endpointReceiveDualWriteSet st1p endpointId executingCore ++
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+                  receiverCspaceRoot receiverSlotBase executingCore st1p with
+               | (_, .error _) => []
+               | (st2, .ok (nextThread, _, _)) =>
+                  replyRecvPostReceiveDonationWriteSet receiver
+                    ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                    (determineExecutingCore st
+                      ((recordedReplyServer? st prevCaller).getD receiver)) returnedSc? st2 ++
+                    (match replyRecvPostReceiveDonation receiver
+                        ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                        (determineExecutingCore st
+                          ((recordedReplyServer? st prevCaller).getD receiver))
+                        returnedSc? st2 with
+                     | .error _ => []
+                     | .ok (_, st3) =>
+                        receiveLegPipHandoffWriteSet st3 receiver nextThread
+                          ((recordedReplyServer? st prevCaller).getD receiver) executingCore))))
 
 -- ============================================================================
 -- Syscall soundness theorems

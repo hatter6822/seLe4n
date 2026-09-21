@@ -70,6 +70,47 @@ def asidTableConsistent (st : SystemState) : Prop :=
   (∀ oid root, st.objects[oid]? = some (KernelObject.vspaceRoot root) →
     st.asidTable[root.asid]? = some oid)
 
+/-- The in-place rewrite of a bookkeeping-neutral object keeps the ASID table
+consistent, unconditionally: a rewrite is of an object of the **same kind**, and
+`KernelObjectType.rewriteNeutral` refuses the `vspaceRoot` kind, so neither the
+key it writes nor the key it read held a VSpace root — both directions read the
+pre-state's table against the pre-state's roots. -/
+theorem rewriteObject_preserves_asidTableConsistent
+    (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt)
+    (hC : asidTableConsistent st) :
+    asidTableConsistent (st.rewriteObject id new h) := by
+  obtain ⟨hSound, hComplete⟩ := hC
+  have hNotRoot : ∀ r, new ≠ .vspaceRoot r := by
+    intro r hEq
+    obtain ⟨_, _, _, hNeutral⟩ := h
+    subst hEq
+    simp [KernelObject.objectType, KernelObjectType.rewriteNeutral] at hNeutral
+  have hOldNotRoot : ∀ r, st.objects[id]? ≠ some (.vspaceRoot r) := by
+    intro r hEq
+    obtain ⟨old, hOld, hKind, hNeutral⟩ := h
+    rw [hOld] at hEq
+    cases hEq
+    rw [← hKind] at hNeutral
+    simp [KernelObject.objectType, KernelObjectType.rewriteNeutral] at hNeutral
+  constructor
+  · intro asid oid hT
+    have hT' : st.asidTable[asid]? = some oid := hT
+    obtain ⟨root, hObj, hAsid⟩ := hSound asid oid hT'
+    refine ⟨root, ?_, hAsid⟩
+    by_cases hEq : id = oid
+    · subst hEq
+      exact absurd hObj (hOldNotRoot root)
+    · rw [SystemState.rewriteObject_objects_ne st id oid new h hEq hInv]
+      exact hObj
+  · intro oid root hObj
+    by_cases hEq : id = oid
+    · subst hEq
+      rw [SystemState.rewriteObject_objects_self st id new h hInv] at hObj
+      exact absurd (Option.some.inj hObj) (hNotRoot root)
+    · rw [SystemState.rewriteObject_objects_ne st id oid new h hEq hInv] at hObj
+      exact hComplete oid root hObj
+
 /-- WS-H11/A-05/M-12: Bounded translation surface — all translated physical addresses
 are within the finite machine window `[0, bound)`.
 

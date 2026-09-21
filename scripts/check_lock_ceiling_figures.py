@@ -151,10 +151,11 @@ def prose_sources(root: str) -> list[str]:
     copies of these figures, and two of the four stale ones were there.
     """
     try:
-        listed = subprocess.run(
-            ["git", "-C", root, "ls-files", "*.md", "*.lean"],
-            capture_output=True, text=True, check=True,
-        ).stdout.split()
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "*.md", "*.lean"],
+            capture_output=True, check=True,
+        ).stdout
+        listed = [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
         if listed:
             return sorted(listed)
     except (OSError, subprocess.CalledProcessError):

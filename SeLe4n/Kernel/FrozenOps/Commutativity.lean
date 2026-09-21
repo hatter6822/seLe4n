@@ -12,8 +12,14 @@ import SeLe4n.Kernel.FrozenOps.Operations
 /-!
 # Q7-D: Commutativity Proofs
 
-**STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
+**STATUS: in the production import chain since `v0.35.60`** (`SeLe4n.lean` imports
+`FrozenOps.Agreement` and `FrozenOps.Invariant`), so the Tier 1 censuses and the
+production/staging partition gate reach this module by derivation rather than
+because someone remembered to widen them.  What remains deferred is the
+*architectural* switch — `API.lean` running syscalls over frozen snapshots — which
+AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
+(`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
+is not being the dispatch path.
 
 Establishes the commutativity diagram between builder-phase and frozen-phase
 operations:
@@ -89,10 +95,9 @@ theorem frozenStoreObject_preserves_irqHandlers
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves the ASID table. -/
 theorem frozenStoreObject_preserves_asidTable
@@ -100,10 +105,9 @@ theorem frozenStoreObject_preserves_asidTable
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.asidTable = st.asidTable := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves the service registry. -/
 theorem frozenStoreObject_preserves_serviceRegistry
@@ -111,10 +115,9 @@ theorem frozenStoreObject_preserves_serviceRegistry
     (st : FrozenSystemState) (st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.serviceRegistry = st.serviceRegistry := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 -- ============================================================================
 -- Q7-D: FrozenMap.set Structural Lemmas
@@ -148,10 +151,9 @@ theorem frozenStoreObject_preserves_cdtSlotNode
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtSlotNode = st.cdtSlotNode := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves CDT node-slot map. -/
 theorem frozenStoreObject_preserves_cdtNodeSlot
@@ -159,10 +161,9 @@ theorem frozenStoreObject_preserves_cdtNodeSlot
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.cdtNodeSlot = st.cdtNodeSlot := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves object types metadata. -/
 theorem frozenStoreObject_preserves_objectTypes
@@ -170,21 +171,9 @@ theorem frozenStoreObject_preserves_objectTypes
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.objectTypes = st.objectTypes := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
-
-/-- Q7-D: `frozenStoreObject` preserves capability refs metadata. -/
-theorem frozenStoreObject_preserves_capabilityRefs
-    (id : SeLe4n.ObjId) (obj : FrozenKernelObject)
-    (st st' : FrozenSystemState)
-    (hOk : frozenStoreObject id obj st = .ok ((), st')) :
-    st'.capabilityRefs = st.capabilityRefs := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves interface registry. -/
 theorem frozenStoreObject_preserves_interfaceRegistry
@@ -192,10 +181,9 @@ theorem frozenStoreObject_preserves_interfaceRegistry
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.interfaceRegistry = st.interfaceRegistry := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 /-- Q7-D: `frozenStoreObject` preserves the object index set. -/
 theorem frozenStoreObject_preserves_objectIndexSet
@@ -203,10 +191,9 @@ theorem frozenStoreObject_preserves_objectIndexSet
     (st st' : FrozenSystemState)
     (hOk : frozenStoreObject id obj st = .ok ((), st')) :
     st'.objectIndexSet = st.objectIndexSet := by
-  unfold frozenStoreObject at hOk
-  cases hSet : st.objects.set id obj with
-  | some objects' => simp [hSet] at hOk; rw [← hOk]
-  | none => simp [hSet] at hOk
+  -- The frame is the write's, stated once at `frozenWithObjectStored`.
+  obtain ⟨_, _, hSt⟩ := frozenStoreObject_ok hOk
+  rw [hSt]
 
 -- ============================================================================
 -- T1-E: frozenQueuePushTail Preservation Theorems (M-FRZ-1/2/3)

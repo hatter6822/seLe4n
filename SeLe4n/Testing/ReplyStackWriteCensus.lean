@@ -13,15 +13,19 @@ import Lean.Elab.Command
 -- here, or this census would pass vacuously about it.
 import SeLe4n
 import SeLe4n.Platform.Staged
+import SeLe4n.Testing.DeclarationKind
 -- The chain surface itself: the two cancellation shape modules and the reply
 -- dispatch invariant sit outside the staged closure, and their results are what
 -- the registry names.
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
 import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
--- The frozen execution surface, which neither root reaches: it is built by its
--- own `lean_exe` target (`tests.FrozenOpsSuite`) and is in the staged allowlist
--- of neither.  `FrozenKernelObject.reply` carries the **live**
+-- The frozen execution surface.  Until `v0.35.60` neither root reached it -- it
+-- was built by its own `lean_exe` target (`tests.FrozenOpsSuite`) and was in
+-- neither staged allowlist -- which is why this census had to be widened by hand
+-- at `v0.35.12`, after a defect had already shipped through the hole; it is in
+-- `SeLe4n.lean` now, so the import below is the root's rather than this file's
+-- alone.  `FrozenKernelObject.reply` carries the **live**
 -- `SeLe4n.Kernel.Reply` — links and all — and `Model.freeze` copies a live
 -- state's Reply objects verbatim, so a frozen state taken mid-call-chain holds
 -- a real reply stack and a frozen transition can falsify the chain exactly as a
@@ -102,7 +106,7 @@ requires every candidate to be a primitive, a registered site, or a member of
 
 Without that, this list would be an enumeration standing in for a derivation:
 `storeObject` takes a whole `KernelObject`, so a definition writing
-`{ r with next := … }` directly, calling none of the nine names here, would be
+`{ r with next := … }` directly, calling none of the ten names here, would be
 invisible to this census and to the registry it drives. -/
 def chainWritePrimitives : List Name :=
   [ -- The caller clear, and the link clear off a frame that heads nothing.
@@ -114,13 +118,30 @@ def chainWritePrimitives : List Name :=
     -- a site and has to be registered.
   , `SeLe4n.Model.SystemState.consumeReply
   , `SeLe4n.Model.SystemState.consumeCallerReply
-    -- The detach: the frame above's `prev`, and its total fold.
-  , `SeLe4n.Kernel.detachReplyFrameAbove
-  , `SeLe4n.Kernel.detachReplyFrameAboveOrSelf
+    -- ...and the pure projection of the second (WS-RR RR8.5): the one state the
+    -- infallible `consumeCallerReply` leaves, which is how a pure composition
+    -- such as `cancelIpcBlocking` runs the consume.  A primitive for the same
+    -- reason as its monadic form -- a pure transition reaching for it bare is
+    -- WS-RM's defect in the other calling convention.
+  , `SeLe4n.Model.SystemState.consumeCallerReplyLink
+    -- The removal: the composed store step (WS-HP HP6.3 -- the frame above's
+    -- `prev`, the frame below's `next`, and the cut frame's own unlink), the
+    -- validated operation over it, and its total fold.  The store step is a
+    -- primitive for the same reason the pop's two component stores are: it
+    -- performs the writes with none of `spliceReplyFrameOut`'s resolution or
+    -- validation, so a transition reaching for it directly is a site.
+  , `SeLe4n.Kernel.spliceReplyFrameStores
+  , `SeLe4n.Kernel.spliceReplyFrameOut
+  , `SeLe4n.Kernel.spliceReplyFrameOutOrSelf
     -- ...and the frozen surface's counterparts, which write the same field of
     -- the same `SeLe4n.Kernel.Reply` record in `FrozenSystemState.objects`.
-  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove
-  , `SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf
+    -- **WS-HP HP8.1** renamed these for the operation they became: the frozen
+    -- removal splices rather than severing, so the store step is a third entry
+    -- beside the two it composes, exactly as the live `spliceReplyFrameStores`
+    -- is.
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut
+  , `SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf
     -- The push: the new head's two links, and the old head's `next`.
   , `SeLe4n.Kernel.storeDonationFramePush
     -- The pop: the head's two links, the frame below re-headed, and the pair.
@@ -176,11 +197,41 @@ def objectStoreHelpers : List Name :=
     -- which is the argument for the pin.
   , `SeLe4n.Model.storeObjectChecked
   , `SeLe4n.Model.storeObjectKindChecked
+    -- The in-place rewrite and the three spellings over it (`v0.35.64`): the
+    -- proof-carrying `rewriteObject` is the bare table insert, `updateTcb` and
+    -- `updateSchedContext` are the typed read-modify-writes over it, and
+    -- `withObjectStored` is the pure `storeObject`.  Without them a writer that
+    -- rebuilds a SchedContext and stores it through `updateSchedContext` sits
+    -- two hops from the primitive and outside the frontier — which is how
+    -- `refillSchedContext`'s chain-neutral entry read as stale the moment its
+    -- store became the typed update (`v0.35.66`), and how a writer setting
+    -- `scReply` through the same helper would have been invisible.  Each is
+    -- pinned below to reach a primitive within the one hop the frontier buys.
+  , `SeLe4n.Model.SystemState.rewriteObject
+  , `SeLe4n.Model.SystemState.updateTcb
+  , `SeLe4n.Model.SystemState.updateSchedContext
+  , `SeLe4n.Model.SystemState.withObjectStored
     -- The frozen surface's own store.  It lands a built record in
     -- `FrozenSystemState.objects`, which is where the frozen chain lives, so a
     -- derivation that knows only the live spellings sees a frozen writer build
     -- a `Reply` and store it nowhere.
-  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject ]
+  , `SeLe4n.Kernel.FrozenOps.frozenStoreObject
+    -- ...and the two the frozen write migration (`v0.35.97`) put *under* it:
+    -- `frozenWithObjectStored` is the surface's one raw `FrozenMap.set` and
+    -- `frozenStoreObject` is now its `FrozenKernel` wrapper, with
+    -- `frozenRewriteObject` the total in-place form.  Pinning them is not
+    -- optional bookkeeping: the frontier reaches **one hop**, so the moment a
+    -- frozen writer's store became `frozenWithObjectStored` rather than a
+    -- direct `FrozenMap.set`, every such writer sat two hops out and dropped
+    -- from the candidate set -- which this census reported at once, as
+    -- `frozenTimerTickBudget`'s chain-neutral entry reading stale.
+    --
+    -- **Deleting that entry is the fail-open direction**, and this list's own
+    -- history says so: `v0.35.64` met the identical report for `suspendThread`
+    -- and deleted it, so a writer setting `scReply` through the unpinned helper
+    -- would have been invisible.  The helper gets pinned; the entry stays.
+  , `SeLe4n.Kernel.FrozenOps.frozenWithObjectStored
+  , `SeLe4n.Kernel.FrozenOps.frozenRewriteObject ]
 
 /-- The stores a built record has to reach to become state. -/
 def objectStoreSpellings : List Name :=
@@ -218,10 +269,28 @@ def chainNeutralConstructors : List (Name × String) :=
       "rebuilds a SchedContext for its CBS parameters; `scReply` is not in the assignment list, so the stored record carries the value it read")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextBind,
       "`{ sc with boundThread := some _ }`; `scReply` is untouched by the update")
+    -- **WS-HP HP10.5**: the destroy path's reservation-origin scrub.  It is a
+    -- `{ sc with donationOrigin := none }` update and nothing else, on the
+    -- contexts whose origin names the thread being destroyed — `scReply` is not
+    -- in the assignment list, so the stored record carries the stack head it
+    -- read.  The census found this on the day the sweep landed, which is the
+    -- derivation working: a fold that rebuilds a `SchedContext` and stores it is
+    -- indistinguishable from one re-heading a stack until somebody says which.
+  , (`SeLe4n.Kernel.clearDonationOriginReferences,
+      "`{ sc with donationOrigin := none }` on the destroy path; `scReply` is untouched by the update")
   , (`SeLe4n.Kernel.FrozenOps.frozenSchedContextUnbind,
       "`{ sc with boundThread := none, isActive := false }`; `scReply` is untouched")
-  , (`SeLe4n.Kernel.FrozenOps.frozenSetPriority,
-      "`{ sc with priority := _ }` on the bound SchedContext; `scReply` is untouched")
+    -- `v0.35.99`: `frozenSetPriority` LEFT this list, and that is the
+    -- reconciliation working rather than an exemption going missing.  Its
+    -- `{ sc with priority := _ }` moved into the shared `frozenWriteBasePriority`
+    -- when the two spellings of "write a thread's base priority" were collapsed
+    -- onto one writer, so it now neither stores directly nor constructs directly
+    -- and is outside both disjuncts of the frontier.  A chain write added back
+    -- to its own body puts it back in the candidate set on the day it is written.
+  , (`SeLe4n.Kernel.FrozenOps.frozenWriteBasePriority,
+      "`{ sc with priority := _ }` on the owned SchedContext and `{ tcb with priority := _ }` on the thread; `scReply` is in neither assignment list")
+  , (`SeLe4n.Kernel.FrozenOps.frozenSetMCPriority,
+      "`{ tcb with maxControlledPriority := _ }`, then the capped base priority through `frozenWriteBasePriority`; no chain field in either")
   , (`SeLe4n.Kernel.FrozenOps.frozenTimerTickBudget,
       "rebuilds a SchedContext for its budget accounting; `scReply` is untouched")
     -- ---------------------------------------------------------------------
@@ -280,9 +349,9 @@ def chainNeutralConstructors : List (Name × String) :=
   , (`SeLe4n.Kernel.cancelBoundDonationOnCore,
       "the per-core spelling of the same binding cancel; same reason")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThread,
-      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body (its direct store is `updateTcb`, which the frontier reaches since v0.35.66 — the entry left this list at v0.35.64, when the frontier did not, and that gap was the fail-open direction)")
   , (`SeLe4n.Kernel.Lifecycle.Suspend.suspendThreadOnCore,
-      "the per-core spelling of the same suspend; same reason")
+      "composes `consumeReplyLink`, which is registered; writes no chain field in its own body")
   , (`SeLe4n.Kernel.Liveness.stepPost,
       "the scheduler trace model's step: a SchedContext budget update and a replenish queue; no chain field")
     -- The dispatch payoff's pack-inhabitation witnesses.  They build a fresh
@@ -351,8 +420,9 @@ environment rather than argued: of the project constants that are definition-
 shaped, non-`Prop` and reference a chain primitive, the number kept only by a
 name test is **zero**, so `isGeneratedComponent` was deleted instead of being
 narrowed a third time.  Equation and proof auxiliaries need no test at all —
-every one of the 5185 in this environment is `Prop`-typed, and `isDefinitionShaped`
-plus the caller's `Meta.isProp` filter exclude them structurally.
+every one of the 5185 in this environment is `Prop`-typed, and
+`DeclarationKind.bodyBearingName` plus the caller's `Meta.isProp` filter exclude
+them structurally.
 
 **Not `Name.isInternal` and not `Name.isInternalDetail`**: the first is true of
 the `_private.…` mangling, so it would have excluded every `private def` in the
@@ -413,36 +483,25 @@ def chainWriteFrontier : String :=
 directly and stored through one helper hop; delegating BOTH halves at once is \
 outside the recognised frontier"
 
-/-- `true` when `n` is a *definition* rather than a proof.
-
-A theorem whose statement mentions a primitive is a result *about* a write, not
-a write, and is excluded here structurally.  The caller's `Meta.isProp` check
-excludes the other shape a proof takes — a proof written with `def`, whose
-**type is** a proposition.
-
-It does **not** exclude a *predicate*: `def p : SystemState → Prop` has type
-`SystemState → Prop`, which is a `Type` rather than a `Prop`, so `Meta.isProp`
-answers `false` for it.  That is the safe direction — such a definition would be
-reported as an unregistered write site rather than silently skipped — and the
-tree currently contains none, since the census's own reconciliation passes.  A
-predicate written in terms of a chain-write primitive would therefore fail this
-gate and want an explicit decision, not a silent pass. -/
-def isDefinitionShaped (env : Environment) (n : Name) : Bool :=
-  match env.find? n with
-  | some (.defnInfo _) => true
-  | some (.opaqueInfo _) => true
-  | _ => false
 
 /-- The derived subject set: every project definition that directly writes
 reply-stack data.
 
 The primitives are included — each one writes, so each one owes a chain result
 — and auxiliaries and `Prop`-valued definitions are not.  The `Prop` filter is
-the caller's, since deciding it needs `MetaM`. -/
+the caller's, since deciding it needs `MetaM`.
+
+`DeclarationKind.bodyBearingName` is what excludes a **proof**: a theorem whose
+statement mentions a primitive is a result *about* a write, not a write.  It does
+not exclude a *predicate* — `def p : SystemState → Prop` has type
+`SystemState → Prop`, a `Type` rather than a `Prop`, so `Meta.isProp` answers
+`false` for it — and that is the safe direction, since such a definition is
+reported as an unregistered write site rather than silently skipped.  The tree
+contains none, the reconciliation passing being the measurement. -/
 def directWriteCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
+      if isProjectConstant n && !isAuxiliary env n && DeclarationKind.bodyBearingName env n &&
           (chainWritePrimitives.contains n || usesDirectly env chainWritePrimitives n)
       then n :: acc else acc) []
 
@@ -496,7 +555,7 @@ closed: a definition it cannot classify is reported rather than skipped. -/
 def recordConstructingStoreCandidates (env : Environment) : List Name :=
   env.constants.toList.foldl
     (fun acc (n, _) =>
-      if isProjectConstant n && !isAuxiliary env n && isDefinitionShaped env n &&
+      if isProjectConstant n && !isAuxiliary env n && DeclarationKind.bodyBearingName env n &&
           ((usesDirectly env objectStoreSpellings n && (reachesChainConstructor env {} n).1) ||
             (storesObject env n && constructsChainRecord env n))
       then n :: acc else acc) []
@@ -620,7 +679,13 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
   , (`SeLe4n.Model.SystemState.consumeCallerReply,
       .states [`SeLe4n.Kernel.consumeCallerReply_preserves_donationChainWellFormed,
                `SeLe4n.Kernel.consumeCallerReply_head_preserves_donationChainWellFormedExcept])
-    -- seL4's `reply_remove`: the detach, then the unlink.  This is the step both
+    -- The pure projection of the pair (WS-RR RR8.5).  Its two chain results are
+    -- the pair's own, reached through the bridge `consumeCallerReply_eq_link`
+    -- rather than proved a second time over a second body.
+  , (`SeLe4n.Model.SystemState.consumeCallerReplyLink,
+      .states [`SeLe4n.Kernel.consumeCallerReplyLink_preserves_donationChainWellFormed,
+               `SeLe4n.Kernel.consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept])
+    -- seL4's `reply_remove`: the splice, then the unlink.  This is the step both
     -- reply spines run, and the one a new reply path must call rather than
     -- reaching for the consume.
   , (`SeLe4n.Kernel.removeCallerReplyFrame,
@@ -629,18 +694,31 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
     -- ---------------------------------------------------------------------
     -- The frozen execution surface.
     --
-    -- These were invisible to this census until `v0.35.12`: `FrozenOps` is
+    -- These were invisible to this census until `v0.35.12`: `FrozenOps` was
     -- reached by neither root, so the closure it claims held for every module
-    -- except one that writes the live `Reply` record.  And the gap was not
+    -- except one that writes the live `Reply` record.  The root cause -- a
+    -- subsystem outside every derived domain -- closed at `v0.35.60`.  And the gap was not
     -- theoretical — `frozenEndpointReply` cleared a caller's Reply bare, which
     -- is WS-RM's own defect, surviving on the surface nothing was looking at.
-  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAbove,
-      .mirrors `SeLe4n.Kernel.detachReplyFrameAbove)
-  , (`SeLe4n.Kernel.FrozenOps.frozenDetachReplyFrameAboveOrSelf,
-      .mirrors `SeLe4n.Kernel.detachReplyFrameAboveOrSelf)
-    -- The frozen reply, which now runs the detach before the consume in the
-    -- order the live one does.  `FO-031` is the differential scenario that
-    -- exercises the agreement.
+    --
+    -- **WS-HP HP8**: the three splice entries below are the two the sever had
+    -- plus its store step, and each `mirrors` the live counterpart of the same
+    -- shape.  The store step is registered rather than folded into the removal
+    -- for the reason the live one is: it performs the writes with none of the
+    -- removal's resolution or validation, so a transition reaching for it
+    -- directly is a site.  It mirrors `spliceReplyFrameStores`, which is itself
+    -- a `.halfStep` of the live removal — so the chain from here terminates in a
+    -- stating entry two hops out rather than one, which the registry's own
+    -- closure check follows.
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameStores,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameStores)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOut,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameOut)
+  , (`SeLe4n.Kernel.FrozenOps.frozenSpliceReplyFrameOutOrSelf,
+      .mirrors `SeLe4n.Kernel.spliceReplyFrameOutOrSelf)
+    -- The frozen reply, which runs the removal before the consume in the order
+    -- the live one does.  `FO-031` is the differential scenario that exercises
+    -- the agreement.
   , (`SeLe4n.Kernel.FrozenOps.frozenEndpointReply,
       .mirrors `SeLe4n.Kernel.removeCallerReplyFrame)
     -- **The frozen donation pop** (PR #895 review round 13).  `Reply.consumed`
@@ -654,17 +732,29 @@ def chainWriteRegistry : List (Name × ChainDiscipline) :=
       .mirrors `SeLe4n.Kernel.storeDonationHeadPop)
   , (`SeLe4n.Kernel.FrozenOps.frozenReturnDonatedSchedContext,
       .mirrors `SeLe4n.Kernel.returnDonatedSchedContext)
-    -- The detach itself, its total fold, and the thread-keyed wrapper the
+    -- The splice itself, its total fold, and the thread-keyed wrapper the
     -- cancellation path runs.
-  , (`SeLe4n.Kernel.detachReplyFrameAbove,
-      .states [`SeLe4n.Kernel.detachReplyFrameAbove_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.detachReplyFrameAboveOrSelf,
-      .states [`SeLe4n.Kernel.detachReplyFrameAboveOrSelf_preserves_donationChainWellFormed])
-  , (`SeLe4n.Kernel.detachFrameAboveThreadReply,
-      .states [`SeLe4n.Kernel.detachFrameAboveThreadReply_preserves_donationChainWellFormed])
-    -- The teardown's TCB-side clear.
-  , (`SeLe4n.Kernel.Lifecycle.Suspend.clearReplyObjectCaller,
-      .states [`SeLe4n.Kernel.clearReplyObjectCaller_preserves_donationChainWellFormed])
+    -- **WS-HP HP6.3**: the composed store step is a *half-step* of the operation
+    -- that validates it.  It cannot state a chain result of its own: given only
+    -- `above` and the two records, nothing says the frame above the cut is the
+    -- one whose `prev` names `rid`, and the three reciprocal links it writes are
+    -- coherent only under the resolution `spliceReplyFrameOut` performs.  That
+    -- resolution is exactly what the operation adds, and it is where the chain
+    -- result is stated.
+  , (`SeLe4n.Kernel.spliceReplyFrameStores,
+      .halfStep `SeLe4n.Kernel.spliceReplyFrameOut)
+  , (`SeLe4n.Kernel.spliceReplyFrameOut,
+      .states [`SeLe4n.Kernel.spliceReplyFrameOut_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.spliceReplyFrameOutOrSelf,
+      .states [`SeLe4n.Kernel.spliceReplyFrameOutOrSelf_preserves_donationChainWellFormed])
+  , (`SeLe4n.Kernel.spliceThreadReplyFrameOut,
+      .states [`SeLe4n.Kernel.spliceThreadReplyFrameOut_preserves_donationChainWellFormed])
+    -- The cancellation path's teardown: the projection above under the victim's
+    -- own `replyObject`.  Until WS-RR RR8.5 this was a raw-insert twin of the
+    -- pair (`clearTcbReplyObject` then `clearReplyObjectCaller`) with its own
+    -- chain proof; it is a corollary now.
+  , (`SeLe4n.Kernel.Lifecycle.Suspend.consumeReplyLink,
+      .states [`SeLe4n.Kernel.consumeReplyLink_preserves_donationChainWellFormed])
     -- The push's second store: the new head's links and the old head's `next`.
     -- Between the two stores the context's head names a frame that does not yet
     -- answer it, so the chain is broken by construction here.
@@ -769,7 +859,7 @@ def reconciliationViolations (derived alsoWriting recorded : List Name) : List S
   let unregistered := derived.filter (fun n => !recorded.contains n)
   -- **Two derivations of "writes chain data", and an entry justified by either
   -- is not stale.**  `derived` is the primitive-reaching frontier — a site that
-  -- calls one of the nine chain-write helpers — and `alsoWriting` is the
+  -- calls one of the ten chain-write helpers — and `alsoWriting` is the
   -- independent record-constructing one, which sees a definition that builds a
   -- `Reply` or `SchedContext` and stores it without naming any helper.  The
   -- tree's own depth-2 chain fixture is in the second and not the first, so
@@ -795,7 +885,7 @@ entries are.  The derived half is exercised in place — unlike the export censu
 planting a write site here costs nothing, since a `def` emits no symbol. -/
 
 /-- **The bare consume the plan asks this gate to catch**: a transition that
-clears a caller's Reply link with no detach anywhere in it.  This is WS-RM's own
+clears a caller's Reply link with no splice anywhere in it.  This is WS-RM's own
 defect, in miniature. -/
 private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) :
     SeLe4n.Model.Kernel Unit :=
@@ -803,7 +893,7 @@ private def censusWitnessBareConsume (caller : SeLe4n.ThreadId) (rid : SeLe4n.Re
 
 /-- **The write that calls no primitive**: a transition that rewrites a Reply's
 upward stack link through a record update and `storeObject`, naming none of the
-nine helpers in `chainWritePrimitives`.
+ten helpers in `chainWritePrimitives`.
 
 This is what makes that list a pin rather than the definition of the frontier.
 Nothing in `usesDirectly env chainWritePrimitives` can see it; only
@@ -1092,7 +1182,7 @@ run_cmd Command.liftTermElabM do
     derived := n :: derived
   -- The primitive list itself, held to what the code does.  `derived` above is
   -- read off `chainWritePrimitives`, so it can only ever confirm that list; this
-  -- is the independent half, and it is what stops the nine names from becoming
+  -- is the independent half, and it is what stops the ten names from becoming
   -- an enumeration standing in for a derivation.
   let mut candidates : List Name := []
   for n in recordConstructingStoreCandidates env do

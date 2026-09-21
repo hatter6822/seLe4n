@@ -1191,7 +1191,7 @@ theorem crossSubsystem_pairwise_coverage_complete :
 -- ============================================================================
 
 /-- W2-A1: Fields modified by `storeObject`. Updates the object table,
-    associated indices, and lifecycle metadata (objectTypes + capabilityRefs).
+    associated indices, and lifecycle metadata (`objectTypes`).
 
     **WS-RR RR7.19: and `asidTable`**, which this list omitted.  `storeObject`'s
     record update erases the *outgoing* object's ASID entry when it was a
@@ -1479,6 +1479,42 @@ theorem storeObject_preservesFieldsOutside
     | rfl
     | exact (hf (by decide)).elim
 
+/-- The in-place rewrite (`SystemState.rewriteObject`) writes the object table
+and **nothing else** — no index, no kind table, no ASID table — which is the
+whole point of the primitive, so its list is the one field rather than
+`storeObject_modifiedFields`.  Consumed by the three theorems below, one per
+spelling of the rewrite. -/
+def rewriteObject_modifiedFields : List StateField :=
+  [.objects]
+
+theorem rewriteObject_preservesFieldsOutside
+    (st : SystemState) (id : SeLe4n.ObjId) (new : KernelObject)
+    (h : st.rewriteAdmissible id new) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.rewriteObject id new h) := by
+  intro f hf
+  cases f <;> first
+    | rfl
+    | exact (hf (by decide)).elim
+
+theorem updateTcb_preservesFieldsOutside
+    (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.updateTcb tid f) := by
+  rw [SystemState.updateTcb_eq_objects_update]
+  intro g hg
+  cases g <;> first
+    | rfl
+    | exact (hg (by decide)).elim
+
+theorem updateSchedContext_preservesFieldsOutside
+    (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) :
+    preservesFieldsOutside rewriteObject_modifiedFields st (st.updateSchedContext scId f) := by
+  rw [SystemState.updateSchedContext_eq_objects_update]
+  intro g hg
+  cases g <;> first
+    | rfl
+    | exact (hg (by decide)).elim
+
 /-- **WS-RR RR7.19**: `revokeService` writes nothing outside its declared set —
 the registry erase and the dependency-graph edit, and no more. -/
 theorem revokeService_preservesFieldsOutside
@@ -1572,19 +1608,6 @@ theorem storeObject_preservesFieldsOutside_capability
   preservesFieldsOutside_mono (fun _ hf => List.mem_append_left _ hf)
     (storeObject_preservesFieldsOutside id obj st st' hStep)
 
-theorem storeCapabilityRef_preservesFieldsOutside
-    (ref : SlotRef) (target : Option CapTarget) (st st' : SystemState)
-    (hStep : storeCapabilityRef ref target st = .ok ((), st')) :
-    preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold storeCapabilityRef at hStep
-  simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-  obtain ⟨-, hEq⟩ := hStep
-  subst hEq
-  intro f hf
-  cases f <;> first
-    | rfl
-    | exact (hf (by decide)).elim
-
 theorem detachSlotFromCdt_preservesFieldsOutside (st : SystemState) (ref : SlotRef) :
     preservesFieldsOutside capabilityOp_modifiedFields st (st.detachSlotFromCdt ref) := by
   unfold SystemState.detachSlotFromCdt
@@ -1627,13 +1650,7 @@ theorem cspaceInsertSlot_preservesFieldsOutside
   split at hStep
   · split at hStep
     · cases hStep
-    · split at hStep
-      · cases hStep
-      · rename_i u st₁ hStore
-        cases u
-        exact preservesFieldsOutside_trans
-          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
-          (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hStep)
+    · exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStep
   · cases hStep
 
 theorem cspaceDeleteSlotCore_preservesFieldsOutside
@@ -1647,17 +1664,12 @@ theorem cspaceDeleteSlotCore_preservesFieldsOutside
     · cases hStep
     · rename_i u st₁ hStore
       cases u
-      split at hStep
-      · cases hStep
-      · rename_i st₂ hRef
-        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨-, hEq⟩ := hStep
-        subst hEq
-        exact preservesFieldsOutside_trans
-          (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
-          (preservesFieldsOutside_trans
-            (storeCapabilityRef_preservesFieldsOutside _ _ _ _ hRef)
-            (detachSlotFromCdt_preservesFieldsOutside _ _))
+      simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      obtain ⟨-, hEq⟩ := hStep
+      subst hEq
+      exact preservesFieldsOutside_trans
+        (storeObject_preservesFieldsOutside_capability _ _ _ _ hStore)
+        (detachSlotFromCdt_preservesFieldsOutside _ _)
   · cases hStep
 
 theorem cspaceDeleteSlot_preservesFieldsOutside
@@ -1985,7 +1997,7 @@ theorem returnDonatedSchedContext_preservesFieldsOutside
     preservesFieldsOutside ipcEndpointOp_modifiedFields st st' := by
   -- WS-OD OD3.2: read off the operation's own store chain rather than by a copy
   -- of its case analysis, which the reply-stack pop's fourth write invalidated.
-  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
+  obtain ⟨_, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hClear, _, hS3, _, hS4, hEq⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? hStep
   refine preservesFieldsOutside_trans
     (storeObject_preservesFieldsOutside_ipc _ _ _ _ hS1) ?_
@@ -3573,8 +3585,9 @@ theorem schedContextConfigure_crossSubsystemInvariant_bridge
 
 /-- AD4-E (F-08): `schedContextBind` preserves `crossSubsystemInvariant`.
     Updates SchedContext `boundThread` and TCB `schedContextBinding` fields
-    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
-    `objectIndex`. -/
+    through the typed in-place rewrites (`rewriteObject` under the lookup's
+    witness, then `updateTcb`). Does not modify `services`, `serviceRegistry`,
+    or `objectIndex`. -/
 theorem schedContextBind_crossSubsystemInvariant_bridge
     (st st' : SystemState)
     (hPre : crossSubsystemInvariant st)
@@ -3619,8 +3632,9 @@ theorem schedContextUnbind_crossSubsystemInvariant_bridge
     hRegEpValid hEndpointQ hNotifWait hScStore hScDual hScRunQ hBlockAcyclic hLockstep hUntypedDisj
 
 /-- AD4-E (F-08): `schedContextYieldTo` preserves `crossSubsystemInvariant`.
-    Transfers budget between SchedContexts. Modifies SchedContext objects
-    via `objects.insert`. Does not modify `services`, `serviceRegistry`, or
+    Transfers budget between SchedContexts. Rewrites both SchedContext objects
+    in place (`rewriteObject` under the source's witness, then
+    `updateSchedContext`). Does not modify `services`, `serviceRegistry`, or
     `objectIndex`. -/
 theorem schedContextYieldTo_crossSubsystemInvariant_bridge
     (st st' : SystemState)

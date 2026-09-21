@@ -487,7 +487,6 @@ structure FrozenSystemState where
 
   -- Lifecycle metadata (FrozenMap)
   objectTypes       : FrozenMap SeLe4n.ObjId KernelObjectType
-  capabilityRefs    : FrozenMap SlotRef CapTarget
 
   -- Non-map fields (retained as-is)
   machine           : SeLe4n.MachineState
@@ -698,7 +697,6 @@ def freeze (ist : IntermediateState) : FrozenSystemState :=
     cdtNextNode := st.cdtNextNode
     scheduler := freezeScheduler st.scheduler
     objectTypes := freezeMap st.lifecycle.objectTypes
-    capabilityRefs := freezeMap st.lifecycle.capabilityRefs
     machine := st.machine
     objectIndex := st.objectIndex
     objectIndexSet := freezeMap st.objectIndexSet.table
@@ -1088,5 +1086,36 @@ def FrozenSystemState.getReply? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) 
   match st.objects.get? rid.toObjId with
   | some (.reply r) => some r
   | _               => none
+
+
+/-- **The frozen mirror of `SystemState.threadBasePriority`** — `TCB.priority`,
+at every binding (`v0.35.133`).
+
+The live resolver collapsed when the base priority stopped having two homes, and
+this mirror collapses with it *in the same cut*, because a mirror that classifies
+where its subject no longer does is a divergence the differential cannot see
+until a scenario puts a `.bound` thread on both surfaces — which is exactly the
+defect PR #897 found here one operation over, at `v0.35.99`.
+
+Kept as a named definition rather than inlined, so `frozenSetMCPriority`'s
+capping rule and the frozen run queue read the question by name and neither
+surface can grow a second reading of it. -/
+def FrozenSystemState.threadBasePriority (_st : FrozenSystemState) (tcb : TCB) :
+    SeLe4n.Priority :=
+  tcb.priority
+
+/-- The one home, stated — the frozen twin of `threadBasePriority_eq`.  It
+subsumes the arm-specific readings (`_unbound`, `_donated`) this mirror used to
+need, which is why they are deleted rather than restated. -/
+@[simp] theorem FrozenSystemState.threadBasePriority_eq (st : FrozenSystemState)
+    (tcb : TCB) : st.threadBasePriority tcb = tcb.priority := rfl
+
+/-- The frozen reading and the live one are the same function of the same TCB,
+whatever either store holds.  Under two homes this could only have been stated
+per binding and under a consistency hypothesis; with one home it is `rfl`, which
+is the strongest form a live/frozen agreement can take. -/
+theorem FrozenSystemState.threadBasePriority_eq_live (fst : FrozenSystemState)
+    (st : SystemState) (tcb : TCB) :
+    fst.threadBasePriority tcb = st.threadBasePriority tcb := rfl
 
 end SeLe4n.Model

@@ -80,8 +80,19 @@ def test_AK8_E_unbound_returns_tcb_priority : IO Bool := do
   | .error _ => return false
 
 /-- AK8-E success: a TCB bound to an existing SchedContext returns the
-SC's priority. -/
-def test_AK8_E_bound_returns_sc_priority : IO Bool := do
+**thread's own** priority, and still requires the reservation to resolve.
+
+WS-RR (`v0.35.133`): this asserted the SC's priority, because the base had two
+homes and this reader chose the reservation's.  With `TCB.priority` the base's one
+home it returns the thread's field at every binding; the lookup survives because
+its FAILURE is the error this `Checked` variant exists to surface (AK8-E.3), not
+because it decides the priority.
+
+The fixture is deliberately a **drifted** state -- the thread at 5, its
+reservation at 77 -- so the row discriminates: on a state satisfying
+`boundThreadPriorityConsistent` the two readings agree, and only here do they
+part.  A revert of the one-home collapse fails this row. -/
+def test_checkedPriority_bound_reads_thread_field : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 200
   let sc : Kernel.SchedContext :=
     { scId := scId
@@ -103,7 +114,7 @@ def test_AK8_E_bound_returns_sc_priority : IO Bool := do
       (.schedContext sc) }
   match SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriorityChecked
           st tcb with
-  | .ok p => return p.val == 77
+  | .ok p => return p.val == 5
   | .error _ => return false
 
 /-- AK8-E failure: a TCB bound to a SchedContext that does not exist in
@@ -186,7 +197,6 @@ private def emptyFrozenState : FrozenSystemState :=
         configDefaultTimeSlice := 5
         replenishQueue := { entries := [], size := 0 } }
     objectTypes := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
-    capabilityRefs := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
     machine := default
     objectIndex := []
     objectIndexSet := freezeMap (SeLe4n.Kernel.RobinHood.RHTable.empty 16)
@@ -389,8 +399,8 @@ and prints `AK8-X.<n> PASS` or `AK8-X.<n> FAIL` per row. -/
 def ak8Tests : List (String × IO Bool) :=
   [ ("AK8-E.1 unbound TCB returns its own priority",
        test_AK8_E_unbound_returns_tcb_priority)
-  , ("AK8-E.2 bound TCB returns SC priority",
-       test_AK8_E_bound_returns_sc_priority)
+  , ("AK8-E.2 bound TCB returns its own priority, not its reservation's",
+       test_checkedPriority_bound_reads_thread_field)
   , ("AK8-E.3 bound TCB with missing SC -> .objectNotFound",
        test_AK8_E_bound_missing_sc_is_objectNotFound)
   , ("AK8-F.1 returns next free slot within radix",

@@ -22,10 +22,17 @@ per-core scheduler dispatcher — `scheduleEffectiveOnCore`
 core's idle thread when nothing else is runnable, and the dispatcher is
 *upstream* of `Platform.Boot` in the import graph.
 
-The idle *TCB constructor* (`createIdleThread`) and the *boot installer*
-(`installIdleThread`, `bootFromPlatformWithIdleThreads`) remain in
-`Platform.Boot` (they need the `IntermediateState` / `Builder` machinery); the
-SM5.E theorems (`Scheduler/Operations/PerCoreIdle.lean`) consume both.
+The idle *TCB* lives here too since `v0.35.68` — `createIdleThread` (the
+dispatched form) and `queuedIdleThread` (the enqueued form), with their field
+lemmas — because the kernel model's idle enqueue (`enqueueIdleThreadOnCore`,
+`Scheduler/Operations/IdleEnqueue.lean`) builds the TCB it stores, and that
+operation is what the production boot now *runs*: `Platform.Boot.enqueueIdleThread`
+is the kernel-model enqueue on the intermediate state's `state`, so the module
+holding the TCB has to sit upstream of both.  Only the boot *installers*
+(`installIdleThread`, `bootFromPlatformWithIdleThreads`, `enqueueIdleThread`)
+remain in `Platform.Boot`, where the `IntermediateState` / `Builder` machinery
+they carry witnesses through is; the SM5.E theorems
+(`Scheduler/Operations/PerCoreIdle.lean`) consume all of it.
 
 The capability predicate `capTargetsReservedIdleObject` (PR #889 review round
 2) lives here too, because both consumers of the reservation — the syscall
@@ -170,5 +177,129 @@ theorem idleThreadId_toObjId_ne_of_not_isIdleObjId (oid : SeLe4n.ObjId)
   intro hEq
   rw [← hEq, isIdleObjId_idleThreadId_toObjId] at h
   exact Bool.noConfusion h
+
+-- ============================================================================
+-- The per-core idle TCB — its dispatched and its enqueued form (SM4.G / SM5.E.2;
+-- moved here from `Platform.Boot` at v0.35.68, when the boot's idle install
+-- became the kernel model's own enqueue)
+-- ============================================================================
+
+/-- **WS-SM SM4.G** (plan §3.7) / **WS-SM SM5.E.2** (plan §3.5): the per-core
+    idle thread control block.
+
+    Idle threads are the lowest-priority threads each core runs when nothing
+    else is runnable.  Fields: `priority := ⟨0⟩` (lowest, so any runnable user
+    thread always outranks idle — idle never starves a higher-priority thread),
+    `domain := ⟨0⟩` (the boot active domain, so `currentThreadInActiveDomain`
+    holds when the idle thread is current), `threadState := .Running` (it is the
+    running thread when scheduled), `tid := idleThreadId c` (the per-core
+    identity), and — **SM5.E.2** — `cpuAffinity := some c`: the idle thread is
+    **pinned to its own core**.
+
+    The affinity binding is the SM5.E.2 improvement.  `createIdleThread`
+    predates `TCB.cpuAffinity` (which landed at SM5.B.4); now that the field
+    exists, binding the idle thread to `some c` is what makes
+    `idleThread_core_locality`
+    (`Scheduler/Operations/PerCoreIdle.lean`) a *substantive* theorem rather
+    than a frame fact: a thread bound to `some c` is not admitted onto any other
+    core `c' ≠ c` (`affinityAdmitsCore`), so core `c`'s idle thread can never
+    appear on core `c'`'s run queue.  `cspaceRoot` / `vspaceRoot` are
+    `ObjId.sentinel`: an idle thread runs in kernel context and holds no
+    capabilities, so it has no CSpace/VSpace root (this is semantically
+    faithful, and the scheduler invariants never read these fields).  All other
+    fields take their structure defaults.
+
+    This is the *dispatched* form: SM4.G's `installIdleThread`
+    (`Platform.Boot`) points a core's current slot at it.  The production boot
+    stores the *enqueued* form, `queuedIdleThread`, below. -/
+def createIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
+  { tid          := idleThreadId c
+    priority     := ⟨0⟩
+    domain       := ⟨0⟩
+    cspaceRoot   := SeLe4n.ObjId.sentinel
+    vspaceRoot   := SeLe4n.ObjId.sentinel
+    ipcBuffer    := default
+    threadState  := .Running
+    cpuAffinity  := some c }
+
+/-- **WS-RR RR5.11** (PR #889 review): the idle TCB as it is **enqueued** —
+    `createIdleThread c` with `threadState := .Ready`.
+
+    `createIdleThread` is the *dispatched* form: SM4.G's `installIdleThread`
+    points a core's current slot at it, so `.Running` is the state the
+    classification infers for it (`inferThreadState`: current on some core).  The
+    kernel model's enqueue (`enqueueIdleThreadOnCore`) — and through it the
+    production boot (`Platform.Boot.enqueueIdleThread`) — does the opposite: it
+    puts idle on the core's run queue and leaves the current slot `none`, and the
+    classification infers `.Ready` for a queued, non-current thread.  Storing the
+    dispatched form on the enqueue path made every successful production boot
+    violate `threadStateConsistent` on every core, which the harness never saw
+    because `assertStateInvariantsFor` syncs the field before it checks it.  The
+    stored field now says what the state says
+    (`Platform.Boot.bootFromPlatformCheckedWithIdleThreads_idle_threadState`).
+
+    Every other field is `createIdleThread`'s, so the enqueue-side theorems that
+    read priority, domain, affinity or id go through by `rfl` exactly as before. -/
+def queuedIdleThread (c : CoreId) : SeLe4n.Model.TCB :=
+  { createIdleThread c with threadState := .Ready }
+
+/-- WS-SM SM5.E.5 (plan §3.5, Theorem `idleThread_priority_zero`): the idle
+    thread is priority `⟨0⟩` — the lowest schedulable priority.  Consequence: a
+    runnable user thread (priority `> 0`, or even `0` with an earlier FIFO
+    position) is never displaced by idle; idle is only selected when no
+    higher-priority thread is eligible.  `rfl` from `createIdleThread`. -/
+@[simp] theorem idleThread_priority_zero (c : CoreId) :
+    (createIdleThread c).priority = ⟨0⟩ := rfl
+
+/-- WS-SM SM5.E.5: the idle thread is in scheduling domain `⟨0⟩` (the boot
+    active domain).  So when core `c`'s active domain is the boot domain (the RPi5
+    v1.0.0 single-domain case, where `domainSchedule = []`), the idle thread is
+    in-domain and hence an eligible selection candidate. -/
+@[simp] theorem createIdleThread_domain_zero (c : CoreId) :
+    (createIdleThread c).domain = ⟨0⟩ := rfl
+
+/-- WS-SM SM5.E.2 (plan §3.5): the idle thread for core `c` is pinned to core
+    `c` via `cpuAffinity = some c`.  This is the field that makes
+    `idleThread_core_locality` substantive — `affinityAdmitsCore (createIdleThread
+    c) c' = (c == c')`, so idle `c` is not admitted on any `c' ≠ c`. -/
+@[simp] theorem createIdleThread_cpuAffinity (c : CoreId) :
+    (createIdleThread c).cpuAffinity = some c := rfl
+
+/-- WS-SM SM5.E.1: the idle thread's id is `idleThreadId c`. -/
+@[simp] theorem createIdleThread_tid (c : CoreId) :
+    (createIdleThread c).tid = idleThreadId c := rfl
+
+/-- **WS-RR RR5.11** (PR #889 review): the **queued** idle TCB — what the enqueue
+    surface stores — has `createIdleThread`'s priority, domain, affinity and id;
+    only `threadState` differs (`.Ready`, `queuedIdleThread_threadState`), because
+    a thread on a run queue and in no current slot is what `inferThreadState`
+    classifies `.Ready`.  Each is `rfl`, so every enqueue-side theorem reads the
+    field through these exactly as it read `createIdleThread`'s before. -/
+@[simp] theorem queuedIdleThread_priority (c : CoreId) :
+    (queuedIdleThread c).priority = ⟨0⟩ := rfl
+
+@[simp] theorem queuedIdleThread_domain (c : CoreId) :
+    (queuedIdleThread c).domain = ⟨0⟩ := rfl
+
+@[simp] theorem queuedIdleThread_cpuAffinity (c : CoreId) :
+    (queuedIdleThread c).cpuAffinity = some c := rfl
+
+@[simp] theorem queuedIdleThread_tid (c : CoreId) :
+    (queuedIdleThread c).tid = idleThreadId c := rfl
+
+/-- **WS-RR RR5.11**: the queued idle TCB's state is `.Ready` — the fact the
+    boot's consistency theorem rewrites with. -/
+@[simp] theorem queuedIdleThread_threadState (c : CoreId) :
+    (queuedIdleThread c).threadState = .Ready := rfl
+
+/-- **WS-RR RR5.11**: the queued form differs from the dispatched form in the
+    one field the state determines — the negative pin, so the two cannot silently
+    collapse into one. -/
+theorem queuedIdleThread_ne_createIdleThread (c : CoreId) :
+    queuedIdleThread c ≠ createIdleThread c := by
+  intro h
+  have hState : SeLe4n.Model.ThreadState.Ready = SeLe4n.Model.ThreadState.Running :=
+    congrArg SeLe4n.Model.TCB.threadState h
+  cases hState
 
 end SeLe4n.Kernel

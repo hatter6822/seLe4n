@@ -229,8 +229,8 @@ theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle
 
 /-- **The local revoke leaves `cdtNodeSlot` alone.**
 
-`storeObject` and `revokeAndClearRefsState` both preserve it, so the node→slot
-map a caller carried into `cspaceRevoke` is the one it carries out.
+`storeObject` preserves it, so the node→slot map a caller carried into
+`cspaceRevoke` is the one it carries out.
 
 Extracted from the three revocation preservation theorems that each held a
 verbatim copy of this derivation. -/
@@ -253,15 +253,7 @@ theorem cspaceRevoke_preserves_cdtNodeSlot
         simp [hObj] at hRevoke
       | cnode preCn =>
         simp [hObj] at hRevoke
-        cases hStore : storeObject addr.cnode
-            (.cnode (preCn.revokeTargetLocal addr.slot parent.target)) st with
-        | error e => simp [hStore] at hRevoke
-        | ok pair =>
-          obtain ⟨_, stMid⟩ := pair; simp [hStore] at hRevoke; rw [← hRevoke]
-          have hNSMid := (storeObject_cdtNodeSlot_eq st stMid addr.cnode _ hStore).1
-          have ⟨_, hNSClear, _, _⟩ :=
-            revokeAndClearRefsState_cdt_eq preCn addr.slot parent.target addr.cnode stMid
-          rw [hNSClear, hNSMid]
+        exact (storeObject_cdtNodeSlot_eq st stLocal addr.cnode _ hRevoke).1
 
 /-- **The scaffold preserves the bundle whenever its traversal does.**
 

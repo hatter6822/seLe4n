@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.35.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.155.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -89,6 +89,25 @@ NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh  # Tier 0-4
 Run at least `test_smoke.sh` before any PR. Run `test_full.sh` when changing
 theorems, invariants, or documentation anchors.
 
+**A tier stops at its first failing check.**  `run_check` calls
+`finalize_report` unless `--continue` is passed, so one run names *one* broken
+gate and a green run after a fix says nothing about the checks that never ran.
+Pass `--continue` to any tier script to collect every failure in one pass:
+
+```bash
+./scripts/test_tier3_invariant_surface.sh --continue   # every broken anchor, once
+```
+
+That matters most after a **refactor**: moving a definition silently breaks every
+Tier 3 anchor scoped to it, and Tier 3 runs last.  Before running it, sweep the
+anchors over every file the cut touched —
+`rg -n '^run_(check|negative_check|prose_check|prose_negative_check) ' scripts/test_tier3_invariant_surface.sh`
+filtered to those paths — and execute each one directly; that is seconds against
+tens of minutes per iteration.  This is the *sweep what was pinning the thing you
+deleted* rule with a mechanism: `v0.35.116` moved a table parse between two
+functions and three anchors over the old home went silent, of which the run
+reported one.
+
 **Run `test_aarch64_cross_build.sh` after any change under `rust/`.** The
 tier scripts and `test_rust.sh` both compile the *host* target, where every
 `#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy
@@ -162,7 +181,7 @@ SeLe4n/Kernel/InformationFlow/   Security labels, projection, non-interference
 SeLe4n/Kernel/RobinHood/         Verified Robin Hood hash table
 SeLe4n/Kernel/RadixTree/         Verified flat-array CNode radix tree
 SeLe4n/Kernel/SchedContext/      CBS budgets, replenishment queue, MCP authority
-SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations (experimental)
+SeLe4n/Kernel/FrozenOps/         Frozen-state kernel operations, refined against the live API
 SeLe4n/Kernel/Concurrency/       SMP-latent assumption inventory
 SeLe4n/Kernel/CrossSubsystem.lean  Cross-subsystem invariants, discharge index marker
 SeLe4n/Kernel/API.lean           Public kernel interface + syscall wrappers
@@ -203,206 +222,215 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~64044 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23254 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12166 lines)
+- `CHANGELOG.md` (~74416 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~7508 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~6673 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~6039 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~5952 lines)
-- `SeLe4n/Platform/Boot.lean` (~5867 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~5683 lines)
-- `docs/spec/SELE4N_SPEC.md` (~5511 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5105 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5067 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5033 lines)
-- `SeLe4n/Model/State.lean` (~4959 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4842 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7984 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7869 lines)
+- `SeLe4n/Kernel/API.lean` (~7592 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6419 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
+- `SeLe4n/Platform/Boot.lean` (~5961 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5881 lines)
+- `SeLe4n/Model/State.lean` (~5685 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5127 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4440 lines)
+- `tests/NegativeStateSuite.lean` (~4545 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/NegativeStateSuite.lean` (~4115 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3919 lines)
-- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3803 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3898 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3813 lines)
+- `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
+- `tests/SmpIpcSuite.lean` (~3796 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Platform/FFI.lean` (~3592 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3725 lines)
+- `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3412 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3439 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3428 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
-- `tests/OperationChainSuite.lean` (~3290 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3285 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3260 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3257 lines)
+- `tests/OperationChainSuite.lean` (~3289 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3118 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `tests/SmpIpcSuite.lean` (~3074 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3090 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3025 lines)
+- `SeLe4n/Model/Object/Types.lean` (~2930 lines)
+- `tests/FrozenOpsSuite.lean` (~2857 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~2714 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2788 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2754 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2535 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2515 lines)
+- `tests/SmpCancellationSuite.lean` (~2518 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
-- `tests/ModelIntegritySuite.lean` (~2484 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2504 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2481 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2481 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
+- `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
-- `SeLe4n/Model/Object/Types.lean` (~2316 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2281 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2278 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~2262 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2244 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2162 lines)
-- `SeLe4n/Prelude.lean` (~2137 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2170 lines)
+- `SeLe4n/Prelude.lean` (~2166 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2164 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2124 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2099 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2059 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2047 lines)
-- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2044 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2043 lines)
-- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2028 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1994 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2077 lines)
+- `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
+- `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
+- `docs/planning/UNFINISHED_SMP_WORK.md` (~2016 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2000 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1981 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~1963 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1955 lines)
+- `tests/LockSetSuite.lean` (~1951 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1934 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1909 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
 - `tests/InformationFlowSuite.lean` (~1895 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1891 lines)
 - `docs/dev_history/planning/V3E_IPC_UNWRAP_CAPS_LOOP_COMPOSITION_PLAN.md` (~1891 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1886 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
-- `tests/SmpCancellationSuite.lean` (~1877 lines)
-- `tests/LockSetSuite.lean` (~1834 lines)
+- `tests/SyscallDispatchSuite.lean` (~1847 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
-- `SeLe4n/Model/FreezeProofs.lean` (~1827 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
-- `tests/SyscallDispatchSuite.lean` (~1812 lines)
+- `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~1800 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
-- `docs/planning/UNFINISHED_SMP_WORK.md` (~1795 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1765 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1729 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1734 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
+- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
-- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1645 lines)
-- `tests/FrozenOpsSuite.lean` (~1636 lines)
-- `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1616 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1603 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1648 lines)
+- `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1583 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1455 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1439 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
+- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1436 lines)
+- `tests/PriorityManagementSuite.lean` (~1430 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1418 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1415 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1411 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1397 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1389 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1375 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~1359 lines)
+- `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1317 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1312 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1295 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1294 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1240 lines)
+- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1178 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1165 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
-- `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1150 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1139 lines)
 - `tests/SyscallReturnAbiSuite.lean` (~1130 lines)
 - `SeLe4n/Machine.lean` (~1128 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1105 lines)
-- `tests/SmpIdleSuite.lean` (~1105 lines)
+- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
+- `SeLe4n/Model/FrozenState.lean` (~1121 lines)
+- `tests/SmpIdleSuite.lean` (~1118 lines)
+- `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1110 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1107 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
-- `SeLe4n/Model/FrozenState.lean` (~1092 lines)
-- `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1085 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1049 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
-- `tests/PriorityManagementSuite.lean` (~1035 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
-- `tests/SmpCbsSuite.lean` (~1001 lines)
+- `tests/SmpCbsSuite.lean` (~1015 lines)
+- `tests/DeadlockFreedomSuite.lean` (~1007 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1000 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~994 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
+- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~973 lines)
 - `docs/planning/SMP_PER_CORE_STATE_PLAN.md` (~968 lines)
-- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~958 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~962 lines)
+- `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~952 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~950 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~949 lines)
-- `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~947 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~951 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
 - `SeLe4n/Kernel/InformationFlow/Declassification.lean` (~935 lines)
+- `tests/SmpTimerSuite.lean` (~934 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
-- `tests/DeadlockFreedomSuite.lean` (~929 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~917 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `tests/SmpTimerSuite.lean` (~904 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~907 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~883 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
-- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~868 lines)
+- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
+- `tests/An10CascadeSuite.lean` (~866 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~845 lines)
-- `tests/An10CascadeSuite.lean` (~842 lines)
-- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~838 lines)
+- `tests/SuspendResumeSuite.lean` (~856 lines)
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~851 lines)
+- `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~843 lines)
+- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~839 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
@@ -411,9 +439,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
+- `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
+- `docs/REGISTERED_DEBT.md` (~807 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
-- `docs/DEVELOPMENT.md` (~803 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
 `scripts/sync_documentation_metrics.sh`) compares it against the live
@@ -799,9 +829,145 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   than bridging at the call site, so no `def` body mentions the store at all.
   `STORE_READ_CODE` is now a `ZERO_METRICS` entry beside `SORRY_COUNT` and
   `AXIOM_COUNT`: **regenerating the baseline does not clear it**, only fixing
-  the tree does, and the gate says so in its failure epilogue.  The only raw
-  reads left anywhere are the accessor bodies — which the census registers by
-  name — and propositions, which have no helper form.
+  the tree does, and the gate says so in its failure epilogue.  Since `v0.35.76`
+  `STORE_WRITE_CODE` sits beside it: the same classifier run over the raw
+  *write* spellings, with the bodies that write raw by design registered in
+  `WRITE_PRIMITIVE_BODIES` and reconciled in both directions — and it was a
+  zero floor from its first measurement, the raw-write migration having
+  reached the primitives before the census existed.
+
+  **Both zeros are over the DIRECT spellings, and `v0.35.117` is where that stops
+  being implied and starts being printed.**  Until then this paragraph said the
+  only raw reads left anywhere were the accessor bodies and propositions, and the
+  §7's raw-write ledger said the only raw writes were the five primitives and one
+  planted witness.  Both were **false**, and the reason is the rule this file
+  states one item down (*a helper the scanner cannot see is a spelling that evades
+  the metric*) read in the other direction: every pattern here keys on the
+  receiver text `.objects`, so a declaration that holds the table through an
+  **indirection** is invisible to all of them.  There are two spellings of that
+  indirection and they are one question — a binding (`let objs := st.objects`,
+  then `objs.insert k v`) and a parameter (`(objs : RHTable ObjId KernelObject)`)
+  — and three executable declarations use them: `endpointQueueRemove` (four
+  writes, two reads), `spliceOutMidQueueNode` (two and two) and
+  `queueNeighbourPatch` (one and one).  Twelve keyed accesses, outside two
+  enforced zeros, which is why the raw-write migration
+  (`v0.35.64`..`v0.35.78`) passed over all three: *the population a census
+  measures is the population its receiver can name.*
+
+  `STORE_INDIRECT_CODE` is the number, `STORE_INDIRECT_SCOPE` the claim, and both
+  zeros now print their own `_SCOPE` line saying *recognised spellings only; a
+  floor, not a proof of absence*.  Four things new code must respect.  (1) **One
+  classifier, both spellings**: `table_receivers` derives the identifiers that
+  denote the table — from three binder positions, a signature binder, a lambda
+  binder and an unbracketed ascription, all read over the *whole* declaration
+  rather than its signature alone, and from a binding of the projection, closed
+  **transitively**, so one extra `let` is not a hole — and the access alternation
+  is `_TABLE_OPS`', the same one `READ` and `WRITE` are built from, so a newly
+  classified operation reaches the direct and indirect censuses by construction.
+  The table type itself has one definition (`_TABLE_TYPE`), so a binder and an
+  ascription cannot disagree about what a table is.  Flooring one spelling and
+  describing the other in prose would have been *a fix applied at one site and not
+  its sibling*.  (2) **It is driven through
+  `classify`**, via a `collect` hook, because the property is a relation between a
+  declaration's signature and its body that no line pattern can express — so the
+  declaration boundary, the `Prop` verdict and the region split stay ONE answer
+  and a mutation of any of them fails both censuses.  (3) **The unit is the
+  access, not the binding**: a binding count cannot see a second `objs.insert`
+  added to a declaration that already aliases, which is *a cardinality is not a
+  set* one level down and is exactly what the two zeros count.  (4) **It is a
+  floor, not a zero, and that is the honest shape**: a `ZERO_METRICS` entry this
+  project may not re-anchor would have had to be false on the day it landed.  The
+  table's own operations are exempt, **derived** from `_TABLE_SOURCES` — a
+  declaration named `RHTable.insert` in the table's own source *is* the primitive,
+  so counting it would report the definition of the thing being measured — and
+  reconciled both ways so a stale exemption cannot read as coverage.
+
+  **Driving it to zero is registered, with its architecture named rather than
+  left to be rediscovered** (`docs/REGISTERED_DEBT.md` table C).  The target is
+  not a new primitive: `queueNeighbourPatch` becomes state-level, which is
+  `Option.elim` over the `updateTcb` this tree has had since `v0.35.65`, and the
+  two aliasing removals then compose it and `rewriteObject` with no table in
+  scope.  What that costs is measured rather than estimated — nine theorems stated
+  over the *table* in `CleanupPreservation.lean`, twenty-five over
+  `spliceOutMidQueueNode` across fifteen files, and the two `_eq_patches` pins
+  whose right-hand sides compose at the table level — which is why it is a cut of
+  its own and not a rider on the census that found it.
+
+  **And a spelling is not a write either — nor is a regex a classification**
+  (PR #897 review, `v0.35.97`).  That zero was true of `objects.insert` and
+  `objects.erase` and blind to `objects.set`, which the WRITE pattern named in
+  its *qualified* branch and not in its *method* one — so `st.objects.set k v`,
+  the frozen surface's ordinary store, walked around an **enforced zero**, and
+  thirty-one executable raw writes sat behind it.  That is `v0.35.12`'s finding
+  on the other census, one branch down, and patching the branch would have been
+  the fourth telling of a rule this file already carries twice.
+
+  So the *question* has one answer: `_TABLE_OPS` classifies every operation of
+  either object table `read` / `write` / `sweep` / `other`, and `READ`, `WRITE`
+  and `SWEEP` are built from **one alternation** over it, so a widening reaches
+  both spellings by construction.  Two reconciliations run in every mode:
+  `table_op_violations` derives the operation set from `RHTable`'s and
+  `FrozenMap`'s own sources and fails in both directions — *an operation nobody
+  classified is one neither pattern ever looks for*, which is precisely how
+  `set` escaped — and `branch_symmetry_violations` asserts each kind is
+  recognised in the method spelling *and* the qualified one.  The decisive
+  self-test case keeps the write and changes only how it is written.
+
+  Two things that widening measured, and both generalise.  **A helper the
+  scanner cannot see is a spelling that evades the metric**: the frozen writes
+  went onto `frozenWithObjectStored`, a *state*-level primitive, because a
+  map-level one would carry its raw `set` on a bare `FrozenMap` parameter, which
+  a census keyed on `.objects` is blind to — so a new store primitive takes the
+  state, never the table.  And **a transition can wear a primitive's
+  exemption**: `frozenUpdatePipBoost` was in `WRITE_PRIMITIVE_BODIES` because it
+  spelled its write `st.objects.insert`, the one form the `set`-only branch
+  could not see; it writes through `frozenRewriteObject` — the total mirror of
+  the live `rewriteObject`, sound because `FrozenMap.insert` *is* `set` with an
+  append fallback — and the registry names the primitive alone.  Whole-table
+  traversals are now **reported** (`STORE_SWEEP_*`) rather than silently outside
+  the population, because a fold is not a keyed access and a number beside the
+  two zeros is what stops their silence reading as absence.
+
+  **And the collapse surfaced twelve answers to one question.**  Moving the
+  writes behind a primitive broke eleven proofs that each `unfold`ed a composite
+  down to `FrozenMap.set` and case-split on it — plus a twelfth,
+  `frozenStoreObject_extracts_state`, which said exactly that, `private`, in a
+  module **downstream of every asker**: *when a question has one owner and an
+  asker that cannot see it, the owner is in the wrong layer.*  The owner is now
+  beside the write (`frozenWithObjectStored_ok`, `_only_modifies_objects`,
+  `frozenRewriteObject_only_modifies_objects`, `frozenOnlyObjects_rfl` /
+  `_trans`) and the duplicate is deleted with a tombstone.  The re-derivations
+  were coupled to the wrong thing besides — each closed its leaves by
+  `injection` on a literal `{ st with objects := _ }`, so it depended on how many
+  branches a body had *and* on every write being spelled inline, which is why
+  the migration broke them rather than leaving them redundant.
+  `frozen_objects_frame` **searches** the branch for whatever store chain the
+  split left in context, so a store added to a frozen operation costs its frame
+  proof nothing.
+
+  One mechanical note, because it corrected the author rather than the tree: a
+  mutation run first read as showing the registry reconciliation passing a stale
+  entry.  It was not stale — `frozenUpdatePipBoost` genuinely still held a raw
+  write, in the `insert` spelling the fixing sweep had grepped past.  **The gate
+  was right and the sweep was one spelling wide**, which is this cut's own
+  finding arriving inside the work to fix it.
+
+  **And the sweep's subject is the SET a cut retires, not the artefact the last
+  red gate named.**  Four artefacts watched this one change and each reported
+  separately: the de-threading gate (a `macro` is declaration-minting
+  machinery), the reply-stack write census (a helper one hop past the frontier),
+  and **two** Tier 3 anchors — one on the retired `WRITE` alternation, one on
+  the retired `WRITE_PRIMITIVE_BODIES` key.  The fourth is the finding: after
+  the third, this file's own *sweep what was pinning the thing you deleted* rule
+  was run — and run against the retired **pattern**, which is what the red gate
+  had pointed at, so the anchor naming a retired **registry key** stayed
+  invisible until Tier 3 reached it.  A cut that deletes a pattern, a helper and
+  a registry key has three sweeps to run.  Deriving that set is a mechanism
+  `scripts/check_anchor_symbol_liveness.py` already has for Python *symbols* and
+  does not have for the string-literal *keys* these registries are indexed by;
+  extending it is registered in `docs/REGISTERED_DEBT.md` table C rather than
+  restated here, because a rule this file has now stated three times is owed a
+  check.
 
   **And a spelling is not a read** (PR #895 review, `v0.35.12`).  The zero above
   was true of `s.objects[k]?` and blind to `s.objects.get? k`, which is *the same
@@ -1236,6 +1402,588 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
 
+  **And a FAILED derivation is not an EMPTY one — the same rule at the point
+  where a gate learns its own domain** (PR #897 review, `v0.35.147`).  The rule
+  above is about *input* a scanner cannot read.  This is about the *question it
+  asks the outside world*: four Tier 0 gates derive their whole domain by running
+  git, and every one of them answered a failed run with an **empty** one —
+  `except (CalledProcessError, FileNotFoundError): return []` and its `{}` twin.
+  `[]` is also what a clean scan of a tree with nothing in it returns, so the
+  caller iterates over nothing, finds nothing, and the gate prints PASS.
+
+  **The review reported one site; the sweep found seven**, and the sweep is the
+  point.  Its first form keyed on `subprocess.` and so missed the *reported*
+  one, which runs git through a helper — *a helper the scanner cannot see is a
+  spelling that evades the metric*, inside the measurement written to size the
+  class — so the domain is closed **transitively** over intra-module calls.  The
+  test that separates a defect from a deliberate sentinel is sharp and needs no
+  registry: **a failure branch is a defect when its value is one the SUCCESS path
+  can also return.**  `-> list[str]` returning `[]` is indistinguishable;
+  `-> str | None` returning `None` is a sentinel the caller reads.  Measured over
+  every tracked `scripts/*.py`: 10 failure branches in the git-derivation domain,
+  **8 indistinguishable and 2 sentinels, with nothing undecidable**.
+
+  Three things this cut records.  **The consequence is measured per site, not
+  asserted**: only `check_deferral_registration.tracked_files` was run to ground,
+  and what it produced was not a silent pass but a **misdiagnosis** — 35 false
+  "row cites a path the index does not track" findings, naming the register
+  instead of git, which is *answering in the words of a fault it does not have*;
+  the rest are the same wrong shape at lower or unmeasured reachability, and the
+  fix is the shape.  Claiming seven silent passes would have been the overstatement
+  the measurement exists to prevent.  **The shared answer is
+  `scripts/indexed_source.py`**, because `check_deferral_registration.indexed_contents`
+  and `generate_smp_theorem_manifest.indexed_text` were the same `cat-file --batch`
+  parser — same loop, same header split, same `i += size + 1`, same trailing
+  comment — under two names; collapsing them found a **third** instance inside
+  the body itself, since both `break` on an unreadable header and return the
+  **prefix** they had parsed, which is a truncated domain indistinguishable from
+  a complete one.  And **not everything that runs git should raise**:
+  `select_changed_anchors._git` stays status-returning because three of its
+  callers ask git a question whose answer IS the exit status (`rev-parse
+  --verify`; `diff --no-index`, where 1 means "they differ"), so only the two for
+  which a nonzero status is a *failure* raise.  A raise cannot be mistaken for an
+  answer, which is why the shared module raises and that helper must not be folded
+  into it.
+
+  The fifth instance is the same rule one artefact over, and it is the one that
+  says where to look next: `check_anchor_consistency`'s `filtered` bucket means
+  *composed*, and its **membership** was a fall-through from every other arm — so
+  `LC_ALL=C rg PATTERN FILE` inside a `bash -lc`, which heads no option table and
+  is not a `SEARCH_TOOLS` head either, landed in the EXCLUDED bucket on a stated
+  ground that is false of it, while the bare-argv sibling answered `unparsed`.
+  `_is_composed` decides that bucket positively now and everything else that
+  searches and does not reduce is `unparsed`, whatever its head.  **When a
+  category has a stated reason, its membership test must BE that relation** — and
+  a bucket reached by falling through is not one.  The widening admits nothing on
+  the live tree (5211 / 827 / 38, byte-identical), so every witness is planted,
+  and the two new fixtures are decided by *different* conditions: restoring the
+  fall-through flips both, while opening the assignment set flips only one — which
+  is what keeps either from being inert.
+
+  **And a default branch over a closed inductive is a decision five artefacts got
+  wrong** (PR #897 review, `v0.35.114` and `v0.35.115`).  The rule above is about
+  input a scanner cannot *read*; this is the same rule where the scanner reads the
+  input perfectly and answers a wildcard.  `ConstantInfo` has exactly eight
+  constructors, and "which declarations carry a body" is the first question every
+  environment-derived **domain** in this tree has to settle.  It had **six
+  answers** — this paragraph said five for one cut, because `v0.35.114`'s
+  enumeration was of the *censuses* and two embedded Lean probes ask the same
+  question; the sixth was found by sweeping the tree for the eight constructor
+  names, which is the measurement that produced the check below.
+  `ReplyStackWriteCensus` was the one that was right (`.defnInfo` *or*
+  `.opaqueInfo`), and five sites across three censuses and two probes matched
+  `.defnInfo` alone, or read `value?` without `allowOpaque := true`, and
+  wildcarded the rest — so an `opaque`, which is executable, which this tree's FFI
+  surface has seventy-odd of, and whose body
+  `ConstantInfo.value? (allowOpaque := true)` hands back, was silently outside
+  **five** derived domains at once.  What each one then stopped asking: an
+  unreachable `opaque` transition owed no wire-or-record judgement
+  (`KernelTransitionReachabilityCensus`), an `opaque` lock-set footprint owed no
+  `_size_le` bound — so `boundedWait_under_2pl` and the whole WCRT surface would
+  be **silent** about it — an `opaque` invariant conjunct dropped out of
+  `measuredConjuncts`, making the de-threading census demand less, an `opaque`
+  writer of `SystemState.declassificationTaint` passed a check whose claim is "one
+  live writer", and an `opaque` helper in a syscall arm's chain stopped the
+  per-core routing reach there, so the arm beyond it reached no slot at all.  The
+  review reported one of the five.
+
+  Three things follow, and the first is why this was not four patches.  **A domain
+  miss is silent by construction** — the constant is never examined, the pin never
+  moves, and each census goes on reporting that its whole domain is accounted for
+  — so the class cannot be found by reading a failure; it is found by sweeping
+  every asker of the question.  **The right answer was already in the tree and
+  unreachable from two of the askers**, which is `v0.35.59`'s rule verbatim: the
+  owner was in the wrong layer.  It is
+  `SeLe4n/Testing/DeclarationKind.lean`'s `bodyBearing` now, upstream of every
+  census, matching all eight constructors with **no `_` case at all**, so a ninth
+  in a future toolchain is a *build error* naming the function rather than a silent
+  exclusion.  And **two of the six exclusions are necessary rather than
+  incidental**, which is precisely why folding them back under a wildcard reads as
+  harmless: a `.thmInfo` carries a value, and a result-type test still matches one
+  — `theorem f : step st = st'` elaborates to `@Eq SystemState (step st) st'`,
+  whose implicit type argument *is* the constant a `SystemState` domain looks for —
+  and `.ctorInfo` covers `SystemState.mk`, whose result type is `SystemState`
+  itself.  `scripts/check_module_axioms.py` had enumerated all eight, case for
+  case, since it was written; that was the precedent, unswept onto the censuses.
+
+  **The widening is not vacuous, and the witnesses are the measurement.**  On the
+  real tree it admitted exactly one constant: `Platform.FFI.kernelStateRef`, an
+  `opaque IO.Ref SystemState` — the state cell the reachability census is
+  *defined over*, since "commits state" means "reaches a write to it", and which
+  was outside its own census's domain.  It is reachable from every committing
+  seam, so it needs no pin entry; carving it out by name would be the enumeration
+  the census exists to retire.  Beyond that the arms needed planting, since a
+  check that cannot fire and carries no witness is indistinguishable from one that
+  is wrong: the owner carries a `def`, an `opaque` and a `theorem` control, and
+  the reachability census carries an `opaque` transformer that must be in its pin
+  and a control that only *takes* a `SystemState` and must not be.  Both census
+  witnesses were decided by **building**: deleting the pin entry makes the
+  reconciliation report the transformer as unrecorded, and reading the whole type
+  instead of the telescoped result makes it report the control as unrecorded — so
+  the pair pins the domain in both directions, and the first draft's claim that
+  the control witnesses "any declaration" was corrected by the mutation that
+  refused to produce it.
+
+
+  **And the question a resemblance stands in for may have THREE answers, not
+  one** (PR #897 review, `v0.35.148`).  `check_content_flow_coverage.py` decided
+  *"is this constant a compiler auxiliary"* by a **substring** over the qualified
+  name, so `SeLe4n.Kernel.congruentTaintWriter` matched `.congr` and left a gate
+  whose whole claim is *one live taint writer*.  The obvious remedy — repoint it
+  at the environment-based answer this tree already has — is wrong, and the
+  measurement says so: asked of this tree, the substring test and
+  `KernelTransitionReachabilityCensus.isCompilerGenerated` disagree in **both**
+  directions, **1156** constants one way and **2814** the other.  They are not
+  two answers to one question.  *Before collapsing two predicates onto one owner,
+  measure whether they agree; two that disagree in both directions are two
+  questions, and naming one of them the owner silently changes what the other
+  asker asks.*
+
+  What licensed deleting it instead was a different measurement: the filter
+  discarded **nothing** (disabling it left the gate byte-identical), and
+  everything it *could* discard is a name a human wrote — the probe reports every
+  writer through its owner-resolution, so the names reaching the filter have
+  already been mapped to a human-written definition.  **A filter positioned where
+  it can only ever be wrong is not a filter**; the two answers upstream of it
+  (the owner resolution, and "a theorem is not a program") were already doing the
+  work.
+
+  And writing the witness found the real cause one layer down, which is the part
+  worth keeping: the owner resolution itself stripped any component with a
+  reserved prefix, so a contributor's `eq_foo` was attributed to its **parent
+  namespace**.  Same class, better unit — the final component rather than a
+  substring — and still a resemblance.  `v0.35.130`'s rule closes it: *the name
+  narrows and the environment decides*, a declaration the compiler minted
+  carrying no source range (`Lean.declRangeExt`, pure).  Two things that fix had
+  to get right.  The range is asked of the constant **as the environment holds
+  it**, never of its un-mangled user name — `privateToUserName?` maps
+  `_private.M.0.foo` to `M.foo`, which is not a registered constant, so asking
+  there answers "no range" for every private declaration and strips them all,
+  re-creating the private-blindness the gate was fixed for two cuts earlier.  And
+  the un-mangling was **folded into** the owner resolution rather than left as a
+  helper beside it, because the two are one step and splitting them is precisely
+  how the wrong name gets asked.
+
+  The witness is the measurement here, as it is in every cut whose widening
+  admits nothing: every existing plant in that gate is named `cfPlanted…`, so not
+  one of them could show either defect.  The plant that decides is named the way
+  a contributor would name a real definition (`eq_cfPlantedUserNamedTaintWriter`),
+  and it is asserted on **both** sweeps.  *A witness drawn from the naming
+  convention the fixtures already use cannot see a defect about naming.*
+
+  **And the answer to "who else asks this" is a SWEEP, and once the sweep has run
+  twice the third response is a check** (PR #897 review, `v0.35.115`).  `v0.35.114`
+  gave the question one owner, repointed four askers and wrote the paragraph above.
+  It named a fifth asker rather than omitting it — `check_content_flow_coverage.py`'s
+  embedded Lean probe, whose `cfExecutableValue` both matched on the kind *and*
+  called `value?` with no flag, with four sweeps beside it that bypassed even that.
+  Then the *sweep* — every tracked file, for each of the eight constructor names —
+  found a **sixth**: `check_live_arm_per_core_routing.py`'s `routeExecutableValue`,
+  byte-for-byte the function `cfExecutableValue` had been, feeding a **reachability**
+  question, so an `opaque` helper anywhere in a syscall arm's chain made the walk
+  stop there and the arm beyond it was reported as touching no per-core slot.  The
+  enumeration that opened this cut said *five*; the count was six, and nothing but
+  running the search over the whole tree would have said so.
+
+  So the response is not a seventh paragraph.
+  `scripts/check_declaration_kind_askers.py` (Tier 0) refuses any subject that
+  matches a `ConstantInfo` constructor and is not a recorded asker, keyed
+  `(subject, constructor)` with a **count** and reconciled in both directions — the
+  floor shape `identifier_naming_baseline.json` already has, because a set of keys
+  alone cannot see a second occurrence inside a subject that already has one and a
+  count alone cannot see the first in a subject that had none.  **Its domain is
+  derived over both places this tree writes Lean**: `.lean` files, and a probe
+  string a Python gate hands to `lake env lean`, located by `ast` — so the three
+  such gates are found without any of them being named, and a fourth is found the
+  day it is written.  A file whose import markers the located constants do not
+  account for is **refused** rather than skipped, since "could not read" must not
+  answer the same as "read and clean".  Both views are the ones this tree already
+  owns, because several subjects document in their docstrings exactly which
+  constructors they retired and a check that counted those would force them to stop
+  explaining themselves.
+
+  Three things that cut measured.  **The widening admits nothing on the live tree**
+  — both gates' whole inventories and both production verdicts are byte-identical
+  before and after — which is the opposite of `v0.35.114`, where one real constant
+  (`kernelStateRef`) came in; so here the *plants* are the entire measurement, and
+  each is its neighbour with one keyword changed: `cfPlantedOpaqueTaintWriter` is
+  the first plant's body spelled `opaque`, and `routeSelfTestOpaque` is
+  `routeSelfTestAlias` spelled `opaque`.  **Neither could have been an older
+  witness**: all four existing plants and all three older routing witnesses are
+  definitions, so every one of them passes both halves of the defect, which is
+  exactly why four review rounds and a sweep were needed to see it.  And **the new
+  check earned its keep on its first run**, twice: its own reconciliation reported
+  two guessed probe-variable names that do not exist, and the mutation set confirms
+  it reports each pre-fix probe, a census re-deciding the question, a stale entry, a
+  moved count in either direction and an unlocatable probe.
+
+  **And the answer to "who else asks this" had a THIRD dimension: the census's own
+  domain and closure** (PR #897 review, `v0.35.125`).  `v0.35.115` derived which
+  *files* hold a Lean probe and gave the question one owner; it left
+  `KernelTransitionReachabilityCensus`'s own three questions to resemblances, and a
+  review found all three at once.  A **name prefix** stood for "generated"
+  (`startsWith "initFn"`, which an ordinary `initFnCleanup` trips — this file's own
+  retired `eq_` prefix, one census over); a **constant occurrence** stood for
+  "reachable", so a transformer mentioned only inside a proof was marked live and
+  escaped the wire-or-record pin; and a **mention** of `SystemState` stood for
+  "returns state", so `TlbCacheJointState.pageTableUpdate` — which rewrites that
+  record's `sysState` field — was on neither side of the reconciliation while the
+  projection `TlbCacheJointState.sysState` was.
+
+  Each remedy is the environment answering, and each was **measured before it was
+  chosen**.  The prefix is *deleted* rather than narrowed: of the 4 `initFn`
+  constants here, **0** are outside `isAuxiliary`, a module's init being
+  macro-scoped, so the clause excluded nothing while admitting a user name.  The
+  closure skips an **erased** constant, decided on the telescoped result through
+  the sibling census's `isPredicate`, since `Expr.isProp` is true of a proof and
+  false of `SystemState → Prop` and a proposition reaches the walk as an implicit
+  argument at a call site: the permissive closure is 4231 constants and the
+  erasure-respecting one 3477, and **zero** of the 754 are transformers, so the
+  tightening is free today and closes the path one proof-carrying body would open.
+  And the domain asks whether a result **carries** state — `SystemState`, or a
+  non-propositional project inductive holding one in a constructor field,
+  transitively — which is 10 carrier types and 39 more pinned definitions, the boot
+  path among them.
+
+  Two rules the carrier derivation cost, both about the measurement rather than the
+  code.  **A constructor's telescope opens the inductive's own parameters**, so
+  without dropping `numParams` a `Prop` structure over a state reads as holding
+  one — 64 carriers, almost all propositions, which is a measurement that would
+  have licensed a much larger claim than the tree supports.  And **a field carries
+  state when its own telescoped result does**, the same question the domain asks of
+  a definition: judging by a mention anywhere admits `PlatformBinding` and both
+  boundary contracts, and with them every configuration record in the tree.  *A
+  measurement that licenses a conclusion gets checked as hard as the conclusion* —
+  twice here, and the third reading is the one that shipped.
+
+  One thing the erasure witness had to get right, and it generalises: **`Expr`
+  traversal walks binder TYPES**, so a helper whose argument is typed with the
+  proposition reaches the subject through its own signature rather than through the
+  proof — a type-level mention, which is not execution either but is not the route
+  the witness is about.  The consumer is generic in the proposition, and the check
+  asserts that the theorem's own proof term mentions the transformer, because a
+  proof term that does not makes the whole witness **inert**.
+
+  **And a REDUCIBLE ALIAS is not a different type, nor is an exhausted fixpoint a
+  smaller answer** (PR #897 review, `v0.35.128`).  Two more misses in that same
+  derivation one cut later, and both are the *domain* half of this family rather than
+  the predicate half — so both fail in the one direction this census structurally
+  cannot report: a constant it never examines moves no pin, and the reconciliation goes
+  on stating that every non-executed transformer is recorded.
+
+  `forallTelescopeReducing` reduces only far enough to expose a `∀`, so a result spelled
+  through `abbrev StateResult := Option SystemState` arrives as the alias **constant** —
+  which the carrier set never contains, that set being built from inductives — and the
+  transformer is then in neither the reachable nor the unreachable set.  One `whnf` at
+  **reducible** transparency is the exact boundary, and *exact* is measured rather than
+  argued: `abbrev` is what Lean makes reducible, so it unfolds, while **default**
+  transparency opens a dependent projection like `id.evidenceProp` and files **four**
+  records of proofs (`covertChannelEvidence`, `fineLockClaimEvidence`,
+  `declassificationRuleEvidence`, `crossCoreLiveArmEvidence`) as state transformers.
+  The negative anchor on the unrestricted spelling is what keeps that boundary.
+
+  Two things the fix records.  **The widening needed the environment's own answer to
+  "did you generate this"**: reducing a `T.noConfusion`'s result mentions the
+  constructor fields' types, so `Lean.isAuxRecursor`, `Lean.isNoConfusion` and
+  `Meta.isMatcherCore` join the filter — and they are **complementary** to the
+  hand-written component list rather than a replacement, measured both ways (the list
+  catches `_flat_ctor` / `_sizeOf_inst` / `_unsafe_rec` members the predicates do not;
+  the predicates catch every `*.noConfusion` the list does not).  *Derive what the
+  environment can answer and keep the list as a pin for what it cannot* — claiming
+  redundancy in either direction would have shrunk the filter.  And **the real tree
+  gains zero declarations**, so the plants are the entire measurement: an `abbrev`
+  naming a state-carrying type (which must be in the pin) beside the control naming one
+  that carries nothing (which must not), so the pair decides *the alias names a carrier*
+  rather than *the result is an alias*.
+
+  The second miss is *a rule stated is not a rule enforced*, and the rule was stated in
+  the very docstring that failed to enforce it: `carrierFixpointBound`'s own text said
+  exhaustion "would under-approximate the carriers, which makes the domain SMALLER, so
+  a new bound must be checked rather than assumed" — and the loop then **returned the
+  partial set as though it were complete**.  It throws now.  The bound is an *argument*
+  so the refusal has a witness, because on this tree the fixpoint converges in **two**
+  rounds against a bound of twelve and nothing in production can reach the throw:
+  `carrierFixpointRefusalViolations` runs the derivation at a bound of **1** and reports
+  a violation when it *succeeds*, which is the only direction that can be silent.  (The
+  two-round figure also corrects the previous cut's docstring, which said three — it had
+  counted the convergence-detecting pass that does not run.)
+
+  **And the sort the alias DECLARES is normalised too** (PR #897 review,
+  `v0.35.135`).  The same miss four lines above, in the same derivation, unswept by
+  the cut that wrote the paragraph above: the alias test read `ci.type` **raw**, so a
+  declared sort that is itself reducibly aliased — `abbrev CarrierSort : Type 1 :=
+  Type`, then `abbrev StateAlias : CarrierSort := SystemState` — is a `.const`,
+  neither `isSort` nor `isForall`, and the alias never entered the candidate array at
+  all.  A transformer over it is then in neither reconciliation set, which is the same
+  silent direction one level further out.  *When a fix names a relation, grep for every
+  other place that asks it* — here the other place was the **next test in the same
+  function**, and asking it is what shows that the whole type and a telescoped body
+  were two spellings of one question: `declaresNonPropSort` is the one owner and the
+  branch on the raw shape is deleted, since `forallTelescopeReducing` over a non-`∀`
+  type calls its continuation on that type.  Both boundaries above carry over
+  unchanged — reducible unfolds an `abbrev` while default files the four evidence
+  records, and `Prop` is a sort — so the plants are again the entire measurement (585
+  over 19 before and after the fix; 586 over 20 with the pair), and the **control** is
+  what makes them decide *the aliased sort is normalised* rather than *anything
+  declared through this sort is a carrier*.
+
+  **And a domain written as a NODE KIND is the same defect one grammar down**
+  (PR #897 review, `v0.35.124`).  `v0.35.115` derived *which files* hold a Lean
+  probe and left *which expressions* to one `ast` node kind: `embedded_lean` read
+  the value of an `Assign`/`AnnAssign` and nothing else, with an explicit `else:
+  continue`.  So a probe handed straight to its runner —
+  `run_probe(<a literal>)` — was located by no shape at all, and the fail-closed
+  refusal beside it asked whether **anything** had been found, which one assigned
+  probe in the same file answers for every marker in it.  Measured on the fixture:
+  the capture read the assigned probe alone and refused nothing, so an inline probe
+  could re-decide the body-bearing question with the inventory unchanged and Tier 0
+  green — *invisible in both directions at once*, which is what makes a domain miss
+  unfindable by reading a failure.
+
+  Four things follow, and each is a rule this file already carries arriving at a
+  smaller unit.  **The domain is every string constant**, plus every expression that
+  *assembles* one (`A + B`, an f-string, a `.join`/`.format`), because an assembled
+  probe's import marker and its `ConstantInfo` match sit in different fragments and
+  neither is a probe on its own evidence — measured at **zero** admitted on the
+  tracked tree, against **1060** for the statement-level grouping first tried, so
+  the widening costs nothing and every witness is planted.  **The refusal is a
+  count** (`markers_located < markers_in_text`), since *a cardinality is what sees
+  the second occurrence*; its witness is therefore an unlocatable marker **beside** a
+  located probe, because a fixture whose only marker is the unlocatable one is
+  refused by the superseded reading too and would pass with the count reverted.  It
+  counts markers in located TEXT and not in the rows reported, because one constant
+  bound to two names is reported twice and that surplus would pay for a marker nobody
+  read — found by re-reading this cut's own diff, not by a review.  **A
+  subject key must identify a subject**: an assembled probe takes its assignment's
+  name rather than its scope, or two of them in one module collapse into one key
+  where the counts add — and two probes that bind *no* name in one scope are
+  **refused**, not bucketed, since an ordinal key churns when an earlier probe is
+  deleted and *refuse, name the scope, state the remedy* is what this project does
+  wherever a scanner cannot decide.  And **the reassembly is in SOURCE order**:
+  `ast.walk` is breadth-first, so `A + B + C` yields `C, A, B`, and a join in that
+  order destroys a constructor name straddling the last boundary — two fragments
+  cannot witness it, which is why the fixture the defect arrived with could not have
+  caught it.
+
+  One mechanical note, and it is the *fail-fast harness* hazard rather than a new
+  class: a `UnreadableProbe` raised inside a self-test case escaped as a traceback,
+  which is not the gate's voice and which skips every case after it — so one
+  mutation could mask another, and two of this cut's eleven mutations were
+  mis-attributed until the direct reads went through a helper that reports a refusal
+  the way `violations` already did.  **A harness that crashes where it should report
+  hides the second defect**, and a mutation run is the only thing that shows it.
+
+  **And the located subject's TEXT and its IDENTITY are each something the program
+  computes** (PR #897 review, `v0.35.127`).  Two fail-open defects in that same
+  locator, one cut later, and they are one class: it asked *what shape is this* where
+  the question was *what value does this have*, and *what is this called* where the
+  question was *which subject is this*.
+
+  The text half is `a spelling is not the text` at the one place the text is
+  assembled rather than written.  `_is_concatenation` asked whether an expression
+  builds a string from parts, and the callers then **joined its literals in source
+  order** — which is the string `"a" + "b"` builds and is *not* the one
+  `"… .{}Info …".format("opaque")` builds: joining yields `… .{}Info … opaque`, so the
+  constructor pattern matches nothing while the template's own import marker **is**
+  accounted for, so the fail-closed marker count passes too and the asker is invisible
+  in both directions at once.  `_reconstruct` returns the string or `None`, and four
+  forms are determined by literals — a literal, `+` over two determined operands, an
+  f-string with no interpolation, and `<literal>.join([<determined>, …])`.  Narrowing
+  the reader is **not enough on its own**, and that is the load-bearing part: with
+  `.format` no longer forming an assembly its template would fall through to the
+  bare-constant branch and be *located*, reopening the hole one branch over — so
+  `_unreadable_assemblies` **refuses** a string assembly that carries a marker and
+  does not reconstruct, which is *a scanner's default branch is a decision* applied to
+  the one branch a narrowing creates.  The shape set excludes a call on a plain
+  **name**, because a probe handed straight to a helper is this tree's commonest idiom
+  and its literal is the call's *argument* rather than a part of a string the call
+  builds; a `.replace` on a named `@SENTINEL@` template — how all four real probes are
+  built — is likewise not a subject, its marker living in the template's own
+  assignment.  Measured before choosing: **zero** such expressions on the tracked
+  tree, so the refusal is entirely planted today.
+
+  The identity half is this file's own rule inside the cut that wrote it.  A named
+  probe's key was the bare target name, so two probes assigning `PROBE` in two
+  functions shared one subject and their counts **added**: change one from `.defnInfo`
+  to `.opaqueInfo` and the other the inverse, and every number in the inventory is
+  unchanged while *both* askers have re-decided the question.  `v0.35.124` had already
+  refused exactly that for probes binding **no** name, one branch over, under a
+  comment stating the reason — *a fix applied at one site and not its sibling*, for the
+  third time in this file.  `_qualified` keys a named probe by scope-and-name, the
+  scope itself is now a **qualified path** rather than the nearest declaration name (a
+  bare name is a resemblance two methods in two classes share), and two probes that
+  still land on one key are **refused** — by OCCURRENCE, not by distinct text, because
+  two identical rebindings double every constructor in them and a set cannot see the
+  second one.  Free on the tree: all 17 located probes are at module scope, so every
+  key is byte-identical and the pin does not move.
+
+  Two things the cut records about its own witnesses.  **The axis came from Python's
+  grammar, not from the reported spelling**: the review named `.format`, and `%` was
+  not even *grouped* by the superseded reader — so its template was read as a bare
+  inline probe and the constructor was lost the same way, one branch further over —
+  while an interpolating f-string has `FormattedValue` parts that are not literals at
+  all.  All three are cases, with **two controls** (a literal f-string, which
+  reconstructs and is read; a `@SENTINEL@` template, which is the tree's own idiom),
+  because a fix that banned the node type would pass a case list drawn from the
+  finding.  And **a mutation must revert the defect, not merely edit the code**: the
+  first mutation written against the `.format` refusal widened a branch whose other
+  conditions still rejected the input, so the self-test passed and the case read as
+  unverified; the mutation that decides restores the *superseded reading* — a
+  `.format` branch returning the source-order join — and is caught immediately.
+
+  **And a TRANSFORM of located text is a third thing, beside its shape and its
+  value** (PR #897 review, `v0.35.129`).  `v0.35.127` replaced *what shape is this*
+  with *what value does this have*, and the case that survived is the one where the
+  answer is **almost** the value.  A named template holding a constructor spelling
+  with a hole in it is a **located** subject: its import marker is accounted for, the
+  fail-closed marker count is satisfied, and its constructor count is **zero**, while
+  the probe handed to Lean decides the question.  Invisible in both directions at
+  once — the shape that makes a domain miss unfindable by reading a failure — and
+  reached by the tree's own commonest probe idiom, a `@SENTINEL@` template consumed
+  by `.replace`.
+
+  **So the reconstruction is PARTIAL: determined text with holes.**  Not the
+  all-or-nothing string, and not a shape — `_reconstruct_holed` returns the text the
+  expression builds with one non-word `_HOLE` wherever text the scanner cannot read
+  enters it, and "determined" is that with no holes left.  Four things follow, and
+  each is a rule already in this file arriving at a smaller unit.  **A name resolves,
+  fail-closed at both ends** — a template is reached *through* its name, so a scanner
+  that cannot resolve the name cannot see the text a substitution applies to, and a
+  name bound more than once resolves to nothing because two bindings are two texts
+  and no occurrence says which is live.  **The refusal asks COMPLETION, not the
+  presence of a hole**: `_constructor_completing_holes` is derived from the
+  constructor tuple and inherits its `\b` bounds, so a hole is refused exactly where
+  the template has written part of a constructor against it — measured at
+  **thirteen** substitution sites on the tree, every one undetermined and **zero**
+  writing a constructor against its hole, so refusing every hole would refuse the
+  tree and the mutation that does fails the control *and* the live gate.  **The
+  default branch is taken per CALL SITE rather than per spelling** — an unmodelled
+  form is unreadable when applied to determined probe text and an ordinary value
+  fragment otherwise, which is what keeps the recognised set from having to be
+  complete.  And **the admission test moves with the text**: the marker is asked of
+  the assembled text in *both* branches, because a template reached through its name
+  puts the marker in no literal fragment of the expression that substitutes into it.
+
+  Two things that cut records about its own witnesses.  **The widening admits nothing
+  and refuses nothing on the live tree** — 25 subjects, byte-identical counts, zero
+  refusals — so the plants are the entire measurement, as at `v0.35.115`.  And **two
+  of the ten mutations were MISSED on the first run**, which is the part worth
+  keeping: the word-boundary guards and the named branch's admission test each passed
+  every case that existed, because every fixture reached them through the other
+  branch.  *An unwitnessed condition is indistinguishable from a wrong one*, so the
+  answer is not to reason about it but to plant the case that separates it — a
+  fixture with **two** holes, so a mutation dropping one guard is caught by its own
+  half; a substitution **assigned** to a name beside the one that is returned; and an
+  ambiguous name that is *not* probe text, since the ambiguous-probe refusal fires
+  first for every name that is.  **Run the mutations before believing the cases.**
+
+
+  **And a PREFILTER is not the SIGNAL — and asking one with the other's predicate
+  skipped two whole gates** (PR #897 review, `v0.35.132`).  Every rule above is about
+  what a scanner asserts of input it examined.  This is the cheapest way not to
+  examine any: `embedded_lean` returned early unless `_probe_signal(text)` held, and
+  that predicate is written for a probe's OWN text, where the import begins a line.
+  Asked of a whole Python file it is a different question, false for one of the
+  commonest spellings there is — `PROBE = """import SeLe4n ...` opens the literal on
+  the assignment line, so no line of the file begins with the import.
+
+  **Measured, and the measurement is why this is a rule rather than a patch**: that
+  skipped `check_ipc_invariant_dethreading.py` (11 markers) and
+  `check_tlbi_broadcast_discipline.py` (4) — two real Tier 0 gates, every embedded
+  Lean probe outside the inventory, with the gate reporting the tree clean.  Not
+  fixtures; the plants in the six preceding cuts admitted nothing, and this widening
+  admits exactly those two files.  **A prefilter must be strictly WIDER than the
+  predicate it stands in for**, and where a scanner has both, the narrow one is kept
+  for the questions that genuinely are about a line start.
+
+  Its sibling finding is the resolution residue reached by an extra HOP: `ALIAS =
+  PROBE` resolves to no literal, so a transform through it substitutes into a hole
+  whose result carries no marker, and the template is still located carrying the
+  constructors its *unsubstituted* text spells.  **The refusal is the remedy, not
+  resolution** — a probe has one name, deleting an alias is a one-line change, and
+  chasing a chain whose depth nothing bounds is the partial-analysis shape this file
+  retires twice over; the probe SET is closed transitively all the same, so `B = A`
+  over `A = PROBE` is seen.
+
+  One correction this cut records about its own plan, because the plan was wrong and
+  the measurement said so before any code was written.  The first design deleted the
+  hole machinery outright, on the ground that no probe in the tree assembles text.
+  That is true of the 41 probe **assignments** and false of their **uses**: three
+  `@SENTINEL@` `.replace` sites substitute *computed* values, so a canonical
+  "substitute with literals or refuse" rule would have refused every real probe in
+  the repository.  *Measure the uses, not only the definitions* — and when a
+  measurement kills the plan, that is the measurement working.
+
+  **And when TWO conditions guard one question, each needs a witness the other
+  cannot rescue** (PR #897 review, `v0.35.130`).  `v0.35.125` deleted the `initFn`
+  prefix and kept the component list on the stated ground that its members are
+  *whole* components the compiler reserves rather than prefixes of user names.  True,
+  and not enough twice over: Lean accepts `_flat_ctor` as an ordinary identifier, so
+  a contributor's transformer with that name was excluded before its result type was
+  read; and `components.any` excludes every declaration **nested beneath a namespace**
+  of such a name, whatever it is called.  So the remedy is the one this section keeps
+  arriving at — the name *narrows* and the **environment decides**: a reserved
+  spelling is a suffix, so the question is the FINAL component, and a declaration the
+  compiler minted carries **no declaration range**, which
+  `Lean.findDeclarationRangesCore?` answers.
+
+  What is new is what the mutation run then showed.  With the range test in place,
+  **neither** the `any`→`last` narrowing nor the name test itself was observable:
+  every user-written plant carries a range, so restoring `components.any` and
+  deleting the name test each passed every case.  Two conjuncts, one of them
+  witnessed.  *A condition no case can reach is indistinguishable from a wrong one*,
+  and the pair rescuing each other is how a two-condition guard hides a dead half —
+  so the witness has to be the shape **neither** existing plant can take: a
+  transformer **minted** through `Lean.addDecl`, with no declaration range, an
+  ordinary final component, under a reserved namespace.  It decides both mutations at
+  once, because it is the only input on which the two conjuncts disagree.
+
+  Generalising: when a guard is a conjunction, ask of each conjunct *what input does
+  this one alone reject?* — and if every fixture is rejected by its partner too, the
+  conjunct is unwitnessed however plausible it reads.  The plant will usually have to
+  be constructed rather than written, because the property being witnessed is
+  precisely the one the ordinary way of writing code cannot produce.
+
+  **And when a cut fixes an exhaustion, SWEEP every other bounded walk — the
+  conservative direction is different for each** (PR #897 review, `v0.35.131`).
+  `v0.35.128` made an exhausted carrier fixpoint an error and wrote down why; the
+  question was never asked of its siblings.  Asking it found the tree has **four**
+  bounded walks and that three of them fail closed for three *different* reasons —
+  `reachesAny` answers `true` (does this export reach a state write? `true` demands
+  more), `entailedTargets` answers the empty entailment set (fewer entailments
+  demand more), `stateCarryingTypes` throws — while `liveClosure` returned its
+  partial set.  A bound is not conservative in itself; **which** answer is
+  conservative depends on what the predicate means, so every walk needs the question
+  asked separately and the answer recorded at the walk.
+
+  Two things that cut records.  **A docstring that compares itself to a sibling is a
+  claim about the sibling**: `liveClosure`'s said it was "fuel-bounded like its
+  sibling", and the sibling does the opposite — the comparison was false in exactly
+  the direction that mattered, and it read as having been checked.  And **a
+  precedence you would otherwise have to witness is better removed**: distinguishing
+  "finished" from "exhausted" by arm order in one `match a, b` is a property no
+  witness on this tree can reach (it bites only when the worklist empties on the last
+  unit of fuel), so the arms are *nested* instead and there is nothing left to get
+  wrong.  *Prefer making the property structural over checking it at all.*
+
+  The same cut's second finding is the recursion rule one level down: a normalisation
+  that reaches only the HEAD is a partial answer too.  `whnf` on `Option StateAlias`
+  stops at `Option`, so an alias nested under a constructor never unfolds — and the
+  answer is not to recurse the normalisation, which is one more partial analysis, but
+  to add the alias to the **set** the search consults, where the existing fixpoint
+  closes a chain of them for free.  *When a reduction cannot reach the thing, widen
+  what the question is asked about rather than deepening the reduction.*
+
+  Two corollaries about the plants it needed, both earned by a mutation run that
+  found three of five conditions unwitnessed.  **A control that mentions the subject
+  for an unrelated reason decides nothing**: the parameterised-alias plant first
+  passed its argument as an inline `fun _ => 0`, whose own binder type put
+  `SystemState` in the result expression outright, so the plant was in the domain
+  whatever the code did.  And **`Prop` is a sort** — the one place this cut's first
+  draft had to be told twice, because dropping that half admitted 30 spurious domain
+  members and the mutation that proves it must target the branch the tree's own
+  predicates actually take.
+
   **And a recognised set is not a derived set — so a count over one is a floor,
   not a measurement** (PR #895 review, rounds 1 and 2, `v0.35.13`).  Every rule
   above polices the **predicate**: what a scanner asserts of an element it
@@ -1317,6 +2065,40 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   section already prescribes.  **A predicate over a domain you filtered is a
   measurement of the filter.**
 
+  **And an exclusion's stated reason is a claim about its MEMBERS, re-measured or
+  not** (`v0.35.120`).  `check_anchor_consistency.py` leaves an invocation it
+  cannot reduce to one `(pattern, target)` out of the satisfiability comparison,
+  with the reason written at the category: such an invocation *"pins a property of
+  the composition rather than of a pattern, so it has no counterpart to
+  contradict"*.  True of a pipeline.  But the *membership* test was not that
+  relation — it was *the script inside a `bash -lc` is not one of two recognised
+  **wrapper** forms*, a syntactic accident — so a bare `rg PATTERN FILE` that
+  happens to be quoted through a shell landed in the bucket, and that is the form
+  **every** bounded-gap anchor in this tree must take, the gap carrying a `\n`.
+  Measured: **976 of 987** excluded invocations reduced to exactly one
+  `(pattern, target)` and 11 were genuinely composed; the compared set was **4579**
+  records where it is now **5573**, and the *negative* half **470** of **742**, so
+  over a third of the tree's absence pins — the *must not come back* negatives a
+  deletion's correctness rests on — were compared against nothing while the gate's
+  PASS line read as coverage of the anchor set.  It failed silently by
+  construction: an excluded member is never examined, so no count moved.
+
+  Three things follow.  **Make the membership test the relation the reason names**,
+  not a shape that usually implies it — the reduction is now the same one a bare
+  argv gets, and `_is_composed` decides what a composition is, so the 11 keep an
+  exclusion that is true of them.  **Re-measure a category's reason against its
+  members when either changes**, because this bucket was correct when it held only
+  the two wrapper forms and became wrong as the tree's anchor style moved.  And
+  **state what the gate still cannot decide at the gate**: *two positives* over one
+  subject are jointly satisfiable in the abstract — a file may hold two matching
+  lines — and unsatisfiable only given a fact no scanner has (*this file declares
+  that name once*), which is why `v0.35.118`'s defect is the changed-file sweep's
+  question and not this one's.  One mechanical note, from this cut's own mutation
+  set: the first anchor over the new fail-closed branch pinned its **condition and
+  explanatory comment**, so a mutation keeping both and changing `unparsed` to
+  `filtered` left it green — *a presence check is not a relation check*, inside an
+  anchor written for the cut that closes one.
+
   **And a narrower resemblance is not a relation** (PR #895 review round 4,
   `v0.35.17`).  The fourth remedy in that list was *a generated component is the
   prefix plus a numeral*, and it is the one that did not hold: `eq_1` is as legal
@@ -1364,7 +2146,19 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the tier that can take it: `SeLe4n/Testing/StoreReadClassificationCensus.lean`
   (Tier 1) asks `findDeclarationRanges?` which declaration owns each line and the
   conclusion of its type whether that declaration is specification, and fails the
-  build wherever the classifier disagrees.  **Where the authoritative answer is
+  build wherever the classifier disagrees.  **And its domain is reconciled
+  against the classifier's** (`v0.35.76`): the classifier scans the filesystem
+  and the reconciliation reads the environment, and no `SeLe4n/Testing/` module
+  was in that environment — invisible while the read census produced no row
+  there, and exposed by the write census's first, the reply-stack census's
+  planted witness, which the check counted as "outside any declaration" and
+  moved on.  A row in a file the environment declares nothing in now fails the
+  build naming the module to import (`orphanFiles`), because a declaration
+  outside the import closure is indistinguishable from one that does not exist
+  and a count of what could not be judged reads as a diagnostic.  Its first run
+  named a **kernel** module, not a test one — `ChainFootprint`, outside both
+  library roots since RR7.40 — which is how the five-modules finding recorded
+  under *a surface outside every derived domain* above was made.  **Where the authoritative answer is
   out of reach at the tier that needs it, derive it at a tier that can and
   reconcile** — the *derive the set, keep the list as a pin* rule, one tier apart.
 
@@ -1489,7 +2283,15 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   which must itself reach a primitive — and that pin found two more defects on
   its first run: a fourth entry (`SystemState.storeObject`) that names no
   declaration at all, and a live helper (`storeObjectChecked`) the list had
-  never mentioned.  A list nothing reconciles is a list nobody reads.
+  never mentioned.  A list nothing reconciles is a list nobody reads.  **And a
+  pin's reach is a relation too** (`v0.35.66`): the frontier recognises a store
+  one hop from a pinned name, so a helper *over* a pinned helper sits two hops
+  out — `refillSchedContext`'s `updateSchedContext` over `rewriteObject` over
+  the insert — and the census reported its exemption as stale the moment the
+  definition migrated.  The `v0.35.64` cut had met the same report for
+  `suspendThread` and deleted the entry, which is the fail-open direction (a
+  writer setting `scReply` through the unpinned helper would have been
+  invisible); the rewrite family is pinned now and the entry is back.
 
   The sweep was then **run**, not just written down, and its value is the two
   sites it left alone.  `check_ipc_invariant_dethreading.py` has its own Lean
@@ -1524,7 +2326,9 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   **a justification that holds on one side of a distinction the code already
   makes is not a justification — say which side, or make the code not care.**
   `replyRecvServerDeschedule` is the named answer, with the write set, the
-  confinement and both bundle proofs carrying it, and the witness pair in
+  confinement and both bundle proofs carrying it (renamed
+  `replyRecvHolderDeschedule` at `v0.35.149`, when its argument stopped being the
+  recorded server), and the witness pair in
   `tests/SmpIpcSuite.lean` §3.9b is delegated *and* non-delegated, because a
   deschedule that fires unconditionally passes the first and breaks the second.
 
@@ -1583,7 +2387,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the gate sources and refuses any bare word-boundary keyword spelling written
   outside it, wired into the view's self-test.  The next such pattern fails on
   the day it is written.  Two things make it honest: it reads **code, not
-  prose** — `_python_code_view` blanks `#` comments and, via `ast`, docstrings,
+  prose** — `python_code_view` blanks `#` comments and, via `ast`, docstrings,
   because `keyword`'s own docstring quotes the bad spelling in order to explain
   it and a check that counted it would force the file to stop explaining itself
   — and it is mutation-tested in all three directions, since a discipline check
@@ -1627,6 +2431,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   same *kind* of mistake, made at the point where a fix chooses what to trust.
 
   **A proxy is not the fact, at the scheduler.**  `replyRecvServerDeschedule`
+  (`replyRecvHolderDeschedule` since `v0.35.149`)
   accepted the core its caller had already computed — `determineExecutingCore`,
   which finds a core the thread is *current* on and otherwise answers
   `bootCoreId`.  A **queued** server matches nothing there, so the deschedule
@@ -1638,7 +2443,11 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   Both are proxies; the fact is **placement**, and `removeRunnableOnCore` writes
   the run queue *and* the current slot of whatever core it is handed.
   `placedCoreOf?` is the witness, tied to `runnableOnSomeCore ||
-  runningOnSomeCore` by theorem so a third answer cannot appear.
+  runningOnSomeCore` by theorem so a third answer cannot appear.  The sites
+  round 10 named and did not sweep — the cancellation path's `descheduleThread`
+  and `cancelIpcBlockingOnCore` — and a third the sweep found, the live
+  suspend's own home-then-running-core removal pair, closed at WS-RR RR8.6
+  (`v0.35.79`); the standing constraint is recorded below.
 
   Two things generalise.  **A parameter is a place for a caller to be wrong**:
   the fix is not a better argument at the call site but *no argument* — the step
@@ -1705,8 +2514,9 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   carried since round 10, and that asymmetry is what hid the `///` cell — the
   same defect one level up, inside the matrix meant to close it.  **A
   declaration-bounded negative is a statement about that declaration**: round
-  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule` while the relation
-  is about *every* deschedule of the recorded server, so the sibling arm
+  10's Tier 3 anchor was scoped to `replyRecvServerDeschedule`
+  (`replyRecvHolderDeschedule` since `v0.35.149`) while the relation
+  is about *every* deschedule of the thread the pop unbound, so the sibling arm
   twenty-five lines away kept the retired spelling and the anchor's silence read
   as coverage.  And **a harness that re-spells the gate's own decision absorbs
   the defect it is there to find**: the refusal handler was written out three
@@ -1866,6 +2676,26 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   14 are the same defect twice, the second inside the first's fix.  That is this
   section's own strongest rule (*one question answered in two places will
   diverge*) meeting the artefact deliberately built to be two places.
+
+  **And that artefact is not a test double** (the maintainer's correction,
+  `v0.35.102`).  `FrozenOps` is the *execute* phase of this project's
+  build → freeze → execute architecture: `Model.freeze` takes the **builder**'s
+  `IntermediateState` to a `FrozenSystemState`, and `Platform/Boot.lean`'s
+  `bootToRuntime_invariantBridge_empty` — *boot to runtime* — carries the
+  invariant bundle across the freeze into `apiInvariantBundle_frozen`, which is
+  a bridge worth proving only if the runtime is meant to run on the frozen
+  representation.  What is missing is the dispatch: `API.lean` contains no
+  occurrence of `FrozenOps`, `kernelStateRef` holds a `SystemState`, the boot
+  installs `ist.state` rather than `freeze ist`, and `Model.freeze` has no
+  executable caller anywhere under `SeLe4n/` — every occurrence in `Boot.lean`
+  is inside a theorem statement.  So the duplication is an **interim**, the
+  differential is the evidence that would license ending it, and every
+  divergence found is a *deferred kernel defect* rather than a model one.
+  Calling it a second implementation *kept so the live one can be compared
+  against it* names the interim method and not the purpose, which reads the
+  severity down; the register row says so since `v0.35.102`, and C.1 row 14 —
+  the dispatch switch — gated on *benchmarks* and named no correctness gate at
+  all, so the two preconditions lived in neither row.
 
   **What changed, and what did not.**  Both causes are now rows in
   `docs/REGISTERED_DEBT.md` table C with closure targets before v1.0.0, because
@@ -2490,6 +3320,459 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   mutation-tested in both directions — silent on the clean tree, firing on a
   mutation that keeps the token and moves it into the target declaration.
 
+  **Two mechanical facts about writing one, both earned at `v0.35.140`.**  The
+  gap stops at the *first* column-0 line, so it cannot cross a **multi-line
+  signature's own closing line** — a Python `) -> set[tuple[str, int]]:` or the
+  equivalent sits at column 0 and is not a continuation.  That is the bound
+  working rather than a defect, and the answer is to anchor from a line that is
+  *inside* the declaration and unique to it (its docstring's first line), never to
+  widen the gap.  And a `\"` inside a double-quoted `rg` argument inside single
+  shell quotes **ends the argument early**, so an anchor over a Python or Lean
+  docstring marker writes the quote `\x22`: the shell-quoting failure does not
+  error, it silently decides nothing, which is the one outcome
+  `check_anchor_consistency.py` exists to refuse.
+
+  **And a DELIMITER that can occur in the data is not a delimiter** (PR #897's
+  review, `v0.35.150`).  Six findings, one class, and it is this family's
+  *domain* half rather than its predicate half: each gate answered "nothing
+  here" for input it could not determine, which is silent by construction — the
+  element is never examined, no count moves, and the report reads as a
+  measurement of absence.
+
+  The sharpest is in **shared infrastructure**.  `indexed_source.indexed_contents`
+  wrote one `cat-file --batch` request per LINE and read one header per line, and
+  a tracked path is a byte string that may hold a newline — which `listed_at`
+  deliberately preserves, `-z` being exactly what it buys.  Measured: a two-file
+  index in which one name holds a newline returned `{}`, **both** files absent
+  and no exception, so every gate reading the staged domain through that helper
+  reported a clean tree.  Three things the fix records.  `-Z` frames both
+  directions, and git documents `-z` as deprecated *because the output stays
+  ambiguous* — a framing fixed on one side only is half a framing.  The declared
+  size is **checked against its terminator** rather than trusted, since `find`ing
+  the next NUL re-synchronises after any drift and an off-by-one is absorbed at
+  every entry.  And the walk must **consume the whole stream**: one response per
+  request, which is precisely what the original defect violated (git answered
+  three times for two wanted entries) and which no per-entry check can see.
+
+  Five rules generalise from the six.  **A recorded failure must FAIL** — the
+  changed-file anchor sweep's epilogue called `record_failure`, which only
+  counts, on a path that never reaches `finalize_report`, so an anchor ending in
+  `exit 0` printed the failure and the gate exited 0; the existing
+  fatal-expansion control could not see it, because `set -u` exits 1 and the two
+  agreed by accident.  **A rebinding is not a use** — crediting a bound fixture
+  path when its name "occurs again" is satisfied by a second *assignment*, so a
+  consumer that spells a path, overwrites the name and opens nothing passed the
+  claim that the row names a gate which reads it.  **A call is not classifiable**
+  — whether a call alters its argument before `lake` sees it is not a question a
+  source scanner answers, so the probe locator's builder/consumer split (is the
+  result used?  is the argument a `Name`?) was two proxies for an undecidable
+  fact, and both were defeated within two review rounds; the exit is round 16's,
+  *require a canonical spelling and refuse the rest* — probe text reaches Lean
+  through a named template and `.replace` over literals, never as a call
+  argument, with one structurally-incapable sink (`ast.parse` returns an AST)
+  exempt by **resolution** rather than by spelling and reconciled both ways.
+  **Every binding TARGET is seen** — a walk that skips any target which is not a
+  bare `ast.Name` leaves `(PROBE,) = (<probe text>,)` binding nothing, so the
+  name denotes no text and a transform through it builds a string carrying no
+  marker: invisible in both directions at once.  And **the sweep is run, not
+  stated** — `check_identifier_naming`'s own module docs record NUL-delimited
+  discovery as its item 8, and seven sibling listings across five gates were
+  still splitting on whitespace; the same sweep found a **third** copy of the
+  `cat-file` loop that `v0.35.147` had collapsed two of.
+
+  Two things about witnessing this class.  A mutation that keeps every token and
+  changes the framing is caught only by a case whose *input* carries the
+  delimiter — a fixture built from well-formed bytes proves nothing about a path
+  with a newline in it, and the decisive cases here are git-driven because what
+  was wrong is the REQUEST, which no parser fixture can exercise.  And **a
+  harness that crashes where it should report hides the second defect**: a
+  refusal raised on a success-path call escaped `indexed_source`'s self-test as a
+  traceback and skipped every case after it, so one mutation masked another until
+  the harness started reporting exceptions as case failures.
+
+  **And the sweep found five more, one of them in the gate that blocks
+  commits — so the rule gets a CHECK** (PR #897's review, `v0.35.154`).
+  `v0.35.150` swept seven sibling listings for this class; the review then
+  reported two it had missed, and sweeping the *question* rather than the
+  reported spelling found three more.  The worst is
+  `scripts/pre-commit-lean-build.sh`, whose `sorry` check reads three
+  `mapfile -t` listings: staging `$'a\nb.lean'` holding
+  `theorem bad : True := by sorry` produced **no finding**, because
+  `git show ":\"a\\nb.lean\""` resolves to no object, so the gate whose stated
+  job is to block a `sorry` passed it silently.  `select_changed_anchors` fails
+  the same way in the other direction — a path that does not exist matches no
+  anchor target, and the sweep reports **clean** while running nothing the real
+  change invalidates.
+
+  This file already said *the sweep is run, not stated*, and restating it a third
+  time is the move that had failed twice.  `indexed_source.unframed_path_listings`
+  is the check, in the module that already owns "run git correctly", wired into
+  the self-test Tier 0 runs.  Three things it records.  **A NUL-framed stream
+  cannot be piped through a line filter**, so the hook's `.lake/` exclusion became
+  a path test rather than a `grep`; the framing is undone by the first consumer
+  that splits on newlines.  **A path byte that is not valid UTF-8 must
+  round-trip**, so the Python reader decodes with `surrogateescape` rather than
+  raising on the one input the framing exists for.  And **the check resolves each
+  line into the structure it stands for**, because two drafts of it cried wolf on
+  this tree's own text: matching lines reported a diagnostic string, a Tier 3
+  anchor quoting the call and a membership predicate, and matching every string
+  argument of a call then reported six fixture builders whose arguments merely
+  *include* an unrelated `"diff"` and an unrelated `"--cached"` — **a set standing
+  in for a sequence, which is this file's own presence-for-relation defect inside
+  the check written to close one.**  An argv is contiguous and identified
+  structurally: a list whose first element is `"git"`, a callee whose name ends in
+  `git`, or a shell command whose *head* word is `git`.  `--error-unmatch` is
+  deliberately not a listing option — it prints nothing and is a predicate whose
+  answer is the exit status.
+
+  **And the check's OWN domain was a name resemblance, found by this cut's
+  anchor sweep rather than by a review.**  `_python_git_argvs` recognised an
+  invocation as a list argument whose first element is `"git"` **or a callee
+  whose name ends in `git`** — and the second is a resemblance.  Measured over
+  the tracked `scripts/*.py`: **30** functions run git, and **6** unframed
+  listing call sites reach one through a helper named `g`, every one reported
+  clean.  That is *a helper the scanner cannot see is a spelling that evades the
+  metric*, inside the check written to close a domain miss, on its first day.
+  `_git_wrapper_names` is the relation — a function whose body starts a process
+  whose argv begins with the literal `"git"` IS a git wrapper, whatever it is
+  called — resolved **intra-module**, because that is what `ast` can decide, with
+  the name test **kept beside it** as a pin for the cross-module case rather than
+  replaced.  The six sites are **fixed, not exempted**: an exemption is the
+  enumeration the check exists to retire, so the harness asks git for paths the
+  way the readers it tests do.  And the control is what keeps the derivation from
+  becoming *any helper* — a same-shaped function running `hg` is not a wrapper,
+  so dropping the `argv[0] == "git"` test fails a case rather than passing
+  silently.
+
+  **And the fail-closed fix's CALLER was admitting what it could not read**
+  (`v0.35.150`, found by CI rather than by review).  Making a derivation raise
+  moves the question to whoever decided it was available, and
+  `check_workstream_plan.baseline_refs` decided it with `git rev-parse --verify
+  -q <cand>` — an existence check for a ref NAME and a pure **syntax** check for
+  a full hex sha, since git turns forty hex digits into a raw object id without
+  consulting the object database.  Measured, on a sha this tree does not
+  contain: `rev-parse --verify -q <sha>` exits **0**, `<sha>^{commit}` exits 1,
+  `ls-tree` exits 128 with `fatal: not a tree object`.  A full hex sha is
+  exactly what CI passes, so the guard was exact for every candidate except the
+  one that matters, and both CI workflows already peeled — *one question, three
+  askers, and the odd one out was the gate*.  `revision_is_readable` is the
+  owner; an unreadable candidate is skipped and `baseline_is_complete` says so.
+
+  Three things that cut records, each a rule already in this file arriving at a
+  smaller unit.  **A fixture that inherits ambient configuration is not a
+  witness**: three of four fixture cases pinned `SELE4N_PLAN_BASE_REF` and one
+  did not, so under CI it listed a revision the fixture cannot contain;
+  `_fixture_repo` is the one owner and it *pins* rather than pops, since popping
+  sends the resolver to its `origin/main` fallback — the ambient repository
+  again, one indirection out.  **Two halves can rescue each other**: with the
+  peel in place, reverting the fixture leak leaves the suite green, because the
+  unreadable sha is skipped and the case silently runs HEAD-only — which a
+  *staged* deletion does not need a base for, though a *committed* one does, so
+  the same leak one case over is a vacuous pass.  Hermeticity is therefore
+  asserted directly, through the resolver inside the fixture, with a hostile
+  ambient value by construction.  And **a negative anchor over a retired
+  SPELLING is defeated by a reformatting revert**: the first one here kept the
+  relation and MISSED its own mutation, because re-inlining the unpeeled call
+  across two lines keeps every token and matches no single-line pattern.  Scope
+  such a negative to the **location** — `baseline_refs` must not ask git at all
+  — which is what makes extracting the owner the fix rather than a tidy-up; it
+  then catches the inlined, the reformatted and the renamed-local revert alike.
+  The explanatory measurement moves to the owner's docstring in the same step,
+  since leaving it behind both duplicates the fact and trips that negative on
+  prose.
+
+  **And a RECEIVER may be parenthesised, which is the same substitution at the
+  smallest unit a scanner has** (PR #897 review, `v0.35.151`).  The rule above
+  polices the *question* a gate asks; this is the one where the question is
+  right and the **text** it is asked of has a legal second form.  Lean permits
+  redundant brackets around any expression, so `(st.objects)[k]?` *is*
+  `st.objects[k]?` — the same access, on the same table — and every store-census
+  pattern keys on the receiver's text.  Seven positions ask *which text denotes
+  the object table*, the review reported one, and **all seven** keyed on the
+  unparenthesised spelling.
+
+  **Measured, and the measurement is what makes it a class rather than a
+  nit**: four keyed reads in `Scheduler/Invariant.lean` are already spelled
+  `({ st with objects := … }.objects)[tid.toObjId]?`, which `READ` could not
+  see.  They sit in a `theorem`, so `STORE_READ_CODE`'s **enforced zero** was
+  untouched — by accident, not by construction; the same expression in a `def`
+  body walks around it.  That is `v0.35.12`'s *a spelling is not a read* and
+  `v0.35.97`'s *a spelling is not a write* at the one position neither cut
+  swept, and the qualified branch's second sub-shape
+  (`RHTable.erase (spliceOutMidQueueNode st tid).objects k`, which `[\w'.]*`
+  structurally cannot span) is a rename away from the same hole, the tree
+  already writing that shape at five sites for theorem helpers.
+
+  Three things follow.  **One owner, not seven patches**: `_RECV_OPEN` /
+  `_RECV_CLOSE` are composed by every receiver position, so a widening reaches
+  all of them by construction — a fix at whichever branch a review names leaves
+  the other six open.  **Exact beats safe where the language decides it**:
+  `_RECV_CLOSE` admits whitespace only INSIDE the bracket group and never
+  between the last `)` and the accessor, because Lean's own lexer separates
+  `x[i]` (a subscript) from `x [i]` (an application to a list literal), so
+  `f (st.objects) [a, b]` is correctly refused — and that refusal is
+  *asserted*, since the widening that admits the one is a whitespace class away
+  from admitting the other.  And **the reconciliation is derived**:
+  `branch_symmetry_violations` crosses `_TABLE_OPS` with `_OPERATION_SPELLINGS`
+  rather than naming two spellings inline, so classifying an operation checks
+  it in every spelling and adding a spelling checks it for every operation.
+
+  Two mechanical notes, both earned by running the mutations rather than
+  reasoning about them.  **Asking "was anything reported" is satisfied by a
+  neighbouring assertion**: dropping the PARENTHESISED SUBSCRIPT check left the
+  suite green because no case could reach it, so each reconciliation case now
+  names the substring its violation must carry, and the two subscript cases are
+  each other's controls — one requires a bracket where Lean does not, the other
+  admits none where Lean does.  And **a negative over a spelling the fixtures
+  deliberately carry must be scoped to its owner**: `self_test` holds the
+  retired patterns as mutation inputs, so a tree-wide negative would fire on
+  them; each is bounded to the declaration that must not ask the question the
+  retired way, and verified by restoring the pre-fix reading inside it.
+
+  **And a canonical-spelling contract is exactly as strong as its narrowest
+  escape** (PR #897 review, `v0.35.152`).  Round 16's exit — *where the subject
+  is code this project writes, require a canonical spelling and refuse the rest*
+  — is the remedy this section arrives at twice, and `v0.35.150` applied it to
+  probe text: *a probe reaches Lean through a named template and a `.replace`
+  over literals, never as a call argument*, with one structurally-incapable sink
+  (`ast.parse`) exempt "by RESOLUTION rather than by spelling".  Both escapes
+  were then keyed on a **resemblance**: the exemption resolved that the receiver
+  is *some* import rather than *which module*, so `import probe_builder as ast`
+  satisfied it; and the unmodelled-form fallback answered "ordinary value" for a
+  `Subscript`, so `[TEMPLATE][0].replace(…)` carried no marker and was not
+  refused.  Both measured invisible in both directions at once.  So: **write the
+  contract, then audit every branch that lets something past it** — an
+  exemption resolves what its table NAMES (a module path, not a binding), and a
+  default branch that cannot read its input answers *refuse* when the input
+  reaches the thing the contract is about.
+
+  Two corollaries the mutation run produced rather than the review.  **A third
+  escape existed and no case reached it**: reverting the `FormattedValue` branch
+  left the suite green, and measuring what it alone decides showed
+  `f"{TEMPLATE}".replace(…)` passing without it — so the branch was right and
+  unwitnessed, which is indistinguishable from wrong until a case is planted.
+  And **a fourth clause measured the other way**: a marker-bearing literal
+  written inline inside an unmodelled form is refused either way across five
+  spellings, because an upstream reconciliation already catches it, so it is
+  deleted with its measurement rather than kept for symmetry — *a filter
+  positioned where it can only ever be wrong is not a filter*.
+
+  **And "the view you read depends on the question" cuts both ways** (same
+  round).  This file states that rule for *structure versus text*; the fixture
+  catalogue needed it for *two code views of one language*.  `.sh` and `.py`
+  consumers were read RAW under a docstring calling the over-approximation a
+  loss of "precision on the diagnostic", and it was not: a shell gate containing
+  only `# open("foo.expected")` satisfied the consumer claim, so a fixture could
+  be indexed, hashed and opened by no executable code.  Both views already
+  existed here, and the reason they are not in the shared overlay stands — a
+  Tier 3 anchor may legitimately match a `.sh` or `.py` comment — so the remedy
+  is a second table with a **stated** question and a reconciliation refusing the
+  two to answer for one suffix, not a third lexer.  Where the existing view
+  answers a *different* question, make the difference a **parameter**:
+  `strip_shell` blanks a double-quoted span's message text, which is right for
+  "which tokens are identifiers" and wrong for "does this script open that
+  fixture", so the policy is the caller's and the lexing stays one answer.
+
+  **And an anchor's inputs are not always in its own command.**  `test
+  "${CIBUNDLE_CONJUNCTS}" -ge 5` names no path; the file it is about is named by
+  the assignment above it.  Relating changed paths to the command alone dropped
+  such an anchor from the changed-file selection **entirely** — not deferred,
+  not reported, absent — so deleting conjuncts left that sweep green while
+  direct Tier 3 failed.  *Resolve the text into the structure it stands for*: a
+  variable reference is a reference to its producer, taken as the **last**
+  assignment of that name before the anchor, and the relation, the disposition
+  and the executed text are one answer.  An unbound name resolves to nothing at
+  all rather than to a partial prelude.
+
+  **And a new AXIS is only as good as the values you enumerate on it** (PR #897
+  review, `v0.35.153`).  `v0.35.151` gave the store census's symmetry matrix a
+  *receiver* axis and enumerated three of its five values; the two it skipped —
+  a doubly parenthesised receiver and a NESTED application — were a live hole in
+  the qualified branch, whose receiver was a FLAT paren group, so
+  `RHTable.erase (f (g st)).objects k` was outside an enforced zero.  That is
+  this file's own *a new axis is enumerated at all of its values on the day it is
+  added* rule, unrun by the cut that created the axis.  **Take the axis's values
+  from the grammar**: a Lean term in projection position is an identifier chain
+  or a parenthesised term, which may nest or hold an application that nests, so
+  the axis has five values and no others.  The same review found the same
+  substitution one derivation over — `_TABLE_TYPE` wrote `(?:SeLe4n\.)?` on one
+  of the type's three identifiers, at one of its qualifications, so a binder
+  spelled `SeLe4n.Kernel.RobinHood.RHTable …` bound no receiver and its keyed
+  accesses were in **neither** census.  A qualified Lean name denotes the same
+  constant, so the qualifier is per identifier and bounded by a
+  name-continuation lookahead.
+
+  Three things that cut records.  **A regex cannot balance parentheses, so the
+  qualified branch over-approximates to the LINE** and says so — a bounded
+  nesting depth is the enumeration this file retires, and over-reporting a
+  violation stops Tier 0 and names the declaration where under-reporting passes
+  silently (measured: zero lines admitted on the live tree).  **The operation
+  name's end is not `\b`** — Lean admits `?` in an identifier, so after `get?`
+  there is no word boundary, and the crossing reported all three of its qualified
+  spellings unrecognised before the branch ever ran against the tree.  And **a
+  widening that admits a live site is a finding, not a failure**: the type
+  widening surfaced `collectQueueMembers`, whose migration to the state accessor
+  was *implemented and then reverted* — the walk and its six theorems port
+  cleanly and two proofs shrink, but seven bundle transports in one module stop
+  being definitional, against 320+ mentions across twelve files, because taking
+  the table is what keeps the predicate unable to mention a non-object field.
+  It is recorded in the indirect floor with that measurement.  *When a
+  measurement kills the plan, that is the measurement working.*
+
+  **And the view you read depends on the QUESTION, so one function that asks two
+  needs two** (PR #897's review, `v0.35.154`).  The rule above is about a *value*
+  a scanner could not read; this is about a scanner that read the right value
+  through the wrong policy.  `check_fixture_consumers` asks a consumer *where is
+  the fixture path mentioned*, which needs string contents **kept** because a
+  path IS a string literal, and *is this occurrence of the bound name a read*,
+  which needs them **gone** because a name inside a string is not a read.  One
+  view answered both, so a consumer spelling `FIXTURE="foo.expected"` and then
+  nothing but `echo "FIXTURE"` credited the literal as a use — a fixture could be
+  listed in the README, hashed, named in a gate that never opens it, and still
+  validate its `Used by` row, which is `v0.35.109`'s own *a checksum is not a
+  comparison* one column over, in the check written to close it.
+
+  **`v0.35.152` had already established that the two policies differ** — it gave
+  `strip_shell` a `keep_quoted` parameter for exactly this reason — and used only
+  one of them; this is that cut's own distinction applied at the second asker.
+  Three things follow.  The blanking policy is a **parameter of the caller's
+  question, not a second lexer**: `python_code_view` gained `blank_strings`, the
+  shape `strip_shell` took two cuts earlier and the one `code_no_strings` has
+  carried for Rust all along, so the tree keeps one Python lexer.  The two views
+  are **byte-aligned**, which is what lets the mention be located in one and the
+  read counted in the other at the same offsets.  And **the reconciliation's
+  domain is derived, not the union of the two tables**: the first draft iterated
+  `set(A) | set(B)`, so a suffix missing from *both* was in neither set and the
+  check was silent about exactly the drop it exists to catch — deleting `.lean`
+  from the identifier table was reported by **nothing**, which the mutation run
+  said and no amount of reading it would have.  The domain is now what
+  `consumer_code_view` can *answer* (`CONSUMER_VIEWS` plus the shared overlay's
+  own `_STRIPPERS`), so "is this suffix answerable at all" has one owner.
+
+  **And a LINE is not the declaration, nor is ONE decision drawn from two
+  subjects** (PR #897's review, `v0.35.155`).  Two more of this family, and both
+  are *the view you read depends on the question* at the level of the SPAN a gate
+  reads.  `v0.35.153` over-approximated the store census's qualified branch to the
+  LINE — correct reasoning, wrong unit: Lean wraps a long call, so
+  `RHTable.insert\n  st.objects k v` matched **nothing** and an executable raw
+  write could sit outside `STORE_WRITE_CODE = 0` while the gate printed the zero,
+  with `READ` holding the same hole.  The unit is the **declaration**, spelled as
+  the bounded gap this tree's anchors already use — a run of characters none of
+  which begins a column-0 line, which a Lean declaration header always does — and
+  written as one lazy alternation so it is linear rather than a nested quantifier.
+  Measured before taking it: over all 405 tracked `.lean` files it admits **zero**
+  matches the line bound did not, so the widening is free and every witness is
+  planted.  `_WHITESPACE_PLACEMENTS` is the axis at all three of its values with
+  `_DECLARATION_CROSSING` as its negative, because a gap that reaches a
+  continuation line is one whitespace class away from reaching the next
+  declaration's.
+
+  The sibling is the same substitution in a *disposition*:
+  `select_changed_anchors` computed `kind` from the anchor ALONE and compared it
+  against `SEARCHING_KINDS`, while `missing` and `substitutes` beside it were
+  computed from the command WITH its prelude — so a fully resolved threshold
+  `test "${N}" -ge 5` reached `defer:tool`, and deleting bundle conjuncts left the
+  changed-file sweep green while direct Tier 3 failed.  `v0.35.152` had fixed that
+  split for `related`, the *provenance* question, and not for `kind`, the
+  *executability* one.  **Recomputing `kind` is not the remedy and the measurement
+  says so**: a compound `NAME=$( … ); run_check …` is not a line the classifier
+  parses, so every such anchor would become `fail:unparsed` and fail Tier 0 on ten
+  anchors that are correctly deferred.  Of eleven anchors with a resolved producer
+  exactly **two** are runnable; the nine others are an array assignment the fold
+  truncates, an EMPTY array (where the tool would run with no arguments and
+  *pass*), a side-effecting `mktemp` feeding a build, or a redirection into the
+  tree.  So round 16's exit again — **require a canonical spelling and refuse the
+  rest** — with two details the measurement corrected: the substitution's closing
+  parenthesis is the LAST character, since a `sed` pattern holds
+  `\(theorem\|def\)` and a `[^)]*` bound stopped inside it, refusing one of the
+  two anchors the contract exists for; and the pipeline is split on a **lexed
+  word** through the module's own `_shell_words`, because a `sed` pattern holds
+  `\|` and a `grep` pattern holds `| ` inside quotes.  **And the predicate needs a
+  WIRING case of its own**: cases that exercise it directly leave a disposition
+  branch which never consults it passing, which is *an unwitnessed condition is
+  indistinguishable from a wrong one* at the point where a fix is plugged in.
+
+- **Retired code is removed, not left to pollute the tree.**  When a cut
+  supersedes a definition, a theorem, a resolver or a policy, the superseded
+  thing is **deleted in the same workstream**, not kept beside its replacement.
+  Two readings of one question is the duplication hazard this file spends most
+  of its length on; a *retired* reading kept "for reference" is that hazard with
+  a note attached, and it reads in a bundle, a footprint or a search result
+  exactly like the live one.  The rule is unconditional — a superseded
+  declaration has no grace period, and "it might be useful later" is what
+  version control is for.
+
+  Six things the WS-HP HP7 sweep (`v0.35.46`) established about doing this
+  safely, each of which cost a measurement:
+
+  1. **"Unused" is measured over the code view, and textual reference is not the
+     only kind of use.**  A `lockSet_*_size_le` bound has *zero* textual
+     consumers and is required **by name** by a Tier 1 census
+     (`LockFootprintBoundCensus`, which derives the obligation from each
+     footprint's own telescope and decides it by `isDefEq`); Tier 3 anchors
+     consume symbols the same way.  A sweep that counted references and deleted
+     the zeroes would have removed eleven live bounds.  So: count references over
+     `scripts/lean_code_view.py --overlay`, then subtract what a **gate**
+     consults — and where a declaration is genuinely consumed by nothing at all,
+     anchor it rather than orphan it (next item) or delete it.
+  2. **The derivations that replace a retired hypothesis are not retired.**
+     HP7's whole content is that three *stated* coherence facts became
+     consequences of the head-driven trigger; the theorems that say so
+     (`answeredFrameHeadContext?_head_is_answered_reply`, `_donationHeadOf`,
+     `_boundThread`) had no consumer either, and deleting them would have left
+     the claim "derivable" with nothing behind it.  They are **anchored in Tier
+     3** instead, because a derivation nothing consults reads exactly like one
+     nobody checked.
+  3. **A retired reading a witness needs moves into the witness, private, and
+     nowhere else.**  A test that cannot name what it replaced cannot show that
+     the replacement changed anything.  So the superseded spelling lives as a
+     `private def` in the suite that refutes it —
+     `bindingDrivenReplyServerDonation?` in `tests/SmpCrossCoreReplySuite.lean`,
+     `bindingDrivenCancelledCallerDonation?` in `tests/SmpCancellationSuite.lean`,
+     and `FrozenOpsSuite`'s `FO-042` for the frozen surface — computed beside the
+     live one so the assertions are known to discriminate rather than merely to
+     pass.  That keeps the *evidence* and deletes the *code*.
+  4. **A positive anchor on a deleted symbol becomes a negative.**  `run_check`
+     on a name a cut removed fails outright; worse, a `run_negative_check` on one
+     silently passes forever, which is the tautological pin this file already
+     retires.  Convert each positive to a negative that refuses the symbol
+     tree-wide (*it must not come back*), and add a positive on whatever now
+     carries the property.
+  5. **Deleting a symbol means sweeping every citation of it.**  Prose naming a
+     declaration that no longer exists reads exactly like prose naming one that
+     does, and the deletion's blast radius includes docstrings, `CLAUDE.md` /
+     `AGENTS.md`, the spec, the claim index, GitBook, the debt register, the plan
+     and the `CITATION_EXEMPTIONS` table in
+     `scripts/check_claim_evidence_citations.py`.  Leave a **tombstone** where
+     the symbol was, naming what replaced it: a reader arriving from a citation
+     you missed needs somewhere to land, and the tombstone is what makes the
+     miss recoverable instead of mystifying.
+  6. **A declaration's own docstring is not authority on its fate — and check
+     that the gates which would catch the miss are running.**  Two things this
+     sweep found, and neither was in the deletion's plan.  The predicate WS-HP
+     HP7 was scheduled to retire turned out to be **live**, with twelve
+     consumers, while **five** docstrings across `API.lean`,
+     `DispatchPayoff.lean`, `DonationPreservation.lean`, `Endpoint.lean` and the
+     plan itself said the phase retires it — a forward-looking claim written
+     three phases earlier, propagated by every later cut that touched those
+     files, and false.  So a sweep resolves what a symbol's *consumers* say, not
+     what its docstring predicts, and it sweeps the **forward-looking** prose
+     (`until X retires it`, `X is what retires this`) as well as the citations:
+     a stale prediction reads exactly like a scheduled obligation.  And the
+     sweep's own instruments need checking, because both of this tree's citation
+     gates failed here in opposite directions: `check_workstream_plan.py` was
+     **red at HEAD** and had been since the previous cut, on landing notes that
+     cite a later sibling narratively where the gate — correctly, no scanner
+     being able to tell a mention from a consumption — reads a forward
+     dependency; and `check_claim_evidence_citations.py` matches a citation as
+     `` `<ident>_<ident>` ``, at least one underscore, so **every Lean `def`**
+     (lowerCamelCase) is outside its domain and a deleted one cited as evidence
+     reports PASS.  That is fail-open, it is registered in
+     `docs/REGISTERED_DEBT.md` §C with its measurement, and until it closes a cut
+     that deletes a `def` sweeps the index by hand.  *A green gate you did not
+     run, and a gate whose domain excludes what you deleted, are the same
+     silence.*
+
 - **Invariant/Operations split**: each kernel subsystem has
   `Operations.lean` (transitions) and `Invariant.lean` (proofs). Keep
   this separation.
@@ -2500,6 +3783,224 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
 - **Fixture-backed evidence**: `Main.lean` output must match
   `tests/fixtures/main_trace_smoke.expected`. Update fixture only with
   rationale.
+
+  **And a checksum is not a comparison** (`v0.35.109`).  Every fixture carries
+  a `.sha256` companion and the Tier 2 gate sweeps all of them, reporting
+  "Fixture hashes verified (14 files)" — which reads as a measurement of
+  agreement with the program and is a measurement of agreement with *itself*.
+  A checksum's job is to force a fixture edit to be paired with a hash refresh
+  in the same commit; it says nothing about whether the fixture still describes
+  what the code does, and it is the fixture's *producer* that must be run to
+  ask that.  This file's oldest rule, arriving at an artefact none of its
+  instances had reached: *a presence check is not a relation check*, where the
+  presence is a hash of the file by itself.
+
+  Measured on the whole directory: **twelve of fourteen** fixtures were also
+  compared against live output — by `test_tier2_trace.sh` for the main trace, by
+  a `fixturePath` read inside the producing suite for ten more, and by
+  `include_str!` in `rust/sele4n-abi/tests/conformance.rs` for the return-shape
+  table, which is asserted on both sides of the ABI — and all twelve matched, so
+  the sweep's value is entirely in the two it could not reach.  Those two are the
+  ones nothing compared, and their drift was **total**: `robin_hood_smoke.expected` and `two_phase_arch_smoke.expected`
+  are not golden output at all but `SCENARIO_ID | SUBSYSTEM |
+  expected_trace_fragment` manifests, and **19 of 19** fragments named lines no
+  suite printed.  The cause is the shape this file keeps recording: the only
+  consumer, `scenario_catalog.py validate-registry`, parses `parts[0]` — the ID
+  column — so the *fragment* column was read by nothing, and when the suites'
+  `expect` labels lost the scenario-id prefix the manifests presuppose, every
+  row went stale in silence.  `RobinHoodSuite.lean` carried **both**
+  conventions, 19 labels with an id and 36 without, in one file.
+
+  Four things new code must respect.  (1) **A fixture needs a gate that runs its
+  producer, and the comparison is of SEQUENCES.**  Which gate it is belongs in
+  `tests/fixtures/README.md`'s "Used by" column — where it was *false* for both
+  manifests, naming suites that do not read their file.  And the main trace's own
+  gate asked only the forward direction (every fixture fragment occurs in the
+  output), computing the converse *inside the failure branch*, so a passing run
+  never asked whether every output line is accounted for: a trace line **added**
+  to the output left the fixture no longer enumerating the trace, while this file
+  said "must match".  Both directions were asserted at `v0.35.110`, and the
+  measurement is what licensed taking the strict one — 239 fragments, 239
+  non-empty output lines, zero unaccounted, so it cost the tree nothing.  The
+  mutation that decided there drops **one** fixture line and touches nothing else:
+  the forward direction still passes at 238/238, and the pre-`v0.35.110` gate
+  reported `Fixture comparison passed` on it.
+
+  **And a set is not a sequence** (PR #897 review, `v0.35.113`).  Both of those
+  directions are substring **containment**, so what the pair decides is set
+  membership and nothing more — which is this file's oldest rule one level below
+  the cut that added the second one, and it leaves three token-preserving
+  mutations passing: a fixture line **duplicated** (the forward pass finds it
+  twice, the reverse pass accounts for every output line), two fixture lines
+  **transposed** (identical multiset, and neither direction reads order), and an
+  output line **duplicated** (both copies independently find the same fragment, so
+  the trace gained a line and the gate reported that both directions held).
+  Measured against the superseded gate, the transposition passed and the
+  duplication passed *reporting `240/240`* against a 239-line trace — a fixture
+  claiming one more expectation than the program prints, called a pass.  What
+  licenses the strict form here is the artefact's own contract rather than a
+  judgement: `tests/fixtures/README.md` regenerates this fixture by redirecting
+  the producer's stdout over it, so it **is** golden output, and the expectation
+  sequence and the output sequence are byte-identical at 239 lines with no
+  duplicate on either side.  The two loops are kept as *diagnostics* — a 239-line
+  diff does not say which scenario id is missing, and which direction moved is
+  what tells a maintainer whether the code or the fixture changed — and the
+  sequence equality is the verdict.  (2) **The improvement direction is the code, not the
+  fixture.**  The manifests were right and the labels had drifted, so the fix
+  relabels 94 assertions rather than rewriting 19 rows — and it costs no fixture
+  churn, because a manifest nobody edits keeps its checksum.  Rewriting the rows
+  would also have made them *ambiguous*: `size correct` and `timer advanced` each
+  name two assertions, so a fragment without its id identifies no scenario, which
+  is the presence-versus-relation defect one level down.  (3) **The swept set is
+  derived**: `list-manifests` classifies a fixture as a manifest by its row shape
+  and reads its producer from the manifest's own `# Suite:` header, so a manifest
+  added later is checked with no gate edit, and one that declares no producer
+  **fails discovery** rather than dropping out of the domain while the gate
+  prints PASS.  (4) **A regeneration recipe is a claim too**: the README told you
+  to redirect each suite's stdout over its manifest, which replaces an ID table
+  with raw output and breaks the Tier 0 registry gate (measured: 74 and 79
+  differing lines).  A documented workflow that corrupts the artefact it
+  maintains is worse than none, and a Tier 3 negative refuses its return.
+
+  **And a table that claims to enumerate a directory is an enumeration standing
+  in for a derivation.**  The same README's `## Files` table is where a reader
+  learns which gate compares a given fixture, and it had omitted
+  `syscall_return_shape.expected` and `qemu_boot_expected.txt` — the second found
+  by `check-fixture-index` (Tier 0) on its first run, which is the criterion this
+  file sets for a mechanism worth building.  Membership is a **row**, never a
+  mention: a fixture named in passing in the prose names no gate, so accepting one
+  would be the presence-for-relation substitution one artefact over.  The
+  exemption set is reconciled in both directions, because an exemption nobody
+  reconciles reads exactly like coverage.
+
+  **And the machinery that closes a class is written by the same hands** (`v0.35.111`).
+  The three paragraphs above are one rule — *a presence check is not a relation
+  check* — applied to fixtures.  A review of the code that applies it found **three
+  instances of it inside that code**, all fail-open, and the measurement worth
+  keeping is not the instances but *where the witnesses were*: all twenty cases had
+  been drawn from the drift that had already been observed, so they probed the
+  boundary and never asked the property.  That is this file's own *a witness drawn
+  from a finding tests the finding*, arriving in the cut written to obey it.
+
+  The three, each a presence check standing in for the relation the function's own
+  name asserts.  `check_fixture_index` joined the table's `|` lines into one blob
+  and asked whether the filename occurred in it, so an **unlisted fixture passed
+  whenever any cell quoted a longer name containing it** — its own `.sha256`
+  companion, which every row in that table names — and the loop ran over the
+  *directory*, so a row naming a **deleted** file was never inspected.
+  `discover_manifests` skipped a file it could not parse, so one carrying a valid
+  `# Suite:` header and a single malformed row was swept as golden output with
+  `manifest_count` still nonzero and the gate still printing PASS — the exact
+  silence the machinery exists to end, arriving through the classifier instead of
+  through a stale row.  And `check_fragments` bound a fragment to nothing, so a row
+  reading `RH-001 | … | [RH-002a insert then get]` **passed**: the fragment is
+  emitted, by the wrong assertion, and `RH-001` could have been deleted from the
+  suite outright with the gate green.
+
+  Four things the remedies decide rather than inherit.  **Membership is a parsed
+  CELL of a named section**: `fixture_table_filenames` reads the `Fixture` and
+  `Hash` cells of the `## Files` table, scoped to that heading — so a filename
+  backticked in a second table cannot satisfy a fixture's membership, which is the
+  derived-domain rule applied to *which table the claim is about* — and only those
+  two cells declare, because the real table's third column quotes
+  `scenario_registry.yaml` in prose and would otherwise have declared it.  **Intent
+  is what makes a skip reportable**: `classify_fixture` treats a `# Suite:`
+  declaration *or* all-row content as manifest intent, and given intent anything
+  short of well-formed is an error — with the control mattering as much as the case,
+  since the same content without the declaration must stay a trace fixture or golden
+  output would be run against a producer it never named.  **A binding is a relation,
+  not a containment**: the id must be followed by an optional sub-case letter and
+  then a character that cannot continue an id, so `RH-001` does not match
+  `RH-0010a …`, which is the same defect one character down.  And **two
+  classifications are none**: a file both exempt and named by a row now fails, as a
+  missing `## Files` heading does — answering "nothing to check" is a silent pass
+  and answering "every fixture is unlisted" names the wrong cause.
+
+  One mechanical point that is genuinely new, and it corrected this cut rather than
+  the tree.  **A negative anchor on a retired variable name is satisfied by a revert
+  that renames it.**  The first negative written here forbade the retired membership
+  expression verbatim; the mutation that reintroduces the joined-blob reading under
+  any other local name left it silent, and the mutation run is what said so.  What
+  the claim is about is *where the README's text is read*, so the anchor is scoped
+  to `check_fixture_index` and forbids the read itself — the declaration-bounded
+  form this file otherwise warns about, correct here because the claim really is
+  about that declaration.  Ask of any negative: *what renames or relocations
+  survive it?*
+
+  **And a gate's own control must be identified by the REASON it fires**
+  (`v0.35.113`, found while fixing the paragraph above).  The one artefact that
+  claimed to exercise the comparison above was
+  `scripts/audit_testing_framework.sh`, whose header says in as many words that
+  it "synthesises a deliberately-broken trace fixture and asserts that
+  `test_tier2_trace.sh` correctly rejects it (catching a class of *fixture
+  compare silently passing* bugs)".  It copied the fixture to a `mktemp` path and
+  asserted a non-zero exit — and `TRACE_FIXTURE_PATH` must name a **git-tracked**
+  file, an injection guard that refuses any path outside the index, so the
+  control was refused before the gate read a single line and would have reported
+  success with the comparison deleted outright.  The script written to catch
+  "fixture compare silently passing" was passing silently, and the class it names
+  is the one the review then found.
+
+  **"The gate could not read it" and "the gate checked it and it differs" must
+  never produce the same verdict** — the rule this file already states for
+  `check_anchor_consistency.py`, there in the PASS direction and here in the FAIL
+  one.  So a control asserts the *message*, not the exit status, and a control
+  whose claim is that one check decides asserts the others stayed **silent**: the
+  five now in that script mutate the real fixture (with its `.sha256` refreshed,
+  since the checksum sweep runs first and the mutation is exactly the consistent
+  fixture edit a maintainer makes) and are each decided by their own subject — an
+  appended expectation by the forward direction, a deleted one by the reverse, a
+  **transposed** and a **duplicated** one by the sequence comparison alone, and an
+  untracked path by the guard and by nothing else.  Two further things that cut
+  measured.  A control that cannot be run **on its own** is a control nobody
+  re-runs after touching the gate it is about, which is how this one stayed inert
+  behind a tier stack it runs first: `--controls-only` is eleven seconds against
+  tens of minutes.  And the mutated fixture is restored from the index after every
+  control **and the restoration is verified**, because a crashed run that leaves a
+  golden fixture edited is worse than a control that never ran.
+  **And a prose COLUMN is a claim nothing reconciles — while a gate that repairs
+  shared state must own it first** (`v0.35.116`).  The rule above says a fixture
+  needs a gate that runs its producer and that *which gate it is belongs in*
+  `tests/fixtures/README.md`'s "Used by" column.  That sentence had two readers
+  and no checker: `check_fixture_index` parses the `Fixture` and `Hash` cells and
+  ignores the third, so the column a reader is told is "the only place a reader
+  learns which gate compares a given fixture" was read by nothing — and the same
+  cut that wrote it *measured* the column false for two fixtures.  A new golden
+  fixture could therefore be listed, hashed and compared by no gate at all with
+  every fixture gate green, which is `v0.35.109`'s own finding one column over,
+  and it is the *a counterpart named in prose* rule (PR #895 round 22) applied to
+  a documentation table rather than to a Lean comment.
+
+  `check_fixture_consumers` validates it per fixture **kind**, because what "its
+  consumer" means differs: a scenario-traceability manifest is found by a glob
+  that names no file, so its cell must name that gate and nothing else is
+  checkable; every other fixture is opened by name, so a repository path its cell
+  names must exist and must mention the fixture in its **code view** — the tree's
+  own per-suffix table, hoisted out of `lean_code_view.overlay`'s local so the
+  question "what is this file's code view" keeps one owner rather than two.  A
+  suffix with no view is read raw and the docstring says so, since narrowing it
+  would mean a third shell lexer.  Its first run caught the row the enumeration
+  could not: `two_phase_arch_smoke.expected`'s cell read *"same two gates"*, a
+  back-reference to the row above that a reader resolves by eye and a check
+  cannot resolve at all.
+
+  The second half is the audit harness, and it is a class this file had not
+  written down.  `audit_testing_framework.sh` mutates the real trace fixture in
+  place — the only way to reach the comparison, since the fixture-path guard
+  refuses anything outside the index — and restores it with `git checkout --`
+  before the first control and again on EXIT.  That **permanently discards an
+  unstaged edit**, and a maintainer editing a fixture is exactly who runs
+  `--controls-only`, which this file advertises as eleven seconds against tens of
+  minutes.  **A gate that repairs shared state takes ownership of it first, and
+  refuses rather than repairing what it does not own**: the check is fail-closed
+  (a non-zero exit naming the files, never a skip), it runs *before* the tier
+  stack rather than before the controls — a full run would otherwise spend tens
+  of minutes and then discard the edits, and a legitimately regenerated fixture
+  makes that stack **pass** — and the restore reads an ownership flag, because the
+  trap is installed before the check can run and would otherwise fire the very
+  restore it exists to prevent.  A *staged* edit is not dirty and is preserved,
+  which is what makes `git diff --quiet` the right question: it asks precisely the
+  unstaged one, and the index is what the restore puts back.
 - **Typed identifiers**: `ThreadId`, `ObjId`, `CPtr`, `Slot`,
   `DomainId`, etc. are wrapper structures, not `Nat` aliases. Use
   explicit `.toNat`/`.ofNat`.
@@ -2820,12 +4321,28 @@ context heads a stack.  (5) **A Reply that still donates cannot be freshened or
 retyped, and neither can a context that still heads a stack** — `linkReply` and
 `lifecyclePreRetypeCleanup` refuse rather than clear, because clearing takes a
 frame off a stack the context still heads and the walk would then stop mid-chain.
-(6) **A cancelled *middle* caller severs the stack at the cut**
-(`cancelledMiddleCallerPolicy = .severAtCut`, proved by
-`cancelledMiddleCaller_severs_at_cut`): the innermost live caller keeps the
-context and no thread below the cut is touched.  Its cost is stated rather than
-hidden — the original owner's reservation ends up with that caller — and it is
-seL4-MCS's own `reply_remove` answer.  One consequence for the suspend footprint:
+(6) **A cancelled *middle* caller is SPLICED out of the stack**
+(`cancelledMiddleCallerPolicy = .spliceOutTheCut` since WS-HP HP6.8, `v0.35.45`,
+proved by `cancelledMiddleCaller_splices_at_cut`): the frame above the cut takes
+the cut frame's own downward link and the frame below links back up at it, so the
+reservation goes on travelling outward to the caller the surviving stack names
+(`.donated scId outer`) and no thread below the cut is touched.  **Up to `v0.35.44`
+it severed** — `cancelledMiddleCallerPolicy = .severAtCut`, the innermost live
+caller keeping the context `.bound scId` and its owner left `.unbound` for good —
+and that is **what seL4-MCS does**, re-verified at `v0.35.40` against upstream
+source at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0: `reply_remove`'s non-head
+branch writes `REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false)` under the
+comment *"not the head, remove from middle - break the chain"*.  It writes
+**zero**, not the cut frame's own `replyPrev`.  `v0.35.14` asserted the reverse
+here and quoted a line that exists in no release; see *the removal does not
+preserve the donation accounting* below for what that retraction cost.  So the
+splice is an **improvement on upstream** rather than an adoption of it, measured at
+reply-stack depth three in `tests/SmpIpcSuite.lean` §3.22 and stated as
+`donationAccountingPreserved_atCallDepthThree`; what it provably cannot reach is
+the depth-**two** loss, where both policies write `none` into the frame above a
+bottom frame, and that is closed instead by the reservation's recorded origin
+(`donationAccountingPreserved_atCallDepthTwo`, WS-HP HP10.9, `v0.35.53`).
+One consequence for the suspend footprint:
 the teardown can rebind the victim `.donated`, and the arm selector re-reads the
 *post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
 `suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.  The payoff
@@ -2961,9 +4478,12 @@ omits a written object is **false**, and every statement built on
 `boundedWait_under_2pl`, the CC-5 bound -- was *silent* about that TCB rather
 than conservative.  **With this cut all eight declared syscall arms name every
 object they write**, and the sweep that began at OD3.9 is closed.  Two mechanical
-notes: the sharp bounds are *renamed*, not weakened
-(`lockSet_replyRecv_size_le_thirteen_of_owner_eq_target`,
-`lockSet_endpointReplyRecvOnCore_size_le_thirteen`), and a new cut that widens a
+notes: the sharp bounds are *renamed*, not weakened -- OD3.13 spelled them
+`lockSet_replyRecv_size_le_thirteen_of_owner_eq_target` and
+`lockSet_endpointReplyRecvOnCore_size_le_thirteen`, and **neither name is live**:
+the first was deleted at `v0.35.50` with the rest of the `_of_owner_eq_target`
+family, whose merge HP6.2 refuted, and the reachable `.replyRecv` bound is
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen` -- and a new cut that widens a
 footprint pays at `admissibleCriticalSection_rpi5Tick`, visibly.
 
 **And `.send` / `.call` declare the queue-structure neighbour** (OD3.11,
@@ -3045,6 +4565,586 @@ every other kernel path uses" was false when OD1.1 wrote it** -- this is that
 finding's third copy, and it survived eight cuts because the fix was applied to
 the copy the finding named.  A removal added later is a fourth: sweep, do not
 patch.
+**...and the agreement between the two link fields is an INVARIANT, not a
+per-site obligation** (WS-RR RR8.3, `v0.35.57`).  `queuePPrev` carries exactly
+**one bit** beyond `queuePrev` — whether the node is linked into a queue at all —
+and every other bit of it must agree: `.endpointHead` iff there is no
+predecessor, `.tcbNext p` iff the predecessor is `p`.  Nothing stated that, and
+that is *why* OD1.1 and OD3.9 each found a removal writing `queuePrev` alone: no
+`ipcInvariantFull` conjunct read the field, so a stranded successor — one that can
+never leave its endpoint queue again — was invisible to the proofs and to the
+harness alike.  Six things new code must respect.
+
+(1) **`queuePPrevAgreesWithPrev` is `dualQueueSystemInvariant`'s fourth
+conjunct**, so `ipcInvariantFull` still has twenty and the bundle family is
+untouched — and since `v0.35.99` its `none` arm says **`queuePrev = none`**
+rather than nothing.  It read `True`, on the stated ground that
+`tcbQueueLinkIntegrity` forbids a dangling `queuePrev`; that conjunct forbids a
+`queuePrev` whose target does not point back and never mentions `queuePPrev`, so
+a *queued* interior node carrying no back-pointer satisfied every conjunct while
+the dual removal — whose guard takes a `QueuePPrev`, not an `Option` — refused it
+outright and could never dequeue it.  The field was weaker than the one bit it is
+documented to carry.  A new writer therefore states both back-pointers, which
+every existing one already wrote: the strengthening cost six discharge sites and
+changed no operation, no queue and no fixture — but every transition in the tree now carries it, and a new one must.
+The cheap route is `queuePPrevAgreesWithPrev_of_frame` (every surviving TCB keeps
+its two link fields) or, for a queue writer, the per-primitive siblings
+`storeTcbQueueLinks_preserves_queuePPrevAgreesWithPrev` and
+`storeObject_tcb_preserves_queuePPrevAgreesWithPrev`.  The bundle has **named
+accessors** (`.endpointsWellFormed` / `.linkIntegrity` / `.chainAcyclic` /
+`.pprevAgrees` / `.headDisjoint`) so the fifth conjunct `v0.35.106` added did not
+shift a single projection path, and a positional `.2.2` into it is now a statement
+about a pair.
+
+(2) **The dual removal's precondition is a named definition the transition
+reads.**  `dualQueueRemovalGuard` *is* `endpointQueueRemoveDual`'s
+`pprevConsistent`, which was an anonymous `let` — which is why no caller could
+state that it had established it.  A Tier 3 negative refuses the inlined spelling
+coming back beside the named one, and eight proofs `unfold` the name, so deleting
+it is a build failure rather than a silent pass.
+
+(3) **The guard factors, and only one factor is the invariant's.**
+`dualQueueRemovalGuard_eq_position_and_pair` splits it into
+`queuePPrevHeadPositionAgrees` and `queueLinkPairAgrees`;
+`dualQueueRemovalGuardHolds` discharges the second from the conjunct and the first
+from **membership**, which stays a hypothesis because no invariant entails it — a
+thread on *no* queue also has `queuePrev = none`, so `.endpointHead` alone cannot
+say which queue's head it names.  Measured rather than asserted: a detached thread
+carrying `(none, .endpointHead, none)` satisfies the pairing and fails the guard
+(`tests/NegativeStateSuite.lean`).  Membership is spelled the way this tree
+already spells it — the head itself, or reachable from it — and
+`QueueNextPath.lastEdge` is what turns reachability into a predecessor, the
+sibling `firstEdge` had lacked because the inductive is written forwards.
+`dualQueueRemovalGuardHolds_of_dualQueueSystemInvariant` is the same discharge in
+the shape callers hold, taking the endpoint rather than the queue.
+
+(4) **The retype replacement is pristine in `queuePPrev` too, and that is not
+derivable from `queuePrev = none` beside it**: a replacement carrying `.tcbNext p`
+with no `queuePrev` *refutes* the pairing rather than satisfying it vacuously.  It
+sits next to `queuePrev` in `retypeReplacementFresh`, because the two are one
+back-pointer, at the cost of shifting twelve positional destructurings — which is
+the price of keeping the pair together and was paid deliberately.
+
+(5) **The unlink updates are where the pair is shown to travel together.**
+`TCB.queuePPrevAgreesWithPrev_queueUnlinkSuccessor` (the successor inherits the
+*removed* thread's own pair) and `…_queueUnlinkPredecessor` (only `queueNext`
+moves) are the machine-checked form of the OD1.1/OD3.9 finding, composed by
+`queueNeighbourPatch_preserves_queuePPrevAgreesWithPrev` into
+`spliceOutMidQueueNode_preserves_queuePPrevAgreesWithPrev` — the third removal's
+own statement, which the cancellation composite then consumes rather than
+re-deriving.
+
+(6) **The conjunct is checked at runtime, not only proved.**
+`queuePPrevAgreesWithPrevChecks` is part of `stateInvariantChecksFor`, so every
+harness state asserts it; the golden trace's `[PIP-005]` count moved 27 → 28,
+which is the measurement that it runs.  Its witness is decisive in both
+directions, and the mutation that decides **keeps every queue and every
+`queueNext` chain and corrupts one back-pointer**.
+
+**...and the head's back-pointer is the QUEUE's fact, not the TCB's — so it needed
+a fifth conjunct** (PR #897 review, `v0.35.106`).  RR8.3 closed *present but wrong*
+and `v0.35.99` closed *absent on an interior node*; what both left open is the
+**head**.  `queuePrev = none` is what a detached thread carries **and** what a
+queue's head carries, so `queuePPrevAgreesWithPrev` — a pointwise predicate over
+one TCB — structurally cannot distinguish them, whatever its `none` arm is
+strengthened to.  A queue whose sole member carried `(none, none, none)` therefore
+satisfied every conjunct of the bundle while `endpointQueueRemoveDual` refused it
+with `.endpointQueueEmpty`: the OD1.1 / OD3.9 stranding class a **fourth** time, and
+this time on a queue that is not empty.  **And the tree had already decided it in
+the other artefact**: `intrusiveQueueWellFormedB`, the check every harness state is
+asserted against, has required `headTcb.queuePPrev = some .endpointHead` since it was
+written — *one question answered in two places*, with the Bool right and the Prop
+wrong, and the divergence sitting exactly where the proofs are silent.  Six things
+new code must respect.
+
+(1) **The clause lives in `intrusiveQueueWellFormed`'s P2**, beside `queuePrev =
+none`, because it is a fact about a *queue's head* and a pointwise TCB predicate
+cannot say it.  A new queue writer states both link fields of a head it installs;
+`storeTcbQueueLinks_preserves_iqwf`'s `hHeadOk` carries the pair.
+
+(2) **`endpointQueueHeadDisjoint` is `dualQueueSystemInvariant`'s FIFTH conjunct**,
+and `ipcInvariantFull` still has twenty.  It says a thread heads at most one
+endpoint queue, counting send and receive as different queues — which is what a
+*clearing* writer needs, since with the back-pointer in P2 it must show the thread
+it clears heads none of the queues it transports, and `endpointQueueNoDup` gives
+disjointness only *within* one endpoint.  The bundle's named accessors gained
+`.headDisjoint`, and that RR8.3 built them "before a fifth conjunct arrives" is the
+measurement that the shape paid: no projection path moved.
+
+(3) **It is a consequence of `ipcInvariantCore`, not a new assumption.**
+`queueHeadExclusive` derives it from `queueHeadBlockedConsistent` — a head's
+`ipcState` names *its* endpoint and *its* queue kind, and a thread has one
+`ipcState` — with `queueHeadKindExclusive` the same-endpoint corollary (which
+re-derives `endpointQueueNoDup`'s disjointness clause) and
+`endpointQueueHeadDisjoint_of_queueHeadBlockedConsistent` the builder.  So nothing
+*assumes* exclusivity; the conjunct exists so the bundle can **transport** it
+without reading an `ipcState`, which is what keeps it inside this bundle's charter.
+
+**...and it is checked at runtime too — since `v0.35.108`, not since it was added**
+(PR #897 review).  RR8.3's item (6) had recorded the rule one cut earlier ("the
+conjunct is checked at runtime, not only proved") and `v0.35.106` added the conjunct
+with no check, so this is that rule unswept at the very next opportunity.  The gap
+was not one omitted call: **nothing** in `stateInvariantChecksFor` was
+cross-endpoint — `endpointDualQueueWellFormedB` is literally the two per-queue
+checks of one endpoint — and nothing tied an endpoint queue's head to its own
+`ipcState`, so a state the bundle refuses passed the entire surface.  Two endpoints
+each holding `{head := some t, tail := some t}` over one thread the live enqueue
+left with `(none, some .endpointHead, none)` is that state, and popping either queue
+then clears `t`'s links and strands the other: the OD1.1 / OD3.9 stranding class a
+fourth time, on a queue that is not empty.  `endpointQueueHeadDisjointChecks` asks,
+per occupied head, whether any **other** `(endpoint, kind)` claims it — so it is
+robust to a repeated index entry and it names the colliding pair, which is the whole
+content of a disjointness failure.  Three things its witness records.  A violating
+state **cannot** be reached by live operations (every kernel queue writer maintains
+disjointness by construction, which is why the conjunct is provable), so the witness
+writes the second endpoint's boundary by hand through `corruptEndpointQueueHeads`,
+as the RR8.3 witnesses write a corrupted back-pointer by hand.  Its claim is a
+**differential** against the control rather than "the only failing check is the new
+one", because `baseState`'s TCBs are unsynced and two `threadState` checks fail on
+both states — a plain claim there would have been false for a reason unrelated to
+the finding.  And the strand is measured rather than described: the pop is taken
+with `expectOkVal`, because `expectOkSt` asserts the invariant surface on the
+post-state and that post-state is the corrupt one the finding is about.  The golden
+trace's `[PIP-005]` count moved 28 → 29, which is the measurement that it runs.
+
+(4) **A writer discharges it locally, from its own guard.**
+`endpointQueueHeadDisjoint_of_singleQueueUpdate` (itself derived from the general
+`_of_freshHeads`) takes two obligations, and each queue writer already has them: a
+pop promotes a successor, which has a predecessor
+(`not_queueHead_of_queuePrev_some`); an enqueue promotes a thread its own guard
+refused a back-pointer to (`not_queueHead_of_queuePPrev_none` — the strengthened P2
+paying for itself); a mid-queue removal and a tail append move no head.  The two
+operations that clear a *victim's* links without owning its queues — the
+notification purge and the reply-path restore — take the victim's off-boundary fact
+as a **stated** hypothesis (`hOffEp`), which the composite holding the whole bundle
+supplies from `queueHeadBlockedConsistent`, because a thread blocked on a
+notification or a reply bounds no endpoint queue.
+
+(5) **The payoff is a retired caller obligation.**  A queue member's `queuePPrev` is
+now derived rather than hypothesised — at the head from P2, at an interior node from
+`tcbQueueLinkIntegrity`'s forward clause plus the pairing — so
+`queuePPrev_of_queueMember` joins the halves and
+`dualQueueRemovalGuardHolds_of_member` is `dualQueueRemovalGuardHolds` with `hPPrev`
+discharged.  `hMem` and `hTailLast` remain, because queue connectivity and the
+tail's identity are what no conjunct of this bundle entails.  Its witness is
+`tests/NegativeStateSuite.lean` case (5), which reads the field off both states
+directly — asserting the *field* rather than a predicate's verdict is what makes it
+about P2's strengthening rather than about the pairing beside it.
+
+**...and the BOUNDARY the removals write is one definition too — and asking the
+fact rather than a proxy for it is what retires a stated hypothesis** (WS-RR
+RR8.4, `v0.35.58`).  OD3.9 unified what a removal writes to the *neighbours*;
+the queue's own `head` and `tail` stayed two readings, and the plan row that
+scheduled this collapse said they "write the same fields to the same values
+today".  They did not.  Both moved the head on `q.head = some tid`; for the tail
+`endpointQueueRemove` asked `q.tail = some tid` while `endpointQueueRemoveDual`
+asked `removed.queueNext = none` and derived the new tail from `queuePPrev`.
+Under a connected queue the two conditions coincide, and `ipcInvariantFull`
+joins a queue's boundaries **nowhere** — it constrains the head, it constrains
+the tail, and nothing relates them — so on a state it admits, a queued thread
+with no successor that is not the tail, they part: there the inferring form
+cleared the tail and **stranded the queue's real tail**, a thread that could then
+never be dequeued, which is OD3.9's own defect class arriving through the field
+OD3.9 did not unify.
+
+`queueRemoveBoundary` (`Model/Object/Types.lean`, beside `queueUnlinkPredecessor`
+and `queueUnlinkSuccessor` — the third and last piece of "what does unlinking
+write") is the shared definition, with the four shapes a guarded removal writes
+named once (`queueRemoveBoundary_{headLast,headMore,midLast,midMore}`, read by
+both the dual's invariant proofs and the `endpointQueueRemove_agrees_*` family).
+Five things new code must respect.
+
+(1) **`q.tail = some tid` is the fact and `removed.queueNext = none` is a
+proxy for it**, so the shared definition asks the fact — this file's own *a proxy
+is not the fact* rule, applied to a field rather than to a core.  Which reading
+survives is not an arbitrary pick: the proxy's failure mode is silent (a
+well-formed-looking queue with a thread missing from it) and the fact's is loud
+(a head cleared without its tail, which `intrusiveQueueWellFormed` refuses), so
+the fact fails closed where the proxy fails open.
+
+(2) **Asking the fact leaves the proxy's direction to be established, and the
+removal CHECKS it.**  `queueTailPairAgrees` — the queue's `tail` field and the
+removed thread's `queueNext` agree about whether this thread is the tail — is the
+first factor of `dualQueueRemovalGuard`, so the dual **refuses** the state on
+which the two readings part rather than mishandling it, and
+`dualQueueRemovalGuard_eq_position_and_pair` is restated over three factors.  One
+direction is free from the bundle (a tail has no successor, so a thread with one
+is not the tail — `spliceTail_ne_of_hasNext`) and the other is the missing
+invariant, which is why this is a runtime guard and not a fifth conjunct.  The
+biconditional is stated because "the tail question has one answer" is what it
+means; refusing the free direction as well costs nothing, the bundle already
+excluding it.
+
+(3) **WS-OD OD1.3's `spliceRemovedIsTailWhenLast` is DELETED, and the deletion is
+not its closure.**  Every consumer was already conditioned on the dual
+succeeding (`dualRemovalEnabled`), so the guard discharges what the hypothesis
+supplied: `SpliceShape`'s two no-successor branches carry `hTail` outright
+instead of the weaker `tail.isSome`, and `endpointQueueRemove_agrees_with_dual`,
+`endpointQueueRemove_establishes_ipcInvariantFullExceptMembership` and
+`abortPendingIpcOnEndpoint_preserves_ipcInvariantFull` each shed a hypothesis —
+the agreement now needs the dual's success and nothing else.  But queue
+connectivity is still a **missing invariant**: the fact is now
+`dualQueueRemovalGuardHolds`'s `hTailLast`, an obligation on whoever *calls* a
+removal, where it is discharged from where the thread sits in the queue, rather
+than one carried by every theorem *about* one.  A cut that reads the deletion as
+"connectivity is now entailed" has read it backwards.
+
+(4) **The pin is asymmetric, and measured rather than assumed.**  The dual's
+boundary write is buried in a five-step program, so only a theorem can state it:
+`endpointQueueRemoveDual_writes_queueRemoveBoundary`, hypothesis-free, replacing
+two consumer-less WS-L3 tail theorems that specified the retired inference.  The
+single's body is straight-line and its four `endpointQueueRemove_ok_*` shape
+theorems already state its post-store *per branch*, so they fail if its boundary
+changes — measured: a no-op mutation of its Step 3 fails four of them — and a
+fifth restatement was **not** added, because that is the duplication this file
+spends its length retiring.  What neither side pins is the *sharing*: an inlined
+copy of the identical record would satisfy every one of those theorems, so that
+is a Tier 3 negative, and its mutation keeps the values and breaks only the
+sharing.
+
+(5) **A plan row's premise is a claim, and this one was false.**  "They write the
+same fields to the same values today" was written from reading both bodies'
+*head* computations and generalising; the tail was where they differed and where
+the defect was.  The row is corrected in place rather than quietly satisfied,
+because a premise that survives a cut it motivated will be cited by the next one.
+
+**And the boundary question had FOUR askers, not two** — the sweep rule catching
+this cut's own plan row.  RR8.4's row said "the two endpoint-queue removals", and
+OD3.9 four sections above had already established there are **three**: the third
+(`removeFromAllEndpointQueues`) splits the work, so `spliceOutMidQueueNode` writes
+only the two neighbour TCBs and its *boundary* write is `removeThreadFromQueue`
+(`Lifecycle/Operations/Cleanup.lean`) — a fourth spelling of the same expression,
+found by asking who else computes a queue boundary rather than by trusting the
+row's enumeration.  It already asked the **fact**, so unifying it is a
+de-duplication and not a behaviour change (`removeThreadFromQueue_tcb_present` is
+byte-for-byte the boundary it wrote before, and
+`removeThreadFromQueue_eq_queueRemoveBoundary` is the relation stated over the
+shared definition).  Its `lookupTcb`-absent arm is deliberately **not** routed
+through `queueRemoveBoundary`: with no TCB there is no removed thread whose links
+a boundary could inherit, so that arm is the *absence* of a removal and routing it
+through a synthetic link-free TCB would make the shared definition describe a case
+it is not about.
+
+**And running the sweep again found a FIFTH**, which is the whole argument for
+running it rather than stating it.  `frozenQueueRemove`
+(`Kernel/FrozenOps/Core.lean`) is the frozen mirror of `endpointQueueRemoveDual`
+and computed the boundary itself, with `==` where the live ones use `=`.  It is
+the asker a kernel-tree sweep structurally missed — until `v0.35.60` the frozen
+surface was in neither library root, built only by its own test target — and it
+is the **fifth** time this project paid for that (WS-RM's census at `v0.35.12`,
+HP4.7's trigger at `v0.35.38`, HP8's splice at `v0.35.47`, HP10.8's origin clear
+at `v0.35.52`, and this boundary).  **This paragraph said "third" for two cuts
+after it was five**, in the file whose own rules retire hand-kept counts; the
+root cause is closed at `v0.35.60` — see *a surface outside every derived domain
+is checked by whoever remembers it* below.  Because the frozen store holds the **live** `TCB` and `IntrusiveQueue`,
+a *model*-level definition applies to it directly, which is why
+`queueRemoveBoundary` lives beside the two unlink updates in
+`Model/Object/Types.lean` rather than in the IPC layer.  Two results worth
+keeping.  The mirror already asked the **fact**, so it was **right** on the tail
+question where the operation it mirrors was wrong, and nothing in the tree
+compared the two on the state where they part — a differential surface can hold
+the better answer and never be asked.  And its *guard* is a different matter: it
+refuses only `queuePPrev.isNone` where the live removal refuses three things, so
+it **succeeds where the kernel refuses**, which is the direction that matters on a
+mirror; the guard family lived in the kernel layer the frozen surface deliberately
+does not import, so relocating it to the model was its own cut — **taken at
+`v0.35.59`**, and the next paragraph is what it measured.
+
+**A plan row's enumeration is a recognised set**; the sweep is what makes it a
+derived one — and a sweep that stops where the build roots stop is still an
+enumeration.
+
+**And a surface outside every derived domain is checked by whoever remembers it**
+(`v0.35.60`, the maintainer's correction).  Every domain rule above polices one
+gate's input.  This is the same defect at the scale of a **subsystem**, and it is
+the one that produced most of the frozen-surface findings in this file.
+
+`SeLe4n/Kernel/FrozenOps/` was in neither library root and in no staged
+allowlist, built only by its own `lean_exe`.  Measured at `v0.35.59`: that put it
+outside the *derived* domain of **five of the six** Tier 1 censuses
+(`IpcDethreadingEnvironmentCensus`, `BootEntryContract`,
+`ExportCommitDisciplineCensus`, `LockFootprintBoundCensus`,
+`StoreReadClassificationCensus` — the sixth, `ReplyStackWriteCensus`, reaches it
+only because `v0.35.12` widened it *by hand, after a defect shipped through the
+hole*), and outside `check_production_staging_partition.sh` entirely, which has no
+opinion on a module that is neither production nor staged.  It was executed
+(Tier 2 runs `lake exe frozen_ops_suite`) and anchored in Tier 3, so it was not
+unchecked — it was under-**derived**, which is the failure mode this section
+spends its length retiring.
+
+**The cost was five after-the-fact corrections**, each found by a later cut rather
+than by a gate, on a surface carrying the **live** `TCB`, `Reply`, `SchedContext`
+and `IntrusiveQueue` records and mirroring the reply and cancellation spines: a
+caller's Reply cleared bare and a link guard reading `caller.isNone` where the
+live kernel reads `Reply.isFree` (`v0.35.12`); a binding-driven trigger after the
+live path went head-driven, plus a missing recipient guard and a missing ID
+promotion (`v0.35.38`); still severing after the live removal spliced
+(`v0.35.47`); never clearing `donationOrigin` (`v0.35.52`); and a duplicated queue
+boundary followed by a guard carrying **one of four** refusals with the wrong
+error code (`v0.35.58`–`v0.35.59`).
+
+**...and a sixth, after the promotion, which is the measurement that says what the
+promotion did and did not close** (PR #897 review, `v0.35.96`).
+`frozenSchedContextBind` and `frozenSchedContextUnbind` were still keeping a
+`donationOrigin` the live kernel erases — the `v0.35.52` correction's own class,
+one operation over — and sweeping the **operation** rather than the field found
+three more: the live bind refuses four things and the mirror refused one, and it
+did not propagate `sc.priority` to the bound TCB, so every frozen post-bind state
+falsified `boundThreadPriorityConsistent`.  Every one of those was invisible to
+the promotion, because putting a module in the library root fixes which
+*definitions* a gate can see and says nothing about whether a mirror **agrees**
+with what it mirrors.  That second half is `docs/REGISTERED_DEBT.md` table C's
+open row — a second implementation (the architecture's own *execute* phase, not a
+test double) whose fidelity is checked by a hand-written scenario list — and the measurement here is what it costs: the three
+missing refusals sit on an operation `frozenBranchDifferentiallyChecked` does not
+name, so no `frozenRunAgrees` comparison could have reached them and none did.
+**Promotion into the root is necessary and is not the fidelity check**; until the
+coverage set is derived, a cut that touches a live transition with a frozen mirror
+sweeps the mirror by reading both, and a cut that adds a *field* to a shared record
+sweeps every writer of it on both surfaces.
+
+**...and a seventh, where the divergence is inside ONE DECLARATION: a primitive
+that guards its principal and not its neighbours** (PR #897 review, `v0.35.146`).
+The three queue primitives resolve the thread they are *about* through
+`frozenLookupTcb` -- which refuses a reserved id exactly as the live `lookupTcb`
+does -- and read the queue's **tail**, **predecessor** and **successor** with the
+bare `getTcb?` two lines below.  So a queue whose neighbour sits at
+`ThreadId.sentinel` was accepted here and refused `.objectNotFound` by
+`endpointQueueEnqueue` / `endpointQueueRemoveDual`.  No scenario driving the
+principal could see it, and **none driving the neighbour existed** -- every fixture
+on this surface exercises the thread a primitive is *about*, which is the half
+that was already guarded.  Not because the states are unreachable:
+`Builder.createObject` accepts a reserved `ObjId`, measured, and the cut's own
+first reading had asserted the opposite and built its fixtures by hand on the
+strength of it.  (`BootstrapBuilder.withObject` does refuse the slot, and
+generalising from that one builder to both was the error.)  **When a declaration
+resolves two threads, ask whether it resolves them the same way**; a shared name
+two lines apart reads as one convention and is not -- and *a claim about what a
+builder will not accept is measured, not inferred from its sibling.*
+
+**And a MISSING WRITE is not a refusal, so no refusal-set comparison can find
+it.**  The fourth site in that cut is the one no review reported and the worse
+of the two kinds: `frozenQueuePopHead` wrote **no successor patch at all**, where
+the live `endpointQueuePopHead` promotes the successor to head.  The thread the
+pop *makes* the head went on naming the popped one, which fails
+`intrusiveQueueWellFormed`'s P2 and -- through `dualQueueRemovalEnabled`'s
+`queuePPrevHeadPositionAgrees` factor -- made **every later removal of it
+`.illegalState`**: stranded for good, by one ordinary `frozenEndpointSend`
+rendezvous into a **two**-deep receive queue, with no hand-built state anywhere.
+That is WS-OD OD1.1 / OD3.9's own class -- *a removal that writes one of a node's
+two back-pointers and not the other* -- arriving on the surface that has no
+theorems to catch it, five cuts after this file recorded the class twice.
+Every existing scenario pops from a **one**-deep queue, where there is no
+successor and the two programs agree by construction: FO-043's lesson on a
+different primitive, *a sweep for fixtures that would break is not a sweep for
+fixtures that would exercise*.
+
+Two things that cut records.  **The sweep found no fifth site, and saying so took
+the measurement**: six other frozen definitions read `getTcb?` and are *faithful*,
+each mirroring a live counterpart that reads the store raw too -- which is why the
+Tier 3 negatives are **declaration-bounded** rather than file-wide, a tree-wide one
+firing on a clean tree and saying nothing.  And **the two kinds of divergence need
+two kinds of anchor**: a respelled read is caught by a negative forbidding the
+relation, while a *deleted* store is caught only by the positive over what replaced
+it -- *test a gate by breaking the relation, not by deleting the token*, read in
+the direction where the defect **is** a deletion.
+
+So: **the gates' domains nearly all key on library-root reachability, which makes
+"not in a root" a silent exemption from most of this tree's defences.**  A
+mirror deliberately shaped to be compared against production therefore gets the
+weakest derivation precisely because it is not production.  The remedy is not a
+sixth hand-widened census — that is the recognised set again — but to put the
+surface **in the root**, which `SeLe4n.lean` does at `v0.35.60` with two imports
+(`FrozenOps.Agreement` and `FrozenOps.Invariant` reach all five modules; the
+dependency runs frozen → production and never the reverse, so no cycle closes).
+
+Three things that promotion measured, and the first is the argument for having
+done it earlier.  **The build was clean and only one gate fired**: the
+content-flow coverage gate's property (C), on `frozenTaintFlow` and
+`frozenTaintClear` naming the taint-writing API from outside the declared
+propagation surface — because `FrozenSystemState.declassificationTaint` is the
+*same* `TaintTable` as the live field.  Tier 0, Tier 2, Tier 3 and the partition
+gate all passed.  That the promotion is cheap is not evidence the deferral was
+harmless; it is evidence the five corrections had already paid the behavioural
+price one cut at a time, and what remained was the **declaration**.
+
+**A frozen writer is declared as a mirror, never folded into the live surface.**
+Nothing in `FrozenOps` can move `SystemState.declassificationTaint` — which the
+gate's property (C2) decides type-resolved — so adding the two to
+`DECLARED_TAINT_WRITERS` would dilute the live one-writer fact into "one live
+writer and some others".  `DECLARED_FROZEN_TAINT_WRITERS` maps each frozen
+primitive to the live counterpart it reproduces, reconciled in **both**
+directions (a key the probe no longer reports is a stale exemption reading as
+coverage; a value outside the live surface names a counterpart that does not
+exist), which is the shape `ReplyStackWriteCensus`'s `.mirrors` constructor and
+`frozenBranchLiveOperation` already use for this question — *find the answer this
+tree already has*.  Both directions are mutation-tested.
+
+**And the gate that fired had already written the finding down.**
+`DECLARED_TAINT_CONSUMERS`'s own note records a "frozen/live taint-layer
+mismatch" that "survived until a differential scenario could start from a tagged
+state".  The gate knew the frozen taint layer diverges; it could not see the
+divergence, because the constants were not in its environment.  **A gate's
+comment naming a hazard it cannot reach is the clearest possible signal that its
+domain is too small** — and it sat there unread while five corrections landed
+around it.
+
+**And the published METRIC had been calling it production the whole time — which
+is why this was reported as a documentation contradiction rather than found by a
+gate** (the maintainer's correction, `v0.35.60`).  This is the sharpest part, and
+it inverts how the deferral looked from outside.
+
+`scripts/generate_codebase_map.py` computes `prod_paths` as *everything not under
+`tests/`*.  So all five `SeLe4n/Kernel/FrozenOps/` modules have been inside
+`readme_sync.production_files` (330) and `readme_sync.production_loc` (385,265)
+since those figures existed — and those two numbers are mechanically synced into
+`README.md`, `docs/spec/SELE4N_SPEC.md`, all **eleven** `docs/i18n/*/README.md`
+and GitBook.  Meanwhile the source-layout line said "(experimental)", `SeLe4n.lean`
+excluded it, `check_production_staging_partition.sh` had no opinion on it, and
+four C.1 rows deferred "promotion into the production chain".
+
+**Four artefacts, three answers to one question, and the artefact that reads as
+authoritative was the one nobody had checked** — because it is *derived* and
+published in fourteen places, where the others are hand-written prose or a build
+file.  A reader who trusts the metric over the prose, which is exactly what this
+file tells readers to do everywhere else, concludes FrozenOps is production; a
+reader who opens `SeLe4n.lean` concludes it is not.  Both were reading correctly.
+
+Three things follow.  **"Is this production" is one question and must have one
+answer**: the import chain is now that answer, and the metric agrees with it
+because the metric already did.  **A derived figure is not automatically the right
+derivation** — `not under tests/` is a *path* convention standing in for a
+*reachability* fact, which is this section's own `a field name is not a receiver
+type` shape at the level of a build classification; it was never wrong about the
+line count, only about what "production" names.  And **a contradiction between a
+published metric and a build file will be reported by a person, not a gate**,
+because no gate reads both: the partition gate reads the roots and the map reads
+the filesystem, and nothing reconciles them.  That reconciliation is the check this
+class needs, and `v0.35.60` makes it *true* rather than *checked* — the surface is
+in the root, so the two agree — which is a state a later cut can silently break.
+
+**Running that reconciliation by hand found one more, and getting the number right
+took three attempts.**  Of the **331** files the metric counts as production,
+**251** are in this root's closure and the rest are reached by `Platform.Staged`,
+by a Tier 1 census, or by one of the 71 `lean_exe` roots — all but **one**:
+`SeLe4n/Kernel/RadixTree.lean`, a re-export hub with zero in-tree consumers that
+**no build target compiled**.  Its three re-exports were therefore never checked
+as a unit, so a re-export naming a renamed or deleted submodule was invisible.
+`SeLe4n.lean` imports the hub now; the count is zero.
+
+  **A fourth measurement, with the roots as the criterion, found five more**
+  (`v0.35.76`).  The count above accepted a `lean_exe` or a census as reach,
+  and that is not the criterion the Tier 1 censuses' environments use: each
+  imports `SeLe4n` and `SeLe4n.Platform.Staged`, so a module reached only by a
+  test executable is outside every one of them.  The store-access census's
+  domain reconciliation (below) found the first — `ChainFootprint`, whose RR7.40
+  header said PRODUCTION while no root imported it — and re-measuring with the
+  two roots as the criterion found five non-test modules outside both: that one,
+  its `CSpaceWalkFootprint` sibling with the same RR7.41 header, the
+  `FrozenOps` and `Scheduler/PriorityInheritance` re-export hubs (RadixTree's
+  shape, reached by test suites alone), and `Architecture/VSpaceARMv8`, which
+  §8.15.1 of the spec had recorded as *test-anchored, not production-imported*
+  for thirty minor versions.  Three went into the root (both hubs, and
+  `ChainFootprint` with its one staged dependency `DynamicChainExtension`, every
+  import of which was already production); two are staged with a `STATUS`
+  marker each — `CSpaceWalkFootprint` because its conflict theorem is stated
+  against SM3.E's `ktiSharesConflictingLock`, so its chain runs through
+  `Serializability` → `Deadlock`, which the RR7.18 decision keeps out of the
+  image, and `VSpaceARMv8` because it is on no execution path.  A header's
+  PRODUCTION is a claim the import chain decides, and two such claims stood for
+  fifty-two minor versions with nothing deciding them.
+
+The three attempts are the finding's own epilogue, and they are this section's
+*a measurement can carry the defect it is sizing* rule applied to me.  The first
+reported **80** orphans, because the allowlist parser ignored the trailing
+` # comment` on every entry and matched none of the 67.  The second reported
+**7**, because it walked only the two roots, the staged anchor and the six
+censuses, and forgot the `lean_exe` targets — which build most of what was left.
+The third, reading all 71 roots out of `lakefile.toml`, reported **1**.  Two of
+those three numbers would have justified a much larger claim than the tree
+supports, and the only reason the first was not believed is that 80 looked wrong
+enough to re-derive.  **A measurement that licenses a conclusion gets checked as
+hard as the conclusion** — and a domain measured by hand needs its own domain
+checked, which is the rule this whole section is about, arriving one level up.
+
+**And a shared answer must be REACHABLE from every asker, or the unreachable one
+grows its own** (`v0.35.59`).  This file's most-repeated rule is *one question
+answered in two places will diverge*, and its remedy has always been to give the
+question one owner.  The frozen removal is the case that shows the remedy is
+incomplete: `dualQueueRemovalGuard` **had** one owner, in
+`SeLe4n/Kernel/IPC/DualQueue/Core.lean`, and the one surface whose whole purpose is
+to be compared against the operation that reads it **could not import it** — so it
+answered the question itself, with one factor, and the divergence was not a second
+implementation drifting from a first but a *layer boundary* standing between an
+asker and the only answer.  The two failure modes are indistinguishable in a diff
+and have opposite remedies: drift is fixed by deleting a copy, and this is fixed by
+**moving the original down** to the layer both askers reach.  So: when a question
+has one owner and an asker that cannot see it, the owner is in the wrong layer.
+`dualQueueRemovalGuard`, `queueTailPairAgrees`, `queuePPrevHeadPositionAgrees`,
+`queueLinkPairAgrees` and `tcbWithQueueLinks` are in `Model/Object/Types.lean` now,
+beside the records they read and beside `queueRemoveBoundary` — the predicate is
+over an `IntrusiveQueue`, a `ThreadId`, a `TCB` and a `QueuePPrev`, every one a
+model record, so the IPC layer never had a claim on it.  Its **discharges** stayed
+in the kernel layer (`dualQueueRemovalGuardHolds`,
+`queueTailPairAgrees_of_wellFormed`), because those read `ipcInvariantFull`, and
+that split is the test of whether a relocation is a layering fix or a layering
+violation: the *predicate* moves, the *invariants that entail it* do not.
+
+**And moving the answer is not enough if the QUESTION was never named — a named
+condition beside unnamed ones is a subset, and reaching it through a shared
+definition reads like agreement.**  This is the sharper half, and it was found by
+auditing the fix rather than by a review: the first attempt relocated
+`dualQueueRemovalGuard` and had the mirror call it, and that mirror **still**
+succeeded where the kernel refuses.  `endpointQueueRemoveDual` refuses *four*
+things before it writes anything, and only one of them had a name — the one an
+invariant discharges, which is why it got named.  Beside it sat an unnamed
+`if q.head.isNone || q.tail.isNone`, an unnamed `prevTcb.queueNext ≠ some tid` in
+the predecessor patch, and an arm answering `.endpointQueueEmpty` where the mirror
+answered `.illegalState` (and `frozenRunAgrees` compares codes, so that one was
+visible to the differential all along, invisible only because nothing drove both
+sides to it).  A state with an **empty queue** and `pprev = .tcbNext p` passes the
+guard outright — `q.head ≠ some tid` holds vacuously for `none`, the link pair
+agrees, and the tail pair agrees because both sides of it are false — so the
+guard-carrying mirror would have unlinked a node from a queue that has none.
+
+So the remedy is not a better shared *answer* but a named shared **question**:
+`dualQueueRemovalEnabled` is the whole store-free precondition, both removals read
+it, and a condition added to it reaches both by construction.  The one factor that
+needs a store lookup cannot fold in, so it is `queuePredecessorNamesSuccessor`,
+named and read by both sides, each resolving its own `prevTcb`.  **A checker for
+this class must ask whether the refusal SETS agree, never whether a shared name is
+called** — the anchors that pin it are the two removals' conditions *and* a
+negative that refuses the guard-alone spelling coming back, because that spelling
+keeps every token.  Generalising: when you relocate a definition so a second asker
+can reach it, enumerate what the *first* asker does that the definition does not
+cover; a named condition is the one a proof needed, not the one an operation
+performs.
+
+Four things this cut recorded rather than predicted.  **The registered cost was
+wrong in the cheap direction, and that is an argument, not luck**: the debt row
+said the closure must pay "whatever fixture cost the newly-refused states carry",
+and it carried none — the newly-refused states are states the *kernel already
+refused*, so nothing in the tree was on one, `frozenRunAgrees` is unmoved and the
+golden trace is byte-identical.  A guard that only ever refuses what its subject
+refuses cannot cost a fixture; that is what distinguishes tightening a mirror from
+tightening an operation, and it is worth checking before deferring one.  **A
+relocation that repairs no proof is the evidence the layer was wrong**: 233 lines
+moved and nothing needed fixing, which is exactly what one expects when a
+definition had no dependency on the layer it was sitting in.  **Collapsing two
+`if`s into one costs a tactic, and the tactic says where the proofs were reading
+structure**: eleven proofs across five modules needed `cases pprev` moved *ahead*
+of their `split`, because unfolding the enabling condition exposes the guard's own
+`match pprev` inside the `if`, and `split` takes that first — a mechanical repair,
+and a reminder that a proof that splits on an `if` is coupled to how many `if`s
+there are.  And **the witness must be decisive about *which* refusal is new**:
+`FO-045` computes the retired `isNone`-only reading beside the live guard on a
+state violating the **tail** factor and no other, and `FO-046` adds one half per
+remaining refusal, each on a state that passes everything the previous half checks
+and is refused by exactly one more thing.  All four were mutation-tested by
+reverting the refusal each is about, and the fourth mutation is the one worth
+keeping: `lake env lean --run` elaborates against existing oleans, so a mutation of
+a *dependency* reads as PASS until the dependency is rebuilt — the first run of M1
+reported green over the reverted fix.
 
 **The cancellation footprint is arm-selected, and `.replyRecv` declares the
 hand-off it was hiding** (OD3.5, `v0.34.128`).  Two changes with one cause: a
@@ -3058,7 +5158,9 @@ was summed over all of them — so the reply and notification arms declared two
 TCB write locks for a splice they do not perform.  `cancelArmSpliceNeighbors?`
 is *derived* from `cancelBlockedEndpoint?`, so the arm question is asked once,
 and the widest arm drops from ten members to eight
-(`lockSet_cancelIpcBlockingOnCore_size_le_ten` since OD3.7 raised it again, with
+(`lockSet_cancelIpcBlockingOnCore_size_le_ten` since OD3.7 raised it again -- that
+name is not live, the bound having been re-based since to
+`lockSet_cancelIpcBlockingOnCore_size_le_thirteen` -- with
 `_replyArm_eq` and `_endpointArm_covers_prev` / `_next` pinning both
 directions).  Over-declaring is sound and **not free**: lock contention is an
 observable channel (SM8.D's CC-5), so a footprint wider than its operation
@@ -3175,7 +5277,8 @@ rule applied to a footprint.  (4) **`maxLockSetSize` was 13 at this cut and is
 and then to **23 µs**, and the uniform envelope moved to 2340 and then 2520 µs,
 all derived from the constant.  **Only `.replyRecv`
 needed the raise** — `lockSet_endpointReply` reaches nine and the cancellation
-reply arm ten (`lockSet_cancelIpcBlockingOnCore_size_le_ten`) — and that is
+reply arm ten (`lockSet_cancelIpcBlockingOnCore_size_le_ten` at that cut; the live
+bound is `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`) — and that is
 asserted rather than described.  (5) **Both members are `none` on every state
 this tree reaches**, so no live footprint widened; this declares ahead of OD4.4's
 code, which is the order the numbering rule requires.
@@ -3183,14 +5286,16 @@ code, which is the order the numbering rule requires.
 **And how much of that ceiling is slack is stated, not left to be re-derived**
 (OD3.7 sharp bound, `v0.34.131`).  Thirteen is the union over *all* argument
 values; a reachable `.replyRecv` declares **twelve**
-(`lockSet_endpointReplyRecvOnCore_size_le_thirteen`), because the donation a reply
+(`lockSet_endpointReplyRecvOnCore_size_le_thirteen` at that cut; the live bound is
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen`), because the donation a reply
 returns is owned by the thread the reply answers, so two arguments name one key
 and `insertOrMerge` lubs the modes without moving the cardinality.  Three things
 new code must respect.  (1) **The equality is a stated hypothesis**
 (`replyDonationOwnerIsAnsweredCaller`), not a consequence of the bundle:
 `donationOwnerValid` says only that the owner is `.unbound` and `.blockedOnReply
 epId rt` for *some* `rt`, and relates `rt` to no donation — the gap WS-RR RR7.22
-met from the cancellation end and closed with `donationHolderIsReplyTarget`.  (2)
+met from the cancellation end and closed with `donationHolderIsReplyTarget`, which
+WS-HP HP5.3 re-keyed onto the frame as `donatedContextIsOwnerFrameHead`.  (2)
 **One member is the whole of the sharpening**: the recorded server merges with
 the invoking thread only on a *non-delegated* reply, a case split rather than an
 invariant, and the delegated case is the one OD3.5 exists to declare.  (3) **The
@@ -3207,8 +5312,8 @@ was designed against.  With
 `returnDonatedSchedContext_preserves_donationChainWellFormed` the pop stopped
 being that exception.  **The universal it established is not the state of the
 tree at HEAD**, and a reader must not take it for one: `v0.35.4` made the stack
-doubly linked, so the mid-stack *detach* is a second writer of chain data (it
-preserves the predicate, `detachReplyFrameAbove_preserves_donationChainWellFormed`),
+doubly linked, so the mid-stack *splice* is a second writer of chain data (it
+preserves the predicate, `spliceReplyFrameOut_preserves_donationChainWellFormed`),
 and the reply path's `consumeCallerReply` falsifies `prevLinkReciprocal` on a
 frame that is not a head — the WS-RM residual recorded two sections above.  New
 code must not assume `donationChainWellFormed` of a state reached by replying to
@@ -3329,9 +5434,21 @@ Five things new code must respect.  (1) **The classifier is
 binding constructor* (WS-CB's hierarchical servers) must be classified.  It is
 the counterpart to `scId?`, the one a thread *runs on*, and the two split a
 thread's scheduling parameters: **reservation-owned** (budget, period, deadline)
-read `scId?` at every binding, **thread-owned** (base priority, domain) read the
-thread's own TCB fields, mirrored onto `ownScId?`'s SchedContext by the AK2-B
-convention.  It is a **narrowing** of `scId?`
+read `scId?` at every binding, **thread-owned** (base priority, domain) are the
+thread's, and — **at `v0.35.3`, when this was written** — were **stored in two
+places** for a `.bound` thread: the TCB field and, mirrored onto it by the AK2-B
+convention, `ownScId?`'s SchedContext.  Which one a *reader* took was not uniform
+and that was the hazard — `threadBasePriority` read the *reservation* at `.bound`
+while `TCB.boostedPriority`, which every run-queue insert is keyed by, read the
+*thread* — so every writer of either had to move both, which is
+`boundThreadPriorityConsistent` and which `v0.35.98` found `.tcbSetPriority` not
+doing.  **The improvement named here — one home, not two kept in sync — was
+taken**: `v0.35.133` for the band and `v0.35.136` for the domain, so no reader
+consults a reservation for either and the standing constraint below is the live
+text.  What the collapse did *not* do is retire the invariant, because the
+**writes** remain two: PR #897's review found the pair falsifiable on a reachable
+donation pop, which is its own table C row and which the two predicates'
+docstrings now state.  `ownScId?` is a **narrowing** of `scId?`
 (`ownScId?_eq_scId?_of_isSome`), so the two can never name different contexts.  (2) **The one answer is
 `SystemState.threadBasePriority`**, and a new priority reader calls it rather
 than matching the binding.  The three scheduler resolvers also need the
@@ -3406,8 +5523,8 @@ frame that reached it, and the expectation **advances** (`.head scId` at the hea
 context at depth 2 is refused.  (4) **The pop writes the frame below the head**:
 `storeDonationHeadPop` clears the head's links and then **re-heads** that frame,
 so the below-head footprint member is a *write*, not a read.  (5) **The
-cancellation path detaches before it consumes** (`detachCancelledCallerFrame`
-over `detachReplyFrameAbove`, between the reclaim and `consumeReplyLink`), and a
+cancellation path splices before it consumes** (`spliceThreadReplyFrameOut`
+over `spliceReplyFrameOut`, between the reclaim and `consumeReplyLink`), and a
 validated below-head frame whose caller was consumed is now an `.error`, never
 the bottom of the stack.  (6) **`maxLockSetSize` went to 16 at this cut** — the
 pop's new write plus the suspend pipeline's second pop; it is **21** at HEAD, and
@@ -3440,8 +5557,9 @@ tick, down from 20.  (4) **No
 *reachable* state declares twenty-one**: the re-donation members fire exactly
 when the endpoint has a queued sender and the pre-receive return exactly when it
 does not, so `lockSet_endpointReplyRecvOnCore_size_le_eighteen` bounds every
-state at **eighteen** with no hypothesis, and the owner merge takes a reachable
-`.replyRecv` to seventeen.  Twenty-one is what the *definition* can produce,
+state at **eighteen** with no hypothesis.  (The owner merge that used to take a
+reachable `.replyRecv` to seventeen is retired at WS-HP HP6.2 — see below.)
+Twenty-one is what the *definition* can produce,
 which is what `boundedWait_under_2pl` and the WCRT surface must consume.  The
 gap was excused by `lockSetForSyscall_replyRecv_refuses_donated_delegate`, **a
 theorem that was never written**; it is deleted.
@@ -3468,21 +5586,22 @@ Plan: [`docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDC
 
 ### WS-RM seL4's `reply_remove` on the reply path — COMPLETE (registered v0.35.4; RM1–RM6 v0.35.6)
 
-`v0.35.4` made the reply stack doubly linked and wired the detach into the
-**cancellation** path, leaving the **reply** path relying on the answered frame
+`v0.35.4` made the reply stack doubly linked and wired the removal (then a sever,
+the splice since HP6.3) into the **cancellation** path, leaving the **reply** path
+relying on the answered frame
 being the head — which every reply of the nested Call pattern satisfies and a
 *delegated* reply capability answering out of order does not.  Twenty-six
 sub-tasks across six phases, all at `v0.35.6`.  Seven things new code must
 respect.
 
 (1) **One removal step, and both spines call it.**  `removeCallerReplyFrame
-caller rid` is seL4's `reply_remove`: `detachReplyFrameAboveOrSelf` (the detach
+caller rid` is seL4's `reply_remove`: `spliceReplyFrameOutOrSelf` (the splice
 folded to the identity on refusal — a non-reciprocating upward link means
 "nothing above me on my stack", which the chain relation permits by design since
 it is stated *downward*), then `SystemState.consumeCallerReply`.
 `endpointReplyOnCore`, `endpointReply` and `endpointReplyRecv` all run it, and a
 Tier 3 negative refuses a bare consume in any of the three.  **The order inside
-it is the content** — the detach reads the link the consume clears — and a
+it is the content** — the splice reads the link the consume clears — and a
 second negative refuses the swap.  `removeCallerReplyFrame_eq_consume_of_no_frame_above`
 is the definitional equality that makes every repair a case split whose `none`
 branch is the pre-WS-RM proof verbatim.
@@ -3522,7 +5641,8 @@ inside the proof rather than on every caller.  That is also what makes the reply
 and with `msg`, which at the post-state were two spellings differing only in a
 message the question never reads.
 
-(3) **`.reply` and `.replyRecv` declare the frame the detach writes.**
+(3) **`.reply` and `.replyRecv` declare the frame above the cut, which the splice
+writes.**
 `answeredReplyFrameAbove?` is resolved from the same
 `(st.getTcb? target).bind (·.replyObject)` expression the arm's existing reply
 member comes from, so the footprint and the transition cannot disagree about
@@ -3534,10 +5654,10 @@ unmoved.  **And declaring a member is not proving the transition writes it** —
 the Tier 3 anchor over each footprint's definition asks only that the resolver
 *occur* there, which is a presence check.  The relation is
 `lockSet_endpointReply_frameAbove_write_mem` and `lockSet_replyRecv_frameAbove_write_mem`
-at full arity, with `lockSet_endpointReplyOnCore_covers_detachedFrameAbove` and
+at full arity, with `lockSet_endpointReplyOnCore_covers_splicedFrameAbove` and
 its `.replyRecv` twin resolved: the reply-path siblings of the coverage the
 cancellation path has carried since `v0.35.4`
-(`lockSet_cancelIpcBlockingOnCore_covers_detachedFrameAbove`), which the cut that
+(`lockSet_cancelIpcBlockingOnCore_covers_splicedFrameAbove`), which the cut that
 added the reply-path member did not sweep onto it.
 
 **And running that sweep over every resolved footprint found one more.**
@@ -3573,8 +5693,9 @@ own bundle theorem stated at the state its own step runs on.  New code must not
 read the fused name as live.
 
 (5) **The dispatch payoff's receive-leg hypotheses are stated at the post-pop
-state.**  `replyRecvPostPopState` and `replyRecvPoppedContext` are *total*
-accessors over the pop, so `syscallDispatchQuiescence.replyRecvStage` stays a
+state.**  `replyRecvPostPopState` and `replyRecvPoppedDonation` are *total*
+accessors over the pop (the second was `replyRecvPoppedContext` until
+`v0.35.149`, when the pop's result became the `(context, holder)` pair), so `syscallDispatchQuiescence.replyRecvStage` stays a
 flat pre-state-computable pack rather than a quantification nested under the
 pop's own success; the pop's two obligations (`hSrvIdle1`, `hStackValid1`) are
 stated at the reply leg's committed state, which is where it runs.  Stating the
@@ -3601,17 +5722,19 @@ level above the frontier the census deliberately stops at (composites inherit by
 `donationChainFrame`'s algebra, which is a composition rather than a claim).
 
 **And "every" meant every module either root reaches** (PR #895 review,
-`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` is reached by neither, and it is in no
-staged allowlist: it is built only by its own `lean_exe` target
-(`tests.FrozenOpsSuite`), so the closure this census claims held for every
+`v0.35.12`).  `SeLe4n/Kernel/FrozenOps/` was reached by neither, and was in no
+staged allowlist: it was built only by its own `lean_exe` target
+(`tests.FrozenOpsSuite`) — **the root cause closed at `v0.35.60`, which put it in
+the library root** — so the closure this census claims held for every
 module except one that writes the live `Reply` record — `FrozenKernelObject.reply` carries `SeLe4n.Kernel.Reply`, links and
 all, and `Model.freeze` copies a live state's Reply objects verbatim, so a
 frozen state taken mid-call-chain holds a real reply stack.  And the gap was not
 theoretical: `frozenEndpointReply` cleared a caller's Reply **bare**, which is
 WS-RM's own defect surviving on the surface nothing was looking at.  Bringing it
 in cost three things.  The frozen reply now runs a frozen `reply_remove`
-(`frozenDetachReplyFrameAboveOrSelf` then the consume, in that order, since the
-detach reads the link the consume clears).  `frozenLinkCallerReply`'s guard read
+(the removal then the consume, in that order, since the removal reads the link the
+consume clears; **WS-HP HP8.2** made that removal `frozenSpliceReplyFrameOutOrSelf`,
+which splices rather than severing).  `frozenLinkCallerReply`'s guard read
 `caller.isNone` where `Model.linkReply` reads `Reply.isFree` — a fifth guard
 deciding one question differently, so a frame still on a live stack was linkable
 there while the live kernel refuses it; it reads `isFree` now.  And the
@@ -3652,72 +5775,1180 @@ thread strictly *inside* the chain and its owner is left `.unbound` two hops
 outside the cut, while the same stack unwound in order delivers it outward still
 owed.  Three frames is the shallowest stack on which any of that is visible.
 
-**Why the splice is not taken, and the claim that is deliberately not made.**
-This kernel decides whether a reply pops a donation from the **recorded server's
-binding** (`endpointReplyServerDonation?`), not from whether the answered frame
-heads a context; `severAtCut` is exactly what keeps those two facts equivalent,
-and it is what the three *stated* pre-state coherence hypotheses
+**Why the splice was not taken at WS-RM, and the order that had to be respected.**
+Up to `v0.35.37` this kernel decided whether a reply pops a donation from the
+**recorded server's binding** (`endpointReplyServerDonation?`), not from whether
+the answered frame heads a context; `severAtCut` is exactly what kept those two
+facts equivalent, and it is what the three *stated* pre-state coherence hypotheses
 (`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
-`answeredHeadContextIsServerDonation`) need — no invariant in this tree entails
+`answeredHeadContextIsServerDonation`) needed — no invariant in this tree entails
 them.  Splicing re-heads a frame whose recorded server is gone and `.unbound`, so
-answering it runs no pop and leaves a consumed frame heading a context: the state
-`replyStackOuterCaller?_of_consumed_frame` refuses and the pinning `v0.35.4`
-closed.  Recovering the accounting therefore means moving the pop's *trigger* to
-head-ness and its *source* to `SchedContext.boundThread` — registered debt with a
-closure target, not a preference.
+under that trigger answering it would have run no pop and left a consumed frame
+heading a context: the state `replyStackOuterCaller?_of_consumed_frame` refuses and
+the pinning `v0.35.4` closed.  Recovering the accounting therefore meant moving the
+pop's *trigger* to head-ness first, which is what **WS-HP HP4** (`v0.35.38`, the
+reply path) and **HP5** (`v0.35.39`, the cancellation path) did, and only then the
+sever to a splice, which is **HP6.8** (`v0.35.45`).  That ordering was enforced
+rather than described: `severAtCut_pop_leaves_no_head` was HP2.3's pin on it, and
+HP6.8 deleted it because its first conjunct was the policy constant at the old
+value.  New code must not read this paragraph as a live reason against the splice —
+the splice is the live policy and the depth-≥ 3 accounting is
+`donationAccountingPreserved_atCallDepthThree`.  The depth-**two** residue the splice
+provably cannot reach was WS-HP HP10's, and it is closed at `v0.35.53` by
+`donationAccountingPreserved_atCallDepthTwo`, so the accounting now holds at every
+depth; what the register still carries is HP10.10's documentation closure alone.
 
-**And `severAtCut` is a divergence from seL4-MCS, not an inheritance of it.**
-Until `v0.35.14` this file asserted the opposite.  Checked against upstream
-source, `reply_remove`'s non-head branch **splices** —
+**And `severAtCut` IS seL4-MCS's removal — the `v0.35.14` retraction was itself
+wrong, and how it went wrong is the finding** (re-verified at `v0.35.40`).
+`reply_remove`'s non-head branch, at master, 13.0.0, 12.1.0, 12.0.0 and 11.0.0 —
+every release that has the function — is
+
+```c
+if (next_ptr) {
+    /* not the head, remove from middle - break the chain */
+    REPLY_PTR(next_ptr)->replyPrev = call_stack_new(0, false);
+}
+if (prev_ptr) {
+    REPLY_PTR(prev_ptr)->replyNext = call_stack_new(0, false);
+}
+```
+
+It writes **zero** into the frame above, which is `severAtCut`, and upstream's own
+comment says so.  `v0.35.14` claimed the opposite and cited
 `REPLY_PTR(call_stack_get_callStackPtr(reply->replyNext))->replyPrev =
-reply->replyPrev` — so the frame above inherits the cut frame's own outward
-pointer and every frame below stays reachable from the head.  v1.0.0 must not
-claim seL4-MCS reply-stack semantics at chain depth ≥ 3.  **A `reply_remove_tcb`
-reference elsewhere in this tree names an operation's shape; it is not evidence
-about what upstream writes** — that conflation is how the false claim survived
-eight cuts.
+reply->replyPrev` as the evidence; **that line is in no release**.  So the
+paragraph before this one describes the accounting cost correctly and attributes
+it wrongly: the cost is seL4-MCS's too, and WS-HP's splice is an **improvement on
+upstream** rather than an adoption of it.  v1.0.0 may claim seL4-MCS reply-stack
+removal semantics today; what it must not claim, of either kernel, is that
+completing a call chain returns a client's reservation at chain depth ≥ 3.
+
+**Quoting is not reading.**  This file's rules all police a *scanner* substituting
+a slice of text for a question about a program.  This is the same substitution with
+no scanner in it: a claim about an **external artefact** was marked "checked against
+upstream source ... and not assumed", in the very sentence that made it false, and
+the quoted C was reconstructed from what `reply_remove` *ought* to do rather than
+copied from the file.  A verbatim quotation is the strongest-looking evidence a
+prose claim can carry and the easiest to fabricate without noticing, and nothing in
+this tree could catch it — no gate reads seL4.  Two things follow.  **Cite the
+revision, not the repository**: a claim about upstream names the tag or commit it
+was read at, so the next reader can re-run the check rather than re-trust the
+quotation, and this tree's upstream claims now do.  And **a retraction is a change
+of claim and gets the same scrutiny as the claim**: `v0.35.14` swept a *correction*
+across four files and three docstrings, and the sweep worked — it propagated the
+error everywhere, in the sentence asserting it had been verified.  The three
+docstrings it "fixed" had been right.
+
+**And a claim about upstream is about a named OPERATION, not a named kernel** — the
+third rule, and the one this cut paid for itself.  Its own first draft said upstream
+"permanently strands a cancelled caller's reservation", which is true of `cancelIPC`
+and false of the kernel: `reply_remove` returns the context and `finaliseCap` runs it
+on reply-capability revocation, which is the behaviour the Reference Manual
+documents.  `cancelIPC`, `reply_remove` and `reply_remove_tcb` are **three
+operations**, and this tree had been treating them as one name for eight cuts — which
+is how `Suspend.lean` came to carry both readings at once, the docstring naming
+`reply_remove` and the inline comment at its own call site naming `reply_remove_tcb`.
+So a divergence claim names the operation it diverges from, and where two upstream
+operations answer differently, saying which is the whole of the claim.  The
+maintainer caught this one from the manual, which is the evidence for the rule: the
+error is invisible to anyone reading only the function the claim happens to name.
+
+Two divergences survived the correction at `v0.35.40`, both smaller and both in
+the direction of this kernel being the weaker one.  **The first is closed and the
+direction has reversed** (WS-HP HP6.3/HP6.7, `v0.35.45`): upstream clears the frame
+*below*'s upward link (`prev->replyNext = 0`), this tree used to leave it stale and
+work around it by validating reciprocity at every read (`donationChainFrom`,
+`replyFrameOnLiveStack`), and the splice now **writes** it —
+`removeCallerReplyFrame_splices_reciprocally` — so the pair either side of the cut
+reciprocates, which is stronger than clearing.  A stale upward link is still
+*reachable*, because `spliceFrameBelow?` refuses a frame below that does not
+reciprocate and degenerates to the sever there, so the reciprocity checks stay and
+stay load-bearing.  **The second survives and is about HEADS**: upstream clears the
+removed frame's own links, and `Reply.consumed` keeps them *when the frame heads a
+context*, deliberately, because the pop that follows in the same transition
+validates the head by them.  On a non-head `Reply.consumed` already cleared both,
+and since HP6.3 the splice clears the cut frame's `prev` itself — seL4's
+`reply_unlink` downward half — which is what makes `donationChainWellFormed`
+survive the removal outright rather than transiently.  So the residual is the head
+case alone; a claim that HP6 closes it is an over-claim, and one was retracted from
+that workstream's plan at `v0.35.45`.
+
+**And the cancellation reclaim is upstream's semantics moved earlier, not an
+invention and not a permanent strand** — the maintainer's correction to this
+section's first draft, which said upstream "permanently strands a cancelled
+caller's reservation".  That described one of four paths and attributed it to
+upstream as a whole.
+
+**Upstream returns a donated context when the caller's Reply object is finalised,
+not when the caller's IPC is cancelled** — four paths, all read at master, 13.0.0,
+12.1.0, 12.0.0 and 11.0.0.  (1) The server replies: `doReplyTransfer` →
+`reply_remove` → head ⇒ `reply_pop` ⇒ donate to the answered caller, guarded
+`if (tcb->tcbSchedContext == NULL)`.  (2) **The reply capability is revoked** while
+its caller is still `BlockedOnReply`: `finaliseCap` runs the *same*
+`reply_remove`, so the context returns to the caller — the Reference Manual's "if
+the reply capability is revoked while the callee currently holds the scheduling
+context, the scheduling context will be automatically returned to the caller".
+(3) The same revocation when the caller's frame is **not** the head, because a
+deeper server holds the context: the non-head branch runs, no donation happens,
+and the caller is removed from the call chain — the manual's deep-call-chain case,
+and the same *break the chain* write the removal-policy correction above rests on.
+(4) `cancelIPC` — a `seL4_TCB_Suspend` on the caller, an endpoint deletion, a
+fault: `reply_remove_tcb` ⇒ **no** donation, and its `reply_unlink` then clears
+`reply->replyTCB`, so a later revocation of that reply capability finds nothing to
+do (`finaliseCap` guards on `reply->replyTCB`) and the context stays with the
+server until an SC-capability holder rebinds it.
+
+So `returnDonationToCancelledCaller` applies **upstream's `reply_remove`
+semantics at the cancellation point**, where upstream defers them to Reply-object
+finalisation.  The difference is *when*, not *whether* — and this kernel's binding
+typing forces the earlier point: `.donated scId owner` names its owner, so
+`donationOwnerValid` is false the instant that owner stops being reply-blocked,
+where upstream's flat `tcbSchedContext` pointer carries no such obligation.
+
+Two consequences for new code.  A claim that this kernel diverges from upstream on
+the *cancellation* reclaim must name the operation: it diverges from `cancelIPC`
+and agrees with `reply_remove`.  And "adopt seL4's cancellation semantics" is not
+a licence to delete the reclaim — deleting it reaches a state
+`donationOwnerValid` forbids, which is the Medium finding WS-RR RR7.22 reported.
 
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — PLANNED (registered v0.35.16)
+### WS-HP The head-driven donation pop — PHASES COMPLETE, depth-2 accounting RE-OPENED at v0.35.141 (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61 → v0.35.62)
 
-The reply path decides whether to pop a donated scheduling context from the
+The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
-the answered frame heads a context.  `severAtCut` is exactly what keeps those
-two facts equivalent — and it is a **divergence** from seL4-MCS, whose
-`reply_remove` splices, so the frames below a cut stay reachable from the head
-there.  The consequence is measured rather than described: at reply-stack depth
-≥ 3 a middle removal drops the frames below the cut, the reservation settles
-`.bound` on a thread strictly *inside* the chain, and its owner is left
-`.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's depth-two witness
-structurally cannot show it, because a two-frame stack's lower frame is its
-bottom and both policies then write the same value).
+the answered frame heads a context.  `severAtCut` is exactly what kept those two
+facts equivalent, and the consequence was measured rather than described: at
+reply-stack depth ≥ 3 a middle removal dropped the frames below the cut, the
+reservation settled `.bound` on a thread strictly *inside* the chain, and its
+owner was left `.unbound` for good (`tests/SmpIpcSuite.lean` §3.22; §3.20's
+depth-two witness structurally cannot show it, because a two-frame stack's lower
+frame is its bottom and both policies then write the same value).
 
-The correction is **two changes in a forced order**, not one: the splice alone
-is unsound under a binding-driven trigger, because it re-heads a frame whose
-recorded server is by then `.unbound`, so answering it runs no pop and leaves a
-consumed frame heading a context — the object pinning `v0.35.4` closed.  So the
-trigger moves first (HP4, HP5), then the sever becomes a splice (HP6), and
-HP2.3 makes that ordering a machine-checked fact rather than a note.
+**HP6 closed that at `v0.35.45`.**  Both triggers read the answered frame
+(HP4, HP5), the removal splices rather than severs (HP6.3, HP6.8), and
+`donationAccountingPreserved_atCallDepthThree` is the statement: at depth ≥ 3 a
+middle removal leaves the reservation **owed outward** and the pop that answers the
+bottom frame delivers it home.  §3.22 inverted from a COST witness to a PAYOFF
+witness in the same cut.  What was left was depth two, which the splice provably
+cannot reach — both policies write `none` into the frame above a bottom frame — and
+which needed the reservation's *origin* on the `SchedContext` rather than stack
+reachability.
+
+**HP10 addressed that at `v0.35.53`, and the workstream's phases closed at `v0.35.54` — but the depth-2 half did not hold, and is re-opened at `v0.35.141`.**
+`SchedContext.donationOrigin` records the thread that owned a reservation when it
+first left, written on a **first** push and cleared by every step that ends the
+loan, and `replyDonationRecipient` reads it in place of stack reachability at the
+bottom of a stack.  `donationAccountingPreserved_atCallDepthTwo` is the statement,
+**under its own two guard hypotheses**.  Two fragments survive the closure,
+deliberately: the footprint/transition resolution asymmetry HP10.8 found keeps its
+own open register row, and `CancelledMiddleCallerPolicy.severAtCut` is **kept** as
+a constructor, because it names the behaviour upstream still has and an
+improvement is only statable against something.
+
+**And the depth-2 half is NOT closed — the guard is a proxy, and its decline is a
+TRANSFER** (PR #897's review, `v0.35.141`).  `donationOriginRebindable` refuses an
+origin that is `.blockedOnReply`, as a stand-in for "some live `.donated _ origin`
+binding names it".  The two are not the same: a client answered out of order is
+woken `.ready` and `.unbound`, and its next **ordinary Call donates nothing** —
+`callDonationSchedContext?` reads `SchedContextBinding.scId?`, which is `none` at
+`.unbound` — while putting it `.blockedOnReply` again.  No binding names it; the
+guard refuses it anyway; the pop falls back to the *answered caller*, which at
+depth 2 is the intermediate caller of the chain.  Measured on the live pop
+(`tests/SmpIpcSuite.lean` §3.25, COST group): the reservation is bound to that
+caller, the client is left `.unbound`, and `donationOrigin` is erased — so the
+kernel can never return it — the context heads no stack afterwards, so no later
+pop can deliver it, and the origin that would have named the recipient is gone with
+it.  Only an out-of-band `schedContextUnbind` + `schedContextBind` by a holder of
+the *SchedContext* capability can repair it, and only if someone notices.  A callee
+that delegates its caller's reply capability to a confederate can arrange it.  **v1.0.0 must not claim that completing a call
+chain returns a client's reservation at every reply-stack depth**; the depth-≥ 3
+half (HP6's chain-preserving removal) stands.  The accounting row in
+`docs/REGISTERED_DEBT.md` table C is **re-opened** on the depth-2 half, with the
+two candidate mechanisms and their measured costs.
+
+**The splice is an improvement on seL4-MCS, not an adoption of it** (`v0.35.40`,
+re-verified against upstream source at five revisions).  `reply_remove`'s non-head
+branch *breaks the chain* exactly as `severAtCut` does — see the WS-RM section
+above for the C and for what the `v0.35.14` retraction cost — so upstream strands
+the reservation at depth ≥ 3 too.  What HP6 buys is therefore a property neither
+kernel has today, and the workstream's value does not depend on the mistaken
+attribution: a callee that delegates its caller's reply capability to a confederate
+could capture that caller's CBS reservation at depth ≥ 3, and the chain-preserving
+removal is what closed it at `v0.35.45`.  Two things upstream *does* confirm, both landed: the pop's trigger is
+`call_stack_get_isHead(reply->replyNext)` (HP4, HP5), and `reply_pop` donates only
+`if (tcb->tcbSchedContext == NULL)`, which is HP4.6's `donationRecipientAcceptable`
+with upstream's own reason.
+
+The correction was **two changes in a forced order**, not one: the splice alone is
+unsound under a binding-driven trigger, because it re-heads a frame whose recorded
+server is by then `.unbound`, so answering it would run no pop and leave a consumed
+frame heading a context — the object pinning `v0.35.4` closed.  So the trigger moved
+first (HP4 `v0.35.38`, HP5 `v0.35.39`), then the sever became a splice (HP6.8
+`v0.35.45`), and HP2.3's `severAtCut_pop_leaves_no_head` made that ordering a
+machine-checked fact rather than a note — HP6.8 deleted it, because its first
+conjunct was the policy constant at the old value and a theorem whose conclusion has
+become false can only be retired.  A tombstone comment beside the `WS-HP HP2.3`
+banner in `IPC/Invariant/Defs.lean` records what replaced it.
+
+| Phase | Status | Version | Scope (one line — detail in the canonical sources) |
+|-------|--------|---------|----------------------------------------------------|
+| HP1 | LANDED | v0.35.35 | The trigger's resolvers and the splice's below-frame resolver, both inert |
+| HP2 | LANDED | v0.35.36 | The two triggers are equivalent on every coherent state, and the splice breaks it |
+| HP3 | LANDED | v0.35.37 | The removal's below-frame footprint member; `maxLockSetSize` 22 → 23 |
+| HP4 | LANDED | v0.35.38 | **The reply path's trigger flips** — both spines, the recipient guard, the payoff's packs, and the frozen mirror (HP4.7) |
+| HP5 | LANDED | v0.35.39 | **The cancellation path's trigger flips** — the resolver, the coherence fact re-keyed, two sentences turned into theorems, and the first witness that fires the reclaim (HP5.5) |
+| HP6 | LANDED | v0.35.41 → v0.35.45 | **The splice replaces the sever** — the family renamed (HP6.1), the two reply footprints repointed (HP6.2), then the primitives, the algebra, the policy flip and the depth-three payoff as one cut (HP6.3–HP6.9) |
+| HP7 | LANDED | v0.35.46 | **The three stated coherence hypotheses retire** — nine declarations deleted with the binding-driven resolver, HP7.1 already done at HP4.4, HP7.4 vacuous, and the fourth stated fact found LIVE |
+| HP8 | LANDED | v0.35.47 | **The frozen mirror splices** — the sever's family deleted, the census's three mirrors, and `FO-043`: the depth-3 witness every shallower scenario structurally could not be |
+| HP9 | LANDED | v0.35.48 | **Witnesses, anchors, documentation, closure** — the depth-4 witness (§3.23), the upstream facts recorded at the code, and acceptance box 10 struck as wrong rather than ticked |
+| HP10 | LANDED | HP10.1–HP10.5 v0.35.49, HP10.6 v0.35.50, HP10.7 v0.35.51, HP10.8 v0.35.52, HP10.9 v0.35.53, HP10.10 v0.35.54 | **The reservation's origin**, so the return does not depend on chain connectivity — the depth-2 residue the splice provably cannot reach; the redirect is live on both surfaces, **`donationAccountingPreserved_atCallDepthTwo` is the payoff**, and the debt row is closed |
+
+**What new code must respect since HP4 (`v0.35.38`).**  Seven things.
+
+(1) **Both reply spines pop on the FRAME, and take it as an argument.**
+`applyReplyDonation st rid targetVtid`, `applyReplyDonationOnCore st rid
+targetVtid holderHome ownerHome` and `replyRecvPopDonation rid target` all read
+`replyFrameHeadHolder? st rid`.  The `rid` is an argument and has to be: the reply
+leg's `consumeCallerReply` clears the answered caller's `replyObject`, so
+`answeredFrameHeadContext?` answers `none` at every state the pop runs on.  It is
+resolved on the pre-state through `answeredReplyObject?`, the one expression the
+arm's footprint members also come from; `answeredFrameHeadContext?` is now that
+composition rather than a second spelling.  Everything the pop *decides* — which
+context the frame heads, which thread holds it, which caller is outer — is read at
+the pop's own state, which is what keeps `returnDonatedSchedContext`'s
+`boundThread` guard vacuous.
+
+(2) **The pair's second component is the thread that LOSES the context**, where
+`endpointReplyServerDonation?`'s was the one that gains it.  Same type, opposite
+role, and under the flip the pair also moves from `returnDonatedSchedContext`'s
+`originalOwner` position to its `serverTid` one.  A substitution that swaps them
+typechecks; `answeredFrameHeadContext?_boundThread` is the theorem that the
+component *is* `sc.boundThread`, and Tier 3 negatives refuse the swap at each
+site.
+
+(3) **`replyDonationReturn?` is NOT the trigger and was not re-keyed.**  It
+answers "does this thread hold a donated context", which the two pre-receive
+cleanups, the cancellation reclaim and the witnesses still ask.  Its argument
+means the holder; the trigger's means the answered caller.
+
+(4) **The pop refuses a recipient that already holds a binding**
+(`donationRecipientAcceptable`).  The head-driven recipient is the answered
+caller, which no binding the operation reads constrains, so without the guard a
+caller that acquired a reservation while blocked would have it silently
+overwritten.  Inert on every reachable state; `returnDonatedSchedContext`'s
+`_ok_storeChain` carries it as a tenth component, so a consumer destructuring that
+chain by position gains one `_`.
+
+(5) **The priority-inheritance reversion still walks from `recordedReplyServer?`**,
+because it keys on waiters rather than on donations — a walk from the context's
+`boundThread` would start at the wrong thread on exactly a delegated reply.  And
+the `.replyCapInvalid` arm still distinguishes "no recorded server" from "no head
+context": collapsing them would turn every donation-free reply into an error.
+
+(6) **The two reply footprints resolved their donation members through the
+binding until HP6.2** (`v0.35.44`), with the gap held closed by
+`lockSet_endpointReplyOnCore_covers_headDrivenPop` — a footprint that omits a
+written object is false.  That repoint had to land *before* the splice: under the
+sever the two resolvers agreed — `severAtCut_pop_leaves_no_head` was the statement,
+retired with the policy at HP6.8 — and the splice is the change that makes them
+disagree, so a window with the splice landed and the repoint outstanding would carry
+a footprint that omits what the pop writes.  The paragraph on HP6.2 below says what
+landed.
+
+(7) **The FROZEN mirror is head-driven too, and its binding-driven resolver is
+gone** (HP4.7).  `frozenEndpointReplyWithDonationReturn` reads
+`frozenReplyFrameHeadHolder? st replyId` — no resolution needed on that surface,
+because `replyId` *is* the presented capability and `frozenEndpointReply` refuses
+it unless the target's own `replyObject` names it — and hands the context to
+`targetId` rather than to a binding's recorded owner.  The flip belongs to HP4
+rather than to HP8 because HP4 is the cut that makes the live operation
+head-driven, and `frozenBranchOperationChecked .endpointReplyToBlockedCaller =
+true` is a machine-checked claim that the two are run beside each other: a
+binding-driven mirror of a head-driven operation is *one question answered in two
+places* with the divergence already scheduled at HP6.
+`frozenEndpointReplyServerDonation?` is deleted, not kept beside the new reading.
+`FO-042` is what makes the claim a measurement — `FO-041` had never given the
+recorded server a `.donated` binding, so through four review rounds the frozen
+donation return was compared on neither side — and its second half is the state
+where the two triggers disagree, which is the mutation that decides the flip.
+Asking the question also found the frozen pop **missing HP4.6's recipient guard**
+under a docstring claiming it carried every live one: `frozenDonationRecipientAcceptable`
+is the counterpart, in the live position, and `FO-042`'s third half is its witness.
+A mirror missing a guard *succeeds* where the kernel refuses, which is the
+direction that matters on a differential surface.  The same question found the
+live step's **ID promotion** missing too — `applyReplyDonation` refuses a holder
+`toValid?` will not promote — added as `holder.isReserved`, because this surface
+uses `toValid?` nowhere and `frozenLookupTcb` (which *is* `isReserved`, exactly
+`= sentinel`) is how it already asks that question; a Tier 3 negative keeps
+`toValid?` out of both frozen modules so the convention stays one.  HP8 owned
+the **splice** half alone, and landed it at `v0.35.47`.
+
+**What new code must respect since HP5 (`v0.35.39`).**  Six things.
+
+(1) **The cancellation reclaim reads the victim's own reply FRAME.**
+`cancelledCallerDonation? st _tid tcb` is `replyFrameHeadHolder? st rid` at
+`tcb.replyObject` under the `.blockedOnReply` arm gate — the same frame-keyed
+resolver both reply spines read since HP4.1, not a second spelling
+(`cancelledCallerDonation?_eq_answeredFrameHeadContext?` ties it to the reply
+path's own form).  The victim's id is **not consulted**: the binding reading's
+`owner == tid` check is what the structure replaces, and
+`cancelledCallerDonation?_independent_of_victim` pins that rather than leaving a
+reader to infer it from an underscore.  The arm gate stays, because it is the
+*arm selector* every exclusivity lemma in the cancellation family reads.
+
+(2) **`donationHolderIsReplyTarget` is GONE** — WS-RR RR7.22's fact about a
+cancelled caller's recorded reply target, which nothing reads any more.  Its
+head-keyed successor is `donatedContextIsOwnerFrameHead`: the donation the victim
+owns is the one its own frame heads, and the reclaim's trigger finds it.  It runs
+binding → head, the opposite direction from the reply path's
+`answeredHeadContextIsServerDonation`, because here the *consumers* quantify over
+bindings while the trigger reads frames.  `…_of_donationOwnerValid` is the builder
+and it measures what the fact costs: everything but two clauses comes out of
+`donationOwnerValid`, and what is left — the frame-head link and the holder's
+promotability — is what no invariant in this tree entails.
+
+(3) **A holder the head reading names may resolve to nothing.**  The
+binding-driven resolvers read a thread out of a stored binding, so the store held
+it by construction; `SchedContext.boundThread` is tied to no stored TCB by any
+invariant.  What rules the case out is the **pop declining**
+(`returnDonatedSchedContext_ok_server_not_reserved`), with
+`abortHolderPendingIpc_eq_self_of_lookup_none` the frame that lets a consumer act
+on it.  New code must not read a resolved `(scId, holder)` as evidence that
+`holder` is a live thread.
+
+(4) **`returnDonatedSchedContext_ok_under_invariants` is now an instance.**  The
+general form is `_ok_of_boundAndRecipient`, which takes the context, its bound
+thread and the recipient's `.unbound` as *arguments* — the head reading supplies
+the first two off the trigger and has no binding to read the third from — with
+the binding-keyed form derived from it.  A new success argument reaches for
+whichever form it can discharge, never for a second proof.
+
+(5) **Two claims are theorems now, and were not stateable before.**
+`cancelReclaimHead?_eq_replyObject` — the head the pop clears **is** the victim's
+own reply object, which is `replyStackHeadIsAnsweredReply`'s content seen from the
+cancellation end — and `cancelSplicedFrameAbove?_of_donation` /
+`cancelSplicedFrameBelow?_of_donation`, a reclaim excludes both removal members.
+Both were sentences about "every reachable state" in footprint docstrings; the
+binding reading could not have stated either, since it reached the context through
+a binding that relates to no reply frame.  Cite the theorems.
+
+(6) **Below the cut the reclaim declines on the STACK.**
+`cancelledCallerDonation?_none_below_the_cut` and
+`cancelledCallerDonation?_some_of_frame_head` (renamed from
+`…_some_of_immediate_donee` for what it now says) are stated over
+`replyFrameAbove?` and `replyFrameHeadContext?` and carry **no** binding
+hypothesis — a frame with a frame above it heads nothing, so the pop's trigger and
+the splice's are exclusive by construction.  That is strictly cheaper than what it
+replaces, and it is the fact HP6 consumes.
+
+One thing HP5 measured rather than predicted, and one it got wrong first.  The wake
+and both below-head footprint members needed **no** re-resolution, because
+`cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?`, `cancelBelowHeadReads?`
+and `cancelReclaimHead?` are all *derived from* the trigger — the derivation
+discipline paying off where an enumeration would have needed five edits.
+
+The fixture sweep is the one it got wrong, and the shape is this file's own: the plan
+named three files, **a sweep over a named list is a recognised set standing in for a
+derived one**, and the three came back clean while the *golden trace* then failed —
+`SeLe4n/Testing/MainTraceHarness.lean` was not among them.  The derived set is every
+tracked test or harness file mentioning `.donated`, thirteen of them, and it holds two
+live defects.  `SCO-020b/c/d` built a `.donated` binding with **no Reply object at
+all**, so the reclaim became the identity and all three lines flipped to `false`; they
+carry the stack a live `Call` builds now, which keeps `main_trace_smoke.expected`
+byte-identical.  And `tests/SmpIpcSuite.lean`'s OD5.2 pair was passing **vacuously** —
+its store's `pushOuter` named no reply object though `pushOuterReply.caller` named it
+back, and both assertions handed the resolver a TCB without the field, so "fires" and
+"declines below the cut" declined for the same reason.  **A suite's assertions can pass
+vacuously; an exact golden trace cannot** — which is why the trace found what the suites
+hid, and the reason to run it early in a flip rather than last.
+
+The gap the sweep did surface is HP5.5: **nothing in the tree fired the reply-arm
+reclaim with the head reading available**, so the flip would have landed untested.  A
+sweep for fixtures that would *break* is not a sweep for fixtures that would
+*exercise*, and only the second measures a flip.  HP5.5 is that witness:
+`tests/SmpCancellationSuite.lean` §3.20 fires the reclaim on the agreeing shape and on
+the orphan head, computing **both** readings side by side (the retired one spelled in
+the suite and nowhere else) so the assertions are known to discriminate.  A behavioural
+revert never reaches them — it fails four theorems in `Lifecycle/Suspend.lean` first,
+because HP5 *states* the head reading rather than merely computing it.
+
+**What new code must respect since HP6.1 (`v0.35.41`).**  The removal family was
+renamed for the operation it becomes, and for four cuts **the name ran ahead of the
+body**: `spliceReplyFrameOut{,OrSelf}`, `spliceThreadReplyFrameOut` and
+`cancelSplicedFrameAbove?` wrote `above.prev := none` — the sever — until HP6.3
+(`v0.35.45`).  Three things that row decided and one it found.  (1) **The name and
+the body were separated by two facts, and neither was the other**:
+`cancelledMiddleCallerPolicy` is the *declared policy* and
+`spliceReplyFrameOutOrSelf_store_cases` states the *body's* writes, so the splice
+could not land without changing that lemma's statement — which it did, from one
+store to a three-step existential.  **Not** `cancelledMiddleCaller_severs_at_cut`:
+its policy conjunct was `rfl` on the constant and its cut shape a hypothesis, so it
+was a statement about the *pop* given a severed cut rather than about the removal
+that produces one — the shape this file calls a theorem whose conclusion is one of
+its own hypotheses.  It is `cancelledMiddleCaller_splices_at_cut` now.  (2) **The
+FROZEN family keeps its `frozenDetach…` names**, because it still severs; HP8
+renamed it in the cut that made it splice (`v0.35.47`), so a `frozenDetach…` beside
+a live `splice…` read as the schedule rather than as a drift.  (3) **The English word
+"detach" in prose describing what the operation does was accurate at that version**
+and was deliberately left alone — prose follows behaviour at HP6.3, where the name
+followed the design here, and that sweep is part of the same cut.  **That sweep was
+not run**: the post-landing audit's second pass (`v0.35.62`) found the operation
+still called *the detach* — and, at nine sites, the sever still described as what it
+does — across some 120 docstrings, comments, test labels and documentation
+sentences in 35 files, and swept them.  (4) A rename is a
+sweep, and this one found a **dead citation**: WS-RM RM1.1 retired
+`detachCancelledCallerFrame` at `v0.35.6` and four *live* claims still named it —
+this file's own WS-OD item 5 and `SELE4N_SPEC.md` §8.12.7 twice.  That is the
+tautological-pin shape one artefact over: prose citing a declaration that does not
+exist reads exactly like prose citing one that does.  HP6.8 paid the same cost in
+reverse, deleting `severAtCut_pop_leaves_no_head` and having to sweep its five prose
+citations.
+
+**What new code must respect since HP6.2 (`v0.35.44`).**  The two reply
+footprints resolve their donation members through **the pop's own trigger**:
+`lockSet_endpointReplyOnCore` and `lockSet_endpointReplyRecvOnCore` read
+`answeredFrameHeadContext? st target`, the expression
+`applyReplyDonationOnCore` itself reads, so the footprint and the transition
+cannot disagree about which context is popped or which thread is unbound.  Six
+things follow.
+
+(1) **The pair's second component is the thread the pop UNBINDS**, and the
+parameter says so: `lockSet_endpointReply`'s and `lockSet_replyRecv`'s
+`donatedOriginalOwnerTid` is renamed `donatedScHolderTid`.  A resolved footprint
+that passes the *recipient* there declares a lock for a write the pop does not
+perform and omits one it does — the recipient needs no member, because the
+head-driven pop hands the context to the answered caller and that is
+`replyTargetTid`.
+
+(2) **Coverage is definitional, and stated on both arms.**
+`lockSet_endpointReplyOnCore_covers_donationPop` and its `.replyRecv` twin take
+**no hypothesis**; HP4.4's `lockSet_endpointReplyOnCore_covers_headDrivenPop`,
+which needed `donationOwnerValid` and `answeredHeadContextIsServerDonation` and
+reached the holder's TCB by *proving it was the recorded server*, is deleted.  A
+behavioural revert does not reach a witness — it fails the coverage theorem
+first, which is where this relation belongs.
+
+(3) **Three write-membership lemmas had to be added**, and their absence is the
+finding: the second donation member had **none** on either footprint, and
+`lockSet_replyRecv`'s SchedContext member had none either, so nothing could state
+that the objects the hottest IPC arm's pop writes carried declared write locks.
+The stand-in had routed around the gap through `callerTid`'s lemma.  Found by
+asking the table to be symmetric, not by a review round.
+
+(4) **`server` stays keyed on the RECORDED server**, because that is the thread
+`propagatePipChainCrossCore` walks from and rewrites, and the splice can make it a
+different thread from the holder — so both are declared.  Measured against the
+composite's three write sites rather than reasoned from the resolver.
+
+(5) **`lockSet_endpointReplyRecvOnCore_size_le_eighteen` is now unconditional**,
+where it took `donationChainWellFormed` and `replyStackHeadIsAnsweredReply`: under
+this trigger a frame that heads a context has no frame above it and none below
+(`answeredReplyFrameAbove?_none_of_headContext`), so the exclusion is structural.
+That is strictly stronger than what it replaces.
+
+(6) **`lockSet_endpointReplyRecvOnCore_size_le_seventeen` is RETIRED**, and this is
+what the repoint costs.  Its single merge was `replyDonationOwnerIsAnsweredCaller`
+— the *owner* is the answered caller — and the head reading's second component is
+the thread *running on* the context while the answered caller is
+`.blockedOnReply`, so that coincidence occurs on **no** state this arm reaches:
+the merge is false, not unproved.  The available substitute is *holder = recorded
+server*, which is `answeredHeadContextIsServerDonation`'s content and exactly what
+the splice falsifies, so a seventeen resting on it would stop holding in the cut
+after next.  One unit of slack traded for two hypotheses and a figure that
+survives HP6.  Both coherence facts had **no consumer at all** after this row,
+which is the verification HP7.2 asked for and HP7 (`v0.35.46`) then ran — and
+having run it, HP7 **deleted** both, so a sharper reachable bound cannot be built
+on *holder = recorded server*: the splice falsifies it on reachable states.
+
+**What new code must respect since HP6.3–HP6.9 (`v0.35.45`).**  The removal is
+seL4's `reply_remove` with the middle case **spliced** rather than severed, and the
+name has caught up with the body.  Eight things.
+
+(1) **The splice is THREE stores, and the third is not optional.**
+`spliceReplyFrameStores` writes `above.prev := some below`, `below.next := some
+(.frame above)` and `rid.prev := none` — the last being seL4's `reply_unlink`
+downward half.  A two-store splice leaves the cut frame with `prev = some below`
+while nothing below names it back, which falsifies `prevLinkReciprocal` at the cut
+frame, so the bare splice would owe a relaxed predicate and
+`ReplyStackWriteCensus` would have to accept a half-step where the sever stated its
+result outright.  With the third store `donationChainWellFormed` is preserved
+**outright** (`spliceReplyFrameOut_preserves_donationChainWellFormed`,
+`removeCallerReplyFrame_preserves_donationChainWellFormed`), and it is **free**: the
+cut frame's lock is already a declared write member on both removal paths, so
+`maxLockSetSize` was unmoved by it, at HP3.5's twenty-three (HP10.6 has since
+taken it to twenty-four, for a member of its own).
+
+(2) **The below side does not refuse — it degenerates.**  `spliceFrameBelow?` is an
+`Option`: a `prev` that does not resolve, one naming the frame above, and a frame
+below whose own `next` does not link back are all *not followed*, and the removal
+then writes `above.prev := none`, which is the sever.  So this operation's refusal
+set is **exactly** the pre-WS-HP one and every refusal theorem carries verbatim,
+`spliceReplyFrameOutOrSelf`'s fold soundness included —
+`spliceReplyFrameOut_eq_sever_of_no_frame_below` is the definitional equality that
+makes every repair a case split whose `none` branch is the pre-HP proof.  A
+consequence: a **stale upward link is still reachable**, so the reciprocity checks
+(`donationChainFrom`, `replyFrameOnLiveStack`) stay and stay load-bearing.
+
+(3) **`spliceReplyFrameOutOrSelf_reply_next` is GONE**, because the splice moves a
+`next` from one `.frame` link to another and its old conclusion (`rq.next =
+rp.next`) is false.  Its successor
+`spliceReplyFrameOutOrSelf_preserves_reply_caller_and_headLink` is a disjunction,
+which is still exactly what its one consumer needs: no reply's `next` acquires a
+`.head` link, so `removeCallerReplyFrame_preserves_donationChainWellFormed` may read
+`hNotHead` on the pre-state.
+
+(4) **The composed store step is a write site, registered as a half-step.**
+`spliceReplyFrameStores` is in `chainWritePrimitives` and registered `.halfStep
+spliceReplyFrameOut`, exactly as the pop's two component stores are half-steps of
+`storeDonationHeadPop`.  It cannot state a chain result of its own: given only
+`above` and the two records, nothing says the frame above is the one whose `prev`
+names `rid`, and the three reciprocal links are coherent only under the resolution
+the operation performs.  `spliceReplyFrameOutOrSelf_store_cases` is spelled as a
+three-step **existential** rather than a named relation, because a `Prop`-valued
+relation whose body mentions `storeObject` is reported by the census's store
+frontier and registering a relation as a write site is not an option — it writes
+nothing.
+
+(5) **The removal's write set is FOUR keys** — the consumed Reply, the answered
+caller's TCB, and the two frames either side of the cut — so
+`removeCallerReplyFrame_objects_frame` takes a fourth exclusion and
+`spliceReplyFrameOut_objects_ne` takes two (the frame below, and the cut frame
+unconditionally).  The information-flow half needs `hSetInv` threaded, because the
+frame below is written at the *intermediate* state and its index membership is read
+there.
+
+(6) **The two facts the sever could not state.**
+`removeCallerReplyFrame_splices_reciprocally` — after a middle removal the frame
+above names the frame below and the frame below names the frame above — and
+`donationAccountingPreserved_atCallDepthThree`, the pop that follows delivering the
+reservation to the caller the surviving stack names.  Both are stated with **no**
+key-distinctness hypothesis, derived instead from the store's contents (a key
+holding a `.reply` is one at which the consume's own TCB lookup fails), because
+`ReplyId.toObjId` and `ThreadId.toObjId` are two wrappers over one `ObjId` and a
+collision is representable.  `removeCallerReplyFrame_getSchedContext?_eq` is the
+same shape and is what lets a post-removal head be resolved against the pre-state
+context record.
+
+(7) **Cite the live policy's consumers, not the retired ones.**
+`cancelledMiddleCallerPolicy = .spliceOutTheCut`;
+`replyStackOuterCaller?_follows_policy` concludes `.ok (some outer)` at a frame with
+one below it, where it used to conclude `.ok none` at a cleared `prev`; and
+`cancelledMiddleCaller_splices_at_cut` gives the target `.donated scId outer`, where
+`cancelledMiddleCaller_severs_at_cut` gave `.bound scId`.  `severAtCut_pop_leaves_no_head`
+is **deleted**.  `CancelledMiddleCallerPolicy.severAtCut` is **kept** as a
+constructor: it names the behaviour this kernel diverged from and that seL4-MCS
+still has.
+
+(8) **The orphan head is reachable now.**  A frame heading a context whose recorded
+reply server is gone and `.unbound` is what the splice produces, so
+`answeredHeadContextIsServerDonation_false_of_orphan_head` changed from a
+*prohibition* into a *fact about reachable states* — and that, with both coherence
+facts having no consumer since HP6.2, is the warrant HP7 spent: HP7 (`v0.35.46`)
+**deleted the predicate and this theorem with it**, a refutation having no subject
+once the thing it refutes is gone.  What carries the evidence instead is an
+*executed* witness — `tests/SmpCrossCoreReplySuite.lean` computes the retired
+binding-driven reading beside the live one at an orphan head.
+
+**What new code must respect since HP7 (`v0.35.46`).**  The three *stated*
+coherence facts the binding-driven pop needed are **deleted**, together with the
+resolver and the scaffolding that consumed them — nine declarations, not three.
+Six things.
+
+(1) **Do not restate a retired fact as a hypothesis.**
+`replyDonationOwnerIsAnsweredCaller`, `replyStackHeadIsAnsweredReply` and
+`answeredHeadContextIsServerDonation` are gone, and Tier 3 refuses each of them
+tree-wide.  The last is not merely unused but **false on reachable states** since
+HP6.8: the splice re-heads a frame whose recorded reply server is gone and
+`.unbound`, which is the orphan head.  A proof that wants one of these is a proof
+asking for a premise the kernel refutes.
+
+(2) **What replaced them is the HP2.4 family, and it is where to reach.**
+`answeredFrameHeadContext?_head_is_answered_reply`, `…_donationHeadOf` and
+`…_boundThread` are the *derivations*: under the head-driven trigger the resolver
+reads the context off the answered frame's own `.head` link and validates that
+context's `scReply` against the same frame, so each retired hypothesis is a
+consequence of the trigger firing — no hypothesis at all.  They are anchored in
+Tier 3 because a derivation nothing consults reads exactly like one nobody
+checked.
+
+(3) **The fourth stated fact is LIVE, and its docstring used to say otherwise.**
+`replyFrameHeadHolderDonation` (HP4.2's rename of `answeredHeadHolderDonation`) is
+the one binding fact the trigger does **not** witness — that the holder's binding
+*is* a donation of the context its frame heads — and it has twelve-plus consumers,
+the dispatch packs' two reply-stage fields among them.  Its own docstring claimed
+HP7 retires it; that claim is corrected rather than acted on.  Of the row's three
+facts, two are *eliminated* and one is *migrated*.
+
+(4) **`endpointReplyServerDonation?` does not exist.**  The reply path's
+binding-driven trigger was deleted, not kept beside the live one: two readings of
+one question free to drift is this project's worst shape, and these two *disagree*
+on reachable states.  `recordedReplyServer?` beside it is **not** retired — the
+priority-inheritance chain walk reads it, because that walk keys on waiters rather
+than on donations, and on a delegated reply the recorded server is not the holder.
+
+(5) **The retired reading lives in the witness that refutes it, and nowhere
+else.**  `tests/SmpCrossCoreReplySuite.lean`'s `private def
+bindingDrivenReplyServerDonation?` computes it beside the live resolver on the
+agreeing shape and on the orphan head, so the assertions are known to
+discriminate rather than merely to pass — the pattern
+`tests/SmpCancellationSuite.lean` §3.20 set at HP5.5 and `FrozenOpsSuite`'s
+`FO-042` set for the frozen surface.  That keeps the *evidence* HP2 produced and
+deletes the *code*.
+
+(6) **The dispatch packs shed nothing here, and that is recorded rather than
+claimed closed.**  `syscallDispatchQuiescence`'s eleven fields and
+`checkedSyscallDispatchQuiescence`'s two never carried one of the three; HP4
+re-keyed the reply-stage conjuncts onto the head-driven reading in the cut that
+flipped the trigger, which is where a pack field belongs — one stated at a state
+its own step no longer runs on is a claim about a different state.  So HP7.4 is
+**vacuous**, and the phase's acceptance criterion was corrected to something
+checkable instead of being reported as met.
+
+**What new code must respect since HP8 (`v0.35.47`).**  The frozen execution
+surface's removal **splices**, and the sever's names are gone.  Five things.
+
+(1) **`frozenDetachReplyFrameAbove` and `…OrSelf` do not exist.**  The family is
+`frozenSpliceFrameBelow?`, `frozenSpliceReplyFrameStores`,
+`frozenSpliceReplyFrameOut` and `frozenSpliceReplyFrameOutOrSelf`, each clause for
+clause with its live counterpart, and Tier 3 refuses the retired names tree-wide.
+HP6.1 kept the sever's names deliberately — a `frozenDetach…` beside a live
+`splice…` read as the *schedule*, where a `frozenDetach…` whose body splices would
+read as a drift — and this is the cut that discharges that, because the name and
+the body move together.
+
+(2) **The three stores are the same three, and the third is masked here.**
+`above.prev := some below`, `below.next := some (.frame above)`,
+`rid.prev := none`.  The third is seL4's `reply_unlink` downward half and it is
+*not observable through the frozen reply composite*: the `Reply.consumed` that
+follows clears the cut frame's links anyway on a frame heading nothing, so the
+suite still passes with that store deleted.  It is load-bearing regardless — a cut
+frame keeping a `prev` nothing names back is what the store exists to prevent, and
+it becomes observable the moment `consumed` changes — so `FO-043`'s last half
+drives `frozenSpliceReplyFrameOut` **directly**, beside the live primitive, which
+is the only place its deletion fails.  A new assertion about the cut frame's own
+links taken from the composite's post-state is testing `consumed`, not the splice.
+
+(3) **The below side declines rather than refusing**, for the reason it does live:
+the `…OrSelf` fold turns a *refusal* into the identity, and that is sound only
+because a refusal means nothing links down to the cut frame.  A below-side refusal
+folded to the identity would leave a reciprocating frame above naming a frame whose
+caller has been cleared.  So the refusal set is unchanged from the sever's, and
+`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below` is the equality that
+makes every pre-HP8 scenario answer as it did.
+
+(4) **Depth ≤ 2 cannot measure this flip, and the suite was green before it.**
+A two-frame stack's lower frame is its bottom, so both policies write the same
+value there; `FO-031` and `FO-041`/`FO-042` all sit on such stacks and passed
+byte-identically when the splice landed.  `FO-043` is the three-frame witness with
+the answered caller holding the **middle** frame, mutation-verified in both
+directions.  A new frozen removal scenario that asserts a connectivity property
+must be at depth ≥ 3 or it is asserting about the fixture.
+
+(5) **The census carries three frozen splice entries where the sever had two.**
+The store step is registered on its own — as the live `spliceReplyFrameStores` is,
+because it performs the writes with none of the removal's resolution or validation
+— and each is a `.mirrors` entry naming the live counterpart of the *same shape*,
+so the store step's chain terminates in a stating entry two hops out, through the
+live `.halfStep`.  The census prints its own counts; they are not restated here,
+for the reason the WS-RM section's item (6) gives — this paragraph carried them
+until the post-landing audit (`v0.35.61`) found it doing so.
+
+**What new code must respect since HP9 (`v0.35.48`).**  Five things, and three of
+them are about what the phase did *not* do.
+
+(1) **The depth-4 witness measures the splice's COMPOSITION, not its stores.**
+`tests/SmpIpcSuite.lean` §3.23 cuts the third frame of a four-frame stack, so
+**two** frames sit below the cut — the shallowest shape on which the splice's
+transitivity is a proposition at all, since at depth 3 "the stack reconnects" and
+"the frame beneath the reconnection survives" are one statement.  Three successive
+pops then carry the reservation home, where §3.22 needs two.  What it deliberately
+does **not** catch is a change to the three stores: `spliceReplyFrameStores_cases`
+states them exactly, so both candidate mutations — the full sever, and a
+reconnection that clobbers the frame below's own downward link — fail to
+*elaborate* rather than failing a test.  A new reply-stack scenario that asserts a
+store shape is duplicating a theorem; one that asserts a *walk* or a *pop chain* is
+measuring something no theorem states.  And a pop chain **follows** the resolver's
+answer rather than supplying it: `returnDonatedSchedContextResolved` reads
+`replyStackOuterCaller?` of its own state, so each row asserts where the kernel says
+the reservation is still owed and the next row pops at that same thread.  A chain
+whose recipients are chosen by the fixture measures the fixture.
+
+(2) **The upstream facts live beside the code they justify.**
+`donationRecipientAcceptable`'s docstring carries all three — `reply_pop` donates
+only under `if (tcb->tcbSchedContext == NULL)`, the trigger is
+`call_stack_get_isHead(reply->replyNext)`, and `reply_remove`'s non-head branch
+writes **zero** into the frame above — each naming the revisions read.  A claim
+about an external artefact belongs at the code it justifies, and it names a **tag**
+rather than a repository, because `v0.35.14` asserted the opposite, quoted a line
+that exists in no release, and swept that error across nine prose sites and three
+docstrings that had been right.
+
+(3) **The anchors are where their cuts put them, not in a closing sweep.**  HP9.2
+asked for positives and negatives over the splice, the trigger and the recipient
+guard; every one of them had already landed with HP6.5, HP7 or HP8, mutation-tested
+in both directions at the time.  So HP9 added only the depth-4 witness's own,
+and **retired one it had first written**: a standalone check that the scenario is
+*called* duplicated the WS-OD contiguous-run anchor, which already names every
+runner of that group **in order** — and which is what caught the insertion, exactly
+as its own comment says it caught OD3.1's and OD4.1's.  A new scenario in that
+group therefore extends that anchor rather than adding a sibling; adding parallel
+anchors to satisfy a row would have been the duplication this file spends its
+length retiring.
+
+(4) **The donation-accounting register row is still OPEN, and HP9's acceptance box
+saying otherwise is struck through rather than ticked.**  That box was written
+before `v0.35.42` found the depth-**2** loss, where the removal takes the client's
+frame off the *bottom* of its stack and both policies write `none` into the frame
+above — so the splice provably cannot reach it.  What WS-HP earned is the depth-≥ 3
+half.  Closing the row would corrupt the artefact RR8.15's hand-off check reads, so
+at HP9 v1.0.0 could still not claim that completing a call chain returns a client's
+reservation *unconditionally*: that was HP10's, and **HP10.9 (`v0.35.53`) earned
+it** — `donationAccountingPreserved_atCallDepthTwo`, closed by the reservation's
+recorded origin rather than by any change to the removal.  The row itself retires at
+HP10.10, which is why it is still open at HEAD.
+
+(5) **An acceptance box is a present-tense claim, so a later phase that deletes its
+artefacts must sweep it.**  HP9's closure read the plan's acceptance list against the
+tree and found box 3 — *the two triggers are proved equivalent … and the theorem that
+the splice breaks that equivalence exists* — citing two declarations that survive only
+as tombstones: HP6.8 deleted `severAtCut_pop_leaves_no_head` because its first
+conjunct was the policy constant at the old value, and HP7 deleted HP2.1's equivalence
+with the binding-driven resolver it was stated over.  Both deletions were right, and
+both were cuts whose own citation sweeps missed this box, because a criterion reads as
+*history* while being written as a live claim.  It is corrected by recording the
+lifecycle rather than by weakening the criterion: an **ordering pin** exists to make a
+sequence machine-checked *while the ordering is still ahead*, and once the ordering is
+taken its subject is gone — so the box says it is not re-verifiable by grep, names the
+cut that earned it, and names what replaced each artefact.  A box whose artefacts a
+later phase consumed, left in the present tense, reads exactly like a box nobody
+checked.
+
+**What new code must respect since HP10.6 (`v0.35.50`).**  Both reply footprints
+declare the TCB a bottom-of-stack pop will redirect the reservation to, and
+`maxLockSetSize` is **24**.  Seven things.
+
+(1) **The resolver is `donationOriginRecipient?`, and it is the expression the arm
+will read.**  It answers `some o` only where all three of the pop's own conditions
+hold: `replyStackOuterCaller?` says bottom of stack (which *is*
+`returnDonatedSchedContextResolved`'s `newOwner? = none`, so the member is declared
+on exactly the states the pop writes it), the context records an origin, and that
+thread passes HP4.6's recipient guard — and, since HP10.7, `donationOriginRebindable`.
+It is a *distinct* key exactly on the out-of-order removal this phase exists for,
+which is the state HP10.7's pop writes a different TCB on.
+
+**HP10.6 claimed this member is live at depth 1, and HP10.8 measured that it is
+not.**  The footprint resolves on the syscall's **pre-state**, where the answered
+caller is `.blockedOnReply` — it is waiting on this very reply — so HP10.7's
+rebindability guard refuses it and the member is `none` there.  The *transition*
+resolves after the reply leg, which wakes that caller, so it may answer `some
+answeredCaller`; the pop then writes `replyTargetTid`, which the footprint declares
+unconditionally, so nothing is undeclared.  Two consequences a reader must not
+lose.  The `insertOrMerge` collapse asserted in `tests/DeadlockFreedomSuite.lean`
+is a statement about the **argument value**, not about a reachable resolution.  And
+the footprint and the transition read the resolver at **different states**, which
+every other member of this family avoids by construction — the asymmetry is
+registered rather than assumed away (`docs/REGISTERED_DEBT.md`, WS-HP).  `donationOriginRecipient?_eq_some_iff` is
+the one characterisation the three consumers read — a second case analysis over the
+same four-way match is the duplication this file spends its length retiring.
+
+(2) **The guard is applied to the CANDIDATE, not to the argument.**  That is the
+whole difference between a recovery and a regression: a stale origin makes the
+resolver answer `none` and the pop falls back to the reachability recipient, where
+applying the guard after the choice would *refuse* the pop.  A resolver that
+answered `some` unconditionally passes every positive anchor and breaks this; a
+Tier 3 positive pins the `if … then some origin else none` shape.  **And since
+`v0.35.61` a candidate is first of all a thread that resolves.**  Both guards pass
+a thread with no TCB (their `_of_none` arms exist so the *operation's* argument
+keeps its own error code), so as first landed a recorded origin naming no thread
+was answered as a candidate and the pop's own `lookupTcb` then refused the reply
+with `.objectNotFound` — a refusal on exactly the shape this item says falls back.
+Unreachable, because objects are never erased and `clearDonationOriginReferences`
+clears the field when the thread it names is retyped, and closed anyway: a
+contract the code does not decide is one a later cut can break silently.  The
+resolver resolves the origin through `lookupTcb` before it consults either guard,
+`replyDonationRecipient_resolves` is the no-refusal fact the pop now has (whenever
+the answered caller resolves, so does the recipient), the frozen mirror does the
+same through `frozenLookupTcb`, and §3.25 and FO-044's third half are the
+witnesses — each with the two-guard CONTROL that makes the decline attributable to
+the resolution check alone.
+
+(3) **The member is a WRITE, and coverage is a relation rather than a presence
+check.**  `lockSet_endpointReply_originRecipient_write_mem` and its `.replyRecv`
+twin state the membership at full arity, and
+`lockSet_endpointReply{,Recv}OnCore_covers_originRecipient` state it of the
+*resolved* footprint under the trigger's own answer.  The Tier 3 anchor over each
+definition asks only that the resolver occur there, which is the presence check
+those theorems replace.
+
+(4) **The ceiling moved and the reachable figures did not — by theorem.**  The
+origin member is live only at the bottom of a stack, and there the two below-head
+members are both absent (`replyStackBelowHead?_of_originRecipient`, over
+`replyStackBelowHead?_of_outer_none`), so a reachable footprint trades **two**
+members for one: `lockSet_endpointReplyRecvOnCore_size_le_twenty` and
+`…_size_le_eighteen` are unchanged, now by a case split on the redirect, and
+`tests/LockSetSuite.lean` exhibits the redirecting shape at **seventeen** —
+one *narrower* than the popping shape it is measured against at the same operands.
+What moved is the union over all argument values, which is what
+`boundedWait_under_2pl` and the WCRT surface consume.
+
+(5) **The cost is not restated here.**  `maxLockSetSize` moved and the RPi5
+per-lock cost and envelope moved with it; all three live in the canonical sentence
+this file carries above, which `scripts/check_lock_ceiling_figures.py` derives from
+the Lean sources and holds every prose copy to.  A second copy of the figures in
+this paragraph would be a hand-kept number beside a derivation, which is the shape
+that drifts on contact — and the gate refuses a near-miss of the canonical phrase
+rather than skipping it, which is how this paragraph's first draft was caught.
+
+(6) **The redirect's SCOPE is the reply path, and the declaration is what fixes
+it.**  All six pop call sites thread `returnDonatedSchedContextResolved`, and only
+the two reply footprints declare an origin member — so a redirect placed in that
+shared resolver would make `lockSet_endpointReceive`, `lockSet_replyRecv`'s
+pre-return group, `lockSet_cancelIpcBlocking`, `lockSet_cancelDonation` and
+`lockSet_tcbSuspendOnCore` **false** of their own transitions.  HP10.7 therefore
+redirects in `applyReplyDonation`, `applyReplyDonationOnCore` and
+`replyRecvPopDonation` only; widening it is a cut that declares first.  That is
+also the right scope on the merits — the registered defect is the reply path's, and
+the cancellation reclaim's recipient comes off the victim's own frame head
+(`cancelledCallerDonation?`), which is a different question.
+
+(7) **Seven sharp bounds are DELETED, and one of them is a Tier 3 negative now.**
+HP6.2 established that the owner merge — the returned donation's holder *is* the
+thread the reply answers — is **false** on every state the arm reaches, retired the
+resolved `…_size_le_seventeen` it licensed, and left five `_of_owner_eq_target`
+bounds and two `_of_no_donation` corners with no consumer in the tree.  A sharp
+figure resting on a refuted hypothesis is worse than no figure, so they are gone
+with a tombstone naming what replaced them, and `_size_le_twentytwo_of_owner_eq_target`
+must not come back.  The four live sharp bounds carry `_of_no_origin` in their names
+because they are stated at the origin's absence; the three
+`_of_no_belowHead` bounds beside them are the branches on which the redirect fires.
+
+**What new code must respect since HP10.7 (`v0.35.51`).**  The reply path's
+bottom-of-stack pop hands the reservation to the recorded **origin**.  Six things.
+
+(1) **`replyDonationRecipient` is the one answer, and all three reply-path pops
+read it.**  `applyReplyDonation`, `applyReplyDonationOnCore` and
+`replyRecvPopDonation` take it; a second spelling of "which thread receives the
+reservation" is the duplication this project spends its length retiring, and these
+two readings *disagree* on exactly the states the phase exists for.  It is the
+identity wherever HP10.6's resolver is silent
+(`replyDonationRecipient_eq_of_no_origin`) and on every `some`-arm pop
+(`_eq_of_outer_some`), so every pre-HP10.7 result is a case split whose `none`
+branch is the old proof verbatim.
+
+(2) **The scope is the reply path, and the declaration fixes it.**  All six
+operational pops thread `returnDonatedSchedContextResolved` and only the two reply
+footprints declare an origin member, so a redirect placed in that shared resolver
+would make `lockSet_endpointReceive`, `lockSet_replyRecv`'s pre-return group,
+`lockSet_cancelIpcBlocking`, `lockSet_cancelDonation` and
+`lockSet_tcbSuspendOnCore` **false** of their own transitions.  Widening it is a
+cut that declares first.
+
+(3) **The guard is a CONJUNCTION, and the second half is soundness rather than
+depth.**  `donationRecipientAcceptable` asks that the recipient hold no binding of
+its own; `donationOriginRebindable` asks that no *other* thread's binding name it
+as owner.  `donationOwnerValid` requires that owner to be `.unbound` **and**
+`.blockedOnReply`, so a thread can pass the first while a live binding is counting
+on it — and `.bound scId` there falsifies that binding's clause.  Reachable with
+ordinary syscalls: a client answered out of order is woken `.ready` and `.unbound`,
+and may bind a second reservation and Call with it while the first is still parked
+on a server whose stack records it as the origin.  The contrapositive is O(1) and
+is `donationOriginRebindable_no_owner`.  A still-reply-blocked origin **falls
+back** to the reachability recipient rather than refusing the pop, which is the
+difference between a recovery and a regression and the reason HP10.6 applied the
+guard to the candidate.
+
+(4) **The bundle splits the recipient from the binding's recorded owner.**  One
+thread used to play three roles — the operation's argument, the binding's owner,
+and the relaxation point of `ipcInvariantFullExceptDonationOwner` — and exactly
+**one** conjunct argument cared: `donationOwnerUnique`, `donationBudgetTransfer`,
+`passiveServerIdle`, the scheduler frame and the read agreement all take the
+recipient purely as the operation's argument.  `donationOwnerValid` is the
+exception, and `returnDonatedSchedContext_establishes_{donationOwnerValid,
+ipcInvariantFull}_of_except_redirected` are where `hNoOwner` lands.  A new
+argument reaches for the conflated form when the recipient *is* the binding's
+owner and for the redirected one otherwise; the conflated form is the instance,
+not a weaker statement.
+
+(5) **The replenishment migration's DESTINATION follows the redirect.**
+`ownerHome` was `determineTargetCore st1 target` — the answered caller's home —
+and a redirect that moves the reservation without moving the queue leaves
+`replenishQueueAffinityConsistentOnCore` false from the instant it commits, which
+is the standing constraint every SchedContext hand-off in this tree is held to.
+`replyDonationRecipientHome` mirrors HP4.3's source resolver clause for clause and
+the three readers that must agree all take it: the live dispatch, the affinity
+proof, and the SM8.B per-core write set that mirrors the dispatch's control flow.
+`hOwnerHome` is quantified over the trigger's answer now — HP4.3 recorded that the
+two home hypotheses swapped conditionality, and the redirect makes **both**
+conditional.  A Tier 3 negative refuses the answered caller's home in that
+position.
+
+(6) **The witness is decisive, not merely green.**  `tests/SmpIpcSuite.lean` §3.25
+resolves the redirect to a *different thread* on a *different core*, and each
+guard's negative is paired with a **control** asserting the other guard admits
+that state — so a decline is attributable to the guard it is about.  Reverting the
+redirect does not reach the witness: it fails to elaborate, because
+`replyDonationRecipient_eq_origin` and its siblings pin the definition
+structurally.  A new scenario in that group **extends** the contiguous-run anchor
+rather than adding a sibling.
+
+**What new code must respect since HP10.8 (`v0.35.52`).**  The frozen mirror
+redirects too, and running it beside the live arm found two defects.  Five things.
+
+(1) **`frozenReplyDonationRecipient` is the mirror, and it had to land within one
+cut of HP10.7.**  `frozenBranchOperationChecked .endpointReplyToBlockedCaller =
+true` is a machine-checked claim that the two programs are run beside each other,
+so a window in which the live arm redirects and the mirror does not makes that
+claim an **over-claim** rather than a failing test — every existing scenario keeps
+passing, because none of them recorded an origin that differs from the answered
+caller.  That is HP4.7's situation verbatim, and this is why the plan's HP10.8 row
+says *same cut*: HP10.7 landed alone at `v0.35.51`, and closing the window was the
+first thing `v0.35.52` did.
+
+(2) **The frozen return clears the origin on the bottom arm — it did not before,
+and FO-044 is what found it.**  HP10.4 landed the field's clears on the live side
+only; `FrozenOps` carries the **live** `SchedContext` record, so the field was
+there and unswept.  A frozen state left with a stale origin is the thread-id-reuse
+hazard the field's own docstring names, one surface over, and nothing could see it
+until a frozen scenario recorded an origin at all.  **A field added to a shared
+record is a sweep of both surfaces**, not of the one whose transition motivated
+it.
+
+(3) **The differential is what catches a mirror that agrees on the headline and
+diverges underneath.**  FO-044's eleven earlier assertions all passed — both
+surfaces bound the reservation to the origin, both left the answered caller
+unbound — and `frozenRunAgrees` still failed, on the `donationOrigin` field no
+per-object assertion mentioned.  A scenario that asserts only what it set out to
+measure would have reported the flip as clean.
+
+(4) **The answered caller is `.blockedOnReply` at the state the resolver reads, so
+the redirect DECLINES it and the recipient comes from the fallback.**  Same
+thread, different route — and it is what makes FO-044's second half
+discriminating, since a selector that fired unconditionally passes every outcome
+assertion and fails the resolver one.  It also retires HP10.6's claim that this
+member is live at depth 1: see the correction in that block, and the registered
+asymmetry between the state the **footprint** resolves at and the state the
+**transition** resolves at.
+
+(5) **Both guards are mirrored, and mirroring one would be worse than mirroring
+neither.**  `frozenDonationOriginRebindable` is `donationOriginRebindable`'s
+counterpart because the frozen surface models the same bindings; a mirror carrying
+the recipient guard alone would redirect on states the kernel refuses, which is
+the direction that matters on a differential surface.  The resolution check is
+mirrored too since `v0.35.61` (`frozenLookupTcb`), with FO-044's third half the
+witness on both surfaces.
+
+**What new code must respect since HP10.9 (`v0.35.53`).**  The depth-two payoff is
+stated and measured, so the donation accounting holds at **every** reply-stack
+depth.  Six things.
+
+(1) **`donationAccountingPreserved_atCallDepthTwo` derives the reachability answer
+and hypothesises the guards, and the split is not stylistic.**
+`replyStackOuterCaller? st' scId = .ok none` — the very answer that names the wrong
+thread — is a **conclusion**, read off the removal through
+`removeCallerReplyFrame_clears_prev_of_bottom_frame`, so no hypothesis hands the
+payoff over.  The two guards are **hypotheses** because one of them *cannot* be
+derived: `donationOriginRebindable` is **false** at the pre-state, the owner being
+`.blockedOnReply` on exactly the reply being answered, and becomes true at the wake
+`endpointReplyOnCore` performs before the removal.  The origin's *existence* at
+that state is a third hypothesis since `v0.35.61`, for the same reason: the
+removal's success says nothing about the thread the field names
+(`consumeCallerReply` is total on an absent caller), and the resolver now names
+only a thread it can resolve.  A cut that "simplifies" the
+statement by hypothesising the resolver's answer or the reachability answer has
+gutted it; Tier 3 negatives refuse both.
+
+(2) **The sever-direction sibling is where the depth-two shape lives.**
+`removeCallerReplyFrame_clears_prev_of_bottom_frame` is
+`removeCallerReplyFrame_splices_reciprocally`'s counterpart: nothing sits below a
+bottom frame, so `spliceFrameBelow?` answers `none`, the splice degenerates to the
+sever, and the frame above is left `prev = none` — *the same value either policy
+writes*, which is the whole reason HP6 could not reach this and HP10 had to.  Its
+`above ≠ rid` is derived from bottom-ness (a frame that were its own frame above
+would carry `prev = some rid`), not assumed; a Tier 3 negative refuses the
+hypothesis.
+
+(3) **The depth-three payoff is byte-identical, and that is the measurement.**
+§3.22 and §3.23 are untouched and the golden trace is byte-identical, so this
+phase is confined to the reachability gap rather than changing the chain — the
+same criterion HP6.9 met in the other direction.  It is *structural* rather than
+lucky: at depth ≥ 3 the pop sits at a `some` arm, where
+`replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
+theorem.
+
+(4) **§3.20's accounting halves are PAYOFFs now, and they measure the live `.reply`
+SPINE.**  They measured `returnDonatedSchedContextResolved` directly, which was an
+accurate proxy for the pop while nothing redirected and is a proxy that *omits* the
+redirect since HP10.7 — *a proxy is not the fact*.  `replyRemovalOutcome` drives
+`endpointReplyCrossCoreDispatch`, so leg, pop, reversion and migration are all in
+the measurement.  The retired `PAYOFF/COST` and `COST` labels are refused
+tree-wide.
+
+(5) **The decisive comparison is a differential WITHIN the suite, because no
+mutation is available.**  Every mutation of the production code here — the origin
+write, the resolver, the three pops, the dispatch's recipient — fails to
+**elaborate** rather than failing the suite, which is the situation §3.23 recorded
+for the splice's store shape.  So `replyRemovalOutcome` takes the chain as a
+**parameter** and is applied twice: to a chain whose first push recorded an origin,
+and to `pushStore`'s, which predates HP10.4 and records none.  One function, two
+chains differing in exactly one field, opposite outcomes.  A new witness on this
+surface should reach for that shape rather than for a mutation that will not
+compile.
+
+(6) **HP10.4's production write is measured, and it was not before.**  Every
+fixture that carried an origin set the field by hand, so nothing asserted that
+`donateSchedContext` records one — *a witness whose field is supplied by its
+fixture asserts nothing about the production write that is supposed to supply it*.
+`pushOwnerStore` is `pushStore` with the first push undone and `replyRemovalChain`
+runs the live push **twice**, so §3.20 measures both directions of HP10.4: a
+**first** push records the origin, an **onward** push leaves it alone, which is
+what distinguishes an origin from a duplicate of `.donated scId owner`.  The same
+construction asserts that the first push reproduces `pushStore`'s own shape, so
+the hand-built fixture is known to be a state the kernel reaches.
+
+One mechanical note, and it is this project's own silent-skip rule catching a gate
+defect rather than a code one.  A Tier 3 anchor added in this cut lost the closing
+quote of its `bash -lc '…'` argument, so it swallowed the following lines, ran a
+search against the wrong file and **never decided** — `bash -n` passes, the gate
+prints PASS, and only a mutation of its subject reveals the silence.  The mutation
+harness reported it (as a negative that would not fire), and
+`scripts/check_anchor_consistency.py` refuses it by name for exactly the stated
+reason that *"the gate could not read it" and "the gate checked it" must never
+produce the same PASS line*.  **Mutation-test a new negative anchor by breaking the
+relation it forbids** — and read its verdict as a statement about the anchor, not
+only about the tree.
+
+**And the splice is not the whole remedy — depth 2 needs HP10** (registered
+`v0.35.42`).  The register scoped this defect to reply-stack depth ≥ 3 and that
+was its own error: at depth **2** the delegate answers the client out of order,
+the removal takes the client's frame — the stack's *bottom* — off the stack, and
+the later in-order pop finds the remaining frame at the bottom and binds the
+reservation to the **intermediate** caller.  Both policies write `none` into the
+frame above a bottom frame, so the splice **provably cannot** reach it: the
+sentence that explains why §3.20 cannot measure the depth-≥ 3 defect is the
+reason the depth-2 defect survives HP6 — and HP6.9's own acceptance criterion,
+that §3.20's depth-two halves pass byte-identically, is the measurement that it
+does.  §3.20 exercises the depth-2 *structural*
+outcome and asserts nothing about where the reservation ends up, so this half was
+in the tree's reach and in neither its witnesses nor its register.
+
+The cause is not seL4-MCS and not the removal policy: the recipient is derived
+from **stack reachability**, so removing a frame changes who the kernel believes
+owns the context — and upstream's `reply_pop` donates to the answered frame's own
+`replyTCB`, so it has the depth-2 loss too.  HP10's remedy is one `SchedContext`
+field recording the reservation's **origin** and one arm reading it, with the
+answered caller as the fallback, so it is a strengthening with no state on which
+it is worse than today.  Three things new code must respect once it lands: the
+origin is **history the kernel validates, not an invariant** (no
+`donationChainWellFormed` clause can state it, because "or a thread whose frame
+was removed" is unstateable from the store — the pop's
+`donationRecipientAcceptable` guard is what makes reading it safe); **thread-id
+reuse is the hazard**, closed by `lifecyclePreRetypeCleanup` clearing a stale
+origin before anything reads the field; and **the footprint grows**, because
+redirecting the recipient changes which TCB the pop writes —
+`maxLockSetSize` 23 → 24.  It lands in WS-HP rather than WS-CB, whose plan has no
+sub-task started and would defer a correctness fix indefinitely; WS-CB inherits
+the field.
 
 Three things a reader should take from the plan rather than infer.  (1) **The
 payoff is larger than the accounting**: under the head-driven trigger the three
-*stated* pre-state coherence hypotheses the reply path carries
+*stated* pre-state coherence hypotheses the reply path used to carry
 (`replyStackHeadIsAnsweredReply`, `replyDonationOwnerIsAnsweredCaller`,
-`answeredHeadContextIsServerDonation`) become derivable and are deleted (HP7) —
-no invariant in this tree entails them today.  (2) **The cost is stated**:
-`maxLockSetSize` 22 → 23 and the RPi5 per-lock cost 15 → 14 µs, because the
-splice writes the frame below and no footprint names it (HP3.5).  (3) **HP5 is
-not optional**, and its reason is derived: after the splice a frame becomes the
-head whose recorded reply target is gone, so a *cancellation* there would leave
-a `.donated` binding naming a `.ready` owner.
+`answeredHeadContextIsServerDonation`) became derivable and are **deleted** at HP7
+(`v0.35.46`) — no invariant in this tree entailed them, HP4 had already retired the
+third from the chain composite for the strictly weaker `replyFrameHeadIsBound`, and
+HP6.2 left none of the three with a consumer.
+(2) **The cost is stated**: `maxLockSetSize` 22 → 23 and the RPi5 per-lock cost
+15 → 14 µs, because the splice writes the frame below and no footprint named it
+(HP3.5).  The splice's *third* store, added at HP6.3, costs nothing further — the
+cut frame's lock was already declared on both paths.  (3) **HP5 was not optional**, and its reason was
+derived rather than assumed: after the splice a frame becomes the head whose
+recorded reply target is gone, so a *cancellation* there would leave a `.donated`
+binding naming a `.ready` owner.  It landed at `v0.35.39`; the paragraphs above say
+what it changed.
 
-No sub-task has started.  Registered in
-[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C with closure target
-**before v1.0.0**; until it closes, v1.0.0 must not claim that completing a call
-chain returns a client's reservation, nor seL4-MCS reply-stack semantics at
-chain depth ≥ 3.
+Registered in
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C, closed there at
+`v0.35.54` and **re-opened at `v0.35.141` on the depth-2 half** — see the
+paragraph above for what PR #897's review measured.  So v1.0.0 may claim the
+depth-≥ 3 half (a middle removal leaves the reservation owed outward, HP6's
+chain-preserving removal) and **must not** claim that a completed call chain
+returns a client's reservation at every reply-stack depth.  What it must also not
+claim is *parity* with seL4-MCS on reply-stack removal at depth ≥ 3: upstream
+severs and this kernel splices, so the honest claim there is an improvement on
+upstream rather than a match for it.
+
+**The post-landing audit (`v0.35.61`) — what reading the code against its prose
+found.**  The whole of WS-HP, RR8.1–RR8.4 and the `v0.35.59`/`v0.35.60` cuts were
+re-read with every docstring treated as a claim to check rather than a description
+to trust.  The code held: each resolver, guard, pop, splice store and frozen
+mirror does what its section above says; the deleted `detach*` theorems all have
+splice twins; objects are never erased, so a recorded origin always resolves; and
+the recipient guard is inert on reachable states because `schedContextBind`
+refuses a thread whose frame is on a live stack.  What did not hold was prose
+**about the future, or about the sever** — ten docstrings and comments across six
+Lean files, and the plan's HP4 narrative.  `replyFrameHeadIsBound`'s docstring and
+the chain composite's both said *"HP7 is where it becomes a clause of the chain
+invariant"*, and HP7 did no such thing — no plan row ever scheduled it; the rest
+still read *"once HP4 lands"*, *"once HP6 makes the removal a splice"*, *"the
+sever today, the splice after HP6.3"*, *"the one HP10 will have to keep true"*,
+or described the removal as clearing the frame above's `prev`, each about a phase
+that had landed.  The retired-code section's rule — *sweep the forward-looking
+prose when the phase it names closes* — is the one that catches these, and
+WS-HP's own closure had not run it over WS-HP's own docstrings.  Three findings
+beyond prose.  (1) **A contract the code does not decide is one a later cut can
+break silently**: `donationOriginRecipient?` promised that a stale origin *falls
+back rather than refusing*, and decided it only for an origin failing a guard — a
+recorded origin naming no thread passed both guards and reached the pop's own
+lookup as `.objectNotFound`.  Unreachable, and closed on both surfaces (item (2)
+under HP10.6 above).  (2) **One thread, two spellings**: `replyRecvPopDonation`
+passed `holderV.val` / `targetV.val` to the return and `holder` / `target` to the
+migration, and four proofs carried `toValid?_some_val_eq` rewrites to reconcile
+what one `let` now states once.  (3) **A hand-kept figure had crept back in**:
+HP8's paragraph restated the reply-stack census's totals a few paragraphs after
+the WS-RM section says why that shape drifts — accurate that day, deleted anyway.
+And the two stated coherence facts HP7 left standing — `replyFrameHeadIsBound`
+and `replyFrameHeadHolderDonation`, true on every reachable state by arguments
+their docstrings carry and entailed by no invariant — had no register row; they
+have one (`docs/REGISTERED_DEBT.md`, table C).
+
+**The second pass (`v0.35.62`) — a sweep the closure claimed and had not run.**
+HP6.1 recorded that the word *detach* was accurate at that version and that HP6.3's
+cut would sweep it; the operation had been a splice for seventeen cuts and the
+sweep had reached one docstring.  Measured rather than estimated: some 120 sites in
+35 files still called the splice *the detach*, and nine of them described the
+**sever** as its behaviour — "`spliceReplyFrameOut` sets its `prev := none`",
+"clears the `prev` of the frame above", "the `severAtCut` policy is unchanged and
+is now carried out by the detach", "the frame above becomes the bottom of the stack
+it heads" — in `LockSetTransitions.lean`, `Endpoint.lean`, `Cancellation.lean`,
+`CancellationReplyShape.lean`, `SchedContext/Operations.lean`, `Reply.lean`,
+`Defs.lean`, the spec's §8.12.7 and GitBook 12.  Each now says what the splice
+writes, and where the sever is still the truth — the *degenerate* arm, taken at a
+bottom frame or when the frame below does not reciprocate — says that instead.
+Three stale **figures** rode along, none of them in a theorem: two docstrings still
+called the splicing `.replyRecv` branch *sixteen, two below* the popping one, on
+theorems whose conclusions read seventeen (`lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin`,
+`lockSet_endpointReplyRecvOnCore_size_le_eighteen`); `maxLockSetSize`'s own
+docstring narrated the ceiling to twenty-three and stopped, one raise short of the
+constant beneath it, and cited `lockSet_endpointReplyRecvOnCore_size_le_nineteen`,
+renamed at HP3.2; and `tests/DeadlockFreedomSuite.lean` labelled a `.replyRecv`
+shape *declares 22* while asserting `maxLockSetSize - 1`, which had been 23 since
+HP10.6, with its negative pinned at the literal 21 rather than at the ceiling's
+minus two — both derive from the constant now, and the Tier 3 anchor on the label
+moved with it.  Two dead citations: `Endpoint.lean` named `replyDonationOwnerHome`
+(retired at HP4.3) as live discipline, and `EndpointReplyDispatchInvariant.lean`'s
+HP6.2 block said `answeredFrameHeadContext?_implies_serverDonation` was *not*
+retired, forty lines below the HP7 comment recording that it was.  And
+`SchedContext.donationOrigin`'s docstring pointed at §3.20's `PAYOFF/COST` rows,
+which HP10.9 renamed.  One inert attribute went with the prose:
+`cancelledCallerDonation?_independent_of_victim` was `@[simp]`, and a rewrite rule
+whose right-hand side has a free variable can never fire.  What the pass
+**re-verified**: every one of the 122 declarations this PR deleted has a splice or
+head-driven twin or a documented retirement, every one of the 31 theorems whose
+hypotheses changed is recorded in the section above, no added line carries a
+`sorry`, `axiom`, `native_decide` or `partial`, and every declaration-shaped name
+the CHANGELOG cites either resolves or is named as retired.
 
 Plan: [`docs/planning/DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md).
 
@@ -3768,7 +6999,7 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50 | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
+| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56, RR8.3 v0.35.57, RR8.4 v0.35.58, RR8.5 v0.35.63, RR8.6 v0.35.79 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
 | SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
 
 **Plans**: master overview at
@@ -3904,7 +7135,7 @@ code may assume:
   a budget admits at the declared ceiling, with
   `WCRT_lockSet_le_budget_of_admissible` the payoff and
   `rpi5Tick_refuses_sixty_micro_sections` the `decide`-checked negative.  At
-  HEAD, the declared lock-set ceiling is **22**, the RPi5 tick admits **15 µs** per lock, and the uniform 60 µs envelope is **3960 µs**.
+  HEAD, the declared lock-set ceiling is **24**, the RPi5 tick admits **13 µs** per lock, and the uniform 60 µs envelope is **4320 µs**.
   Those three figures are **derived**, and since WS-OD OD3.15
   `scripts/check_lock_ceiling_figures.py` (Tier 0) holds every prose copy of them
   to the Lean sources: the constants and the formula that combines them are read
@@ -4048,96 +7279,277 @@ code may assume:
   (`revokePendingTransfersFrom`, v0.33.88), because revoking a derived subtree
   leaves the source slot live and so never trips the creator's check.  New code
   must not assume a carried `TransferCap` will install.
-- **`ipcInvariantFull` has its dispatch payoff — three theorems, under
-  stated packs and confinements.**  The whole bundle family is de-threaded:
-  the RR3.1 gate (`scripts/check_ipc_invariant_dethreading.py`, Tier 0)
-  reports **zero** conjuncts bound on a post-state across all **176**
-  `*_preserves_ipcInvariantFull*` / `*_establishes_ipcInvariantFull*`
-  statements, measured over the comment-free code view with the conjunct set,
-  the bundle family and each bundle's own pre-state all *derived* rather than
-  listed, and prints `[PASS] ipcInvariantFull is de-threaded end to end`;
-  `docs/planning/ipc_dethreading_pending.txt` carries zero registrations and
-  the gate holds that register in both directions.  **The figure above is
-  enforced, not asserted** (WS-RR RR7.28): the gate holds every tracked
-  Markdown file outside `CHANGELOG.md` and `docs/dev_history/` — where the
-  number is history, and rewriting it would be the falsification — to its own
-  `len(bundles)`, so a cut that adds a bundle fails until the prose it made
-  stale is corrected, and a claim spelled in a form the reader cannot parse
-  fails rather than being skipped.  A hand-maintained count beside a derivation
-  is the enumeration-standing-in-for-a-derivation shape this file warns about,
-  and it drifted exactly that way: RR7.22 added twelve statements and the three
-  canonical sites still said 146 two cuts later.  The payoff tier (WS-RR
-  RR3.15–RR3.26, v0.34.43): `dispatchCapabilityOnly_preserves_ipcInvariantFull`
-  (`SeLe4n/Kernel/API.lean`, **production**) covers every capability-gated arm
-  under the pre-state pack `capabilityDispatchQuiescence`, composing the
-  production per-arm layer
-  `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`;
-  `dispatchWithCap_preserves_ipcInvariantFull` and
-  `dispatchSyscall_preserves_ipcInvariantFull`
-  (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) extend it over the IPC
-  fall-through arms and the lookup/taint prologue under
-  `syscallDispatchQuiescence` — **staged**, because the `.call` arm composes
-  the staged `EndpointCallInvariant` surface (see the call-chain bullet
-  below); they relocate to production when that surface promotes.  The
-  flow-checked tier is covered too:
-  `dispatchWithCapChecked_preserves_ipcInvariantFull` and
-  `dispatchSyscallChecked_preserves_ipcInvariantFull` (same module, staged)
-  reduce every mirrored arm to the unchecked payoff — machine-checking the
-  dispatcher's "mirrors the unchecked arm" comments — and close the four
-  live SM9 arms from their transitions' frames, under
-  `checkedSyscallDispatchQuiescence` (the base pack plus the declassifying
-  signal's unbound-delivery confinement).  Both packs carry inhabitation
-  witnesses built through the retype and binding levers — the base pair
-  (`syscallDispatchQuiescence_inhabited`,
-  `checkedSyscallDispatchQuiescence_inhabited`) for the state-shaped fields,
-  plus a per-arm family (`…_inhabited_signal` / `…_retype` / `…_send` /
-  `…_receive` / `…_call` / `…_mint` / `…_reply` / `…_bind` / `…_unbind` /
-  `…_suspend` / `checked…_inhabited_declassifySignal`, `DispatchPayoff` §7b)
-  that fires
-  each *indexed* field's premises — so an unsatisfiable pack field cannot
-  hide; the two interiors beyond the levers' reach (a caller-carrying
-  reply, a CSpace-resolved `replyRecv` capability — both created only by
-  the call rendezvous) are registered WS-DT debt.  What new
-  code must respect: (1) the payoff holds *under the packs* — every field is
-  a pre-state fact, dischargeable before the step, with the state-shaped ones
-  collected in `SeLe4n/Kernel/IPC/Invariant/Reachability.lean`
-  (`ipcReachable`, boot-inhabited by `ipcReachable_default`) — so a caller
-  supplies the pack rather than citing the theorem bare; (2) the stated
-  confinements: `.notificationSignal` is covered on the unbound-delivery path
-  only (SM6.D's registered debt), the `.replyRecv` composite excludes a live
-  donation edge naming the woken caller (the AUD-3 window), and the retype
-  and suspend arms demand their quiescence packs (`retypeTargetDetached`,
-  `threadIpcFieldsQuiescent` — revoke, suspend and cancel *before* retype or
-  suspend); (3) production code must not cite the two staged payoffs.  The
-  operation-hardening and relocation residuals are registered as debt under
-  **WS-DT — CLOSED** in
-  [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) (plan retired to
-  [`docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md`](docs/dev_history/planning/IPC_INVARIANT_DETHREADING_PLAN.md));
-  RR8.3 retires this bullet.
+- **A footprint's same-kind core segment is `schedCoreSegment`, over a core
+  *set*** (WS-RR RR8.12, `v0.35.87`).  A cross-domain footprint that names
+  several cores' run queues or replenish queues declares them through
+  `schedCoreSegment (f : CoreId → SchedLockId) (cs : List CoreId)`
+  (`Scheduler/Operations/PerCoreChooseThread.lean`), whose canonical form is
+  `Concurrency.canonicalCores` — `allCores.filter (· ∈ cs)`, so ascending,
+  duplicate-free and bounded by `numCores` because `allCores` is.  Three things
+  new code must respect.  (1) **The arity is an argument, not a definition.**
+  `sortedSchedCorePair` and `sortedSchedCoreTriple` were this question at two
+  arities and are **deleted**, with a Tier 3 negative refusing each tree-wide;
+  a footprint needing four cores passes a four-element list, and a footprint
+  resolved from a *walk* passes whatever the walk found
+  (`pipChainSchedFootprint` does).  (2) **A hand-inlined `if`-chain over two
+  cores is the same defect**: `cancelDonatedDonationOnCoreSchedLockSet` carried
+  one for eleven cuts, forty lines below a comment asserting the shared
+  definition was used everywhere below it, and its uniqueness and ordering
+  proofs were 30 and 35 lines of branch analysis for a fact the shared lemmas
+  state once.  (3) **`allCores`'s ordering is `allCores_pairwise_le`, never a
+  `decide`**: a `decide` at the literal `numCores` stops reducing the moment a
+  multi-platform build parameterises it by `PlatformBinding.coreCount`, which is
+  what `allCores_nodup`'s own docstring says and what one chain-footprint proof
+  had done anyway.
+
+- **...and a whole operation's footprint is `schedFootprintOfCores`, over two
+  core sets** (WS-RR RR8.12 sixth cut, `v0.35.94`).  The segment above is one
+  kind; a footprint of a whole kernel operation is the three-domain ladder
+  `(object, .write) :: runSegment ++ replenishSegment`, and that was spelled at
+  **seven** definitions with **four** byte-identical twenty-five-line
+  `_pairwise_le` proofs — one question with four answers, about to become nine
+  as the remaining syscall arms are declared.  `schedFootprintOfCores (runCores
+  replenishCores : List CoreId)` is the one answer, with `_pairwise_le`,
+  `_write_only`, `_keys_nodup`, `_length_le`, `_subset` and the single
+  characterisation `mem_schedFootprintOfCores_iff` its consumers read instead of
+  each running the same three-way case analysis.  Four things new code must
+  respect.  (1) **The criterion is the *shape of the argument*, not a list of
+  names**: a footprint whose cores form a set — two or more of a kind, an
+  `Option` joined with another, a segment resolved from a walk — is this
+  constructor; one at a fixed single core of each kind
+  (`wakeThreadLockSet`, `descheduleThreadLockSet`,
+  `cancelBoundDonationOnCoreSchedLockSet`) is a literal, because there is
+  nothing to sort and nothing to merge and its ladder is a two-element `simp`.
+  A literal that gains a second core of a kind becomes this constructor in the
+  same cut.  (2) **"The argument is a set" is a theorem, not a claim**:
+  `Concurrency.canonicalCores_congr` and `schedFootprintOfCores_congr` say two
+  resolvers that discover the same cores declare the same footprint, and
+  `canonicalCores_singleton` is the `Option CoreId` arm.  That is what retired
+  `cancelIpcBlockingOnCoreSchedLockSet`'s hand-written deduplication — `if
+  placed = some c then … else … ++ [(runQueue ⟨c⟩, .write)]`, a question about a
+  set answered by an `if`-chain over its two possible elements, which is item
+  (2) above one level up and which RR8.12's first cut did not sweep onto its own
+  sibling.  With the branch gone,
+  `cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write` is
+  **unconditional**, where it used to need `placed ≠ some c`.  (3) **A composite
+  covers a component by `schedFootprintOfCores_subset`**, not by a second
+  member-by-member case analysis; over-declaring is the safe direction and the
+  lemma is stated that way round.  (4) **`Scheduler/PriorityInheritance/
+  ChainFootprint.lean` is deliberately not this shape**: its object segment is a
+  *per-thread* TCB lock per chain member rather than the single table lock, so
+  its ladder is a different proposition and it keeps its own — which is why the
+  Tier 3 negative that refuses a re-inlined `runQueue_lt_replenishQueue` is
+  scoped to `SeLe4n/Kernel/IPC/` and `SeLe4n/Kernel/Lifecycle/` rather than
+  tree-wide.
+
+- **...and the first three syscall arms declare one** (WS-RR RR8.12 seventh cut,
+  `v0.35.95`).  `UncoveredLockDomain.syscallSeamSchedulerDomain` records that
+  `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a run-queue
+  lock at all, so an `endpointSend`'s receiver wake is outside the footprint the
+  RR7.12 seam acquires.  `.notificationSignal` (through the **bound** arm the
+  live dispatch routes to), `.notificationWait` and `.send` now have one —
+  `schedLockSet_notificationSignalBoundOnCore`,
+  `schedLockSet_notificationSignalOnCore`,
+  `schedLockSet_notificationWaitOnCore`, `schedLockSet_endpointSendOnCore`, all
+  **inert** until the bracket cut.  Four things new code must respect.  (1) **A
+  footprint is `schedFootprintOfCores` of the arm's SM8.B write set**, never of a
+  second resolution of the same cores: `notificationSignalOnCore_confinedToCores`
+  is *stated at* `notificationSignalWriteSet` and the footprint is that list, so a
+  footprint and a confinement claim naming different cores is unstateable rather
+  than merely refuted.  (2) **The write sets moved to production for that
+  reason.**  `notificationSignalWriteSet`, `notificationSignalBoundWriteSet` and
+  `endpointSendWriteSet` were declared in
+  `InformationFlow/NonInterferenceCrossCore.lean`, which is staged and imports
+  `Kernel.API`, so the production footprint could not read them; they now sit
+  beside the transitions they describe and the confinement theorems that consume
+  them stay staged.  `wakeThread_replenishQueueOnCore` moved the same way, out of
+  the staged `PerCoreCbs.lean` where its `_local` suffix was the signal.  (3) **An
+  empty replenish segment is a theorem, not a reading of the body**: these three
+  arms move no scheduling context — only `.call`, `.receive` and `.replyRecv`
+  donate — and `notificationSignalOnCore_replenishQueueOnCore`,
+  `notificationWaitOnCore_replenishQueueOnCore`,
+  `notificationSignalBoundOnCore_replenishQueueOnCore` and
+  `endpointSendCrossCoreDispatchChecked_replenishQueueOnCore` say so, because a
+  footprint that omits a written lock is false and `observableSlotsConfinedToCores`
+  covers six per-core slots of which the replenish queue is **not** one.  (4)
+  **`.receive` and `.replyRecv` are deliberately still undeclared at this cut**:
+  both donate, so their replenish segments are non-empty and their cores come from
+  the migration rather than from a confinement write set, and `.receive`'s chain
+  leg is not pre-state computable at all (`receiveRendezvousHandoffWriteSet` takes
+  the post-donation state) — those cores are declared through the dynamic chain
+  extension, as the object domain declares them.  `.receive` is declared at Cut
+  8a-ii (`v0.35.107`, the bullet below); `.replyRecv` is not.  **And that sentence named two arms where the
+  derivation gives many more** (`v0.35.104`, found by running the sweep on this
+  note rather than by a review): four arms declare a scheduler footprint and the
+  staged non-interference module holds **24** per-core write sets, so `.call`,
+  `.tcbSuspend`, `.tcbResume`, the three SchedContext arms, `.tcbSetPriority`,
+  `.tcbSetAffinity` and the retype are undeclared too and were in neither list.
+  *A recognised set is not a derived set*, in the note written one cut earlier to
+  record which arms remain — read `UncoveredLockDomain.syscallSeamSchedulerDomain`
+  and the `schedLockSet_` inventory, never this paragraph, for what is left.
+
+- **...and the first DONATING arm declares one, so the first with a non-empty
+  replenish segment** (WS-RR RR8.12 Cut 8a-ii, `v0.35.107`).
+  `schedLockSet_endpointReceiveOnCore` is the live `.receive` arm's
+  scheduler-domain footprint — the object-store table write lock, the run-queue
+  write lock of the one core the receive leg moves, and the replenish-queue write
+  locks of the two endpoints WS-OD OD3.6's donation migrates between — **inert**
+  until the bracket cut.  Seven things new code must respect.  (1) **Every core is
+  DERIVED; nothing is a parameter — and the first shape of this cut got that
+  wrong.**  The run segment is `schedFootprintOfCores` of the arm's SM8.B write
+  set, as Cut 7 requires.  The replenish segment has no write set to take —
+  `observableSlotsConfinedToCores` does not read the replenish queue at all — and
+  the first shape therefore took the donation's two cores as **parameters**, on the
+  reasoning that `applyRendezvousCallDonation` resolves them at the *post*-receive-leg
+  state, so a pre-state reading would answer the question at a state the migration
+  does not run at.  Three things were wrong with that.  It breaks this file's own
+  rule that **a parameter is a place for a caller to be wrong** (PR #895 round 10:
+  the fix is not a better argument but *no* argument), since a caller could declare
+  locks for a migration between two cores the transition never touches.  A bracket
+  resolves a footprint **before** the transition runs, so Cut 9 could not have
+  supplied them at all and the form would have had to be rewritten anyway.  And it
+  left three frames Cut 8a had promoted *for this footprint* with no consumer, which
+  is the measurement that said so: a frame nobody asks for is a question nobody
+  asked.  The replenish segment is `endpointReceiveHandoffReplenishCores`, read on
+  the **pre**-state, licensed by
+  `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` — *the
+  receive leg moves no thread's home core*, because `determineTargetCore` reads
+  `cpuAffinity` and only `.tcbSetAffinity` writes it — and
+  `endpointReceiveHandoffReplenishCores_of_call_rendezvous` states that the pre-state
+  list **equals** the pair the donation resolves, not that it agrees with or
+  over-approximates it.  So this *closes*, for `.receive`, the
+  footprint/transition resolution asymmetry WS-HP HP10.8 registered for the reply
+  arm's origin member rather than adding a second instance of it.  A Tier 3 positive
+  pins both segments in one anchor, a second pins the equality, and a negative
+  refuses the parameter names coming back; each is mutation-tested by keeping every
+  other token.  (2) **The declaration is TRUE by theorem, not by reading the body**:
+  `schedLockSet_endpointReceiveOnCore_covers_donation` covers
+  `applyCallDonationOnCoreSchedLockSet` member for member, hence — through
+  `applyCallDonationOnCoreSchedLockSet_covers_migration` — the SM5.H migration's
+  two slots; and in the other direction
+  `endpointReceiveDualOnCore_replenishQueueOnCore` and its WithCaps sibling say
+  the receive **leg** writes no replenish queue, so every core in that segment
+  comes from the donation and none from the leg.  On the block path the segment is
+  `[]` and `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked` says
+  so: a receive that parks itself donates nothing, and over-declaring is not free —
+  lock contention is an observable channel (SM8.D's CC-5), which is why OD3.5
+  *narrowed* a footprint for the same reason.  (3) **The chain walk is declared
+  dynamically, not statically.**  The arm also runs `applyReceiverPipHandoff`,
+  whose cores are state-discovered; `PriorityInheritance.pipChainSchedFootprint`
+  declares them per walked member and `pipChainStart_endpointReceive` is the SM3.C
+  obligation that ties the walk to it.  A static footprint that tried to
+  enumerate them would be a footprint over an unbounded set.  (4) **Two more
+  production relocations, for the reason `v0.35.59` states.**
+  `endpointReceiveDualWriteSet` and
+  `endpointReceiveDualWithCapsOnCore_scheduler_eq` were declared in the staged
+  `InformationFlow/NonInterferenceCrossCore.lean`, which imports `Kernel.API`, so
+  the production footprint and its replenish frame could not read them; a frame
+  lemma about a production transition belongs beside that transition, not in the
+  staged surface that first happened to need it.  Both are refused there by a
+  Tier 3 negative.  Two more of the same class surfaced from the **build** rather
+  than from reading, and both are the shape `v0.35.59` names — *when a question has
+  one owner and an asker that cannot see it, the owner is in the wrong layer*:
+  `storeTcbIpcStateAndMessage_determineTargetCore_eq` is a frame over an IPC
+  *primitive* and sat in a cross-core *arm* module the receive leg's own frame does
+  not import, while `endpointReceiveDualOnCore_preserves_objects_invExt` is a frame
+  over a transition and sat **downstream** of the module that declares it.  Four
+  relocations in one cut is the signal that the class is a layering convention, not
+  four accidents.  (5) **The frames the licence needed, and where they live.**  The
+  `*_determineTargetCore_eq` family gained `linkCallerReply_…` (a Reply store then
+  a TCB store, `cpuAffinity`-`rfl` on both) and `ipcUnwrapCaps_…` (whose own TCB
+  frame holds at every key in *both* directions, so the whole `getTcb?` projection
+  is fixed — strictly stronger than the affinity the licence needs, which is why no
+  per-field argument appears in it).  Both sit in the family's home module, not
+  beside their operations, because that is where every other member lives.  The
+  composite is stated on the **rendezvous** branch, and that is the claim's own
+  subject rather than an economy: the segment is `[]` on the block path, so there is
+  no core there for a pre-state reading to get wrong.  (6) **The one missing frame is a corollary, not a second case
+  analysis**: `cleanupPreReceiveDonationChecked_scheduler_eq` goes through
+  `cleanupPreReceiveDonationChecked_ok_eq_cleanup`, the bridge that already
+  settles that the checked and defensive variants agree on `.ok` — re-deriving it
+  from the checked body would let the two disagree about a branch.  And the
+  layering worry that deferred this cut was unfounded: `IPC.Invariant.Defs` *is*
+  reachable from `IPC/CrossCore/EndpointReply.lean`, through
+  `Scheduler.Operations.PerCoreWake → IPC.Invariant.PerCore`; the grep that
+  suggested otherwise measured which cross-core module happens to cite those
+  frames, not which can.  (7) **The scheduler-footprint family has no census, and
+  the measurement is what says so.**  A footprint's `_write_only` / `_pairwise_le`
+  are `schedFootprintOfCores`' own lemmas at that footprint's arguments, so
+  restating them per footprint is a delegation with no content — Cut 7's four arms
+  omit them and this one does too, with the reason stated where a reader looks for
+  them.  What is **not** a delegation is a run-segment coverage lemma, and asking
+  the whole family who consumes those found **33 of its 47 theorems with neither a
+  consumer nor a Tier 3 anchor** — every RR2.4 / RR2.10 / RR8.12 footprint property,
+  silently deletable.  Their consumer is the bracket cut, which is the ordering the
+  numbering rule requires, so the answer is not to delete them; it is that the
+  scheduler domain has no `LockFootprintBoundCensus`, which the object domain has
+  had since RR7.18 for exactly this reason.  Deriving one is Cut 8c; the eight hand
+  anchors this cut adds are the stopgap, and a hand-written list is what that census
+  retires.
+
+- **`ipcInvariantFull` has its dispatch payoff, under stated packs and
+  confinements** (WS-RR RR3.15–RR3.26, `v0.34.43`; compressed here at RR8.14,
+  `v0.35.88`).  The bundle family is de-threaded end to end and
+  `scripts/check_ipc_invariant_dethreading.py` (Tier 0) keeps it so, holding the
+  family size stated in prose to its own measurement — the figure and the
+  narrative of how it drifted live in `docs/spec/SELE4N_SPEC.md` and
+  `CHANGELOG.md`, not here.  Four things new code must respect.  (1) **Cite the
+  right tier.**  `dispatchCapabilityOnly_preserves_ipcInvariantFull`
+  (`SeLe4n/Kernel/API.lean`) is **production** and covers every capability-gated
+  arm; `dispatchWithCap_preserves_ipcInvariantFull`,
+  `dispatchSyscall_preserves_ipcInvariantFull` and their two `…Checked` twins
+  (`SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean`) are **staged**, because the
+  `.call` arm composes the staged `EndpointCallInvariant` surface, and production
+  code must not cite them; they relocate when that surface promotes.  (2) **The
+  payoff holds *under the packs***: every field of
+  `capabilityDispatchQuiescence` / `syscallDispatchQuiescence` /
+  `checkedSyscallDispatchQuiescence` is a pre-state fact, with the state-shaped
+  ones collected as `ipcReachable`
+  (`SeLe4n/Kernel/IPC/Invariant/Reachability.lean`, boot-inhabited by
+  `ipcReachable_default`), so a caller supplies the pack rather than citing the
+  theorem bare.  (3) **The packs are inhabited, per arm** — an unsatisfiable
+  field cannot hide behind a vacuous witness (`DispatchPayoff` §7b); the two
+  interiors beyond the retype and binding levers' reach are registered debt.
+  (4) **The confinements are stated, not implied**: `.notificationSignal` is
+  covered on the unbound-delivery path only, the `.replyRecv` composite excludes
+  a live donation edge naming the woken caller, and the retype and suspend arms
+  demand `retypeTargetDetached` / `threadIpcFieldsQuiescent` — revoke, suspend
+  and cancel *before* retype or suspend.
 - **A cancelled caller gets its donated SchedContext back** (WS-RR RR7.22
   residual remediation, v0.34.97).  `cancelIpcBlocking`'s `.blockedOnReply` arm
-  is `consumeReplyLink (restoreToReadyCancelled (returnDonationToCancelledCaller
-  st tid tcb) tid) tid tcb` — seL4-MCS's `reply_remove`.  Before it, the server
+  is `consumeReplyLink (restoreToReadyCancelled (spliceThreadReplyFrameOut
+  (returnDonationToCancelledCaller st tid tcb) tcb) tid) tid tcb` — seL4-MCS's
+  `reply_remove` (the splice joined the chain at `v0.35.4`; this sentence
+  omitted it for fifty-nine cuts).  Before it, the server
   kept `.donated scId caller` while the caller left `.blockedOnReply`, which
   `donationOwnerValid` forbids and which permanently transferred the caller's CBS
   reservation.  Four things new code must respect.  (1) **The return runs before
   the restore**, because it reads the `.blockedOnReply` state the restore clears;
-  a Tier 3 negative refuses the old order.  (2) **The holder is the caller's
-  recorded reply target** (`cancelledCallerDonation?`), and that
-  `ipcInvariantFull` does not entail — it admits `.blockedOnReply epId rt` for any
-  `rt` and relates `rt` to no donation — so `donationHolderIsReplyTarget` states
-  it; the *behaviour* needs no hypothesis, only the payoff
-  `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
+  a Tier 3 negative refuses the old order.  (2) **The holder is the thread the
+  caller's own reply frame's head context is bound to** (`cancelledCallerDonation?`;
+  it was the caller's *recorded reply target* until WS-HP HP5.1 re-keyed the
+  resolver), and that no invariant entails — `donationOwnerValid` relates a donation
+  to no reply object and `donationChainWellFormed` carries no binding clause — so
+  `donatedContextIsOwnerFrameHead` states it, having replaced
+  `donationHolderIsReplyTarget` at HP5.3; the *behaviour* needs no hypothesis, only
+  the payoff `cancelIpcBlocking_reply_no_donation_to_victim` does.  (3) **The SM5.H
   replenishment migration is at the cross-core layer** (`cancelIpcBlockingMigrated`),
   where this tree resolves home cores for every donation-carrying path, which is
   what keeps `cancelIpcBlocking` an objects-only write; that it *establishes*
-  `replenishQueueAffinityConsistent_smp` is registered RR8 debt.  (4) **The return
+  `replenishQueueAffinityConsistent_smp` is proved at WS-RR RR8.11 (`v0.35.86`,
+  `cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp` and its
+  cross-core lift), which also moved the migration's **destination** onto the bound
+  thread's post-teardown home — see the hand-off constraint below for why the
+  victim's pre-state home was wrong.  (4) **The return
   is invisible to every observer, not merely a high one**: `projectKernelObject`
   strips `schedContextBinding` and `boundThread`, so writing a possibly-low
   server's TCB on a high caller's cancellation leaks nothing
   (`returnDonationToCancelledCaller_preserves_projection`).  `cancelIpcBlocking_lifecycle_eq`
-  is now conditional on there being no donation, because `storeObject` maintains
-  bookkeeping the arm's other writes bypass.
+  was made conditional on there being no donation, because `storeObject` maintains
+  bookkeeping the arm's other writes bypassed — and it is **deleted** at WS-RR
+  RR8.5 (`v0.35.63`), when the teardown started writing through `storeObject`
+  too: the definitional lifecycle frame would then need `tcb.replyObject = none`,
+  which no reachable `.blockedOnReply` state satisfies, and nothing consumed it.
 - **...and the reclaim ends the holder's outstanding send or call first**
   (WS-OD OD1.4, v0.34.104).  The hand-back is
   `returnDonatedSchedContext (abortHolderPendingIpc st holder) holder scId tid`.
@@ -4182,8 +7594,9 @@ code may assume:
   unconditional.
 - **...and the unblocked holder is placed on a run queue, not merely unblocked**
   (WS-OD OD1.7, v0.34.108).  `cancelIpcBlockingOnCore`'s state is
-  `removeRunnableOnCore (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
-  …) …) victim home`.  Without the wake the abort left the holder `.ready`,
+  `descheduleAtPlacement (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
+  …) …) victim` (the removal at the victim's *home* until WS-RR RR8.6, see the
+  placement bullet below).  Without the wake the abort left the holder `.ready`,
   spliced off its endpoint and on **no** run queue, and every recovery path was
   closed — `resumeThreadOnCore` demands `threadState = .Inactive` and the abort
   leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued
@@ -4232,6 +7645,325 @@ code may assume:
   thread's own observability, and the holder's label is not determined by the
   victim's — discharged outright where no donation is resolved and registered as
   WS-OD debt otherwise.
+- **...and the live `.tcbSuspend` performs that wake — since `v0.35.90`, and not
+  before** (WS-RR RR8.12, second cut).  OD1.7's wake and WS-RR RR7.22/RR8.11's
+  replenishment migration were both added to `cancelIpcBlockingOnCore`, a
+  composite **no production path calls**: the live arm and the
+  `suspend_thread_cross_core` seam run `Lifecycle.Suspend.suspendThreadOnCore`,
+  whose G4 performs its own placement removal and whose G2 therefore reached for
+  the *bare* teardown.  So on the only path a syscall takes, neither fix was
+  present — measured on the live transition, an aborted donation holder ended
+  `.ready` and `.unbound` on **no** run queue on any core (the strand OD1.7
+  describes, reachable from an ordinary `.tcbSuspend` on a thread in one's own
+  call chain), and the reclaimed reservation's replenishment stayed on the
+  holder's home core while the `.bound` arm purged the victim's, leaving an entry
+  naming a deactivated SchedContext.  Five things new code must respect.  (1)
+  **The shared step is the composite's PREFIX, and it has a name**:
+  `cancelIpcBlockingReclaimed` is the teardown with its migration and its holder
+  wake, `cancelIpcBlockingOnCore` is that plus the victim's deschedule
+  (`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`, `rfl`), and G2 is the
+  prefix — so every object-level, bundle and information-flow result about the
+  composite's teardown half reaches the live path with no second statement.  (2)
+  **A step added to the cancellation *teardown* goes in the prefix**; only a step
+  about the victim's own placement belongs to the composite.  A composite whose
+  prefix a second consumer needs is a shared answer that consumer cannot reach,
+  which is how two cuts each believed they had closed this.  (3) **The state pair
+  is `(st, cancelIpcBlockingMigrated … st)`** — `wakeAbortedDonationHolder` reads
+  the pre-state to resolve the holder and its home and the post-teardown state to
+  check the abort unblocked it, and handing it a state further down the pipeline
+  is a different predicate.  (4) **Both declarations grew by the wake core**:
+  `suspendThreadOnCoreSchedLockSet` takes a `wakeCore : Option CoreId` (the
+  run-queue segment is the placed and executing cores *plus* it) and
+  `suspendThreadOnCoreWriteSet`'s first entry is no longer `[]` — a write set that
+  omits a written core is as false as a footprint that does, and both were silent
+  because the pipeline performed no wake.  `maxLockSetSize` does not move: a
+  `SchedLockSet` carries no cardinality bound.  (5) **The guarantee is proved of
+  the whole pipeline, not only measured** (`v0.35.92`, RR8.12's fourth cut):
+  `suspendThreadOnCore_holder_still_placed` lifts OD1.7's payoff through the six
+  stages after G2 — the chain reversion, the donation arm, the placement
+  deschedule, the pending-state clear, the `.Inactive` store and the G7 scheduling
+  point — and `tests/SmpCancellationSuite.lean` §3.26 exhibits its premises and its
+  conclusion on a state the live operations reach, computing the retired G2 beside
+  the live one, because a hypothesis nothing exhibits is indistinguishable from one
+  that cannot hold.  Two things new code must respect.  **`holder ≠ victim` is
+  derived, not assumed**: `cancelAbortedHolderWake?_ne_victim` reads it off the
+  wake's own two guards, which ask the same TCB's `ipcState` for incompatible
+  constructors — it had been a sentence in the G4-precapture comment, and a
+  sentence is not a licence.  And **resolvability travels with placement**: a
+  scheduling point strands a thread whose TCB does not resolve
+  (`preemptCurrentOnCore` re-enqueues the outgoing thread only when it does), so
+  every stage carries `(getTcb? holder).isSome` forward and
+  `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` **states** that side
+  condition rather than hiding it.  The chain walk's run-queue and `current` frames
+  moved to `Scheduler/PriorityInheritance/Propagate.lean` for the reason the second
+  cut named a prefix — `IPC/Invariant/FaultProgress.lean`, where they sat, imports
+  `IPC.CrossCore.Fault`, which imports `Cancellation` — and its three
+  `_not_mem_of_not_mem` forms were retired with them, the biconditional being the
+  answer.  **And the single-core reference path reads it too, since `v0.35.93`**
+  (RR8.12's fifth cut): `cancelIpcBlockingReclaimed` and the wake family were
+  declared in `IPC/CrossCore/Cancellation.lean`, which *imports*
+  `Lifecycle/Suspend.lean`, so `Lifecycle.Suspend.suspendThread`'s G2 could not see
+  them and the same strand was reachable on it.  They are declared beside the
+  teardown they complete now — *when a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer* — keeping the `SeLe4n.Kernel`
+  namespace they were declared in, so the move renames nothing.
+- **...and its replenish segment follows the donation's own guard, not "is the send
+  queue non-empty"** (PR #897 Codex review, `v0.35.112`).  Cut 8a-ii's own docstring
+  rejected over-declaration in as many words — *a segment naming two cores would be
+  a footprint wider than its operation, and lock contention is an observable channel
+  (SM8.D's CC-5)* — and applied that to the **block** path only.  The segment keyed
+  on `receiveRendezvousSender?` while WS-OD OD3.6's donation fires only on a dequeued
+  **`Call`**, so **every ordinary `seL4_Send` rendezvous declared two
+  replenish-queue write locks for a migration that provably does not happen**: the
+  defect the paragraph above it rejects, on the more common path, which is this
+  file's own *a fix applied at one site and not its siblings*.  Seven things new code
+  must respect.
+
+  (1) **The pre-state guard and the post-state guard are two spellings of one
+  question and both must exist.**  `rendezvousSenderIsCall` is
+  `rendezvousDequeuedCall`'s pre-state sibling, clause for clause, because a dequeued
+  `Call` sender is `.blockedOnCall` *before* the receive leg and `.blockedOnReply`
+  *after* it.  Asking for the post-state constructor at the pre-state answers `false`
+  for exactly the sender that *will* donate, so a footprint derived from it would
+  **omit** a lock the transition writes — and a footprint that omits a written lock
+  is false, where one wider than its operation is merely expensive.  That asymmetry
+  is the whole reason the narrowing is safe in one direction and not the other.
+
+  (2) **It reads the leg's OWN branch condition.**
+  `endpointReceiveDualOnCore` branches on the TCB `endpointQueuePopHead` *returns*,
+  which no consumer could name until
+  `endpointQueuePopHead_popped_tcb_eq_lookup` — the twin of WS-RR RR2.6's
+  `endpointQueuePopHead_popped_eq_head` — said that record **is**
+  `lookupTcb st head`.  Without it a pre-state resolver is a *second* reading of the
+  same question, which is the shape this file spends its length retiring.
+
+  (3) **The licence is unconditional in the result, and that is why it names
+  `.blockedOnSend` rather than "not a `Call`".**  On the refusal branches the leg
+  returns the *pre*-state, where a sender already `.blockedOnReply` would satisfy the
+  weaker hypothesis and refute the conclusion; `ipcStateQueueMembershipConsistent` is
+  what says `.blockedOnSend` is the reachable non-`Call` shape on a send queue.  The
+  proof needs **no** distinctness between sender and receiver, because the last write
+  at the sender's key is `.ready` either way.
+
+  (4) **The rename is the claim.**  `_of_rendezvous` asserted the
+  segment/migration equality for *every* rendezvous, which on a plain `Send` is now
+  false (the segment is `[]`), so it is `_of_call_rendezvous` with the hypothesis the
+  name promises, and a Tier 3 negative refuses the retired spelling.  Its four
+  citations were swept, and the two positive anchors **failed loudly** at the rename —
+  which is *sweep what was pinning the thing you deleted* working in the direction it
+  is meant to.
+
+  (5) **The residual is a LAYERING defect, registered rather than glossed — and
+  the first statement of it was FALSE, which is the part worth keeping.**  A
+  dequeued `Call` whose donation prerequisites fail migrates nothing either, and the
+  transition's guard for that is `callDonationSchedContext?`; transporting its
+  pre-state answer across the receive leg is the backward `sameSchedContextBindings`
+  frame.  This item first said that frame's four per-primitive members, which sit in
+  `IPC/Invariant/Structural/DualQueueMembership.lean`, are unreachable from the
+  module that declares the footprint, "so the transport cannot be stated there at
+  all".  They are reachable: `EndpointReply.lean` → `EndpointCall` →
+  `Scheduler.Operations.PerCoreWake` → `PerCoreSwitchToThread` →
+  `PerCoreChooseThread` → `Scheduler.Invariant.PerCore` → `CrossSubsystem` →
+  `Capability.Invariant.Defs` → `IPC.Invariant` → `IPC.Invariant.Structural`, every
+  module production, with the first edge already present at `v0.35.111`.  **A
+  module's layer is a fact about the import closure, and a nine-edge path is not
+  visible in the two names at its ends** — RR8.4's *a plan row's premise is a
+  claim* a second time, and what catches it is this file's own *resolve the text
+  into the structure it stands for* applied to the module graph: compute the
+  closure, never infer it from paths — and the decisive check is cheaper still:
+  `#check` the name from a module that imports the asker and let the elaborator
+  answer, which is what settled this one.  What is actually left is two smaller
+  things.
+  **No** `sameSchedContextBindings` frame exists for `endpointReceiveDual` or
+  `endpointReceiveDualWithCaps` at all — the two theorems that need one
+  (`endpointReceiveDual_preserves_donationBudgetTransfer`,
+  `endpointReceiveDual_preserves_donationOwnerUnique`) each inline the whole
+  rendezvous composition, so it must be **extracted**, which is a de-duplication and
+  the evidence the frame was missing rather than merely unnamed.  And
+  `IPC/Operations/Donation.lean`'s closure does not contain
+  `IPC/Invariant/Defs.lean` nor the reverse, so a bridge from that frame to
+  `callDonationSchedContext?` has no home beside the resolver — *that* is *a shared
+  answer must be reachable from every asker* (`v0.35.59`), with the same remedy,
+  move the owner down, keeping the `SeLe4n.Kernel` namespace so that nothing is
+  renamed.  It is table C's row with Cut 9 as its deadline.  So the further
+  narrowing is **available at a placement cost** rather than blocked, and it is
+  deferred because a relocation and a 130-line extraction are not a footprint
+  narrowing.
+
+  (6) **The claim is made about the step the ARM runs, not only about the donation.**
+  `API.lean`'s `.receive` arm calls `applyReceiveRendezvousHandoff`, which is the
+  donation **and** WS-OD OD3.14's priority-inheritance walk under one guard, so
+  `applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend` sits beside the
+  donation-level fact — *a proxy is not the fact*, and a consumer reaching for the
+  component would be reasoning about a sub-step of the transition it brackets.  The
+  walk writes run queues rather than replenish queues (declared dynamically through
+  `pipChainSchedFootprint`), so the replenish segment's own licence is still the
+  donation half; both exist so neither can be read as the other.
+
+  (7) **The witness computes the retired reading beside the live one.**
+  `tests/SmpIpcSuite.lean` §3.26 drives both shapes from one base state through the
+  live operations and shows the two readings **agreeing** on the `Call` shape (the
+  control) and **disagreeing** on the `Send` shape, where the retired one declares
+  two cores and the live one none.  It then asserts the donation step moves no
+  replenishment, on the replenish *entries* rather than on state equality, because
+  that is the proposition the footprint is about — `SystemState` has no
+  `DecidableEq`, and reaching for one would have been a claim about the wrong thing.
+- **A definition that transforms kernel state is wired or recorded** (WS-RR
+  RR8.12 third cut, `v0.35.91`).
+  `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every
+  project `def` whose **result type** mentions `SystemState` — 528 of them —
+  partitions that domain by whether one of the 7 committing `@[export]`s can
+  reach it (288 do), and reconciles the other 240 against a pin in **both**
+  directions: a new non-executed transformer fails, and so does an entry that
+  has become live.  New code adding a state transformer that no seam runs must
+  either wire it or record it there.
+
+  Four things it decides and one it does not.  (1) **The commit predicate and
+  the auxiliary filter are imported, not restated** —
+  `ExportCommitDisciplineCensus.commitsState` and
+  `ReplyStackWriteCensus.isAuxiliary` — so the three censuses cannot disagree
+  about what installs kernel state or about what the compiler generated; the
+  three generated shapes the second does not reach are named with the
+  measurement that found them.  (2) **The domain over-approximates on purpose**:
+  an `Option SystemState` resolver qualifies, which is the safe direction, since
+  a member wrongly included must be explained and a member wrongly excluded is
+  never looked at.  (3) **The 240 carry no per-entry prose**, deliberately —
+  that many shallow reasons read as justification while asserting nothing — so
+  the obligation falls on whoever adds the next entry.  (4) **Two known residues are
+  named in the pin's docstring rather than left to read as unexamined**: the
+  revocation family, which has no syscall arm at all, and four transformers
+  consumed by nothing; both carry register rows, because each needs the
+  wire-or-retire judgement `v0.35.78` made for the capability-reference table.
+
+  **What it does not decide, and this corrects the row that asked for it**:
+  reachability sees a *new* non-executed transition and **cannot** see a step
+  added inside an already-registered one — which is the defect that motivated
+  it, since `cancelIpcBlockingOnCore` already existed and was already
+  unreachable.  The register row claiming the census "would have failed on the
+  day" that step was added was wrong and is corrected.  What sees it is
+  `standsBesideLive`: a row names the non-executed surface, the live definition
+  that re-composes it, and a **pin theorem** that RELATES them, so a step added to
+  one side alone fails the build — measured by inserting one into
+  `cancelIpcBlockingOnCore` and watching
+  `cancelIpcBlockingOnCore_eq_reclaimed_deschedule` stop elaborating.  *Relates*,
+  not *mentions* (PR #897 review, `v0.35.96`): the check asked whether the
+  statement named both programs, which a conjunction of reflexive equations
+  satisfies while relating nothing — this file's oldest rule failing inside the
+  gate written to enforce a different one.  `pinRelatesPrograms` requires an `Eq`
+  or `Iff` conclusion with **each program on exactly one side, on opposite
+  sides**, so one side is built from the surface without naming the counterpart
+  and the other from the counterpart without naming the surface; three witness
+  theorems carry the shapes the superseded check accepted and the census asserts
+  all three are refused, because a check that cannot fire on this tree is
+  indistinguishable from one that is wrong.  Two rows are pinned today; a
+  registered surface with no pin makes **no** agreement claim, and extending the
+  pinned set is what closes the class rather than the instance.
+- **An endpoint queue's membership lives in its members' TCBs, and those members'
+  labels differ** (WS-RR RR8.8, `v0.35.83`).  Three facts new code must respect,
+  and the first is the one that decides the other two.  (1) **The admission gate
+  is an order, not an equality**: the live send / call gate is
+  `endpointFlowGate ctx ep (threadLabelOf sender) (endpointLabelOf ep)` and the
+  receive gate its mirror, so a *lower*-labelled and a *higher*-labelled sender
+  are both admitted onto one higher-labelled endpoint —
+  `publicLabel → kernelTrusted` being the flow
+  `securityFlowsTo_prevents_label_escalation` documents as intended.
+  `endpointAdmissionAdmitsMixedObservability`
+  (`InformationFlow/Projection.lean`) is that admission as a `decide`-checked
+  theorem, with an observer that sees exactly one of the two.  So **an
+  endpoint/notification queue label-uniformity invariant is unestablishable**, not
+  merely absent; it was the registered closure for `abortHolderProjectionStable`,
+  `abortHolderWakeHigh` and the three queue arms' `hTeardownProj`, and it is
+  retracted.  A proof that reaches for it is asking for a premise the gate
+  refutes.  (2) **What the gate gives is the other direction, and with one
+  added conjunct it is enough for everything but the neighbours.**  Every
+  waiter's label flows to its endpoint's **flow** label
+  (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis) — but
+  `objectObservable` decides visibility from `objectLabelOf`, and
+  `LabelingContext` carried `endpointLabelOf` and `objectLabelOf` as
+  *independent* fields with nothing relating them, so "the endpoint object is
+  non-observable whenever a waiter is" was **not derivable** and `v0.35.83`
+  asserted it anyway.  `LabelingContextValid.endpointObjectCoherence`
+  (`v0.35.84`) is the missing conjunct — an endpoint's flow label flows to its
+  own object's label, so the object is at least as sensitive as the flows the
+  endpoint admits — discharged structurally for every constructed context from
+  `DeploymentLabeling.hEndpointObjectCoherence`, which the one base constructor
+  meets by reflexivity.  A new `DeploymentLabeling` must supply it; a new
+  labelling *question* about an endpoint must say which of the two fields it is
+  about.  With it, `endpointObjectHigh_of_admittedThreadHigh` covers the
+  endpoint's own queue boundaries and `donationHolderHigh_of_donorHigh` covers
+  the aborted holder's TCB, through `donationOwnerFlowsToHolder` — the state
+  form of `label victim ⊑ label endpoint ⊑ label holder`, established where a
+  donation is minted because the state records no trace of the two gates that
+  licensed it.  The **queue neighbours** are covered by nothing: their labels are
+  constrained only against the endpoint's.  So `abortHolderWakeHigh` is
+  **reduced to that fact** (`abortHolderWakeHigh_of_donationOwnerFlowsToHolder`,
+  `v0.35.84`) — it is a single `threadObservable` of the holder and needed no
+  queue reasoning at all — while `abortHolderProjectionStable` and
+  `hTeardownProj` reduce to the neighbour class and no further
+  (`abortHolderSpliceHigh_of_victimHigh`, over the shared
+  `endpointSpliceHigh`).  **Read that as a reduction, not a closure**: `v0.35.84`
+  called it *discharged*, which is what it would be if the fact it reduces to were
+  a fact about reachable states, and for two cuts it was a `Prop` nothing
+  established — see item (4).  (3) **The residue is
+  representational and the remedy is forced**: `queuePrev` / `queuePPrev` /
+  `queueNext` survive `projectKernelObject`, so an observable thread's projection
+  already names a non-observable one's identity with no operation having run —
+  the same class as the `replyObject` erasure SM6.D landed — and a splice then
+  rewrites an observable field.  *Stripping* the links is **unsound** rather than
+  coarse: the projection would stop determining the next dequeue, so two
+  low-equivalent states would step to states differing in the endpoint's own
+  visible `head` and the step-level NI theorems would become false.  A queue's
+  content must live in an object whose label **dominates** every member's, which
+  the endpoint is and a member's own TCB is not — so the closure is non-intrusive
+  endpoint queues, registered in `docs/REGISTERED_DEBT.md` table C with its
+  measurement.  Until it lands, **v1.0.0 must not claim that a low observer
+  cannot learn a high thread's identity from endpoint queue state.**  (4) **A
+  predicate only consumed as a hypothesis is an assumption wearing a definition's
+  name** (WS-RR RR8.16, `v0.35.126`, PR #897 review).  `v0.35.83` and `v0.35.84`
+  introduced `blockedSenderFlowsToEndpoint` and `donationOwnerFlowsToHolder`, argued
+  from the *gates* in their docstrings — which is the right argument — and then
+  consumed both as hypotheses and nothing else: no theorem established either where
+  the fact is created, none transported it across a step, and no state inhabited
+  either.  So the reduction above was not composable for a live state, and the word
+  *discharged* was reading a reduction as a closure.  Four things new code must
+  respect.  **Only ONE of the two needs a story**: `donationFlowFromBlockedDonor`
+  derives `donationOwnerFlowsToHolder`'s conclusion from its sibling plus the
+  *receiving* gate — `label owner ⊑ label ep ⊑ label holder` — because a
+  `.donated scId owner` binding is minted only through a `Call` rendezvous in which
+  the donor is `.blockedOnCall` on that endpoint.  **Transport is weaker than a
+  frame, deliberately**: `blockedSenderShrinks` (with `.refl`, `.trans` and
+  `blockedSenderShrinks_of_ipcStateFrame`) says a step introduces no blocked sender
+  *on the same endpoint* it did not already have — a send rendezvous writes the
+  receiver `.ready` and a wake writes a runnable state, so neither frames every
+  `ipcState` while both shrink the set, and a step moving a thread from
+  `.blockedOnSend ep₁` to `.blockedOnCall ep₂` would satisfy a set-shaped relation
+  and break the predicate.  The donation fact's counterpart is
+  `donationOwnerFlowsToHolder_of_sameSchedContextBindings`, over the frame family
+  the tree already has for every transition that mints no donation.
+  **Establishment is stated at the one WRITE, not per transition**: every
+  production path that blocks a sender or a caller goes through
+  `storeTcbIpcStateAndMessage` with the endpoint as an explicit argument, so
+  `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint` takes the gate
+  as an argument (a transition-time check the store records no trace of) and a
+  transition inherits the fact by exhibiting its own decomposition.  Landing it
+  moved `storeTcbIpcStateAndMessage_tcb_backward_fields` out of
+  `IPC/CrossCore/EndpointReplyInvariant.lean` and beside the primitive it frames,
+  which is `v0.35.59`'s rule — *when a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer* — and put it next to the two
+  siblings RR3.5 had already relocated for the same reason.  And **the boot state
+  inhabits both, for every labelling context**
+  (`bootFromPlatformCheckedWithIdleThreads_flowGateFacts`): `bootSafeTcbCheck`
+  refuses a blocked or bound config TCB and the idle fold installs neither, so both
+  antecedents are *empty* rather than their conclusions cheap.  That measurement
+  generalised `bootFromPlatformChecked_ok_tcb_inactive` — which concluded two of the
+  ten fields its own object-reachability argument establishes, so the other eight
+  needed a second copy of that argument — into
+  `bootFromPlatformChecked_ok_tcb_bootSafeFields`, with the old name its two-field
+  corollary.  What is **still owed** is the per-transition lift from that store to
+  the two checked dispatches that perform it (`endpointSendCrossCoreDispatchChecked`,
+  `endpointCallCrossCoreDispatchChecked`), which needs a per-TCB dichotomy for
+  `endpointSendDualWithCapsOnCore` / `endpointCallDualWithCapsOnCore` that the tree
+  does not have; it is a table C row, not a sentence here.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder
@@ -4259,12 +7991,389 @@ code may assume:
   `tcb.ipcState` — including, since OD3.5, the victim's own splice neighbours,
   which were the one member of the family that did not.  The widest arm is the
   reply arm, at **eight** after OD3.5 and **ten** since OD3.7
-  (`lockSet_cancelIpcBlockingOnCore_size_le_ten`); the endpoint arm is four and
+  (`lockSet_cancelIpcBlockingOnCore_size_le_ten` then; the live bound is
+  `lockSet_cancelIpcBlockingOnCore_size_le_thirteen`); the endpoint arm is four and
   the notification arm two.  Before the OD3.5 split the reply arm declared two
   TCB write locks for a splice it does not perform, which also put it at ten —
   the same number for the opposite reason, so read the theorem rather than the
   figure.  New code adding a cancellation member states the arm it belongs to,
   not the sum.
+- **The cancellation teardown IS the reply path's consume** (WS-RR RR8.5,
+  v0.35.63).  The tree carried two spellings of "tear down the caller↔Reply
+  link": the monadic `SystemState.consumeCallerReply` on the reply paths, and a
+  pure pair of raw-insert helpers on the cancellation path, written because
+  `cancelIpcBlocking` is a pure composition and could not run a `Kernel` step.
+  They had parted on write order and on whether the writes went through
+  `storeObject`'s bookkeeping, and every fact about one was proved a second time
+  about the other.  Five things new code must respect.  (1) **The survivor is the
+  monadic step, and its pure form is a projection, not a second body**:
+  `SystemState.consumeCallerReplyLink st caller rid` is the one state
+  `consumeCallerReply caller rid st` leaves — defined by matching on the step
+  with the `.error` arm *eliminated* by `consumeCallerReply_isOk`, never
+  defaulted to `st` — and `consumeCallerReply_eq_link` is the bridge.  A pure
+  transition that needs the consume calls the projection; one that re-spells the
+  two writes is the defect this closed, and Tier 3 refuses the retired names
+  (`clearTcbReplyObject`, `clearReplyObjectCaller`) tree-wide.  (2) **Every
+  cancellation-side fact is a corollary through the bridge.**
+  `consumeReplyLink st tid tcb` is the projection under the victim's own
+  `replyObject`, and `consumeReplyLink_preserves_objects_invExt`, `_tcb_lookup`,
+  `_other_tcb_eq`, `_preserves_ipcInvariant`, `_sameSchedContextBindings`,
+  `_passiveServerIdleFrame`, `_preserves_donationChainWellFormed` and
+  `_preserves_projection_high` all keep their statements and are one application
+  of the `consumeCallerReply_*` twin each; a new fact about the teardown is proved
+  of the monadic step and read across, never of `consumeReplyLink` directly.  The
+  two sharp pointwise readings that made this possible are new —
+  `consumeCallerReply_tcb_caller` (the caller's key holds the pre-state TCB with
+  `replyObject` cleared and nothing else moved) and `consumeCallerReply_tcb_other`
+  (every other TCB-holding key is untouched), stated with no `rid`-distinctness
+  hypothesis because the distinctness is derived from the store's contents.  (3)
+  **The teardown writes through `storeObject` now, so a definitional lifecycle
+  frame across the reply arm is false**: `cancelIpcBlocking_lifecycle_eq` and
+  `consumeReplyLink_lifecycle_eq` are deleted rather than given a third
+  hypothesis, and a caller needing the metadata across a cancellation needs a
+  semantic frame, owed once, about `storeObject`.  (4) **The projection theorem
+  reads index completeness**, because the reply path's
+  `consumeCallerReply_preserves_projection` needs the (already-present) Reply's
+  membership — so `consumeReplyLink_preserves_projection_high` takes
+  `objectIndexSetComplete` and the reply arm's composite carries it from the
+  return through the splice and the restore
+  (`restoreToReadyStaging_preserves_objectIndexSetComplete`,
+  `spliceThreadReplyFrameOut_preserves_objectIndexSetComplete`).  (5) **The
+  census knows both**: `consumeCallerReplyLink` is a `chainWritePrimitives`
+  entry — a pure transition reaching for it bare is WS-RM's defect in the other
+  calling convention — and `consumeReplyLink` is registered as a site stating its
+  chain result.  What the collapse *measured* and did not fix is the drift it is
+  one instance of: sixty executable definitions still wrote the object table
+  raw beside `storeObject`, registered with the measurement in
+  [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C rather than
+  absorbed into an M-sized row — and migrated from `v0.35.64` on, see the next
+  bullet.
+- **A kernel object is rewritten in place through `SystemState.rewriteObject`,
+  and stored through `storeObject`** (`v0.35.64`, the raw-write migration's
+  first cut).  The register's remedy for the raw writers — a pure `storeObject`
+  projection — was the wrong primitive for the sites that matter: `storeObject`
+  filters every capability reference and re-inserts into two more tables on
+  every write, and an `RHTable` re-insert of an existing key is not structurally
+  the identity without a no-resize hypothesis, so a scheduler tick spelled
+  through it would pay on every quantum and every definitional field frame would
+  become a conditional theorem.  `rewriteObject st id new h` takes a proof that
+  the key holds an object of the **same, bookkeeping-neutral kind**
+  (`rewriteAdmissible`, over `KernelObjectType.rewriteNeutral` — every kind but
+  CNode and VSpace root, whose contents *are* bookkeeping, enumerated
+  constructor by constructor) and its body is the bare insert; the proof is
+  erased, so the executable is one table insert.  Five things new code must
+  respect.  (1) **A lookup-then-write site is `updateTcb` /
+  `updateSchedContext`** — a plain match on the **witnessed lookup**
+  `getTcbWitnessed?` / `getSchedContextWitnessed?` (`v0.35.65`: `getTcb?`
+  carrying its own equation, `Option { t // st.getTcb? tid = some t }`, matched
+  on the store and erased to the value; `getEndpointWitnessed?` /
+  `getNotificationWitnessed?` are the endpoint and notification twins since
+  `v0.35.74`) whose witness is the rewrite's proof —
+  or that witnessed lookup around `rewriteObject` with `rewriteAdmissible_tcb`
+  (one such lemma per neutral kind) when the looked-up value is used for more
+  than the write; never a raw `objects.insert`, and never a dependent
+  `match h : st.getTcb? tid with`: a dependent matcher's discriminant occurs in
+  its own motive, so no consumer proof can rewrite it, and `v0.35.64`'s
+  `updateTcb` was spelled that way for exactly one cut.  A Tier 3 negative holds
+  the migrated files to it.  (2) **A key that may hold nothing, or a CNode or VSpace
+  root, is a store**: `storeObject` in a `Kernel` step, `withObjectStored` in a
+  pure transition — the RR8.5 projection with the error arm eliminated by
+  `storeObject_isOk`, bridged by `storeObject_eq_withObjectStored`.  (3) **The
+  bookkeeping is unchanged by theorem, once**:
+  `rewriteObject_preserves_objectIndexSetComplete`,
+  `rewriteObject_preserves_objectIndexLive`,
+  `rewriteObject_preserves_objectIndexBounded`,
+  `rewriteObject_preserves_objectIndexSetSync`,
+  `rewriteObject_preserves_objectTypeMetadataConsistent` in `Model/State.lean`,
+  `rewriteObject_preserves_asidTableConsistent` in
+  `Architecture/VSpaceInvariant.lean`, `rewriteObject_preservesFieldsOutside`
+  against the one-field `rewriteObject_modifiedFields` in
+  `Kernel/CrossSubsystem.lean`, and `rewriteObject_eq_objects_update` for any
+  field with no named frame — each instantiated on `updateTcb` and
+  `updateSchedContext`.  A site proof reaches for these rather than re-deriving
+  the fact from `RHTable.insert_preserves_invExt`.  (4) **The proof recipe is
+  two equations**: `cases hT : st.getTcb? tid`, then `updateTcb_eq_of_some hT`
+  or `updateTcb_eq_self_of_none hT`, and the old proof continues verbatim;
+  `updateTcb_getTcb?_self` is the read-back.  A site that matches on the
+  witnessed lookup itself reduces under `simp only [site,
+  getTcbWitnessed?_eq_some hT]` (or `_eq_none`), and after a `split` its arm
+  carries **three** inaccessibles — the value, the witness, the match equation —
+  so it is `rename_i tcb hTcb _`, never the two-name `next tcb _` of the old arm,
+  which binds the witness to the value's name and fails one line later at the
+  record update; `rewriteObject_objects` exposes the insert to a proof that
+  reads the table directly.  **The case split precedes the unfold**
+  (`v0.35.66`): `cases hT : st.getTcb? tid` over a goal that already holds the
+  unfolded witnessed match fails to generalise, because the lookup's *type*
+  mentions `st.getTcb? tid` — so a proof cases on the typed lookup first, then
+  unfolds the site and rewrites with `getTcbWitnessed?_eq_some hT` /
+  `_eq_none hT`; a hypothesis `hStep : site st = .ok …` is rewritten the same
+  way and then `dsimp only [SystemState.rewriteObject] at hStep` restores the
+  literal the old proof read.  (5) **A twin migrates with its
+  original.**  `cancelBoundDonationOnCore` is held to `cancelBoundDonation` by a
+  `rfl` bridge, so it moved in the same cut; the private copy of
+  `restoreToReadyOnCore`'s prefix that `PriorityInheritance/PerCore.lean` pinned
+  by `rfl` was deleted instead, and the operation is now *defined* through the
+  public `restoreToReadyMidState` — a pin between two spellings of one prefix is
+  the signal to make one of them the definition.  The R5.D shim
+  `clearTcbIpcFields` and its theorems went in the same cut, having no consumer.
+  The same signal closed the single-thread PIP boost update at `v0.35.66`:
+  `updatePipBoost` and `updatePipBoostOnCore` were two copies of one body
+  differing in the literal core, held together by an `rfl`, so the single-core
+  name is now *defined* as the per-core update at `bootCoreId` and
+  `updatePipBoost_eq_updatePipBoostOnCore_bootCore` stays as the equation
+  consumers rewrite with — definitional, and still the fact that the two cannot
+  diverge.  What is still raw is registered with its measurement (65 sites in 52
+  executable declarations across 22 files after `v0.35.64`; 60 in 47 across 22
+  after `v0.35.65` moved the scheduler's context-save family —
+  `saveOutgoingContext`, `saveOutgoingContextChecked`,
+  `saveOutgoingContextOnCore`, `preemptCurrentOnCore` — and
+  `setThreadCpuAffinity`; **53 in 41 across 20** after `v0.35.66` moved
+  `enqueueRunnableOnCore`, `updatePipBoostOnCore`, `timerTick`,
+  `refillSchedContext` and `handleYieldWithBudget`; **43 in 37 across 17** after
+  `v0.35.67` moved `timerTickBudget`, `timerTickBudgetOnCore`,
+  `enqueueIdleThreadOnCore` and the trace model's `stepPost`; unchanged at
+  `v0.35.68`, which migrated no site but *derived* the boot's idle install from
+  `enqueueIdleThreadOnCore`, so the boot performs no raw write of its own
+  through it; **39 in 33 across 15** after `v0.35.69` made the four
+  register-context writers — `writeReturnFrameToTcb`, `writeRestartFrameToTcb`,
+  `writeFfiRegistersToTcb`, `writeFaultRegistersToTcb` — the `updateTcb` each
+  already had the shape of; **32 in 26 across 13** after `v0.35.70` moved the
+  fault path's seven — `recordPendingFault`, `applyFaultRestart`, the four
+  fail-closed dispositions over their deschedule, and `installFaultHandler`
+  taking the store's witness for the TCB it is handed; **19 in 19 across 10**
+  after `v0.35.71` moved the SchedContext operations and the priority
+  management — `updatePrioritySource`, `setMCPriorityOp`,
+  `setMCPriorityOnCore`, `schedContextConfigureBoundPropagate`,
+  `schedContextBind`, `schedContextUnbind`, `schedContextYieldTo`; **16 in 16
+  across 8** after `v0.35.72` moved the cross-core suspend's G6, the revoke
+  sweep's step and the destroy path's origin scrub — `suspendThreadOnCore`,
+  `revokePendingTransfersStep`, `clearDonationOriginReferences`; **9 in 9
+  across 6** after `v0.35.73` made the seven inhabitation witnesses the
+  store on each fresh key and the rewrite on the bind's two in-place writes
+  — `witnessSt1`–`witnessSt4`, `chainWitnessSt1`, `chainWitnessSt2`,
+  `donationChainWitness`; **5 in 5 across 4** after `v0.35.74` moved the two
+  queue sweeps — `removeFromAllEndpointQueues`,
+  `removeFromAllNotificationWaitLists` — onto the witnessed lookup around
+  `rewriteObject`, and those five are the primitives that should be raw:
+  `storeObject`, `rewriteObject`, `Builder.createObject`, `updateObjectAt`
+  and the frozen store, so the executable population outside them is
+  **zero**; since `v0.35.75` the trace harness's 61 fixture inserts are
+  stores too, so over the whole `SeLe4n/` tree the only raw writes in the
+  spellings that census recognises are those five and the reply-stack
+  census's planted witness — and since `v0.35.76` that is **enforced**:
+  `STORE_WRITE_CODE` is a Tier 0 `ZERO_METRICS` entry, those six bodies are
+  `WRITE_PRIMITIVE_BODIES`, reconciled in both directions, and a raw write
+  reappearing in an executable position fails on the day it is written.
+  **Six executable writes and four reads are outside those spellings** and
+  were outside this ledger until `v0.35.117` measured them: a declaration
+  that holds the object table through a binding or a parameter is invisible
+  to a pattern keyed on the receiver text `.objects`, and three of them do
+  — see *both zeros are over the DIRECT spellings* in the key-conventions
+  section above for the population, the floor that now reports it, and the
+  named architecture for driving it to zero).  At `v0.35.77` (D2)
+  `storeObject`'s capability-reference maintenance became an erase over the
+  displaced CNode's populated slots rather than a filter over the whole
+  table, and the register row was **closed**; what landing it found — the
+  table was read by no executable code, and `capabilityRefMetadataConsistent`,
+  the invariant named for it, read the object store instead, so it was
+  definitionally true and its `storeObject` preservation proof consumed no
+  hypothesis — is closed at `v0.35.78` by **retiring the table** (the
+  *capability-reference table* bullet below).  (6) **A transition that rewrites a TCB it is
+  handed takes the store's witness for it.**  `timerTickBudget` /
+  `timerTickBudgetOnCore` (`v0.35.67`) take `(hTcb : st.getTcb? tid = some tcb)`
+  beside the TCB — the proof `rewriteAdmissible_tcb` consumes, erased at runtime —
+  so a caller cannot charge a TCB the store does not hold (both suites did, with a
+  TCB fabricated at an unstored id, and the tick then wrote it into the store);
+  every caller resolves the thread through `getTcbWitnessed?` and hands the
+  witness on.  A consumer statement carries it as an implicit
+  `{hW : st.getTcb? tid = some tcb}` beside its `hStep` — positional applications
+  are unchanged, and a pre-state hypothesis of the same type stays revertible,
+  the two being interchangeable by proof irrelevance — an arrow-chain hypothesis
+  names its binder (`∀ (hTcb : …), timerTickBudgetOnCore … tcb hTcb = .ok … → …`),
+  and a `split` on the witnessed SchedContext match yields three inaccessibles,
+  `rename_i sc hSc _`, in the bullet form as well as the bare one.  (7) **A
+  dependent match lives in a definition whose state is a parameter, never inline
+  under a `let`.**  Lean elaborates a `let` whose body's type does not depend on
+  it as a `have`, and a dependent match — one whose alternative's type names the
+  scrutinised state, which every witnessed lookup is — under a `have` binder, or
+  over a stuck projection, is opaque to definitional unification: two spellings
+  of one match tree unify only when the state is a variable.  Measured
+  (`v0.35.67`, eleven isolated experiments): with the witnessed lookup inline,
+  `timerTickOnCore_eq_prepared`'s `rfl` failed on every restatement but a
+  verbatim copy of the body, a phase definition over the prepared triple failed
+  the same way, and a `split`-based proof splits the two sides independently.
+  `timerTickChargeCurrentOnCore` is the shape — the dependent match over a
+  parameter, the tick's own match tree non-dependent, the equation `rfl` — a
+  consumer reads through `timerTickChargeCurrentOnCore_eq` / `_none` / `_ok`,
+  and Tier 3 refuses any lookup coming back into the tick's body.  (8) **A
+  transition that rewrites two objects performs the first under the witness
+  its own lookup carries and the second through the typed read-modify-write
+  over the rewritten state** (`v0.35.71`).  A witness taken at the pre-state
+  does not carry across a rewrite without `invExt`, which executable code has
+  no proof of — so `schedContextBind` writes the SchedContext through
+  `rewriteObject` under `hSc` and then the TCB through `st1.updateTcb`, and
+  the lambda's record is the stored one with its fields moved, which is what
+  the raw insert wrote from the pre-state lookup on every state the two
+  lookups admit.  The proofs reduce the pair once, from the pre-state's
+  witness and `invExt` (`updateTcb_after_rewriteObject_schedContext` and its
+  three siblings), on the lemma library that makes the reduction a fact
+  rather than a case split: a SchedContext rewrite is invisible to every TCB
+  lookup at *every* key (`rewriteObject_schedContext_getTcb?` — at the key
+  itself the admissibility witness says it held a SchedContext, so no TCB
+  lookup read it), the twin, the typed read-modify-writes inheriting both,
+  and the keys of two typed witnesses distinct with no invariant consulted
+  (`getTcb?_getSchedContext?_keys_distinct`).  Where the second write sits on
+  a state that is a scheduler-only update of the pre-state, the stage is
+  spelled `{ st with scheduler := … }` so its object table is the pre-state's
+  *definitionally* and the witness needs no transport at all
+  (`schedContextUnbind`).  Two things that cut measured.  A `_` field in a
+  `{ s with x := _ }` pattern is filled from `s`, not left as a hole, so a
+  reduction whose base state must be read off the goal is applied with
+  `exact` rather than `rw`.  And a hypothesis a raw insert needed can be one
+  the typed rewrite makes false to need:
+  `updatePrioritySource_donated_preserves_donor_schedContext` lost
+  `tid.toObjId ≠ scId.toObjId`, because the rewrite fires only at a key
+  holding a TCB and reaches no SchedContext at any key — the one way that
+  security statement could have been vacuous is gone with the hypothesis.
+- **There is no capability-reference table** (`v0.35.78`, closing the row
+  `v0.35.77` registered).  `LifecycleMetadata` is the object-type table alone,
+  `lifecycleInvariantBundle` is `objectTypeMetadataConsistent` under two names
+  (`lifecycleIdentityTypeExact`, `lifecycleIdentityAliasingInvariant`),
+  `IntermediateState.hLifecycleConsistent` is that predicate of the builder
+  state, and a slot's target is read through `lookupSlotCap` — the one
+  slot-target reader, `O(1)`, which yields the whole capability.  The register
+  row's remedy said *wire or retire, and the rule says wire*; the decision was
+  **retire, on measurement**.  `lookupCapabilityRefMeta`, the reader the table
+  was named for, had been `(lookupSlotCap st ref).map Capability.target` since
+  the repository's root, so no executable code had ever read the table; every
+  slot-target query in the tree holds or fetches the CNode already; the one
+  consumer the remedy proposed — a revocation sweep over a *target* — is a
+  target→slots question a table keyed by slot cannot answer; the boot builder
+  installed populated CNodes without ever populating it; the frozen mirror
+  never maintained it; and every CNode store paid a fold over the CNode's slots
+  for it.  A cache nothing reads is not a cache, and *implement the
+  improvement* has no improvement to implement when no reader can be named.
+  Four things new code must respect.  (1) **A conjunct whose proof consumes
+  no hypothesis is deleted, and so is everything stated over it**:
+  `capabilityRefMetadataConsistent`, the bundle-of-one
+  `lifecycleMetadataConsistent`, the lifecycle capability-reference and
+  stale-reference families (`lifecycleCapabilityRefExact` through
+  `lifecycleIdentityStaleReferenceInvariant`), the capability layer's
+  `lifecycleCapabilityStaleAuthorityInvariant`, the policy surface's
+  owner-authority implication (`policyOwnerAuthorityRefRecorded →
+  policyOwnerAuthoritySlotPresent`) and the builders' `withLifecycleCapabilityRef`
+  — each an instance of `x = x`, of lookup determinism or of
+  `objectTypeMetadataConsistent` — with Tier 3 refusing every name tree-wide.
+  (2) **`storeObject`'s lifecycle write is the object-type insert alone**, so
+  a CNode store is `O(1)` on the lifecycle side rather than a fold over its
+  slots, and `allTablesInvExtK` is **sixteen** conjuncts: the positional
+  projections in `Builder.lean`, `Boot.lean`, `FreezeProofs.lean` and
+  `IdleEnqueue.lean` shifted by one at every position past the sixth, which
+  is the fragility their docstrings already record.  (3) **The capability
+  operations store once**: `cspaceInsertSlot`, `cspaceRevoke` and
+  `cspaceMutate` end in `storeObject`, `cspaceDeleteSlotCore` in the store
+  then `detachSlotFromCdt`; the second writer `storeCapabilityRef` and the
+  fused `revokeAndClearRefsState` are gone, and a proof over one of these
+  operations is one `storeObject_*` frame lemma rather than a composition of
+  two.  (4) **The one substantive fact the layer had restated is owned where
+  it always was**: a reply cap is backed iff its Reply resolves, which is the
+  capability layer's step-preserved `replyCapPointsToValidReply`, exhibited
+  by `replyCapPointsToValidReply_distinguishes_backed_and_dangling`.
+- **A state-resolved thread is descheduled where the state PLACES it** (WS-RR
+  RR8.6, `v0.35.79`).  `descheduleThread`, `cancelIpcBlockingOnCore` and
+  `suspendThreadOnCore`'s G4 removed a victim at `determineTargetCore` — its
+  *home*, which is where a wake places a thread and not where a removal finds
+  it: `preemptCurrentOnCore` re-enqueues a preempted thread on the core that ran
+  it, and an unpinned thread may run on any core, so a `.tcbSuspend` on an
+  unpinned thread preempted on a secondary core marked it `.Inactive` and left
+  it in that core's run queue.  Five things new code must respect.  (1) **One
+  primitive, one resolver**: `descheduleAt st tid placed` removes at a
+  pre-resolved placement and `descheduleAtPlacement st tid` *is*
+  `descheduleAt st tid (placedCoreOf? st tid)`; a transition that must declare
+  its footprint before it runs captures `placedCoreOf?` on the pre-state and
+  removes through `descheduleAt` (the suspend), one that acts after other steps
+  resolves at the state it acts on through `descheduleAtPlacement` (the reply
+  path, the cancellation composite).  Tier 3 refuses `determineTargetCore` and a
+  bare `removeRunnableOnCore` inside each of the three declarations.  (2) **The
+  poke reads the same placement** (`descheduleSgi?`): the placed core, when the
+  thread is current there and it is not the executing core — and no object.
+  The wake's ghost-guard is not mirrored, because a removal takes a placed thread
+  off its core whether or not a TCB backs it, so a guard on the TCB would clear a
+  slot and poke nobody.  (3) **The composite is `descheduleThread` on the
+  post-wake state by `rfl`**, and the footprint is declared on the pre-state;
+  `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the relation (the post-wake
+  placement is the pre-state's, or the pre-state placed the victim nowhere and
+  it is the declared wake core) and
+  `cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` is its payoff.  (4)
+  **The scheduler footprints take the placement**: `descheduleThreadLockSet
+  (placed : Option CoreId)`, `cancelIpcBlockingOnCoreSchedLockSet (placed
+  wakeCore : Option CoreId)`, and `suspendThreadOnCoreSchedLockSet (home
+  executingCore ownerHome outerHome : CoreId) (placed : Option CoreId)`, whose
+  run-queue segment is a *pair* over the placed and executing cores — the home
+  stays a replenish member, since the `.bound` arm's purge is keyed on it, and
+  the running core needs no member of its own.  (5) **A theorem about a
+  deschedule is stated at the placement, never at the home**:
+  `descheduleThread_fully_descheduled` takes single placement (which the
+  scheduler maintains by construction) where it took the home-placement
+  discipline (false of exactly the thread the defect is about), and
+  `suspendThreadOnCore_sgi_remote_reschedule` concludes `runningCoreOf? = some c`
+  because a victim current nowhere now falls back to the executing core, where
+  no SGI can arise.  The retired reading survives in one place,
+  `tests/SmpCancellationSuite.lean` §3.24's `retiredHomeAndRunningDeschedule`,
+  computed beside the live one on the queued-off-home shape.
+- **A donation pop's deschedule names the thread the pop UNBOUND** (PR #897
+  review, `v0.35.149`).  Every production pop makes the answered frame's head
+  context's own `boundThread` `.unbound`, and the step that follows must be about
+  *that* thread: `applyReplyDonation` and `applyReplyDonationOnCore` always were,
+  and `replyRecvPostReceiveDonation` was not — it descheduled
+  `recordedReplyServer?`, the server the answered caller recorded when it
+  *Called*.  WS-HP HP4 (`v0.35.38`) repointed the **trigger** onto the frame and
+  left the **deschedule** on the binding-era proxy; HP6.8 (`v0.35.45`) is what
+  makes the two disagree, because a spliced middle caller leaves an **orphan
+  head** whose context is bound to a thread the caller never recorded.  Measured
+  on the live `replyRecvBody`: the holder ended `.unbound` and still queued
+  (`hasSufficientBudget` is unconditionally `true` for an unbound thread, so it
+  runs at its legacy TCB band charged to no reservation — PR #895 round 8's
+  defect on the sibling site that round did not sweep), while a bystander still
+  holding its own reservation was taken off its run queue and left `.ready`,
+  which WS-OD OD1.7 enumerates as unrecoverable.  Four things new code must
+  respect.  (1) **The holder travels inside the arm selector**:
+  `replyRecvPopDonation` answers `Option (SchedContextId × ThreadId)`, so a
+  consumer cannot hold the context and the holder apart and hand the deschedule a
+  different thread; `replyRecvPopDonation_holder_eq_frameHead` is the relation,
+  and `replyRecvServerDeschedule` / `replyRecvPoppedContext` are refused
+  tree-wide.  (2) **Two threads, two questions**: both deschedule arms name the
+  holder and both chain walks keep `recordedServer`, because the walk keys on
+  waiters rather than on donations (WS-HP HP7's reason for keeping that
+  resolver).  (3) **The idle-state obligation moved with the thread** —
+  `hHolderIdleAllowed`, conditioned on the pair the pop returned rather than
+  stated unconditionally at a proxy, in the transition's own theorem and in both
+  dispatch packs.  (4) **The cancellation reclaim is the one pop that ENQUEUES**,
+  and that is a decision rather than an omission: `abortPendingIpcOnEndpoint`
+  stages `Architecture.timeoutFrame` into the holder's register context (WS-RR
+  RR7.14), so the kernel owes it a delivery it can only observe by running, where
+  a pop owes nothing.  See the registered temporal-isolation residue that choice
+  carries in `docs/REGISTERED_DEBT.md` table C.
+- **A reclaimed holder runs unbudgeted, and `passiveServerIdle` cannot see it**
+  (PR #897 review, `v0.35.149`; registered, unfixed).  `.unbound` in this kernel
+  means *both* "MCS-passive" and "legacy time-sliced at `tcb.priority`":
+  `hasSufficientBudget`'s `.unbound` arm is `true` by design,
+  `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever, and
+  `schedContextUnbind` deliberately re-buckets an unbound thread.  So the
+  cancellation reclaim cannot both return the reservation and keep the holder off
+  the CPU.  Measured on the live `suspendThreadOnCore`: after a `.tcbSuspend` of a
+  reply-blocked client whose donated context is held by a server blocked on a
+  nested call, the server ends `.unbound`, `.ready`, **on its home core's run
+  queue**, `hasSufficientBudget = true`, at its own TCB band, and
+  `chooseThreadOnCore` selects it.  `passiveServerIdle`'s antecedent is *not
+  queued*, so a runnable unbound thread satisfies it vacuously — PR #895 round 8's
+  rule, on the conjunct that rule was written about.  A properly passivated server
+  is otherwise never runnable-and-unbound (it is unbound while blocked in receive
+  and enqueued only by a donation), so **the reclaim is what creates the state**:
+  a malicious passive server that Calls onward and blocks, plus an ordinary
+  suspension of its client, escapes CBS admission entirely.  New code must not
+  read a successful reclaim as leaving the holder budget-limited, and **v1.0.0
+  must not claim that a thread without a reservation does not consume CPU.**
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at
@@ -4332,6 +8441,57 @@ code may assume:
   not an obligation**: `endpointQueueNoDup_of_dualQueue_of_headBlocked` derives
   it from the dual-queue invariant and the head conjunct, so a transition need
   not re-establish it separately.
+- **A woken caller's post-state does not satisfy `replyCallerLinkage`, and
+  asking for the full bundle *and* the wake is asking for nothing** (WS-RR
+  RR8.7, `v0.35.80`).  The third relaxed view, and the one whose absence had
+  produced two **vacuous** production theorems.
+  `consumeCallerReply_preserves_ipcInvariantFull` and
+  `removeCallerReplyFrame_preserves_ipcInvariantFull` each took
+  `ipcInvariantFull st` together with "st's answered caller is not
+  `.blockedOnReply`", and `replyCallerLinkage`'s second direction refutes that
+  pairing outright — a stored Reply naming a caller obliges that caller to be
+  reply-blocked, so the bundle *entails* that no woken thread is still named.
+  Their premises held on **no state**; they asserted nothing while their names
+  read, in a bundle search, exactly like coverage.  Six things new code must
+  respect.  (1) **The refutation is pinned, permanently**:
+  `replyCallerLinkage_refutes_woken_linked_caller` derives `False` from the two
+  premises, is consumed by nothing, and is anchored in Tier 3 for that reason —
+  a refutation nothing states is one the next cut re-discovers by shipping the
+  defect again.  Two Tier 3 negatives refuse both retired spellings tree-wide,
+  each mutation-tested by reintroducing the name as **code** (the tombstones
+  mention them in prose, which the code view strips, so the clean tree
+  exercises the other direction).  (2) **The relaxation is the narrowest one
+  that admits the state.**  `replyCallerLinkageExcept st woken` still requires
+  the reciprocal pair to *exist* at the woken thread — the Reply resolves and
+  the thread names it back — and drops only the blocking clause, written as a
+  **disjunct** (`tid = woken ∨ ∃ ep rt, …`) rather than by excusing the thread
+  from the clause.  Excusing it would drop the pair too, and the pair is
+  precisely what the teardown reads.  (3) **The unit is the pair, not either
+  half.**  `restoreToReadyStaging` wakes the victim and so *breaks*
+  reciprocity, leaving `ipcInvariantFullExceptReplyLinkage` and nothing
+  stronger; the teardown alone would break the third clause, since it clears
+  `replyObject` without unblocking.  Each is the other's repair, so
+  `restoredAndConsumed` — the composition the reply arm performs — is what
+  carries the full bundle (`restoredAndConsumed_preserves_ipcInvariantFull`), and
+  a claim taken at either half is a claim about a state the arm does not rest
+  at.  (4) **A relaxed view is registered with the de-threading gate**, in
+  `PRE_STATE_PREDICATES`, longest-prefix-first — otherwise the gate reads the
+  relaxed bundle's own hypothesis as a threaded post-state conjunct.  (5) **The
+  splice's own bundle statement is owed, not claimed**: the deleted composite's
+  honest form is the *relaxed* one, which needs a relaxed twin of
+  `storeObject_reply_stackLinks_preserves_ipcInvariantFull`; it is registered in
+  `docs/REGISTERED_DEBT.md` §A with a tombstone at the deletion site naming both.
+  (6) **The class was named at `v0.31.154` and not swept.**
+  `REPLY_OBJECTS_COMPLETION_PLAN.md`'s own landed note re-based
+  `linkCallerReply_preserves_ipcInvariantFull` because "full `ipcInvariantFull
+  st` would be *vacuous* at a link site" — and left the sibling `consumeCallerReply`
+  threading the post-state, one clause away, with the same contradiction
+  available.  RR8.5 then turned that post-state threading into a *pre*-state
+  hypothesis, which moved the vacuity from the conclusion into the premises
+  rather than removing it.  **When a cut records that a bundle would be vacuous
+  at one site, ask the same question of every operation that writes the same
+  field** — and note that de-threading a conjunct can *preserve* a vacuity by
+  relocating it.
 - **The `.call` chain's IPC bundle is staged; every other live-arm bundle is
   production.**  RR2 (v0.34.42) gave the transitions behind `Kernel/API.lean`'s
   SMP dispatch `_preserves_ipcInvariantFull` theorems, and the RR2 closure audit
@@ -4349,17 +8509,49 @@ code may assume:
   three-stage composite (`replyRecvBody_preserves_ipcInvariantFull`,
   `IPC/Invariant/DispatchPayoff.lean`, staged with the payoff tier) and the
   `Architecture.stage*` return-frame writes
-  (`IPC/Invariant/DispatchArmPreservation.lean`, production).  What no
-  transition-level bundle covers yet: `cancelIpcBlockingOnCore`'s *notification*
-  and *reply* arms (registered debt, owner RR8).  Its **blocked-on-endpoint** arm
-  is covered since v0.34.95 —
-  `cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
-  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (production) —
-  and its **notification** arm since v0.34.96
+  (`IPC/Invariant/DispatchArmPreservation.lean`, production).  **All three
+  `cancelIpcBlocking` arms are covered since RR8.7 (`v0.35.82`)**, each in its own
+  production module: the **blocked-on-endpoint** arm at v0.34.95
+  (`cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull`,
+  `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean`), the
+  **notification** arm at v0.34.96
   (`cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull`,
-  `…/CancellationNotificationShape.lean`).  Each needed its own engine, because
-  each runs a whole-store fold rather than RR7.22's splice.  Two hypotheses
-  beyond the bundle are common to both: the timeout-budget discipline
+  `…/CancellationNotificationShape.lean`), and the **reply** arm at `v0.35.82`
+  (`cancelIpcBlocking_replyArm_preserves_ipcInvariantFull`,
+  `…/CancellationReplyShape.lean`).  **The arm-complete composite and its
+  cross-core lift landed at `v0.35.85`** (WS-RR RR8.10,
+  `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean`, production and in the
+  library root): `cancelIpcBlocking_preserves_ipcInvariantFull` over the four
+  bodies the six `ipcState` constructors are serviced by, and
+  `cancelIpcBlockingOnCore_preserves_ipcInvariantFull` over the transition the
+  live `.tcbSuspend` dispatch runs.  Three things new code must respect.  (1)
+  **The premises are per-arm**: `cancelIpcBlockingArmPremises` gates each group
+  on that arm's own `ipcState` equation — which is the equation each arm theorem
+  already takes, so no second reading of "which arm is this" enters the tree —
+  and the `.ready` arm owes nothing, because it commits no write.  (2) **The
+  cross-core form's premises are the teardown's and nothing more**: the
+  migration, the holder wake and the victim's placement removal each frame
+  `passiveServerIdle` for a reason that is a property of the *step* — the
+  migration writes no run queue and no current slot, an *insert* cannot break a
+  conjunct whose antecedent is "not queued", and the removal's one obligation is
+  discharged from `cancelIpcBlocking_victim_ready`, the fact that a cancelled
+  victim ends `.ready` on every arm.  A hypothesis about any of the three here
+  would retract that claim, and a Tier 3 negative refuses one.  (3) **Only
+  `passiveServerIdle` reads the scheduler**, which is why the lift is
+  `ipcInvariantFull_of_descheduleFrame` and not a second twenty-conjunct
+  argument; a proof that unfolds the bundle instead is doing the work RR2.5
+  factored away.  "All five arms" is how the register named this row and the
+  count is **four bodies over six constructors** — the three endpoint states
+  share one.  The sentence here named the notification arm as
+  uncovered for eighteen cuts after v0.34.96 covered it, two sentences below its
+  own retraction, which is the *status claim a later cut must sweep* shape — so
+  read this list as of its stated versions and sweep it, not around it.  Each arm
+  needed its own engine, because the first two run a whole-store fold rather than
+  RR7.22's splice, and the third is a **four-step composition** — reclaim, splice,
+  restore, teardown — in which no two steps carry the bundle for the same reason
+  (`cancelIpcBlocking_reply_arm_eq` pins the arm to that composition by `rfl`).
+  Two hypotheses beyond the bundle are common to the first two: the
+  timeout-budget discipline
   `allTimeoutBudgetsNone` (unavoidable — the conjunct says a budget-carrying
   thread is *blocked*, and both operations make one `.ready`), and a
   queue-coherence fact `ipcInvariantFull` does not entail, because it constrains
@@ -4367,7 +8559,23 @@ code may assume:
   `sweptThreadQueueCoherent`'s three clauses for the endpoint arm, and
   `sweptThreadOffQueueChains` for the notification arm, which has no splice to
   repair the swept thread's neighbours.  New code must state those rather than
-  assume them.  What is **not** a hypothesis is anything the bundle entails:
+  assume them.  **The reply arm's set is larger, because its steps are** — read it
+  off `cancelIpcBlocking_replyArm_preserves_ipcInvariantFull` rather than off a
+  count here.  Those two, and: `donationChainWellFormed`, which is what makes the
+  pop's fail-closed head validation *resolve*; `cancelDonationStackValid` for the
+  pop's outer caller; `abortHolderQueueCoherent`, the endpoint arm's three clauses
+  again but for the *holder* the reclaim aborts and under the arm gate, since a
+  caller cannot name that thread to state them of it; and **both directions of one
+  local coherence fact** — `replyFrameHeadHolderDonation` at the victim's reply
+  object (head → binding, which the pop's carriage is stated over) and
+  `donatedContextIsOwnerFrameHead` (binding → head, which the no-donation payoff
+  quantifies over).  Neither direction entails the other — a frame head whose
+  context is `.bound` to its holder satisfies the second and refutes the first, and
+  a binding with no frame satisfies the first vacuously — and `ipcInvariantFull`
+  entails neither, which is WS-HP HP7's own reason for keeping the first stated.
+  `sweptThreadOffQueueChains` does double duty here: it is also what rules the
+  victim out as a queue neighbour of that holder, which is what carries the
+  victim's own TCB across the reclaim with only its binding rewritten.  What is **not** a hypothesis is anything the bundle entails:
   `replyObject_none_of_not_blockedOnReply` derives "holds no Reply object" from
   the bundle's own reciprocity, and
   `purgedAndRestored_victim_off_endpoint_boundaries` derives that a
@@ -4377,19 +8585,334 @@ code may assume:
   (`dispatchWithCapChecked_preserves_ipcInvariantFull` /
   `dispatchSyscallChecked_preserves_ipcInvariantFull`, staged) in the same
   cut.
-- **Every SchedContext hand-off must migrate the replenish queue.**  The CBS
-  replenishments of a SchedContext live on its *bound thread's* home core
-  (`replenishQueueAffinityConsistentOnCore`, SM5.H), so any transition that
-  rebinds `boundThread` across cores must call `migrateSchedContextReplenishment`
-  or the invariant is false from the instant it commits.  Three live paths do
-  (`applyCallDonationOnCore`, `applyReplyDonationOnCore`, `replyRecvReturnDonation`,
-  all at v0.34.42), each with a `replenishQueueAffinityConsistent_smp` preservation
-  theorem.  The pre-SM10 audit found only two of the three, because it enumerated
-  the donation *primitives* and `.replyRecv` composes them from the API layer —
-  the enumeration-versus-derivation shape the key-conventions section above warns
-  about.  A same-core hand-off is a definitional no-op
-  (`migrateSchedContextReplenishment_noop`), so the migration costs nothing where
-  it is not needed and there is no reason to omit it.
+- **Every SchedContext hand-off must migrate the replenish queue, and the
+  migration's DESTINATION is the bound thread's home rather than the thread the
+  hand-off expects to bind** (SM5.H; the destination half is WS-RR RR8.11,
+  `v0.35.86`).  The CBS replenishments of a SchedContext live on its *bound
+  thread's* home core (`replenishQueueAffinityConsistentOnCore`), so any transition
+  that rebinds `boundThread` across cores must call
+  `migrateSchedContextReplenishment` or the invariant is false from the instant it
+  commits.  Three live paths do (`applyCallDonationOnCore`,
+  `applyReplyDonationOnCore`, and `.replyRecv`'s pop — `replyRecvPopDonation` since
+  WS-RM split the fused `replyRecvReturnDonation`; the paths landed at v0.34.42),
+  each with a `replenishQueueAffinityConsistent_smp` preservation theorem.  The
+  pre-SM10 audit found only two of the three, because it enumerated the donation
+  *primitives* and `.replyRecv` composes them from the API layer — the
+  enumeration-versus-derivation shape the key-conventions section above warns about.
+  A same-core hand-off is a definitional no-op
+  (`migrateSchedContextReplenishment_noop`), so the migration costs nothing where it
+  is not needed and there is no reason to omit it.
+
+  **And a caller that can refuse must read the destination off the post-rebind
+  state.**  `cancelIpcBlockingMigrated` aimed its migration at
+  `determineTargetCore st victim` — the home of the thread the reclaim is *about to*
+  bind the context to — and the reclaim's guards are fail-closed (the outer-caller
+  check, HP4.6's recipient guard, the head validation), so on a refusal it moved
+  `scId`'s replenishments to a core no thread bound to `scId` is homed on, which is
+  the invariant's own negation.  Latent rather than live — the refusal needs a state
+  violating one of the two *stated* coherence facts, which hold on every reachable
+  state — but the migration's soundness rested on an unstated hypothesis, and the
+  reply path never had the defect because *its* migration sits in the `.ok`
+  continuation of its return: one question, two spellings, and the pure one had it
+  wrong.  `replenishHomeOfSchedContext` (`SchedContext/ReplenishAffinity.lean`) is
+  the destination now — the home of the thread the context is bound to, read on the
+  state the migration runs against — so a refused rebind is a *self*-migration that
+  `_noop` collapses to the identity, and
+  `migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` gets
+  its destination obligation free from `replenishHomeOfSchedContext_spec`.  Three
+  things new code must respect.  (1) **Every caller passes the migration's own
+  source as the fallback**, so a context that resolves to nothing or is bound to no
+  thread is a no-op rather than a pointless move.  (2) **The general lemma requires
+  the source to be where the invariant currently puts the context** — spelled as the
+  pre-state binding and its home, not as an implication, because a context bound to
+  no thread locates no entries a migration could move.  (3) **The footprint does not
+  grow**: both cores the destination can name were already declared, and
+  `maxLockSetSize` is unmoved.
+- **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
+  **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
+  propagation convention, its reservation's `SchedContext.priority` — with
+  `SystemState.threadBasePriority` choosing between them by
+  `SchedContextBinding.ownScId?` and `boundThreadPriorityConsistent` keeping the
+  pair in step.  The pair is what `v0.35.98` found `.tcbSetPriority` not
+  maintaining: a demotion re-bucketed the thread at its new band while every
+  later wake re-inserted it at the old one, permanently, because the run queue is
+  keyed by `TCB.boostedPriority` (the thread's field) and the resolver read the
+  reservation's.  A demotion that does not stick is a temporal-isolation break in
+  exactly the mixed-criticality deployments MCS exists for, and it needed no
+  authority beyond what the syscall already requires.
+
+  **The remedy is structural rather than another writer** — for *reads*, and
+  `v0.35.136` is where that qualification stops being implied and starts being
+  printed.  This paragraph said "with one home the pair is unfalsifiable by
+  construction, so a stale mirror is not a defect that was fixed but a state no
+  writer can reach", and PR #897's review found the writer: the collapse gave the
+  band one **reading** home and left it two **writing** homes, so a stale mirror
+  is still reachable and `boundThreadPriorityConsistent` is still falsifiable —
+  it just no longer mis-schedules anything, which is the whole of what the
+  collapse bought.  See the standing constraint *a `bound*Consistent` predicate
+  is a writer fact* below for the two routes and the register row.  Six things
+  new code must respect.
+
+  (1) **Every reader reads `TCB.priority`, at every binding.**  Five did the
+  classification and all five are collapsed: `SystemState.threadBasePriority`,
+  `resolveEffectivePrioDeadline`, `effectiveSchedParams`,
+  `getCurrentPriorityChecked` and the frozen
+  `FrozenSystemState.threadBasePriority`.  `threadBasePriority_eq`,
+  `effectiveBucketPriority_eq` and `FrozenSystemState.threadBasePriority_eq` are
+  the `rfl` statements of that, and `FrozenSystemState.threadBasePriority_eq_live`
+  is the live/frozen agreement — which under two homes could only be stated per
+  binding and under a consistency hypothesis, and is now the strongest form such
+  an agreement can take.
+
+  (2) **`effectiveBucketPriority` was the THIRD copy of the resolver and its body
+  is gone.**  It mirrored `resolveEffectivePrioDeadline` because
+  `Scheduler/Invariant.lean` sits below `Selection.lean` and could not call it —
+  a second implementation held in step by a pin, which is the shape this project
+  spends its length retiring and which existed only because there were two bases
+  to choose between.  It is `TCB.boostedPriority` now and the pin is `rfl`.
+
+  (3) **The run-queue invariants moved with the readers, and then COLLAPSED.**
+  `effectiveParamsMatchRunQueue` and `effectiveParamsMatchRunQueueOnCore` asserted
+  on their `.bound` arm that the recorded bucket equals the RESERVATION's
+  `priority`.  That was over-strong the moment the base had one home — the queue
+  is keyed by `TCB.boostedPriority` — and under two homes it was precisely the
+  conjunct that had to hold for the `v0.35.98` defect not to strand a demoted
+  thread.  With all three arms saying the same thing the binding case analysis is
+  **deleted**, and auditing this cut's own diff is what showed that keeping it was
+  wrong rather than merely untidy.  Its `.bound` arm ended `| _ => True`, so a
+  bound thread whose reservation did not resolve was silently excused from the
+  bucket claim: *a scanner's default branch is a decision* one artefact over — a
+  **predicate's** default arm is one too, and that one excused a case nobody chose
+  to excuse.  And under two homes this predicate and `schedulerPriorityMatch` were
+  **jointly unsatisfiable** for any bound thread whose mirror had drifted, which is
+  the S-H04 over-constraint `Scheduler/Operations/Core.lean`'s own header records
+  — so the collapse is what makes the pair satisfiable rather than merely shorter.
+
+  (4) **Three theorems retire into one, and the HYPOTHESES are the point.**
+  `boostedPriority_eq_resolve_unbound` (AI3-A) related the selector's base
+  component to `TCB.boostedPriority` at `.unbound`;
+  `resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree` (SM5.I) extended
+  it to `.bound` **under the `boundThreadPriorityConsistent` agreement specialised
+  to the thread**; `resolveEffectivePrioDeadline_fst_of_donated` (WS-OD) was the
+  `.donated` payoff.  With one home the `.bound` arm reads the TCB field like the
+  other two, so that agreement hypothesis is discharged by nothing at all — and a
+  name like `_of_agree` kept past its hypothesis is not merely redundant, it
+  *teaches a false dependency*: a reader would go on believing that weakening the
+  bind/configure propagation costs the selector its priority ordering.  It does
+  not.  The three are deleted for the one unconditional
+  `resolveEffectivePrioDeadline_fst_eq_boostedPriority`, with a tombstone and
+  three Tier 3 negatives.  **Deadlines have no counterpart and must not be read as
+  having one**: bind copies only the priority, so a TCB-*deadline* comparison still
+  diverges from the selector for exactly the bound threads CBS exists for, which is
+  what the `chooseThreadEffectiveOnCore` gate says.
+
+  (5) **`SchedContext.priority` survives as what it always was on the WRITE side**
+  — the band a reservation *configures* its bound thread to, propagated into the
+  TCB by `schedContextBind` and `schedContextConfigureBoundPropagate` — and no
+  scheduling decision reads it.  `boundThreadPriorityConsistent` is therefore no
+  longer load-bearing for any read; it is **kept, not retired**, as the only
+  artefact stating that the propagation happened, which is a real property of those
+  two writers and not a tautology.  A new *reader* of `SchedContext.priority` as a
+  thread's band is the defect this cut closed; a new *writer* still propagates.
+  **And a justification that names a constraint the cut removed invites deleting a
+  live write**: `schedContextBind`'s propagation comment said the two run-queue
+  invariants *jointly force* `tcb.priority = sc.priority` with no operation
+  establishing it — its whole stated reason, and false the moment neither predicate
+  read a reservation.  When a cut retires a constraint, sweep the comments that
+  cite it as a *reason*, not only the ones that cite it as a fact.
+
+  (6) **A witness for a collapsed mirror lives on the state the collapse makes
+  UNREACHABLE.**  The soundness argument and the testability problem are the same
+  sentence: on a state satisfying `boundThreadPriorityConsistent` the two readings
+  agree *by construction*, so a fixture built there asserts nothing about which one
+  is live and passes either way.  What discriminates is a **drifted** state — the
+  shape `v0.35.98` produced — and four fixtures in this tree were already sitting
+  on one, which is why all four failed when the readers collapsed.  The instinct on
+  such a failure is to make the fixture consistent; that is right for a fixture
+  whose subject is the *operation* and wrong for one whose subject is *which field
+  the operation reads*, and doing it everywhere would have left the cut with no
+  decisive witness at all.  So `AK8-E.2` and `AN10-D.6` keep their drifted states
+  and flip their expectations; `PM-010b` becomes consistent because its subject is
+  the cap firing, with `PM-010c` added to carry the drifted half; and the
+  `v0.35.99` frozen-ceiling witness is restated over **both** branches of the cap,
+  since the divergence it was written for has no state left to arise on and what
+  survives is that the two surfaces fire *and decline* together.  Generalising:
+  when a cut makes two readings agree everywhere, the only witness that can fail on
+  a revert is one standing on the disagreement the cut abolished — keep it, name it
+  as such, and say in the fixture why the state is one the kernel no longer
+  reaches.
+
+  The collapse is behaviour-preserving on every reachable state, and that is
+  measured rather than argued: `schedContextConfigurePropagates` is
+  `ownScId? = some scId`, which is exactly the condition the retired resolver
+  classified on, so the two readings differ only where the mirror had already gone
+  stale — and the golden trace is byte-identical at 239/239 with the whole library
+  building.
+
+  The **frozen** surface writes the configured band too (`v0.35.99`):
+
+  `FrozenSystemState.threadBasePriority` is its reader and
+  `frozenWriteBasePriority` the one writer both `frozenSetPriority` and
+  `frozenSetMCPriority`'s ceiling call, so a new frozen priority operation reads
+  and writes the pair the way the live one does rather than growing a second
+  answer.
+
+  **And a priority write moves the thread's run-queue BUCKET, on both surfaces**
+  (`v0.35.101`, reported on PR #897).  `TCB.boostedPriority` is
+  `priority.raisedBy pipBoost`, so a **base** write moves the run-queue key exactly
+  as an inherited-**boost** write does, and every live writer of either re-buckets:
+  `updatePipBoostOnCore`, `migrateRunQueueBucketOnCore` (which
+  `applyPriorityChangeOnCore` composes) and `schedContextBind`'s Z5-G3 step.  On the
+  frozen surface the mechanics were spelled *inline* in `frozenUpdatePipBoost`, so
+  only the boost half was answered and three base writers moved nothing.  They are
+  one definition now — `frozenQueuedAnywhere`, `frozenRebucketRunnable` and
+  `frozenWriteTcbRebucketed` (`FrozenOps/Core.lean`, beside `frozenEnsureRunnable`)
+  — and a new frozen writer of either field calls them.  Two things new code must
+  respect.  (1) **The guard is per-operation and the mechanics are shared**, because
+  the live writers disagree about the guard and faithfully: `updatePipBoostOnCore`
+  migrates only `if oldPrio != newPrio` while the base writers migrate whenever the
+  thread is queued, and the difference is observable — `RunQueue.insert` appends, so
+  a remove-and-reinsert at an unchanged key moves the thread to its bucket's tail,
+  and `frozenRunAgrees` compares buckets as **lists**.  (2) **The key is the live
+  accessor**, read off the record being written: `frozenEnsureRunnable` and
+  `frozenChooseThread` already read `TCB.boostedPriority`, so "which bucket does this
+  thread belong in" has no frozen-specific answer and must not acquire one.  The
+  third site was found by sweeping the *question* rather than the two the review
+  named: `frozenSchedContextConfigure` propagated **neither** thread-owned parameter
+  and re-bucketed nothing, so every frozen post-configure state with a bound owner
+  falsified `boundThreadPriorityConsistent` **and** `boundThreadDomainConsistent`.
+
+  What `v0.35.98` measured, on the live per-core dispatch path: a
+  `seL4_TCB_SetPriority` demotion of a bound thread from 50 to 10 re-bucketed it
+  at 10 and its first wake re-inserted it at **50**, the band the demotion had
+  removed — permanently, since every later wake reads the same stale field.  A
+  demotion that does not stick is a temporal-isolation break in the
+  mixed-criticality deployments MCS exists for, and it needed no authority
+  beyond what the syscall already requires.
+
+  **And the frozen surface reads the same field because the live resolvers read
+  it, which is now a theorem rather than a coincidence** (`v0.35.134`).
+  `effectiveSchedParams_fst_eq_boostedPriority` states that the triple-valued
+  resolver's priority component **is** `TCB.boostedPriority`, unconditionally and
+  derived from the existing pair bridge; `FrozenOps.Agreement`'s
+  `frozenComputeMaxWaiterPriority_eq_live_reading` carries that across to the
+  frozen waiter fold, quantified over *every* live state because the reading
+  turns out to read none of it.  PR #897's review reported the two as diverging,
+  correctly against `v0.35.132`; `v0.35.133` closed it and swept neither the
+  prose nor the missing pin, which is this file's own *sweep the forward-looking
+  prose* rule unrun at the cut that made it stale.
+
+  **Sweeping that question found `frozenResumeThread` reading the wrong priority
+  in three places**, and the three are what a mirror looks like when nothing
+  compares it.  It cleared `ipcState` alone where the live `restoreToReady`
+  clears five fields — the fifth, `pendingReceiveReply`, keeps `replyIsStashed`
+  true and so makes lifecycle cleanup of that Reply answer `revocationRequired`
+  with no receive pending; it carried the pre-suspend `pipBoost` where the live
+  resume re-derives it from the post-restore blocking graph; and it compared the
+  two **base** priorities where the live test compares the effective ones, so the
+  surfaces disagreed in both directions whenever either thread carried a boost.
+  Three things new code must respect.  (1) **The field clear is
+  `TCB.restoredToReady`** (`Model/Object/Types.lean`, beside `TCB.boostedPriority`
+  and `TCB.blockingServer?`), because it had *no name to call* — it was spelled
+  inline inside `updateTcb`'s lambda, which is why the mirror carried four fewer
+  fields; both surfaces call it now, so a field added to the restore reaches both
+  by construction.  (2) **A frozen scheduling decision reads
+  `TCB.boostedPriority`**, never `TCB.priority`, and the live counterpart to cite
+  is `resolveEffectivePrioDeadline_fst_eq_boostedPriority`.  (3) **Clearing
+  `current` is the frozen spelling of the live re-enqueue-then-schedule** —
+  dispatch here is `current := some tid` with the thread left in its bucket — so
+  that one is *not* a divergence, which was checked rather than assumed.
+
+  What made all three invisible is worth more than the instances: none of the
+  three frozen-resume scenarios sets `scheduler.current`, so the preemption
+  branch was unexecuted, and `.tcbResume` is outside `FrozenOpBranch.all`, so no
+  differential reached it — while the live side has had four scenarios for the
+  same two steps since R5.B and PR #811.  `frozenOpUncheckedReason` had recorded
+  the gap as *"adapter owed"* the whole time.  **A stated reason bounds nothing**;
+  it says who owes the work, and until it is paid a cut that touches a live
+  transition with a frozen mirror sweeps the mirror by reading both bodies.
+
+  **And the collapse had a SIXTH reader and an unswept theorem family**
+  (`v0.35.134`, PR #897's review against `v0.35.133` itself).
+  `threadSchedulingParams` (`Model/Object/Structures.lean`) — the Z1-N migration
+  bridge, reachable from the root-imported model API — still took a `.bound` or
+  `.donated` thread's band from `sc.priority`.  It is **deleted**, not
+  collapsed, and on measurement: zero consumers anywhere in the tree, so
+  collapsing it would have produced a fourth reading nobody asks.  New code
+  reads `effectiveSchedParams`.
+
+  The family is the same rule one file over.  `v0.35.133` deleted
+  `resolveEffectivePrioDeadline`'s three arm-specific readings *because a name
+  kept past its hypothesis teaches a false dependency*, and left
+  `effectiveBucketPriority`'s six standing with hypotheses the same collapse had
+  made dead — three binding-arm instances of the unconditional lemma, one about
+  an expression shape the accessor no longer contains, and two frames demanding
+  that SchedContext lookups agree of an accessor that reads no store.  All six
+  are gone for the unconditional `effectiveBucketPriority_congr`, and the one
+  consumer lost seventy lines of case analysis for one citation.  **When a cut
+  collapses a definition, the theorems whose hypotheses that definition supplied
+  are part of the collapse** — the sweep is the family, not the body.
+
+- **A `bound*Consistent` predicate is a WRITER fact, not an invariant — and the
+  domain mirror had the same hole** (`v0.35.136`, PR #897's review, reported for
+  the priority half).  `returnDonatedSchedContext`'s bottom arm installs a
+  `.bound` binding and writes neither the recipient's `priority` / `domain` nor
+  the reservation's, so whichever home moved while the reservation was on loan
+  comes back disagreeing: `boundThreadPriorityConsistent` and
+  `boundThreadDomainConsistent` are both **false** on a state the kernel reaches.
+  Five things new code must respect.
+
+  (1) **Two routes, both ordinary syscalls, and the second breaks both predicates
+  at once.**  `.tcbSetPriority` on the **unbound** donor writes its TCB alone —
+  correctly, since it owns no reservation to mirror to — and
+  `schedContextConfigure` of the **donated** reservation writes `sc.priority` and
+  `sc.domain` alone, also correctly, the propagation being gated on the donee's
+  `ownScId?`, which is `none` (WS-OD `v0.35.3`, and the whole point of that gate).
+  Either way the pop then rebinds the origin under the disagreement.
+
+  (2) **Neither reconciliation is available to the pop**, which is what makes this
+  a fact about the *writers* rather than a defect in the pop.  `tcb.* := sc.*`
+  would undo a demotion, or **migrate a thread's partition**, on an IPC reply — at
+  the instance of a holder of a capability on the *reservation*, which says
+  nothing about the thread, and which is the crossing WS-OD closed from the other
+  side.  `sc.* := tcb.*` would silently retune what that capability's holder had
+  just set, and is projection-**visible** besides, since `SchedContext.priority`
+  survives `projectKernelObject`.  A cut that decides otherwise must change
+  `donationReturnSchedContext_priority` / `…_domain`, which exist so that it has
+  to.
+
+  (3) **The domain now has one reading home too.**  `v0.35.133` collapsed the
+  *band*'s readers and left `effectiveSchedParams`'s `.bound` arm reporting
+  `sc.domain`, on the stated ground that the domain mirror had *"no writer known
+  to break it"* — and this finding is that writer.  `effectiveSchedParams_domain_eq`
+  is the unconditional pin that every arm reports `tcb.domain`, the sibling of
+  `effectiveSchedParams_fst_eq_boostedPriority`; it was **free**, the component
+  having no live consumer (every domain filter reads `tcb.domain` directly through
+  `chooseBestRunnableInDomainEffective`) and the golden trace staying
+  byte-identical.  *A stated reason that no writer exists is a claim about every
+  writer, and it is the kind that ages.*
+
+  (4) **So the residue is a verification gap and not a scheduling one**, and that
+  distinction is measured rather than asserted: the origin resumes at its own band
+  in its own partition.  `boundThreadPriorityConsistent` is consumed by nothing at
+  all; `boundThreadDomainConsistent` is a conjunct of
+  `schedulerInvariantBundleExtended`, whose scope is the boot and scheduler
+  surface, and no IPC transition claims that bundle — so no theorem in the tree is
+  false.  A proof that takes either predicate of a post-pop state is asking for a
+  premise the kernel refutes.
+
+  (5) **The refutation is executed, and it has a control.**
+  `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the configure and
+  the pop as **live operations** and asserts both pairs disagree; WS-RR-PRIO-10 is
+  the same fixture and the same pop with the reconfiguration omitted, where both
+  pairs agree — which is what makes the witness a statement about the
+  reconfiguration rather than about the pop, and what shows the pop is not what
+  breaks the agreement but what *installs the binding under which it is asserted*.
+  The closure is the model change `v0.35.133`'s register row named and deferred —
+  retire `SchedContext.priority` and `SchedContext.domain` as thread-band homes,
+  which is what seL4-MCS does, its `sched_context` carrying neither — and it is
+  **WS-CB**'s, whose plan already reshapes this surface.
+
 - **The scheduler liveness trace model is boot-core-pinned** (SM4.C.11's
   residual).  SM5.J lifted the per-core Liveness *predicates* at v0.31.64 —
   `eventuallyExitsOnCore`, `higherBandExhaustedOnCore`,
@@ -4608,7 +9131,21 @@ code may assume:
   `bootFromPlatformCheckedWithIdleThreads`, a thin composition over
   `bootFromPlatformChecked` (same validation, same rejections, the seven results
   characterizing it unchanged) that folds a per-core idle enqueue over
-  `allCores`.  So `∀ c, idleThreadEnqueuedOnCore st c` holds of the live boot
+  `allCores`.  **That enqueue is the kernel model's own** (`v0.35.68`):
+  `Platform.Boot.enqueueIdleThread ist c` has `state := enqueueIdleThreadOnCore
+  ist.state c` (`enqueueIdleThread_state`, by `rfl`), with the four
+  `IntermediateState` witnesses the operation's own preservation theorems and
+  every boot-level frame an instance of the kernel model's — it was a second
+  body (`Builder.createObject` plus a hand-written run-queue write) held to the
+  first by a docstring sentence, differing in the bookkeeping the store
+  maintains and the builder skips.  The operation therefore lives in the
+  production module `Scheduler/Operations/IdleEnqueue.lean`, upstream of the
+  boot, and the idle TCB (`createIdleThread`, `queuedIdleThread`) in
+  `Scheduler/IdleThread.lean` beside its identities; `PerCoreIdle.lean` (staged)
+  keeps the per-core-invariant theorems and consumes both.  New code adding a
+  boot-time write of an object the kernel model can already write runs the
+  kernel model's operation on `ist.state` and carries the witnesses through its
+  theorems, never a builder-side copy of its body.  So `∀ c, idleThreadEnqueuedOnCore st c` holds of the live boot
   state (`bootFromPlatformCheckedWithIdleThreads_idleThreadEnqueuedOnCore`),
   discharging the premise `chooseThreadOnCore_always_succeeds` consumes and
   `schedulerNoStall_smp`'s `hIdle` took by hypothesis — which no reachable state
@@ -5708,10 +10245,13 @@ code may assume:
   new footprint without a bound, or with one at the wrong arity, fails Tier 1
   the day it is written.  A legitimate exemption goes in `boundExemptions` with
   a reason; the list is empty and meant to stay so.
-- **Staged modules**: 67 staged-only, listed in
+- **Staged modules**: 68 staged-only, listed in
   `scripts/staged_module_allowlist.txt` and gated by
   `scripts/check_production_staging_partition.sh`.  Production must not import
-  staged.  WS-RR RR5.15 promoted five (the three state-committing kernel
+  staged.  (67 until `v0.35.76`, which promoted `Locks/DynamicChainExtension`
+  with the RR7.40 footprint that consumes it and staged
+  `Architecture/VSpaceARMv8` and `Capability/CSpaceWalkFootprint` — see the
+  five-modules note below.)  WS-RR RR5.15 promoted five (the three state-committing kernel
   entries `SecondaryEntry` / `PerCoreTimerEntry` / `PerCoreRescheduleEntry`,
   plus the two modules their closure pulls in): an `@[export]` emits a symbol
   only when its module is in `SeLe4n.lean`'s import closure, so a linked image

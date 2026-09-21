@@ -502,20 +502,11 @@ theorem step_preserves_projection
       · simp [hNull] at hOp
       simp only [hNull, Bool.false_eq_true, ↓reduceIte] at hOp
       split at hOp
-      · -- rights subset: storeObject + storeCapabilityRef
+      · -- rights subset: the store of the mutated CNode
         split at hOp
         · -- some (.cnode cn)
           next cn =>
-          split at hOp
-          · -- storeObject error
-            next e hStore => simp at hOp
-          · -- storeObject ok
-            next stMid hStore =>
-            have hProjMid := storeObject_preserves_projection ctx observer st stMid
-                addr.cnode _ hAH hObjInv hStore
-            have hProjFinal := storeCapabilityRef_preserves_projection ctx observer stMid st'
-                addr (some _) hOp
-            rw [hProjFinal, hProjMid]
+          exact storeObject_preserves_projection ctx observer st st' addr.cnode _ hAH hObjInv hOp
         · -- not a cnode
           simp at hOp
       · -- rights not subset: error
@@ -764,6 +755,34 @@ structure LabelingContextValid (ctx : LabelingContext) : Prop where
       See `defaultLabelingContext_fails_validity` for the concrete failure. -/
   labelNonTriviality : ∃ (tid₁ tid₂ : SeLe4n.ThreadId),
     ctx.threadLabelOf tid₁ ≠ ctx.threadLabelOf tid₂
+  /-- **WS-RR RR8.8**: endpoint-object coherence — an endpoint's *flow* label
+      flows to its own kernel object's label.
+
+      The kernel asks "how sensitive is this endpoint?" in two places and read
+      two different fields for the answer: the live IPC gates compare
+      `endpointLabelOf` (`endpointFlowGate`) while the projection decides
+      visibility from `objectLabelOf`.  `LabelingContext` carries them as
+      independent functions and nothing related them, so a deployment could
+      label an endpoint high for flow purposes and low for visibility with no
+      gate or obligation refusing it — *one question, two answers*.
+
+      With this conjunct the inference the cancellation path's projection
+      results need becomes available: a thread blocked sending or calling on an
+      endpoint satisfies `threadLabelOf ⊑ endpointLabelOf`
+      (`endpointFlowGate_implies_securityFlowsTo`, no hypothesis), so composing
+      gives `threadLabelOf ⊑ objectLabelOf`, and the endpoint **object** is
+      non-observable whenever any of its waiters is
+      (`endpointObjectHigh_of_admittedThreadHigh` below).  Without it that step
+      does not exist, which is what `v0.35.83` asserted and could not have
+      proved.
+
+      A flow rather than an equality, exactly as `threadObjectCoherence` above
+      is, and discharged structurally for every constructed context
+      (`deploymentLabelingContext_valid`) from `DeploymentLabeling`'s own
+      `hEndpointObjectCoherence` field — which the one base constructor meets by
+      reflexivity, its two label functions being the same partition. -/
+  endpointObjectCoherence : ∀ oid : SeLe4n.ObjId,
+    securityFlowsTo (ctx.endpointLabelOf oid) (ctx.objectLabelOf oid) = true
 
 /-- V6-D / AK6-H (NI-M02): The default labeling context is **no longer**
     `LabelingContextValid`. It satisfies the first two conjuncts (coherence
@@ -824,6 +843,11 @@ theorem labelingContextValid_is_deployment_requirement
       two observability gates, which read exactly those two labels.
     * `labelNonTriviality` — the `DeploymentLabeling.hSeparated` field, which
       the structure demands at construction.
+    * `endpointObjectCoherence` (WS-RR RR8.8) — the
+      `DeploymentLabeling.hEndpointObjectCoherence` field, likewise demanded at
+      construction and met by reflexivity in the one base constructor, whose
+      `endpointLabelOf` and `entityLabelOf` are the same partition read at the
+      same index.
 
     A deployment therefore discharges all three by choosing a partition, and the
     non-triviality half is additionally *checked at runtime* by
@@ -839,6 +863,7 @@ theorem deploymentLabelingContext_valid (d : DeploymentLabeling) :
       deploymentLabelingContext_thread_object_label_eq d tid] using h
   labelNonTriviality :=
     ⟨d.separatedLower, d.separatedUpper, d.hSeparated⟩
+  endpointObjectCoherence := d.hEndpointObjectCoherence
 
 /-- **WS-RR RR5.1**: the production two-domain context is `LabelingContextValid`
     — the corollary a platform binding cites when it installs
@@ -857,6 +882,335 @@ theorem confinedLabelingContext_valid (upperDomainBase lowerWitness : Nat)
 theorem harnessLabelingContext_valid :
     LabelingContextValid harnessLabelingContext :=
   deploymentLabelingContext_valid _
+
+-- ============================================================================
+-- WS-RR RR8.8 -- the two labelling facts the cancellation path's projection
+-- obligations reduce to
+-- ============================================================================
+
+/-- **WS-RR RR8.8**: an endpoint's *object* is non-observable whenever a thread
+the endpoint admitted is.
+
+`endpointFlowGate_implies_securityFlowsTo` gives `threadLabelOf tid ⊑
+endpointLabelOf epId` with no hypothesis at all — every thread the live send /
+call gate admitted onto an endpoint satisfies it — and
+`LabelingContextValid.endpointObjectCoherence` carries that on to
+`objectLabelOf epId`.  So an observer that cannot see the thread cannot see the
+endpoint object either, which is what makes the endpoint half of a queue
+teardown's write set invisible.
+
+**Only the endpoint half.**  The same order says *nothing* relating two threads
+admitted onto one endpoint: both satisfy `⊑ endpointLabelOf epId` and neither
+bounds the other, which is exactly the admission
+`endpointAdmissionAdmitsMixedObservability` exhibits.  So a teardown's writes to
+the victim's queue **neighbours** are not covered by this and cannot be \-- see
+`docs/REGISTERED_DEBT.md` for why the residue is representational. -/
+theorem endpointObjectHigh_of_admittedThreadHigh
+    (ctx : LabelingContext) (observer : IfObserver)
+    (epId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId)
+    (hValid : LabelingContextValid ctx)
+    (hAdmitted : securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer epId = false := by
+  by_cases hEp : objectObservable ctx observer epId = true
+  · exfalso
+    unfold objectObservable at hEp
+    unfold threadObservable at hThreadHigh
+    rw [securityFlowsTo_trans _ _ _ hAdmitted
+      (securityFlowsTo_trans _ _ _ (hValid.endpointObjectCoherence epId) hEp)] at hThreadHigh
+    exact Bool.noConfusion hThreadHigh
+  · simp only [Bool.not_eq_true] at hEp
+    exact hEp
+
+/-- **WS-RR RR8.8**: a donated scheduling context's holder is at least as high as
+its donor — the labelling fact the cancellation reclaim's two projection
+obligations rest on, and the one the register had scheduled against no sub-task.
+
+Stated over `replyDonationReturn?`, which is this tree's single reader of "does
+this thread hold a donated context, and from whom": a second spelling of that
+question is the duplication this project spends its length retiring, and it is
+also exactly what the cancellation resolver's own
+`cancelledCallerDonation?_holder_holds_victim_donation` concludes.
+
+**A deployment establishes it, and it is not an assumption pulled from the air.**
+A `.donated scId owner` binding is minted only by `donateSchedContext`, reached
+through a `Call` rendezvous whose two gates both passed: the caller's own
+`endpointFlowGate ctx ep (threadLabelOf owner) (endpointLabelOf ep)` on the way
+in, and the server's `endpointFlowGate ctx ep (endpointLabelOf ep)
+(threadLabelOf holder)` when it received.  Composed, those give exactly
+`threadLabelOf owner ⊑ threadLabelOf holder`.  What this predicate does *not* do
+is re-derive that from the store — the gates are transition-time checks and the
+state records no trace of them — so it is carried as a state predicate,
+established where the donation is minted and preserved by everything that does
+not mint one. -/
+def donationOwnerFlowsToHolder (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId),
+    replyDonationReturn? st holder = some (scId, owner) →
+      securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true
+
+/-- **WS-RR RR8.8**: a non-observable donor's holder is non-observable too.
+
+The whole content of `abortHolderWakeHigh`, and the first of
+`abortHolderProjectionStable`'s three write classes: a run-queue insert is
+filtered by the inserted thread's own observability, and the holder's own TCB is
+projected away exactly when the holder is. -/
+theorem donationHolderHigh_of_donorHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hRes : replyDonationReturn? st holder = some (scId, owner))
+    (hOwnerHigh : threadObservable ctx observer owner = false) :
+    threadObservable ctx observer holder = false := by
+  by_cases hH : threadObservable ctx observer holder = true
+  · exfalso
+    unfold threadObservable at hH hOwnerHigh
+    rw [securityFlowsTo_trans _ _ _ (hFlow holder owner scId hRes) hH] at hOwnerHigh
+    exact Bool.noConfusion hOwnerHigh
+  · simp only [Bool.not_eq_true] at hH
+    exact hH
+
+/-- **WS-RR RR8.8**: a thread blocked sending or calling on an endpoint has a
+label that flows to that endpoint's.
+
+The second labelling fact, and the one that reaches the *endpoint object* a queue
+teardown rewrites.  Like `donationOwnerFlowsToHolder` it is what the live gate
+checked at the transition and the state does not record: a thread reaches
+`.blockedOnSend epId` / `.blockedOnCall epId` only through
+`endpointSendCrossCoreDispatchChecked` / `endpointCallCrossCoreDispatchChecked`,
+whose gate is `endpointFlowGate ctx epId (threadLabelOf tid) (endpointLabelOf
+epId)`, so `endpointFlowGate_implies_securityFlowsTo` gives the conclusion at the
+instant the thread blocks.
+
+The two blocked states are the ones that name a *send* queue, which is the queue
+`abortPendingIpcOnEndpoint` splices and the one `cancelHolderBlockedEndpoint?`
+resolves; `.blockedOnReceive` is deliberately absent, its gate running in the
+other direction (`endpointLabelOf ⊑ threadLabelOf`). -/
+def blockedSenderFlowsToEndpoint (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st tid = some t →
+    (t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t.ipcState = ThreadIpcState.blockedOnCall epId) →
+      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true
+
+/-- **WS-RR RR8.8**: the endpoint a non-observable thread is blocked sending or
+calling on is itself non-observable — the second of
+`abortHolderProjectionStable`'s three write classes, composed from the two facts
+above. -/
+theorem blockedSenderEndpointObjectHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId)
+    (hValid : LabelingContextValid ctx)
+    (hFlow : blockedSenderFlowsToEndpoint ctx st)
+    (hLookup : lookupTcb st tid = some t)
+    (hBlocked : t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hThreadHigh : threadObservable ctx observer tid = false) :
+    objectObservable ctx observer epId = false :=
+  endpointObjectHigh_of_admittedThreadHigh ctx observer epId tid hValid
+    (hFlow tid t epId hLookup hBlocked) hThreadHigh
+
+/-! ### WS-RR RR8.16: establishing and preserving the two flow facts
+
+`v0.35.83`/`v0.35.84` introduced the two predicates above and consumed them as
+**hypotheses**: no theorem established either one where the fact is created, none
+transported it across a step, and neither appeared in a reachable-state pack — so
+the reduction of the cancellation NI obligations they license was not composable
+for a live state (PR #897 review).  Their docstrings argued from the *gates*, which
+is the right argument and was not a theorem.
+
+What follows is that argument, machine-checked, and it is deliberately ordered so
+that only ONE of the two needs an independent story:
+
+* `blockedSenderShrinks` is the transport relation, with the algebra a composite
+  needs and a bridge from the `ipcStateFrame` this tree already has;
+* a blocking **store** is the one write that creates a blocked sender, so its
+  establishment is stated there rather than per transition;
+* and `donationOwnerFlowsToHolder` is then a **consequence** of its sibling and the
+  receiving gate, not a second assumption -- which is the whole reason a donation's
+  two ends are comparable at all.
+-/
+
+/-- WS-RR RR8.16: a step introduces no blocked sender it did not already have.
+
+Weaker than `ipcStateFrame`, and the weakening is the point: the send rendezvous
+writes the receiver's `ipcState` to `.ready` and the wake writes a runnable one, so
+neither frames every `ipcState` while both leave the blocked-sender set no larger.
+That is exactly what `blockedSenderFlowsToEndpoint` needs, since the predicate says
+nothing about a thread that is not blocked sending or calling.
+
+Stated with the ENDPOINT carried through: a step that moved a thread from
+`.blockedOnSend ep₁` to `.blockedOnCall ep₂` would satisfy a set-shaped relation and
+break the predicate, so the pre-state witness must be blocked on the *same*
+endpoint. -/
+def blockedSenderShrinks (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (t' : TCB) (epId : SeLe4n.ObjId),
+    lookupTcb st' tid = some t' →
+    (t'.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      t'.ipcState = ThreadIpcState.blockedOnCall epId) →
+      ∃ t, lookupTcb st tid = some t ∧
+        (t.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          t.ipcState = ThreadIpcState.blockedOnCall epId)
+
+theorem blockedSenderShrinks.refl (st : SystemState) : blockedSenderShrinks st st :=
+  fun _ t' _ h hB => ⟨t', h, hB⟩
+
+theorem blockedSenderShrinks.trans {st st' st'' : SystemState}
+    (h1 : blockedSenderShrinks st st') (h2 : blockedSenderShrinks st' st'') :
+    blockedSenderShrinks st st'' := by
+  intro tid t'' epId hLook hB
+  obtain ⟨t', hLook', hB'⟩ := h2 tid t'' epId hLook hB
+  exact h1 tid t' epId hLook' hB'
+
+/-- WS-RR RR8.16: a step that frames every `ipcState` shrinks the blocked-sender
+set, so every consumer of `ipcStateFrame` in the tree transports the flow fact with
+no new work. -/
+theorem blockedSenderShrinks_of_ipcStateFrame {st st' : SystemState}
+    (h : ipcStateFrame st st') : blockedSenderShrinks st st' := by
+  intro tid t' epId hLook hB
+  have hNotRes : ¬ tid.isReserved := lookupTcb_some_not_reserved st' tid t' hLook
+  obtain ⟨t, hPre, hEq⟩ := h tid t' (lookupTcb_some_objects st' tid t' hLook)
+  refine ⟨t, lookupTcb_of_objects_of_not_reserved st tid t hPre hNotRes, ?_⟩
+  rw [hEq]
+  exact hB
+
+/-- WS-RR RR8.16: **the write that creates a blocked sender carries the flow fact,
+given the gate that admitted it.**
+
+`storeTcbIpcStateAndMessage st tid ipc msg` is the one production write of a
+blocking `ipcState` — every path that blocks a sender or a caller goes through it,
+with the endpoint as an explicit argument — so the establishment is stated at the
+*store*, once, rather than per transition, and a transition inherits it by
+exhibiting its own decomposition.
+
+`storeTcbIpcStateAndMessage_tcb_backward_fields` is what makes that one case split:
+every post-state TCB either **is** its pre-state self (the fact carries verbatim) or
+carries exactly `ipc` (the conclusion is the gate's own).  That frame was declared
+in `IPC/CrossCore/EndpointReplyInvariant.lean`, which this module cannot reach, and
+RR8.16 moved it beside the primitive it frames.
+
+The gate is an argument rather than a hypothesis on the state, because it is a
+transition-time check the store records no trace of; the caller that holds it is the
+checked dispatch, whose `endpointFlowGate ctx epId (threadLabelOf tid)
+(endpointLabelOf epId)` is exactly `hGate` after
+`endpointFlowGate_implies_securityFlowsTo`.
+
+Stated for an arbitrary `ipc`: where the written state is not a blocking one the
+`hGate` argument is vacuous, so a non-blocking store transports the fact through the
+same theorem rather than through a second one. -/
+theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint
+    (ctx : LabelingContext) (st st' : SystemState) (tid : SeLe4n.ThreadId)
+    (ipc : ThreadIpcState) (msg : Option IpcMessage)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st')
+    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hGate : ∀ epId : SeLe4n.ObjId,
+      (ipc = ThreadIpcState.blockedOnSend epId ∨
+        ipc = ThreadIpcState.blockedOnCall epId) →
+      securityFlowsTo (ctx.threadLabelOf tid) (ctx.endpointLabelOf epId) = true) :
+    blockedSenderFlowsToEndpoint ctx st' := by
+  intro other t' epId hLook hB
+  have hNotRes : ¬ other.isReserved := lookupTcb_some_not_reserved st' other t' hLook
+  obtain ⟨ty, hPreObj, _, _, hCase⟩ :=
+    storeTcbIpcStateAndMessage_tcb_backward_fields st st' tid ipc msg hObjInv hStep
+      other.toObjId t' (lookupTcb_some_objects st' other t' hLook)
+  rcases hCase with hSame | hWritten
+  · -- the write did not touch this thread: the pre-state fact applies verbatim
+    refine hPre other ty epId
+      (lookupTcb_of_objects_of_not_reserved st other ty hPreObj hNotRes) ?_
+    rw [← hSame]
+    exact hB
+  · -- this thread carries the WRITTEN state.  Either it is the thread the write
+    -- targeted, where the gate is the conclusion, or the write did not reach it at
+    -- all and the pre-state fact does — so the branch needs no argument about which
+    -- thread `tid` is.
+    by_cases hTid : other = tid
+    · subst hTid
+      rw [hWritten] at hB
+      exact hGate epId hB
+    · have hOther : st'.objects[other.toObjId]? = st.objects[other.toObjId]? :=
+        storeTcbIpcStateAndMessage_preserves_objects_ne st st' tid ipc msg
+          other.toObjId
+          (fun hEq => hTid (SeLe4n.ThreadId.toObjId_injective _ _ hEq)) hObjInv hStep
+      refine hPre other t' epId ?_ hB
+      refine lookupTcb_of_objects_of_not_reserved st other t' ?_ hNotRes
+      rw [← hOther]
+      exact lookupTcb_some_objects st' other t' hLook
+
+/-- WS-RR RR8.16: the flow fact transports across any step that introduces no
+blocked sender. -/
+theorem blockedSenderFlowsToEndpoint_of_shrinks {ctx : LabelingContext}
+    {st st' : SystemState}
+    (hPre : blockedSenderFlowsToEndpoint ctx st)
+    (hShrink : blockedSenderShrinks st st') :
+    blockedSenderFlowsToEndpoint ctx st' := by
+  intro tid t' epId hLook hB
+  obtain ⟨t, hPreLook, hPreB⟩ := hShrink tid t' epId hLook hB
+  exact hPre tid t epId hPreLook hPreB
+
+/-- WS-RR RR8.16: the base case.  A state with no blocked sender satisfies the fact
+outright, which is what makes the boot state an inhabitant rather than an
+assumption. -/
+theorem blockedSenderFlowsToEndpoint_of_none_blocked {ctx : LabelingContext}
+    {st : SystemState}
+    (hNone : ∀ (tid : SeLe4n.ThreadId) (t : TCB) (epId : SeLe4n.ObjId),
+      lookupTcb st tid = some t →
+      t.ipcState ≠ ThreadIpcState.blockedOnSend epId ∧
+        t.ipcState ≠ ThreadIpcState.blockedOnCall epId) :
+    blockedSenderFlowsToEndpoint ctx st := by
+  intro tid t epId hLook hB
+  rcases hB with h | h
+  · exact absurd h (hNone tid t epId hLook).1
+  · exact absurd h (hNone tid t epId hLook).2
+
+/-- WS-RR RR8.16: **a donated context's two ends are comparable because the donor is
+a blocked caller.**
+
+This is what makes `donationOwnerFlowsToHolder` a consequence rather than a second
+assumption.  A `.donated scId owner` binding is minted only by `donateSchedContext`,
+reached through a `Call` rendezvous in which the donor is `.blockedOnCall` on the
+endpoint — so `blockedSenderFlowsToEndpoint` gives `threadLabelOf owner ⊑
+endpointLabelOf ep`, and the receiving side's own gate gives `endpointLabelOf ep ⊑
+threadLabelOf holder`.  Composed, that is the conclusion.
+
+The receiving gate is an argument rather than a hypothesis on the state, because it
+is a transition-time check the store records no trace of; the caller that has it in
+scope is the checked dispatch. -/
+theorem donationFlowFromBlockedDonor {ctx : LabelingContext} {st : SystemState}
+    {owner holder : SeLe4n.ThreadId} {ownerTcb : TCB} {epId : SeLe4n.ObjId}
+    (hBlockedSenders : blockedSenderFlowsToEndpoint ctx st)
+    (hOwner : lookupTcb st owner = some ownerTcb)
+    (hOwnerBlocked : ownerTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+      ownerTcb.ipcState = ThreadIpcState.blockedOnCall epId)
+    (hReceiveGate : securityFlowsTo (ctx.endpointLabelOf epId)
+      (ctx.threadLabelOf holder) = true) :
+    securityFlowsTo (ctx.threadLabelOf owner) (ctx.threadLabelOf holder) = true :=
+  securityFlowsTo_trans _ _ _
+    (hBlockedSenders owner ownerTcb epId hOwner hOwnerBlocked) hReceiveGate
+
+/-- WS-RR RR8.16: the donation flow fact transports across any step that leaves
+every thread's `schedContextBinding` alone — which is what the tree's own
+`sameSchedContextBindings` frame family already establishes for the transitions
+that do not mint a donation. -/
+theorem donationOwnerFlowsToHolder_of_sameSchedContextBindings
+    {ctx : LabelingContext} {st st' : SystemState}
+    (hPre : donationOwnerFlowsToHolder ctx st)
+    (hFrame : sameSchedContextBindings st st') :
+    donationOwnerFlowsToHolder ctx st' := by
+  intro holder owner scId hRes
+  refine hPre holder owner scId ?_
+  unfold replyDonationReturn? at hRes ⊢
+  cases hLook : lookupTcb st' holder with
+  | none => rw [hLook] at hRes; simp at hRes
+  | some t' =>
+    have hNotRes : ¬ holder.isReserved :=
+      lookupTcb_some_not_reserved st' holder t' hLook
+    obtain ⟨t, hPreObj, hBindEq⟩ :=
+      hFrame holder t' (lookupTcb_some_objects st' holder t' hLook)
+    have hPreLook : lookupTcb st holder = some t :=
+      lookupTcb_of_objects_of_not_reserved st holder t hPreObj hNotRes
+    rw [hLook] at hRes
+    simp only [hPreLook, hBindEq]
+    exact hRes
 
 -- ============================================================================
 -- WS-H10/A-39: Declassification non-interference (C.10)

@@ -81,9 +81,13 @@ REQUIRED_EXTENSIONS = frozenset(
 
 
 def cited_extensions() -> set[str]:
-    tracked = subprocess.run(
-        ['git', 'ls-files'], capture_output=True, text=True, check=True
-    ).stdout.split()
+    # NUL-delimited: `git ls-files` C-quotes a path holding an unusual byte and
+    # `str.split()` breaks one holding whitespace into fragments that name no file,
+    # so the extension census would be taken over paths the tree does not have
+    # (`v0.35.150`; the same sweep that closed it in four sibling gates).
+    listing = subprocess.run(
+        ['git', 'ls-files', '-z'], capture_output=True, check=True).stdout
+    tracked = [p for p in listing.decode('utf-8', 'surrogateescape').split('\0') if p]
     found = set()
     for path in tracked:
         match = EXTENSION_RE.search(path)
@@ -170,12 +174,17 @@ ORPHAN_CITATION_RE = re.compile(r'(?:(?<=[\s`(,/~])|^):\d{2,}\b')
 
 
 def target_files() -> list[str]:
+    # NUL-delimited on both halves.  `ls` is kept only for its EXISTENCE check --
+    # `check=True` makes a missing root document a failure -- while `printf` is
+    # what emits the names, so a path holding whitespace stays one entry.
     listing = subprocess.run(
         ['bash', '-c',
-         "find docs -name '*.md' -not -path 'docs/dev_history/*'; "
-         "ls CLAUDE.md AGENTS.md README.md"],
-        capture_output=True, text=True, check=True).stdout.split()
-    return sorted(set(listing))
+         "find docs -name '*.md' -not -path 'docs/dev_history/*' -print0; "
+         "ls CLAUDE.md AGENTS.md README.md > /dev/null && "
+         "printf '%s\\0' CLAUDE.md AGENTS.md README.md"],
+        capture_output=True, check=True).stdout
+    return sorted({p for p in listing.decode('utf-8', 'surrogateescape').split('\0')
+                   if p})
 
 
 def main() -> int:

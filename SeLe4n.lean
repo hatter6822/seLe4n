@@ -20,6 +20,13 @@ import SeLe4n.Model.State
 -- silently.
 import SeLe4n.Model.Object.PerObjectLockInventory
 import SeLe4n.Kernel.API
+-- WS-RR RR8.10: the cancellation's arm-complete IPC bundle and its cross-core
+-- lift.  Its three arm theorems live in three different modules, so the
+-- composite has no natural home among them; putting it in the production import
+-- closure is what keeps it inside every Tier 1 census's derived domain (the
+-- `v0.35.60` lesson: a module outside the root is exempt from most of this
+-- tree's defences by omission rather than by decision).
+import SeLe4n.Kernel.IPC.Invariant.CancellationBundle
 import SeLe4n.Kernel.Architecture.VSpaceBackend
 import SeLe4n.Kernel.Architecture.TlbModel
 import SeLe4n.Kernel.Architecture.RegisterDecode
@@ -169,3 +176,51 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 -- `lean_classify_synchronous_exception`).  One import: the entry's transitive
 -- closure is the whole production fault surface.
 import SeLe4n.Kernel.FaultEntry
+-- **The frozen execution surface is production** (`v0.35.60`).  It was outside
+-- both library roots and in no staged allowlist, built only by its own
+-- `lean_exe` — which put it outside the *derived* domain of five of the six
+-- Tier 1 censuses and outside the production/staging partition gate entirely.
+-- That is this tree's own *a recognised set is not a derived set* rule at the
+-- scale of a subsystem, and it cost five after-the-fact corrections
+-- (`v0.35.12`, `v0.35.38`, `v0.35.47`, `v0.35.52`, `v0.35.58`), each found by a
+-- later cut rather than by a gate, on a surface that carries the **live**
+-- `TCB`, `Reply`, `SchedContext` and `IntrusiveQueue` records and mirrors the
+-- reply and cancellation spines.
+--
+-- Two imports reach all five modules: `Agreement` pulls `Operations` → `Core`
+-- and the live `Kernel.API` it is refined against, `Invariant` pulls
+-- `Commutativity` → `Operations`.  The dependency runs frozen → production and
+-- never the reverse, so this closes no cycle.
+import SeLe4n.Kernel.FrozenOps.Agreement
+import SeLe4n.Kernel.FrozenOps.Invariant
+-- **The one remaining re-export hub that no build target reached** (`v0.35.60`).
+-- Measured while promoting `FrozenOps`: of the 331 files the published
+-- `readme_sync.production_*` metric counts as production, 251 are in this root's
+-- closure and the rest are reached by `Platform.Staged`, a Tier 1 census or a
+-- `lean_exe` — all but `SeLe4n.Kernel.RadixTree`, a hub with zero in-tree
+-- consumers that nothing compiled.  Its three re-exports were therefore never
+-- checked as a unit, so a re-export naming a renamed or deleted submodule would
+-- have been invisible.  The submodules are already in this closure; this import
+-- adds only the hub, which is the point -- a file outside every build target is
+-- checked by nothing, which is the `FrozenOps` finding one file smaller.
+import SeLe4n.Kernel.RadixTree
+-- **Five more files outside both library roots** (`v0.35.76`).  The
+-- store-access census's Tier 1 reconciliation
+-- (`SeLe4n/Testing/StoreReadClassificationCensus.lean`) started refusing a row
+-- in a module its environment does not contain, and its first run named
+-- `Scheduler/PriorityInheritance/ChainFootprint.lean`.  Measured with the two
+-- roots as the criterion -- the criterion every Tier 1 census's environment
+-- actually uses, where the `v0.35.60` count above accepted a `lean_exe` as
+-- reach -- five non-test modules were outside both.  Three come here: the
+-- `Scheduler/PriorityInheritance` hub and the `FrozenOps` hub (RadixTree's
+-- shape again, each reached by test suites alone, so a re-export naming a
+-- deleted submodule was checked as a unit by nothing in CI -- their
+-- submodules are already in this closure); and `ChainFootprint`, whose RR7.40
+-- header says PRODUCTION and which no root imported, so its only staged
+-- dependency (`Concurrency/Locks/DynamicChainExtension`, every import of which
+-- was already here) is promoted with it.  The other two --
+-- `Architecture/VSpaceARMv8` and `Capability/CSpaceWalkFootprint` -- are staged
+-- instead; `Platform/Staged.lean` says why each cannot be here.
+import SeLe4n.Kernel.Scheduler.PriorityInheritance
+import SeLe4n.Kernel.FrozenOps
+import SeLe4n.Kernel.Scheduler.PriorityInheritance.ChainFootprint

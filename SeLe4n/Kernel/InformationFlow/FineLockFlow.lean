@@ -2469,8 +2469,8 @@ theorem syscallEntryUnderLockSet_preserves_projectionOnCore_of_entry (ctx : Labe
 -- takes locks in two domains this type cannot name:
 --
 -- * the **scheduler domain** — `suspendThreadOnCoreSchedLockSet` over
---   `SchedLockId` (run queues of the victim's home core, the executing core and
---   the core actually running it, plus replenish queues), and
+--   `SchedLockId` (run queues of the core the victim is placed on and of the
+--   executing core, plus replenish queues), and
 -- * the **dynamic PIP chain** — SM3.C.11's contract requires each chain member's
 --   TCB write lock *and* its home-core run-queue write lock, discovered as the
 --   walk proceeds rather than resolvable from the pre-state at all.
@@ -2889,7 +2889,7 @@ endpoint lock in isolation.
 answer was arithmetic: the suspend footprint was eight members at full resolution
 against a ceiling of nine, so two neighbour locks did not fit.  That reason is
 spent — every raise since has left room, and at the time of writing
-`lockSet_tcbSuspendOnCore_size_le_sixteen` sits well inside `maxLockSetSize`, so
+`lockSet_tcbSuspendOnCore_size_le_seventeen` sits well inside `maxLockSetSize`, so
 the two would fit with room over.  (Both figures are derived and both have moved
 repeatedly; the canonical live statement is the ceiling sentence
 `scripts/check_lock_ceiling_figures.py` holds, and this paragraph deliberately

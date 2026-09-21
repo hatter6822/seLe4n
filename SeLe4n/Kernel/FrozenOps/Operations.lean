@@ -13,8 +13,14 @@ import SeLe4n.Kernel.SchedContext.Budget
 /-!
 # Q7-C: Per-Subsystem Frozen Operations
 
-**STATUS: Experimental — post-1.0 hardening candidate (AG8-D). Not in
-production chain; registered in `docs/REGISTERED_DEBT.md` (Registered debt index, C.1).**
+**STATUS: in the production import chain since `v0.35.60`** (`SeLe4n.lean` imports
+`FrozenOps.Agreement` and `FrozenOps.Invariant`), so the Tier 1 censuses and the
+production/staging partition gate reach this module by derivation rather than
+because someone remembered to widen them.  What remains deferred is the
+*architectural* switch — `API.lean` running syscalls over frozen snapshots — which
+AG8-D gated on RPi5 freeze→operate→thaw benchmarks that do not exist yet
+(`docs/REGISTERED_DEBT.md`, Registered debt index C.1 row 14).  Being in the chain
+is not being the dispatch path.
 
 AF5-I (AF-43): Implements 24 frozen kernel operations that operate on
 `FrozenSystemState` using O(1) array-indexed lookups. Each mirrors a
@@ -182,10 +188,15 @@ def frozenHandleYield : FrozenKernel Unit :=
         let st' := { st with scheduler := { st.scheduler with current := none } }
         frozenSchedule st'
 
-/-- Q7-C1: Default time-slice quantum for frozen scheduler.
-DEPRECATED: Use `FrozenSchedulerState.configDefaultTimeSlice` instead.
-Retained for backward compatibility in tests that reference this constant. -/
-def frozenDefaultTimeSlice : Nat := 5
+-- `frozenDefaultTimeSlice : Nat := 5` stood here and is **deleted** at
+-- `v0.35.103`, together with the live `defaultTimeSlice` it mirrored.  Its own
+-- docstring marked it DEPRECATED in favour of
+-- `FrozenSchedulerState.configDefaultTimeSlice` and justified keeping it as
+-- *"backward compatibility in tests that reference this constant"* — and no test
+-- referenced it, nor did anything else in the tree.  A retention justification
+-- that names a consumer which does not exist is the stale-claim shape this
+-- project retires on sight; `frozenTimerTick` below reads
+-- `st.scheduler.configDefaultTimeSlice`.
 
 /-- Q7-C1: Frozen timer tick — handle preemption in frozen state.
 Mirrors `timerTick` with dequeue-on-dispatch.
@@ -205,21 +216,20 @@ def frozenTimerTick : FrozenKernel Unit :=
             if tcb.timeSlice ≤ 1 then
               -- Time-slice expired: reset to platform-configured value, update TCB
               let tcb' := { tcb with timeSlice := st.scheduler.configDefaultTimeSlice }
-              match st.objects.set tid.toObjId (.tcb tcb') with
-              | some objects' =>
-                  let st' := { st with objects := objects', machine := tick st.machine }
+              match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+              | .ok stored =>
+                  let st' := { stored with machine := tick st.machine }
                   -- Clear current to re-enqueue the preempted thread
                   let st'' := { st' with scheduler :=
                     { st'.scheduler with current := none } }
                   frozenSchedule st''
-              | none => .error .objectNotFound
+              | .error e => .error e
             else
               -- Time-slice not expired: decrement and continue
               let tcb' := { tcb with timeSlice := tcb.timeSlice - 1 }
-              match st.objects.set tid.toObjId (.tcb tcb') with
-              | some objects' =>
-                  .ok ((), { st with objects := objects', machine := tick st.machine })
-              | none => .error .objectNotFound
+              match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+              | .ok stored => .ok ((), { stored with machine := tick st.machine })
+              | .error e => .error e
         | _ => .error .schedulerInvariantViolation
 
 -- ============================================================================
@@ -371,9 +381,8 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := {
               state := nextState, waitingThreads := rest, pendingBadge := none,
               boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
-                let st' := { st with objects := objects' }
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok st' =>
                 -- **The badge is delivered, not just dropped.**  This branch
                 -- clears `pendingBadge` and woke the waiter, but stored no
                 -- message — so the badge vanished while the state claimed a
@@ -405,7 +414,7 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
                       .ok ((), frozenTaintClear
                               (frozenTaintFlow st3 waiter.toObjId signaller.toObjId)
                               notificationId)
-            | none => .error .objectNotFound
+            | .error e => .error e
         | none =>
             let mergedBadge : SeLe4n.Badge :=
               match ntfn.pendingBadge with
@@ -414,13 +423,12 @@ def frozenNotificationSignal (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification := {
               state := .active, waitingThreads := SeLe4n.NoDupList.empty,
               pendingBadge := some mergedBadge, boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok stored =>
                 -- Stored on the notification: it now holds the badge, so it
                 -- carries the signaller's provenance until something takes it.
-                .ok ((), frozenTaintFlow { st with objects := objects' }
-                          notificationId signaller.toObjId)
-            | none => .error .objectNotFound
+                .ok ((), frozenTaintFlow stored notificationId signaller.toObjId)
+            | .error e => .error e
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -441,9 +449,8 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
             let ntfn' : Notification :=
               { state := .idle, waitingThreads := SeLe4n.NoDupList.empty,
                 pendingBadge := none, boundTCB := ntfn.boundTCB }
-            match st.objects.set notificationId (.notification ntfn') with
-            | some objects' =>
-                let st' := { st with objects := objects' }
+            match frozenWithObjectStored st notificationId (.notification ntfn') with
+            | .ok st' =>
                 -- **No enqueue here** (PR #873 round 17).  The waiter on this
                 -- branch is the *calling* thread: it consumed a badge that was
                 -- already pending, so it never blocked and never left the run
@@ -463,7 +470,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                     .ok (some badge, frozenTaintClear
                             (frozenTaintFlow st'' waiter.toObjId notificationId)
                             notificationId)
-            | none => .error .objectNotFound
+            | .error e => .error e
         | none =>
             match frozenLookupTcb st waiter with
             | none => .error .objectNotFound
@@ -480,9 +487,8 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                         waitingThreads := wt'
                         pendingBadge := none
                         boundTCB := ntfn.boundTCB }
-                      match st.objects.set notificationId (.notification ntfn') with
-                      | some objects' =>
-                          let st' := { st with objects := objects' }
+                      match frozenWithObjectStored st notificationId (.notification ntfn') with
+                      | .ok st' =>
                           -- PR #886 review: clear `pendingMessage` atomically
                           -- with the block, exactly as the live idle-wait path
                           -- does since the RR3.5 fix -- storing state alone
@@ -495,7 +501,7 @@ def frozenNotificationWait (notificationId : SeLe4n.ObjId)
                               (fun stB => frozenRemoveRunnable stB waiter) with
                           | .error e => .error e
                           | .ok st'' => .ok (none, st'')
-                      | none => .error .objectNotFound
+                      | .error e => .error e
     | some _ => .error .invalidCapability
     | none => .error .objectNotFound
 
@@ -555,13 +561,58 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               -- to allow re-enqueue via frozenQueuePushTail, which rejects
               -- threads with queuePPrev.isSome)
               let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
-              match st.objects.set endpointId (.endpoint ep') with
-              | some objects1 =>
-                  let st1 := { st with objects := objects1 }
-                  match frozenStoreTcb headTid headTcb' st1 with
+              match frozenWithObjectStored st endpointId (.endpoint ep') with
+              | .ok st1 =>
+                  -- **PR #897 review, swept: THE SUCCESSOR IS PROMOTED.**  The
+                  -- live `endpointQueuePopHead` writes
+                  -- `storeTcbQueueLinks st1 nextTid none (some .endpointHead)
+                  -- nextTcb.queueNext` here; this mirror wrote **nothing**, so
+                  -- the thread the pop makes the head went on naming the popped
+                  -- thread as its predecessor.
+                  --
+                  -- That is not a refusal-set divergence but a *structural* one,
+                  -- and it is the worse of the two: the new head then fails
+                  -- `intrusiveQueueWellFormed`'s P2 (`queuePrev = none` and
+                  -- `queuePPrev = some .endpointHead`) and, because
+                  -- `dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees`
+                  -- factor reads exactly that pair, **every later
+                  -- `frozenQueueRemove` of it is refused `.illegalState`** -- the
+                  -- thread is stranded in the queue for good.  Measured on the
+                  -- surface's own operations, with no hand-built state: one
+                  -- `frozenEndpointSend` rendezvous into a two-deep receive queue
+                  -- leaves the promoted head undequeueable where the live
+                  -- `endpointSendDual` leaves it removable.  It is the
+                  -- OD1.1 / OD3.9 stranding class -- *a removal that writes one
+                  -- of a node's two back-pointers and not the other* -- arriving
+                  -- on the surface that had no theorems to catch it.
+                  --
+                  -- Every existing scenario popped from a **one**-deep queue,
+                  -- where there is no successor and the two programs agree by
+                  -- construction.  That is FO-043's lesson on a different
+                  -- primitive: *a sweep for fixtures that would break is not a
+                  -- sweep for fixtures that would exercise.*
+                  --
+                  -- The read is `frozenLookupTcb`, so an unresolvable or
+                  -- reserved successor is `.objectNotFound` as it is live, and
+                  -- the order is the live order -- endpoint, successor, then the
+                  -- head's own clear -- so a self-linked head resolves the same
+                  -- way on both surfaces.
+                  let afterSuccessor : Except KernelError FrozenSystemState :=
+                    match newHead with
+                    | none => .ok st1
+                    | some nextTid =>
+                      match frozenLookupTcb st1 nextTid with
+                      | none => .error .objectNotFound
+                      | some nextTcb =>
+                          frozenWithObjectStored st1 nextTid.toObjId (.tcb { nextTcb with
+                            queuePrev := none, queuePPrev := some .endpointHead })
+                  match afterSuccessor with
                   | .error e => .error e
-                  | .ok ((), st2) => .ok (headTid, headTcb, st2)
-              | none => .error .objectNotFound
+                  | .ok st2 =>
+                    match frozenStoreTcb headTid headTcb' st2 with
+                    | .error e => .error e
+                    | .ok ((), st3) => .ok (headTid, headTcb, st3)
+              | .error e => .error e
   | _ => .error .objectNotFound
 
 /-- Q7-C2: Frozen endpoint send — send message via frozen endpoint.
@@ -902,9 +953,25 @@ def frozenEndpointReply (replierId : SeLe4n.ThreadId)
                         | .ok ((), st'') =>
                             -- **WS-RM, frozen mirror**: the frame above comes off
                             -- the stack BEFORE its caller link is consumed — the
-                            -- detach reads the link the consume clears, so the
+                            -- removal reads the link the consume clears, so the
                             -- order is the content, exactly as it is live.
-                            let st' := frozenDetachReplyFrameAboveOrSelf st'' replyId
+                            --
+                            -- **WS-HP HP8.2**: and it **splices** rather than
+                            -- severing.  The frame above takes the cut frame's
+                            -- own downward link and the frame below links back up
+                            -- at it, so a middle removal leaves the stack
+                            -- connected and the reservation travelling outward.
+                            -- HP6.3 made the live removal do this; leaving the
+                            -- mirror severing would be one question answered in
+                            -- two places with the answers already known to
+                            -- differ, which is what `frozenBranchOperationChecked
+                            -- .endpointReplyToBlockedCaller = true` forbids.
+                            -- Where the cut frame is the *bottom* of its stack
+                            -- the two write the same value
+                            -- (`frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below`),
+                            -- which is why every scenario this surface carried
+                            -- before HP8 answers as it did.
+                            let st' := frozenSpliceReplyFrameOutOrSelf st'' replyId
                             -- ...and the record stored is **`Reply.consumed`**, the
                             -- live function, not an inline caller clear.  It is a
                             -- pure function on a `Reply`, and this surface stores
@@ -953,24 +1020,6 @@ def frozenRecordedReplyServer? (st : FrozenSystemState) (target : SeLe4n.ThreadI
       | _                                 => none
   | none => none
 
-/-- **WS-RM, frozen mirror**: the donation this reply returns, paired with its
-original owner -- `endpointReplyServerDonation?`'s counterpart.
-
-Read from the **recorded server's** binding, not the (possibly delegated) cap
-holder's, exactly as the live resolver does: a delegated reply capability is
-legitimate authority and does not move the donation. -/
-def frozenEndpointReplyServerDonation? (st : FrozenSystemState)
-    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
-  match frozenRecordedReplyServer? st target with
-  | none => none
-  | some server =>
-      match st.getTcb? server with
-      | some tcb =>
-          match tcb.schedContextBinding with
-          | .donated scId originalOwner => some (scId, originalOwner)
-          | _                           => none
-      | none => none
-
 /-- **WS-RM, frozen mirror of `applyReplyDonation`** — the return **and** the
 deschedule, as one step.
 
@@ -986,13 +1035,29 @@ nobody -- the temporal-isolation defect PR #895 rounds 9-11 closed on the live
 with the deschedule, and reproduced the defect on this surface -- that round's
 own rule, *sharing an implementation transfers its preconditions*, failing inside
 the fix that recorded it.  A frozen mirror of a live step therefore names the
-live function that **completes** it, never the one nested inside. -/
-def frozenApplyReplyDonation (st : FrozenSystemState) (replier : SeLe4n.ThreadId)
+live function that **completes** it, never the one nested inside.
+
+**The sentinel holder is refused here, as the live twin refuses it** (WS-HP
+HP4.7).  `applyReplyDonation` promotes the holder through `ThreadId.toValid?` and
+answers `.invalidArgument` when it will not promote; that promotion is the live
+step's, not `returnDonatedSchedContext`'s, so it belongs at this unit.  It is
+spelled `holder.isReserved` rather than with `toValid?` because this surface uses
+`toValid?` nowhere -- `frozenLookupTcb` is how it asks whether an id is usable,
+and that predicate *is* `isReserved`, which in turn is exactly `= sentinel`
+(`Prelude.lean`).  So the condition is the live one and the vocabulary is this
+surface's, which is what keeps "is this id usable" one question here rather than
+two.  Reachable only on a malformed frozen state -- a SchedContext bound to the
+sentinel thread, which no live invariant admits and which `Model.freeze` would
+copy verbatim if one existed -- and that is precisely the class this surface's
+guards exist for. -/
+def frozenApplyReplyDonation (st : FrozenSystemState) (holder : SeLe4n.ThreadId)
     (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId) :
     Except KernelError FrozenSystemState :=
-  match frozenReturnDonatedSchedContextResolved st replier scId originalOwner with
-  | .error e => .error e
-  | .ok st' => .ok (frozenRemoveRunnable st' replier)
+  if holder.isReserved then .error .invalidArgument
+  else
+    match frozenReturnDonatedSchedContextResolved st holder scId originalOwner with
+    | .error e => .error e
+    | .ok st' => .ok (frozenRemoveRunnable st' holder)
 
 /-- **WS-RM, frozen mirror of the whole `.reply` operation** (PR #895 review
 round 13).
@@ -1015,8 +1080,30 @@ keeping: the bare live reply leaves a head linked too, so moving the pop into th
 mirror would make it diverge from the very function it refines -- the refinement
 that currently holds is what tells this surface apart from a guess.
 
-The donation is resolved on the **pre**-state, because the reply clears the
-`ipcState` the recorded server is read from.
+The donation is resolved on the **pre**-state, because the reply clears both
+things a resolver could key on: the `ipcState` that records the server, and the
+`replyObject` that names the answered frame.
+
+**...and it is resolved from the FRAME** (WS-HP HP8.1).  HP4 made the live
+`.reply` operation head-driven — `endpointReplyCrossCoreDispatch` reads
+`replyFrameHeadHolder?` and pops the context the answered frame **heads** — and
+this mirror read the recorded server's `.donated` binding.  The two coincide on
+every state `severAtCut` leaves, which is why nothing here failed, and part
+company on the states HP6's splice creates: that is this project's *one question
+answered in two places will diverge*, with the divergence already on the
+schedule.  The frame needs no resolving here, because `replyId` **is** the
+presented reply capability and `frozenEndpointReply` refuses it unless the
+target's own `replyObject` names it — so this surface asks the head question of
+exactly the frame the live operation recovers through `answeredReplyObject?`.
+
+Two consequences worth stating.  The pop's subject is the frame's **holder**
+(the context's `boundThread`), which on a delegated reply capability is neither
+the replier nor, since HP6's splice (`v0.35.45`), necessarily the recorded
+server.  And the
+recipient is `targetId` — the caller being answered — rather than the binding's
+recorded `originalOwner`; the two agree wherever `donationOwnerValid` holds, and
+the frame reading is the one that stays true when a middle frame has been
+spliced out.
 
 **...and priority inheritance is reverted on every successful reply** (PR #895
 review round 15), donation or none.  The answered caller was blocked *on* the
@@ -1043,14 +1130,25 @@ def frozenEndpointReplyWithDonationReturn (replierId : SeLe4n.ThreadId)
     (targetId : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (msg : IpcMessage) :
     FrozenKernel Unit :=
   fun st =>
-    let donation? := frozenEndpointReplyServerDonation? st targetId
+    -- **WS-HP HP8.1**: the head-driven trigger, read on the pre-state.
+    let headHolder? := frozenReplyFrameHeadHolder? st replyId
     let server? := frozenRecordedReplyServer? st targetId
     match frozenEndpointReply replierId targetId replyId msg st with
     | .error e => .error e
     | .ok ((), st') =>
-      match donation?, server? with
-      | some (scId, originalOwner), some server =>
-          match frozenApplyReplyDonation st' server scId originalOwner with
+      match headHolder?, server? with
+      | some (scId, holder), some server =>
+          -- **WS-HP HP10.8**: the recipient at the BOTTOM of the stack is the
+          -- reservation's recorded origin, exactly as the live arm has read it
+          -- since HP10.7.  The resolver is read on the PRE-state `st`, because
+          -- `frozenEndpointReply` has already consumed the answered caller's
+          -- reply link by the time `st'` exists -- the same reason the live
+          -- trigger takes its frame as an argument.  A window in which the live
+          -- arm redirects and this one does not makes
+          -- `frozenBranchOperationChecked .endpointReplyToBlockedCaller = true`
+          -- an over-claim, which is HP4.7's situation verbatim.
+          match frozenApplyReplyDonation st' holder scId
+                  (frozenReplyDonationRecipient st scId targetId) with
           | .error e => .error e
           | .ok st'' => .ok ((), frozenRevertPriorityInheritance st'' server)
       | _, some server => .ok ((), frozenRevertPriorityInheritance st' server)
@@ -1103,9 +1201,9 @@ def frozenCspaceMint (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
         | none =>
             let slots' := cn.slots.insert slot cap
             let cn' : FrozenCNode := { cn with slots := slots' }
-            match st.objects.set rootId (.cnode cn') with
-            | some objects' => .ok ((), { st with objects := objects' })
-            | none => .error .objectNotFound
+            match frozenWithObjectStored st rootId (.cnode cn') with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
@@ -1117,9 +1215,9 @@ def frozenCspaceDelete (rootId : SeLe4n.ObjId) (slot : SeLe4n.Slot)
     | some (.cnode cn) =>
         let slots' := cn.slots.erase slot
         let cn' : FrozenCNode := { cn with slots := slots' }
-        match st.objects.set rootId (.cnode cn') with
-        | some objects' => .ok ((), { st with objects := objects' })
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st rootId (.cnode cn') with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
     | some _ => .error .objectNotFound
     | none => .error .objectNotFound
 
@@ -1171,7 +1269,47 @@ def frozenLookupServiceByCap (epId : SeLe4n.ObjId)
 /-- Z8-H: Frozen SchedContext configure — update scheduling parameters.
 Mirrors `schedContextConfigure` in frozen state. SchedContext is passthrough-
 frozen (no internal RHTables), so this is a straightforward lookup + store.
-Validates parameters and checks admission control against frozen state. -/
+Validates parameters and checks admission control against frozen state.
+
+**And it propagates the two thread-owned parameters to the bound thread, in two
+independently gated halves, of which only the priority half re-buckets**
+(`v0.35.101`, corrected `v0.35.105`).  Found by sweeping the *question* rather than the
+two sites PR #897 named: the review reported `frozenSchedContextBind` and
+`frozenWriteBasePriority`, and asking "which other frozen writer moves a run-queue
+key?" found this one, which was worse than either.  It wrote the reservation and
+stopped -- no priority propagation, no domain propagation, no re-bucket -- where
+the live `schedContextConfigureBoundPropagate` does all three.  So every frozen
+post-configure state with a thread bound to the reconfigured reservation
+falsified **two** invariants at once, `boundThreadPriorityConsistent` and
+`boundThreadDomainConsistent`, which is `v0.35.99`'s bind finding on a third
+operation.
+
+**Two halves, not one gate** (PR #897 review, `v0.35.105`).  The sentence above
+used to end *"does all three under one gate"*, and that reading is what the first
+mirror implemented: one condition over both parameters, feeding
+`frozenWriteTcbRebucketed`.  The live operation has **two** gates -- `if
+boundTcb.priority.val = priority ∨ ¬ propagates` and, over the state the first
+left, `if currentTcb.domain.val = domain ∨ ¬ propagates` -- and only the first
+writes a run-queue key.  Fusing them made a *domain-only* reconfiguration
+re-bucket, and `RunQueue.insert` appends, so a queued bound thread moved to its
+bucket's tail at an unchanged key: measured on a reservation bound to a queued
+thread with a same-priority peer, live leaves the bucket `[62, 63]` and the fused
+mirror left `[63, 62]`.  `frozenStateAgrees` compares buckets as lists and
+`frozenChooseThread` folds them in order, so that is a different next thread.
+
+Two live questions given one frozen answer is the **dual** of this project's *one
+question, two answers* shape, and it is invisible to the same instruments: only
+the priority half's outcome was ever compared, and `.schedContextConfigure` is not
+a `FrozenOpBranch` at all, so no `frozenRunAgrees` scenario could reach it -- the
+measurement `v0.35.96` recorded for the bind's missing refusals, holding again one
+operation over.
+
+The gate is the live one, `schedContextConfigurePropagates`: the bound thread must
+**own** this reservation, so a donee running on it is never propagated to -- its
+base priority and domain are its own (WS-OD `v0.35.3`), and writing them from the
+donor's reservation would be the authority crossing that cut closed.  `.bound` is
+the only binding `boundThread` can hold on this surface for a thread that owns the
+reservation, and the gate says so rather than this arm assuming it. -/
 def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
     (budget period priority deadline domain : Nat) : FrozenKernel Unit :=
   fun st =>
@@ -1207,9 +1345,80 @@ def frozenSchedContextConfigure (scId : SeLe4n.ObjId)
           | .schedContext sc' => if sc'.scId.toObjId == scId then acc else sc' :: acc
           | _ => acc
         if SeLe4n.Kernel.admissionCheck allScs updated then
-          match st.objects.set scId (.schedContext updated) with
-          | some objects' => .ok ((), { st with objects := objects' })
-          | none => .error .objectNotFound
+          match frozenWithObjectStored st scId (.schedContext updated) with
+          | .ok st' =>
+            -- The propagation half: the live `schedContextConfigureBoundPropagate`
+            -- reads the *stored* state, so this does too.  Each parameter is
+            -- written only when it moved, as the live halves are -- and since
+            -- `v0.35.105` each has its **own** gate, so an unchanged priority is
+            -- no write and no re-bucket even when the domain moved.  This comment
+            -- claimed that before the code did it: the gate was the *disjunction*,
+            -- so a domain-only reconfigure reached the re-bucketing writer.
+            match sc.boundThread with
+            | none => .ok ((), st')
+            | some boundTid =>
+              match frozenLookupTcb st' boundTid with
+              | none => .ok ((), st')
+              | some boundTcb =>
+                -- The id comes from the **argument**, as the live gate's does
+                -- (`SchedContextId.ofObjId vScId.val`), not from the record's own
+                -- `scId` field: a self-id field is data the store holds and the
+                -- operation is about the object at this key.  Same derivation the
+                -- frozen bind uses for its own binding.
+                if boundTcb.schedContextBinding.ownScId?
+                    != some (⟨scId.toNat⟩ : SeLe4n.SchedContextId) then
+                  .ok ((), st')
+                else
+                  -- **TWO HALVES, one per parameter** (PR #897 review, `v0.35.105`).
+                  -- `schedContextConfigureBoundPropagate` is two independently
+                  -- gated writes -- a priority half that re-buckets and a domain
+                  -- half that writes in place -- and `v0.35.101` mirrored it as
+                  -- **one** gate over their union feeding the re-bucketing
+                  -- writer.  A domain-only reconfiguration then re-bucketed:
+                  -- `RunQueue.insert` appends, so a queued bound thread moved to
+                  -- its bucket's *tail* at an unchanged key while the live
+                  -- operation left it where it was.  Measured on a reservation
+                  -- bound to a queued thread with a same-priority peer: live
+                  -- leaves the bucket `[62, 63]`, the fused mirror left
+                  -- `[63, 62]`, so `frozenChooseThread` selected the other
+                  -- thread.  Two live questions given one frozen answer is the
+                  -- dual of this project's *one question, two answers* shape, and
+                  -- the remedy is the same -- mirror the structure rather than
+                  -- the outcome.
+                  --
+                  -- The ownership gate is hoisted above both halves rather than
+                  -- asked twice, which is exact and not a narrowing: the live
+                  -- domain half consults `schedContextConfigurePropagates
+                  -- boundTcb`, the **pre-write** record, exactly as its priority
+                  -- half does, so the predicate cannot change between them.
+                  --
+                  -- The priority half: the live gate is *the priority moved*, and
+                  -- the write goes through the re-bucketing writer because a base
+                  -- priority **is** the run-queue key (`TCB.boostedPriority`).
+                  let priorityHalf : Except KernelError FrozenSystemState :=
+                    if boundTcb.priority == (⟨priority⟩ : SeLe4n.Priority) then .ok st'
+                    else
+                      frozenWriteTcbRebucketed st' boundTid
+                        { boundTcb with priority := ⟨priority⟩ }
+                  match priorityHalf with
+                  | .error e => .error e
+                  | .ok stPri =>
+                    -- The domain half reads the record the priority half may have
+                    -- rewritten, so it **re-resolves** -- the live half does, for
+                    -- the same reason -- and its write is the surface's ordinary
+                    -- in-place store: a domain is not a run-queue key, so nothing
+                    -- here may move a bucket.
+                    match frozenLookupTcb stPri boundTid with
+                    | none => .ok ((), stPri)
+                    | some currentTcb =>
+                      if currentTcb.domain == (⟨domain⟩ : SeLe4n.DomainId) then
+                        .ok ((), stPri)
+                      else
+                        match frozenWithObjectStored stPri boundTid.toObjId
+                            (.tcb { currentTcb with domain := ⟨domain⟩ }) with
+                        | .ok stDom => .ok ((), stDom)
+                        | .error e => .error e
+          | .error e => .error e
         else
           .error .resourceExhausted
       | _ => .error .objectNotFound
@@ -1224,21 +1433,72 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
     match st.getObject? scId with
     | some (.schedContext sc) =>
       if sc.boundThread.isSome then .error .illegalState
+      -- **PR #897 review, the sweep the origin fix owed.**  The live bind refuses
+      -- four things and this mirror refused one, so it **succeeded where the
+      -- kernel refuses** -- the direction that matters on a differential surface,
+      -- and the `v0.35.59` shape one operation over (*a named condition beside
+      -- unnamed ones is a subset*).  The three below are the live guards in the
+      -- live order, so the two agree on the error code as well as on the verdict.
+      --
+      -- WS-OD (`v0.35.4`): a context that heads a reply stack is on loan down a
+      -- call chain and owed back along it; binding it elsewhere would give it a
+      -- second claimant the pop then displaces.
+      else if sc.scReply.isSome then .error .illegalState
       else
         match st.getTcb? threadId with
         | some tcb =>
+          -- AE3-A/U-11: the domain filter reads `tcb.domain` while effective
+          -- priority resolves from `sc.domain`, so a cross-domain bind would let
+          -- a thread pass the filter by one and be prioritised by the other.
+          if tcb.domain != sc.domain then .error .invalidArgument
+          -- WS-OD (`v0.35.4`): a thread blocked on a reply whose frame is on a
+          -- live stack is owed a context by the pop that reaches that frame, and
+          -- that pop writes its binding; a second context now would be
+          -- overwritten by it and orphaned.
+          else if frozenReplyFrameOnLiveStack st tcb then .error .illegalState
+          else
           match tcb.schedContextBinding with
           | .unbound =>
             let scIdTyped : SeLe4n.SchedContextId := ⟨scId.toNat⟩
-            let updatedSc := { sc with boundThread := some threadId }
+            -- **WS-HP HP10.4, frozen mirror (PR #897 review).**  A bind ends any
+            -- loan, so the recorded origin clears — the live clause, which this
+            -- mirror did not carry.  `FrozenSystemState` holds the **live**
+            -- `SchedContext` record and `Model.freeze` copies it verbatim, so a
+            -- frozen state taken mid-chain really does carry an origin; leaving it
+            -- here would let `frozenDonationOriginRecipient?` hand a later
+            -- bottom-of-stack return to a thread this bind has nothing to do with,
+            -- which is the thread-id-reuse hazard the field's own docstring names.
+            -- A field added to a shared record is a sweep of **both** surfaces,
+            -- not of the one whose transition motivated it.
+            let updatedSc := { sc with boundThread := some threadId,
+                                       donationOrigin := none }
+            -- **AK2-B option B (S-H04), frozen mirror (PR #897 review)**: and the
+            -- SchedContext's priority reaches the TCB, as the live bind's does.
+            -- Omitting it left every frozen post-bind state falsifying
+            -- `boundThreadPriorityConsistent` -- the invariant the live write
+            -- exists to establish -- so the mirror was not merely narrower than
+            -- its subject but produced states the live kernel cannot reach.
             let updatedTcb := { tcb with
-              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped }
-            match st.objects.set scId (.schedContext updatedSc) with
-            | some objs1 =>
-              match objs1.set threadId.toObjId (.tcb updatedTcb) with
-              | some objs2 => .ok ((), { st with objects := objs2 })
-              | none => .error .objectNotFound
-            | none => .error .objectNotFound
+              schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound scIdTyped,
+              priority := sc.priority }
+            match frozenWithObjectStored st scId (.schedContext updatedSc) with
+            | .ok st1 =>
+              -- **And the bound thread is re-bucketed** (`v0.35.101`, reported on
+              -- PR #897).  The propagated `sc.priority` moves `updatedTcb`'s
+              -- `boostedPriority`, which is the frozen run queue's key, and the
+              -- live bind's Z5-G3 step exists for exactly this: `if tid ∈
+              -- runQueueOnCore bindHome then remove + insert at
+              -- resolveInsertPriority`.  Post-bind that insert priority *is*
+              -- `updatedTcb.boostedPriority` -- `resolveEffectivePrioDeadline`
+              -- reads the reservation for a `.bound` thread and this write has
+              -- just made the two agree -- so the shared frozen writer's key is
+              -- the live one's value, not a frozen-specific reading of it.
+              -- Without it a bind could raise a queued thread's band and
+              -- `frozenSchedule` would keep selecting it at the old one.
+              match frozenWriteTcbRebucketed st1 threadId updatedTcb with
+              | .ok st2 => .ok ((), st2)
+              | .error e => .error e
+            | .error e => .error e
           | _ => .error .illegalState
         | _ => .error .objectNotFound
     | _ => .error .objectNotFound
@@ -1286,15 +1546,22 @@ def frozenSchedContextUnbind (scId : SeLe4n.ObjId) : FrozenKernel Unit :=
           let st0 := if (st.scheduler.current) == some tid then
             { st with scheduler := { st.scheduler with current := none } }
           else st
-          let updatedSc := { sc with boundThread := none, isActive := false }
+          -- **WS-HP HP10.4, frozen mirror (PR #897 review)**: and the origin,
+          -- for the bind's reason in the other direction — the reservation stops
+          -- being owned at all, so a recorded departure from ownership has no
+          -- subject.  Both live arms of `schedContextUnbind` clear it; a mirror
+          -- that keeps history the kernel erases is a mirror that answers a later
+          -- pop differently.
+          let updatedSc := { sc with boundThread := none, isActive := false,
+                                     donationOrigin := none }
           let updatedTcb := { tcb with
             schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound }
-          match st0.objects.set scId (.schedContext updatedSc) with
-          | none => .error .objectNotFound
-          | some st1Objs =>
-            match st1Objs.set tid.toObjId (.tcb updatedTcb) with
-            | some objs2 => .ok ((), { st0 with objects := objs2 })
-            | none => .error .objectNotFound
+          match frozenWithObjectStored st0 scId (.schedContext updatedSc) with
+          | .error e => .error e
+          | .ok st1 =>
+            match frozenWithObjectStored st1 tid.toObjId (.tcb updatedTcb) with
+            | .ok st2 => .ok ((), st2)
+            | .error e => .error e
         | _ =>
           -- AK8-H: TCB missing or wrong variant — fail closed, no SC mutation.
           .error .objectNotFound
@@ -1325,16 +1592,16 @@ def frozenTimerTickBudget : FrozenKernel Unit :=
               let result := SeLe4n.Kernel.cbsBudgetCheck sc st.machine.timer 1
               let updatedSc := result.1
               let wasPreempted := result.2
-              match st.objects.set scId.toObjId (.schedContext updatedSc) with
-              | some objs1 =>
-                let st' := { st with objects := objs1, machine := tick st.machine }
+              match frozenWithObjectStored st scId.toObjId (.schedContext updatedSc) with
+              | .ok stored =>
+                let st' := { stored with machine := tick st.machine }
                 if wasPreempted == true then
                   -- Budget exhausted: clear current to force rescheduling
                   .ok ((), { st' with scheduler :=
                     { st'.scheduler with current := none } })
                 else
                   .ok ((), st')
-              | none => .error .objectNotFound
+              | .error e => .error e
             | _ =>
               -- R5.E (DEEP-SCH-04): SchedContext lookup failed for a bound-
               -- budget thread.  Pre-R5 this silently fell back to the legacy
@@ -1379,9 +1646,9 @@ def frozenSuspendThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
           queuePrev := none
           queueNext := none
           queuePPrev := none }
-        match st.objects.set tid.toObjId (.tcb tcb') with
-        | some objs => .ok ((), frozenRemoveRunnable { st with objects := objs } tid)
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st tid.toObjId (.tcb tcb') with
+        | .ok stored => .ok ((), frozenRemoveRunnable stored tid)
+        | .error e => .error e
 
 /-- D1: Frozen thread resume — transition a thread from Inactive to Ready.
 Mirrors `resumeThread` in frozen state.
@@ -1390,8 +1657,49 @@ PR #873 round 15: the thread also **enters the run queue**, for the reason its
 suspending counterpart leaves it.  Skipping the insert left a resumed thread
 `.ready` and absent from every `byPriority` bucket, which is precisely the state
 `frozenChooseThread` cannot select from — resumed in name, unschedulable in
-fact.  If the resumed thread has higher priority than current, `current` is
-cleared to force rescheduling. -/
+fact.
+
+**And it mirrors the live resume's three scheduling steps** (`v0.35.134`).  All
+three were absent, and each is a divergence from `resumeThread` on a state the
+frozen surface reaches.  They were found by sweeping the question PR #897's
+review asked of `frozenComputeMaxWaiterPriority` — *which priority does this
+surface read* — one function over, which is why they are one cut with it.
+
+1. **The field clear is `TCB.restoredToReady`** (`Model/Object/Types.lean`), the
+   live `restoreToReady`'s own function rather than a second list of fields.
+   This set `ipcState := .ready` and stopped, so the three intrusive-queue links
+   and the stashed receive Reply survived the resume.  The stashed Reply is the
+   sharper half: `replyIsStashed` stays true, so lifecycle cleanup of that Reply
+   answers `revocationRequired` with no receive pending — the defect PR #822's
+   review added the live clear for, alive here because the clear had no name to
+   call.
+
+2. **`pipBoost` is recomputed from the blocking graph** (live H3b).  While the
+   thread was `.Inactive`, threads may have blocked on it or stopped blocking on
+   it, so a carried-over boost is stale in both directions: too high and the
+   thread runs at an inherited band nobody is waiting for, too low and the
+   inversion priority inheritance exists to prevent is live.  It is computed on
+   the **cleared** state, as live computes it after `restoreToReady`, so a thread
+   whose own `ipcState` recorded it as blocked on itself does not count itself.
+
+3. **The preemption comparison reads `TCB.boostedPriority`**, which is what the
+   live comparison's `resolveEffectivePrioDeadline` resolves to
+   (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`).  It compared
+   `tcb'.priority` against `curTcb.priority` — the **bases** — so the two
+   surfaces disagreed in both directions whenever either thread carried a boost:
+   a boosted resumed thread failed to preempt the lower-priority thread its boost
+   exists to get ahead of, and an unboosted resumed thread preempted a boosted
+   current one.  No fixture could see it (none of the three frozen resume
+   scenarios set `current` at all, so the branch was unexecuted) and no
+   differential could reach it (`.tcbResume` is outside `FrozenOpBranch.all`,
+   which covers the IPC syscalls).
+
+Clearing `current` **is** the frozen spelling of the live re-enqueue-then-
+schedule: dispatch here is `current := some tid` with the thread left in its
+bucket, so clearing it makes the outgoing thread selectable again, exactly as
+`frozenHandleYield` documents.  The enqueue runs after the comparison where live
+runs it before; the order is immaterial, because the enqueue touches only
+`byPriority` and the comparison reads only the two TCBs. -/
 def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
   fun st =>
     match frozenLookupTcb st tid with
@@ -1399,30 +1707,83 @@ def frozenResumeThread (tid : SeLe4n.ThreadId) : FrozenKernel Unit :=
     | some tcb =>
       if tcb.threadState != .Inactive then .error .illegalState
       else
-        let tcb' := { tcb with threadState := .Ready, ipcState := .ready }
-        match st.objects.set tid.toObjId (.tcb tcb') with
-        | some objs =>
-          let st' := { st with objects := objs }
-          -- If resumed thread has higher priority than current, force reschedule
-          let st' := match (st'.scheduler.current) with
-            | some curTid =>
-              match st'.getTcb? curTid with
-              | some curTcb =>
-                if tcb'.priority.val > curTcb.priority.val then
-                  { st' with scheduler := { st'.scheduler with current := none } }
-                else st'
-              | _ => { st' with scheduler := { st'.scheduler with current := none } }
-            | none => st'
-          -- PR #873 round 15: and it re-enters the run queue, which is what
-          -- makes it selectable at all.
-          match frozenEnsureRunnable st' tid with
+        -- (1) the shared restore, committed first so (2) reads a state in which
+        -- the resumed thread is no longer recorded as blocked on anything.
+        match frozenWithObjectStored st tid.toObjId (.tcb tcb.restoredToReady) with
+        | .error e => .error e
+        | .ok stCleared =>
+          -- (2) the boost re-derived from the post-restore blocking graph.
+          let tcb' := { tcb.restoredToReady with
+                          threadState := .Ready
+                          pipBoost := frozenComputeMaxWaiterPriority stCleared tid }
+          match frozenWithObjectStored stCleared tid.toObjId (.tcb tcb') with
+          | .ok stored =>
+            -- (3) preemption on the EFFECTIVE priority, off the record just
+            -- stored, so the refreshed boost is the one compared.
+            let st' := match (stored.scheduler.current) with
+              | some curTid =>
+                match stored.getTcb? curTid with
+                | some curTcb =>
+                  if tcb'.boostedPriority.val > curTcb.boostedPriority.val then
+                    { stored with scheduler := { stored.scheduler with current := none } }
+                  else stored
+                | _ => { stored with scheduler := { stored.scheduler with current := none } }
+              | none => stored
+            -- PR #873 round 15: and it re-enters the run queue, which is what
+            -- makes it selectable at all -- at the bucket `tcb'.boostedPriority`
+            -- names, which (2) may have moved.
+            match frozenEnsureRunnable st' tid with
+            | .error e => .error e
+            | .ok st'' => .ok ((), st'')
           | .error e => .error e
-          | .ok st'' => .ok ((), st'')
-        | none => .error .objectNotFound
 
 -- ============================================================================
 -- D2-L: Frozen priority management operations
 -- ============================================================================
+
+/-- **The frozen mirror of `updatePrioritySource`** (`v0.35.99`): a `.bound`
+thread's base priority has **two homes** and this writes both, in the live
+operation's own order (the reservation, then the thread).
+
+`v0.35.98` fixed the live writer and left this surface writing the reservation
+alone, so the same operation produced divergent live and frozen states and a
+frozen block/wake would read the stale `TCB.boostedPriority` and restore the old
+band — the very defect that cut closed, surviving on the mirror.  Reported on
+PR #897, and it is this project's *a field added to a shared record is a sweep of
+both surfaces* rule, which `v0.35.98`'s own entry quoted about `donationOrigin`
+and then did not apply to its own change.
+
+Both frozen operations that move a base priority call this, so the surface has
+one answer: `frozenSetPriority` directly, and `frozenSetMCPriority` when its
+ceiling bites.
+
+**And the write re-buckets** (`v0.35.101`, reported on PR #897).  The frozen run
+queue is keyed by `TCB.boostedPriority`, which is `priority.raisedBy pipBoost` --
+so a base-priority write moves a queued thread's bucket exactly as a boost write
+does, and this wrote the field and stopped.  `frozenChooseThread` folds
+`byPriority`, so the frozen kernel went on ordering the thread by the band this
+write had just removed, where the live `applyPriorityChangeOnCore` composes
+`migrateRunQueueBucketOnCore` onto `updatePrioritySource` for precisely that
+reason; worse, a later `frozenEnsureRunnable` appends when the thread is absent
+from the bucket for its *new* priority, so the thread would have ended in **two**.
+`frozenWriteTcbRebucketed` is the shared answer -- the mechanics were spelled
+inline in `frozenUpdatePipBoost` and so answered the boost half only, which is
+this project's *one question answered in two places* shape with one of the places
+never answering. -/
+def frozenWriteBasePriority (st : FrozenSystemState) (targetTid : SeLe4n.ThreadId)
+    (targetTcb : TCB) (newPriority : SeLe4n.Priority) :
+    Except KernelError FrozenSystemState :=
+  let tcb' := { targetTcb with priority := newPriority }
+  match targetTcb.schedContextBinding.ownScId? with
+  | some scId =>
+    match st.getSchedContext? scId with
+    | some sc =>
+      match frozenWithObjectStored st scId.toObjId
+              (.schedContext { sc with priority := newPriority }) with
+      | .ok st1 => frozenWriteTcbRebucketed st1 targetTid tcb'
+      | .error e => .error e
+    | none => .error .objectNotFound
+  | none => frozenWriteTcbRebucketed st targetTid tcb'
 
 /-- D2-L: Frozen-phase setPriority. Validates MCP authority, updates priority
 on the frozen state (the thread's SchedContext if `.bound`, its TCB otherwise).
@@ -1445,20 +1806,9 @@ def frozenSetPriority (callerTid targetTid : SeLe4n.ThreadId)
       | some targetTcb =>
         -- Update the priority source (`.bound`: the SchedContext; `.unbound`
         -- and `.donated`: the TCB).
-        match targetTcb.schedContextBinding.ownScId? with
-        | some scId =>
-          match st.getSchedContext? scId with
-          | some sc =>
-            let sc' := { sc with priority := newPriority }
-            match st.objects.set scId.toObjId (.schedContext sc') with
-            | some objs => .ok ((), { st with objects := objs })
-            | none => .error .objectNotFound
-          | _ => .error .objectNotFound
-        | none =>
-          let tcb' := { targetTcb with priority := newPriority }
-          match st.objects.set targetTid.toObjId (.tcb tcb') with
-          | some objs => .ok ((), { st with objects := objs })
-          | none => .error .objectNotFound
+        match frozenWriteBasePriority st targetTid targetTcb newPriority with
+        | .ok st' => .ok ((), st')
+        | .error e => .error e
 
 /-- D2-L: Frozen-phase setMCPriority. Validates caller has sufficient MCP,
 updates target's maxControlledPriority. If current priority exceeds new MCP,
@@ -1473,15 +1823,23 @@ def frozenSetMCPriority (callerTid targetTid : SeLe4n.ThreadId)
       else match frozenLookupTcb st targetTid with
       | none => .error .objectNotFound
       | some targetTcb =>
+        -- `v0.35.99`: the ceiling on the TCB, then the capped base priority
+        -- through the shared writer -- the live `setMCPriorityOnCore`'s own
+        -- control flow (rewrite the ceiling, then `applyPriorityChangeOnCore`).
+        -- Two divergences closed here, mirror images of each other: the cap is
+        -- compared against `threadBasePriority`, which reads the *reservation*
+        -- for a `.bound` thread and which this arm read off the TCB; and the
+        -- capped value was written to the TCB alone, where the live path writes
+        -- both homes.
         let targetTcb' := { targetTcb with maxControlledPriority := newMCP }
-        -- Cap priority if it exceeds new MCP
-        let targetTcb' :=
-          if targetTcb'.priority.val > newMCP.val
-          then { targetTcb' with priority := newMCP }
-          else targetTcb'
-        match st.objects.set targetTid.toObjId (.tcb targetTcb') with
-        | some objs => .ok ((), { st with objects := objs })
-        | none => .error .objectNotFound
+        match frozenWithObjectStored st targetTid.toObjId (.tcb targetTcb') with
+        | .error e => .error e
+        | .ok st1 =>
+          if (st1.threadBasePriority targetTcb').val > newMCP.val then
+            match frozenWriteBasePriority st1 targetTid targetTcb' newMCP with
+            | .ok st' => .ok ((), st')
+            | .error e => .error e
+          else .ok ((), st1)
 
 -- ============================================================================
 -- D3-I: Frozen IPC buffer configuration
@@ -1522,9 +1880,9 @@ def frozenSetIPCBuffer (targetTid : SeLe4n.ThreadId)
               .error .addressOutOfBounds
             else
               let tcb' := { tcb with ipcBuffer := addr }
-              match st.objects.set targetTid.toObjId (.tcb tcb') with
-              | some objs => .ok ((), { st with objects := objs })
-              | none => .error .objectNotFound
+              match frozenWithObjectStored st targetTid.toObjId (.tcb tcb') with
+              | .ok st' => .ok ((), st')
+              | .error e => .error e
           | none => .error .translationFault
         | _ => .error .invalidArgument
 

@@ -768,16 +768,26 @@ pub extern "C" fn handle_synchronous_exception(frame: &mut TrapFrame) {
             // `arm64DefaultLayout.syscallNumReg = ⟨7⟩`).  The
             // dispatcher reads x0..x5 + msg_info from the trap frame,
             // validates argument count against `MessageInfo.length`,
-            // and forwards via the `syscall_dispatch_inner`
-            // `extern "C"` symbol (Lean-emitted by
-            // `@[export syscall_dispatch_inner]` in
-            // `SeLe4n/Platform/FFI.lean`) into the Lean kernel.
-            // Errors are surfaced via x0 with the canonical
-            // KernelError discriminant (matching `sele4n-types`):
-            // post-WS-RC R2 the `dispatch_svc` shim wraps the raw
-            // discriminant in `DispatchError::Kernel(disc)` so
-            // user-mode sees exactly the value the Lean kernel
-            // emitted.
+            // and forwards via the `lean_syscall_dispatch_cross_core`
+            // `extern "C"` symbol (Lean-emitted from
+            // `SeLe4n/Kernel/SyscallDispatchEntry.lean`) into the Lean
+            // kernel.
+            //
+            // **WS-RR RR8.13**: this named `syscall_dispatch_inner` and
+            // described the ABI v1 status convention — a raw
+            // `KernelError` discriminant in `x0`, wrapped as
+            // `DispatchError::Kernel(disc)`.  Both were retired: the
+            // legacy export is gone (see `kernel_entry.rs`'s own note),
+            // and WS-RA's `SYSCALL_ABI_VERSION = 3` puts the status in
+            // the **`x1` MessageInfo label** at `errorLabelBase + d`,
+            // with `x0` carrying the badge or primary result at full
+            // width.  The scalar export return is the *outcome tag*
+            // (`0` = the mailbox frame is the caller's return, `1` =
+            // the caller blocked, `2` = it faulted), and the six-word
+            // frame travels through `ffiSyscallReturnFrame`.  A comment
+            // naming a deleted symbol and a retired convention is what
+            // `docs/planning/UNFINISHED_SMP_WORK.md` §4 finding 11
+            // recorded; this is that finding closed.
             //
             // WS-SM SM1.I.4: record per-core syscall count for
             // benchmarking / post-mortem attribution.  Wait-free

@@ -15,16 +15,59 @@ open SeLe4n.Model
 open SeLe4n.Kernel.Concurrency (bootCoreId CoreId SgiKind)
 
 -- ============================================================================
--- D4-G: updatePipBoost (single-thread priority update)
+-- D4-G / SM5.F.2: updatePipBoostOnCore (single-thread priority update) and its
+-- boot-core instance updatePipBoost
 -- ============================================================================
 
-/-- D4-G / AN5-C: Update the `pipBoost` field for a single thread based on
-its current waiters. If the thread has higher-priority waiters than its
-base priority, sets `pipBoost` to the maximum waiter priority. Otherwise
-clears it.
+/-- WS-SM SM5.F.2 (plan §3.6): per-core single-thread PIP boost update — since
+`v0.35.66` the ONE body of the single-thread update, of which `updatePipBoost`
+below is the boot-core instance.
 
-If the thread is in the run queue and effective priority changed,
-performs remove-then-insert for bucket migration (D2-E pattern).
+Updates the `pipBoost` field of thread `tid` from its current waiters: if the
+thread has higher-priority waiters than its base priority, sets `pipBoost` to the
+maximum waiter priority, otherwise clears it.  The boost VALUE is the GLOBAL
+`computeMaxWaiterPriority st tid` (max over every waiter, cross-core) — the
+per-core parameter only controls *where* the bucket is re-positioned, never the
+magnitude of the boost (under-boosting would reintroduce inversion).  If the
+thread is in core `c`'s run queue and its effective priority changed, performs
+remove-then-insert for bucket migration (D2-E pattern) on that core — the
+holder's home core, not always `bootCoreId` (see the SM5.F.2 section below for
+why that is per-core under SMP).
+
+The TCB write is `SystemState.rewriteObject` under the witnessed lookup
+(`getTcbWitnessed?`): one in-place table insert whose admissibility proof is
+erased, so the update costs what the raw insert cost.
+`updatePipBoostOnCore_objects_at` is its pointwise reading. -/
+def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
+  match st.getTcbWitnessed? tid with
+  | some ⟨tcb, h⟩ =>
+    let newBoost := computeMaxWaiterPriority st tid
+    -- Only update if pipBoost actually changed
+    if tcb.pipBoost == newBoost then st
+    else
+      -- Update TCB with new (GLOBAL) pipBoost
+      let tcb' := { tcb with pipBoost := newBoost }
+      let st' := st.rewriteObject tid.toObjId (KernelObject.tcb tcb')
+        (SystemState.rewriteAdmissible_tcb h tcb')
+      -- Conditional run-queue bucket migration ON CORE c (the holder's home core)
+      if tid ∈ (st.scheduler.runQueueOnCore c) then
+        let oldPrio := (resolveEffectivePrioDeadline st tcb).1
+        let newPrio := (resolveEffectivePrioDeadline st' tcb').1
+        if oldPrio != newPrio then
+          { st' with
+            scheduler := st'.scheduler.setRunQueueOnCore c
+              (((st'.scheduler.runQueueOnCore c).remove tid).insert tid newPrio)
+          }
+        else st'
+      else st'
+  | none => st
+
+/-- D4-G / AN5-C: the single-core PIP boost update — `updatePipBoostOnCore` at
+the boot core.  Up to `v0.35.65` this was a second copy of that body with the
+core fixed to `bootCoreId`, held to it by
+`updatePipBoost_eq_updatePipBoostOnCore_bootCore` (an `rfl`, in the staged
+`PriorityInheritance.PerCore`); it is the *instance* now, so the two cannot
+diverge, and that theorem is the equation consumers rewrite with.
 
 **Lifecycle relationship (AN5-C)**:
 * `propagatePriorityInheritance` — top-level "forward" entry point
@@ -43,27 +86,7 @@ performs remove-then-insert for bucket migration (D2-E pattern).
   `InformationFlow/Invariant/Operations.lean` discharges cross-domain
   information-flow safety. -/
 def updatePipBoost (st : SystemState) (tid : ThreadId) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-    let newBoost := computeMaxWaiterPriority st tid
-    -- Only update if pipBoost actually changed
-    if tcb.pipBoost == newBoost then st
-    else
-      -- Update TCB with new pipBoost
-      let tcb' := { tcb with pipBoost := newBoost }
-      let st' := { st with objects := st.objects.insert tid.toObjId (KernelObject.tcb tcb') }
-      -- Conditional run queue bucket migration
-      if tid ∈ (st.scheduler.runQueueOnCore bootCoreId) then
-        let oldPrio := (resolveEffectivePrioDeadline st tcb).1
-        let newPrio := (resolveEffectivePrioDeadline st' tcb').1
-        if oldPrio != newPrio then
-          { st' with
-            scheduler := st'.scheduler.setRunQueueOnCore bootCoreId
-              (((st'.scheduler.runQueueOnCore bootCoreId).remove tid).insert tid newPrio)
-          }
-        else st'
-      else st'
-  | none => st
+  updatePipBoostOnCore st bootCoreId tid
 
 -- ============================================================================
 -- D4-H: propagatePriorityInheritance (chain walk)
@@ -172,13 +195,13 @@ theorem updatePipBoost_ipcState_frame (st : SystemState) (tid : ThreadId)
     (hObjInv : st.objects.invExt)
     (t : ThreadId) (hNe : t ≠ tid) :
     (updatePipBoost st tid).objects[t.toObjId]? = st.objects[t.toObjId]? := by
-  unfold updatePipBoost
+  unfold updatePipBoost updatePipBoostOnCore
   split
-  case h_1 tcb _ =>
+  case h_1 tcb _ _ =>
       simp only []
       split
       · rfl
-      · -- pipBoost changed → objects insert at tid.toObjId
+      · -- pipBoost changed → the rewrite is an insert at tid.toObjId
         have hObjNe : ¬(tid.toObjId == t.toObjId) = true := by
           intro h; apply hNe
           exact (ThreadId.toObjId_injective tid t (eq_of_beq h)).symm
@@ -209,11 +232,12 @@ theorem updatePipBoost_self_ipcState (st : SystemState) (tid : ThreadId)
       tcb'.ipcState = tcb.ipcState by
     obtain ⟨tcb', hLook, hIpc⟩ := h; simp only [hLook, hIpc]
   -- Now prove the lookup gives such a TCB
-  unfold updatePipBoost
-  -- `updatePipBoost` reads the store through `getTcb?`, so the raw hypothesis
-  -- is retyped into accessor form before it can drive the match.
+  unfold updatePipBoost updatePipBoostOnCore
+  -- The update reads the store through the witnessed lookup, so the raw
+  -- hypothesis is retyped into accessor form and then into the lookup's own
+  -- equation before it can drive the match.
   have hGet : st.getTcb? tid = some tcb := by unfold SystemState.getTcb?; rw [hObj]
-  simp only [hGet]
+  simp only [SystemState.getTcbWitnessed?_eq_some hGet]
   split
   · -- pipBoost unchanged → state is st, lookup is hObj
     exact ⟨tcb, hObj, rfl⟩
@@ -266,17 +290,22 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
   by_cases hEq : t = tid
   · -- t = tid: ipcState preserved by { tcb with pipBoost := ... }
     rw [hEq]
-    unfold updatePipBoost
-    -- `updatePipBoost` discriminates through `getTcb?`, so the case analysis is
-    -- the accessor's two arms; the raw form the congr lemma wants comes back
-    -- from `getTcb?_eq_some_iff`, which is the bridge between the two
-    -- vocabularies rather than a second reading of the store.
+    -- The update discriminates through the witnessed lookup, so the case
+    -- analysis is the typed accessor's two arms carried in by the lookup's
+    -- equations; the raw form the congr lemma wants comes back from
+    -- `getTcb?_eq_some_iff`, which is the bridge between the two vocabularies
+    -- rather than a second reading of the store.  The split comes BEFORE the
+    -- unfold: the witnessed lookup's type mentions `st.getTcb? tid`, so a
+    -- `cases` over the unfolded match cannot generalise it.
     cases hTid : st.getTcb? tid with
-    | none => rfl
+    | none =>
+      unfold updatePipBoost updatePipBoostOnCore
+      rw [SystemState.getTcbWitnessed?_eq_none hTid]
     | some tcb =>
       have hRaw : st.objects[tid.toObjId]? = some (.tcb tcb) :=
         (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTid
-      simp only []
+      unfold updatePipBoost updatePipBoostOnCore
+      simp only [SystemState.getTcbWitnessed?_eq_some hTid]
       split
       · rfl -- pipBoost unchanged
       · -- pipBoost changed: blockingServer reads only ipcState, which is
@@ -306,44 +335,12 @@ theorem updatePipBoost_preserves_blockingServer (st : SystemState) (tid : Thread
 -- current thread).  The boost *value* stays GLOBAL — `computeMaxWaiterPriority`
 -- (the max over ALL waiters regardless of core); using only a per-core slice
 -- would under-boost and re-introduce priority inversion.  `updatePipBoostOnCore`
--- is therefore `updatePipBoost` with the bucket migration generalised from
--- `bootCoreId` to an explicit home core `c`; the single-core form is recovered
--- at `c = bootCoreId` (`updatePipBoost_eq_updatePipBoostOnCore_bootCore`, an
--- `rfl`, proved in the staged `PriorityInheritance.PerCore`).
-
-/-- WS-SM SM5.F.2 (plan §3.6): per-core single-thread PIP boost update.
-
-Identical to `updatePipBoost` except the run-queue *bucket migration* targets
-the holder's home core `c` instead of `bootCoreId`.  The boost VALUE is the
-GLOBAL `computeMaxWaiterPriority st tid` (max over every waiter, cross-core) —
-the per-core parameter only controls *where* the bucket is re-positioned, never
-the magnitude of the boost (under-boosting would reintroduce inversion).
-
-`updatePipBoost st tid = updatePipBoostOnCore st bootCoreId tid` definitionally
-(the only change is the literal core), so the existing single-core PIP proof base
-is preserved verbatim and the per-core form generalises it. -/
-def updatePipBoostOnCore (st : SystemState) (c : CoreId) (tid : ThreadId) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-    let newBoost := computeMaxWaiterPriority st tid
-    -- Only update if pipBoost actually changed
-    if tcb.pipBoost == newBoost then st
-    else
-      -- Update TCB with new (GLOBAL) pipBoost
-      let tcb' := { tcb with pipBoost := newBoost }
-      let st' := { st with objects := st.objects.insert tid.toObjId (KernelObject.tcb tcb') }
-      -- Conditional run-queue bucket migration ON CORE c (the holder's home core)
-      if tid ∈ (st.scheduler.runQueueOnCore c) then
-        let oldPrio := (resolveEffectivePrioDeadline st tcb).1
-        let newPrio := (resolveEffectivePrioDeadline st' tcb').1
-        if oldPrio != newPrio then
-          { st' with
-            scheduler := st'.scheduler.setRunQueueOnCore c
-              (((st'.scheduler.runQueueOnCore c).remove tid).insert tid newPrio)
-          }
-        else st'
-      else st'
-  | none => st
+-- is therefore the single-thread update with the bucket migration on an explicit
+-- home core `c`, and `updatePipBoost` is its instance at `c = bootCoreId`
+-- (`updatePipBoost_eq_updatePipBoostOnCore_bootCore`, an `rfl`, proved in the
+-- staged `PriorityInheritance.PerCore`).  Both are defined in the D4-G section
+-- above — one body, since `v0.35.66`; this section keeps the per-core
+-- generalisation's rationale and its theorems.
 
 /-- WS-RR RR2.6: `updatePipBoostOnCore` rewrites the boosted thread's TCB in
 `pipBoost` **and nothing else** — including on the no-op arm, where the boost it
@@ -362,10 +359,9 @@ theorem updatePipBoostOnCore_objects_at (st : SystemState) (c : CoreId) (tid : T
       (st.objects.insert tid.toObjId t).get? tid.toObjId = some t := fun t =>
     SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId t hInv
   -- The goal is converted to store form because `hIns` is about the table;
-  -- the *discriminant* needs no conversion any more, since the transition
-  -- matches on `getTcb?` itself.
+  -- the discriminant is the witnessed lookup, driven by its own equation.
   simp only [SystemState.getTcb?_eq_some_iff]
-  simp only [updatePipBoostOnCore, hTcb]
+  simp only [updatePipBoostOnCore, SystemState.getTcbWitnessed?_eq_some hTcb]
   split
   · exact ⟨tcb.pipBoost, (SystemState.getTcb?_eq_some_iff st tid tcb).mp hTcb⟩
   · split
@@ -383,7 +379,7 @@ theorem updatePipBoostOnCore_mem_runQueueOnCore (st : SystemState) (c c' : CoreI
     (tid x : ThreadId) :
     x ∈ (updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c'
       ↔ x ∈ st.scheduler.runQueueOnCore c' := by
-  simp only [updatePipBoostOnCore]
+  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
   split
   · split
     · exact Iff.rfl
@@ -572,11 +568,11 @@ fallthrough arm returns `st`. -/
 theorem updatePipBoostOnCore_eq_self_of_getTcb?_none (st : SystemState) (c : CoreId)
     (tid : ThreadId) (hNone : st.getTcb? tid = none) :
     updatePipBoostOnCore st c tid = st := by
-  -- The transition discriminates on `getTcb?`, which is what this hypothesis
-  -- is about, so the proof is the rewrite rather than a split through the
-  -- accessor's definition.
+  -- The transition discriminates on the witnessed lookup, whose `none` arm is
+  -- exactly this hypothesis, so the proof is the rewrite rather than a split
+  -- through the accessor's definition.
   unfold updatePipBoostOnCore
-  rw [hNone]
+  rw [SystemState.getTcbWitnessed?_eq_none hNone]
 
 /-- WS-SM SM5.F.4: the cross-core donation chain walk preserves the object-store
 invariant — each link is a `pipBoostWithWake` boost (an `invExt`-preserving TCB
@@ -790,4 +786,144 @@ theorem propagatePipChainCrossCore_replenish_readings (st : SystemState) (tid : 
                fun scId => (hS scId).trans (hHere.2.1 scId),
                fun t => (hT t).trans (hHere.2.2 t)⟩
 
+-- ============================================================================
+-- §  WS-RR RR8.12 (Cut 4) — the walk's scheduler frames
+-- ============================================================================
+--
+-- The three facts a consumer needs to say that the chain reversion does not
+-- move a thread it is not about: run-queue membership, the `current` slots, and
+-- the resolvability of a TCB.  They live here, beside the walk, because the
+-- suspend pipeline's placement payoff (`suspendThreadOnCore_holder_still_placed`)
+-- is stated in `IPC/CrossCore/Cancellation.lean`, which `IPC/Invariant/
+-- FaultProgress.lean` — where the current-slot frame used to sit — imports
+-- transitively.  A shared answer must be reachable from every asker, and the
+-- walk's own module is the layer both can see.
+
+/-- **WS-RR RR8.12**: one walk step leaves every thread's run-queue *membership*
+exactly where it was, on every core — the lift of
+`updatePipBoostOnCore_mem_runQueueOnCore` to the walk's step.  A boost migrates a
+bucket; it neither admits nor drops a member. -/
+theorem pipBoostWithWake_mem_runQueueOnCore (st : SystemState) (tid x : ThreadId)
+    (ec c' : CoreId) :
+    x ∈ (pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c'
+      ↔ x ∈ st.scheduler.runQueueOnCore c' := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_mem_runQueueOnCore st _ c' tid x
+
+/-- **WS-RR RR8.12**: and so does the whole walk, by induction on its fuel.
+
+Stated as the biconditional rather than as the one direction the fault-progress
+theorem needed (*the walk admits no new member*): the suspend pipeline's payoff
+needs the other one (*the walk drops none*), and two lemmas for one question is
+how they come to disagree. -/
+theorem propagatePipChainCrossCore_mem_runQueueOnCore :
+    ∀ (fuel : Nat) (st : SystemState) (startTid x : ThreadId) (ec c' : CoreId),
+      x ∈ (propagatePipChainCrossCore st startTid ec fuel).1.scheduler.runQueueOnCore c'
+        ↔ x ∈ st.scheduler.runQueueOnCore c'
+  | 0, st, startTid, x, ec, c' => by
+      rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, x, ec, c' => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_mem_runQueueOnCore st startTid x ec c'
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_mem_runQueueOnCore n
+            (pipBoostWithWake st startTid ec).1 nextServer x ec c'
+          simp only at hTail ⊢
+          rw [hTail]
+          exact pipBoostWithWake_mem_runQueueOnCore st startTid x ec c'
+
+/-- **WS-RR RR8.12**: the boost never writes any core's `current` slot — the
+lift of `updatePipBoostOnCore_currentOnCore` to the walk's step. -/
+theorem pipBoostWithWake_currentOnCore (st : SystemState) (tid : ThreadId)
+    (ec c' : CoreId) :
+    (pipBoostWithWake st tid ec).1.scheduler.currentOnCore c'
+      = st.scheduler.currentOnCore c' :=
+  updatePipBoostOnCore_currentOnCore st _ c' tid
+
+/-- **WS-RR RR8.12**: the whole chain walk writes no core's `current` slot. -/
+theorem propagatePipChainCrossCore_currentOnCore :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec c' : CoreId),
+      (propagatePipChainCrossCore st startTid ec fuel).1.scheduler.currentOnCore c'
+        = st.scheduler.currentOnCore c'
+  | 0, st, startTid, ec, c' => by
+      rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, ec, c' => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_currentOnCore st startTid ec c'
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_currentOnCore n
+            (pipBoostWithWake st startTid ec).1 nextServer ec c'
+          simp only at hTail ⊢
+          rw [hTail]
+          exact pipBoostWithWake_currentOnCore st startTid ec c'
+
+/-- **WS-RR RR8.12**: a boost rewrites a TCB **in place**, so a thread that
+resolved before resolves after — on every key, not only the boosted one. -/
+theorem updatePipBoostOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
+    (tid x : ThreadId) (hInv : st.objects.invExt) (h : (st.getTcb? x).isSome) :
+    ((updatePipBoostOnCore st c tid).getTcb? x).isSome := by
+  by_cases hEq : (tid.toObjId == x.toObjId) = true
+  · obtain rfl : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ (by simpa using hEq)
+    cases hT : st.getTcb? tid with
+    | none => rw [hT] at h; exact absurd h (by simp)
+    | some tcb =>
+      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+      rw [hPost]; rfl
+  · have hRaw := updatePipBoostOnCore_objects_ne st c tid x.toObjId hEq hInv
+    have hTcb : (updatePipBoostOnCore st c tid).getTcb? x = st.getTcb? x := by
+      unfold SystemState.getTcb?; rw [hRaw]
+    rw [hTcb]; exact h
+
+/-- **WS-RR RR8.12**: hence one walk step keeps a thread resolvable. -/
+theorem pipBoostWithWake_getTcb?_isSome (st : SystemState) (tid x : ThreadId)
+    (ec : CoreId) (hInv : st.objects.invExt) (h : (st.getTcb? x).isSome) :
+    (((pipBoostWithWake st tid ec).1).getTcb? x).isSome := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_getTcb?_isSome st _ tid x hInv h
+
+/-- **WS-RR RR8.12**: and so does the whole walk. -/
+theorem propagatePipChainCrossCore_getTcb?_isSome :
+    ∀ (fuel : Nat) (st : SystemState) (startTid x : ThreadId) (ec : CoreId),
+      st.objects.invExt → (st.getTcb? x).isSome →
+      (((propagatePipChainCrossCore st startTid ec fuel).1).getTcb? x).isSome
+  | 0, st, startTid, x, ec, _, h => by
+      rw [propagatePipChainCrossCore_zero]; exact h
+  | n + 1, st, startTid, x, ec, hInv, h => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      have hStepSome := pipBoostWithWake_getTcb?_isSome st startTid x ec hInv h
+      have hStepInv := pipBoostWithWake_preserves_objects_invExt st startTid ec hInv
+      cases hb : blockingServer st startTid with
+      | none => simpa using hStepSome
+      | some nextServer =>
+          simpa using propagatePipChainCrossCore_getTcb?_isSome n
+            (pipBoostWithWake st startTid ec).1 nextServer x ec hStepInv hStepSome
+
 end SeLe4n.Kernel.PriorityInheritance
+
+namespace SeLe4n.Kernel
+
+open SeLe4n.Model
+open SeLe4n.Kernel.Concurrency (CoreId)
+open SeLe4n.Kernel.PriorityInheritance
+
+/-- SM8.B.2: **the cores a cross-core PIP chain walk may write** — the home core
+of every member the walk reaches, computed from the pre-state by mirroring the
+walk's own fuel recursion. The state is threaded exactly as
+`propagatePipChainCrossCore` threads it, so the two agree member for member. -/
+def pipChainWriteSet (st : SystemState) (startTid : SeLe4n.ThreadId)
+    (executingCore : CoreId) : Nat → List CoreId
+  | 0 => []
+  | fuel + 1 =>
+      determineTargetCore st startTid ::
+        (match blockingServer st startTid with
+         | some nextServer =>
+             pipChainWriteSet (pipBoostWithWake st startTid executingCore).1 nextServer
+               executingCore fuel
+         | none => [])
+
+end SeLe4n.Kernel

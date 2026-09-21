@@ -819,40 +819,16 @@ theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore
 -- composition reads each fold at its own input state).  These lemmas
 -- transport the receive leg's pre-state facts across the reply leg.
 
-open SeLe4n.Model.SystemState in
-/-- SM6.D transport helper: a post-`storeTcbIpcStateAndMessage` TCB lookup
-pulls back to a pre-state TCB agreeing on `pendingReceiveReply` and
-`timeoutBudget`, and either identical or rewritten to the stored `ipcState`. -/
-theorem storeTcbIpcStateAndMessage_tcb_backward_fields
-    (st st' : SystemState) (tid : SeLe4n.ThreadId)
-    (ipc : ThreadIpcState) (msg : Option IpcMessage)
-    (hObjInv : st.objects.invExt)
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    ∀ (s : SeLe4n.ObjId) (tx : TCB), st'.objects[s]? = some (.tcb tx) →
-      ∃ ty, st.objects[s]? = some (.tcb ty) ∧
-        tx.pendingReceiveReply = ty.pendingReceiveReply ∧
-        tx.timeoutBudget = ty.timeoutBudget ∧
-        (tx = ty ∨ tx.ipcState = ipc) := by
-  intro s tx hObj
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hLookup : lookupTcb st tid with
-  | none => simp [hLookup] at hStep
-  | some tcb =>
-    simp only [hLookup] at hStep
-    cases hStore : storeObject tid.toObjId
-        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      obtain ⟨⟨⟩, st''⟩ := pair
-      simp only [hStore, Except.ok.injEq] at hStep
-      subst hStep
-      by_cases hs : s = tid.toObjId
-      · subst hs
-        rw [storeObject_objects_eq st st'' tid.toObjId _ hObjInv hStore] at hObj
-        obtain rfl := KernelObject.tcb.inj (Option.some.inj hObj)
-        exact ⟨tcb, lookupTcb_some_objects st tid tcb hLookup, rfl, rfl, Or.inr rfl⟩
-      · rw [storeObject_objects_ne st st'' tid.toObjId s _ hs hObjInv hStore] at hObj
-        exact ⟨tx, hObj, rfl, rfl, Or.inl rfl⟩
+-- **WS-RR RR8.16**: `storeTcbIpcStateAndMessage_tcb_backward_fields` used to be
+-- declared here.  It is a **frame over a primitive**, and it sat in a cross-core
+-- *arm* module that the information-flow layer cannot reach -- so the establishment
+-- of `blockedSenderFlowsToEndpoint` at the one write that creates a blocked sender
+-- was unstateable beside the predicate.  It now lives beside
+-- `storeTcbIpcStateAndMessage` in `IPC/Operations/Endpoint.lean`, next to its two
+-- existing siblings (`_preserves_objects_ne` and `storeTcbIpcState`'s own frames,
+-- themselves moved there for the same reason at WS-RR RR3.5), keeping its name and
+-- statement -- the `v0.35.59` rule: *when a question has one owner and an asker that
+-- cannot see it, the owner is in the wrong layer.*
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport helper: a post-`consumeCallerReply` TCB lookup pulls back
@@ -909,7 +885,7 @@ theorem consumeCallerReply_tcb_fields_backward
         exact ⟨t1, hT1, hEq1, hEq2, hEq3, hEq4⟩
 
 open SeLe4n.Model.SystemState in
-/-- **WS-RM (`v0.35.6`)**: the removal's pullback — the detach writes no TCB at
+/-- **WS-RM (`v0.35.6`)**: the removal's pullback — the splice writes no TCB at
 all, so the four fields agree for the same reason they do across the consume. -/
 theorem removeCallerReplyFrame_tcb_fields_backward
     (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
@@ -923,8 +899,8 @@ theorem removeCallerReplyFrame_tcb_fields_backward
   intro s tx hObj
   rw [removeCallerReplyFrame_eq] at hStep
   obtain ⟨ty, hTy, h1, h2, h3, h4⟩ := consumeCallerReply_tcb_fields_backward _ st' caller rid
-    (detachReplyFrameAboveOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hObj
-  exact ⟨ty, detachReplyFrameAboveOrSelf_tcb_backward st rid hObjInv s ty hTy, h1, h2, h3, h4⟩
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep s tx hObj
+  exact ⟨ty, spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv s ty hTy, h1, h2, h3, h4⟩
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D transport (T1): every TCB observable after `endpointReplyOnCore`
@@ -1435,122 +1411,17 @@ theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore
 -- valid badges on the parked message's capabilities) rather than any post-state
 -- conjunct.
 
-/-- WS-RR RR2 (closure audit): the bare per-core receive preserves the
-object-store invariant — the definition walk, mirroring
-`endpointSendDualOnCore_preserves_objects_invExt`. -/
-theorem endpointReceiveDualOnCore_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
-    (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    (endpointReceiveDualOnCore endpointId receiver replyId executingCore st).1.objects.invExt := by
-  unfold endpointReceiveDualOnCore
-  cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> exact hObjInv
-  | some ep =>
-    simp only
-    cases hHead : ep.sendQ.head with
-    | some sender0 =>
-      simp only
-      cases hPop : endpointQueuePopHead endpointId false st with
-      | error e => simp only; exact hObjInv
-      | ok popRes =>
-        obtain ⟨sender, senderTcb, st'⟩ := popRes
-        simp only
-        have hObjInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId false
-          st st' sender senderTcb hObjInv hPop
-        split
-        · -- The dequeued sender was a `Call`: re-block it on reply, link, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender
-              (.blockedOnReply endpointId (some receiver)) none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            cases replyId with
-            | none => exact hObjInv
-            | some rid =>
-              simp only
-              cases hLink : SystemState.linkCallerReply sender rid st'' with
-              | error e => simp only; exact hObjInv
-              | ok pLink =>
-                obtain ⟨⟨⟩, stLinked⟩ := pLink
-                simp only
-                have hObjInv3 := linkCallerReply_preserves_objects_invExt st'' stLinked
-                  sender rid hObjInv2 hLink
-                cases hS2 : storeTcbIpcStateAndMessage stLinked receiver .ready
-                    senderTcb.pendingMessage with
-                | ok st3 =>
-                    exact storeTcbIpcStateAndMessage_preserves_objects_invExt stLinked st3
-                      receiver _ _ hObjInv3 hS2
-                | error e => simp only; exact hObjInv
-        · -- A plain `Send`: complete the sender, wake it on its home core, deliver.
-          cases hS1 : storeTcbIpcStateAndMessage st' sender .ready none with
-          | error e => simp only; exact hObjInv
-          | ok st'' =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st''
-              sender _ _ hObjInv1 hS1
-            have hObjInvW := wakeThread_preserves_objects_invExt st'' sender executingCore hObjInv2
-            cases hS2 : storeTcbIpcStateAndMessage (wakeThread st'' sender executingCore).1
-                receiver .ready senderTcb.pendingMessage with
-            | ok st4 =>
-                exact storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 receiver _ _
-                  hObjInvW hS2
-            | error e => simp only; exact hObjInv
-    | none =>
-      simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
-      | error e => simp only; exact hObjInv
-      | ok stClean =>
-        simp only
-        have hObjInvC : stClean.objects.invExt := by
-          unfold cleanupPreReceiveDonationChecked at hClean
-          cases hLk : lookupTcb st receiver with
-          | none => rw [hLk] at hClean; cases hClean; exact hObjInv
-          | some recvTcb =>
-            rw [hLk] at hClean; simp only [] at hClean
-            cases hB : recvTcb.schedContextBinding with
-            | donated scId originalOwner =>
-                rw [hB] at hClean
-                exact returnDonatedSchedContextResolved_lift hClean
-                  (fun n s hs => returnDonatedSchedContext_preserves_objects_invExt st s receiver
-                    scId originalOwner hObjInv n hs)
-            | unbound => rw [hB] at hClean; cases hClean; exact hObjInv
-            | bound scId => rw [hB] at hClean; cases hClean; exact hObjInv
-        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
-        | error e => simp only; exact hObjInv
-        | ok st1 =>
-          simp only
-          have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
-            stClean st1 hObjInvC hEnq
-          cases hS1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId)
-              none with
-          | error e => simp only; exact hObjInv
-          | ok st2 =>
-            simp only
-            have hObjInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2
-              receiver _ _ hObjInv1 hS1
-            cases hGetR : st2.getTcb? receiver with
-            | none =>
-                show (removeRunnableOnCore st2 receiver executingCore).objects.invExt
-                rw [removeRunnableOnCore_preserves_objects]
-                exact hObjInv2
-            | some rTcb =>
-              simp only
-              split
-              · cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
-                | error e => simp only; exact hObjInv
-                | ok pStash =>
-                  obtain ⟨⟨⟩, stStashed⟩ := pStash
-                  show (removeRunnableOnCore stStashed receiver executingCore).objects.invExt
-                  rw [removeRunnableOnCore_preserves_objects]
-                  exact storeObject_preserves_objects_invExt st2 stStashed receiver.toObjId _
-                    hObjInv2 hStash
-              · exact hObjInv
-
 open SeLe4n.Model.SystemState in
+-- WS-SM SM6.C, relocated at **WS-RR RR8.12**:
+-- `endpointReceiveDualOnCore_preserves_objects_invExt` moved to
+-- `IPC/CrossCore/EndpointReply.lean`, beside the transition it frames.  An
+-- `objects.invExt` preservation is a frame, and this project homes a frame with the
+-- write it is about; sitting here it was *downstream* of the module that declares
+-- the transition, so the receive leg's own home-core frame -- which needs invExt at
+-- the post-leg state to reach the capability installation -- could not consult it.
+-- Third instance of that layering in this cut, after `endpointReceiveDualWriteSet`
+-- and `endpointReceiveDualWithCapsOnCore_scheduler_eq`.
+
 /-- **WS-RR RR2 (closure audit): the transition the live `.receive` arm really
 calls preserves the whole IPC invariant bundle.**
 
@@ -1800,27 +1671,31 @@ theorem endpointReplyOnCore_observer_atomic
     -- reply-stack head, for the same reason the reply object is here.
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD (`v0.35.4`) / WS-RM (`v0.35.6`): and the head the pop clears and the
-    -- frame above the answered reply, which the removal's detach writes -- every
+    -- frame above the answered reply, which the removal's splice writes -- every
     -- argument of the footprint this theorem names, for the reason above.
     (donatedHead? answeredFrameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP10.6**: and at the origin-recipient arity.
+    (originRecipient? : Option SeLe4n.ThreadId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
           (lockSet_endpointReply replier cnRoot target donatedSc?
             donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-            answeredFrameAbove?).lockAcquireSequence s)
+            answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet
           (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? replyId
-            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove?)
+            belowHeadReply? outerCaller? donatedHead? answeredFrameAbove? answeredFrameBelow? originRecipient?)
           executingCore (endpointReplyOnCore replier target msg executingCore) s).1
       = threadIpcStateObserver observed
           (endpointReplyOnCore replier target msg executingCore
             (acquireAll executingCore
               (lockSet_endpointReply replier cnRoot target donatedSc?
                 donatedOwner? replyId belowHeadReply? outerCaller? donatedHead?
-                answeredFrameAbove?).lockAcquireSequence s)).1 :=
+                answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyOnCore_preserves_objects_invExt replier target msg
@@ -1845,13 +1720,17 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (belowHeadReply? : Option SeLe4n.ReplyId) (outerCaller? : Option SeLe4n.ThreadId)
     -- WS-OD OD3.13 / (`v0.35.4`) / PR #894 review / WS-RM (`v0.35.6`): and every
     -- remaining argument -- the queue-structure neighbour, the two heads, the
-    -- invoker's own pre-receive return and the frame the reply leg detaches.
+    -- invoker's own pre-receive return and the frame the reply leg splices out.
     (queueNeighbour? : Option SeLe4n.ThreadId)
     (redonationOldHead? donatedHead? : Option SeLe4n.ReplyId)
     (preReturnSc? : Option SeLe4n.SchedContextId) (preReturnOwner? : Option SeLe4n.ThreadId)
     (preReturnHead? preReturnBelowHead? : Option SeLe4n.ReplyId)
     (preReturnOuterCaller? : Option SeLe4n.ThreadId)
     (answeredFrameAbove? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP3.1**: and at the frame-below arity.
+    (answeredFrameBelow? : Option SeLe4n.ReplyId)
+    -- **WS-HP HP10.6**: and at the origin-recipient arity.
+    (originRecipient? : Option SeLe4n.ThreadId)
     (s : SystemState) (hInv : s.objects.invExt) :
     threadIpcStateObserver observed
         (acquireAll executingCore
@@ -1859,14 +1738,14 @@ theorem endpointReplyRecvOnCore_observer_atomic
             donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)
       = threadIpcStateObserver observed s
     ∧ threadIpcStateObserver observed
         (withLockSet (lockSet_replyRecv receiver cnRoot target endpointId newSender?
             donatedSc? donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?)
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?)
           executingCore
           (endpointReplyRecvOnCore endpointId receiver target msg replyId executingCore) s).1
       = threadIpcStateObserver observed
@@ -1876,7 +1755,7 @@ theorem endpointReplyRecvOnCore_observer_atomic
                 donatedOwner? replyId installsCaps donationServer? redonatedSc?
             belowHeadReply? outerCaller? queueNeighbour? redonationOldHead? donatedHead?
             preReturnSc? preReturnOwner? preReturnHead? preReturnBelowHead?
-            preReturnOuterCaller? answeredFrameAbove?).lockAcquireSequence s)).1 :=
+            preReturnOuterCaller? answeredFrameAbove? answeredFrameBelow? originRecipient?).lockAcquireSequence s)).1 :=
   lockSet_observer_atomic_of_objectStoreObserver _ executingCore _ s _
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver

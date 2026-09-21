@@ -140,14 +140,7 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                     | some _ => simp [hLookup] at hInsert
                     | none =>
                       simp [hLookup] at hInsert
-                      cases hS : storeObject dst.cnode (.cnode (cn.insert dst.slot cap)) st with
-                      | error e => simp [hS] at hInsert
-                      | ok pair =>
-                        obtain ⟨_, stM⟩ := pair
-                        simp [hS] at hInsert
-                        have hNS1 := (storeObject_cdtNodeSlot_eq st stM dst.cnode _ hS).1
-                        have ⟨_, hNS2, _, _⟩ := storeCapabilityRef_cdt_eq stM st2 dst (some cap.target) hInsert
-                        rw [hNS2, hNS1]
+                      exact (storeObject_cdtNodeSlot_eq st st2 dst.cnode _ hInsert).1
                   | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (by rw [hNSSt2]; exact hNodeSlotK) hDelete
@@ -310,9 +303,10 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
             { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
           | error e => simp_all
           | ok pair =>
-            obtain ⟨_, stMid⟩ := pair; simp only [hStore] at hStep
-            have hRefObj : st'.objects = stMid.objects :=
-              storeCapabilityRef_preserves_objects stMid st' addr (some cap.target) hStep
+            obtain ⟨_, stMid⟩ := pair
+            simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+            obtain ⟨_, hStep⟩ := hStep
+            have hRefObj : st'.objects = stMid.objects := by rw [hStep]
             have hMidSelf : stMid.objects[addr.cnode]? = some (.cnode (preCn.insert addr.slot
                 { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) :=
               storeObject_objects_eq st stMid addr.cnode _ hObjInv hStore
@@ -351,7 +345,7 @@ theorem cspaceMutate_preserves_replyCapPointsToValidReply
 
 /-- WS-F4/F-06: cspaceMutate preserves capabilityInvariantBundle.
 Mutate composes cspaceLookupSlot (read-only) + cn.insert (which preserves
-slotsUnique) + storeObject + storeCapabilityRef. -/
+slotsUnique) + storeObject. -/
 theorem cspaceMutate_preserves_capabilityInvariantBundle
     (st st' : SystemState)
     (addr : CSpaceAddr)
@@ -363,7 +357,7 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
     (hStep : cspaceMutate addr rights badge st = .ok ((), st')) :
     capabilityInvariantBundle st' := by
   rcases hInv with ⟨_hSound, hBounded, hComp, hAcyclic, hDepthPre, hObjInv, hRCPV⟩
-  -- WS-H4: cspaceMutate goes through storeObject(CNode.insert) → storeCapabilityRef, same as insertSlot
+  -- WS-H4: cspaceMutate goes through storeObject(CNode.insert), same as insertSlot
   have ⟨hBounded', hComp', hAcyclic', hDepth', hObjInv'⟩ :
       cspaceSlotCountBounded st' ∧ cdtCompleteness st' ∧ cdtAcyclicity st' ∧ cspaceDepthConsistent st' ∧ st'.objects.invExt := by
     unfold cspaceMutate SystemState.getCNode? at hStep
@@ -388,9 +382,12 @@ theorem cspaceMutate_preserves_capabilityInvariantBundle
               { cap with rights := rights, badge := badge.orElse (fun _ => cap.badge) })) st with
             | error e => simp_all
             | ok pair =>
-              obtain ⟨_, stMid⟩ := pair; simp only [hStore] at hStep
-              have ⟨hRefCdt, hRefNS, _, hRefObj⟩ := storeCapabilityRef_cdt_eq stMid st' addr
-                (some cap.target) hStep
+              obtain ⟨_, stMid⟩ := pair
+              simp only [hStore, Except.ok.injEq, Prod.mk.injEq] at hStep
+              obtain ⟨_, hStep⟩ := hStep
+              have hRefCdt : st'.cdt = stMid.cdt := by rw [hStep]
+              have hRefNS : st'.cdtNodeSlot = stMid.cdtNodeSlot := by rw [hStep]
+              have hRefObj : st'.objects = stMid.objects := by rw [hStep]
               have hBndMid := cspaceSlotCountBounded_of_storeObject_cnode st stMid addr.cnode _ hBounded hObjInv hStore
                 (hSlotCapacity preCn _ hPre)
               have hCompMid := cdtCompleteness_of_storeObject st stMid addr.cnode _ hComp hObjInv hStore

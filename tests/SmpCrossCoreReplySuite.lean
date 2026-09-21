@@ -98,13 +98,25 @@ open SeLe4n.Testing
 
 -- SM6.C.3 donation chain across cores + cross-core dispatch:
 #check @applyReplyDonationOnCore
-#check @applyReplyDonationOnCore_bootCoreId
+#check @applyReplyDonationOnCore_eq_single_of_placed_at_bootCore
+-- `v0.35.37`: the deschedule resolves the recorded server's PLACEMENT rather than
+-- taking a core from its caller, so the single-core bridge is conditional on that
+-- placement.  Pinned beside the bridge because a reader who sees only the new name
+-- cannot tell whether the hypothesis was earned or assumed.
+#check @placedCoreOf?_congr_of_scheduler_eq
+#check @descheduleAtPlacement_passiveServerIdleFrame
 #check @lockSet_endpointReply_donation_extension
--- WS-SM SM6.D (PR #822 review): the reply donation return is keyed on the RECORDED
+-- WS-SM SM6.D (PR #822 review): the reply donation return was keyed on the RECORDED
 -- SERVER (the caller's `blockedOnReply` server, who holds the donated SC), not the
--- possibly-delegated cap holder.
+-- possibly-delegated cap holder.  **WS-HP HP4 moved the trigger onto the answered
+-- reply FRAME and HP7 (`v0.35.46`) deleted the binding-driven resolver**, whose only
+-- remaining consumer was the witness that refutes it; the retired reading is
+-- `bindingDrivenReplyServerDonation?` below, private to this suite.
+-- `recordedReplyServer?` survives: the reply path still reads it for the
+-- priority-inheritance chain walk, which keys on waiters rather than on donations.
 #check @recordedReplyServer?
-#check @endpointReplyServerDonation?
+#check @answeredFrameHeadContext?
+#check @replyFrameHeadHolder?
 -- WS-SM SM6.D: the per-object reply WRITE lock is in the reply footprint once the
 -- reply object is resolved (the 2PL coverage of the single-use `reply.caller`
 -- consume — PR #822 review 6J90-5).
@@ -154,11 +166,11 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : C
 example (replier target : SeLe4n.ThreadId) (cnRoot : SeLe4n.ObjId) (msg : IpcMessage)
     (executingCore : CoreId) (donatedSc? : Option SeLe4n.SchedContextId)
     (donatedOwner? : Option SeLe4n.ThreadId) (s : SystemState) :
-    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none)
+    (withLockSet (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none)
         executingCore (endpointReplyOnCore replier target msg executingCore) s).2
       = (endpointReplyOnCore replier target msg executingCore
           (acquireAll executingCore
-            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none).lockAcquireSequence s)).2 := by
+            (lockSet_endpointReply replier cnRoot target donatedSc? donatedOwner? none none none none none none none).lockAcquireSequence s)).2 := by
   rw [endpointReplyOnCore_atomic_under_lockSet]
 
 /-- SM6.C.8: a cross-core reply unblocking a high caller is invisible on every core. -/
@@ -191,6 +203,38 @@ private def assertBool (name : String) (b : Bool) : IO Unit := do
 
 private def core1 : CoreId := ⟨1, by decide⟩
 
+/-- `v0.35.37`: a core that is neither the boot core nor the caller's home, so a
+deschedule landing on it can only have come from the server's own placement. -/
+private def core2 : CoreId := ⟨2, by decide⟩
+
+/-- **WS-HP HP7 (`v0.35.46`)**: the *superseded* binding-driven donation-pop
+trigger, spelled here and nowhere else.
+
+`endpointReplyServerDonation?` was the reply path's trigger until HP4 (`v0.35.38`)
+moved both spines onto the answered reply frame's own `.head` link, and HP6.2
+(`v0.35.44`) repointed the last footprints off it.  A second production spelling of
+"which donation does this reply return" would be the duplication this project
+retires -- but a witness that cannot name what it replaced cannot show that the
+replacement changed anything, which is the whole point of the orphan-head pair
+below.  So the retired reading lives in the test that refutes it, exactly as
+`SmpCancellationSuite`'s `bindingDrivenCancelledCallerDonation?` does for the
+cancellation side and `FrozenOpsSuite`'s `FO-042` for the frozen surface.
+
+Spelled as the composition the deleted definition was — `recordedReplyServer?`
+then that server's own `.donated` binding — so a reader can see it is the retired
+reading verbatim rather than a paraphrase of it. -/
+private def bindingDrivenReplyServerDonation? (st : SystemState)
+    (target : SeLe4n.ThreadId) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match recordedReplyServer? st target with
+  | some server =>
+    match st.getTcb? server with
+    | some sTcb =>
+      match sTcb.schedContextBinding with
+      | .donated scId owner => some (scId, owner)
+      | _ => none
+    | none => none
+  | none => none
+
 private def epId : SeLe4n.ObjId := ⟨600⟩
 private def cnRoot : SeLe4n.ObjId := ⟨300⟩
 private def serverTid : SeLe4n.ThreadId := ⟨601⟩
@@ -198,6 +242,11 @@ private def clientLocalTid : SeLe4n.ThreadId := ⟨602⟩
 private def clientRemoteTid : SeLe4n.ThreadId := ⟨603⟩
 private def wrongTid : SeLe4n.ThreadId := ⟨604⟩
 private def scId : SeLe4n.SchedContextId := ⟨700⟩
+/-- **WS-HP HP6.2 (`v0.35.44`)**: a holder that is NOT the recorded reply server —
+the orphan-head shape the splice creates, and the one on which the repointed
+footprint and the retired binding-driven one name different threads. -/
+private def orphanHolderTid : SeLe4n.ThreadId := ⟨605⟩
+private def replyId709 : SeLe4n.ReplyId := ⟨709⟩
 private def replyMsg : IpcMessage :=
   { registers := #[SeLe4n.RegValue.ofNat 100, SeLe4n.RegValue.ofNat 200, SeLe4n.RegValue.ofNat 300],
     caps := #[], badge := none }
@@ -235,19 +284,20 @@ private def runLockSetChecks : IO Unit := do
   IO.println "--- §3.1 SM6.C.1/.6 lock-set footprint + caller-TCB write lock ---"
   -- SM6.C.1: every declared lock has a kind permitted for `.reply`.
   assertBool "reply lock-set kinds all permitted (replier W, cnode R, caller W)"
-    (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs,
+    (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none none none).pairs,
         p.fst.kind ∈ permittedKinds .reply))
   -- SM6.C.1: keys are duplicate-free.
   assertBool "reply lock-set keys are duplicate-free"
-    (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs.map (·.fst)).Nodup)
+    (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none none none).pairs.map (·.fst)).Nodup)
   -- SM6.C.6: the caller-TCB *write* lock — the reply-state lifecycle write — is declared.
   assertBool "caller-TCB write lock is in the reply footprint (reply-state lifecycle)"
     (decide ((tcbLock clientLocalTid, AccessMode.write)
-      ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none).pairs))
+      ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none none none).pairs))
   -- SM6.C.5: the replyRecv lock-set is hierarchically correct.
   assertBool "replyRecv lock-set kinds all permitted"
     (decide (∀ p ∈ (lockSet_replyRecv serverTid cnRoot clientLocalTid epId none none none
-          none false none none none none none none none none none none none none none).pairs,
+          none false none none none none none none none none none none none none none none
+          none).pairs,
         p.fst.kind ∈ permittedKinds .replyRecv))
   -- SM6.C.1: the state-resolved reply lock-set is hierarchically correct.
   assertBool "state-resolved reply lock-set kinds all permitted"
@@ -260,10 +310,10 @@ private def runLockSetChecks : IO Unit := do
   assertBool "per-object reply write-lock is in the reply footprint (resolved rid)"
     (decide ((replyLock (⟨707⟩ : SeLe4n.ReplyId), AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
-          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none).pairs))
+          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none none none).pairs))
   assertBool "reply lock-set with resolved reply object: kinds all still permitted"
     (decide (∀ p ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid none none
-          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none).pairs, p.fst.kind ∈ permittedKinds .reply))
+          (some (⟨707⟩ : SeLe4n.ReplyId)) none none none none none none).pairs, p.fst.kind ∈ permittedKinds .reply))
   -- WS-SM SM6.D (PR #822 review 6J-NL9): the `.receive` / `.call` footprints also carry
   -- the per-object reply write lock once the linked reply is resolved — a Call rendezvous
   -- on receive (and a server-first Call) links a Reply object under that lock.
@@ -385,7 +435,7 @@ private def runConsumeChecks : IO Unit := do
 
 /-- **WS-RM (`v0.35.6`)**: `stLinked` with the answered Reply carrying a frame
 **above** it — the shape a delegated reply capability answering out of order
-produces, and the one the detach exists for.
+produces, and the one the splice exists for.
 
 `replyId707` is the answered caller's frame; `replyId708` sits above it, so the
 stack reads `708 -> 707 -> …` and `708.prev = some 707` is the stale reference
@@ -412,10 +462,10 @@ private def stLinkedWithFrameAbove : SystemState :=
     |>.withRunnable [serverTid]
     |>.build)
 
-private def runFrameDetachChecks : IO Unit := do
-  IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the detach, both directions ---"
+private def runFrameSpliceChecks : IO Unit := do
+  IO.println "--- §3.9 WS-RM: seL4's `reply_remove` — the splice, both directions ---"
   -- (1) The in-order path: the answered frame has nothing above it, so the
-  -- detach is the identity and the reply is byte-for-byte the pre-WS-RM one.
+  -- splice is the identity and the reply is byte-for-byte the pre-WS-RM one.
   -- A fixture exercising only this path would pass before and after the cut,
   -- which is why the second half below exists.
   assertBool "in-order reply: the answered frame has no frame above it"
@@ -438,7 +488,7 @@ private def runFrameDetachChecks : IO Unit := do
     (match postDetached.getReply? replyId708 with
      | some r => decide (r.prev = none)
      | none => false)
-  assertBool "...and the detach touches nothing else on that frame"
+  assertBool "...and the splice touches nothing else on that frame"
     (match postDetached.getReply? replyId708, stLinkedWithFrameAbove.getReply? replyId708 with
      | some r, some r0 => r == { r0 with prev := none }
      | _, _ => false)
@@ -480,11 +530,11 @@ private def runDonationChecks : IO Unit := do
   assertBool "donating reply lock-set includes the returned SchedContext write lock"
     (decide ((schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none none none).pairs))
+        none none none none none none none).pairs))
   assertBool "donating reply lock-set includes the original-owner TCB write lock"
     (decide ((tcbLock clientLocalTid, AccessMode.write)
       ∈ (lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none none none).pairs))
+        none none none none none none none).pairs))
   -- The extension equation holds definitionally.  **WS-OD OD3.5**: it is a
   -- THREE-member extension — the returned SchedContext, the original owner's
   -- TCB, and the state-level lock, because the donation return maintains
@@ -493,25 +543,37 @@ private def runDonationChecks : IO Unit := do
   -- `lockSet_endpointReply_donation_extension`; the two must not drift.
   assertBool "donation lock-set extension equation holds"
     (decide ((lockSet_endpointReply serverTid cnRoot clientLocalTid (some scId) (some clientLocalTid)
-        none none none none none).pairs
+        none none none none none none none).pairs
       = (lockSetExtendOpt
            (lockSetExtendOpt
-             (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none)
+             (lockSetExtendOpt (lockSet_endpointReply serverTid cnRoot clientLocalTid none none none none none none none none none)
                (some (schedContextLock scId, .write)))
              (some (tcbLock clientLocalTid, .write)))
            (some (stateLevelLock, .write))).pairs))
-  -- A replier holding no donated SC: the cross-core donation return is a no-op (ok).
-  match SeLe4n.ThreadId.toValid? serverTid with
-  | some serverV =>
-      assertBool "applyReplyDonationOnCore on a non-donating replier is a no-op (ok)"
-        (match applyReplyDonationOnCore stBase serverV bootCoreId bootCoreId bootCoreId with
+  -- **WS-HP HP4.3**: a reply whose answered frame heads no scheduling context is
+  -- a no-op (ok).  This is the head-driven reading of what used to be stated as
+  -- "a replier holding no donated SC"; `stBase` carries no reply stack at all,
+  -- so the trigger declines and the step is the identity.
+  match SeLe4n.ThreadId.toValid? clientLocalTid with
+  | some clientV =>
+      assertBool "applyReplyDonationOnCore on a frame heading no context is a no-op (ok)"
+        (match applyReplyDonationOnCore stBase replyId707 clientV bootCoreId bootCoreId with
          | .ok _ => true | .error _ => false)
-  | none => assertBool "serverTid is a valid thread id" false
+      assertBool "…and the trigger really does decline there, so this is not a vacuous pass"
+        (decide (replyFrameHeadHolder? stBase replyId707 = none))
+  | none => assertBool "clientLocalTid is a valid thread id" false
   -- WS-SM SM6.D (PR #822 review 6J90-... donation): the donation return is keyed on
   -- the RECORDED SERVER, not the (possibly delegated) cap holder.  Build a state
   -- where `clientLocalTid` is `blockedOnReply (some serverTid)` and `serverTid`
   -- holds `.donated scId clientLocalTid`; `wrongTid` is an unrelated (delegate)
   -- replier holding no donation.
+  -- **WS-HP HP6.2 (`v0.35.44`)**: the fixture carries the *reply stack* a live
+  -- `Call` donation leaves, for the reason HP4.3 gave the deschedule witness one:
+  -- the footprint's donation members are now resolved from the answered frame, so
+  -- a state with a `.donated` binding and no stack declares nothing at all and
+  -- the assertions below would pass vacuously -- which is how this witness
+  -- failed the moment the repoint landed.  A binding with no stack is also a
+  -- state no live path produces, so the stronger fixture is the faithful one.
   let stDonated : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject epId (.endpoint {})
@@ -519,7 +581,15 @@ private def runDonationChecks : IO Unit := do
           (.tcb { mkTcb 601 50 none .ready with
                     schedContextBinding := .donated scId clientLocalTid })
       |>.withObject clientLocalTid.toObjId
-          (.tcb (mkTcb 602 30 none (.blockedOnReply epId (some serverTid))))
+          (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                    replyObject := some replyId707 })
+      |>.withObject replyId707.toObjId
+          (.reply { replyId := replyId707, caller := some clientLocalTid,
+                    next := some (.head scId) })
+      |>.withObject scId.toObjId
+          (.schedContext { SchedContext.empty scId with
+                            boundThread := some serverTid,
+                            scReply := some replyId707 })
       |>.withObject wrongTid.toObjId (.tcb (mkTcb 604 40 none .ready))
       |>.withRunnable [serverTid]
       |>.build)
@@ -527,8 +597,19 @@ private def runDonationChecks : IO Unit := do
     (decide (recordedReplyServer? stDonated clientLocalTid = some serverTid))
   -- The key finding: the resolved donation is the RECORDED SERVER's, regardless of
   -- which thread holds the reply cap (the delegate `wrongTid` holds none).
-  assertBool "endpointReplyServerDonation? resolves the recorded server's donation (not the replier's)"
-    (decide (endpointReplyServerDonation? stDonated clientLocalTid = some (scId, clientLocalTid)))
+  assertBool "the RETIRED binding-driven reading resolves the recorded server's donation"
+    (decide (bindingDrivenReplyServerDonation? stDonated clientLocalTid
+               = some (scId, clientLocalTid)))
+  -- ...and on this shape the LIVE head-driven trigger's holder **is** the recorded
+  -- server -- the thread whose binding the retired reading reads.  Not the same
+  -- *pair*: the retired reading's second component is the donation's OWNER and the
+  -- live one's is its HOLDER, which is HP4's component-swap hazard and is why they
+  -- are asserted separately rather than compared.  What coincides here is the
+  -- thread the pop unbinds, and that coincidence is exactly what the orphan head
+  -- below breaks, so these rows are a witness for the flip and not for the fixture.
+  assertBool "...and the LIVE trigger's holder IS the recorded server on this shape"
+    (decide (answeredFrameHeadContext? stDonated clientLocalTid
+               = some (scId, serverTid)))
   -- The state-resolved reply lock-set therefore covers the returned SC write lock
   -- AND the recorded server's TCB write lock, even on a delegated reply where the
   -- cap holder (`wrongTid`) is not the server.
@@ -538,6 +619,147 @@ private def runDonationChecks : IO Unit := do
   assertBool "delegated reply lock-set covers the recorded server's TCB write lock"
     (decide ((tcbLock serverTid, AccessMode.write)
       ∈ (lockSet_endpointReplyOnCore stDonated wrongTid cnRoot clientLocalTid).pairs))
+  -- ==========================================================================
+  -- `v0.35.44`: WS-HP HP6.2 — the ORPHAN HEAD, where the two resolvers disagree
+  -- ==========================================================================
+  --
+  -- The decisive witness for the repoint, and the shape above cannot be it: there
+  -- the holder *is* the recorded server, so the holder's TCB lock is in the
+  -- footprint through the `server` member whichever resolver supplies the pair,
+  -- and the assertion would pass with the repoint reverted.
+  --
+  -- Here `orphanHolderTid` runs on the context while `serverTid` is still the
+  -- caller's recorded reply target -- the state HP6's splice creates by re-heading
+  -- a frame whose recorded server has gone.  The binding-driven resolver reads
+  -- `serverTid`'s `.donated` binding and names `clientLocalTid`; the head-driven
+  -- one reads the frame and names `orphanHolderTid`, which is the thread the pop
+  -- actually sets `.unbound`.  A footprint that omits it is FALSE of the
+  -- transition, which this tree rates worse than a wide one.
+  let stOrphanHead : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject epId (.endpoint {})
+      |>.withObject serverTid.toObjId
+          (.tcb { mkTcb 601 50 none .ready with
+                    schedContextBinding := .donated scId clientLocalTid })
+      |>.withObject orphanHolderTid.toObjId (.tcb (mkTcb 605 45 none .ready))
+      |>.withObject clientLocalTid.toObjId
+          (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                    replyObject := some replyId709 })
+      |>.withObject replyId709.toObjId
+          (.reply { replyId := replyId709, caller := some clientLocalTid,
+                    next := some (.head scId) })
+      |>.withObject scId.toObjId
+          (.schedContext { SchedContext.empty scId with
+                            boundThread := some orphanHolderTid,
+                            scReply := some replyId709 })
+      |>.withRunnable [serverTid]
+      |>.build)
+  assertBool "the two resolvers name DIFFERENT threads at an orphan head"
+    (decide (answeredFrameHeadContext? stOrphanHead clientLocalTid
+               = some (scId, orphanHolderTid)
+             ∧ bindingDrivenReplyServerDonation? stOrphanHead clientLocalTid
+               = some (scId, clientLocalTid)))
+  assertBool "…and the repointed footprint declares the thread the POP unbinds"
+    (decide ((tcbLock orphanHolderTid, AccessMode.write)
+      ∈ (lockSet_endpointReplyOnCore stOrphanHead wrongTid cnRoot clientLocalTid).pairs))
+  assertBool "…on .replyRecv too, which is the same reply leg"
+    (decide ((tcbLock orphanHolderTid, AccessMode.write)
+      ∈ (lockSet_endpointReplyRecvOnCore stOrphanHead wrongTid cnRoot clientLocalTid
+           epId).pairs))
+  -- NEGATIVE: the *retired* reading's second component is not declared as a write
+  -- here at all, so this pair of rows cannot both pass under a revert -- which is
+  -- what makes them a witness for the repoint rather than for the fixture.  (The
+  -- answered caller's own TCB is a declared write on its own account, as the reply
+  -- target, so the thread named is the recorded server's *binding owner* read back
+  -- through a thread that is neither principal.)
+  assertBool "NEGATIVE: the orphan head's holder is not the recorded server"
+    (!decide (answeredFrameHeadContext? stOrphanHead clientLocalTid
+                = some (scId, serverTid)))
+  -- ==========================================================================
+  -- `v0.35.37`: the donation return deschedules at the server's PLACEMENT
+  -- ==========================================================================
+  --
+  -- The decisive witness for the finding, and it has to be built this way: the
+  -- recorded server is **queued on a non-boot core and current on none**, which
+  -- is what a preempted passive server looks like and the one shape
+  -- `determineExecutingCore` cannot see — that resolver finds a core a thread is
+  -- *current* on and otherwise answers `bootCoreId`.
+  --
+  -- Under the superseded spelling the deschedule ran
+  -- `removeRunnableOnCore … bootCoreId`, which edits core 0's queue and current
+  -- slot: the server is on neither, so the step wrote nothing and the server
+  -- stayed queued on core 2 with its donation already returned — `.unbound`, and
+  -- therefore selected at its legacy TCB priority against no reservation.
+  --
+  -- The paired negative is what makes this a witness rather than a fixture: it
+  -- asserts the server IS on core 2 before the return, so a witness that passed
+  -- because the fixture never queued it would fail here.
+  --
+  -- **WS-HP HP4.3**: the fixture now carries the *reply stack* a live `Call`
+  -- donation leaves, because the pop is keyed on the answered frame: the client's
+  -- Reply heads the context and the context names it back.  Before the flip the
+  -- pop read the recorded server's `.donated` binding and no stack was needed --
+  -- which is a state no live path produces, so the stronger fixture is also the
+  -- more faithful one.
+  let stQueuedServer : SystemState :=
+    enqueueRunnableOnCore
+      (BootstrapBuilder.empty
+        |>.withObject epId (.endpoint {})
+        |>.withObject serverTid.toObjId
+            (.tcb { mkTcb 601 50 none .ready with
+                      schedContextBinding := .donated scId clientLocalTid })
+        |>.withObject clientLocalTid.toObjId
+            (.tcb { mkTcb 602 30 none (.blockedOnReply epId (some serverTid)) with
+                      replyObject := some replyId707 })
+        |>.withObject replyId707.toObjId
+            (.reply { replyId := replyId707, caller := some clientLocalTid,
+                      next := some (.head scId) })
+        |>.withObject scId.toObjId
+            (.schedContext { SchedContext.empty scId with
+                              boundThread := some serverTid,
+                              scReply := some replyId707 })
+        |>.withRunnable []
+        |>.build)
+      core2 serverTid
+  assertBool "PRECONDITION: the recorded server is queued on core 2 before the return"
+    ((stQueuedServer.scheduler.runQueueOnCore core2).contains serverTid)
+  assertBool "…and current on NO core, which is what makes `determineExecutingCore` answer the boot core"
+    (decide (determineExecutingCore stQueuedServer serverTid = bootCoreId))
+  assertBool "…so the placement resolver and the superseded proxy disagree here"
+    (decide (placedCoreOf? stQueuedServer serverTid = some core2))
+  assertBool "…and the head-driven trigger names the queued server as the holder"
+    (decide (replyFrameHeadHolder? stQueuedServer replyId707 = some (scId, serverTid)))
+  match SeLe4n.ThreadId.toValid? clientLocalTid with
+  | some clientV =>
+      match applyReplyDonationOnCore stQueuedServer replyId707 clientV core2 core2 with
+      | .ok stAfter =>
+          assertBool "the donation return DESCHEDULES a queued recorded server (v0.35.37)"
+            (!(stAfter.scheduler.runQueueOnCore core2).contains serverTid)
+          assertBool "…and on no other core either — the server is off every run queue"
+            (decide (placedCoreOf? stAfter serverTid = none))
+          assertBool "…and the donation really was returned, so this is not a vacuous pass"
+            (decide (replyDonationReturn? stAfter serverTid = none))
+          -- DECISIVE: the superseded spelling, run on this very shape, is inert.
+          -- Stated rather than left to a mutation run, because a mutation of the
+          -- operation no longer typechecks — the frame lemmas name the placement
+          -- resolver — so the only way to show the witness discriminates is to
+          -- exhibit what the pre-fix step computed.  `removeRunnableOnCore` at
+          -- `determineExecutingCore`'s answer edits core 0 and the server is on
+          -- core 2, so it stays queued and stays selectable at its legacy TCB
+          -- priority against no reservation.
+          assertBool "NEGATIVE: the superseded `determineExecutingCore` deschedule leaves it queued"
+            ((removeRunnableOnCore stQueuedServer serverTid
+                (determineExecutingCore stQueuedServer serverTid)
+              ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+          assertBool "…so the two spellings genuinely differ on core 2's queue"
+            (!((descheduleAtPlacement stQueuedServer serverTid
+                 ).scheduler.runQueueOnCore core2 |>.contains serverTid)
+             && ((removeRunnableOnCore stQueuedServer serverTid
+                    (determineExecutingCore stQueuedServer serverTid)
+                  ).scheduler.runQueueOnCore core2 |>.contains serverTid))
+      | .error _ =>
+          assertBool "the donation return succeeds on the queued-server shape" false
+  | none => assertBool "clientLocalTid is a valid thread id" false
 
 private def runDispatchChecks : IO Unit := do
   IO.println "--- §3.6 SM6.C cross-core dispatch + SM6.C.9 chain bound ---"
@@ -561,7 +783,7 @@ def runSmpCrossCoreReplyChecks : IO Unit := do
   runWakeChecks
   runReplayChecks
   runConsumeChecks
-  runFrameDetachChecks
+  runFrameSpliceChecks
   runReplyRecvChecks
   runDonationChecks
   runDispatchChecks

@@ -577,4 +577,101 @@ theorem lockSet_notificationSignalOnCore_bound_endpoint_write_mem
     (notificationSignalWaiter? st notificationId) epId t
     (notificationSignalSpliceNeighbors? st notificationId)
 
+/-- **WS-RR RR8.12 (frame)**: the bound-aware signal — the transition the live
+`.notificationSignal` arm runs — touches **no** core's replenish queue.
+
+The obligation `schedLockSet_notificationSignalBoundOnCore` owes for declaring an
+empty replenish segment.  The bound-delivery path is an endpoint dequeue and a
+badge store (both whole-scheduler frames) followed by a wake (a run-queue insert);
+the fall-through path *is* `notificationSignalOnCore`, whose own frame applies. -/
+theorem notificationSignalBoundOnCore_replenishQueueOnCore (nid : SeLe4n.ObjId)
+    (badge : SeLe4n.Badge) (ec : CoreId) (st : SystemState) (c : CoreId) :
+    (notificationSignalBoundOnCore nid badge ec st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold notificationSignalBoundOnCore
+  cases hTarget : boundDeliveryTarget? st nid with
+  | none =>
+    simp only []
+    exact notificationSignalOnCore_replenishQueueOnCore nid badge ec st c
+  | some pair =>
+    obtain ⟨t, epId⟩ := pair
+    simp only []
+    cases hRemove : endpointQueueRemoveDual epId true t st with
+    | error e => rfl
+    | ok u =>
+      obtain ⟨_, st1⟩ := u
+      simp only []
+      cases hRecv : storeTcbReceiveComplete st1 t (some { IpcMessage.empty with badge := some badge }) with
+      | error e => rfl
+      | ok st2 =>
+        simp only []
+        rw [wakeThread_replenishQueueOnCore,
+          storeTcbReceiveComplete_scheduler_eq st1 st2 _ _ hRecv,
+          endpointQueueRemoveDual_scheduler_eq st st1 epId true t hRemove]
+
+/-- WS-SM SM8.B.2, relocated to production at **WS-RR RR8.12**: **the cores a
+bound-aware cross-core signal may write** — the bound TCB's home core when the
+badge is delivered directly, otherwise the plain signal's set.
+
+`boundDeliveryTarget?` is the transition's own pre-state resolution, so the
+declared set and the transition name the same TCB.  It is also the resolver
+`lockSet_notificationSignalOnCore` keys its endpoint and bound-TCB members on, so
+the object-domain footprint, the scheduler-domain footprint and the write set all
+branch on one fact.
+
+Relocated for the reason `notificationSignalWriteSet`'s docstring gives: the
+scheduler-domain footprint below is production and the staged
+`InformationFlow/NonInterferenceCrossCore.lean` is not reachable from it. -/
+def notificationSignalBoundWriteSet (st : SystemState) (notificationId : SeLe4n.ObjId) :
+    List CoreId :=
+  match boundDeliveryTarget? st notificationId with
+  | some (t, _) => [determineTargetCore st t]
+  | none => notificationSignalWriteSet st notificationId
+
+/-- **WS-RR RR8.12**: the scheduler-domain footprint of the **live**
+`.notificationSignal` arm.
+
+`API.dispatchWithCap{,Checked}` routes `.notificationSignal` through
+`notificationSignalBoundCrossCoreDispatch{,Checked}`, hence through
+`notificationSignalBoundOnCore` — so this, not
+`schedLockSet_notificationSignalOnCore`, is the footprint the syscall seam must
+acquire.  Both exist because the bare signal is a transition in its own right and
+the two genuinely differ: on the bound-delivery path the woken thread is the
+*bound* TCB, whose home core the plain signal's set does not name.
+
+Defined over `notificationSignalBoundWriteSet`, so the footprint and
+`notificationSignalBoundOnCore_confinedToCores` cannot name different cores. -/
+def schedLockSet_notificationSignalBoundOnCore (st : SystemState)
+    (notificationId : SeLe4n.ObjId) : List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (notificationSignalBoundWriteSet st notificationId) []
+
+/-- **WS-RR RR8.12**: on the bound-delivery path the footprint names the bound
+TCB's home core — the one `wakeThread` writes under.
+
+The relation the live arm needs, and the one a footprint keyed on the *plain*
+signal's waiter set would fail: the bound path requires an empty waiter list, so
+`notificationSignalWriteSet` is `[]` there and the plain footprint would name no
+run queue at all. -/
+theorem schedLockSet_notificationSignalBoundOnCore_contains_bound_runQueue_write
+    (st : SystemState) (notificationId : SeLe4n.ObjId) (t : SeLe4n.ThreadId)
+    (epId : SeLe4n.ObjId) (hTarget : boundDeliveryTarget? st notificationId = some (t, epId)) :
+    (SchedLockId.runQueue ⟨determineTargetCore st t⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_notificationSignalBoundOnCore st notificationId := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold notificationSignalBoundWriteSet
+  rw [hTarget]
+  simp
+
+/-- **WS-RR RR8.12**: off the bound path the live arm's footprint **is** the bare
+signal's, definitionally — so every statement about one transfers to the other on
+the overwhelming majority of signals. -/
+@[simp] theorem schedLockSet_notificationSignalBoundOnCore_of_no_target (st : SystemState)
+    (notificationId : SeLe4n.ObjId)
+    (hNone : boundDeliveryTarget? st notificationId = none) :
+    schedLockSet_notificationSignalBoundOnCore st notificationId
+      = schedLockSet_notificationSignalOnCore st notificationId := by
+  unfold schedLockSet_notificationSignalBoundOnCore schedLockSet_notificationSignalOnCore
+    notificationSignalBoundWriteSet
+  rw [hNone]
+
 end SeLe4n.Kernel

@@ -1505,16 +1505,35 @@ private def sd052b_replyRecv_donation_switch : IO Unit := do
       |>.withObject server.toObjId
           (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
       |>.withObject clientA.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := .bound scA })
+          -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
+          -- not `.bound` -- two threads bound to one SchedContext is the
+          -- malformation the pop's recipient guard refuses, and the binding-driven
+          -- trigger never looked at the recipient so nothing caught it here.
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound })
       |>.withObject clientB.toObjId
           (.tcb { mkTcb 3 with ipcState := .ready, schedContextBinding := .bound scB })
-      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      -- **WS-OD OD4.1 / WS-HP HP4**: a `.donated` binding always has a FRAME on
+      -- the context's reply stack -- `donateSchedContext` is a four-store push
+      -- that is fail-closed on the donor's `replyObject`, so a donation with no
+      -- frame is a state no live transition can produce.  The reply stack was
+      -- missing here, which was invisible while the pop read the recorded
+      -- server's binding and is what the head-driven trigger reads.
+      |>.withObject rid.toObjId
+          (.reply { replyId := rid, caller := some clientA, next := some (.head scA) })
       |>.withObject scA.toObjId
-          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with boundThread := some server })
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
+            boundThread := some server, scReply := some rid })
       |>.withObject scB.toObjId
           (.schedContext { SeLe4n.Kernel.SchedContext.empty scB with boundThread := some clientB })
       |>.withRunnable [server]
       |>.build)
+  -- **WS-HP HP4**: the pop is head-driven, so assert the trigger resolves on the
+  -- pre-state before relying on it -- a frame heading nothing makes the pop the
+  -- identity, and `sd052b_donation_switched` below would then be measuring a
+  -- fixture rather than the arm.
+  expect "sd052b_pre_donation_frame_heads_the_context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? st0 rid == some (scA, server))
+    "the previous caller's Reply must head the donated context, as a real Call leaves it"
   -- clientB issues a Call while the server is busy → it enqueues `blockedOnCall`
   -- (the queued-Call path does NOT donate; the donation is deferred to rendezvous).
   match SeLe4n.Kernel.endpointCallOnCore epId clientB IpcMessage.empty bootCoreId st0 with
@@ -1559,16 +1578,32 @@ private def sd052c_replyRecv_delegated_returns_recorded_server_donation : IO Uni
       |>.withObject server.toObjId
           (.tcb { mkTcb 1 with ipcState := .ready, schedContextBinding := .donated scA clientA })
       |>.withObject clientA.toObjId
-          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := .bound scA })
+          -- **WS-HP HP4.6**: a donor that has donated its context is `.unbound`,
+          -- not `.bound` -- two threads bound to one SchedContext is the
+          -- malformation the pop's recipient guard refuses, and the binding-driven
+          -- trigger never looked at the recipient so nothing caught it here.
+          (.tcb { mkTcb 2 with ipcState := .blockedOnReply epId (some server), replyObject := some rid, schedContextBinding := SeLe4n.Kernel.SchedContextBinding.unbound })
       |>.withObject delegate.toObjId
           (.tcb { mkTcb 5 with ipcState := .ready, schedContextBinding := .unbound })
-      |>.withObject rid.toObjId (.reply { replyId := rid, caller := some clientA })
+      -- The reply stack the donating Call left, as in sd052b above: a `.donated`
+      -- binding with no frame is unreachable, and the head-driven pop reads the
+      -- frame rather than the binding.
+      |>.withObject rid.toObjId
+          (.reply { replyId := rid, caller := some clientA, next := some (.head scA) })
       |>.withObject scA.toObjId
-          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with boundThread := some server })
+          (.schedContext { SeLe4n.Kernel.SchedContext.empty scA with
+            boundThread := some server, scReply := some rid })
       |>.withRunnable [server, delegate]
       |>.build)
   let msg : IpcMessage :=
     { registers := #[SeLe4n.RegValue.ofNat 99], caps := #[], badge := Badge.ofNatMasked 0 }
+  -- **WS-HP HP4**: the same pre-state check as sd052b.  It matters more here: the
+  -- whole point of this case is that the donation is the RECORDED SERVER's and not
+  -- the delegate's, and the head-driven trigger reaches the server through the
+  -- frame rather than through the reply capability's holder.
+  expect "sd052c_pre_donation_frame_heads_the_context"
+    (SeLe4n.Kernel.replyFrameHeadHolder? st0 rid == some (scA, server))
+    "the frame must head the context the RECORDED server holds, not the delegate"
   -- No queued sender on the endpoint → the delegate blocks on the receive leg.
   match SeLe4n.Kernel.replyRecvBody epId delegate rid clientA msg (SeLe4n.ObjId.ofNat 0)
       (SeLe4n.Slot.ofNat 0) bootCoreId st0 with

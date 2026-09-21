@@ -139,6 +139,84 @@ want to assert it of a state directly. -/
 def threadInactiveFlagConsistentBool (st : SystemState) : Bool :=
   (threadInactiveFlagConsistentChecks st.objectIndex st).all (·.2)
 
+/-- **WS-RR RR8.3**: `queuePPrevAgreesWithPrev`, the fourth conjunct of
+`dualQueueSystemInvariant`, as a runtime check.
+
+`queuePPrev` carries exactly one bit beyond `queuePrev` — whether the node is
+linked into a queue at all — and every other bit of it must agree with
+`queuePrev`.  Nothing checked that before RR8.3, and *that* is why WS-OD OD1.1
+and OD3.9 each found a removal writing `queuePrev` without its partner: no
+`ipcInvariantFull` conjunct read the field, so a stranded successor was invisible
+to both the proofs and the harness. -/
+def queuePPrevAgreesWithPrevChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getTcb? ⟨oid.toNat⟩ with
+    | some tcb =>
+        let ok : Bool :=
+          match tcb.queuePPrev with
+          -- `v0.35.99`: `none` says the thread is on no queue, so it claims
+          -- `queuePrev = none` rather than nothing.  It read `true` here and in
+          -- the Prop-level predicate, which admitted a queued thread carrying no
+          -- back-pointer -- one the dual removal refuses outright and can never
+          -- dequeue.
+          | none => tcb.queuePrev.isNone
+          | some .endpointHead => tcb.queuePrev.isNone
+          | some (.tcbNext p) => tcb.queuePrev == some p
+        (s!"queuePPrev agrees with queuePrev: oid={oid} prev={reprStr tcb.queuePrev} \
+pprev={reprStr tcb.queuePPrev}", ok) :: acc
+    | none => acc) []
+
+/-- **WS-RR RR8.3**: the same relation as a single boolean, for suites that assert
+it of a state directly — and for the witnesses that show a corrupted back-pointer
+fails it. -/
+def queuePPrevAgreesWithPrevBool (st : SystemState) : Bool :=
+  (queuePPrevAgreesWithPrevChecks st.objectIndex st).all (·.2)
+
+/-- **PR #897 review (`v0.35.108`)**: the FIFTH `dualQueueSystemInvariant`
+conjunct — a thread heads at most one endpoint queue, counting a send queue and a
+receive queue as different queues.
+
+`v0.35.106` added the conjunct and added no runtime check, one cut after RR8.3
+had recorded the rule that a conjunct is *checked at runtime, not only proved*.
+The gap was not narrow: **nothing** in `stateInvariantChecksFor` is cross-endpoint
+(`endpointDualQueueWellFormedB` is literally the two per-queue checks of one
+endpoint) and nothing ties an endpoint queue's head to its own `ipcState`.  So two
+endpoints each holding `{head := some t, tail := some t}`, with `t` carrying
+`(queuePrev := none, queuePPrev := some .endpointHead, queueNext := none)`, passed
+every check while the proof bundle refuses the state — and popping either queue
+then clears `t`'s links and strands the other.
+
+The check is per occupied head and asks whether any **other** `(endpoint, kind)`
+claims the same one, so it is robust to a repeated object id in `objectIds`
+(comparing against "exactly one" would mis-report a duplicated index entry as a
+violation).  It says which two queues collide, because the whole content of a
+disjointness failure is *which* pair. -/
+def endpointQueueHeadDisjointChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  let heads : List (SeLe4n.ObjId × Bool × SeLe4n.ThreadId) :=
+    objectIds.foldr (fun oid acc =>
+      match st.getEndpoint? oid with
+      | some ep =>
+          let withSend :=
+            match ep.sendQ.head with
+            | some hd => (oid, false, hd) :: acc
+            | none    => acc
+          match ep.receiveQ.head with
+          | some hd => (oid, true, hd) :: withSend
+          | none    => withSend
+      | none => acc) []
+  heads.foldr (fun e acc =>
+    let others := heads.filter (fun f => f.2.2 == e.2.2 && !(f.1 == e.1 && f.2.1 == e.2.1))
+    (s!"endpoint queue heads disjoint: head={e.2.2.toNat} ep={e.1.toNat} \
+recvQ={e.2.1} collides={others.map (fun f => (f.1.toNat, f.2.1))}", others.isEmpty) :: acc) []
+
+/-- **PR #897 review (`v0.35.108`)**: the same relation as a single boolean, for
+suites that assert it of a state directly — and for the witness that shows a
+shared singleton head fails it while every queue stays well formed. -/
+def endpointQueueHeadDisjointBool (st : SystemState) : Bool :=
+  (endpointQueueHeadDisjointChecks st.objectIndex st).all (·.2)
+
 /-- M-11 CSpace coherency: every CNode slot whose capability targets an object has that
 object present in the object store — and, where the capability names the object's
 *kind*, an object of that kind.
@@ -463,6 +541,16 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
     -- earns its place because `stateInvariantChecksFor` is also the surface
     -- `assertStateInvariantsWithoutSync` runs, where the two differ.
     ++ threadInactiveFlagConsistentChecks objectIds st
+    -- WS-RR RR8.3: the fourth `dualQueueSystemInvariant` conjunct.  It is what
+    -- `endpointQueueRemoveDual`'s guard asks for, and until RR8.3 no conjunct and
+    -- no runtime check read `queuePPrev` at all.
+    ++ queuePPrevAgreesWithPrevChecks objectIds st
+    -- PR #897 review (`v0.35.108`): and the FIFTH.  `v0.35.106` added the conjunct
+    -- without its runtime check, one cut after RR8.3 recorded the rule that a
+    -- conjunct is checked at runtime and not only proved -- and no other check in
+    -- this list is cross-endpoint, so a head shared by two queues passed the whole
+    -- surface while the bundle refuses it.
+    ++ endpointQueueHeadDisjointChecks objectIds st
 
 /--
 Fallback invariant check surface for callers without an explicit object-id inventory.

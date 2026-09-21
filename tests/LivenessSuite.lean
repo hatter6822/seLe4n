@@ -233,7 +233,6 @@ open SeLe4n.Model
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_scheduler_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_serviceRegistry_eq
 #check @SeLe4n.Kernel.Lifecycle.Suspend.restoreToReady_lifecycle_eq
-#check @SeLe4n.Kernel.Lifecycle.Suspend.clearTcbIpcFields_eq_restoreToReady
 -- R5.G (DEEP-SCH-06): schedContextConfigure domain propagation witnesses.
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_bound_tcb_domain_eq
 #check @SeLe4n.Kernel.SchedContextOps.schedContextConfigure_domain_noop_when_eq

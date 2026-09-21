@@ -78,6 +78,18 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # catch.  Today: seven committing seams, two of them bracketed.
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
+# v0.35.114: which declarations carry a body has ONE answer.  Four of the
+# censuses below derive a domain from the environment and each has to decide it
+# first; until this module they answered it five ways, and four of those matched
+# `.defnInfo` alone and wildcarded the rest, so an `opaque` — executable, and
+# seventy-odd of them in this tree's FFI surface — was silently outside four
+# derived domains at once.  A domain miss is silent by construction, which is why
+# this became one owner rather than four patches.  Building it IS the check: the
+# eight-constructor match is exhaustive with no `_`, so a ninth constructor in a
+# future toolchain is a build error, and three witnesses (a `def`, an `opaque`,
+# a `theorem` control) decide the arms on a real environment.
+run_check "BUILD" lake build SeLe4n.Testing.DeclarationKind
+
 # WS-RR RR7.18: every declared `LockSet` footprint has a size bound, stated at
 # the footprint's OWN arity.  The bound is what `boundedWait_under_2pl` and the
 # WCRT surface take as a premise, so a footprint without one is a transition
@@ -107,6 +119,20 @@ run_check "BUILD" lake build SeLe4n.Testing.ReplyStackWriteCensus
 # `a Lean question goes to the Lean elaborator` rule applied at the tier that
 # can, since the classifier's own tier cannot.
 run_check "BUILD" lake build SeLe4n.Testing.StoreReadClassificationCensus
+
+# WS-RR RR8.12 (third cut): the counterpart of the export-commit census, walked
+# the other way.  That one asks how each state-committing `@[export]` commits;
+# this one derives every definition that transforms kernel state and asks which
+# of them a committing export can reach.  It exists because WS-RR RR8.12 found
+# two verified behavioural steps sitting in `cancelIpcBlockingOnCore`, a
+# composite no production path calls, while the live `.tcbSuspend` re-composed
+# its parts and carried neither -- a permanent denial of service against a
+# passive server, and a fact that was true, checkable and unstated.  The
+# partition is derived, the non-executed half is pinned by name in both
+# directions, and the rows that stand beside a live re-composition carry a pin
+# theorem, which is what makes a step added to one side and not the other a
+# build failure rather than a reading nobody did.
+run_check "BUILD" lake build SeLe4n.Testing.KernelTransitionReachabilityCensus
 
 # WS-SM SM8.B: no live syscall arm may reach a boot-pinned scheduler primitive.
 # PR #861 review rounds 10 and 12 found this defect three times, one syscall per

@@ -1752,27 +1752,28 @@ for FFI ABI parity but is not consulted inside this helper.
 
 If the target object is not a TCB (or the lookup fails) the state is
 returned unchanged — `syscallEntryChecked` will surface the error
-(`.illegalState` or `.objectNotFound`) on the very next step. -/
+(`.illegalState` or `.objectNotFound`) on the very next step.
+
+The write is the typed in-place rewrite `SystemState.updateTcb` (`v0.35.69`):
+the witnessed lookup around `rewriteObject`, so the spill rewrites the one TCB
+the seam resolved and touches no bookkeeping, and is the identity on a miss. -/
 def writeFfiRegistersToTcb
     (st : SystemState) (tid : SeLe4n.ThreadId)
     (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64) : SystemState :=
-  match st.getTcb? tid with
-  | some tcb =>
-      let layout := SeLe4n.arm64DefaultLayout
-      let rf := tcb.registerContext
-      -- x0 → capPtrReg (= ⟨0⟩); x1 → msgInfoReg (= ⟨1⟩) — `decodeMsgInfo`
-      -- decodes the msgInfo from this slot via `MessageInfo.decode`.
-      let rf := writeReg rf layout.capPtrReg     ⟨x0.toNat⟩
-      let rf := writeReg rf layout.msgInfoReg    ⟨x1.toNat⟩
-      let rf := writeReg rf ⟨2⟩                  ⟨x2.toNat⟩
-      let rf := writeReg rf ⟨3⟩                  ⟨x3.toNat⟩
-      let rf := writeReg rf ⟨4⟩                  ⟨x4.toNat⟩
-      let rf := writeReg rf ⟨5⟩                  ⟨x5.toNat⟩
-      let rf := writeReg rf layout.syscallNumReg ⟨syscallId.toNat⟩
-      let tcb' := { tcb with registerContext := rf }
-      { st with objects := st.objects.insert tid.toObjId (.tcb tcb') }
-  | none => st
+  st.updateTcb tid fun tcb =>
+    let layout := SeLe4n.arm64DefaultLayout
+    let rf := tcb.registerContext
+    -- x0 → capPtrReg (= ⟨0⟩); x1 → msgInfoReg (= ⟨1⟩) — `decodeMsgInfo`
+    -- decodes the msgInfo from this slot via `MessageInfo.decode`.
+    let rf := writeReg rf layout.capPtrReg     ⟨x0.toNat⟩
+    let rf := writeReg rf layout.msgInfoReg    ⟨x1.toNat⟩
+    let rf := writeReg rf ⟨2⟩                  ⟨x2.toNat⟩
+    let rf := writeReg rf ⟨3⟩                  ⟨x3.toNat⟩
+    let rf := writeReg rf ⟨4⟩                  ⟨x4.toNat⟩
+    let rf := writeReg rf ⟨5⟩                  ⟨x5.toNat⟩
+    let rf := writeReg rf layout.syscallNumReg ⟨syscallId.toNat⟩
+    { tcb with registerContext := rf }
 
 /-- WS-RC R2.B.1 helper: Read the syscall return value from a thread's
     `x0` register, per AAPCS64.
@@ -2003,9 +2004,8 @@ theorem syscallReturnOutcome_blocked_ignores_staged_registers
   have hTcb' : (Architecture.writeReturnFrameToTcb st tid frame).getTcb? tid
       = some (tcb.withReturnFrame frame) := by
     unfold Architecture.writeReturnFrameToTcb
-    rw [hTcb]
-    simp only [SystemState.getTcb?, RHTable_getElem?_eq_get?]
-    rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self st.objects tid.toObjId _ hObjInv]
+    rw [SystemState.updateTcb_getTcb?_self st tid _ hObjInv, hTcb]
+    rfl
   rw [syscallReturnOutcome_blocks_of_ipcBlocked syscallId _ tid _ hTcb' hBlocked,
       syscallReturnOutcome_blocks_of_ipcBlocked syscallId st tid tcb hTcb hBlocked]
 
@@ -3199,8 +3199,8 @@ theorem writeFfiRegistersToTcb_scheduler
     (st : SystemState) (tid : SeLe4n.ThreadId) (syscallId : UInt32)
     (x0 x1 x2 x3 x4 x5 : UInt64) :
     (writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5).scheduler = st.scheduler := by
-  unfold writeFfiRegistersToTcb SystemState.getTcb?
-  split <;> rfl
+  unfold writeFfiRegistersToTcb
+  exact SystemState.updateTcb_scheduler st tid _
 
 /-- **WS-RR RR7.3**: the capability guarantee at the **exported seam**.
 
@@ -3551,20 +3551,23 @@ theorem writeFfiRegistersToTcb_id_when_not_tcb
     (x0 x1 x2 x3 x4 x5 : UInt64)
     (hNotTcb : ∀ tcb : TCB, st.objects[tid.toObjId]? ≠ some (.tcb tcb)) :
     writeFfiRegistersToTcb st tid syscallId x0 x1 x2 x3 x4 x5 = st := by
-  unfold writeFfiRegistersToTcb SystemState.getTcb?
-  cases h : st.objects[tid.toObjId]? with
-  | none => rfl
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
-      exact absurd h (hNotTcb tcb)
-    | endpoint _ => rfl
-    | notification _ => rfl
-    | cnode _ => rfl
-    | vspaceRoot _ => rfl
-    | untyped _ => rfl
-    | schedContext _ => rfl
-    | reply _ => rfl
+  have hNone : st.getTcb? tid = none := by
+    unfold SystemState.getTcb?
+    cases h : st.objects[tid.toObjId]? with
+    | none => rfl
+    | some obj =>
+      cases obj with
+      | tcb tcb =>
+        exact absurd h (hNotTcb tcb)
+      | endpoint _ => rfl
+      | notification _ => rfl
+      | cnode _ => rfl
+      | vspaceRoot _ => rfl
+      | untyped _ => rfl
+      | schedContext _ => rfl
+      | reply _ => rfl
+  unfold writeFfiRegistersToTcb
+  exact SystemState.updateTcb_eq_self_of_none hNone _
 
 /-- WS-RC R2.B.5: `readReturnValue` is total — it reads `0` whenever
     the target object is not a TCB (or absent).  Used by callers that

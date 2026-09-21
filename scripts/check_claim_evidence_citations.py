@@ -56,6 +56,14 @@ CITATION_EXEMPTIONS: dict[str, str] = {
     "seL4_Fault_tag": "seL4's own ABI field name, cited for fidelity",
     "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
     "reply_remove": "seL4's own kernel function name, cited for fidelity",
+    "reply_unlink": "seL4's own kernel function name, cited for fidelity",
+    "reply_pop": "seL4's own kernel function name, cited for fidelity",
+    "severAtCut_pop_leaves_no_head": (
+        "retired at WS-HP HP6.8 (`v0.35.45`) -- its first conjunct was "
+        "`cancelledMiddleCallerPolicy = .severAtCut`, so the policy flip deleted it "
+        "rather than restating it; the row names it to say it is gone, which is the "
+        "one shape a citation may legitimately not resolve"
+    ),
     "seL4_MsgMaxExtraCaps": "seL4 constant, cited for fidelity",
     "seL4_MsgMaxLength": "seL4 constant, cited for fidelity",
     "native_decide": "a Lean tactic, not a declaration",
@@ -99,10 +107,20 @@ ASM_DECL = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:", re.M)
 
 def tracked(root: str, pattern: str) -> list[str]:
     """Files as the index sees them, from git, with a filesystem fallback so the
-    self-test's temporary trees work the same way."""
+    self-test's temporary trees work the same way.
+
+    NUL-delimited, because `git ls-files` C-quotes a path holding an
+    unusual byte and `str.split()` breaks one holding whitespace into
+    fragments that name no file -- a requirement dropped from the domain,
+    which is a check nobody runs.  Zero tracked paths carry whitespace
+    today, so this costs the tree nothing and closes the next one
+    (`v0.35.150`; the same defect `check_identifier_naming` records as its
+    own item 8).
+    """
     try:
-        out = subprocess.run(["git", "-C", root, "ls-files", pattern],
-                             capture_output=True, text=True, check=True).stdout.split()
+        listed = subprocess.run(["git", "-C", root, "ls-files", "-z", pattern],
+                                capture_output=True, check=True).stdout
+        out = [p for p in listed.decode("utf-8", "surrogateescape").split("\0") if p]
         if out:
             return out
     except (OSError, subprocess.CalledProcessError):

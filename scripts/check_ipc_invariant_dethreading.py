@@ -121,6 +121,11 @@ PRE_STATE_PREDICATES = (
     # the first form that fits, and a shorter prefix placed first would claim
     # the longer name's occurrences.
     "ipcInvariantFullExceptMembership",
+    # WS-RR RR8.7: the bundle with the *reply linkage* relaxed at a woken
+    # caller, which is the honest post-state of the unblock-and-stage rewrite
+    # and the honest pre-state of the reply-link teardown.  Listed for the same
+    # reason as its two siblings, and ahead of the bare spelling it extends.
+    "ipcInvariantFullExceptReplyLinkage",
     "ipcInvariantFull",
     "ipcInvariantCore",
 )
@@ -318,11 +323,28 @@ MACHINERY_PINS = {
     # PR #889 review round 17: the boot entry's contract, decided over the
     # elaborated environment.  One `run_cmd`; it mints no declaration.
     ("SeLe4n/Testing/BootEntryContract.lean", "run_cmd"): 1,
+    # v0.35.114: the owner of "does this declaration carry a body", shared by the
+    # four censuses below.  One `run_cmd`, which looks its three planted
+    # witnesses up in the environment and throws when `bodyBearing` answers the
+    # wrong arm for one of them.  It mints no declaration.
+    ("SeLe4n/Testing/DeclarationKind.lean", "run_cmd"): 1,
     # The elaborator-backed de-threading census itself: one `run_cmd`
     # running the witnesses and the environment walk.  The census is this
     # pin's own payoff -- the machinery it rides is reviewed here like any
     # other.
     ("SeLe4n/Testing/IpcDethreadingEnvironmentCensus.lean", "run_cmd"): 1,
+    # WS-RR RR8.12 (third cut): the kernel-transition reachability census.
+    # One `run_cmd`, which derives the state-transformer domain, partitions it
+    # by reachability from the committing exports and reconciles the
+    # unreachable half against its pin.  It mints no declaration.
+    # 2 since `v0.35.130`: the census itself, and the `Lean.addDecl` that mints
+    # the range-less witness the compiler-generated classification needs.  A
+    # declaration a `def` cannot produce -- the property being witnessed is the
+    # absence of the source position the elaborator always supplies -- so it has
+    # to be minted, and minting is exactly what this pin exists to review.  It
+    # defines one closed constant and no command, and it is named in
+    # `nonExecutedTransitions`, so the census that would not see it does.
+    ("SeLe4n/Testing/KernelTransitionReachabilityCensus.lean", "run_cmd"): 2,
     # The census's own loop witness: a `local macro` minting a hygienic
     # clean family theorem, so the no-macro-scope-skip rule is exercised
     # at every elaboration.
@@ -981,12 +1003,12 @@ def lean_sources(root: str) -> list[str]:
     the filesystem walk is the fallback the self-test's temporary trees use.
     """
     try:
-        listed = subprocess.run(
-            ["git", "-C", root, "ls-files", "*.lean"],
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "*.lean"],
             capture_output=True,
-            text=True,
             check=True,
-        ).stdout.split()
+        ).stdout
+        listed = [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
         if listed:
             return sorted(listed)
     except (OSError, subprocess.CalledProcessError):
@@ -3171,12 +3193,12 @@ def documentation_sources(root: str) -> list[str]:
     filesystem walk is what the self-test's temporary trees need.
     """
     try:
-        listed = subprocess.run(
-            ["git", "-C", root, "ls-files", "*.md"],
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "*.md"],
             capture_output=True,
-            text=True,
             check=True,
-        ).stdout.split()
+        ).stdout
+        listed = [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
         if listed:
             return sorted(listed)
     except (OSError, subprocess.CalledProcessError):
@@ -5815,12 +5837,13 @@ end «shadow»""",
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    orphan_payoff["Main.lean"] = (
+    orphan_payoff_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    orphan_payoff["Main.lean"] = orphan_payoff_main
     cases.append(
         _Case(
             "a payoff module no build root reaches is an orphan, not a consumer",
@@ -6188,12 +6211,13 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    echo_root["Main.lean"] = (
+    echo_root_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    echo_root["Main.lean"] = echo_root_main
     echo_root["scripts/fixture_note.sh"] = (
         "#!/bin/sh\n"
         'echo lake build SeLe4n.Kernel.API\n'
@@ -6876,16 +6900,18 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
         'name = "fixturekernel"\n'
         'root = "Main"\n'
     )
-    unreachable_bundle["Main.lean"] = (
+    unreachable_bundle_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.API\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
-    unreachable_bundle[CENSUS_MODULE] = (
+    unreachable_bundle["Main.lean"] = unreachable_bundle_main
+    unreachable_bundle_census = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.API\n"
     )
+    unreachable_bundle[CENSUS_MODULE] = unreachable_bundle_census
     cases.append(
         _Case(
             "a bundle outside the census module's closure is reported",
@@ -6901,13 +6927,14 @@ theorem dispatchSyscall_preserves_ipcInvariantFull
     # layer at all.
     census_missing = _fixture()
     census_missing["lakefile.toml"] = unreachable_bundle["lakefile.toml"]
-    census_missing["Main.lean"] = (
+    census_missing_main = (
         "import SeLe4n.Kernel.IPC.Invariant.Defs\n"
         "import SeLe4n.Kernel.IPC.Invariant.Structural.Bundles\n"
         "import SeLe4n.Kernel.API\n"
         "\n"
         "def main : IO Unit := pure ()\n"
     )
+    census_missing["Main.lean"] = census_missing_main
     cases.append(
         _Case(
             "a missing census module is reported, not silently skipped",
