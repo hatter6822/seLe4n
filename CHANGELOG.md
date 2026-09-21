@@ -1,3 +1,91 @@
+## v0.35.141 — the donation pop's rebindability guard is a proxy, and its decline is a transfer
+
+**PR #897's review, measured and retracted.** HP10.7's `donationOriginRebindable`
+refuses a recorded origin that is `.blockedOnReply`, standing in for *"some live
+`.donated _ origin` binding names it"*. The two are not the same, and the gap is
+reachable with ordinary syscalls: a client answered out of order is woken `.ready`
+and `.unbound`, and its **next ordinary Call donates nothing** —
+`callDonationSchedContext?` reads `SchedContextBinding.scId?`, which is `none` at
+`.unbound` — while putting it `.blockedOnReply` again. No binding names it, the
+guard refuses it, and the bottom-of-stack pop falls back to the *answered caller*,
+which at reply-stack depth 2 is the intermediate caller of the chain.
+
+**What that costs, driven through the live pop** (`tests/SmpIpcSuite.lean` §3.25,
+new COST group on a three-thread chain): the reservation is bound to that
+intermediate caller, the client is left `.unbound`, and `donationOrigin` is
+**erased** — so **the kernel can never return it**: the context heads no stack
+afterwards (asserted), there is no later pop to deliver it, and the origin that
+would have named the recipient is gone with it.  Only an out-of-band
+`schedContextUnbind` + `schedContextBind` by a holder of the *SchedContext*
+capability can repair it — its guards permit that, the captor holding `.bound`
+rather than `.donated` — and only if someone notices.  A callee that delegates its
+caller's reply capability to a confederate can arrange the out-of-order answer that
+sets it up. The CONTROL beside it is the same pop on the same fixture with the client
+awake, which is the one input on which the two outcomes differ; without it the
+COST assertions would read as properties of the fixture. A three-thread shape is
+what the measurement needs and §3.25's own fixture is not one: there the holder
+and the answered caller are the same thread, so the pop's step 4 overwrites its
+own step 3 and the transfer is invisible.
+
+**What is retracted.** The published claim *"a completed call chain returns a
+client's reservation at every reply-stack depth"* is **false** and is corrected at
+every live site: `CLAUDE.md` / `AGENTS.md` (three sites each, plus the WS-HP
+heading and the HP10 closure sentence), `docs/spec/SELE4N_SPEC.md` §8.12.15 and
+§8.12.8, `docs/CLAIM_EVIDENCE_INDEX.md`'s depth-two payoff row, GitBook 12, and
+`docs/planning/DONATION_POP_TRIGGER_PLAN.md`'s HP10.10 row. The **depth-≥ 3 half**
+(HP6's chain-preserving removal) stands unchanged. Three docstrings that asserted
+the decline is *"the conservative reading"* or *"a recovery and not a regression"*
+— `donationOriginRebindable`, `donationOriginRecipient?` and
+`donationAccountingPreserved_atCallDepthTwo` — say what it actually is instead.
+`donationAccountingPreserved_atCallDepthTwo` itself is unchanged and remains true:
+it **hypothesises** the guard's verdict, and this cut is about a reachable state on
+which that hypothesis is false.
+
+**Why it is not fixed in this cut, and what would fix it** (re-opened in
+`docs/REGISTERED_DEBT.md` table C, with both mechanisms measured). Making the
+guard the *fact* — refuse only an origin whose own reply frame heads a context — is
+behaviourally exact, and `donationOriginRebindable_no_owner` then needs *"a live
+`.donated _ origin` binding implies `origin`'s frame heads that context"*, which
+**no invariant in this tree carries**: `donationOwnerValid` relates a donation's
+owner to no reply object, and `donationChainWellFormed` carries no binding clause
+at all (its own *what is deliberately absent*). It is true on every reachable state
+by construction — `donateSchedContext` mints the binding and pushes the donor's
+frame in one step — and is already *stated* for the cancellation path as
+`donatedContextIsOwnerFrameHead`. Supplying it as a clause of `donationOwnerValid`
+is the clean form, since the bundles then get it for free; measured on the tree
+that is **39** named theorems and lemmas carrying the predicate, **35** of them
+concluding it (the `_of_objects_eq` / `_of_frames` / `_of_getElem_eq` /
+`_of_storeAgrees` / `_of_readViewAgreement` frames carry a new clause for free),
+**397** mention sites across **35** files whose destructuring patterns gain a
+component, and one real statement change:
+`consumeCallerReply_preserves_donationOwnerValid` becomes an `Except` form, because
+the reply leg clears the answered caller's `replyObject` while the holder's binding
+still names it — relaxed at exactly the thread `donationOwnerValidExcept` already
+relaxes at. The second mechanism, the reverse metadata the review proposed, is
+recorded beside it with the footprint measurement that makes it affordable
+(`donationOwnerUnique` gives "at most one", so an `Option` suffices; the
+destruction points write TCBs the reply footprints already declare).
+
+Adding a *stated* pre-state hypothesis to the five reply-path bundle theorems was
+rejected: that is the class WS-HP HP7 retired, and `v0.35.126` (WS-RR RR8.16)
+records why a predicate consumed only as a hypothesis is an assumption wearing a
+definition's name.
+
+Eighteen Tier 3 anchors: the COST group and its control, the live resolver the
+witness drives the pop through, the theorem's two guard hypotheses and its
+corrected docstring, and four negatives refusing the retracted claim's return --
+each mutation-tested by restoring the retired sentence, and the register row's by
+re-striking its heading.
+
+**Touched**: `SeLe4n/Kernel/IPC/Operations/Endpoint.lean`,
+`SeLe4n/Kernel/IPC/Invariant/Defs.lean`,
+`SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean`, `tests/SmpIpcSuite.lean`,
+`scripts/test_tier3_invariant_surface.sh`,
+`CLAUDE.md`, `AGENTS.md`, `docs/REGISTERED_DEBT.md`,
+`docs/CLAIM_EVIDENCE_INDEX.md`, `docs/spec/SELE4N_SPEC.md`,
+`docs/gitbook/12-proof-and-invariant-map.md`,
+`docs/planning/DONATION_POP_TRIGGER_PLAN.md`.
+
 ## v0.35.140 — the change set knew `git diff` cannot see an untracked file; the anchor selection did not
 
 PR #897's review, against `v0.35.131`: *"`added_anchor_lines` runs `git diff -U0

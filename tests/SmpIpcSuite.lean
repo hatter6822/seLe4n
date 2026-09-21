@@ -3470,12 +3470,21 @@ out-of-order removal of plan §3.2: a client answered by a delegate is woken
 says another.
 
 Four assertions, and the last two are why the guard is a conjunction.  A thread
-that is still `.blockedOnReply` is a thread whose own reservation is travelling,
-and rebinding it would falsify the owner clause of whatever binding is waiting on
-it (`donationOriginRebindable`); a thread that already holds a binding is the case
-`donationRecipientAcceptable` has always covered.  Both decline to the
-reachability answer rather than refusing the pop, which is the difference between
-a recovery and a regression. -/
+that is still `.blockedOnReply` is a thread whose own reservation *may* be
+travelling, and rebinding such a thread would falsify the owner clause of whatever
+binding is waiting on it (`donationOriginRebindable`); a thread that already holds
+a binding is the case `donationRecipientAcceptable` has always covered.  Both
+decline to the reachability answer rather than refusing the pop.
+
+**And the COST group is what that decline costs** (PR #897's review, `v0.35.141`).
+`.blockedOnReply` is a PROXY for ownership: a client answered out of order and
+re-called is reply-blocked while `.unbound`, so its Call donated nothing and no
+binding names it, and the guard refuses it anyway.  Driving the live pop on a
+three-thread chain shows what the fallback then does — it binds the reservation to
+the *answered caller*, leaves the client holding nothing, and erases the record of
+whose reservation it was.  The CONTROL beside it is the same pop on the same
+fixture with the client awake, which is the one input on which the two outcomes
+differ; without it the COST assertions would read as properties of the fixture. -/
 private def runDonationOriginRedirectChecks : IO Unit := do
   IO.println "--- §3.25 WS-HP HP10.7: the reply pop's recipient is the recorded origin ---"
   -- The context sits at the BOTTOM of its stack (`pushOuterReply.prev = none`),
@@ -3529,6 +3538,70 @@ private def runDonationOriginRedirectChecks : IO Unit := do
     (donationOriginRecipient? stBlockedOrigin pushSc == none)
   assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
     (replyDonationRecipient stBlockedOrigin pushSc pushServer == pushServer)
+  -- **THE COST OF THAT FALLBACK, DRIVEN THROUGH THE LIVE POP** (PR #897's review,
+  -- `v0.35.141`).  The decline is sound and it is **not** conservative: the
+  -- reservation neither stays where it was nor goes home — it is *transferred* to
+  -- the thread the reply answers, which at depth 2 is the intermediate caller and
+  -- owns nothing.  Reading the resolver cannot show that; only the pop can.
+  --
+  -- A THREE-thread shape is what the measurement needs, and the fixture above is
+  -- not one: there the reservation is held by `pushServer` and `pushServer` is also
+  -- the thread the fallback names, so the pop's step 4 overwrites its own step 3 and
+  -- the transfer is invisible.  `heldBy pushDonor` separates the holder from the
+  -- answered caller, giving the chain `pushOuter → pushServer → pushDonor` — the
+  -- client, the intermediate caller, and the server that holds the reservation.
+  let heldBy (holder : SeLe4n.ThreadId) (outerTcb : TCB) : SystemState :=
+    { pushStore with
+        objects := (pushStore.objects.insert pushSc.toObjId
+          (.schedContext { SchedContext.empty pushSc with
+                             boundThread := some holder,
+                             scReply := some pushOuterReply,
+                             donationOrigin := some pushOuter })).insert
+            pushOuter.toObjId (.tcb outerTcb) }
+  let poppedFrom (st : SystemState) : Option SystemState :=
+    (returnDonatedSchedContextResolved st pushDonor pushSc
+      (replyDonationRecipient st pushSc pushServer)).toOption
+  -- The client was answered out of order and has simply issued its next Call: it is
+  -- `.unbound`, so that Call donated nothing and no binding names it as an owner --
+  -- but it is `.blockedOnReply` again, which is all the guard reads.
+  let stCapture : SystemState := heldBy pushDonor pushOuterBlockedTcb
+  let stCaptureControl : SystemState := heldBy pushDonor (mkTcb 93 50 (some c1))
+  assertBool "pre: the reservation is held by a THIRD thread, the server"
+    ((stCapture.getSchedContext? pushSc).bind (·.boundThread) == some pushDonor)
+  assertBool "pre: ...whose binding records it as owed to the intermediate caller"
+    (pushBindingOf stCapture pushDonor == some (.donated pushSc pushOuter))
+  assertBool "COST: the pop succeeds"
+    (poppedFrom stCapture).isSome
+  assertBool "COST: ...and binds the reservation to the ANSWERED CALLER"
+    ((poppedFrom stCapture).bind
+      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushServer)
+  assertBool "COST: ...which now holds it outright, as its own"
+    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushServer)
+      == some (.bound pushSc))
+  assertBool "COST: ...while the client that owns it is left holding nothing"
+    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushOuter) == some .unbound)
+  assertBool "COST: ...and the record of whose reservation it was is ERASED"
+    ((poppedFrom stCapture).bind
+      (fun st' => (st'.getSchedContext? pushSc).map (·.donationOrigin)) == some none)
+  -- ...and this is what makes the loss unrecoverable BY THE KERNEL, which is the
+  -- precise claim rather than "permanent": the context heads no stack afterwards,
+  -- so there is no later pop to deliver it, and the origin that would have named
+  -- the recipient is gone with it.  What remains is an out-of-band repair by a
+  -- holder of the *SchedContext* capability -- `schedContextUnbind` then
+  -- `schedContextBind` -- which its guards permit (the captor holds `.bound`, not
+  -- `.donated`, so the unbind is not refused) and which requires noticing first.
+  assertBool "COST: ...so no later pop can deliver it -- the context heads no stack"
+    ((poppedFrom stCapture).bind
+      (fun st' => (st'.getSchedContext? pushSc).map (·.scReply)) == some none)
+  -- CONTROL: the same pop, the same fixture, the client AWAKE.  Without it the four
+  -- assertions above would read as properties of the fixture rather than of the
+  -- guard's refusal -- this is the one input on which the two outcomes differ.
+  assertBool "CONTROL: ...where an awake client receives the reservation instead"
+    ((poppedFrom stCaptureControl).bind
+      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushOuter)
+  assertBool "CONTROL: ...and the intermediate caller ends holding nothing"
+    ((poppedFrom stCaptureControl).bind (fun st' => pushBindingOf st' pushServer)
+      == some .unbound)
   -- NEGATIVE: an origin that already holds a reservation of its own is the case
   -- `donationRecipientAcceptable` has always covered.
   let stBoundOrigin : SystemState :=

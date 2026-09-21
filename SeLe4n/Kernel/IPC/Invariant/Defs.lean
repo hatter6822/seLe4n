@@ -2862,8 +2862,17 @@ client out of order, the client's frame leaves the stack, and the later in-order
 pop binds the reservation to the *intermediate* caller.  Closing that needed the
 reservation's **origin** recorded on the `SchedContext` rather than derived from
 stack reachability, and WS-HP HP10.9 (`v0.35.53`) landed it:
-`donationAccountingPreserved_atCallDepthTwo` is the payoff, so a completed call
-chain returns a client's reservation at every depth.
+`donationAccountingPreserved_atCallDepthTwo` is the payoff — **under its own two
+guard hypotheses**, which is the whole of what that theorem claims.
+
+**And one of those hypotheses is false on a reachable state** (PR #897's review,
+`v0.35.141`).  `donationOriginRebindable` refuses a client that is
+`.blockedOnReply`, and a client answered out of order and re-called is exactly
+that while owning nothing — its Call donated no reservation, being `.unbound`.  The
+pop then falls back to the answered caller and the depth-2 loss is live again, so
+**a completed call chain does not return a client's reservation at every depth**.
+Measured at `tests/SmpIpcSuite.lean` §3.25's COST group; registered in
+`docs/REGISTERED_DEBT.md` table C.
 
 **And no object is pinned by a cut, at either policy.**  A frame the removal takes
 off a stack carries no `.head` link, so consuming its caller clears it outright

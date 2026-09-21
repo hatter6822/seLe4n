@@ -308,9 +308,10 @@ upstream facts this workstream rests on — the non-head branch's write, the pop
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
 which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
-and the register row is closed at `v0.35.54` on both halves being earned.
+and the register row was closed at `v0.35.54` on both halves being earned — and is
+**re-opened at `v0.35.141`** on the depth-2 half, see the correction below.
 
-**HP10.9 (`v0.35.53`) closed depth 2**, which the splice provably could not reach:
+**HP10.9 (`v0.35.53`) addressed depth 2**, which the splice provably could not reach:
 the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits
 below it to reconnect and either policy writes the same `none` above it
 (`removeCallerReplyFrame_clears_prev_of_bottom_frame`).
@@ -322,6 +323,21 @@ answered frame's own `replyTCB`), so this is an improvement on seL4-MCS too.  Th
 theorem **derives** the reachability answer from the removal and **hypothesises**
 the two guards, one of which cannot be derived at all: the owner is
 `.blockedOnReply` on exactly the reply being answered until the reply leg's wake.
+
+**And that guard is a PROXY, so the depth-2 claim is retracted** (PR #897's review,
+`v0.35.141`).  `donationOriginRebindable` reads the origin's `ipcState` alone,
+standing in for "some live `.donated _ origin` binding names it".  A client woken
+by the out-of-order reply is an ordinary runnable thread: its next Call is
+`.unbound`, so it donates nothing and no binding names it, while putting it
+`.blockedOnReply` again — and the guard refuses it.  The pop then falls back to the
+answered caller and **transfers** the reservation to the intermediate caller,
+clearing `donationOrigin`, so the kernel can never return it — the context heads no
+stack afterwards and no later pop can deliver it; only an out-of-band
+`schedContextUnbind` + `schedContextBind` by a holder of the *SchedContext*
+capability can repair it.  Measured on the live pop
+at `tests/SmpIpcSuite.lean` §3.25's COST group with an awake-client CONTROL.  The
+theorem stands as stated; what does not stand is reading it as "the accounting
+holds at every reply-stack depth".
 §3.20's accounting halves inverted from COST to PAYOFF and now drive the live
 `.reply` spine rather than `returnDonatedSchedContextResolved`, which was an
 accurate proxy for the pop while nothing redirected and omits the redirect since

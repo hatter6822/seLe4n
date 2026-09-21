@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.140.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.141.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5398,7 +5398,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — COMPLETE (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61 → v0.35.62)
+### WS-HP The head-driven donation pop — PHASES COMPLETE, depth-2 accounting RE-OPENED at v0.35.141 (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61 → v0.35.62)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -5420,20 +5420,37 @@ cannot reach — both policies write `none` into the frame above a bottom frame 
 which needed the reservation's *origin* on the `SchedContext` rather than stack
 reachability.
 
-**HP10 closed that at `v0.35.53`, and the workstream closed at `v0.35.54`.**
+**HP10 addressed that at `v0.35.53`, and the workstream's phases closed at `v0.35.54` — but the depth-2 half did not hold, and is re-opened at `v0.35.141`.**
 `SchedContext.donationOrigin` records the thread that owned a reservation when it
 first left, written on a **first** push and cleared by every step that ends the
 loan, and `replyDonationRecipient` reads it in place of stack reachability at the
-bottom of a stack.  `donationAccountingPreserved_atCallDepthTwo` is the statement.
-So **a completed call chain returns a client's reservation at every reply-stack
-depth** — a claim seL4-MCS cannot make, since upstream severs at depth ≥ 3 and
-`reply_pop` donates to the answered frame's own `replyTCB` at depth 2 — and
-`docs/REGISTERED_DEBT.md`'s donation-accounting row is closed on both halves being
-*earned* rather than on the deferral being retracted.  Two fragments survive the
-closure, deliberately: the footprint/transition resolution asymmetry HP10.8 found
-keeps its own open register row, and `CancelledMiddleCallerPolicy.severAtCut` is
-**kept** as a constructor, because it names the behaviour upstream still has and an
+bottom of a stack.  `donationAccountingPreserved_atCallDepthTwo` is the statement,
+**under its own two guard hypotheses**.  Two fragments survive the closure,
+deliberately: the footprint/transition resolution asymmetry HP10.8 found keeps its
+own open register row, and `CancelledMiddleCallerPolicy.severAtCut` is **kept** as
+a constructor, because it names the behaviour upstream still has and an
 improvement is only statable against something.
+
+**And the depth-2 half is NOT closed — the guard is a proxy, and its decline is a
+TRANSFER** (PR #897's review, `v0.35.141`).  `donationOriginRebindable` refuses an
+origin that is `.blockedOnReply`, as a stand-in for "some live `.donated _ origin`
+binding names it".  The two are not the same: a client answered out of order is
+woken `.ready` and `.unbound`, and its next **ordinary Call donates nothing** —
+`callDonationSchedContext?` reads `SchedContextBinding.scId?`, which is `none` at
+`.unbound` — while putting it `.blockedOnReply` again.  No binding names it; the
+guard refuses it anyway; the pop falls back to the *answered caller*, which at
+depth 2 is the intermediate caller of the chain.  Measured on the live pop
+(`tests/SmpIpcSuite.lean` §3.25, COST group): the reservation is bound to that
+caller, the client is left `.unbound`, and `donationOrigin` is erased — so the
+kernel can never return it — the context heads no stack afterwards, so no later
+pop can deliver it, and the origin that would have named the recipient is gone with
+it.  Only an out-of-band `schedContextUnbind` + `schedContextBind` by a holder of
+the *SchedContext* capability can repair it, and only if someone notices.  A callee
+that delegates its caller's reply capability to a confederate can arrange it.  **v1.0.0 must not claim that completing a call
+chain returns a client's reservation at every reply-stack depth**; the depth-≥ 3
+half (HP6's chain-preserving removal) stands.  The accounting row in
+`docs/REGISTERED_DEBT.md` table C is **re-opened** on the depth-2 half, with the
+two candidate mechanisms and their measured costs.
 
 **The splice is an improvement on seL4-MCS, not an adoption of it** (`v0.35.40`,
 re-verified against upstream source at five revisions).  `reply_remove`'s non-head
@@ -6336,12 +6353,15 @@ binding naming a `.ready` owner.  It landed at `v0.35.39`; the paragraphs above 
 what it changed.
 
 Registered in
-[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C and **closed there at
-`v0.35.54`**, both halves earned rather than the deferral retracted — so v1.0.0
-**may** claim that completing a call chain returns a client's reservation, at every
-reply-stack depth.  What it must still not claim is *parity* with seL4-MCS on
-reply-stack removal at depth ≥ 3: upstream severs and this kernel splices, so the
-honest claim is an improvement on upstream rather than a match for it.
+[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C, closed there at
+`v0.35.54` and **re-opened at `v0.35.141` on the depth-2 half** — see the
+paragraph above for what PR #897's review measured.  So v1.0.0 may claim the
+depth-≥ 3 half (a middle removal leaves the reservation owed outward, HP6's
+chain-preserving removal) and **must not** claim that a completed call chain
+returns a client's reservation at every reply-stack depth.  What it must also not
+claim is *parity* with seL4-MCS on reply-stack removal at depth ≥ 3: upstream
+severs and this kernel splices, so the honest claim there is an improvement on
+upstream rather than a match for it.
 
 **The post-landing audit (`v0.35.61`) — what reading the code against its prose
 found.**  The whole of WS-HP, RR8.1–RR8.4 and the `v0.35.59`/`v0.35.60` cuts were

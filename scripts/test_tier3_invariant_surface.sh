@@ -17697,4 +17697,54 @@ run_prose_check "INVARIANT" rg -F -n 'TPH-015 | TwoPhaseArch | TPH-015a boot suc
 run_prose_check "INVARIANT" rg -F -n '  TPH-015:' tests/fixtures/scenario_registry.yaml
 
 
+# --------------------------------------------------------------------------
+# `v0.35.141` (PR #897's review): the depth-2 accounting guard is a PROXY for
+# ownership, and what its decline COSTS is measured on the live pop.
+# --------------------------------------------------------------------------
+# `donationOriginRebindable` refuses an origin that is `.blockedOnReply`, standing
+# in for "some live `.donated _ origin` binding names it".  The two are not the
+# same: a client answered out of order is woken `.ready` and `.unbound`, and its
+# next ORDINARY Call donates nothing -- `callDonationSchedContext?` reads
+# `SchedContextBinding.scId?`, `none` at `.unbound` -- while putting it
+# `.blockedOnReply` again.  No binding names it; the guard refuses it anyway.
+# Reading the resolver cannot show what the decline then costs, so the witness
+# drives the LIVE pop through the LIVE recipient rather than supplying one.
+run_check "INVARIANT" bash -lc 'rg -U -n "let poppedFrom \(st : SystemState\) : Option SystemState :=[^\n]*(\n([ \t][^\n]*)?)*replyDonationRecipient st pushSc pushServer\)\)\.toOption" tests/SmpIpcSuite.lean'
+# ...on a THREE-thread shape, because the holder and the thread the fallback names
+# must be different threads or the pop's step 4 overwrites its own step 3 and the
+# transfer is invisible.
+run_check "INVARIANT" rg -F -n '  let stCapture : SystemState := heldBy pushDonor pushOuterBlockedTcb' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n '  let stCaptureControl : SystemState := heldBy pushDonor (mkTcb 93 50 (some c1))' tests/SmpIpcSuite.lean
+# The decline is a TRANSFER, not a hold: the reservation is bound to the answered
+# caller, the client that owns it is left holding nothing, and the record of whose
+# reservation it was is erased -- so the capture is permanent.
+run_check "INVARIANT" rg -F -n 'COST: the pop succeeds' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'COST: ...and binds the reservation to the ANSWERED CALLER' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'COST: ...which now holds it outright, as its own' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'COST: ...while the client that owns it is left holding nothing' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'COST: ...and the record of whose reservation it was is ERASED' tests/SmpIpcSuite.lean
+# ...which is what makes the loss unrecoverable BY THE KERNEL -- the precise claim
+# rather than "permanent", since a holder of the SchedContext capability can still
+# unbind and rebind out of band.
+run_check "INVARIANT" rg -F -n 'COST: ...so no later pop can deliver it -- the context heads no stack' tests/SmpIpcSuite.lean
+# ...with the CONTROL that makes the group decide the GUARD rather than the
+# fixture: the same pop, the same state, the client awake.
+run_check "INVARIANT" rg -F -n 'CONTROL: ...where an awake client receives the reservation instead' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -F -n 'CONTROL: ...and the intermediate caller ends holding nothing' tests/SmpIpcSuite.lean
+# ...and the depth-2 theorem states its guard hypotheses rather than deriving
+# them, which is why the proof surface could not have caught this.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*\(hAcceptable : donationRecipientAcceptable st. origin = true\)" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+# ...and its docstring says so: a hypothesis that becomes false again before the
+# in-order reply arrives is a window the theorem does not cover.
+run_prose_check "INVARIANT" rg -F -n '**And it can become false again before the in-order reply arrives** (PR #897' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+# The retracted claim must not come back.  v1.0.0 may claim the depth->= 3 half
+# and must NOT claim that a completed call chain returns a client's reservation at
+# every reply-stack depth.
+run_prose_negative_check "INVARIANT" rg -F -n '**may** claim that completing a call chain returns a client' CLAUDE.md
+run_prose_negative_check "INVARIANT" rg -F -n '**may** claim that completing a call chain returns a client' AGENTS.md
+run_prose_negative_check "INVARIANT" rg -F -n 'donation accounting holds at every reply-stack depth' docs/spec/SELE4N_SPEC.md
+# ...and the register row is OPEN, not struck through.
+run_prose_negative_check "INVARIANT" rg -F -n '| ~~The removal does not preserve the donation accounting' docs/REGISTERED_DEBT.md
+run_prose_check "INVARIANT" rg -F -n 'redirect is guarded by a PROXY for ownership' docs/REGISTERED_DEBT.md
+
 finalize_report

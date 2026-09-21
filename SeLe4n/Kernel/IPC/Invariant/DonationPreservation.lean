@@ -3739,9 +3739,21 @@ about the owner's TCB at `st'`: it holds no reservation of its own
 (`donationOriginRebindable`).  The second is *false* before the reply leg runs —
 the owner is `.blockedOnReply` on exactly the reply being answered — and becomes
 true at the wake `endpointReplyOnCore` performs before the removal, so no
-statement about the removal alone can supply it.  Both decline to the reachability
-answer rather than refusing the pop, which is what makes the redirect a recovery
-and not a regression. -/
+statement about the removal alone can supply it.
+
+**And it can become false again before the in-order reply arrives** (PR #897's
+review, `v0.35.141`), which is why this theorem's scope must be read as its
+hypotheses and not as a property of the depth-2 shape.  The woken owner is an
+ordinary runnable thread: issuing its next Call puts it `.blockedOnReply` while it
+is still `.unbound`, so that Call donates nothing and no binding names it — and
+`donationOriginRebindable`, which reads the `ipcState` alone, refuses it anyway.
+The pop then falls back to the answered caller and **transfers** the reservation to
+the intermediate caller of the chain, clearing `donationOrigin` with it.  So the
+guards' declining is not "a recovery rather than a regression"; it is the depth-2
+loss this theorem exists to close, reachable through a window the theorem does not
+cover.  Measured at `tests/SmpIpcSuite.lean` §3.25's COST group and registered in
+`docs/REGISTERED_DEBT.md` table C, whose closure is what would let this theorem's
+hypotheses be discharged rather than assumed. -/
 theorem donationAccountingPreserved_atCallDepthTwo
     (st st' st'' : SystemState)
     (rid top : SeLe4n.ReplyId) (r t : Reply)

@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.140` (`lakefile.toml`) |
+| **Package version** | `0.35.141` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,365 across 334 Lean files |
-| **Test LoC** | 80,607 across 70 Lean test suites |
+| **Production LoC** | 396,419 across 334 Lean files |
+| **Test LoC** | 80,680 across 70 Lean test suites |
 | **Proved declarations** | 13,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4908,7 +4908,7 @@ respect.
    server's binding to the answered frame's head-ness first; that is **WS-HP**,
    registered in `docs/REGISTERED_DEBT.md` with closure target before v1.0.0, and
    until it closes v1.0.0 must not claim — of either kernel — that completing a call
-   chain returns a client's reservation.  The trigger flip landed
+   chain returns a client's reservation at depth ≥ 3.  The trigger flip landed
    for the reply path at `v0.35.38` (§8.12.9) and for the cancellation path at
    `v0.35.39` (§8.12.10); the splice is HP6.
 
@@ -5406,8 +5406,19 @@ known to be a state the kernel reaches.
 that this cut is confined to the reachability gap rather than changing the chain.
 It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm, where
 `replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
-theorem.  What remains is documentation closure (HP10.10), after which v1.0.0 may
-claim that completing a call chain returns a client's reservation at every depth.
+theorem.
+
+**And the payoff holds only under its two guard hypotheses, one of which is false
+on a reachable state** (PR #897's review, `v0.35.141`).
+`donationOriginRebindable` refuses an origin that is `.blockedOnReply`, as a proxy
+for "some live `.donated _ origin` binding names it" — and a client answered out of
+order and re-called is reply-blocked while owning nothing, because its Call is
+`.unbound` and so donates nothing.  The pop then falls back to the answered caller
+and **transfers** the reservation to the intermediate caller, clearing
+`donationOrigin` with it (`tests/SmpIpcSuite.lean` §3.25, COST group).  So v1.0.0
+**must not** claim that completing a call chain returns a client's reservation at
+every depth; the depth-≥ 3 half stands.  Re-opened in `docs/REGISTERED_DEBT.md`
+table C.
 
 #### 8.12.16 The teardown's bundle statement is honest about its own state — WS-RR RR8.7 (`v0.35.80`)
 

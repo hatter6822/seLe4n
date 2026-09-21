@@ -1808,9 +1808,34 @@ reply then fires the redirect at a thread another binding is counting on.
 thread as owner forces that thread `.blockedOnReply`; so a thread that is *not*
 reply-blocked is named by none, and rebinding it can falsify nothing
 (`donationOriginRebindable_no_owner`).  A recorded origin that *is* still
-reply-blocked is a thread whose own reservation is still travelling, and
-declining the redirect there is both sound and the conservative reading — the pop
-falls back to the reachability recipient exactly as it did before HP10.7.
+reply-blocked is declined, and that decline is **sound but not conservative** —
+which corrects what this docstring said until `v0.35.141`.
+
+**`.blockedOnReply` is a PROXY for ownership, and the fallback it declines to is a
+TRANSFER** (PR #897's review, measured at `tests/SmpIpcSuite.lean` §3.25's COST
+group).  Being reply-blocked is *implied* by owning a live donation and does not
+*imply* it: a client answered out of order is woken `.ready` and `.unbound`, and
+its next ordinary Call donates nothing — `callDonationSchedContext?` reads
+`SchedContextBinding.scId?`, which is `none` at `.unbound` — while still putting it
+`.blockedOnReply`.  No binding names it, and this guard refuses it anyway.  The pop
+then falls back to the *answered caller*, which at depth 2 is the intermediate
+caller of the chain: the reservation is bound to a thread that owns nothing,
+`donationOrigin` is cleared, and the kernel can never return it — the context heads
+no stack afterwards, so no later pop can deliver it, and the origin that would have
+named the recipient is gone with it; only an out-of-band `schedContextUnbind` +
+`schedContextBind` by a holder of the *SchedContext* capability can repair it.  So
+the
+decline is not "the pop behaves as it did before HP10.7" — before HP10.7 that same
+transfer is what happened, and HP10.7 exists to stop it.
+
+Closing it needs the **fact** the proxy stands in for, which no invariant in this
+tree carries: `donationOwnerValid` relates a donation's owner to no reply frame, so
+"a live `.donated _ origin` binding implies `origin`'s own frame heads that
+context" — true on every reachable state by construction, since
+`donateSchedContext` mints the binding and pushes the frame in one step, and
+already *stated* for the cancellation path as `donatedContextIsOwnerFrameHead` —
+is not derivable here.  Registered in `docs/REGISTERED_DEBT.md` table C with the
+two candidate mechanisms and their measured costs.
 
 A thread that does not resolve passes, as the sibling guards' `_of_none` arms do
 -- and since `v0.35.61` the resolver never consults this guard on one:
@@ -5535,9 +5560,17 @@ frame's thread, **or** a thread whose frame was removed* has an unstateable seco
 disjunct, so no `donationChainWellFormed` clause can carry it.  What makes reading
 it safe is that the guard is applied **here**: a stale origin falls back to the
 reachability answer rather than refusing the pop, which is the difference between
-a recovery and a regression — and `donationRecipientAcceptable` is the same guard
+a recovery and a refusal — and `donationRecipientAcceptable` is the same guard
 HP4.6 put inside the operation, asked of the candidate before it is chosen rather
 than after.
+
+**The fallback is not neutral, and `v0.35.141` stopped this docstring implying it
+is.**  Where the redirect declines on an origin distinct from the answered caller,
+falling back *transfers* the reservation to that answered caller — see
+`donationOriginRebindable` for the reachable sequence and the registered closure.
+The fallback is right on the other three arms (not at the bottom; no origin
+recorded; an origin that is the answered caller), where the reachability answer
+and the recorded owner are the same thread.
 
 It is **not** keyed on the answered caller.  A `some` answer is the recorded
 origin whether or not it coincides with the thread the reply answers, and at
