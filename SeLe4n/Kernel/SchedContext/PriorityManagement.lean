@@ -193,7 +193,12 @@ def getCurrentPriorityChecked (st : SystemState) (tcb : TCB)
   | some scId =>
     -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
     match st.getSchedContext? scId with
-    | some sc => .ok sc.priority
+    -- WS-RR (`v0.35.133`): the THREAD's base, at every binding.  The lookup
+    -- survives because its FAILURE is the error this variant exists to surface
+    -- (a `.bound` binding naming an absent reservation is a
+    -- `schedContextBindingConsistent` violation); what it no longer decides is
+    -- the priority.
+    | some _  => .ok tcb.priority
     | none    => .error .objectNotFound
   | none => .ok tcb.priority
 
@@ -281,13 +286,22 @@ def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     (tcb : TCB) (newPriority : SeLe4n.Priority) : SystemState :=
   match tcb.schedContextBinding.ownScId? with
   | some scId =>
-    -- `.bound`: the base priority has **two homes** and this writes both.
+    -- `.bound`: the base priority is the TCB's, and the reservation carries the
+    -- band it was configured to; this writes both.
     --
-    -- `SystemState.threadBasePriority` reads `sc.priority` here, while
-    -- `TCB.boostedPriority` -- the bucket every run-queue *insert* is keyed by
-    -- (`enqueueRunnableOnCore`, `preemptCurrentOnCore`) -- reads
-    -- `tcb.priority`.  `boundThreadPriorityConsistent` is the agreement between
-    -- them, `schedContextBind` establishes it and
+    -- **WS-RR (`v0.35.133`): do not read the SchedContext write as redundant.**
+    -- Until that cut `SystemState.threadBasePriority` read `sc.priority` here
+    -- while `TCB.boostedPriority` -- the bucket every run-queue *insert* is keyed
+    -- by (`enqueueRunnableOnCore`, `preemptCurrentOnCore`) -- read `tcb.priority`,
+    -- so the two writes were the two halves of one base.  With one home the TCB
+    -- write is what changes the thread's band and the SchedContext write is what
+    -- keeps `boundThreadPriorityConsistent` true -- the statement that a
+    -- reservation's configured band tracks its bound thread's.  Dropping it would
+    -- leave the mirror stale at the old value for `schedContextConfigure` to
+    -- propagate back later.
+    --
+    -- `boundThreadPriorityConsistent` is the agreement between them,
+    -- `schedContextBind` establishes it and
     -- `schedContextConfigureBoundPropagate` maintains it; until `v0.35.98` this
     -- arm wrote the reservation alone, so the syscall whose entire job is to
     -- change a priority was the one writer that broke it.  Measured on the

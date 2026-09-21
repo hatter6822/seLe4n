@@ -837,9 +837,10 @@ theorem size_le_16 (L : List (LockId × AccessMode))
     (Nat.add_le_add_right (size_le_15 L o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅) 1) ?_
   omega
 
-/-- **PR #894 review**: seventeen optionals -- `lockSet_replyRecv`'s full arity.
-`4 + 17 = 21`, which is the footprint `maxLockSetSize` is measured against now
-(see its docstring for why it moved from 16). -/
+/-- **PR #894 review**: seventeen optionals -- `lockSet_replyRecv`'s full arity
+**at that cut**.  `4 + 17 = 21`, which was the footprint `maxLockSetSize` was
+measured against then; the arity has grown three times since and the ceiling with
+it.  See `size_le_20`, and read the constant for the current value. -/
 theorem size_le_17 (L : List (LockId × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ : Option (LockId × AccessMode)) :
     (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetExtendOpt (lockSetOfList L) o₁) o₂) o₃) o₄) o₅) o₆) o₇) o₈) o₉) o₁₀) o₁₁) o₁₂) o₁₃) o₁₄) o₁₅) o₁₆) o₁₇).size
@@ -850,8 +851,9 @@ theorem size_le_17 (L : List (LockId × AccessMode))
   omega
 
 /-- **WS-RM (`v0.35.6`)**: eighteen optionals — `lockSet_replyRecv`'s full arity
-once the frame above the answered caller's reply object is declared.  `4 + 18 =
-22`, which is the footprint `maxLockSetSize` is measured against now. -/
+**at that cut**, once the frame above the answered caller's reply object is
+declared.  `4 + 18 = 22`, which was the footprint `maxLockSetSize` was measured
+against then.  See `size_le_20`, and read the constant for the current value. -/
 theorem size_le_18 (L : List (LockId × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ :
       Option (LockId × AccessMode)) :
@@ -864,7 +866,12 @@ theorem size_le_18 (L : List (LockId × AccessMode))
 
 /-- **WS-HP HP3.1**: nineteen optionals -- `lockSet_replyRecv`'s full arity once
 the frame **below** the answered caller's reply object joins the frame above it.
-`4 + 19 = 23`, which is the footprint `maxLockSetSize` is measured against now. -/
+`4 + 19 = 23`, which was the footprint `maxLockSetSize` was measured against at
+HP3.5.  **It is not the ceiling now**: HP10.6 added the origin a bottom-of-stack
+pop redirects the reservation to, so the arity is `size_le_20` below and the
+constant is 24.  A ceiling figure in a docstring is a live claim, and this one
+said "now" for eighty-three cuts -- reported on PR #897 against the sibling
+headline in `PerCoreWcrt.lean`, which had the same shape.  Read the constant. -/
 theorem size_le_19 (L : List (LockId × AccessMode))
     (o₁ o₂ o₃ o₄ o₅ o₆ o₇ o₈ o₉ o₁₀ o₁₁ o₁₂ o₁₃ o₁₄ o₁₅ o₁₆ o₁₇ o₁₈ o₁₉ :
       Option (LockId × AccessMode)) :

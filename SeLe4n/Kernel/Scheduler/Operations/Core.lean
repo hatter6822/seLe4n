@@ -32,12 +32,20 @@ import SeLe4n.Kernel.IPC.Operations.Timeout
      vector that an earlier draft of this work introduced.
   3. **Consumption sites unchanged:** the four production re-enqueue
      sites (`handleYield`, `timerTick`, `timerTickBudget` unbound,
-     `switchDomain`) continue to use `tcb.boostedPriority`.
-     Under the propagation invariant this equals
-     `(resolveEffectivePrioDeadline st tcb).1` consulted by selection,
-     eliminating the priority-inversion vector. `schedulerPriorityMatch`
+     `switchDomain`) continue to use `tcb.boostedPriority`, eliminating
+     the priority-inversion vector.
+
+     *WS-RR (`v0.35.133`) narrows what that costs.*  This point used to
+     read that `tcb.boostedPriority` equals the
+     `(resolveEffectivePrioDeadline st tcb).1` selection consults **under
+     the propagation invariant**, and that `schedulerPriorityMatch`
      (TCB-based) and `effectiveParamsMatchRunQueue` (SC-based) agree
-     without requiring invariant fusion.
+     without invariant fusion.  With `TCB.priority` the base's one home
+     both readings are unconditional: the equality is
+     `resolveEffectivePrioDeadline_fst_eq_threadBasePriority` composed with
+     `threadBasePriority_eq`, which assumes nothing, and neither predicate
+     is SC-based any more — `effectiveParamsMatchRunQueue` reads no
+     SchedContext at all, so the two differ only in the PIP boost.
 - AK2-D (S-M02): `timeoutBlockedThreads` errors surfaced via
   `SchedulerState.lastTimeoutErrors` diagnostic field, cleared at each
   `timerTickWithBudget` entry.

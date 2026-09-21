@@ -361,13 +361,19 @@ the one it *runs on* — one resolver answers
 `getCurrentPriority_eq_threadBasePriority` (by `rfl`),
 `effectiveSchedParams_priority_deadline_eq_resolve`,
 `effectiveBucketPriority_eq_resolveEffective` — so the split cannot be unpicked
-one site at a time.  Two invariants follow the read: a donee's recorded
-run-queue bucket is its own base priority
-(`effectiveParamsMatchRunQueue{,OnCore}`), and `boundThreadPriorityConsistent`
-ranges over `.bound` alone, where quantified over every binding **the donation
-falsified it** whenever the donor's and the donee's base priorities differed —
-the reservation's `priority` had to equal one before the hand-off and the other
-after, and the hand-off writes neither field.  Budget,
+one site at a time.  Two invariants follow the read.
+`effectiveParamsMatchRunQueue{,OnCore}` says a run-queue member's recorded bucket
+is that thread's own base priority — at *every* binding since `v0.35.133`, its
+three-armed case analysis having collapsed when `TCB.priority` became the base's
+one home; its `.bound` arm's `| _ => True` fallback went with it, so a bound
+thread whose reservation does not resolve is no longer excused from the claim.
+And `boundThreadPriorityConsistent` ranges over `.bound` alone, where quantified
+over every binding **the donation falsified it** whenever the donor's and the
+donee's base priorities differed — the reservation's `priority` had to equal one
+before the hand-off and the other after, and the hand-off writes neither field.
+It is load-bearing for no read now and is kept as the statement that
+`schedContextBind` and `schedContextConfigureBoundPropagate` propagated the band
+a reservation configures.  Budget,
 period and deadline stay the reservation's at every depth, and the five budget
 predicates keep their merged arm — pinned as such, so the split cannot leak into
 the budget question.  `schedContextConfigureBoundPropagate` gates both

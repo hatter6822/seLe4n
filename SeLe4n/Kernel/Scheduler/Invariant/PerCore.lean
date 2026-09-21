@@ -268,25 +268,19 @@ def replenishQueueValidOnCore (st : SystemState) (c : CoreId) : Prop :=
   replenishQueueSizeConsistent (st.scheduler.replenishQueueOnCore c)
 
 /-- SM4.C: per-core effective-params-match.  Per-core form of
-`effectiveParamsMatchRunQueue`.  Uses the typed `getTcb?` /
-`getSchedContext?` accessors. -/
+`effectiveParamsMatchRunQueue`, using the typed `getTcb?` accessor.
+
+WS-RR (`v0.35.133`): the binding case analysis is gone, for the reason the
+boot-core form records — with `TCB.priority` the base's one home its three arms
+were one statement, and its `.bound` arm's `| none => True` fallback silently
+excused a bound thread whose reservation did not resolve.  The predicate reads no
+SchedContext at all now, which is why `effectiveParamsMatchRunQueueOnCore_frame`
+no longer takes a SchedContext-agreement hypothesis. -/
 def effectiveParamsMatchRunQueueOnCore (st : SystemState) (c : CoreId) : Prop :=
   ∀ tid, tid ∈ (st.scheduler.runQueueOnCore c) →
     match st.getTcb? tid with
     | some tcb =>
-      match tcb.schedContextBinding with
-      | .unbound =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
-      | .bound scId =>
-        match st.getSchedContext? scId with
-        | some sc =>
-          (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some sc.priority
-        | none => True
-      -- WS-OD (v0.35.3): a donee is bucketed at its **own** base priority, so
-      -- its recorded bucket is the `.unbound` arm's.  Mirrors the boot-core
-      -- `effectiveParamsMatchRunQueue`.
-      | .donated _ _ =>
-        (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
+      (st.scheduler.runQueueOnCore c).threadPriority[tid]? = some tcb.priority
     | none => True
 
 -- ============================================================================
@@ -513,24 +507,7 @@ theorem effectiveParamsMatchRunQueueOnCore_bootCore_iff (st : SystemState) :
   unfold SystemState.getTcb?
   cases h : (st.objects[tid.toObjId]? : Option KernelObject) with
   | none => simp
-  | some obj =>
-    cases obj with
-    | tcb tcb =>
-      simp
-      cases tcb.schedContextBinding with
-      | unbound => rfl
-      | bound scId =>
-        unfold SystemState.getSchedContext?
-        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
-        | none => simp [h2]
-        | some objSc => cases objSc <;> simp [h2]
-      | donated scId _owner =>
-        unfold SystemState.getSchedContext?
-        cases h2 : (st.objects[scId.toObjId]? : Option KernelObject) with
-        | none => simp
-        | some objSc => cases objSc <;> simp
-    | endpoint _ | notification _ | cnode _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp
+  | some obj => cases obj <;> simp
 
 -- ============================================================================
 -- §3  Aggregate per-core invariant (SM4.C.29) + the SMP forall form (§5.6)
@@ -1125,14 +1102,16 @@ theorem replenishQueueValidOnCore_frame {st st' : SystemState} {c : CoreId}
     replenishQueueValidOnCore st' c ↔ replenishQueueValidOnCore st c := by
   unfold replenishQueueValidOnCore; rw [hRepl]
 
+/-- WS-RR (`v0.35.133`): the SchedContext-agreement `have` this proof used to
+derive is gone with the predicate's SchedContext read.  The **signature** is
+unchanged — it still takes whole-store equality — so no call site moves; what
+narrowed is what the proof consumes. -/
 theorem effectiveParamsMatchRunQueueOnCore_frame {st st' : SystemState} {c : CoreId}
     (hRQ : st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c)
     (hObj : st'.objects = st.objects) :
     effectiveParamsMatchRunQueueOnCore st' c ↔ effectiveParamsMatchRunQueueOnCore st c := by
   have hTcb : ∀ tid, st'.getTcb? tid = st.getTcb? tid := getTcb?_congr_objects hObj
-  have hSc : ∀ scId, st'.getSchedContext? scId = st.getSchedContext? scId :=
-    getSchedContext?_congr_objects hObj
-  unfold effectiveParamsMatchRunQueueOnCore; simp only [hRQ, hTcb, hSc]
+  unfold effectiveParamsMatchRunQueueOnCore; simp only [hRQ, hTcb]
 
 -- ============================================================================
 -- §6  Per-core frame lemma + cross-core independence (SM4.C.30)
@@ -1912,9 +1891,16 @@ field — so any hand-off between threads of different bands broke it.  Nothing
 carried it across either, since `boundThreadPriorityConsistent_frame` requires
 `schedContextBinding` unchanged, which is exactly what the hand-off rewrites.  Narrowing it is not a weakening of the
 guarantee — `resolveEffectivePrioDeadline` no longer reads `sc.priority` on the
-`.donated` arm, so there is nothing left for the donated case to reconcile
-(`resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree` now
-discharges that arm outright). -/
+`.donated` arm, so there is nothing left for the donated case to reconcile.
+
+**WS-RR (`v0.35.133`): what this predicate is still FOR.**  Since `TCB.priority`
+became the base's one home, no scheduling decision reads `sc.priority` at any
+binding — `resolveEffectivePrioDeadline_fst_eq_boostedPriority` is unconditional
+now, and the `_of_agree` form that used to consume this predicate is deleted.  So
+this is no longer load-bearing for a *read*.  It is kept, and is not a tautology:
+it states that `schedContextBind` and `schedContextConfigureBoundPropagate`
+actually propagated the band a reservation configures its bound thread to, which
+is a real property of those two writers and the only artefact saying they did. -/
 def boundThreadPriorityConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
     ∀ scId, tcb.schedContextBinding.ownScId? = some scId →

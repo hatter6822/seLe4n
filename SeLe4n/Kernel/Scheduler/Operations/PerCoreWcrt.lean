@@ -54,7 +54,7 @@ respects the SM3.D static `maxLockSetSize` bound has lock-WCRT
 
 **WS-RR RR7.31: that bound is not automatically inside the 1 ms timer tick, and
 this header used to say it was.**  It is a product of three factors and only one
-of them is fixed: `maxLockSetSize` is **23** (RR7.11 raised it from 8 to 9; WS-OD
+of them is fixed: `maxLockSetSize` is **24** (RR7.11 raised it from 8 to 9; WS-OD
 OD3.5 from 9 to 11, for the two members `.replyRecv`'s second donation needs;
 OD3.7 from 11 to 13 for the two objects the pop reads below its reply-stack head;
 OD3.13 from 13 to 14 for the queue-structure neighbour its receive leg relinks;

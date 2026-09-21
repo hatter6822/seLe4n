@@ -214,7 +214,15 @@ private def pm010_setPriorityUnboundThread : IO Unit := do
     | _ => throw <| IO.userError "target TCB not found"
   | .error e => throw <| IO.userError s!"setPriority unbound should succeed, got {repr e}"
 
-/-- PM-010b: setMCPriority caps priority on SchedContext-bound thread. -/
+/-- PM-010b: setMCPriority caps priority on SchedContext-bound thread.
+
+WS-RR (`v0.35.133`): the fixture used to carry `tcb.priority = 30` beside a bound
+reservation at 80 -- a state `boundThreadPriorityConsistent` forbids, and one the
+old two-homes reading made meaningful because the cap consulted the RESERVATION's
+field.  With `TCB.priority` the base's one home the cap reads the thread, so the
+state the kernel actually maintains is the one to test: both homes at 80, capped
+to 50, and **both** asserted afterwards -- the TCB assertion being the one the
+suite never made and the one that would have caught `v0.35.98`. -/
 private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
@@ -224,26 +232,74 @@ private def pm010b_setMCPriorityCapsSchedContextBound : IO Unit := do
     priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
     budgetRemaining := ⟨100⟩, boundThread := some targetTid
   }
-  -- Target is bound to SchedContext with priority 80, we set MCP to 50
-  -- Priority should be capped: SchedContext priority should become 50
+  -- Target runs at 80 and its reservation is configured to 80 (the propagation
+  -- `schedContextBind` establishes); we set MCP to 50, so the cap must fire.
   let st := mkState [
     (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150) (binding := .bound scId))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 80) (mcp := 150) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc)
   ]
   match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
   | .ok st' =>
-    -- Verify MCP was updated on TCB
+    -- Verify MCP was updated on TCB, and that the cap wrote the thread's own
+    -- base priority -- the one home every scheduling decision reads.
     match st'.objects[targetTid.toObjId]? with
     | some (.tcb tcb) =>
       expect "MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
+      expect "TCB base priority capped to 50" (tcb.priority == ⟨50⟩)
     | _ => throw <| IO.userError "target TCB not found"
-    -- Verify SchedContext priority was capped to 50
+    -- ...and that the configured band on the reservation moved with it, which is
+    -- what keeps `boundThreadPriorityConsistent` true across the cap.
     match st'.objects[scId.toObjId]? with
     | some (.schedContext sc') =>
       expect "SchedContext priority capped to 50" (sc'.priority == ⟨50⟩)
     | _ => throw <| IO.userError "SchedContext not found after MCP cap"
   | .error e => throw <| IO.userError s!"setMCPriority bound cap should succeed, got {repr e}"
+
+/-- PM-010c: the MCP cap reads the THREAD's band, not its reservation's.
+
+The discriminating witness for `v0.35.133`, and the only shape that can be one:
+on a state satisfying `boundThreadPriorityConsistent` the two readings agree by
+construction, so what separates them is a **drifted** state -- exactly the state
+`v0.35.98` produced, where a demotion wrote one home and left the mirror stale.
+
+Here the thread runs at 30 and its reservation still reads 80.  The new MCP is 50.
+The thread's band is already below the ceiling, so the cap must NOT fire and
+nothing may be rewritten; the retired reading saw the reservation's 80, capped,
+and would have driven the thread's band DOWN to 50 on the strength of a field no
+scheduling decision consults.  A revert of the one-home collapse fails here. -/
+private def pm010c_setMCPriorityReadsThreadNotReservation : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨51⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨80⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some targetTid
+  }
+  let st := mkState [
+    (⟨1⟩, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (⟨2⟩, .tcb (mkTcb 2 (prio := 30) (mcp := 150) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc)
+  ]
+  -- The retired resolver's answer, computed beside the live one so the
+  -- assertions below are known to discriminate rather than merely to pass.
+  let retiredReservationReading : SeLe4n.Priority := sc.priority
+  expect "the two readings disagree on this state"
+    (!(retiredReservationReading == ⟨30⟩))
+  match setMCPriorityOp st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨50⟩ with
+  | .ok st' =>
+    match st'.objects[targetTid.toObjId]? with
+    | some (.tcb tcb) =>
+      expect "MCP updated to 50" (tcb.maxControlledPriority == ⟨50⟩)
+      expect "the thread keeps its own band -- no cap fired" (tcb.priority == ⟨30⟩)
+    | _ => throw <| IO.userError "target TCB not found"
+    match st'.objects[scId.toObjId]? with
+    | some (.schedContext sc') =>
+      expect "the stale mirror is left alone -- the cap did not consult it"
+        (sc'.priority == ⟨80⟩)
+    | _ => throw <| IO.userError "SchedContext not found"
+  | .error e => throw <| IO.userError s!"setMCPriority should succeed, got {repr e}"
 
 -- ============================================================================
 -- D2-M5: MCP authority transitivity
@@ -1025,29 +1081,42 @@ private def pm_frozenBasePriorityAgreesWithTheLiveWrite : IO Unit := do
 
 /-- **`v0.35.99`: the MC-priority ceiling reaches the same question.**  Found by
 sweeping the sibling rather than by a report: the frozen capping compared against
-`targetTcb.priority` where the live one compares against `threadBasePriority` —
+`targetTcb.priority` where the live one compared against `threadBasePriority` —
 the *reservation* for a `.bound` thread — and wrote the capped value to the TCB
 alone where the live path writes both homes.  Two mirror-image divergences on one
-operation. -/
+operation.
+
+**WS-RR (`v0.35.133`) narrowed the question and this witness with it.**  With
+`TCB.priority` the base's one home, *both* surfaces now compare the ceiling
+against the thread's own field, so the divergence this test was written for has no
+state left to arise on — which is what a structural closure looks like from the
+test's side.  What survives, and is what it now pins, is the agreement itself, on
+**both** branches of the cap: it must fire identically where the thread's band
+exceeds the ceiling, and it must decline identically where it does not.  The
+second half carries the *drifted* state the retired reading depended on, because a
+surface still consulting the reservation would cap there and the other would not —
+so a revert of the collapse on either surface fails this witness. -/
 private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
   let callerTid : SeLe4n.ThreadId := ⟨1⟩
   let targetTid : SeLe4n.ThreadId := ⟨2⟩
   let scId : SeLe4n.SchedContextId := ⟨50⟩
-  -- the reservation carries the live band (80); the TCB's own field is stale at
-  -- 10, which is the state the retired frozen reading got wrong: it compared the
-  -- ceiling against 10 and capped nothing.
+  -- (a) THE CAP FIRES.  A state the kernel maintains: the thread runs at 80 and
+  -- its reservation is configured to 80, so `boundThreadPriorityConsistent`
+  -- holds and the ceiling of 20 is below the band on either reading.
   let sc : SeLe4n.Kernel.SchedContext :=
     { scId := scId, budget := ⟨100⟩, period := ⟨200⟩, priority := ⟨80⟩,
       deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨100⟩,
       boundThread := some targetTid }
   let objs : List (ObjId × KernelObject) := [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
   let liveSt := mkState objs
+  -- `FrozenKernelObject.tcb` carries the LIVE `TCB`, so the two stores are built
+  -- from the same records; only the wrapper differs, hence the second list.
   let frozenSt := mkFrozenState [
     (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
-    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 80) (binding := .bound scId))),
     (scId.toObjId, .schedContext sc) ]
   match setMCPriorityOp liveSt ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨20⟩ with
   | .error e => throw <| IO.userError s!"live setMCPriority should succeed, got {repr e}"
@@ -1056,17 +1125,50 @@ private def pm_frozenCeilingAgreesWithTheLiveWrite : IO Unit := do
     | .error e => throw <| IO.userError s!"frozen setMCPriority should succeed, got {repr e}"
     | .ok ((), frozenAfter) =>
       let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
+      let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
       let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
       let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
       let frozenMcp := (frozenLookupTcb frozenAfter targetTid).map (·.maxControlledPriority)
       expect "the ceiling lands on the frozen TCB" (frozenMcp == some ⟨20⟩)
-      expect "live: the ceiling caps the reservation's band to 20" (liveScPrio == some ⟨20⟩)
-      expect "frozen: the ceiling caps the reservation too — it read the TCB before"
-        (frozenScPrio == some ⟨20⟩)
-      expect "...and the frozen thread's own field moves with it"
+      expect "live: the ceiling caps the thread's own band to 20" (liveTcbPrio == some ⟨20⟩)
+      expect "live: ...and the configured band moves with it" (liveScPrio == some ⟨20⟩)
+      expect "frozen: the ceiling caps the thread's own band too"
         (frozenTcbPrio == some ⟨20⟩)
-      expect "...so the two surfaces agree on the reservation's band"
-        (frozenScPrio == liveScPrio)
+      expect "frozen: ...and the reservation too — it wrote the TCB alone before"
+        (frozenScPrio == some ⟨20⟩)
+      expect "...so the two surfaces agree on both homes"
+        (frozenScPrio == liveScPrio && frozenTcbPrio == liveTcbPrio)
+  -- (b) THE CAP DECLINES, IDENTICALLY, ON A DRIFTED STATE.  The thread runs at
+  -- 10 and its reservation still reads 80 — the shape `v0.35.98` produced.  Under
+  -- the retired two-homes reading the ceiling of 20 was compared against 80 and
+  -- fired; under one home it is compared against 10 and does not.  A surface that
+  -- still consults the reservation caps here while the other does not, so this is
+  -- the half that separates the two readings on both surfaces at once.
+  let driftedObjs : List (ObjId × KernelObject) := [
+    (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+    (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+    (scId.toObjId, .schedContext sc) ]
+  match setMCPriorityOp (mkState driftedObjs) ⟨callerTid, by decide⟩
+          ⟨targetTid, by decide⟩ ⟨20⟩ with
+  | .error e => throw <| IO.userError s!"live setMCPriority (drifted) should succeed, got {repr e}"
+  | .ok liveAfter =>
+    match frozenSetMCPriority callerTid targetTid ⟨20⟩ (mkFrozenState [
+            (callerTid.toObjId, .tcb (mkTcb 1 (prio := 50) (mcp := 200))),
+            (targetTid.toObjId, .tcb (mkTcb 2 (prio := 10) (binding := .bound scId))),
+            (scId.toObjId, .schedContext sc) ]) with
+    | .error e =>
+      throw <| IO.userError s!"frozen setMCPriority (drifted) should succeed, got {repr e}"
+    | .ok ((), frozenAfter) =>
+      let liveTcbPrio := (liveAfter.getTcb? targetTid).map (·.priority)
+      let liveScPrio := (liveAfter.getSchedContext? scId).map (·.priority)
+      let frozenTcbPrio := (frozenLookupTcb frozenAfter targetTid).map (·.priority)
+      let frozenScPrio := (frozenAfter.getSchedContext? scId).map (·.priority)
+      expect "live: the drifted thread keeps its band — no cap fired"
+        (liveTcbPrio == some ⟨10⟩ && liveScPrio == some ⟨80⟩)
+      expect "frozen: and so does the frozen one"
+        (frozenTcbPrio == some ⟨10⟩ && frozenScPrio == some ⟨80⟩)
+      expect "...so the two surfaces decline together"
+        (frozenTcbPrio == liveTcbPrio && frozenScPrio == liveScPrio)
 
 /-- **`v0.35.101`: and the write RE-BUCKETS, which neither witness above could
 see.**  Reported on PR #897.
@@ -1279,6 +1381,7 @@ def main : IO Unit := do
   pm009_setPriorityBoundThread
   pm010_setPriorityUnboundThread
   pm010b_setMCPriorityCapsSchedContextBound
+  pm010c_setMCPriorityReadsThreadNotReservation
   IO.println "--- D2-M5: MCP transitivity ---"
   pm011_mcpTransitivity
   IO.println "--- D2-M6: Self-priority ---"

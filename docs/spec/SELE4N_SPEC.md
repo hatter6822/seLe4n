@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.132` (`lakefile.toml`) |
+| **Package version** | `0.35.133` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,110 across 334 Lean files |
-| **Test LoC** | 80,213 across 70 Lean test suites |
-| **Proved declarations** | 13,131 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 396,021 across 334 Lean files |
+| **Test LoC** | 80,339 across 70 Lean test suites |
+| **Proved declarations** | 13,127 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5501,17 +5501,29 @@ bounded by `objectIndex.length`.
 
 **Composition with SchedContext donation (Z7)**: `effectiveSchedParams`
 computes `max(basePrio, pipBoost)`, where `basePrio` is
-`SystemState.threadBasePriority` — the reservation's priority for a `.bound`
-thread and the thread's **own** `TCB.priority` for an `.unbound` or `.donated`
-one.  So PIP provides the boost whenever the transitive client priority exceeds
-the server's own band.
+`SystemState.threadBasePriority` — since `v0.35.133` the thread's **own**
+`TCB.priority` at every binding, that being the base's one home.  So PIP provides
+the boost whenever the transitive client priority exceeds the server's own band.
 
 Since `v0.35.3` a thread's scheduling parameters split in two, and the split is
 `SchedContextBinding`'s own: **reservation-owned** parameters (budget, period,
 deadline) come from the SchedContext a thread *runs on* (`scId?` — `.bound` or
 `.donated`), while **thread-owned** parameters (base priority, domain) come from
 the thread's own TCB fields, mirrored onto the SchedContext it *owns*
-(`ownScId?` — `.bound` alone) by the AK2-B propagation convention.  A donation
+(`ownScId?` — `.bound` alone) by the AK2-B propagation convention.
+
+Since `v0.35.133` that mirror is **write-only for the base priority**: a
+reservation still configures its bound thread's band and
+`boundThreadPriorityConsistent` still states that it did, but no scheduling
+decision reads `SchedContext.priority` any more, so the base has one home and
+the pair cannot go stale under a reader.  That closes the `v0.35.98` divergence
+structurally rather than by adding a writer: a `seL4_TCB_SetPriority` demotion of
+a bound thread used to re-bucket it at the new band while every later wake
+re-inserted it at the old one, permanently, because the run queue is keyed by
+`TCB.boostedPriority` and the resolver read the reservation's field.  The domain
+half keeps both homes and `boundThreadDomainConsistent`.
+
+A donation
 therefore moves budget, period and deadline and **not** priority or domain: a
 passive server runs its client's work on the client's reservation, at the
 server's own band and in the server's own partition, and rises to the client's

@@ -306,9 +306,15 @@ duration of the call *and*, through `updatePrioritySource`, let a
   let (basePrio, dl) := match tcb.schedContextBinding with
     | .unbound => (tcb.priority, tcb.deadline)
     | .bound scId =>
-      -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
+      -- WS-RR (`v0.35.133`): the donor's deadline, the thread's OWN priority --
+      -- the same shape as the `.donated` arm below, because since the one-home
+      -- collapse `TCB.priority` is the only place a base priority is stored.
+      -- Reading `sc.priority` here was the second half of the `v0.35.98`
+      -- defect: the run queue is keyed by `TCB.boostedPriority`, so a state
+      -- whose two homes had drifted scheduled the thread at one band and
+      -- re-inserted it at the other.
       match st.getSchedContext? scId with
-      | some sc => (sc.priority, sc.deadline)
+      | some sc => (tcb.priority, sc.deadline)
       | none    => (tcb.priority, tcb.deadline)
     | .donated scId _ =>
       -- WS-OD (v0.35.3): the donor's deadline, the donee's own priority.
@@ -320,55 +326,43 @@ duration of the call *and*, through `updatePrioritySource`, let a
   -- `effectiveSchedParams` below and with the frozen run queue's mirror.
   (basePrio.raisedBy tcb.pipBoost, dl)
 
-/-- AI3-A: For unbound threads without PIP boost, the full effective priority
-resolution `(resolveEffectivePrioDeadline st tcb).1` equals the simpler
-`tcb.boostedPriority` from Invariant.lean. -/
-theorem boostedPriority_eq_resolve_unbound (st : SystemState) (tcb : TCB)
-    (hUnbound : tcb.schedContextBinding = .unbound) :
-    tcb.boostedPriority = (resolveEffectivePrioDeadline st tcb).1 := by
-  -- Since `v0.35.28` both sides apply the boost through `Priority.raisedBy`,
-  -- so there is no `pipBoost` case split left to do: the two readings are the
-  -- same expression once the binding is known.
-  simp [TCB.boostedPriority, resolveEffectivePrioDeadline, hUnbound]
+/-- WS-RR (`v0.35.133`): the base-priority half of the selector's resolution
+**is** `TCB.boostedPriority` — the bucket key `schedulerPriorityMatch` records —
+at every binding and with **no hypothesis**.
 
-/-- SM5.I (AK2-B alignment).  When a thread's SchedContext base priority agrees
-with its TCB base priority — the `boundThreadPriorityConsistent` agreement
-specialised to this thread — the SchedContext-aware effective priority
-`(resolveEffectivePrioDeadline st tcb).1` equals the TCB-based
-`tcb.boostedPriority` (the bucket `schedulerPriorityMatch` records).
-This is the bridge that lets the SchedContext-priced run-queue inserts
-(`resolveInsertPriority`, used by `updatePipBoostOnCore` and the bound budget
-re-enqueue) preserve `schedulerPriorityMatchOnCore`.  Generalises
-`boostedPriority_eq_resolve_unbound` to the `.bound` case under the
-agreement hypothesis.
+This is the bridge that lets the run-queue inserts (`resolveInsertPriority`,
+used by `updatePipBoostOnCore` and the bound budget re-enqueue) preserve
+`schedulerPriorityMatchOnCore`, and it is what makes a TCB-field comparison of
+*priorities* sound wherever the selector's own ordering is the subject.
 
-**WS-OD (v0.35.3).**  The hypothesis is stated over
-`SchedContextBinding.ownScId?` — the classifier — rather than over
-`scId?`, and so ranges over `.bound` alone; the `.donated` arm needs no
-agreement at all, because since the donee-priority split it reads
-`tcb.priority` directly.  This is a *strictly weaker* hypothesis for the same
-conclusion: a caller holding the old `scId?`-shaped fact still discharges it
-through `SchedContextBinding.ownScId?_eq_scId?_of_isSome`. -/
-theorem resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
-    (st : SystemState) (tcb : TCB)
-    (h : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
-          ∀ sc, st.getSchedContext? scId = some sc → sc.priority = tcb.priority) :
+**It replaces three theorems whose hypotheses this cut killed**, and the
+hypotheses are the point rather than the count.  `boostedPriority_eq_resolve_unbound`
+(AI3-A) held at `.unbound`; `resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree`
+(SM5.I) extended it to `.bound` **under the `boundThreadPriorityConsistent`
+agreement specialised to the thread**; `resolveEffectivePrioDeadline_fst_of_donated`
+(WS-OD) was the `.donated` payoff.  With `TCB.priority` the base's one home the
+`.bound` arm reads that field like the other two, so the agreement hypothesis is
+discharged by nothing at all — and a reader who kept the `_of_agree` name would go
+on believing that weakening the bind/configure propagation costs the selector its
+priority ordering.  It does not: what that propagation is for is the configure
+semantics and `boundThreadPriorityConsistent`, stated at `schedContextBind`.
+
+**Deadlines have no counterpart and must not be read as having one** — see the
+`chooseThreadEffectiveOnCore` gate below: bind copies only the priority, so a
+TCB-*deadline* comparison still diverges from the selector for exactly the bound
+threads CBS exists for. -/
+theorem resolveEffectivePrioDeadline_fst_eq_boostedPriority
+    (st : SystemState) (tcb : TCB) :
     (resolveEffectivePrioDeadline st tcb).1 = tcb.boostedPriority := by
   cases hb : tcb.schedContextBinding with
   | unbound =>
     cases hboost : tcb.pipBoost <;>
       simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hboost]
   | bound scId =>
-    cases hsc : st.getSchedContext? scId with
-    | none =>
+    cases hsc : st.getSchedContext? scId <;>
       cases hboost : tcb.pipBoost <;>
         simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost]
-    | some sc =>
-      have hp : sc.priority = tcb.priority := h scId (by rw [hb]; rfl) sc hsc
-      cases hboost : tcb.pipBoost <;>
-        simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost, hp]
   | donated scId owner =>
-    -- WS-OD (v0.35.3): unconditional — the arm reads `tcb.priority`.
     cases hsc : st.getSchedContext? scId <;>
       cases hboost : tcb.pipBoost <;>
         simp [resolveEffectivePrioDeadline, TCB.boostedPriority, hb, hsc, hboost]
@@ -397,20 +391,11 @@ theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority
       cases hboost : tcb.pipBoost <;>
         simp [resolveEffectivePrioDeadline, SystemState.threadBasePriority, hb, hsc, hboost]
 
-/-- WS-OD (v0.35.3): the donee's effective priority is its own effective
-priority — `TCB.boostedPriority`, the TCB-only reading the run queue
-records — with no hypothesis about the donor's reservation.  The payoff of the
-split, stated where the scheduler reads it. -/
-theorem resolveEffectivePrioDeadline_fst_of_donated
-    (st : SystemState) (tcb : TCB)
-    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (hDonated : tcb.schedContextBinding = .donated scId owner) :
-    (resolveEffectivePrioDeadline st tcb).1 = tcb.boostedPriority := by
-  refine resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
-    st tcb ?_
-  intro scId' hSrc
-  rw [hDonated] at hSrc
-  exact absurd hSrc (by simp)
+-- WS-RR (`v0.35.133`) tombstone: `resolveEffectivePrioDeadline_fst_of_donated`
+-- lived here.  Its conclusion is now `resolveEffectivePrioDeadline_fst_eq_boostedPriority`
+-- at every binding, so a `.donated`-specific restatement would assert nothing its
+-- unconditional form does not; the WS-OD payoff it carried — that the donee runs at
+-- its OWN band — is what that theorem says everywhere.  Tier 3 refuses the name.
 
 -- ============================================================================
 -- R5.C (DEEP-SCH-02): Total effective-scheduling-parameter resolution
@@ -464,10 +449,11 @@ R5.C.1 retired that variant in favour of this total form. -/
   | .unbound => (tcb.boostedPriority, tcb.deadline, tcb.domain)
   | .bound scId =>
     match st.getSchedContext? scId with
-    -- A `.bound` thread's base is its RESERVATION's priority, so the boost is
-    -- applied to `sc.priority` here and to the TCB's own everywhere else -- one
-    -- `Priority.raisedBy`, two bases (`Prelude.lean`).
-    | some sc => (sc.priority.raisedBy tcb.pipBoost, sc.deadline, sc.domain)
+    -- WS-RR (`v0.35.133`): the boost is applied to the THREAD's base at every
+    -- binding, because that is the only base there is -- one
+    -- `Priority.raisedBy`, one base (`Prelude.lean`).  `sc.domain` stays: the
+    -- domain mirror is a separate pair, with no writer known to break it.
+    | some sc => (tcb.boostedPriority, sc.deadline, sc.domain)
     | none => (tcb.boostedPriority, tcb.deadline, tcb.domain)
   | .donated scId _ =>
     -- WS-OD (v0.35.3): the donor's **deadline** — the reservation-owned
@@ -524,36 +510,28 @@ If the TCB lookup fails (invariant violation — unreachable under
 section
 set_option linter.unusedSimpArgs false
 
-/-- AK2-A/AK2-B bridge: `effectiveBucketPriority` (SC-aware) equals
-`(resolveEffectivePrioDeadline st tcb).1`, the priority selection actually
-reads. Under the AK2-B Option B propagation invariant
-(`tcb.priority = sc.priority` for bound threads), both also equal
-`tcb.boostedPriority`. This bridge is retained for the deferred
-AK2.5 Option A fusion. -/
+/-- AK2-A/AK2-B bridge: the bucket a thread is keyed by **is** the priority
+selection reads.
+
+**WS-RR (`v0.35.133`): this pin held two resolvers together and now holds one.**
+`effectiveBucketPriority` mirrored `resolveEffectivePrioDeadline`'s
+classification because `Invariant.lean` sits below this module and could not
+call it; with `TCB.priority` the only home both are `TCB.boostedPriority`, so
+what remains to split is the shape of `resolveEffectivePrioDeadline`'s own
+`match`, whose every arm now yields the same base. -/
 theorem effectiveBucketPriority_eq_resolveEffective
     (st : SystemState) (tcb : TCB) :
     effectiveBucketPriority st tcb = (resolveEffectivePrioDeadline st tcb).1 := by
-  -- AN10-B: `resolveEffectivePrioDeadline` now reads via `getSchedContext?`
-  -- but `effectiveBucketPriority` still reads via the raw object-store
-  -- lookup; unfold both helpers locally to expose the shared raw form.
-  unfold effectiveBucketPriority resolveEffectivePrioDeadline SystemState.getSchedContext?
-
-  -- Since `v0.35.28` the boost is `Priority.raisedBy` on both sides, so only
-  -- the binding and the SchedContext lookup remain to split on.
+  unfold effectiveBucketPriority resolveEffectivePrioDeadline TCB.boostedPriority
   cases hBind : tcb.schedContextBinding with
   | unbound => simp only [hBind]
   | bound scId =>
     simp only [hBind]
-    cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => rfl
-    | some obj => cases obj <;> rfl
+    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
   | donated scId owner =>
     simp only [hBind]
-    cases hSc : (st.objects[scId.toObjId]? : Option KernelObject) with
-    | none => rfl
-    | some obj => cases obj <;> rfl
+    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
 
-end
 
 /-- Z4-D/E: SchedContext-aware three-level scheduling selection.
 
@@ -1535,13 +1513,15 @@ the budget-eligible candidate `tid` outrank core `c`'s current thread — in the
 **Why resolved parameters (PR #880 round 7).**  The selector this gate
 predicts (`chooseThreadEffectiveOnCore` → `chooseBestRunnableEffective`)
 orders candidates by `resolveEffectivePrioDeadline` — for a bound or donated
-thread the SchedContext's `priority` / `deadline`, with the PIP boost composed
-on top.  For *priorities* a TCB-field comparison was sound: `schedContextBind`
-and `schedContextConfigure` propagate `sc.priority` into the bound TCB
-(`boundThreadPriorityConsistent`), and
-`resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree`
-(above) is exactly that bridge.  **Deadlines have no such propagation or
-consistency invariant**: bind copies only the priority, and
+thread the SchedContext's *deadline*, with the PIP boost composed on top.  For
+*priorities* a TCB-field comparison is sound, and since WS-RR (`v0.35.133`)
+**unconditionally**: with `TCB.priority` the base's one home the resolver's
+first component *is* `tcb.boostedPriority` at every binding, which
+`resolveEffectivePrioDeadline_fst_eq_boostedPriority` (above) states with no
+hypothesis.  Until that cut it read `sc.priority` at `.bound`, so the bridge
+needed the `boundThreadPriorityConsistent` agreement the bind and configure
+propagations establish — do not read this paragraph as still resting on them.
+**Deadlines have no such one home**: bind copies only the priority, and
 `schedContextConfigure` / `cbsUpdateDeadline` move the SC deadline with the
 TCB field untouched.  A TCB-deadline comparison (the round-6 form) therefore
 diverged from the selector exactly for the bound threads CBS scheduling

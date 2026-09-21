@@ -492,8 +492,10 @@ def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
 1. Precondition: SchedContext has no bound thread, TCB is unbound
 2. Set bidirectional binding (sc.boundThread, tcb.schedContextBinding)
 3. Write both updated objects to store
-4. If thread is in RunQueue, remove and re-insert at SchedContext priority
-   to maintain `effectiveParamsMatchRunQueue` invariant
+4. If thread is in RunQueue, remove and re-insert at the propagated priority
+   so the recorded bucket tracks the TCB field step 2 just wrote
+   (`effectiveParamsMatchRunQueue`, which since `v0.35.133` reads that field
+   at every binding rather than the reservation's)
 
 **AL8 (WS-AL / AK7-E.cascade)**: `scId` is `ValidObjId`, `threadId` is
 `ValidThreadId` for compile-time sentinel rejection on BOTH IDs. -/
@@ -543,13 +545,22 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
           | .unbound =>
             -- Z5-G2: Bidirectional binding
             -- AK2-B option B (S-H04): Propagate SC priority to TCB priority.
-            -- This establishes `tcb.priority = sc.priority` at bind time,
-            -- aligning the base priority component that `schedulerPriorityMatch`
-            -- and `effectiveParamsMatchRunQueue` each read. Without this, the
-            -- two invariants jointly force `tcb.priority = sc.priority` in the
-            -- extended bundle but no operation ever establishes the equality.
-            -- Matches seL4 MCS where bind transfers scheduling authority from
+            -- This establishes `tcb.priority = sc.priority` at bind time.
+            -- Matches seL4 MCS, where bind transfers scheduling authority from
             -- the TCB to its bound SchedContext.
+            --
+            -- **WS-RR (`v0.35.133`): do not read this write as redundant.**  Its
+            -- original justification was that `schedulerPriorityMatch` and
+            -- `effectiveParamsMatchRunQueue` jointly forced `tcb.priority =
+            -- sc.priority` in the extended bundle with no operation establishing
+            -- it.  That is no longer true: with `TCB.priority` the base's one
+            -- home neither predicate reads a reservation, so the pair forces
+            -- nothing here.  What the write is for now is the thing it always
+            -- *did* — it is how a reservation configures its bound thread's
+            -- band, it is what `boundThreadPriorityConsistent` states, and with
+            -- the field the only home the scheduler reads, deleting it would
+            -- make `schedContextBind` silently not apply the band it is being
+            -- asked to apply.
             let scIdTyped : SchedContextId := ⟨vScId.val.toNat⟩
             -- **WS-HP HP10.4: a bind ends any loan, so the origin clears.**  The
             -- thread now *owns* this reservation, which is the state the origin

@@ -337,8 +337,19 @@ def an10_d_lookupCspaceRoot_wrong_kind : IO Bool := do
       (.endpoint mkEmptyEndpoint) }
   return lookupCspaceRoot st tid == none
 
-/-- AN10-D.6 — `getCurrentPriority` (post-migration via
-`getSchedContext?`) returns the SchedContext's priority for a bound TCB. -/
+/-- AN10-D.6 — `getCurrentPriority` returns the **thread's own** priority for a
+bound TCB.
+
+WS-RR (`v0.35.133`): this asserted the SchedContext's, because the base had two
+homes and the resolver chose the reservation's for a `.bound` thread.  With
+`TCB.priority` the base's one home there is nothing to choose.  The AN10-D
+migration this row was written for — typed `getSchedContext?` in place of a raw
+store read — is unaffected: what changed is which field the answer comes from,
+not how the reservation is looked up.
+
+The fixture stays **drifted** (thread 5, reservation 42) because that is the only
+shape on which the two readings part, so the row discriminates rather than merely
+passes. -/
 def an10_d_getCurrentPriority_bound : IO Bool := do
   let scId : SchedContextId := SchedContextId.ofNat 300
   let sc : Kernel.SchedContext :=
@@ -348,8 +359,9 @@ def an10_d_getCurrentPriority_bound : IO Bool := do
   let st : SystemState := { (default : SystemState) with
     objects := ((default : SystemState).objects
       |>.insert scId.toObjId (.schedContext sc)) }
-  -- For .bound, getCurrentPriority must read sc.priority not tcb.priority.
-  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨42⟩
+  -- For .bound, getCurrentPriority must read tcb.priority -- the one home --
+  -- and NOT the reservation's 42, which no scheduling decision consults.
+  return SeLe4n.Kernel.SchedContext.PriorityManagement.getCurrentPriority st tcb == ⟨5⟩
 
 /-- AN10-D.7 — `getCurrentPriority` falls back to the TCB's own
 `priority` for an `.unbound` TCB.  This confirms the unbound branch is

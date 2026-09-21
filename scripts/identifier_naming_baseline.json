@@ -762,9 +762,6 @@
  "test_AK8_E_bound_missing_sc_is_objectNotFound": {
   "tests/Ak8CoverageSuite.lean": 2
  },
- "test_AK8_E_bound_returns_sc_priority": {
-  "tests/Ak8CoverageSuite.lean": 2
- },
  "test_AK8_E_unbound_returns_tcb_priority": {
   "tests/Ak8CoverageSuite.lean": 2
  },

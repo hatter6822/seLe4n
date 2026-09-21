@@ -3575,9 +3575,17 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def ownScId\?[^\
 # ...and it is a NARROWING of `scId?`, not a second independent resolution.
 run_check "INVARIANT" rg -n '^theorem ownScId\?_eq_scId\?_of_isSome' SeLe4n/Kernel/SchedContext/Types.lean
 
-# The canonical state-level resolver, classified through it.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def threadBasePriority \(st : SystemState\) \(tcb : TCB\) : SeLe4n\.Priority :=\n  match tcb\.schedContextBinding\.ownScId\? with" SeLe4n/Model/State.lean'
-run_check "INVARIANT" rg -n '^@\[simp\] theorem threadBasePriority_donated' SeLe4n/Model/State.lean
+# The canonical state-level resolver.
+#
+# RETIRED AT `v0.35.133`: it used to be classified through `ownScId?`, and these
+# anchors pinned that classification.  The base priority has ONE home now, so the
+# resolver is `tcb.priority` and the arm-specific readings it needed
+# (`_unbound`, `_donated`, `_bound`, `_bound_missing`) are one `rfl` theorem.
+# The `ownScId?` classifier above is NOT retired -- `updatePrioritySource` below
+# still selects its write target through it, which is the WS-OD finding this
+# block is about -- so only the reader's anchors move.
+run_check "INVARIANT" rg -F -n 'def threadBasePriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem threadBasePriority_eq' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^theorem threadBasePriority_congr' SeLe4n/Model/State.lean
 
 # THE WRITE.  `updatePrioritySource` selects its target through the classifier,
@@ -3603,7 +3611,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def resolveEffectivePrioD
 # domain.  `tcb.boostedPriority` is the donee's own priority raised by the
 # donee's own boost; a spelling naming `sc.priority` would be the defect.
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*\| \.donated scId _ =>[^\n]*(\n([ \t][^\n]*)?)*\| some sc => \(tcb\.boostedPriority, sc\.deadline, tcb\.domain\)" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveBucketPriority[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ => tcb\.priority$" SeLe4n/Kernel/Scheduler/Invariant.lean'
+# RETIRED AT `v0.35.133`: this pinned the `.donated` arm of a classification the
+# one-home collapse deleted -- the helper is `TCB.boostedPriority` at every
+# binding now, pinned in the `v0.35.133` block below.
+run_check "INVARIANT" rg -F -n 'def effectiveBucketPriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=' SeLe4n/Kernel/Scheduler/Invariant.lean
 # NEGATIVE (each declaration-bounded): the merged arm, which is how all three
 # read the donor's `sc.priority` before the split.  `hasSufficientBudget` in the
 # same file KEEPS it, so a file-wide negative would fire on a clean tree.
@@ -3619,7 +3630,16 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem getCurrentPriorityChecked_donate
 # the split would be four independent edits that a later cut could unpick one at
 # a time -- one question, four answers.
 run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
-run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_of_donated' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+# WS-RR (v0.35.133): the `.donated`-specific pin is gone with its two siblings --
+# the resolver's first component is `TCB.boostedPriority` at EVERY binding now, so
+# the one unconditional theorem is the pin for all three cases.  Both the positive
+# and the three negatives below are what stop the hypothesis-bearing forms coming
+# back: a restatement under an agreement hypothesis would read like a check while
+# asserting strictly less than what the tree can prove.
+run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_boostedPriority$' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_negative_check "INVARIANT" rg -n 'resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n 'resolveEffectivePrioDeadline_fst_of_donated' SeLe4n/ tests/
+run_negative_check "INVARIANT" rg -n 'boostedPriority_eq_resolve_unbound' SeLe4n/ tests/
 run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_resolve' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
@@ -3637,10 +3657,15 @@ run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' 
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*match targetTcb\.schedContextBinding\.ownScId\? with" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*\| \.bound scId \| \.donated scId _ =>" SeLe4n/Kernel/FrozenOps/Operations.lean'
 
-# The invariants follow the read: a donee is bucketed at its own base priority,
-# so its recorded run-queue bucket is the `.unbound` arm's.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveParamsMatchRunQueue \(st : SystemState\) : Prop :=[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ =>\n        \(st\.scheduler\.runQueueOnCore bootCoreId\)\.threadPriority\[tid\]\? = some tcb\.priority" SeLe4n/Kernel/Scheduler/Invariant.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*\| \.donated _ _ =>\n        \(st\.scheduler\.runQueueOnCore c\)\.threadPriority\[tid\]\? = some tcb\.priority" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+# RETIRED AT `v0.35.133`: these pinned the `.donated` ARM of a three-armed case
+# analysis that no longer exists.  The claim they carried -- a donee's recorded
+# bucket is its own base priority -- is now true of every binding, because with
+# `TCB.priority` the base's one home the three arms became one statement and the
+# analysis was deleted (its `.bound` arm's `| _ => True` fallback silently excused
+# a bound thread whose reservation did not resolve).  A pin on a deleted arm is a
+# tautology-in-waiting, so both are replaced by the pair in the `v0.35.133` block
+# below, which asserts the body each predicate HAS and refuses the binding
+# analysis coming back.
 # The carrier is scoped to the priority source, not to the binding.  Quantified
 # over `scId?` it covered `.donated` too, and the donation FALSIFIES that: the
 # reservation's priority must equal the donor's before the hand-off and the
@@ -13919,7 +13944,7 @@ open SeLe4n.Kernel
 #check @boundThreadPriorityConsistent
 #check @boundThreadPriorityConsistent_frame
 #check @default_boundThreadPriorityConsistent
-#check @resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree
+#check @resolveEffectivePrioDeadline_fst_eq_boostedPriority
 EOF
 lake env lean /tmp/sm5i_suite.lean'
 
@@ -17315,5 +17340,50 @@ run_check "INVARIANT" rg -F -n '    orphan_payoff_main = (' scripts/check_ipc_in
 run_check "INVARIANT" rg -F -n '    census_missing_main = (' scripts/check_ipc_invariant_dethreading.py
 run_check "INVARIANT" rg -F -n '    lean_unregistered_vspace = (' scripts/check_tlbi_broadcast_discipline.py
 run_check "INVARIANT" rg -F -n '    lean_mutual_runtime = (' scripts/check_tlbi_broadcast_discipline.py
+
+# ===========================================================================
+# v0.35.133: ONE HOME for a thread's base priority
+# ===========================================================================
+# The base had two homes -- `TCB.priority` and the mirrored
+# `SchedContext.priority` -- with a resolver choosing between them and
+# `boundThreadPriorityConsistent` keeping them in step.  `v0.35.98` found
+# `.tcbSetPriority` not maintaining the pair: a demotion re-bucketed at the new
+# band and every later wake re-inserted at the old one, because the run queue is
+# keyed by `TCB.boostedPriority`.  With one home the pair is unfalsifiable.
+# ---------------------------------------------------------------------------
+# (1) THE CANONICAL READER READS THE TCB, and says so by `rfl`.
+run_check "INVARIANT" rg -F -n 'def threadBasePriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -F -n 'st.threadBasePriority tcb = tcb.priority := rfl' SeLe4n/Model/State.lean
+# ...and the retired classification must not come back at either surface.
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def threadBasePriority[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/State.lean | rg -F "ownScId?"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def FrozenSystemState.threadBasePriority[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Model/FrozenState.lean | rg -F "ownScId?"'
+# (2) THE FROZEN MIRROR COLLAPSED IN THE SAME CUT, with the live/frozen
+# agreement stated as `rfl` -- the strongest form such an agreement can take.
+run_check "INVARIANT" rg -F -n 'def FrozenSystemState.threadBasePriority (_st : FrozenSystemState) (tcb : TCB) :' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -F -n 'theorem FrozenSystemState.threadBasePriority_eq_live' SeLe4n/Model/FrozenState.lean
+# (3) THE SCHEDULER'S OWN RESOLVER reads the thread's field on the `.bound` arm.
+run_check "INVARIANT" bash -lc 'rg -n -U "def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "| some sc => (tcb.priority, sc.deadline)"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def resolveEffectivePrioDeadline[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "(sc.priority, sc.deadline)"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveSchedParams[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Selection.lean | rg -F "sc.priority.raisedBy"'
+# (4) THE THIRD COPY IS GONE: the bucket is the accessor, not a classification.
+run_check "INVARIANT" rg -F -n 'def effectiveBucketPriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -F -n 'effectiveBucketPriority st tcb = tcb.boostedPriority := rfl' SeLe4n/Kernel/Scheduler/Invariant.lean
+# (5) BOTH RUN-QUEUE INVARIANTS moved off the reservation's field, which the
+# queue is not keyed by -- and then COLLAPSED, which the pair below is what pins.
+# The `sc.priority` negatives alone are satisfied by the dead scaffolding the
+# collapse removed (a three-armed match whose arms all read `tcb.priority`, with
+# a `| _ => True` fallback silently excusing a bound thread whose reservation does
+# not resolve), so each predicate is pinned by the body it HAS and by the absence
+# of the binding analysis it must not regrow.  Bounded to the declaration: a Lean
+# declaration header sits at column 0, so the gap cannot leave it.
+run_negative_check "INVARIANT" rg -F -n 'threadPriority[tid]? = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_negative_check "INVARIANT" rg -F -n 'threadPriority[tid]? = some sc.priority' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueue[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant.lean | rg -F "runQueueOnCore bootCoreId).threadPriority[tid]? = some tcb.priority"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueue[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant.lean | rg -F "tcb.schedContextBinding"'
+run_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean | rg -F "runQueueOnCore c).threadPriority[tid]? = some tcb.priority"'
+run_negative_check "INVARIANT" bash -lc 'rg -n -U "def effectiveParamsMatchRunQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean | rg -F "tcb.schedContextBinding"'
+# (6) THE CHECKED READER keeps its lookup -- its FAILURE is the error it exists
+# to surface -- and stops deciding the priority with it.
+run_check "INVARIANT" bash -lc 'rg -n -U "def getCurrentPriorityChecked[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/SchedContext/PriorityManagement.lean | rg -F "| some _  => .ok tcb.priority"'
 
 finalize_report

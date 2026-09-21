@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.132.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.133.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8005,47 +8005,121 @@ code may assume:
   no thread locates no entries a migration could move.  (3) **The footprint does not
   grow**: both cores the destination can name were already declared, and
   `maxLockSetSize` is unmoved.
-- **A `.bound` thread's base priority lives in TWO places, and every writer of
-  either must move both** (`v0.35.98`).  `SystemState.threadBasePriority` reads
-  the reservation's `priority`; `TCB.boostedPriority` — which
-  `enqueueRunnableOnCore`, `preemptCurrentOnCore` and every other run-queue
-  insert is keyed by — reads the thread's own.  `boundThreadPriorityConsistent`
-  is the agreement between them, and it is **not** a bundle conjunct: it is a
-  standalone predicate consumed as a *hypothesis* by the effective-priority
-  agreement in `Scheduler/Operations/Selection.lean`.  Three things new code
-  must respect.  (1) **A new writer of `TCB.priority` or
-  `SchedContext.priority` writes both homes and carries a preservation
-  theorem.**  Four transitions touch them today: `schedContextBind`
-  (establishes), `schedContextConfigureBoundPropagate` (maintains, gated on
-  `schedContextConfigurePropagates`), `updatePrioritySource` (maintains since
-  `v0.35.98` —
-  `updatePrioritySource_preserves_boundThreadPriorityConsistent`), and
-  `returnDonatedSchedContext`'s bottom arm, which **still breaks it**: it
-  rebinds a recipient `.bound` without refreshing the reservation's record, so a
-  `.tcbSetPriority` on the origin *during* the loan leaves the pair
-  desynchronised at the pop.  That is the one remaining writer, it is latent
-  rather than reachable-by-default, and it is registered — **and the obvious
-  remedy is refuted rather than merely deferred** (`v0.35.100`): refreshing the
-  mirror inside the record that pop stores (`donationReturnSchedContext`, the
-  named form of that write since `v0.35.100`) makes the pop
-  projection-**visible**, because `SchedContext.priority` survives
-  `projectKernelObject` — so a possibly-high recipient's band would be copied
-  into a possibly-low reservation and
-  `returnDonatedSchedContext_preserves_projection` would be false.
-  `donationReturnSchedContext_priority` and a Tier 3 negative state that at the
-  record.  The closure is the one-home improvement below, which leaves nothing
-  for the pop to refresh.  (2) **A new writer
-  needs `schedContextBindingConsistent`**, which is what rules out a second
-  thread bound to one reservation — the reservation's `priority` moves for the
-  whole reservation, so a second claimant would be left stale.  (3) **A
-  preservation theorem for this predicate is homed beside the INVARIANT, not
-  beside the write**: `CrossSubsystem` imports the SchedContext invariants, so
-  `Scheduler/Invariant/PerCore.lean` is downstream of every priority operation
-  and stating it at the write closes an import cycle.  This project's *the frame
-  belongs to the write* rule is about frames, and does not apply when the
-  predicate is downstream of the operation.
+- **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
+  **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
+  propagation convention, its reservation's `SchedContext.priority` — with
+  `SystemState.threadBasePriority` choosing between them by
+  `SchedContextBinding.ownScId?` and `boundThreadPriorityConsistent` keeping the
+  pair in step.  The pair is what `v0.35.98` found `.tcbSetPriority` not
+  maintaining: a demotion re-bucketed the thread at its new band while every
+  later wake re-inserted it at the old one, permanently, because the run queue is
+  keyed by `TCB.boostedPriority` (the thread's field) and the resolver read the
+  reservation's.  A demotion that does not stick is a temporal-isolation break in
+  exactly the mixed-criticality deployments MCS exists for, and it needed no
+  authority beyond what the syscall already requires.
 
-  And the **frozen** surface writes both homes too (`v0.35.99`):
+  **The remedy is structural rather than another writer**: with one home the pair
+  is unfalsifiable by construction, so a stale mirror is not a defect that was
+  fixed but a state no writer can reach.  Six things new code must respect.
+
+  (1) **Every reader reads `TCB.priority`, at every binding.**  Five did the
+  classification and all five are collapsed: `SystemState.threadBasePriority`,
+  `resolveEffectivePrioDeadline`, `effectiveSchedParams`,
+  `getCurrentPriorityChecked` and the frozen
+  `FrozenSystemState.threadBasePriority`.  `threadBasePriority_eq`,
+  `effectiveBucketPriority_eq` and `FrozenSystemState.threadBasePriority_eq` are
+  the `rfl` statements of that, and `FrozenSystemState.threadBasePriority_eq_live`
+  is the live/frozen agreement — which under two homes could only be stated per
+  binding and under a consistency hypothesis, and is now the strongest form such
+  an agreement can take.
+
+  (2) **`effectiveBucketPriority` was the THIRD copy of the resolver and its body
+  is gone.**  It mirrored `resolveEffectivePrioDeadline` because
+  `Scheduler/Invariant.lean` sits below `Selection.lean` and could not call it —
+  a second implementation held in step by a pin, which is the shape this project
+  spends its length retiring and which existed only because there were two bases
+  to choose between.  It is `TCB.boostedPriority` now and the pin is `rfl`.
+
+  (3) **The run-queue invariants moved with the readers, and then COLLAPSED.**
+  `effectiveParamsMatchRunQueue` and `effectiveParamsMatchRunQueueOnCore` asserted
+  on their `.bound` arm that the recorded bucket equals the RESERVATION's
+  `priority`.  That was over-strong the moment the base had one home — the queue
+  is keyed by `TCB.boostedPriority` — and under two homes it was precisely the
+  conjunct that had to hold for the `v0.35.98` defect not to strand a demoted
+  thread.  With all three arms saying the same thing the binding case analysis is
+  **deleted**, and auditing this cut's own diff is what showed that keeping it was
+  wrong rather than merely untidy.  Its `.bound` arm ended `| _ => True`, so a
+  bound thread whose reservation did not resolve was silently excused from the
+  bucket claim: *a scanner's default branch is a decision* one artefact over — a
+  **predicate's** default arm is one too, and that one excused a case nobody chose
+  to excuse.  And under two homes this predicate and `schedulerPriorityMatch` were
+  **jointly unsatisfiable** for any bound thread whose mirror had drifted, which is
+  the S-H04 over-constraint `Scheduler/Operations/Core.lean`'s own header records
+  — so the collapse is what makes the pair satisfiable rather than merely shorter.
+
+  (4) **Three theorems retire into one, and the HYPOTHESES are the point.**
+  `boostedPriority_eq_resolve_unbound` (AI3-A) related the selector's base
+  component to `TCB.boostedPriority` at `.unbound`;
+  `resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree` (SM5.I) extended
+  it to `.bound` **under the `boundThreadPriorityConsistent` agreement specialised
+  to the thread**; `resolveEffectivePrioDeadline_fst_of_donated` (WS-OD) was the
+  `.donated` payoff.  With one home the `.bound` arm reads the TCB field like the
+  other two, so that agreement hypothesis is discharged by nothing at all — and a
+  name like `_of_agree` kept past its hypothesis is not merely redundant, it
+  *teaches a false dependency*: a reader would go on believing that weakening the
+  bind/configure propagation costs the selector its priority ordering.  It does
+  not.  The three are deleted for the one unconditional
+  `resolveEffectivePrioDeadline_fst_eq_boostedPriority`, with a tombstone and
+  three Tier 3 negatives.  **Deadlines have no counterpart and must not be read as
+  having one**: bind copies only the priority, so a TCB-*deadline* comparison still
+  diverges from the selector for exactly the bound threads CBS exists for, which is
+  what the `chooseThreadEffectiveOnCore` gate says.
+
+  (5) **`SchedContext.priority` survives as what it always was on the WRITE side**
+  — the band a reservation *configures* its bound thread to, propagated into the
+  TCB by `schedContextBind` and `schedContextConfigureBoundPropagate` — and no
+  scheduling decision reads it.  `boundThreadPriorityConsistent` is therefore no
+  longer load-bearing for any read; it is **kept, not retired**, as the only
+  artefact stating that the propagation happened, which is a real property of those
+  two writers and not a tautology.  A new *reader* of `SchedContext.priority` as a
+  thread's band is the defect this cut closed; a new *writer* still propagates.
+  **And a justification that names a constraint the cut removed invites deleting a
+  live write**: `schedContextBind`'s propagation comment said the two run-queue
+  invariants *jointly force* `tcb.priority = sc.priority` with no operation
+  establishing it — its whole stated reason, and false the moment neither predicate
+  read a reservation.  When a cut retires a constraint, sweep the comments that
+  cite it as a *reason*, not only the ones that cite it as a fact.
+
+  (6) **A witness for a collapsed mirror lives on the state the collapse makes
+  UNREACHABLE.**  The soundness argument and the testability problem are the same
+  sentence: on a state satisfying `boundThreadPriorityConsistent` the two readings
+  agree *by construction*, so a fixture built there asserts nothing about which one
+  is live and passes either way.  What discriminates is a **drifted** state — the
+  shape `v0.35.98` produced — and four fixtures in this tree were already sitting
+  on one, which is why all four failed when the readers collapsed.  The instinct on
+  such a failure is to make the fixture consistent; that is right for a fixture
+  whose subject is the *operation* and wrong for one whose subject is *which field
+  the operation reads*, and doing it everywhere would have left the cut with no
+  decisive witness at all.  So `AK8-E.2` and `AN10-D.6` keep their drifted states
+  and flip their expectations; `PM-010b` becomes consistent because its subject is
+  the cap firing, with `PM-010c` added to carry the drifted half; and the
+  `v0.35.99` frozen-ceiling witness is restated over **both** branches of the cap,
+  since the divergence it was written for has no state left to arise on and what
+  survives is that the two surfaces fire *and decline* together.  Generalising:
+  when a cut makes two readings agree everywhere, the only witness that can fail on
+  a revert is one standing on the disagreement the cut abolished — keep it, name it
+  as such, and say in the fixture why the state is one the kernel no longer
+  reaches.
+
+  The collapse is behaviour-preserving on every reachable state, and that is
+  measured rather than argued: `schedContextConfigurePropagates` is
+  `ownScId? = some scId`, which is exactly the condition the retired resolver
+  classified on, so the two readings differ only where the mirror had already gone
+  stale — and the golden trace is byte-identical at 239/239 with the whole library
+  building.
+
+  The **frozen** surface writes the configured band too (`v0.35.99`):
+
   `FrozenSystemState.threadBasePriority` is its reader and
   `frozenWriteBasePriority` the one writer both `frozenSetPriority` and
   `frozenSetMCPriority`'s ceiling call, so a new frozen priority operation reads

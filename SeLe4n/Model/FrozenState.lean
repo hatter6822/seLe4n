@@ -1088,40 +1088,34 @@ def FrozenSystemState.getReply? (st : FrozenSystemState) (rid : SeLe4n.ReplyId) 
   | _               => none
 
 
-/-- **The frozen mirror of `SystemState.threadBasePriority`** (`v0.35.99`).
+/-- **The frozen mirror of `SystemState.threadBasePriority`** — `TCB.priority`,
+at every binding (`v0.35.133`).
 
-A `.bound` thread's base priority is read from its *reservation*; every other
-binding reads the thread's own field.  The frozen surface needs the same reading
-because it carries the live `TCB` and `SchedContext` records, and because
-`frozenSetMCPriority`'s capping rule compares against it — reading
-`tcb.priority` there instead is the divergence PR #897 found one operation over:
-the two surfaces answer "what band is this thread at" differently and the
-differential cannot see it until a scenario puts a `.bound` thread on both.
+The live resolver collapsed when the base priority stopped having two homes, and
+this mirror collapses with it *in the same cut*, because a mirror that classifies
+where its subject no longer does is a divergence the differential cannot see
+until a scenario puts a `.bound` thread on both surfaces — which is exactly the
+defect PR #897 found here one operation over, at `v0.35.99`.
 
-Stated here beside the frozen accessors, as the live one is stated beside the
-live ones, so neither surface has a second reading of the question. -/
-def FrozenSystemState.threadBasePriority (st : FrozenSystemState) (tcb : TCB) :
+Kept as a named definition rather than inlined, so `frozenSetMCPriority`'s
+capping rule and the frozen run queue read the question by name and neither
+surface can grow a second reading of it. -/
+def FrozenSystemState.threadBasePriority (_st : FrozenSystemState) (tcb : TCB) :
     SeLe4n.Priority :=
-  match tcb.schedContextBinding.ownScId? with
-  | some scId =>
-    match st.getSchedContext? scId with
-    | some sc => sc.priority
-    | none    => tcb.priority
-  | none => tcb.priority
+  tcb.priority
 
-/-- An unbound thread reads its own field — the frozen twin of
-`threadBasePriority_unbound`. -/
-@[simp] theorem FrozenSystemState.threadBasePriority_unbound (st : FrozenSystemState)
-    (tcb : TCB) (h : tcb.schedContextBinding = .unbound) :
-    st.threadBasePriority tcb = tcb.priority := by
-  simp [FrozenSystemState.threadBasePriority, h]
+/-- The one home, stated — the frozen twin of `threadBasePriority_eq`.  It
+subsumes the arm-specific readings (`_unbound`, `_donated`) this mirror used to
+need, which is why they are deleted rather than restated. -/
+@[simp] theorem FrozenSystemState.threadBasePriority_eq (st : FrozenSystemState)
+    (tcb : TCB) : st.threadBasePriority tcb = tcb.priority := rfl
 
-/-- A **donated** thread reads its own field, whatever the donor's reservation
-says — the frozen twin of `threadBasePriority_donated`, and the seL4-MCS split. -/
-@[simp] theorem FrozenSystemState.threadBasePriority_donated (st : FrozenSystemState)
-    (tcb : TCB) {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (h : tcb.schedContextBinding = .donated scId owner) :
-    st.threadBasePriority tcb = tcb.priority := by
-  simp [FrozenSystemState.threadBasePriority, h]
+/-- The frozen reading and the live one are the same function of the same TCB,
+whatever either store holds.  Under two homes this could only have been stated
+per binding and under a consistency hypothesis; with one home it is `rfl`, which
+is the strongest form a live/frozen agreement can take. -/
+theorem FrozenSystemState.threadBasePriority_eq_live (fst : FrozenSystemState)
+    (st : SystemState) (tcb : TCB) :
+    fst.threadBasePriority tcb = st.threadBasePriority tcb := rfl
 
 end SeLe4n.Model

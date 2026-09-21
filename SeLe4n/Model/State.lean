@@ -2743,77 +2743,52 @@ def getSchedContext? (st : SystemState) (scId : SeLe4n.SchedContextId)
   | some (.schedContext sc) => some sc
   | _                       => none
 
-/-- WS-OD (v0.35.3): the **base priority a thread runs at** — the canonical
-resolution of the priority question, and the one every reader in the tree is
-proved to agree with.
+/-- WS-RR (`v0.35.133`): the **base priority a thread runs at** — `TCB.priority`,
+at every binding, because that is the only place it is stored.
 
-The source is chosen by `SchedContextBinding.ownScId?`, so a
-`.bound` thread reads its reservation's priority (the AK2-B propagation
-convention, kept) while `.unbound` **and `.donated`** threads read their own
-`TCB.priority`.  A donee runs on the donor's budget, deadline and domain and
-at its own priority: that is seL4-MCS's split, and it is what stops a
-`.tcbSetPriority` on a passive server from rewriting the client's reservation.
+**This was a resolver, and it is one no longer.**  Until `v0.35.133` a `.bound`
+thread's base priority had TWO homes — the TCB field and, mirrored onto it by the
+AK2-B propagation convention, its reservation's `SchedContext.priority` — and this
+function chose between them by `SchedContextBinding.ownScId?`.  Keeping the pair in
+step was `boundThreadPriorityConsistent`, an invariant every writer of either field
+had to maintain and which `v0.35.98` found `.tcbSetPriority` **not** maintaining:
+a demotion re-bucketed the thread at its new band and every later wake re-inserted
+it at the old one, permanently, because the run queue is keyed by
+`TCB.boostedPriority` (the thread's field) while `threadBasePriority` read the
+reservation's.  `returnDonatedSchedContext`'s bottom arm was the last writer still
+breaking it.
 
-The fallback on an unresolvable priority source is `tcb.priority`, unreachable
-under `schedContextStoreConsistent`; it is the same fallback
-`resolveEffectivePrioDeadline` and `getCurrentPriority` have always taken, so
-the total shape is unchanged and only the `.donated` arm moves.
+With one home there is nothing to keep in step on the READ side: the stale-mirror
+read is not a defect that was fixed but a state no reader can be misled by, since
+no scheduling decision consults the mirror any more.  `SchedContext.priority`
+survives as what it always was on the write side — the band a reservation
+*configures* its bound thread to, propagated into the TCB by `schedContextBind` and
+`schedContextConfigureBoundPropagate` — and `boundThreadPriorityConsistent` survives
+with it, no longer load-bearing for any read but still the statement that those two
+writers propagated.  That is a real property of them and not a tautology, so it is
+kept rather than retired.
+
+The state argument is kept so the ~50 call sites and every theorem stated over them
+are unchanged by the collapse; it is unread, and `threadBasePriority_eq` says so.
 
 **Base**, not effective: `TCB.pipBoost` is applied by the callers that schedule
-(`resolveEffectivePrioDeadline`, `effectiveSchedParams`,
-`effectiveBucketPriority`), because a boost is a property of the blocking graph
-rather than of the reservation. -/
-def threadBasePriority (st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
-  match tcb.schedContextBinding.ownScId? with
-  | some scId =>
-    match st.getSchedContext? scId with
-    | some sc => sc.priority
-    | none    => tcb.priority
-  | none => tcb.priority
+(`resolveEffectivePrioDeadline`, `effectiveSchedParams`, `effectiveBucketPriority`),
+because a boost is a property of the blocking graph rather than of the thread. -/
+def threadBasePriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=
+  tcb.priority
 
-/-- An unbound thread runs at its own base priority. -/
-@[simp] theorem threadBasePriority_unbound (st : SystemState) (tcb : TCB)
-    (h : tcb.schedContextBinding = .unbound) :
-    st.threadBasePriority tcb = tcb.priority := by
-  simp [threadBasePriority, h]
+/-- The one home, stated: the base priority is the TCB's field, whatever the
+binding and whatever the store holds.  Every arm-specific reading the resolver used
+to need (`_unbound`, `_donated`, `_bound`, `_bound_missing`) is this theorem, which
+is why they are deleted rather than restated. -/
+@[simp] theorem threadBasePriority_eq (st : SystemState) (tcb : TCB) :
+    st.threadBasePriority tcb = tcb.priority := rfl
 
-/-- A **donated** thread runs at its own base priority, whatever the donor's
-reservation says.  This is the seL4-MCS split, stated as a `simp` lemma so no
-consumer has to unfold the classifier to see it. -/
-@[simp] theorem threadBasePriority_donated (st : SystemState) (tcb : TCB)
-    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (h : tcb.schedContextBinding = .donated scId owner) :
-    st.threadBasePriority tcb = tcb.priority := by
-  simp [threadBasePriority, h]
-
-/-- A bound thread runs at its reservation's base priority. -/
-@[simp] theorem threadBasePriority_bound (st : SystemState) (tcb : TCB)
-    {scId : SeLe4n.SchedContextId} {sc : SeLe4n.Kernel.SchedContext}
-    (hb : tcb.schedContextBinding = .bound scId)
-    (hsc : st.getSchedContext? scId = some sc) :
-    st.threadBasePriority tcb = sc.priority := by
-  simp [threadBasePriority, hb, hsc]
-
-/-- The fallback: a bound thread whose reservation is absent (unreachable under
-`schedContextStoreConsistent`) runs at its own base priority. -/
-theorem threadBasePriority_bound_missing (st : SystemState) (tcb : TCB)
-    {scId : SeLe4n.SchedContextId}
-    (hb : tcb.schedContextBinding = .bound scId)
-    (hsc : st.getSchedContext? scId = none) :
-    st.threadBasePriority tcb = tcb.priority := by
-  simp [threadBasePriority, hb, hsc]
-
-/-- `threadBasePriority` reads the object store only at the thread's priority
-source, so any state agreeing there agrees on the result.  The frame every
-transition that writes an unrelated SchedContext discharges. -/
-theorem threadBasePriority_congr {st st' : SystemState} (tcb : TCB)
-    (h : ∀ scId, tcb.schedContextBinding.ownScId? = some scId →
-      st'.getSchedContext? scId = st.getSchedContext? scId) :
-    st'.threadBasePriority tcb = st.threadBasePriority tcb := by
-  unfold threadBasePriority
-  cases hp : tcb.schedContextBinding.ownScId? with
-  | none => rfl
-  | some scId => simp only [h scId hp]
+/-- `threadBasePriority` reads no object store at all, so every state agrees on it.
+The frame every transition discharges, now with no hypothesis: it used to require
+agreement at the thread's priority source. -/
+theorem threadBasePriority_congr {st st' : SystemState} (tcb : TCB) :
+    st'.threadBasePriority tcb = st.threadBasePriority tcb := rfl
 
 /-- WS-SM SM6.D: Read a Reply from the global object store. -/
 def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
