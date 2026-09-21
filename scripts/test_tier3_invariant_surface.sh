@@ -18027,5 +18027,31 @@ run_check "INVARIANT" rg -F -n 'if m.group(1) not in COLLATION_ONLY_ASSIGNMENTS:
 run_check "INVARIANT" rg -F -n 'bare = None if _is_composed(argv) else _strip_env_prefix(argv)' scripts/check_anchor_consistency.py
 run_check "INVARIANT" rg -F -n 'stripped = _strip_env_prefix(inner)' scripts/check_anchor_consistency.py
 run_negative_check "INVARIANT" rg -F -n 'if inner and inner[0] in SEARCH_TOOLS:' scripts/check_anchor_consistency.py
+# --- v0.35.148: a resemblance is not a relation, at the taint-writer sweep -----
+#
+# `check_content_flow_coverage.py` filtered its writer sets with a SUBSTRING test
+# over the qualified name (`".congr" in name`, `".eq_" in name`, ...), and the
+# names reaching it have already been mapped to their human-written owner by
+# `cfReportName` -- so the only thing it could ever discard was a contributor's
+# own definition.  Measured: disabling it left the gate's whole output
+# byte-identical (11 taint writers, same PASS line), while 13 declarations on
+# this tree match a segment, two of them planted in `ReplyStackWriteCensus`
+# precisely to prove the environment's answer does NOT filter a user name shaped
+# like a generated one.  It is deleted; these refuse its return.
+run_negative_check "INVARIANT" rg -F -n '".eq_", ".eq_def", "._eq", ".match_", ".proof_", ".induct"' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -F -n 'def is_auxiliary(name: str) -> bool:' scripts/check_content_flow_coverage.py
+
+# ...and the OWNER resolution asks the environment rather than the name shape.
+# A declaration the compiler minted carries no source range; `eq_` is a legal
+# stem a contributor may choose, so stripping it by prefix attributed a real
+# definition to its PARENT namespace.  The range is asked of the constant as the
+# environment holds it, never of the un-mangled user name -- which is not a
+# registered constant for a private declaration, so asking there would strip
+# every private definition in the tree.
+run_check "INVARIANT" rg -F -n 'if (Lean.declRangeExt.find? env orig).isNone then cfStripReserved user else user' scripts/check_content_flow_coverage.py
+run_negative_check "INVARIANT" rg -U -n 'private partial def cfOwnerName : Name -> Name' scripts/check_content_flow_coverage.py
+# ...and the plant that makes the resolution decisive: a writer whose name
+# RESEMBLES a compiler auxiliary, reported under its own name by both sweeps.
+run_check "INVARIANT" rg -F -n 'SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"' scripts/check_content_flow_coverage.py
 
 finalize_report

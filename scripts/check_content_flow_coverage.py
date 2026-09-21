@@ -262,6 +262,21 @@ SELF_TEST_ROGUE_REBUILD = "cfPlantedRebuildTaintWriter"
 # Same body as the first plant, so the only thing the case varies is the keyword.
 SELF_TEST_ROGUE_OPAQUE = "cfPlantedOpaqueTaintWriter"
 
+# A sixth plant, for the FILTER this gate stopped having (PR #897 review,
+# `v0.35.148`).  A substring test stood between the sweeps and their verdict --
+# `any(seg in name for seg in (".eq_", ".match_", ".congr", ".below", ...))` --
+# and every plant above is named `cfPlanted…`, so not one of them could show what
+# it discarded.  This one is named the way a contributor might name a real
+# definition: the `eq_` stem is a legal identifier a human may choose, and the
+# qualified name then CONTAINS `.eq_`.
+#
+# The spelling is deliberate and load-bearing: it mirrors
+# `ReplyStackWriteCensus`'s `eq_censusWitnessUserNamed` and `eq_1`, planted there
+# for exactly this reason against the environment's own answer.  Reintroducing
+# the substring filter makes this plant vanish from both sweeps while it goes on
+# rewriting the field -- a second live writer, silently excused by its name.
+SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"
+
 # Definitions that build a `SystemState` from nothing rather than rewrite one.
 # See `cfStateConstructors` in the probe for why this is a named list.
 #
@@ -294,6 +309,11 @@ private def {SELF_TEST_ROOT_HELPER} (tcb : SeLe4n.Model.TCB)
   {{ tcb with priority := p }}
 
 private opaque {SELF_TEST_ROGUE_OPAQUE} (st : SeLe4n.Model.SystemState) :
+    SeLe4n.Model.SystemState :=
+  {{ st with declassificationTaint :=
+      SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
+
+private def {SELF_TEST_ROGUE_USER_NAMED} (st : SeLe4n.Model.SystemState) :
     SeLe4n.Model.SystemState :=
   {{ st with declassificationTaint :=
       SeLe4n.Kernel.applyTaintClears [] SeLe4n.Kernel.TaintTable.empty }}
@@ -490,19 +510,19 @@ private def cfWritesChannel (idxs : List (Name × Name × Nat)) (e : Expr) : Boo
   idxs.any fun (structName, field, idx) =>
     used.contains (structName ++ `mk) && cfScan structName field idx e
 
-/-- The name a human wrote, recovered from the name the elaborator stored.
+/-- The human-written definition a generated auxiliary belongs to.
 
+**The name a human wrote is recovered from the name the elaborator stored.**
 `private def foo` is not stored as `foo`: Lean mangles it to
 `_private.<Module>.<n>.foo`, which reports `isInternal = true` **and**
-`isInternalDetail = true`.  Both sweeps below filtered on `isInternal`, so every
-private definition in the tree — 11 292 of them — was skipped before its body was
-ever inspected.  A private helper that rewrote `SystemState.declassificationTaint`
-would therefore have passed the "one writer" checks by being private, which is
-the opposite of what privacy should buy a definition in a gate whose subject is
-"who writes this field". -/
-private def cfUserName (n : Name) : Name := (privateToUserName? n).getD n
-
-/-- The human-written definition a generated auxiliary belongs to.
+`isInternalDetail = true`.  Both sweeps below once filtered on `isInternal`, so
+every private definition in the tree — 11 292 of them — was skipped before its
+body was ever inspected.  A private helper that rewrote
+`SystemState.declassificationTaint` would therefore have passed the "one writer"
+checks by being private, which is the opposite of what privacy should buy a
+definition in a gate whose subject is "who writes this field".  The un-mangling
+lives here rather than in a helper of its own because the range question below
+has to be asked of the name the *environment* holds, not of the un-mangled one.
 
 `Ns.helper.match_1`, `Ns.helper.eq_3`, `Ns.helper._proof_1` all strip back to
 `Ns.helper`.  A name with no such suffix is its own owner.
@@ -514,15 +534,38 @@ that shape).  "As well as" is what makes skipping auxiliaries safe today, and it
 is not a property this gate should depend on the elaborator continuing to have.
 Scanning the auxiliary and reporting it under its owner keeps the coverage
 without turning `applySyscallTaint.match_1` into an undeclared writer. -/
-private partial def cfOwnerName : Name -> Name
-  | .str p s =>
-      if s.startsWith "match_" || s.startsWith "eq_" || s.startsWith "proof_"
-          || s.startsWith "_" || s == "eq_def" || s == "brecOn"
-          || s == "below" || s == "induct" || s == "fun_cases" then
-        cfOwnerName p
-      else
-        .str p s
+private def cfReservedComponent (s : String) : Bool :=
+  s.startsWith "match_" || s.startsWith "eq_" || s.startsWith "proof_"
+    || s.startsWith "_" || s == "eq_def" || s == "brecOn"
+    || s == "below" || s == "induct" || s == "fun_cases"
+
+private partial def cfStripReserved : Name -> Name
+  | .str p s => if cfReservedComponent s then cfStripReserved p else .str p s
   | n => n
+
+/-- `orig`'s owner: itself, unless the COMPILER minted it.
+
+`v0.35.148`: the name narrows and the ENVIRONMENT decides.  This stripped any
+component with a reserved prefix, which is a spelling a contributor may choose:
+`eq_censusWitnessUserNamed` is a real `private def` in this tree -- planted in
+`ReplyStackWriteCensus` precisely because `eq_` is a legal stem -- and under the
+superseded reading it was attributed to its PARENT namespace, so a writer named
+that way would have been reported under a name it does not have, or filtered as
+an internal detail of one.
+
+A declaration the compiler minted carries no source range, which is what
+`Lean.declRangeExt` answers and what `KernelTransitionReachabilityCensus.isCompilerGenerated`
+already asks one census over.  The prefix test stays as the cheap narrowing --
+it runs first, so the extension lookup is reached only for the handful of names
+that could be auxiliaries at all -- and the range decides.
+
+The range is asked of `orig`, the constant as the environment holds it, NOT of
+its un-mangled user name: `privateToUserName?` maps `_private.M.0.foo` to `M.foo`,
+which is not a registered constant, so asking there would answer "no range" for
+every private declaration and strip them all. -/
+private def cfOwnerName (env : Environment) (orig : Name) : Name :=
+  let user := (privateToUserName? orig).getD orig
+  if (Lean.declRangeExt.find? env orig).isNone then cfStripReserved user else user
 
 /-- Resolve short names to every non-internal constant whose last component
 matches, for **every** stem in one pass.  Ambiguity is harmless here: the walk
@@ -554,7 +597,7 @@ private def cfStemIndex (env : Environment) (wanted : Std.HashSet String) :
     -- the stem `foo`.  Over-resolving is harmless by the same argument as
     -- ambiguity above: the walk is a union, so a wider seed set can only widen
     -- the reach, never hide a write.
-    let owner := cfOwnerName (cfUserName n)
+    let owner := cfOwnerName env n
     if !owner.isInternalDetail then
       let c := cfLast owner
       if wanted.contains c then
@@ -594,8 +637,8 @@ private def cfExecutableValue (ci : ConstantInfo) : Option Expr :=
 Decided on the **owner**, so a generated auxiliary is inspected on behalf of its
 definition instead of being dropped, and a constant with no human-written owner
 (the matcher of a matcher, a purely internal detail) is still skipped. -/
-private def cfInspectable (n : Name) : Bool :=
-  !(cfOwnerName (cfUserName n)).isInternalDetail
+private def cfInspectable (env : Environment) (n : Name) : Bool :=
+  !(cfOwnerName env n).isInternalDetail
 
 /-- How a writer is reported: the readable name, with private ones marked.
 
@@ -603,8 +646,8 @@ The mark is not cosmetic.  Reporting a private constant under its bare user name
 would let `_private.Rogue.0.SeLe4n.Kernel.applySyscallTaint` match the declared
 writer list and pass — a private definition impersonating the one writer is
 precisely the finding this sweep must not miss. -/
-private def cfReportName (n : Name) : String :=
-  let owner := cfOwnerName (cfUserName n)
+private def cfReportName (env : Environment) (n : Name) : String :=
+  let owner := cfOwnerName env n
   if isPrivateName n then s!"private@{owner}" else toString owner
 
 private def cfUsed (env : Environment) (n : Name) : Array Name :=
@@ -690,7 +733,7 @@ auxiliaries of its own (`SystemState.mk._flat_ctor` is a `defn`, not a `ctor`, s
 the sweeps' body-bearing filter does not skip it), and each is machinery for the
 same reason its owner is. -/
 private def cfStructureMachinery (env : Environment) (structName n : Name) : Bool :=
-  let owner := cfOwnerName (cfUserName n)
+  let owner := cfOwnerName env n
   isAuxRecursor env owner || isNoConfusion env owner || owner == structName ++ `mk
 
 /-- Definitions that **construct** a `SystemState` rather than rewrite one.
@@ -727,7 +770,7 @@ run_cmd do
   | some fieldIdx =>
     let fieldWriters : List Name :=
       env.constants.fold (init := []) fun acc n ci =>
-        if !cfInspectable n || !cfRewritesState env stateName n then acc
+        if !cfInspectable env n || !cfRewritesState env stateName n then acc
         else match cfExecutableValue ci with
           | some value =>
               -- Prefilter on the constructor's presence: an Expr that never
@@ -739,7 +782,7 @@ run_cmd do
               else acc
           | none => acc
     for w in fieldWriters do
-      logInfo m!"CF_FIELD_WRITER {cfReportName w}"
+      logInfo m!"CF_FIELD_WRITER {cfReportName env w}"
     -- The exempted constructions, reported so a stale entry is visible: a name
     -- that no longer writes the field (or no longer exists) must leave the list.
     for c in cfStateConstructors do
@@ -765,7 +808,7 @@ run_cmd do
   -- checked against it rather than against two memberships.
   let writers : List (Name × List Name) :=
     env.constants.fold (init := []) fun acc n ci =>
-      if !cfInspectable n then acc
+      if !cfInspectable env n then acc
       else match cfExecutableValue ci with
         | some value =>
             let used := value.getUsedConstants
@@ -773,9 +816,9 @@ run_cmd do
             if apis.isEmpty then acc else (n, apis) :: acc
         | none => acc
   for (w, apis) in writers do
-    logInfo m!"CF_TAINT_WRITER {cfReportName w}"
+    logInfo m!"CF_TAINT_WRITER {cfReportName env w}"
     for a in apis do
-      logInfo m!"CF_TAINT_EDGE {cfReportName w} {a}"
+      logInfo m!"CF_TAINT_EDGE {cfReportName env w} {a}"
   -- (C3) WS-SM SM9.D.13a: **who can append to the audit trail.**
   --
   -- `applySyscallTaint` skips the origination diff for every arm
@@ -793,7 +836,7 @@ run_cmd do
     | none => {}
     | some auditIdx =>
       env.constants.fold (init := ({} : NameSet)) fun acc n ci =>
-        if !cfInspectable n || !cfRewritesState env stateName n then acc
+        if !cfInspectable env n || !cfRewritesState env stateName n then acc
         else match cfExecutableValue ci with
           | some value =>
               if value.getUsedConstants.contains (stateName ++ `mk)
@@ -802,7 +845,7 @@ run_cmd do
               else acc
           | none => acc
   for w in auditWriters.toList do
-    logInfo m!"CF_AUDIT_WRITER {cfReportName w}"
+    logInfo m!"CF_AUDIT_WRITER {cfReportName env w}"
   -- The theorems the append exemptions below rest on.  An exemption whose
   -- justification has been deleted must stop being an exemption.
   for j in cfJustifications do
@@ -852,7 +895,7 @@ run_cmd do
       let auditHits := reach.toList.filter (fun n => auditWriters.contains n)
       logInfo m!"CF_AUDIT_ARM {arm} {auditHits.length}"
       for h in auditHits.take 4 do
-        logInfo m!"CF_AUDIT_HIT {arm} {cfReportName h}"
+        logInfo m!"CF_AUDIT_HIT {arm} {cfReportName env h}"
 """
 
 
@@ -1317,6 +1360,23 @@ def main() -> int:
             print("      `.defnInfo` — or reads `value?` without that flag — lets a")
             print("      second direct writer pass check (C2) by being spelled this way.")
             return 1
+        # …and the plant whose NAME resembles a compiler auxiliary.  Every plant
+        # above is `cfPlanted…`, so none of them could show what the retired
+        # substring filter discarded: it matched on the qualified name, and the
+        # names reaching it have already been mapped to their human-written owner
+        # by `cfReportName`, so the only thing it could ever discard was a
+        # contributor's own definition.  Asserted on BOTH sweeps, because the
+        # filter stood in front of both.
+        rogue_named = f"private@{SELF_TEST_ROGUE_USER_NAMED}"
+        if rogue_named not in field_writers or rogue_named not in writers:
+            print("FAIL: --self-test — a planted PRIVATE writer whose name merely")
+            print(f"      RESEMBLES a compiler auxiliary (`{SELF_TEST_ROGUE_USER_NAMED}`)")
+            print("      was not reported by both sweeps.  `eq_` is a legal stem a")
+            print("      contributor may choose, so a substring test over the")
+            print("      qualified name excuses a real second writer — and the names")
+            print("      reaching such a test are already owners, so every name it")
+            print("      can match is one a human wrote.")
+            return 1
         # …and every named construction must still be one.  The exemption exists
         # because a constructor application counts as a write of every field, so
         # an entry that stops being reported is a name that no longer builds a
@@ -1354,7 +1414,9 @@ def main() -> int:
               f"{len(planted)} inert arm(s); both sweeps detected the declared "
               f"writer, the planted private rogue writer, the one that hides its "
               f"rebuild behind a `match`, the one that rebuilds positionally "
-              f"with no projection anywhere and the one spelled `opaque`; root "
+              f"with no projection anywhere and the one spelled `opaque`; a planted "
+              f"writer whose NAME resembles a compiler auxiliary was reported "
+              f"under its own name rather than its parent; root "
               f"resolution reached a PRIVATE arm helper; `.receive` was checked "
               f"in each of its dispatchers separately; the audit-trail reach "
               f"found the two recording arms.")
@@ -1463,18 +1525,43 @@ def main() -> int:
 
     # (C) one taint writer
     # A *theorem* naming the API states a property of it; only a **definition**
-    # can move the field.  The check is therefore over constants with
-    # computational content, minus the compiler's own equation and match
-    # auxiliaries, which carry a definition's body rather than a new one.
-    def is_auxiliary(name: str) -> bool:
-        return any(seg in name for seg in
-                   (".eq_", ".eq_def", "._eq", ".match_", ".proof_", ".induct",
-                    ".fun_cases", ".brecOn", ".below", "._sunfold", "._unsafe_rec",
-                    ".ind_", ".congr", ".sizeOf"))
-
+    # can move the field.  That distinction is `cfExecutableValue`'s, decided by
+    # the elaborator inside the probe.
+    #
+    # `v0.35.148`: AND THE SUBSTRING AUXILIARY FILTER IS GONE.  A third filter
+    # stood here -- `any(seg in name for seg in (".eq_", ".match_", ".congr",
+    # ".below", ...))` -- meant to drop "the compiler's own equation and match
+    # auxiliaries".  It could not do that and could do nothing else, because of
+    # where it sits:
+    #
+    # * the probe reports every writer through `cfReportName`, which is
+    #   `cfOwnerName` -- the HUMAN-WRITTEN definition a generated auxiliary
+    #   belongs to.  So the names reaching this filter have already been mapped
+    #   to their owner, and a name it can match is a name a contributor chose;
+    # * a generated equation lemma is a `theorem`, which `cfExecutableValue`
+    #   excludes before it is ever reported;
+    # * `cfInspectable` drops an internal-detail owner upstream of both.
+    #
+    # Measured: with this filter returning `False` unconditionally the gate's
+    # whole output is **byte-identical** -- the same 11 taint writers, the same
+    # PASS line -- so it discarded nothing.  What it could discard is a
+    # contributor's definition whose qualified name merely CONTAINS a segment,
+    # which is PR #897's report (`SeLe4n.Kernel.congruentTaintWriter` matches
+    # `.congr`) and which this tree has 13 live instances of, two of them the
+    # witnesses `ReplyStackWriteCensus` planted precisely to prove the
+    # environment's own answer does NOT filter a user name shaped like a
+    # generated one (`eq_censusWitnessUserNamed`, `eq_1`).
+    #
+    # It is DELETED rather than repointed at an environment predicate, and the
+    # measurement is why: asked of this tree, the substring test and
+    # `KernelTransitionReachabilityCensus.isCompilerGenerated` disagree in BOTH
+    # directions -- 1156 constants the substring calls generated and the
+    # environment calls user-written, 2814 the reverse -- so they are not two
+    # answers to one question but two different questions, and the one this
+    # sweep needs is already answered twice upstream.  A third answer that can
+    # only ever be wrong is not a filter; it is a hole with a comment.
     unexpected = sorted(w for w in writers
                         if w not in DECLARED_TAINT_WRITERS
-                        and not is_auxiliary(w)
                         and w not in DECLARED_TAINT_CONSUMERS
                         and w not in DECLARED_FROZEN_TAINT_WRITERS)
     if unexpected:
@@ -1529,9 +1616,10 @@ def main() -> int:
         failures.append(
             "  the probe could not resolve `SystemState.declassificationTaint`'s field "
             "index — the direct-write sweep ran on nothing.  Fails closed.")
+    # No auxiliary filter here either, and for the same reason: `CF_FIELD_WRITER`
+    # is reported through `cfReportName` too, so these names are owners.
     unexpected_field = sorted(w for w in field_writers
-                              if w not in DECLARED_FIELD_WRITERS
-                              and not is_auxiliary(w))
+                              if w not in DECLARED_FIELD_WRITERS)
     if unexpected_field:
         failures.append(
             "  constants write `SystemState.declassificationTaint` directly, outside "

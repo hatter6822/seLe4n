@@ -1,3 +1,92 @@
+## v0.35.148 — a resemblance is not a relation, at the taint-writer sweep
+
+PR #897 review.  `check_content_flow_coverage.py` decided *"is this constant a
+compiler auxiliary"* with a **substring** test over the qualified name —
+`any(seg in name for seg in (".eq_", ".match_", ".congr", ".below", …))` — so
+`SeLe4n.Kernel.congruentTaintWriter` matched `.congr` and was discarded from a
+gate whose whole claim is **one live taint writer**.
+
+### The filter could only ever be wrong
+
+Measured before choosing, and the measurement is the finding:
+
+- **It discarded nothing.**  With it returning `False` unconditionally the
+  gate's whole output is byte-identical — the same 11 taint writers, the same
+  PASS line.
+- **Everything it could discard is a name a human wrote.**  The probe reports
+  every writer through `cfReportName`, which is `cfOwnerName` — *the
+  human-written definition a generated auxiliary belongs to* — so the names
+  reaching the filter have already been mapped to their owner.
+- **A generated equation lemma never reaches it** either: it is a `theorem`, and
+  `cfExecutableValue` excludes those inside the probe.
+- **13 declarations on this tree match a segment**, two of them
+  (`eq_censusWitnessUserNamed`, `eq_1`) planted in `ReplyStackWriteCensus`
+  *precisely* to prove that the environment's own answer does **not** filter a
+  user name shaped like a generated one.
+
+So it is **deleted**, not repointed at an environment predicate — and that
+choice is measured too.  Asked of this tree, the substring test and
+`KernelTransitionReachabilityCensus.isCompilerGenerated` disagree in **both**
+directions: **1156** constants the substring calls generated and the environment
+calls user-written, **2814** the reverse.  They are not two answers to one
+question but two different questions, and the one this sweep needs is already
+answered twice upstream.  A third answer that can only ever be wrong is not a
+filter; it is a hole with a comment.
+
+### …and the real cause was one layer down
+
+Writing the witness found it.  A plant named `eq_cfPlantedUserNamedTaintWriter`
+was **not reported at all**, and not because of the filter: `cfOwnerName` strips
+any component with a reserved prefix, so a contributor's `eq_foo` was attributed
+to its **parent namespace** — reported under a name it does not have, or dropped
+as an internal detail of one.  Same class, right unit (the final component
+rather than a substring), still a resemblance.
+
+The name narrows and the **environment decides**, which is `v0.35.130`'s rule
+already in this tree: a declaration the compiler minted carries no source range,
+and `Lean.declRangeExt` answers that purely.  The prefix test stays as the cheap
+narrowing — it runs first, so the extension lookup is reached only for names
+that could be auxiliaries at all.
+
+Two things the fix had to get right:
+
+- **The range is asked of `orig`**, the constant as the environment holds it,
+  *not* of its un-mangled user name.  `privateToUserName?` maps
+  `_private.M.0.foo` to `M.foo`, which is not a registered constant, so asking
+  there would answer "no range" for every private declaration and strip them
+  all — re-creating the private-blindness this gate was fixed for at PR #873.
+- **`cfUserName` is gone**, folded into `cfOwnerName` with its docstring, because
+  the un-mangling and the range question are one step and splitting them is how
+  the wrong name gets asked.
+
+### The witness is decisive because the plant is named the way a contributor would
+
+Every existing plant is `cfPlanted…`, so not one of them could show either
+defect.  `SELF_TEST_ROGUE_USER_NAMED = "eq_cfPlantedUserNamedTaintWriter"`
+rewrites the field and is asserted on **both** sweeps.  Mutations, all caught:
+
+| mutation | outcome |
+|---|---|
+| `cfOwnerName` strips by name shape again | self-test FAILS (plant vanishes) |
+| the substring filter returns | Tier 3 negative fires |
+| the plant is renamed to an ordinary stem | Tier 3 positive fires |
+
+The self-test returns before the reporting path computes its unexpected set, so
+the filter's return is pinned by a Tier 3 **negative** rather than by a case —
+which is this project's own treatment of a deletion: *a positive anchor on a
+deleted symbol becomes a negative.*
+
+### What changed
+
+- `scripts/check_content_flow_coverage.py` — `is_auxiliary` and both call sites
+  deleted; `cfOwnerName` takes the environment and decides by declaration range;
+  `cfReservedComponent` / `cfStripReserved` split out; `cfInspectable` and
+  `cfReportName` take the environment; `cfUserName` retired into `cfOwnerName`;
+  the sixth plant and its two-sweep assertion.
+- 5 Tier 3 anchors, each mutation-verified.
+
+Production output unchanged: 35 arms, 8 moving content, 11 taint writers.
+
 ## v0.35.147 — a failed derivation is not an empty one
 
 PR #897 review, and the sweep it opened.  Four Tier 0 gates derive their whole

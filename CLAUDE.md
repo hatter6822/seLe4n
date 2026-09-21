@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.147.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.148.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1523,6 +1523,53 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   the pair pins the domain in both directions, and the first draft's claim that
   the control witnesses "any declaration" was corrected by the mutation that
   refused to produce it.
+
+
+  **And the question a resemblance stands in for may have THREE answers, not
+  one** (PR #897 review, `v0.35.148`).  `check_content_flow_coverage.py` decided
+  *"is this constant a compiler auxiliary"* by a **substring** over the qualified
+  name, so `SeLe4n.Kernel.congruentTaintWriter` matched `.congr` and left a gate
+  whose whole claim is *one live taint writer*.  The obvious remedy — repoint it
+  at the environment-based answer this tree already has — is wrong, and the
+  measurement says so: asked of this tree, the substring test and
+  `KernelTransitionReachabilityCensus.isCompilerGenerated` disagree in **both**
+  directions, **1156** constants one way and **2814** the other.  They are not
+  two answers to one question.  *Before collapsing two predicates onto one owner,
+  measure whether they agree; two that disagree in both directions are two
+  questions, and naming one of them the owner silently changes what the other
+  asker asks.*
+
+  What licensed deleting it instead was a different measurement: the filter
+  discarded **nothing** (disabling it left the gate byte-identical), and
+  everything it *could* discard is a name a human wrote — the probe reports every
+  writer through its owner-resolution, so the names reaching the filter have
+  already been mapped to a human-written definition.  **A filter positioned where
+  it can only ever be wrong is not a filter**; the two answers upstream of it
+  (the owner resolution, and "a theorem is not a program") were already doing the
+  work.
+
+  And writing the witness found the real cause one layer down, which is the part
+  worth keeping: the owner resolution itself stripped any component with a
+  reserved prefix, so a contributor's `eq_foo` was attributed to its **parent
+  namespace**.  Same class, better unit — the final component rather than a
+  substring — and still a resemblance.  `v0.35.130`'s rule closes it: *the name
+  narrows and the environment decides*, a declaration the compiler minted
+  carrying no source range (`Lean.declRangeExt`, pure).  Two things that fix had
+  to get right.  The range is asked of the constant **as the environment holds
+  it**, never of its un-mangled user name — `privateToUserName?` maps
+  `_private.M.0.foo` to `M.foo`, which is not a registered constant, so asking
+  there answers "no range" for every private declaration and strips them all,
+  re-creating the private-blindness the gate was fixed for two cuts earlier.  And
+  the un-mangling was **folded into** the owner resolution rather than left as a
+  helper beside it, because the two are one step and splitting them is precisely
+  how the wrong name gets asked.
+
+  The witness is the measurement here, as it is in every cut whose widening
+  admits nothing: every existing plant in that gate is named `cfPlanted…`, so not
+  one of them could show either defect.  The plant that decides is named the way
+  a contributor would name a real definition (`eq_cfPlantedUserNamedTaintWriter`),
+  and it is asserted on **both** sweeps.  *A witness drawn from the naming
+  convention the fixtures already use cannot see a defect about naming.*
 
   **And the answer to "who else asks this" is a SWEEP, and once the sweep has run
   twice the third response is a check** (PR #897 review, `v0.35.115`).  `v0.35.114`
