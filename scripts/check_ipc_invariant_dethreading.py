@@ -1003,12 +1003,12 @@ def lean_sources(root: str) -> list[str]:
     the filesystem walk is the fallback the self-test's temporary trees use.
     """
     try:
-        listed = subprocess.run(
-            ["git", "-C", root, "ls-files", "*.lean"],
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "*.lean"],
             capture_output=True,
-            text=True,
             check=True,
-        ).stdout.split()
+        ).stdout
+        listed = [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
         if listed:
             return sorted(listed)
     except (OSError, subprocess.CalledProcessError):
@@ -3193,12 +3193,12 @@ def documentation_sources(root: str) -> list[str]:
     filesystem walk is what the self-test's temporary trees need.
     """
     try:
-        listed = subprocess.run(
-            ["git", "-C", root, "ls-files", "*.md"],
+        out = subprocess.run(
+            ["git", "-C", root, "ls-files", "-z", "*.md"],
             capture_output=True,
-            text=True,
             check=True,
-        ).stdout.split()
+        ).stdout
+        listed = [p for p in out.decode("utf-8", "surrogateescape").split("\0") if p]
         if listed:
             return sorted(listed)
     except (OSError, subprocess.CalledProcessError):

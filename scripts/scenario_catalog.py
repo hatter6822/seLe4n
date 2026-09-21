@@ -793,10 +793,54 @@ def consumer_bound_name(lines: list[str], index: int, at: int) -> str | None:
     return identifiers[-1] if identifiers else None
 
 
-def word_occurrences(text: str, word: str) -> int:
-    """How many times `word` occurs in `text` as a whole word."""
-    return len(re.findall(
-        r"(?<![A-Za-z_0-9])" + re.escape(word) + r"(?![A-Za-z_0-9])", text))
+# `word_occurrences` -- the unfiltered whole-word count -- was deleted at
+# `v0.35.150` when its sole reader became `word_read_occurrences` below, which
+# asks the question this file actually has: does the name occur again *as a
+# read*.  Nothing needs the unfiltered count, so keeping it would have left one
+# whole-word pattern written twice in one file.  (`rust/sele4n-hal/build.rs`
+# has a same-named Rust function; it is live and unrelated.)
+
+
+#: What follows a name when that occurrence BINDS it: an assignment operator,
+#: optionally behind a type ascription.  `==`, `!=`, `<=` and `>=` are
+#: comparisons and are excluded by shape rather than by a list; `:=` needs no
+#: exclusion, being the alternation's first branch.  This is
+#: `consumer_bound_name`'s rule read forwards, over the same four languages:
+#: `X="..."`, `def x : String := "..."`, `const X: &str = ...`, `local X=...`.
+BINDING_FOLLOWS = re.compile(r"[ \t]*(?::[^=\n]*)?(?::=|(?<![=!<>:])=(?!=))")
+
+
+def word_read_occurrences(text: str, word: str) -> int:
+    """How many whole-word occurrences of `word` are NOT bindings of it.
+
+    **A rebinding is not a use** (PR #897's review, `v0.35.150`).  The claim
+    `fixture_mention_consumed` makes of a bound path is that something CONSUMES
+    the name, and `word_occurrences(...) > 1` answers a different question --
+    does the name occur again -- which a second *assignment* satisfies.  So a
+    consumer whose whole content is
+
+        FIXTURE = "foo.expected"
+        FIXTURE = "bar.expected"
+
+    passed, with `foo.expected` spelled, overwritten and never opened: a README
+    row could list and hash a new golden fixture, name that consumer, and
+    `check-fixture-index` would report the claim validated.  That is the same
+    shape as the standalone-literal branch beside it (`v0.35.138`) -- an
+    occurrence standing in for a consumption -- one level down.
+
+    The test is syntactic rather than a dataflow question, for the reason
+    `fixture_mention_consumed` records: resolving a binding to a read across
+    shell, Lean, Rust and Python is this project's unbounded-parser trap.  What
+    is decidable is whether THIS occurrence is the left-hand side of an
+    assignment, which `BINDING_FOLLOWS` reads off the text after it.
+
+    Measured before taking the strict form, as `v0.35.116` was: over the shipped
+    README every live `Used by` claim still validates, so requiring a non-binding
+    occurrence costs the tree nothing.
+    """
+    hits = re.finditer(
+        r"(?<![A-Za-z_0-9])" + re.escape(word) + r"(?![A-Za-z_0-9])", text)
+    return sum(1 for m in hits if not BINDING_FOLLOWS.match(text, m.end()))
 
 
 #: A filename character, for deciding whether a mention of a fixture IS that
@@ -859,6 +903,10 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
     unbounded-parser trap.  What is decidable is that a *binding* must be consumed,
     which is the `word_occurrences` shape the tree already uses for the
     sole-consumption question, and which admits every live row.
+
+    "Consumed" means an occurrence of the bound name that is **not another
+    binding of it** (`word_read_occurrences`, `v0.35.150`): counting any second
+    occurrence let a path be spelled, overwritten and never opened.
     """
     lines = view.splitlines()
     mentioned = False
@@ -877,7 +925,7 @@ def fixture_mention_consumed(view: str, fixture: str) -> bool | None:
                         consumer_mention_head(lines, index, at)):
                     return True
                 continue
-            if word_occurrences(view, name) > 1:
+            if word_read_occurrences(view, name) > 0:
                 return True
     return False if mentioned else None
 

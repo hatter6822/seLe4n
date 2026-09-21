@@ -150,6 +150,14 @@ if [[ "${CONTROLS_MODE}" -eq 1 ]]; then
   run_control "a FATAL expansion is reported in this gate's own voice" \
     "$(printf 't.sh\t12\tpath\tanchor\tsweep\trun_check "H" rg -n x "${ZZ_UNDEFINED_TIER_LOCAL}"')" \
     1 "the shell exited while sweeping t.sh:12"
+  # An anchor that exits the shell with status ZERO.  Row 12 above exits 1 (an
+  # unbound variable under `set -u`), so the epilogue's recorded failure and the
+  # shell's own status agreed by accident and this gate's VERDICT was never the
+  # thing being asserted.  This row separates them: measured pre-fix, the sweep
+  # printed the failure and returned 0.
+  run_control "an anchor that exits ZERO still FAILS the sweep" \
+    "$(printf 't.sh\t14\tpath\tanchor\tsweep\texit 0')" \
+    1 "the shell exited while sweeping t.sh:14"
   run_control "a disposition this gate does not know FAILS" \
     "$(printf 't.sh\t10\tpath\tanchor\tsomething_new\trun_check "H" rg -n x y')" \
     1 "which this gate does not know"
@@ -171,6 +179,7 @@ if [[ "${CONTROLS_MODE}" -eq 1 ]]; then
     echo "  invocation, tier-local variable and command substitution all named by"
     echo "  reason, an unreadable and an unlexable search failing, a swept anchor"
     echo "  that reaches no verdict and one whose expansion is fatal both failing,"
+    echo "  an anchor that exits ZERO still failing the sweep,"
     echo "  an unknown disposition failing, a skipped row failing the row"
     echo "  reconciliation, and the honest zero."
   fi
@@ -190,13 +199,27 @@ CLEANUP=("${DERIVATION}")
 # an exit status, which reads like a broken script rather than a finding.
 SWEEPING_ROW=""
 SWEEP_COMPLETE=0
-_sweep_epilogue() {
+# A RECORDED FAILURE MUST FAIL (PR #897's review, `v0.35.150`).  `record_failure`
+# only counts; the verdict is `finalize_report`'s, and this path never reaches it
+# -- the shell is already on its way out, carrying whatever status the anchor
+# chose.  So an anchor ending in `exit 0` printed "FAIL: ... the shell exited
+# while sweeping ..." and the script returned **0**: the row reconciliation and
+# `finalize_report` never ran and CI accepted every anchor the sweep had not yet
+# reached.  The existing fatal-expansion control could not see it, because `set
+# -u` exits 1 and the epilogue's failure agreed with the shell's status by
+# accident.  The status is therefore OVERRIDDEN here rather than inherited.
+_sweep_exit() {
+  local status=$?
   if [[ "${SWEEP_COMPLETE}" -eq 0 && -n "${SWEEPING_ROW}" ]]; then
     record_failure "HYGIENE" \
-      "changed-file anchor sweep: the shell exited while sweeping ${SWEEPING_ROW}; an unbound tier-local variable is fatal under \`set -u\`, so the selector should have deferred it"
+      "changed-file anchor sweep: the shell exited while sweeping ${SWEEPING_ROW}, so the rows after it were never swept; either the anchor expanded an unbound tier-local (fatal under \`set -u\`, and the selector should have deferred it) or it exited the shell itself"
+    status=1
   fi
+  rm -f "${CLEANUP[@]}"
+  trap - EXIT
+  exit "${status}"
 }
-trap '_sweep_epilogue; rm -f "${CLEANUP[@]}"' EXIT
+trap _sweep_exit EXIT
 
 if [[ -n "${SELECTION_OVERRIDE}" ]]; then
   SELECTION="${SELECTION_OVERRIDE}"

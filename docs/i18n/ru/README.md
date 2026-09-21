@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безопасность" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.149-blue" alt="Версия" />
+  <img src="https://img.shields.io/badge/version-0.35.150-blue" alt="Версия" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Лицензия" /></a>
 </p>
@@ -96,7 +96,7 @@ security model) от seL4, вводя при этом архитектурные
 
 | Атрибут | Значение |
 |---------|----------|
-| **Версия** | `0.35.149` |
+| **Версия** | `0.35.150` |
 | **Тулчейн Lean** | `v4.28.0` |
 | **Продуктовый код (Lean LoC)** | 396 702 строки в 334 файлах |
 | **Тестовый код (Lean LoC)** | 81 018 строк в 70 тест-сьютах |

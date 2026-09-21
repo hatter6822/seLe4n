@@ -107,10 +107,20 @@ ASM_DECL = re.compile(r"^\s*([A-Za-z_][A-Za-z0-9_]*)\s*:", re.M)
 
 def tracked(root: str, pattern: str) -> list[str]:
     """Files as the index sees them, from git, with a filesystem fallback so the
-    self-test's temporary trees work the same way."""
+    self-test's temporary trees work the same way.
+
+    NUL-delimited, because `git ls-files` C-quotes a path holding an
+    unusual byte and `str.split()` breaks one holding whitespace into
+    fragments that name no file -- a requirement dropped from the domain,
+    which is a check nobody runs.  Zero tracked paths carry whitespace
+    today, so this costs the tree nothing and closes the next one
+    (`v0.35.150`; the same defect `check_identifier_naming` records as its
+    own item 8).
+    """
     try:
-        out = subprocess.run(["git", "-C", root, "ls-files", pattern],
-                             capture_output=True, text=True, check=True).stdout.split()
+        listed = subprocess.run(["git", "-C", root, "ls-files", "-z", pattern],
+                                capture_output=True, check=True).stdout
+        out = [p for p in listed.decode("utf-8", "surrogateescape").split("\0") if p]
         if out:
             return out
     except (OSError, subprocess.CalledProcessError):

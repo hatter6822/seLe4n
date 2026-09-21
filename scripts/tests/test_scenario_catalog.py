@@ -954,6 +954,17 @@ class TestFixtureConsumers(unittest.TestCase):
     #: is what makes the refusal about consumption rather than about the mention
     #: sitting at the start of a line.
     STANDALONE_CONSUMED = 'def f : Nat := 0\ncompareAgainst "a.expected"\n'
+    #: REBOUND and never read: the path is spelled, then the same name is bound
+    #: to something else.  `word_occurrences(view, name) > 1` counts the second
+    #: ASSIGNMENT as a use, so this passed while the fixture was overwritten and
+    #: never opened (PR #897's review, `v0.35.150`).
+    REBOUND = ('def fixturePath : String := "a.expected"\n'
+               'def fixturePath : String := "b.expected"\n')
+    #: Its control: the SAME two occurrences, the second one a READ, which is
+    #: what makes the refusal about the second occurrence being a binding rather
+    #: than about there being two declarations of one name.
+    REBOUND_CONSUMED = ('def fixturePath : String := "a.expected"\n'
+                        'def main : IO Unit := IO.FS.readFile fixturePath\n')
     SILENT = "def f : Nat := 0\n"
     COMMENTED = "-- the gate compares a.expected\ndef f : Nat := 0\n"
     MANIFEST_FIXTURE = (
@@ -1008,6 +1019,38 @@ class TestFixtureConsumers(unittest.TestCase):
                                 {"gates/r.lean": self.DEAD_BINDING})
             self.assertTrue(errors)
             self.assertIn("binds it to a name nothing else", " ".join(errors))
+
+    def test_rejects_a_REBINDING_counted_as_a_use(self) -> None:
+        """PR #897's review, `v0.35.150`: a rebinding is not a use.
+
+        `v0.35.123` closed the dead-binding half by asking whether the bound name
+        occurs AGAIN, and a second assignment to it is such an occurrence -- so a
+        consumer that spells the path, overwrites the name and opens nothing
+        passed, and a new golden fixture could be listed, hashed and assigned to
+        it.  The same substitution as the standalone-literal case beside it, one
+        level down: an occurrence standing in for a consumption.
+
+        Preserving: the fixture's name is in the file, the name it binds occurs
+        TWICE, and only the second occurrence's role changes.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                                {"gates/r.lean": self.REBOUND})
+            self.assertTrue(errors)
+            self.assertIn("binds it to a name nothing else", " ".join(errors))
+
+    def test_accepts_a_second_occurrence_that_READS(self) -> None:
+        """The control for the case above.
+
+        Two occurrences of one name, the second a read rather than a binding.
+        Without it the rebinding rule would be satisfied by a check that refuses
+        every consumer binding a path at all -- which is four of the five live
+        idioms.
+        """
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._case(d, "a.expected", "x\n", "`gates/r.lean`",
+                           {"gates/r.lean": self.REBOUND_CONSUMED}), [])
 
     def test_accepts_a_mention_that_BINDS_NOTHING(self) -> None:
         """An argument is a use, so it needs no second occurrence.

@@ -42,6 +42,7 @@ silently, which is how the drift survived review in the first place.
 
 from __future__ import annotations
 
+import contextlib
 import os
 import re
 import subprocess
@@ -641,6 +642,29 @@ def prose_count_sources() -> dict[str, str]:
     return out
 
 
+def revision_is_readable(rev: str) -> bool:
+    """Can `list_tracked` actually read a plan set at `rev`?
+
+    The question `baseline_refs` has to answer, given one owner so it cannot be
+    asked two ways.  `git rev-parse --verify -q <rev>` is NOT that question: for
+    a ref name it is an existence check, and for a full hex sha it is a pure
+    syntax check -- git turns forty hex digits into a raw object id without
+    consulting the object database -- so an absent commit returns exit 0 while
+    `ls-tree` on it exits 128 with `fatal: not a tree object`.  A full hex sha
+    is exactly what CI passes in `SELE4N_PLAN_BASE_REF`, so the superseded
+    guard was exact for every candidate except the one that matters.
+
+    `^{commit}` forces the lookup and peels to the object `ls-tree` needs, and
+    it is what both CI workflows already write -- so the three askers of "is
+    this base usable" ask one question rather than two.  Named rather than
+    inlined because a negative anchor over a spelling is satisfied by a revert
+    that reformats; over a *location* it is not, and what must not come back is
+    `baseline_refs` deciding this for itself.
+    """
+    return subprocess.run(["git", "rev-parse", "--verify", "-q", f"{rev}^{{commit}}"],
+                          cwd=REPO, capture_output=True).returncode == 0
+
+
 def baseline_refs() -> list[str]:
     """Revisions a plan may have existed in but the index no longer carries.
 
@@ -650,12 +674,18 @@ def baseline_refs() -> list[str]:
     meant to run.  The integration base is therefore consulted too, so a
     committed deletion on the branch is still compared against a revision that
     predates it.
+
+    Whether a candidate is usable is `revision_is_readable`'s question and is
+    not re-decided here; see it for why the obvious test is not that question.
+    A candidate that is not readable is SKIPPED and reported by
+    `baseline_is_complete`, which is the designed narrower coverage, while a
+    base that resolves and then fails to list is a real derivation failure and
+    `list_tracked` still raises on it.
     """
     refs = ["HEAD"]
     override = os.environ.get("SELE4N_PLAN_BASE_REF")
     for cand in ([override] if override else ["origin/main", "main"]):
-        if cand and subprocess.run(["git", "rev-parse", "--verify", "-q", cand],
-                                   cwd=REPO, capture_output=True).returncode == 0:
+        if cand and revision_is_readable(cand):
             refs.append(cand)
             break
     return refs
@@ -877,7 +907,7 @@ def _cli_cases():
         git("config", "user.name", "gate")
         git("add", "-A"); git("commit", "-qm", "base")
         mutate(root, git)
-        env = {**os.environ, "SELE4N_PLAN_BASE_REF": "main"}
+        env = {**os.environ, "SELE4N_PLAN_BASE_REF": FIXTURE_BASE_REF}
         return subprocess.run([sys.executable, "scripts/" + src.name],
                               cwd=root, capture_output=True, text=True, env=env)
 
@@ -994,28 +1024,63 @@ def _cli_cases():
     return out
 
 
+#: The base revision every fixture repository is compared against.  A fixture
+#: builds its own history, so the only revision it can have is one it created.
+FIXTURE_BASE_REF = "main"
+
+
+@contextlib.contextmanager
+def _fixture_repo(root: Path):
+    """Point the checker at a fixture repository, hermetically.
+
+    Two things have to move together and were moving separately: `REPO`, and
+    `SELE4N_PLAN_BASE_REF`, which `baseline_refs` reads from the AMBIENT
+    environment.  Three of the four fixture cases pinned the variable and one
+    did not, so under CI -- where the variable names the pull request's base
+    sha -- that case ran `git ls-tree <a sha this fixture cannot contain>` and
+    the derivation refused, failing Tier 0 on a configuration artefact rather
+    than on anything in the tree.  *A fix applied at one site and not its
+    siblings*, in the same file, a few lines of the same shape apart.
+
+    A fixture that inherits ambient configuration is not a witness: what it
+    asserts depends on who invoked it.  So the swap has one owner, and the
+    variable is PINNED rather than popped -- popping would send `baseline_refs`
+    to its `origin/main` fallback, which is the developer's ambient repository
+    again, one indirection further out.
+    """
+    global REPO
+    saved_repo, saved_base = REPO, os.environ.get("SELE4N_PLAN_BASE_REF")
+    REPO = root
+    os.environ["SELE4N_PLAN_BASE_REF"] = FIXTURE_BASE_REF
+    try:
+        yield
+    finally:
+        REPO = saved_repo
+        if saved_base is None:
+            os.environ.pop("SELE4N_PLAN_BASE_REF", None)
+        else:
+            os.environ["SELE4N_PLAN_BASE_REF"] = saved_base
+
+
 def _archive_and_reprefix_cases():
     """Two moves that look identical to a naive set difference but are not:
     archiving a closed plan keeps its IDs defined, re-prefixing its rows does
     not."""
     import tempfile
-    global REPO
-    saved, out = REPO, []
-    try:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            plan = root / "docs" / "planning" / "XX_PLAN.md"
-            plan.parent.mkdir(parents=True)
-            (root / "docs" / "dev_history" / "planning").mkdir(parents=True)
-            plan.write_text(CLEAN, encoding="utf-8")
-            (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
-            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
-            git("init", "-q", "-b", "main")
-            git("config", "user.email", "gate@example.invalid")
-            git("config", "user.name", "gate")
-            git("add", "-A"); git("commit", "-qm", "plan and citation")
-            REPO = root
-            os.environ["SELE4N_PLAN_BASE_REF"] = "main"
+    out = []
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        plan = root / "docs" / "planning" / "XX_PLAN.md"
+        plan.parent.mkdir(parents=True)
+        (root / "docs" / "dev_history" / "planning").mkdir(parents=True)
+        plan.write_text(CLEAN, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
+        git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "gate@example.invalid")
+        git("config", "user.name", "gate")
+        git("add", "-A"); git("commit", "-qm", "plan and citation")
+        with _fixture_repo(root):
             companions = {"CLAUDE.md": (root / "CLAUDE.md").read_text()}
 
             # Archiving on close: SM10.6.3 does exactly this to the live plan.
@@ -1034,10 +1099,100 @@ def _archive_and_reprefix_cases():
             out.append(("re-prefixing a plan's rows is caught, not bypassed",
                         any("nothing in the tree defines XX" in e for e in errs),
                         errs))
-            return out
+        return out
+
+
+def _baseline_admission_cases():
+    """`baseline_refs` admits only a revision it can actually read.
+
+    `git rev-parse --verify -q <cand>` is an existence check for a REF NAME and
+    a pure syntax check for a FULL HEX SHA -- git turns forty hex digits into a
+    raw object id without consulting the object database -- and a full hex sha
+    is exactly what CI passes.  So the guard was exact for every candidate
+    except the one that matters, and `list_tracked` then raised on a base this
+    function had already reported as available, failing Tier 0 on a
+    configuration artefact.  The cases run against the real repository, because
+    what is under test is git's behaviour rather than any fixture's.
+    """
+    out = []
+    saved = os.environ.get("SELE4N_PLAN_BASE_REF")
+    absent = "0123456789012345678901234567890123456789"
+    try:
+        os.environ["SELE4N_PLAN_BASE_REF"] = absent
+        refs = baseline_refs()
+        out.append(("an absent full-hex base is SKIPPED, not admitted",
+                    refs == ["HEAD"] and not baseline_is_complete(),
+                    [f"baseline_refs()={refs}"]))
+        # The control: without it the case above is satisfied by a guard that
+        # admits nothing at all, which would disable the committed-deletion
+        # comparison everywhere rather than only where the base is unreadable.
+        head = subprocess.run(["git", "rev-parse", "HEAD"], cwd=REPO,
+                              capture_output=True, text=True).stdout.strip()
+        os.environ["SELE4N_PLAN_BASE_REF"] = head
+        refs = baseline_refs()
+        out.append(("a PRESENT full-hex base is still admitted",
+                    refs == ["HEAD", head] and baseline_is_complete(),
+                    [f"baseline_refs()={refs}"]))
     finally:
-        REPO = saved
-        os.environ.pop("SELE4N_PLAN_BASE_REF", None)
+        if saved is None:
+            os.environ.pop("SELE4N_PLAN_BASE_REF", None)
+        else:
+            os.environ["SELE4N_PLAN_BASE_REF"] = saved
+    return out
+
+
+def _fixture_hermeticity_cases():
+    """The fixture harness resolves its OWN base, whatever the caller's is.
+
+    Written because the ordinary mutation could not see the defect.  Reverting
+    `_deleted_plan_case` to inherit the ambient variable leaves the whole suite
+    green, since `baseline_refs` peels since `v0.35.150` and therefore *skips* a
+    revision the fixture cannot contain -- so the case silently runs HEAD-only,
+    which a STAGED deletion does not need a base for.  *A fix whose revert
+    breaks nothing is indistinguishable from no fix*, and here the two halves
+    rescue each other: the peel hides the leak, and the leak would have hidden
+    a missing peel.
+
+    What the leak actually costs is invisible in that direction and lethal in
+    the other: had the leaking case been `_committed_deletion_case`, whose claim
+    REQUIRES a base predating the deletion, the ambient value would be skipped
+    and the case would pass **vacuously** -- a witness asserting nothing while
+    reporting PASS.  So the property under test is hermeticity itself, asserted
+    directly rather than through a downstream symptom, and the ambient value is
+    hostile by construction because on a clean machine the variable is unset and
+    the `main` fallback gives the right answer by accident.
+    """
+    import tempfile
+    out = []
+    hostile = "0123456789012345678901234567890123456789"
+    saved = os.environ.get("SELE4N_PLAN_BASE_REF")
+    try:
+        os.environ["SELE4N_PLAN_BASE_REF"] = hostile
+        with tempfile.TemporaryDirectory() as td:
+            root = Path(td)
+            (root / "docs" / "planning").mkdir(parents=True)
+            (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+            git = lambda *a: subprocess.run(["git", *a], cwd=root,
+                                            capture_output=True, check=True)
+            git("init", "-q", "-b", FIXTURE_BASE_REF)
+            git("config", "user.email", "gate@example.invalid")
+            git("config", "user.name", "gate")
+            git("add", "-A"); git("commit", "-qm", "plan")
+            with _fixture_repo(root):
+                inside, inside_repo = baseline_refs(), REPO
+            out.append(("a fixture repository resolves its OWN base, not the caller's",
+                        inside == ["HEAD", FIXTURE_BASE_REF] and inside_repo == root,
+                        [f"baseline_refs()={inside} REPO={inside_repo} (wanted "
+                         f"['HEAD', {FIXTURE_BASE_REF!r}] and the fixture root)"]))
+        out.append(("the caller's base is restored when the fixture closes",
+                    os.environ.get("SELE4N_PLAN_BASE_REF") == hostile,
+                    [f"left {os.environ.get('SELE4N_PLAN_BASE_REF')!r}"]))
+    finally:
+        if saved is None:
+            os.environ.pop("SELE4N_PLAN_BASE_REF", None)
+        else:
+            os.environ["SELE4N_PLAN_BASE_REF"] = saved
+    return out
 
 
 def _committed_deletion_case():
@@ -1046,59 +1201,49 @@ def _committed_deletion_case():
     comparison sees nothing.  Here the deletion is committed on a branch and
     the check must still find it by consulting the integration base."""
     import tempfile
-    global REPO
-    saved = REPO
-    try:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "docs" / "planning").mkdir(parents=True)
-            (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
-            (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
-            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
-            git("init", "-q", "-b", "main")
-            git("config", "user.email", "gate@example.invalid")
-            git("config", "user.name", "gate")
-            git("add", "-A"); git("commit", "-qm", "plan and citation")
-            git("checkout", "-q", "-b", "topic")
-            git("rm", "-q", "docs/planning/XX_PLAN.md")
-            git("commit", "-qm", "delete the plan, keep the citation")
-            REPO = root
-            os.environ["SELE4N_PLAN_BASE_REF"] = "main"
-            errs = deleted_plan_errors({"CLAUDE.md": (root / "CLAUDE.md").read_text()})
-            hit = any("cites XX0.2" in e for e in errs)
-            return ("a COMMITTED plan deletion is caught, not just a staged one",
-                    hit, errs)
-    finally:
-        REPO = saved
-        os.environ.pop("SELE4N_PLAN_BASE_REF", None)
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs" / "planning").mkdir(parents=True)
+        (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("scheduled at XX0.2\n", encoding="utf-8")
+        git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+        git("init", "-q", "-b", "main")
+        git("config", "user.email", "gate@example.invalid")
+        git("config", "user.name", "gate")
+        git("add", "-A"); git("commit", "-qm", "plan and citation")
+        git("checkout", "-q", "-b", "topic")
+        git("rm", "-q", "docs/planning/XX_PLAN.md")
+        git("commit", "-qm", "delete the plan, keep the citation")
+        with _fixture_repo(root):
+            errs = deleted_plan_errors(
+                {"CLAUDE.md": (root / "CLAUDE.md").read_text()})
+        hit = any("cites XX0.2" in e for e in errs)
+        return ("a COMMITTED plan deletion is caught, not just a staged one",
+                hit, errs)
 
 
 def _deleted_plan_case():
     """Build a real repository, stage the plan's deletion, and require the
     outstanding citation to be reported."""
     import tempfile
-    global REPO
-    saved = REPO
-    try:
-        with tempfile.TemporaryDirectory() as td:
-            root = Path(td)
-            (root / "docs" / "planning").mkdir(parents=True)
-            (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
-            (root / "CLAUDE.md").write_text("the work is scheduled at XX0.2\n", encoding="utf-8")
-            git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
-            git("init", "-q")
-            git("config", "user.email", "gate@example.invalid")
-            git("config", "user.name", "gate")
-            git("add", "-A")
-            git("commit", "-qm", "plan and a citation of it")
-            git("rm", "-q", "--cached", "docs/planning/XX_PLAN.md")
-            REPO = root
-            errs = deleted_plan_errors({"CLAUDE.md": (root / "CLAUDE.md").read_text()})
-            hit = any("cites XX0.2" in e and "deletes docs/planning/XX_PLAN.md" in e
-                      for e in errs)
-            return ("deleting a plan that is still cited is rejected", hit, errs)
-    finally:
-        REPO = saved
+    with tempfile.TemporaryDirectory() as td:
+        root = Path(td)
+        (root / "docs" / "planning").mkdir(parents=True)
+        (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
+        (root / "CLAUDE.md").write_text("the work is scheduled at XX0.2\n", encoding="utf-8")
+        git = lambda *a: subprocess.run(["git", *a], cwd=root, capture_output=True, check=True)
+        git("init", "-q")
+        git("config", "user.email", "gate@example.invalid")
+        git("config", "user.name", "gate")
+        git("add", "-A")
+        git("commit", "-qm", "plan and a citation of it")
+        git("rm", "-q", "--cached", "docs/planning/XX_PLAN.md")
+        with _fixture_repo(root):
+            errs = deleted_plan_errors(
+                {"CLAUDE.md": (root / "CLAUDE.md").read_text()})
+        hit = any("cites XX0.2" in e and "deletes docs/planning/XX_PLAN.md" in e
+                  for e in errs)
+        return ("deleting a plan that is still cited is rejected", hit, errs)
 
 
 def _case(name, mutate, expect):
@@ -1244,6 +1389,8 @@ def self_test() -> int:
     cases.append(_deleted_plan_case())
     cases.append(_committed_deletion_case())
     cases.extend(_archive_and_reprefix_cases())
+    cases.extend(_baseline_admission_cases())
+    cases.extend(_fixture_hermeticity_cases())
     cases.extend(_cli_cases())
 
     # Fenced blocks illustrate; they do not declare.  Both directions matter:

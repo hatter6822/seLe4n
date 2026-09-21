@@ -15,15 +15,14 @@ SKIP_DIRS = ("docs/dev_history/",)
 
 def tracked_markdown_files() -> list[Path]:
     result = subprocess.run(
-        ["git", "ls-files", "*.md"],
+        ["git", "ls-files", "-z", "*.md"],
         cwd=REPO_ROOT,
         check=True,
-        text=True,
         capture_output=True,
     )
     return [
         REPO_ROOT / line
-        for line in result.stdout.splitlines()
+        for line in result.stdout.decode("utf-8", "surrogateescape").split("\0")
         if line.strip() and not line.startswith(SKIP_DIRS)
     ]
 

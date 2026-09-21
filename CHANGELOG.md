@@ -1,3 +1,163 @@
+## v0.35.150 — a requirement a gate drops is a check nobody runs
+
+PR #897's remaining review threads, all one class: the gate answers "nothing
+here" for input it could not determine.  A predicate miss can fire on a real
+element; a **domain** miss is silent by construction, and every one of these
+six fails in that direction.  A seventh is recorded below: CI found it in the
+fix for the second, and it is the same substitution one caller out -- a *proxy*
+standing in for "this revision is readable".
+
+**`indexed_source.indexed_contents` framed its `cat-file --batch` request by
+NEWLINES, which a tracked path may contain.**  Measured, and worse than
+reported: a two-file index in which one name holds a newline returns `{}` --
+*both* files absent, no exception -- because git answered three times for two
+wanted entries and the walk paired response 1 with the newline-bearing path and
+response 2 with its neighbour.  Every gate reading the staged domain through
+this helper reported a clean tree.  `-Z` frames both directions (`-z` is
+deprecated precisely because the *output* stays ambiguous), the declared size is
+CHECKED against its terminator rather than trusted, and the walk must consume
+the whole stream -- one response per request, which is what the original defect
+violated.  The request is encoded and the header decoded with `surrogateescape`,
+since git echoes a request back on a `missing` line and a path need not be
+UTF-8.
+
+**...and the sweep found a THIRD copy of that loop.**  `v0.35.147` collapsed two
+onto this module; `check_identifier_naming.index_contents` was not swept and
+kept all three of the defects the module exists to close -- the newline framing,
+a short-stream `break` returning the PREFIX it had parsed, and `len(header) < 3`
+reading an unreadable header as git's own `missing`.  It calls
+`indexed_source.indexed_contents` now.
+
+**The changed-file anchor sweep's epilogue recorded a failure and did not fail.**
+`record_failure` only counts; the verdict is `finalize_report`'s, and that path
+never runs -- the shell is already exiting with whatever status the anchor
+chose.  An anchor ending in `exit 0` therefore printed
+`FAIL: ... the shell exited while sweeping ...` and the gate returned **0**, so
+the row reconciliation never ran and CI accepted every anchor the sweep had not
+reached.  The existing fatal-expansion control could not see it: `set -u` exits
+1, so the epilogue's failure and the shell's status agreed by accident.  The
+status is overridden now, with its own control.
+
+**A REBINDING is not a use.**  `fixture_mention_consumed` credited a bound
+fixture path when `word_occurrences(view, name) > 1`, and a second *assignment*
+to the name is such an occurrence -- so a consumer whose whole content is
+`FIXTURE = "foo.expected"` / `FIXTURE = "bar.expected"` passed, with the path
+spelled, overwritten and never opened.  `word_read_occurrences` counts
+occurrences that are not bindings of the name, decided syntactically because
+resolving a binding to a read across shell, Lean, Rust and Python is this
+project's unbounded-parser trap.  Measured before taking the strict form: all
+15 live `Used by` claims still validate.
+
+**And the probe locator stops classifying calls.**  `v0.35.142` asked whether a
+call *builds* a probe and answered with two proxies -- whether the program uses
+the result, and whether the argument is a `Name`.  The review defeated both
+within two rounds (`build_probe(PROBE_TEMPLATE, "opaque")`, whose argument is a
+Name; `build_and_run(<a template spelling @KIND@Info>, "opaque")` as a bare
+expression statement), and in both the located literal counts **zero**
+constructors while the program runs `.opaqueInfo`.  The proxies could not have
+been right: whether a call alters its argument before `lake` sees it is not a
+question a source scanner answers, and the set of call shapes that defeats a
+partial answer is unbounded.
+
+So the question is not asked.  This project writes its own probes, and the
+canonical spelling is what all four of them already use -- a module-level
+template, `.replace` over literals, and a FILE PATH handed to `lake`.  Probe
+text is never a call argument; anything else is refused, which is round 16's
+exit applied to the last construct in that file still being classified.  Keyed
+on the IMPORT MARKER rather than `_probe_signal`, measured over every tracked
+`.py`: the widened signal reaches three calls, two of them diagnostics quoting a
+constructor; the marker reaches **one**, the self-test's own `ast.parse` of a
+fixture, which `_PROBE_TEXT_SINKS` exempts by a structural fact (it returns an
+AST) and which resolves rather than matching a spelling -- a local
+`ast = FakeParser()` is not the stdlib parser.  The registry is reconciled in
+both directions.
+
+**And every binding TARGET is seen.**  `_name_bindings` skipped any target that
+is not a bare `ast.Name`, so `(PROBE_TEMPLATE,) = (<a probe>,)` bound nothing:
+the name denoted no text, a later `.replace` reconstructed a bare hole carrying
+no import marker, and neither the splice nor the unreadable refusal saw it --
+while the literal was still located with the constructors its *unsubstituted*
+text spells, which is none.  A container target this scanner can pair with the
+value resolves elementwise; one it cannot -- a `Starred`, a call-valued
+right-hand side, a length mismatch -- is a refusal.
+
+**The NUL sweep, run rather than stated.**  `git ls-files` C-quotes a path
+holding an unusual byte and `str.split()` breaks one holding whitespace into
+fragments that name no file -- a requirement dropped from the domain.
+`check_identifier_naming`'s own module docs record that as its item 8 and the
+sweep had never been run onto its siblings: `check_claim_evidence_citations`,
+`check_lock_ceiling_figures`, `check_ipc_invariant_dethreading` (twice),
+`check_markdown_links` and `check_source_line_citations` (twice) are all
+NUL-delimited now.  Zero tracked paths carry whitespace today, so it costs the
+tree nothing and closes the next one.
+
+Every change is mutation-tested: six on the batch framing (the whole pre-fix
+framing, the parser's own, the terminator relation, the one-response-per-request
+relation, the blob-terminator arithmetic and the request encoding), one on the
+sweep's exit status, three on the rebinding reading, and six on the probe
+locator -- including the length-mismatch case, which is the only input that
+distinguishes `_elementwise` from the `Starred` branch beside it and which a
+first mutation run showed to be unwitnessed.  `indexed_source`'s self-test also
+stopped crashing where it should report: a refusal on a success-path call
+escaped as a traceback and skipped every case after it, so one mutation could
+mask another.
+
+**And a SEVENTH, found by CI rather than by review, in the fix for the second.**
+`v0.35.147` made `check_workstream_plan.list_tracked` raise instead of answering
+`[]` -- correct, and it turned Tier 0 red on three commits, because its caller
+was admitting a revision it had not established was readable.  `baseline_refs`
+decided availability with `git rev-parse --verify -q <cand>`, which is an
+existence check for a ref NAME and a pure **syntax** check for a full hex sha:
+git turns forty hex digits into a raw object id without consulting the object
+database.  Measured, on a sha this repository does not contain, `rev-parse
+--verify -q <sha>` exits **0** while `<sha>^{commit}` exits 1 and `ls-tree`
+exits 128 with `fatal: not a tree object`.  A full hex sha is exactly what CI
+passes in `SELE4N_PLAN_BASE_REF`, so the guard was exact for every candidate
+except the one that matters -- and both CI workflows already peel with
+`^{commit}`, so the gate was the odd one out of **three** askers of one
+question.  `revision_is_readable` is that question's owner now; an unreadable
+candidate is skipped and `baseline_is_complete` says so, which is the designed
+narrower coverage, while a base that resolves and then fails to list still
+raises.
+
+The failing invocation was the **self-test**, and its cause is the same rule one
+artefact over: `_deleted_plan_case` set `REPO` to a fixture repository without
+pinning `SELE4N_PLAN_BASE_REF`, so under CI it ran `ls-tree` against a sha the
+fixture cannot contain.  Its three siblings pinned it -- *a fix applied at one
+site and not its siblings*, in the same file.  `_fixture_repo` is the one owner,
+and it PINS rather than pops, since popping sends `baseline_refs` to its
+`origin/main` fallback, which is the ambient repository again one indirection
+further out.
+
+Two things the mutation run forced.  **The two halves rescue each other**: with
+the peel in place, reverting the fixture leak leaves the whole suite green,
+because an unreadable ambient sha is now skipped and the case silently runs
+HEAD-only -- which a *staged* deletion does not need a base for.  Had the leak
+been in `_committed_deletion_case`, whose claim requires a base, that would be a
+**vacuous pass**.  So hermeticity is asserted directly, through `baseline_refs`
+inside the fixture, with a hostile ambient value by construction.  And **the
+first negative anchor over the retired guard MISSED its own mutation**: it
+pinned the spelling, and a revert that merely reformats the unpeeled call keeps
+every token and walks around it.  The negative is scoped to the *location* --
+`baseline_refs` must not ask git at all -- which is what made extracting the
+owner the fix rather than a tidy-up; it now catches the inlined, the reformatted
+and the renamed-local revert alike.  The explanation moved to the owner's
+docstring in the same step, since leaving it in `baseline_refs` both duplicated
+the measurement and tripped that negative on prose.
+
+`scenario_catalog.word_occurrences` was **deleted**: its last reader became
+`word_read_occurrences`, and `check_anchor_symbol_liveness` caught the residue
+on this cut's own first Tier 0 run.  Keeping it would have left one whole-word
+pattern written twice in one file.  (`rust/sele4n-hal/build.rs` has a same-named
+Rust function; it is live and unrelated.)
+
+Docs: `CLAUDE.md` / `AGENTS.md` record the class; Tier 3 carries 26 new anchors
+(8 negatives, each mutation-tested by restoring the relation it forbids) and
+five pre-existing ones are repointed off the retired spellings -- two of them
+found by `check_anchor_consistency.py`, doing exactly its job.
+
+No kernel source changed; `maxLockSetSize` and the golden fixture are unmoved.
+
 ## v0.35.149 — the `.replyRecv` deschedule names the thread the pop unbound
 
 **PR #897 review (P2, `SeLe4n/Kernel/API.lean:853`).**  `replyRecvPopDonation`

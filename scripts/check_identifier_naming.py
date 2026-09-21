@@ -121,13 +121,18 @@ import sys
 from collections import Counter
 from pathlib import Path
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from indexed_source import (  # noqa: E402  (needs the path insert above)
+    indexed_contents as _indexed_contents,
+)
+
 REPO_ROOT = Path(__file__).resolve().parent.parent
 BASELINE_REL = "scripts/identifier_naming_baseline.json"
 BASELINE_PATH = REPO_ROOT / BASELINE_REL
 
 
 def index_contents(paths: list[str]) -> dict[str, str]:
-    """Read every path's STAGED content, in one `git cat-file --batch`.
+    """Read every path's STAGED content, through `indexed_source`.
 
     `git ls-files` enumerates the index, so reading the working tree
     alongside it checks a state that is not the one being committed: a
@@ -136,31 +141,20 @@ def index_contents(paths: list[str]) -> dict[str, str]:
     the violation.  The docstring promises the pre-commit case runs
     against the index, so it does.
 
-    In CI the two agree (a fresh checkout has an empty diff), which is
-    why this is a correctness fix rather than a behaviour change there.
-    One batched subprocess keeps it to a single fork for the whole tree
-    rather than one per file.
+    **The `cat-file --batch` loop is not written out here** (PR #897's
+    review, `v0.35.150`).  `v0.35.147` collapsed two copies of it onto
+    `indexed_source.indexed_contents` and this THIRD one was not swept,
+    so it kept all three of the defects that module exists to close: the
+    request was framed by NEWLINES, which a tracked path may contain --
+    one such path split into two requests, and the walk then paired each
+    response with the wrong path and lost its readable neighbour too; a
+    short stream `break`, returning the PREFIX it had managed to parse,
+    which is indistinguishable from the whole domain; and `len(header) <
+    3`, which reads an unreadable header as git's own `missing` answer.
+    Every one of them makes this gate report a clean tree over files it
+    never scanned.  One question, one answer.
     """
-    request = "".join(f":{p}\n" for p in paths).encode()
-    proc = subprocess.run(["git", "cat-file", "--batch"], cwd=REPO_ROOT,
-                          input=request, capture_output=True)
-    out, pos, result = proc.stdout, 0, {}
-    for path in paths:
-        nl = out.find(b"\n", pos)
-        if nl < 0:
-            break
-        header = out[pos:nl].split()
-        if len(header) < 3:            # "missing" -- unmerged or gone
-            pos = nl + 1
-            continue
-        size = int(header[2])
-        blob = out[nl + 1:nl + 1 + size]
-        pos = nl + 1 + size + 1        # trailing newline after the blob
-        try:
-            result[path] = blob.decode("utf-8")
-        except UnicodeDecodeError:
-            continue                   # binary: path still gets scanned
-    return result
+    return _indexed_contents(str(REPO_ROOT), paths)
 
 
 def read_tracked(rel: str) -> str | None:

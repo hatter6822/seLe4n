@@ -278,9 +278,10 @@ _REFUSAL_REASONS = {
               "position where the template has written part of a `ConstantInfo` "
               "constructor against it, so the constructor the probe decides is "
               "not in any located text",
-    "builder": "a probe-signalling literal is handed to a plain-name call whose "
-               "RESULT the program uses, so the call builds the probe and the "
-               "located literal is not the text it runs",
+    "call": "Lean probe text is handed to a call, so what the program runs is "
+            "whatever that call returns rather than any text this scanner "
+            "located -- a probe reaches Lean through a named template and "
+            "`.replace` over literals, never through a function",
     "concat": "the probe's Lean source is not ONE text this scanner has read: "
               "unread text is concatenated, interpolated or joined onto determined "
               "probe text rather than substituted into it, so the fragment may "
@@ -328,13 +329,129 @@ def _name_bindings(tree: ast.AST) -> dict[str, list[str | None]]:
             targets, value = [node.target], None
         else:
             continue
-        text = (value.value if isinstance(value, ast.Constant)
-                and isinstance(value.value, str) else None)
         for target in targets:
-            if not isinstance(target, ast.Name):
-                continue
-            seen.setdefault(target.id, []).append(text)
+            for name, text in _target_bindings(target, value):
+                seen.setdefault(name, []).append(text)
     return seen
+
+
+def _literal_text(value: ast.expr | None) -> str | None:
+    """The string a value spells, when it spells one literally."""
+    return (value.value if isinstance(value, ast.Constant)
+            and isinstance(value.value, str) else None)
+
+
+def _target_bindings(target: ast.expr,
+                     value: ast.expr | None) -> list[tuple[str, str | None]]:
+    """`(name, the literal text bound)` for every name this TARGET binds.
+
+    **Every binding form, not the one that is a bare `Name`** (PR #897's review,
+    `v0.35.150`).  The superseded walk skipped a target that is not an `ast.Name`
+    outright, so
+
+        (PROBE_TEMPLATE,) = (<a marker-bearing literal>,)
+
+    bound nothing as far as this scanner could see.  `PROBE_TEMPLATE` then
+    resolved to no text, a later `.replace` onto it reconstructed a bare hole
+    carrying no import marker, and neither the splice refusal nor the unreadable
+    refusal saw it -- while the literal was still located, with the constructors
+    its UNSUBSTITUTED text spells, which is none.  The same shape as the alias
+    defect (`v0.35.132`) and the ambiguous-name one beside it, reached through
+    the target instead of through the value.
+
+    A tuple or list target against a tuple or list value of the same length and
+    with no `Starred` is resolved ELEMENTWISE, so that spelling reads exactly as
+    the plain one does.  Every other shape records the names it binds with NO
+    text: the name then resolves to nothing, which is the direction that refuses
+    rather than misreads, and which `_ambiguous_probe_bindings` and
+    `_probe_alias_bindings` already rest on.  An `Attribute` or `Subscript`
+    target binds no name at all and nothing can resolve through it, so it
+    contributes nothing.
+    """
+    if isinstance(target, ast.Name):
+        return [(target.id, _literal_text(value))]
+    if isinstance(target, ast.Starred):
+        return [(n, None) for n, _ in _target_bindings(target.value, None)]
+    if isinstance(target, (ast.Tuple, ast.List)):
+        elements = list(target.elts)
+        if _elementwise(target, value):
+            return [pair for element, item in zip(elements, value.elts)
+                    for pair in _target_bindings(element, item)]
+        return [(n, None) for element in elements
+                for n, _ in _target_bindings(element, None)]
+    return []
+
+
+def _elementwise(target: ast.expr, value: ast.expr | None) -> bool:
+    """Can this container target be paired with the value, element by element?"""
+    return (isinstance(target, (ast.Tuple, ast.List))
+            and isinstance(value, (ast.Tuple, ast.List))
+            and len(value.elts) == len(target.elts)
+            and not any(isinstance(e, ast.Starred) for e in target.elts))
+
+
+def _target_resolves(target: ast.expr, value: ast.expr | None) -> bool:
+    """Does every name this target binds receive a value this scanner can see?
+
+    The question `_unresolved_probe_bindings` is about, and it is about the
+    target's SHAPE rather than about the value's readability.  A bare `Name` is
+    resolvable whatever its right-hand side is -- `PROBE = "a" + "b"` binds no
+    literal and is read perfectly well by `_assembled_strings`, so refusing it
+    would refuse the tree's own split-probe idiom.  What is NOT resolvable is a
+    container target this scanner cannot pair with the value: the name then
+    receives something the source does not show, and no later reading of it can
+    be honest.
+    """
+    if isinstance(target, ast.Name):
+        return True
+    if isinstance(target, (ast.Tuple, ast.List)):
+        return _elementwise(target, value) and all(
+            _target_resolves(element, item)
+            for element, item in zip(target.elts, value.elts))
+    return False
+
+
+def _unresolved_probe_bindings(tree: ast.AST) -> list[str]:
+    """Names bound to probe text through a target this scanner cannot resolve.
+
+    The other half of `_target_bindings`' widening (PR #897's review,
+    `v0.35.150`), and the half that does not depend on what later reads the name.
+    Elementwise resolution covers `(P,) = (<probe>,)`; it cannot cover
+    `P, _ = split_it(<probe>)` or `*P, = (<probe>,)`, where the value the name
+    receives is not a literal this scanner has read.  There the name resolves to
+    nothing, and a transform through it -- a `.replace`, a `"".join` -- builds
+    text carrying no import marker, so every refusal downstream stays silent
+    while the literal is located with the constructors its unsubstituted text
+    spells.  Invisible in both directions at once, which is what makes a domain
+    miss unfindable by reading a failure.
+
+    The condition is narrow on purpose: the marker-bearing literal is IN the
+    assignment being refused, so this never fires on an ordinary unpacking.  The
+    remedy is the canonical spelling -- bind the probe to its own name -- which
+    is a one-line change, and which is what all four of this tree's real probes
+    already do.  Measured: zero such bindings on the tracked tree, so it is
+    planted today.
+    """
+    out: list[str] = []
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Assign):
+            targets, value = list(node.targets), node.value
+        elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
+            targets, value = [node.target], node.value
+        else:
+            continue
+        # `x: int` is an `AnnAssign` with no value and binds nothing readable.
+        if value is None:
+            continue
+        if not any(isinstance(c, ast.Constant) and isinstance(c.value, str)
+                   and LEAN_PROBE_MARKER.search(c.value)
+                   for c in ast.walk(value)):
+            continue
+        for target in targets:
+            if _target_resolves(target, value):
+                continue
+            out.extend(name for name, _ in _target_bindings(target, value))
+    return sorted(set(out))
 
 
 def _ambiguous_probe_bindings(tree: ast.AST) -> list[str]:
@@ -543,9 +660,12 @@ def _string_assembly_shapes(tree: ast.AST) -> list[ast.AST]:
     """Every expression that builds a string out of PARTS.
 
     An operator (`+`, `%`), an f-string, or a method called on a string-valued
-    expression.  A `Call` on a plain *name* -- a probe handed straight to a helper --
-    is deliberately NOT one: the literal is its ARGUMENT, not a part of a string
-    the call builds, and that is the commonest probe idiom in this tree.
+    expression.  A `Call` on a plain *name* is deliberately NOT one: the literal is
+    its ARGUMENT, not a part of a string the call builds.  That is a different
+    question from whether probe text may REACH a call at all, which
+    `_probe_text_calls` answers and answers `no` (`v0.35.150`) -- the two are kept
+    apart because a method call is both, and classifying one by the other names the
+    right file for the wrong reason.
     """
     out: list[ast.AST] = []
     for node in ast.walk(tree):
@@ -728,28 +848,52 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
     question.  Refusing on the marker alone here would refuse all four of this tree's
     real probes, whose holes carry data; refusing on nothing would leave the hole.
 
-    `builder` -- `v0.35.142` (PR #897's review), and the fourth reason exists because
-    the exclusion above was a hole.  `_string_assembly_shapes` deliberately does not
-    treat a `Call` on a plain NAME as an assembly: a probe handed straight to
-    `run_probe(<literal>)` is its argument, not a part of a string the call builds.
-    But `PROBE = build_probe(<a probe literal>, "opaque")` is
-    the same shape with the opposite meaning -- the call *builds* the probe, and the
-    literal is located as an inline one, so its import marker is accounted for, its
-    constructor count is **zero**, and the asker that decides `.opaqueInfo` at
-    runtime is invisible in both directions at once.  What separates the two is
-    whether the program USES the call's result: a probe handed to a runner is a bare
-    expression statement, and a probe *built* by a call is assigned, returned or
-    passed on.  So a plain-name call whose result is used and whose arguments carry
-    a probe-signalling literal is refused.
+    `call` -- probe text reaches a CALL.  `v0.35.142` answered this by asking
+    whether the call *builds* the probe, decided by two proxies: whether the
+    program uses the result, and whether the argument is a `Name`.  Neither is the
+    fact.  PR #897's review supplied both counterexamples within two rounds --
+    `build_probe(PROBE_TEMPLATE, "opaque")`, whose argument is a Name, and
+    `build_and_run(<a template literal spelling `@KIND@Info`>, "opaque")` as a
+    bare expression statement,
+    whose result is unused -- and in both the located literal counts **zero**
+    constructors while the program runs `.opaqueInfo`.  The proxies could not have
+    been right: whether a call alters its argument before Lean sees it is not a
+    question any source scanner answers, and the set of call shapes that defeat a
+    partial answer is unbounded.
 
-    Measured: **zero** refusals of any of the four reasons on the tracked tree -- the
-    only probe-signalling literals passed to plain-name calls are two `print`
-    diagnostics, which are statement-level and so not builders -- so all four are
-    planted today.
+    So the question is not asked.  **This project writes its own probes**, and the
+    canonical spelling is what all four of them already use: a module-level template,
+    `.replace` over literals, and a FILE PATH handed to `lake` -- probe text is never
+    a call argument.  Anything else is refused, which is round 16's exit (*require a
+    canonical spelling and refuse the rest*) applied to the last construct in this
+    file that was still being classified.  The eight-round tail of shapes goes with
+    the question.
+
+    Keyed on the IMPORT MARKER rather than on `_probe_signal`, for the reason
+    `embedded_lean` gives for its own branches (b) and (c): a constructor name is
+    exactly what a diagnostic explaining a retired reading carries, and this tree's
+    own `print`s are full of them.  Measured over every tracked `.py`: the widened
+    signal reaches three calls, two of them such diagnostics; the marker reaches
+    **one**, the self-test's own `ast.parse` of a fixture source, which
+    `_PROBE_TEXT_SINKS` exempts by a structural fact rather than a promise.
+
+    Measured: **zero** refusals of any of the four reasons on the tracked tree, so
+    all four are planted today.
     """
     consts = _module_string_bindings(tree)
     out: list[tuple[ast.AST, str]] = []
+    # The CALL refusal is decided first, and its nodes are then skipped below.
+    # A method call is both a string assembly and a call, and the two branches
+    # ask opposite questions of it: an assembly is a transform whose RECEIVER is
+    # probe text, while this is a call whose ARGUMENT is.  Classifying
+    # `ast.parse(<a probe>)` as an unreadable assembly refuses the right file for
+    # the wrong reason, and a reason a reader cannot act on is half a refusal.
+    calls = _probe_text_calls(tree)
+    call_ids = {id(c) for c in calls}
+    out.extend((call, "call") for call in calls)
     for node in _string_assembly_shapes(tree):
+        if id(node) in call_ids:
+            continue
         holed = _reconstruct_holed(node, consts)
         if holed is not None and _HOLE not in holed:
             continue
@@ -765,34 +909,156 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
                 out.append((node, "splice"))
             elif not _substitution_into_determined_text(node, consts):
                 out.append((node, "concat"))
-    out.extend((call, "builder") for call in _probe_building_calls(tree))
     return out
 
 
-def _probe_building_calls(tree: ast.AST) -> list[ast.Call]:
-    """Plain-name calls that BUILD a probe out of a literal handed to them.
+#: Calls a probe-signalling text may legitimately be handed to, as
+#: `(module, attribute)` or `(name,)`.
+#:
+#: The exemption is by a STRUCTURAL FACT rather than by a promise about what the
+#: callee does with its argument: `ast.parse` returns an `ast.Module`, so it
+#: cannot be the thing that builds the Lean source a probe runs.  That is the
+#: same reasoning `indexed_source` applies to a refusal it cannot decide -- say
+#: what is true of the construct, not what you hope the program means by it.
+#:
+#: One entry, because the tracked tree has exactly one such call: the self-test's
+#: own parse of a FIXTURE Python source.  It is reconciled in both directions --
+#: an entry no call exercises is stale and fails -- because an exemption nobody
+#: reconciles reads exactly like coverage.
+_PROBE_TEXT_SINKS: tuple[tuple[str, ...], ...] = (("ast", "parse"),)
 
-    A `Call` on a plain `Name` is not a string assembly (`_string_assembly_shapes`
-    says why), so its literal argument reaches the bare-constant branch and is
-    located as an inline probe -- which is right when the call CONSUMES the probe
-    and wrong when it builds one.  The structural difference is whether the result
-    is used: `run_probe(<literal>)` is a bare expression statement, while
-    `PROBE = build_probe(<template>, "opaque")` assigns, returns or passes its
-    result on.  A method call is excluded because it is already an assembly, and a
-    `Name` argument is excluded because the constant it names is a subject of its
-    own.
+
+def _module_name_bindings(tree: ast.AST) -> tuple[set[str], set[str]]:
+    """`(imported, assigned)` -- every name this module binds, by how it binds it.
+
+    A sink's exemption is only sound while its spelling RESOLVES to what the
+    exemption is about: a module that rebinds `ast` means something else by
+    `ast.parse`, and the exemption would then excuse a call this scanner knows
+    nothing about.  *A name is not a definition.*
+
+    The two sets are kept apart because the two sink shapes ask opposite
+    questions of them.  An attribute sink's receiver must BE an import and must
+    not be assigned anywhere; a bare-name sink must be bound by nothing at all,
+    import included, so it is the builtin.  Collecting over every scope rather
+    than resolving each call site's own over-approximates toward REFUSAL, which
+    is the safe direction: a shadowed sink is a named failure whose remedy is a
+    rename.
     """
-    bare = {id(node.value) for node in ast.walk(tree)
-            if isinstance(node, ast.Expr) and isinstance(node.value, ast.Call)}
-    out: list[ast.Call] = []
+    imported: set[str] = set()
+    assigned: set[str] = set()
     for node in ast.walk(tree):
-        if not (isinstance(node, ast.Call) and isinstance(node.func, ast.Name)):
-            continue
-        if id(node) in bare:
+        if isinstance(node, (ast.Import, ast.ImportFrom)):
+            for alias in node.names:
+                imported.add((alias.asname or alias.name).split(".")[0])
+        elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+            assigned.add(node.name)
+        elif isinstance(node, ast.arg):
+            assigned.add(node.arg)
+        elif isinstance(node, ast.Name) and isinstance(node.ctx, (ast.Store, ast.Del)):
+            assigned.add(node.id)
+        elif isinstance(node, ast.Global):
+            assigned.update(node.names)
+    return imported, assigned
+
+
+def _is_probe_text_sink(node: ast.Call, imported: set[str],
+                        assigned: set[str]) -> bool:
+    """Is this call one of `_PROBE_TEXT_SINKS`, resolved rather than spelled?
+
+    An attribute sink requires its receiver to be an IMPORTED name that nothing
+    in the file assigns; a bare-name sink requires the name to be bound by
+    nothing at all, so it is the builtin.  *A name is not a definition*, and an
+    exemption keyed on a spelling is one a local `ast = FakeParser()` walks
+    around.
+    """
+    func = node.func
+    if isinstance(func, ast.Attribute) and isinstance(func.value, ast.Name):
+        key = (func.value.id, func.attr)
+        return (key in _PROBE_TEXT_SINKS
+                and func.value.id in imported and func.value.id not in assigned)
+    if isinstance(func, ast.Name):
+        return ((func.id,) in _PROBE_TEXT_SINKS
+                and func.id not in imported and func.id not in assigned)
+    return False
+
+
+def _argument_carries_probe_text(arg: ast.expr, consts: dict[str, str],
+                                 probe_names: set[str]) -> bool:
+    """Does this argument evaluate to, or visibly contain, Lean probe text?
+
+    Three readings, and the third is what keeps the answer from being a spelling:
+    a marker-bearing LITERAL, a NAME this module binds once to marker-bearing
+    text, and an expression whose reconstruction carries the marker -- or which
+    holds a marker-bearing literal anywhere inside it, so an assembly this
+    scanner cannot determine is caught rather than read past.
+    """
+    if isinstance(arg, ast.Starred):
+        arg = arg.value
+    if isinstance(arg, ast.Constant) and isinstance(arg.value, str):
+        return LEAN_PROBE_MARKER.search(arg.value) is not None
+    if isinstance(arg, ast.Name):
+        return arg.id in probe_names
+    text = _reconstruct_holed(arg, consts)
+    if text is not None and LEAN_PROBE_MARKER.search(text):
+        return True
+    return any(isinstance(c, ast.Constant) and isinstance(c.value, str)
+               and LEAN_PROBE_MARKER.search(c.value) for c in ast.walk(arg))
+
+
+def _exercised_probe_text_sinks(tree: ast.AST) -> set[tuple[str, ...]]:
+    """The `_PROBE_TEXT_SINKS` entries this module's own calls actually use.
+
+    An exemption nobody reconciles reads exactly like coverage, which is the shape
+    this project refuses everywhere it keeps a registry beside a derivation.  The
+    caller unions this over every tracked source and fails on an entry no call
+    exercises: a sink kept past its last use excuses a construct nothing in the
+    tree performs, and the next reader takes it for a considered decision.
+    """
+    consts = _module_string_bindings(tree)
+    probe_names = {n for n, v in consts.items() if LEAN_PROBE_MARKER.search(v)}
+    imported, assigned = _module_name_bindings(tree)
+    used: set[tuple[str, ...]] = set()
+    for node in ast.walk(tree):
+        if not (isinstance(node, ast.Call)
+                and _is_probe_text_sink(node, imported, assigned)):
             continue
         args = list(node.args) + [kw.value for kw in node.keywords]
-        if any(isinstance(a, ast.Constant) and isinstance(a.value, str)
-               and _probe_signal(a.value) for a in args):
+        if not any(_argument_carries_probe_text(a, consts, probe_names)
+                   for a in args):
+            continue
+        func = node.func
+        used.add((func.value.id, func.attr)
+                 if isinstance(func, ast.Attribute) else (func.id,))
+    return used
+
+
+def _probe_text_calls(tree: ast.AST) -> list[ast.Call]:
+    """Calls that RECEIVE Lean probe text, which this scanner refuses to read past.
+
+    PR #897's review, `v0.35.150`.  The superseded `_probe_building_calls` asked
+    whether a call *builds* the probe and answered it with two proxies -- whether
+    the program uses the result, and whether the argument is a `Name` -- and the
+    review defeated both within two rounds.  See `_unreadable_assemblies`' `call`
+    reason for why no third proxy was written: whether a call alters its argument
+    before `lake` sees it is not a question a source scanner answers, so the
+    canonical spelling is required instead and probe text is never a call
+    argument.
+
+    Every call is in scope, method and plain-name alike -- `_string_assembly_shapes`
+    excludes a plain-name call from being an ASSEMBLY, which is a different
+    question and stays as it is.
+    """
+    consts = _module_string_bindings(tree)
+    probe_names = {n for n, v in consts.items() if LEAN_PROBE_MARKER.search(v)}
+    imported, assigned = _module_name_bindings(tree)
+    out: list[ast.Call] = []
+    for node in ast.walk(tree):
+        if not isinstance(node, ast.Call):
+            continue
+        if _is_probe_text_sink(node, imported, assigned):
+            continue
+        args = list(node.args) + [kw.value for kw in node.keywords]
+        if any(_argument_carries_probe_text(a, consts, probe_names) for a in args):
             out.append(node)
     return out
 
@@ -806,8 +1072,8 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
     from a helper is as real as one at the top -- (b) every expression that
     ASSEMBLES one out of fragments, named after its assignment target where it has
     one and after its enclosing declaration where it does not, and (c) every
-    remaining string constant that binds no name at all, which is what a probe
-    handed straight to `run_probe(<literal>)` is.
+    remaining string constant that binds no name at all -- a literal in a list, a
+    `return`, or standing alone as a statement.
 
     (a) is admitted on a **probe signal**; (b) and (c) on the IMPORT MARKER alone.
     Two signals, because one was not enough (`v0.35.118`): a line-anchored import
@@ -872,6 +1138,18 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
             f"{path} embeds Lean (an `import Lean`/`import SeLe4n` line, or a "
             f"`ConstantInfo` constructor) and does not parse as Python ({exc}), so "
             f"its probe cannot be located.") from None
+    unresolved = _unresolved_probe_bindings(tree)
+    if unresolved:
+        raise UnreadableProbe(
+            f"{path} binds `{unresolved[0]}` to Lean probe text through a target "
+            f"this scanner cannot resolve"
+            + (f" ({len(unresolved)} such names)" if len(unresolved) > 1 else "")
+            + ".  The name then denotes no text, so a substitution or a join "
+            f"through it builds a string carrying no import marker and every "
+            f"refusal downstream stays silent -- while the literal is still "
+            f"located, carrying the constructors its unsubstituted text spells "
+            f"rather than the ones the probe decides.  Bind the probe directly "
+            f"to its own name.")
     ambiguous = _ambiguous_probe_bindings(tree)
     if ambiguous:
         raise UnreadableProbe(
@@ -965,7 +1243,8 @@ def embedded_lean(path: str, text: str) -> list[tuple[str, str]]:
         for name in names:
             found.append((_qualified(scopes[id(fragments[0])], name), assembled))
     # ...AND the ones that bind no name.  A walker reading only assignments could
-    # not see `run_probe("""import SeLe4n … .opaqueInfo …""")`, and an assigned
+    # not see a probe literal standing in a list or as a statement of its own, and
+    # an assigned
     # probe elsewhere in the file made `found` non-empty, which suppressed the
     # refusal below -- so an inline probe could re-decide the body-bearing question
     # with the captured inventory unchanged and Tier 0 green, invisible in both
@@ -1173,6 +1452,13 @@ ASKER_REASONS: dict[str, str] = {
         "THIS GATE'S OWN FIXTURE for the refusal direction, pinned for the same "
         "reason: its `match` is what makes the unlocatable case a fail-OPEN one, "
         "so a fixture that lost it would assert nothing while still passing.",
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SHADOWED_SINK_PROBE":
+        "THIS GATE'S OWN FIXTURE for the sink-resolution case (`v0.35.150`): "
+        "`ast.parse` is exempt from the no-probe-text-in-a-call rule because it "
+        "returns an AST, and the fixture REBINDS `ast` so the spelling no longer "
+        "denotes the stdlib parser.  Its `.opaqueInfo` is what makes the case "
+        "decide -- a fixture whose probe matched nothing would be refused for "
+        "having no constructor rather than for the shadowing.",
     "scripts/check_declaration_kind_askers.py::_FIXTURE_OWNER":
         "THIS GATE'S OWN FIXTURE for the owner, and a subject only since "
         "`v0.35.118`: it is Lean source with NO import at all, so the `^import "
@@ -1353,6 +1639,9 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
     "scripts/check_declaration_kind_askers.py::_FIXTURE_PROBE_PY": {
         "ctorInfo": 1, "defnInfo": 1, "thmInfo": 1,
     },
+    "scripts/check_declaration_kind_askers.py::_FIXTURE_SHADOWED_SINK_PROBE": {
+        "opaqueInfo": 1,
+    },
     "scripts/check_declaration_kind_askers.py::_FIXTURE_SPLIT_PROBE": {
         "defnInfo": 1,
     },
@@ -1440,6 +1729,28 @@ DECLARATION_KIND_ASKERS: dict[str, dict[str, int]] = {
         "ctorInfo": 1,
     },
 }
+
+
+def stale_probe_text_sinks(repo: str | None = None) -> list[tuple[str, ...]]:
+    """`_PROBE_TEXT_SINKS` entries no tracked call exercises.
+
+    The registry's second direction.  A sink is an exemption from the rule that
+    probe text never reaches a call, and one kept past its last use excuses a
+    construct nothing in this tree performs while reading, to the next person, as
+    a considered decision about live code.
+    """
+    repo = repo or REPO
+    used: set[tuple[str, ...]] = set()
+    for rel in _tracked(repo, "*.py"):
+        abs_path = os.path.join(repo, rel)
+        if not os.path.isfile(abs_path):
+            continue
+        try:
+            tree = ast.parse(open(abs_path, encoding="utf-8").read())
+        except SyntaxError:
+            continue
+        used |= _exercised_probe_text_sinks(tree)
+    return [entry for entry in _PROBE_TEXT_SINKS if entry not in used]
 
 
 def violations(repo: str | None = None,
@@ -1626,8 +1937,7 @@ private def declared (ci : ConstantInfo) : Bool :=
   | _ => false
 """
 
-run_probe(PROBE)
-run_probe("""
+PROBES = [PROBE, """
 import SeLe4n
 import Lean.Elab.Command
 
@@ -1635,7 +1945,7 @@ private def inline (ci : ConstantInfo) : Bool :=
   match ci with
   | .opaqueInfo _ => true
   | _ => false
-""")
+"""]
 '''
 
 #: ...and the CONTROLS that keep the widening from swallowing prose, one per
@@ -1727,14 +2037,14 @@ private def declared (ci : ConstantInfo) : Bool :=
 #: that lost the enclosing `def` would report `<module>` with nothing to notice it.
 _FIXTURE_INLINE_ASSEMBLED = '''\
 def build() -> None:
-    run_probe("""
+    """
 import SeLe4n
 """ + """
 private def nested (ci : ConstantInfo) : Bool :=
   match ci with
   | .opaqueInfo _ => true
   | _ => false
-""")
+"""
 '''
 
 #: TWO probes that bind no name, in ONE scope.  They would share a single subject
@@ -1742,23 +2052,23 @@ private def nested (ci : ConstantInfo) : Bool :=
 #: is the defect the per-(subject, constructor) inventory exists to refuse, so the
 #: scanner refuses the file instead of bucketing them.
 _FIXTURE_TWO_INLINE_ONE_SCOPE = '''\
-run_probe("""
+[
+"""
 import SeLe4n
 
 private def first (ci : ConstantInfo) : Bool :=
   match ci with
   | .defnInfo _ => true
   | _ => false
-""")
-
-run_probe("""
+""",
+"""
 import SeLe4n
 
 private def second (ci : ConstantInfo) : Bool :=
   match ci with
   | .opaqueInfo _ => true
   | _ => false
-""")
+"""]
 '''
 
 #: A probe assembled from THREE fragments with a constructor name split across the
@@ -2020,10 +2330,14 @@ private def k (ci : ConstantInfo) : Bool :=
 """, "opaque")
 '''
 
-#: The CONTROL for the one above: the same shape with the call's result UNUSED, which
-#: is a probe handed straight to a runner.  Without it the refusal would read as "a
-#: marker-bearing literal may not be a call argument", which would refuse this tree's
-#: own inline-probe idiom.
+#: The shape `v0.35.142` READ, and `v0.35.150` refuses: a probe handed straight to a
+#: call whose result is unused.  The distinction it rested on -- does the program use
+#: the result -- is a proxy for "does this call alter the text", which no source
+#: scanner answers, and the review defeated it with a bare-expression builder whose
+#: literal spells `@KIND@Info`.  So probe text is never a call argument, and this is a
+#: refused case rather than a control.  The CONTROL is `_FIXTURE_INLINE_PROBE`, whose
+#: unnamed literal binds no name and reaches no call: the refusal is about the CALL,
+#: not about the literal being unnamed.
 _FIXTURE_CALL_CONSUMED_PROBE = '''\
 def run_probe(source):
     return source
@@ -2035,6 +2349,93 @@ import SeLe4n
 private def k (ci : ConstantInfo) : Bool :=
   match ci with | .opaqueInfo _ => true | _ => false
 """)
+'''
+
+
+#: ...and the NAMED template handed to a builder, which `v0.35.142` could not see at
+#: all: its argument is an `ast.Name`, deliberately excluded because "the constant it
+#: names is a subject of its own" -- true, and that subject counts the constructors
+#: the template spells UNSUBSTITUTED, which is none.
+_FIXTURE_CALL_NAMED_TEMPLATE = '''\
+def build_probe(template, kind):
+    return template.replace("@KIND@", kind)
+
+
+TEMPLATE = """
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+"""
+
+PROBE = build_probe(TEMPLATE, "opaque")
+'''
+
+
+#: The CONTROL for both: a container target this scanner CAN pair with the value,
+#: whose substitution is then read.  Without it the refusals above are satisfied by
+#: a binding walk that refuses every destructuring, which would refuse correct code
+#: and would make the elementwise resolution unwitnessed.
+_FIXTURE_RESOLVED_TARGET_PROBE = '''\
+(TEMPLATE,) = ("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+""",)
+
+PROBE = TEMPLATE.replace("@KIND@", "opaque")
+'''
+
+
+#: A container target this scanner cannot pair with the value: two names against a
+#: one-element tuple.  `_elementwise` is what refuses it, and it is the only fixture
+#: that DISTINGUISHES that guard -- a `Starred` target is refused by its own branch,
+#: so dropping the guard leaves every other case answering as before.  `_elementwise`
+#: is also what makes the `zip` below safe, since a value with no `.elts` never
+#: reaches it.
+_FIXTURE_MISMATCHED_TARGET_PROBE = '''\
+FIRST, SECOND = ("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+""",)
+
+PROBE = FIRST.replace("@KIND@", "opaque")
+'''
+
+
+#: A sink spelling whose receiver the module REBINDS, so `ast.parse` means something
+#: this scanner knows nothing about.  *A name is not a definition*: an exemption keyed
+#: on a spelling is one a local `ast` walks around.
+_FIXTURE_SHADOWED_SINK_PROBE = '''\
+import ast
+
+ast = FakeParser()
+
+ast.parse("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .opaqueInfo _ => true | _ => false
+""")
+'''
+
+
+#: ...and probe text bound through a target this scanner cannot pair with a value.
+#: The name then denotes nothing, a join through it carries no import marker, and
+#: every refusal downstream stays silent while the literal is located with the
+#: constructors its unsubstituted text spells.
+_FIXTURE_UNRESOLVED_TARGET_PROBE = '''\
+*PARTS, = ("""
+import SeLe4n
+
+private def k (ci : ConstantInfo) : Bool :=
+  match ci with | .@KIND@Info _ => true | _ => false
+""",)
+
+PROBE = "".join(PARTS).replace("@KIND@", "opaque")
 '''
 
 #: The RESOLUTION residue, closed.  A template whose name is bound twice -- here at
@@ -2607,10 +3008,13 @@ def _self_test() -> int:
         keys = [k for k in got if k.startswith(inline)]
         if not any("<inline in <module>>" in k for k in keys):
             print("FAIL: --self-test — an INLINE probe was not located:")
-            print(f"      {sorted(keys)}.  A probe passed as an argument decides")
+            print(f"      {sorted(keys)}.  A probe that binds no name decides")
             print("      the body question exactly as an assigned one does, and a")
             print("      walker that reads only assignments is a domain written as")
-            print("      a node kind.")
+            print("      a node kind.  It is a list element rather than a call")
+            print("      argument (`v0.35.150`), so this case is ALSO the control")
+            print("      for the call refusal: the refusal is about the CALL, not")
+            print("      about the literal being unnamed.")
             return 1
         problems = violations(root, base_pin, base_reasons)
         if not any("<inline in <module>>" in p and "not a recorded asker" in p
@@ -3210,20 +3614,97 @@ def _self_test() -> int:
             print("      against a probe that decides the question.")
             return 1
 
-    # (37) ...and its CONTROL, which is what keeps (36) from refusing this tree's own
-    #      inline-probe idiom.  The same shape with the call's result UNUSED is a
-    #      probe handed straight to a runner, and it must be READ under its enclosing
-    #      declaration.  A mutation dropping the result-used condition refuses this
-    #      and passes (36).
+    # (37) ...and the same shape with the call's result UNUSED, which `v0.35.142`
+    #      READ.  PR #897's review supplied the counterexample -- a bare-expression
+    #      builder whose literal spells `@KIND@Info` -- so "does the program use the
+    #      result" is a proxy for "does this call alter the text", which no source
+    #      scanner answers.  Probe text is not a call argument, whatever the result
+    #      does.  A mutation restoring the result-used condition passes (36) and
+    #      fails here.
     with tempfile.TemporaryDirectory() as root:
         run = "scripts/call_consumed_gate.py"
         _fixture(root, {**base, run: _FIXTURE_CALL_CONSUMED_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(run in p and "handed to a call" in p for p in problems):
+            print("FAIL: --self-test — a probe handed straight to a call was not")
+            print(f"      refused: {problems}.  Whether the program uses the")
+            print("      result says nothing about whether the call alters the")
+            print("      text, so the located literal may not be the one it runs.")
+            return 1
+
+    # (37b) ...and a NAMED template handed to a builder, whose argument is an
+    #       `ast.Name`.  `v0.35.142` excluded those on the ground that the constant
+    #       is a subject of its own -- true, and that subject counts the constructors
+    #       the template spells UNSUBSTITUTED, which is none, while the program runs
+    #       `.opaqueInfo`.  Invisible in both directions at once.
+    with tempfile.TemporaryDirectory() as root:
+        named = "scripts/call_named_gate.py"
+        _fixture(root, {**base, named: _FIXTURE_CALL_NAMED_TEMPLATE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(named in p and "handed to a call" in p for p in problems):
+            print("FAIL: --self-test — a NAMED template handed to a builder was")
+            print(f"      not refused: {problems}.  Its own subject counts the")
+            print("      constructors it spells unsubstituted, which is none.")
+            return 1
+
+    # (37c) ...and probe text bound through a target this scanner cannot pair with a
+    #       value.  The superseded binding walk skipped every target that is not a
+    #       bare `Name`, so the name denoted nothing, a join through it carried no
+    #       import marker, and no refusal downstream saw it.
+    with tempfile.TemporaryDirectory() as root:
+        tgt = "scripts/unresolved_target_gate.py"
+        _fixture(root, {**base, tgt: _FIXTURE_UNRESOLVED_TARGET_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(tgt in p and "cannot resolve" in p for p in problems):
+            print("FAIL: --self-test — probe text bound through an unresolvable")
+            print(f"      target was not refused: {problems}.  The name denotes")
+            print("      no text, so every refusal downstream stays silent.")
+            return 1
+
+    # (37d) ...and the CONTROL for both, which is what keeps them from refusing
+    #       every destructuring: a container target this scanner CAN pair with the
+    #       value resolves elementwise, and the substitution onto it is READ with
+    #       the constructor the program runs.
+    with tempfile.TemporaryDirectory() as root:
+        ok = "scripts/resolved_target_gate.py"
+        _fixture(root, {**base, ok: _FIXTURE_RESOLVED_TARGET_PROBE})
         got = {k: v for k, v in _capture_fixture(root).items()
-               if k.startswith(run)}
-        if list(got.values()) != [{"opaqueInfo": 1}]:
-            print("FAIL: --self-test — a probe handed straight to a runner was not")
-            print(f"      read: {got}.  Refusing it rejects correct code, and the")
-            print("      refusal in (36) is about the call's RESULT being used.")
+               if k.startswith(ok)}
+        if got.get(ok + "::PROBE") != {"opaqueInfo": 1}:
+            print("FAIL: --self-test — a probe destructured from a tuple was not")
+            print(f"      resolved: {got}.  The target pairs with the value")
+            print("      element for element, so it reads exactly as the plain")
+            print("      spelling does and the substitution is the text it runs.")
+            return 1
+
+    # (37d-ii) ...and a container target whose LENGTH does not match the value is
+    #       not resolvable either.  It is the case that distinguishes
+    #       `_elementwise` from the `Starred` branch beside it: without the length
+    #       guard the walk pairs what `zip` happens to line up and reports names
+    #       that received something else, so the probe's substitution reads a hole
+    #       and nothing is refused.
+    with tempfile.TemporaryDirectory() as root:
+        mism = "scripts/mismatched_target_gate.py"
+        _fixture(root, {**base, mism: _FIXTURE_MISMATCHED_TARGET_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(mism in p and "cannot resolve" in p for p in problems):
+            print("FAIL: --self-test — a LENGTH-MISMATCHED destructuring was not")
+            print(f"      refused: {problems}.  Pairing what `zip` lines up")
+            print("      reports a name receiving text the source never gave it.")
+            return 1
+
+    # (37e) ...and a sink whose receiver the module REBINDS is not a sink.  The
+    #       exemption is sound only while `ast.parse` means what the registry says
+    #       it means; keyed on the spelling alone, a local `ast` walks around it.
+    with tempfile.TemporaryDirectory() as root:
+        shadow = "scripts/shadowed_sink_gate.py"
+        _fixture(root, {**base, shadow: _FIXTURE_SHADOWED_SINK_PROBE})
+        problems = violations(root, base_pin, base_reasons)
+        if not any(shadow in p and "handed to a call" in p for p in problems):
+            print("FAIL: --self-test — a REBOUND sink receiver was still exempt:")
+            print(f"      {problems}.  `ast.parse` is an exemption about the")
+            print("      stdlib parser; a module that binds its own `ast` means")
+            print("      something else by it.")
             return 1
 
     found = capture()
@@ -3248,9 +3729,12 @@ def _self_test() -> int:
           f"and a template whose name is bound twice, while a substitution whose "
           f"value is a literal is RECONSTRUCTED and its constructor recorded; a "
           f"probe whose markers are SPLIT across fragments is seen (the file-level "
-          f"prefilter no longer gates the PARSE) and one BUILT by a plain-name call "
-          f"is refused while the same shape with the call's result unused is read; "
-          f"the live tree is clean at {len(found)} subject(s).")
+          f"prefilter no longer gates the PARSE); probe text handed to a CALL is "
+          f"refused in all three shapes -- a literal whose result is used, one "
+          f"whose result is not, and a named template -- while an unnamed literal "
+          f"that reaches no call is still read, and probe text bound through a "
+          f"target this scanner cannot pair with a value is refused; the live tree "
+          f"is clean at {len(found)} subject(s).")
     return 0
 
 
@@ -3261,7 +3745,15 @@ def main(argv: list[str]) -> int:
         for subj, per in sorted(capture().items()):
             for c, n in sorted(per.items()):
                 print(f"DECLARATION_KIND_SITE {subj} {c} {n}")
-    problems = violations()
+    # The sink registry's second direction, over the REAL tree.  It is not part
+    # of `violations` because that runs against synthetic fixture roots too, and
+    # a fixture exercising no sink is not a stale exemption -- it is a fixture.
+    problems = [
+        f"`{'.'.join(entry)}` is a recorded `_PROBE_TEXT_SINKS` exemption and no "
+        f"tracked call hands it Lean probe text any more.  A stale exemption "
+        f"reads exactly like coverage; delete the entry."
+        for entry in stale_probe_text_sinks()]
+    problems += violations()
     if problems:
         print("FAIL: the body-bearing question is decided outside its owner.")
         for p in problems:

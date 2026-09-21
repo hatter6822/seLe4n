@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.149.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.150.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3331,6 +3331,101 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   docstring marker writes the quote `\x22`: the shell-quoting failure does not
   error, it silently decides nothing, which is the one outcome
   `check_anchor_consistency.py` exists to refuse.
+
+  **And a DELIMITER that can occur in the data is not a delimiter** (PR #897's
+  review, `v0.35.150`).  Six findings, one class, and it is this family's
+  *domain* half rather than its predicate half: each gate answered "nothing
+  here" for input it could not determine, which is silent by construction — the
+  element is never examined, no count moves, and the report reads as a
+  measurement of absence.
+
+  The sharpest is in **shared infrastructure**.  `indexed_source.indexed_contents`
+  wrote one `cat-file --batch` request per LINE and read one header per line, and
+  a tracked path is a byte string that may hold a newline — which `listed_at`
+  deliberately preserves, `-z` being exactly what it buys.  Measured: a two-file
+  index in which one name holds a newline returned `{}`, **both** files absent
+  and no exception, so every gate reading the staged domain through that helper
+  reported a clean tree.  Three things the fix records.  `-Z` frames both
+  directions, and git documents `-z` as deprecated *because the output stays
+  ambiguous* — a framing fixed on one side only is half a framing.  The declared
+  size is **checked against its terminator** rather than trusted, since `find`ing
+  the next NUL re-synchronises after any drift and an off-by-one is absorbed at
+  every entry.  And the walk must **consume the whole stream**: one response per
+  request, which is precisely what the original defect violated (git answered
+  three times for two wanted entries) and which no per-entry check can see.
+
+  Five rules generalise from the six.  **A recorded failure must FAIL** — the
+  changed-file anchor sweep's epilogue called `record_failure`, which only
+  counts, on a path that never reaches `finalize_report`, so an anchor ending in
+  `exit 0` printed the failure and the gate exited 0; the existing
+  fatal-expansion control could not see it, because `set -u` exits 1 and the two
+  agreed by accident.  **A rebinding is not a use** — crediting a bound fixture
+  path when its name "occurs again" is satisfied by a second *assignment*, so a
+  consumer that spells a path, overwrites the name and opens nothing passed the
+  claim that the row names a gate which reads it.  **A call is not classifiable**
+  — whether a call alters its argument before `lake` sees it is not a question a
+  source scanner answers, so the probe locator's builder/consumer split (is the
+  result used?  is the argument a `Name`?) was two proxies for an undecidable
+  fact, and both were defeated within two review rounds; the exit is round 16's,
+  *require a canonical spelling and refuse the rest* — probe text reaches Lean
+  through a named template and `.replace` over literals, never as a call
+  argument, with one structurally-incapable sink (`ast.parse` returns an AST)
+  exempt by **resolution** rather than by spelling and reconciled both ways.
+  **Every binding TARGET is seen** — a walk that skips any target which is not a
+  bare `ast.Name` leaves `(PROBE,) = (<probe text>,)` binding nothing, so the
+  name denotes no text and a transform through it builds a string carrying no
+  marker: invisible in both directions at once.  And **the sweep is run, not
+  stated** — `check_identifier_naming`'s own module docs record NUL-delimited
+  discovery as its item 8, and seven sibling listings across five gates were
+  still splitting on whitespace; the same sweep found a **third** copy of the
+  `cat-file` loop that `v0.35.147` had collapsed two of.
+
+  Two things about witnessing this class.  A mutation that keeps every token and
+  changes the framing is caught only by a case whose *input* carries the
+  delimiter — a fixture built from well-formed bytes proves nothing about a path
+  with a newline in it, and the decisive cases here are git-driven because what
+  was wrong is the REQUEST, which no parser fixture can exercise.  And **a
+  harness that crashes where it should report hides the second defect**: a
+  refusal raised on a success-path call escaped `indexed_source`'s self-test as a
+  traceback and skipped every case after it, so one mutation masked another until
+  the harness started reporting exceptions as case failures.
+
+  **And the fail-closed fix's CALLER was admitting what it could not read**
+  (`v0.35.150`, found by CI rather than by review).  Making a derivation raise
+  moves the question to whoever decided it was available, and
+  `check_workstream_plan.baseline_refs` decided it with `git rev-parse --verify
+  -q <cand>` — an existence check for a ref NAME and a pure **syntax** check for
+  a full hex sha, since git turns forty hex digits into a raw object id without
+  consulting the object database.  Measured, on a sha this tree does not
+  contain: `rev-parse --verify -q <sha>` exits **0**, `<sha>^{commit}` exits 1,
+  `ls-tree` exits 128 with `fatal: not a tree object`.  A full hex sha is
+  exactly what CI passes, so the guard was exact for every candidate except the
+  one that matters, and both CI workflows already peeled — *one question, three
+  askers, and the odd one out was the gate*.  `revision_is_readable` is the
+  owner; an unreadable candidate is skipped and `baseline_is_complete` says so.
+
+  Three things that cut records, each a rule already in this file arriving at a
+  smaller unit.  **A fixture that inherits ambient configuration is not a
+  witness**: three of four fixture cases pinned `SELE4N_PLAN_BASE_REF` and one
+  did not, so under CI it listed a revision the fixture cannot contain;
+  `_fixture_repo` is the one owner and it *pins* rather than pops, since popping
+  sends the resolver to its `origin/main` fallback — the ambient repository
+  again, one indirection out.  **Two halves can rescue each other**: with the
+  peel in place, reverting the fixture leak leaves the suite green, because the
+  unreadable sha is skipped and the case silently runs HEAD-only — which a
+  *staged* deletion does not need a base for, though a *committed* one does, so
+  the same leak one case over is a vacuous pass.  Hermeticity is therefore
+  asserted directly, through the resolver inside the fixture, with a hostile
+  ambient value by construction.  And **a negative anchor over a retired
+  SPELLING is defeated by a reformatting revert**: the first one here kept the
+  relation and MISSED its own mutation, because re-inlining the unpeeled call
+  across two lines keeps every token and matches no single-line pattern.  Scope
+  such a negative to the **location** — `baseline_refs` must not ask git at all
+  — which is what makes extracting the owner the fix rather than a tidy-up; it
+  then catches the inlined, the reformatted and the renamed-local revert alike.
+  The explanatory measurement moves to the owner's docstring in the same step,
+  since leaving it behind both duplicates the fact and trips that negative on
+  prose.
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded

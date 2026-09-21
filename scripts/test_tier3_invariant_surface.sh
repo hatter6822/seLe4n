@@ -16734,8 +16734,12 @@ run_negative_check "INVARIANT" rg -U -n '^      eval .\$\{command\}.[^\n]*(\n([ 
 # reads like a broken script rather than a finding.  A subshell would contain it
 # and would also strip `record_failure`'s bookkeeping, losing a real anchor's own
 # message, which the controls assert; so the sweep stays in this shell.
-run_check "INVARIANT" rg -U -n '^_sweep_epilogue\(\) \{[^\n]*(\n([ \t][^\n]*)?)*    record_failure .HYGIENE.' scripts/check_changed_file_anchors.sh
-run_check "INVARIANT" rg -F -n "trap '_sweep_epilogue; rm -f \"\${CLEANUP[@]}\"' EXIT" scripts/check_changed_file_anchors.sh
+# ...and since `v0.35.150` the epilogue OVERRIDES the exit status rather than
+# inheriting it: `record_failure` only counts, `finalize_report` never runs on
+# this path, and an anchor ending in `exit 0` therefore printed the failure and
+# returned success.
+run_check "INVARIANT" rg -U -n '^_sweep_exit\(\) \{[^\n]*(\n([ \t][^\n]*)?)*    record_failure .HYGIENE.' scripts/check_changed_file_anchors.sh
+run_check "INVARIANT" rg -F -n 'trap _sweep_exit EXIT' scripts/check_changed_file_anchors.sh
 run_check "INVARIANT" rg -U -n '^done 9< .\$\{SELECTION\}.\nSWEEP_COMPLETE=1' scripts/check_changed_file_anchors.sh
 # ...and the selection is read on FD 9, not on stdin.  An `eval`ed anchor that read
 # stdin would drain the remaining rows and the loop would end early with a
@@ -16854,8 +16858,11 @@ run_negative_check "INVARIANT" rg -F -n -- '--extra-fixtures' scripts/test_tier0
 # read the name elsewhere.  What is decidable is that a BINDING is consumed --
 # and, since `v0.35.138`, that an UNBOUND mention is an operand of something;
 # this line used to conflate the two, so the anchor is repointed at the branch
-# that survives rather than deleted.
-run_check "INVARIANT" rg -F -n '        if word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
+# that survives rather than deleted.  Since `v0.35.150` "consumed" means a
+# NON-BINDING occurrence: a second assignment to the name is an occurrence and
+# not a use, so the superseded reading passed a path spelled, overwritten and
+# never opened.
+run_check "INVARIANT" rg -F -n '            if word_read_occurrences(view, name) > 0:' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'if CONSUMER_APPLICATION.search(head[operators[-1]:]):' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -F -n 'verdict = fixture_mention_consumed(' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -F -n 'row.fixture in consumer_code_view(' scripts/scenario_catalog.py
@@ -17809,14 +17816,36 @@ run_check "INVARIANT" rg -F -n '    """Could this FILE embed a probe?  Strictly 
 # ...and it must not be a gate on the scan again: the only thing it decides is
 # whether a file that does not PARSE is a refusal.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "def embedded_lean\(path: str, text: str\)[^\n]*(\n([ \t][^\n]*)?)*if not _probe_prefilter\(text\):\n        return \[\]\n    try:" scripts/check_declaration_kind_askers.py'
-# ...and a plain-name call that BUILDS a probe out of a literal is refused rather
-# than read as an inline probe: the literal is a template, so its constructor
-# count is the UNSUBSTITUTED one while the probe handed to Lean decides the
-# question -- invisible in both directions at once.  The structural difference is
-# whether the result is used.
-run_check "INVARIANT" rg -F -n 'def _probe_building_calls(tree: ast.AST) -> list[ast.Call]:' scripts/check_declaration_kind_askers.py
-run_check "INVARIANT" rg -F -n '    out.extend((call, "builder") for call in _probe_building_calls(tree))' scripts/check_declaration_kind_askers.py
-run_check "INVARIANT" rg -F -n '    "builder": "a probe-signalling literal is handed to a plain-name call whose "' scripts/check_declaration_kind_askers.py
+# ...and probe text handed to a CALL is refused.  `v0.35.142` asked whether the
+# call BUILDS the probe and answered with two proxies -- whether the result is used
+# and whether the argument is a `Name` -- and PR #897's review defeated both within
+# two rounds.  Whether a call alters its argument before `lake` sees it is not a
+# question a source scanner answers, so the canonical spelling is required instead:
+# a probe reaches Lean through a named template and `.replace` over literals, never
+# as a call argument.  Both retired proxies must stay retired.
+run_check "INVARIANT" rg -F -n 'def _probe_text_calls(tree: ast.AST) -> list[ast.Call]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    calls = _probe_text_calls(tree)' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n '    "call": "Lean probe text is handed to a call, so what the program runs is "' scripts/check_declaration_kind_askers.py
+# The DEFINITION, not the name: the docstring above the replacement names the
+# retired classifier in order to say what it got wrong, and a negative that
+# counted that would force the file to stop explaining what it retired -- which
+# is this project's own rule against contorting prose to satisfy a scanner.
+run_negative_check "INVARIANT" rg -F -n 'def _probe_building_calls' scripts/check_declaration_kind_askers.py
+run_negative_check "INVARIANT" rg -F -n '"builder") for call in' scripts/check_declaration_kind_askers.py
+# ...and the ARGUMENT reading is what the two proxies became: a `Name` that resolves
+# to probe text is probe text, whatever the call does with the result.
+run_check "INVARIANT" bash -lc 'rg -U -n "def _argument_carries_probe_text[^\n]*(\n([ \t][^\n]*)?)*if isinstance\(arg, ast\.Name\):\n        return arg\.id in probe_names" scripts/check_declaration_kind_askers.py'
+# ...and the sink exemption RESOLVES rather than matching a spelling: an attribute
+# sink's receiver must be imported AND unassigned, so a local `ast = FakeParser()`
+# is not the stdlib parser.
+run_check "INVARIANT" bash -lc 'rg -U -n "def _is_probe_text_sink[^\n]*(\n([ \t][^\n]*)?)*func\.value\.id in imported and func\.value\.id not in assigned\)" scripts/check_declaration_kind_askers.py'
+# ...and every BINDING TARGET is seen, so a destructured template resolves rather
+# than denoting nothing; a target this scanner cannot pair with the value is a
+# refusal, and `_elementwise` is the length-and-shape guard that decides which.
+run_check "INVARIANT" rg -F -n 'def _target_bindings(target: ast.expr,' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" rg -F -n 'def _unresolved_probe_bindings(tree: ast.AST) -> list[str]:' scripts/check_declaration_kind_askers.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def _target_resolves[^\n]*(\n([ \t][^\n]*)?)*return _elementwise\(target, value\) and all\(" scripts/check_declaration_kind_askers.py'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _name_bindings[^\n]*(\n([ \t][^\n]*)?)*if not isinstance\(target, ast\.Name\):\n                continue" scripts/check_declaration_kind_askers.py'
 
 # --- `v0.35.143` (PR #897's review): two scanners located the wrong UNIT of the
 # text they read -- a hunk kind in one, a filename boundary in the other -- and
@@ -18083,5 +18112,82 @@ run_negative_check "INVARIANT" rg -F -n 'replyRecvHolderDeschedule tid recordedS
 # ...and the witness that both shapes are reachable and the outcome differs.
 run_check "INVARIANT" rg -F -n 'runReplyRecvHolderDescheduleChecks' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -F -n 'private def recordedServerDescheduleTarget' tests/SmpIpcSuite.lean
+
+# --- `v0.35.150` (PR #897's review): six gate defects, one class -- the gate
+# answers "nothing here" for input it could not determine, and a requirement it
+# drops is a check nobody runs.
+#
+# (1) `indexed_contents` framed its `cat-file --batch` request by NEWLINES, which a
+# tracked path may contain.  Measured: a two-file index in which one name holds a
+# newline returned `{}` -- BOTH files absent, no exception -- so every gate reading
+# the staged domain through this helper reported a clean tree.  NUL in both
+# directions, the declared size checked against its terminator, and one response
+# per request.
+run_check "INVARIANT" rg -F -n 'out = run_git(repo, ["cat-file", "--batch", "-Z"],' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n '        nul = out.find(b"\0", i)' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n '        if out[i + size:i + size + 1] != b"\0":' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n '    if i != len(out):' scripts/indexed_source.py
+run_negative_check "INVARIANT" rg -F -n 'stdin="".join(f":{p}' scripts/indexed_source.py
+# ...and the THIRD copy of that loop is gone: `v0.35.147` collapsed two onto this
+# module and `check_identifier_naming` was not swept, so it kept all three defects.
+run_check "INVARIANT" rg -F -n '    return _indexed_contents(str(REPO_ROOT), paths)' scripts/check_identifier_naming.py
+run_negative_check "INVARIANT" rg -F -n 'cat-file", "--batch"], cwd=REPO_ROOT' scripts/check_identifier_naming.py
+#
+# (2) The changed-file anchor sweep's epilogue RECORDED a failure and returned the
+# status the anchor chose, so an anchor ending in `exit 0` printed the failure and
+# the gate exited 0.  The status is overridden, not inherited.
+run_check "INVARIANT" bash -lc 'rg -U -n "_sweep_exit\(\) \{[^\n]*(\n([ \t][^\n]*)?)*status=1" scripts/check_changed_file_anchors.sh'
+run_check "INVARIANT" rg -F -n 'an anchor that exits ZERO still FAILS the sweep' scripts/check_changed_file_anchors.sh
+run_negative_check "INVARIANT" rg -F -n "trap '_sweep_epilogue; rm -f" scripts/check_changed_file_anchors.sh
+#
+# (3) A REBINDING is not a use: `word_occurrences(view, name) > 1` counted a second
+# ASSIGNMENT to the bound name, so a consumer that spells a fixture path, overwrites
+# the name and opens nothing satisfied the `Used by` claim.
+run_check "INVARIANT" rg -F -n 'def word_read_occurrences(text: str, word: str) -> int:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n 'BINDING_FOLLOWS = re.compile(' scripts/scenario_catalog.py
+run_negative_check "INVARIANT" rg -F -n 'if word_occurrences(view, name) > 1:' scripts/scenario_catalog.py
+#
+# (4) Every index listing is NUL-delimited: `git ls-files` C-quotes an unusual byte
+# and `str.split()` breaks a path holding whitespace into fragments that name no
+# file.  Zero tracked paths carry whitespace today, so the sweep is free.
+run_negative_check "INVARIANT" rg -F -n '.stdout.split()' scripts/check_claim_evidence_citations.py scripts/check_lock_ceiling_figures.py scripts/check_ipc_invariant_dethreading.py scripts/check_markdown_links.py scripts/check_source_line_citations.py
+run_check "INVARIANT" rg -F -n "['git', 'ls-files', '-z'], capture_output=True, check=True).stdout" scripts/check_source_line_citations.py
+run_check "INVARIANT" rg -F -n "find docs -name '*.md' -not -path 'docs/dev_history/*' -print0; " scripts/check_source_line_citations.py
+run_check "INVARIANT" rg -F -n '["git", "-C", root, "ls-files", "-z", pattern]' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -F -n '["git", "-C", root, "ls-files", "-z", "*.md", "*.lean"]' scripts/check_lock_ceiling_figures.py
+run_check "INVARIANT" rg -F -n '["git", "ls-files", "-z", "*.md"],' scripts/check_markdown_links.py
+#
+# (5) A PROXY is not the FACT, at a revision's availability.  `baseline_refs`
+# admitted a candidate on `git rev-parse --verify -q <cand>`, which is an
+# existence check for a ref NAME and a pure syntax check for a full hex SHA --
+# which is what CI passes -- so an unfetched base was reported available and
+# `list_tracked` (fail-closed since v0.35.147) then raised on it.  Both CI
+# workflows already peel; the gate was the odd one out of three askers.
+run_check "INVARIANT" bash -lc 'rg -U -n "def revision_is_readable\(rev: str\) -> bool:[^\n]*(\n([ \t][^\n]*)?)*rev\}\^\{\{commit\}\}" scripts/check_workstream_plan.py'
+run_check "INVARIANT" rg -F -n 'if cand and revision_is_readable(cand):' scripts/check_workstream_plan.py
+# The negative forbids the question being asked in the WRONG PLACE rather than in
+# a retired SPELLING: a revert that merely reformats the unpeeled guard back into
+# `baseline_refs` keeps every token of the retired line and walks around a
+# spelling-shaped negative, which is how the first draft of this anchor MISSED
+# its own mutation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def baseline_refs\(\) -> list\[str\]:[^\n]*(\n([ \t][^\n]*)?)*rev-parse" scripts/check_workstream_plan.py'
+run_check "INVARIANT" rg -F -n 'an absent full-hex base is SKIPPED, not admitted' scripts/check_workstream_plan.py
+run_check "INVARIANT" rg -F -n 'a PRESENT full-hex base is still admitted' scripts/check_workstream_plan.py
+#
+# (6) A fixture repository resolves its OWN base.  Three of the four fixture
+# cases pinned `SELE4N_PLAN_BASE_REF` and one did not, so under CI that case ran
+# `ls-tree` against a sha the fixture cannot contain.  One owner now, and the
+# hermeticity is asserted directly -- through `baseline_refs`, not through a
+# downstream symptom, because with (5) in place the leak degrades to a silent
+# vacuous pass rather than to a failure.
+run_check "INVARIANT" rg -F -n 'def _fixture_repo(root: Path):' scripts/check_workstream_plan.py
+run_check "INVARIANT" rg -F -n 'FIXTURE_BASE_REF = "main"' scripts/check_workstream_plan.py
+run_check "INVARIANT" rg -F -n "a fixture repository resolves its OWN base, not the caller's" scripts/check_workstream_plan.py
+run_negative_check "INVARIANT" rg -F -n 'os.environ["SELE4N_PLAN_BASE_REF"] = "main"' scripts/check_workstream_plan.py
+#
+# (7) The unfiltered whole-word count was DELETED when its last reader became
+# `word_read_occurrences`; keeping it would have left one pattern written twice
+# in one file, and a pin on a symbol nothing reads decides nothing.
+run_negative_check "INVARIANT" rg -F -n 'def word_occurrences(' scripts/scenario_catalog.py
 
 finalize_report

@@ -130,43 +130,98 @@ def indexed_contents(repo: str, paths: Iterable[str]) -> dict[str, str]:
       the module's own defect one level in, since a truncated result is
       indistinguishable from a complete one and the caller reads it as the whole
       domain.
+
+    The request stream is NUL-framed, as `listed_at`'s listing is and for the same
+    reason: a tracked path may contain a newline.  See `parse_batch` for what the
+    superseded line framing cost.
     """
     wanted = list(paths)
     if not wanted:
         return {}
-    out = run_git(repo, ["cat-file", "--batch"],
-                  stdin="".join(f":{p}\n" for p in wanted).encode())
+    out = run_git(repo, ["cat-file", "--batch", "-Z"],
+                  stdin=b"".join(b":" + p.encode("utf-8", "surrogateescape") + b"\0"
+                                 for p in wanted))
     return parse_batch(out, wanted)
 
 
 def parse_batch(out: bytes, wanted: list[str]) -> dict[str, str]:
-    """`cat-file --batch` output, entry by entry.  Separated from the call so the
-    self-test can drive the REFUSALS: git does not emit a truncated stream or an
-    unreadable header on demand, so a check that could only run git could not
-    witness the two arms that distinguish this parser from the two it replaces."""
+    """`cat-file --batch -Z` output, entry by entry.
+
+    Separated from the call so the self-test can drive the REFUSALS: git does not
+    emit a truncated stream or an unreadable header on demand, so a check that
+    could only run git could not witness the two arms that distinguish this parser
+    from the two it replaces.
+
+    **NUL-framed in both directions, because a newline occurs in the data**
+    (PR #897's review, `v0.35.150`).  The superseded framing wrote one request per
+    LINE and read one header per line, and a path is a byte string that may hold a
+    newline -- which `listed_at` deliberately preserves, `-z` being exactly what it
+    buys.  One such path therefore split into two requests, git answered three
+    times for two wanted entries, and the parser paired response 1 with the
+    newline-bearing path and response 2 with its NEIGHBOUR: measured, a two-file
+    index in which one name holds a newline returned `{}` -- **both** files absent,
+    no exception -- so every gate reading the staged domain through this helper
+    reported a clean tree.  A delimiter that can occur in the data is not a
+    delimiter, and the failure direction here is the one this project refuses: a
+    requirement dropped from the domain is a check nobody runs.
+
+    `-Z` is git's own answer (`git cat-file -h`: "stdin and stdout is
+    NUL-terminated"); `-z`, which frames only the input, is documented as
+    deprecated because the OUTPUT stays ambiguous.  The header is decoded with
+    `surrogateescape` for the same reason the request is encoded with it: git
+    echoes the request back on a `missing` line, and a path need not be UTF-8.
+    """
     res: dict[str, str] = {}
     i = 0
     for n, rel in enumerate(wanted):
-        nl = out.find(b"\n", i)
-        if nl < 0:
+        nul = out.find(b"\0", i)
+        if nul < 0:
             raise DerivationFailed(
-                ["git", "cat-file", "--batch"], 0, "",
+                ["git", "cat-file", "--batch", "-Z"], 0, "",
                 f"output ended after {n} of {len(wanted)} entries")
-        header = out[i:nl].decode("utf-8", "replace")
-        i = nl + 1
+        header = out[i:nul].decode("utf-8", "surrogateescape")
+        i = nul + 1
         if header.endswith((" missing", " ambiguous")):
             continue
         try:
             size = int(header.rsplit(" ", 1)[1])
         except (IndexError, ValueError):
             raise DerivationFailed(
-                ["git", "cat-file", "--batch"], 0, "",
+                ["git", "cat-file", "--batch", "-Z"], 0, "",
                 f"unreadable header for {rel!r}: {header!r}") from None
+        # The declared size is CHECKED against the framing, not trusted.  A
+        # `find` for the next NUL re-synchronises after any drift -- an entry
+        # started one byte late still yields a header whose trailing size token
+        # parses -- so an off-by-one in this walk is absorbed and silently
+        # returns a different blob's bytes.  Asking that the byte at the declared
+        # size IS the terminator makes the two agree, which is the relation the
+        # `+ 1` below only assumes.
+        if out[i + size:i + size + 1] != b"\0":
+            raise DerivationFailed(
+                ["git", "cat-file", "--batch", "-Z"], 0, "",
+                f"the entry for {rel!r} declares {size} byte(s) but is not "
+                f"NUL-terminated there")
         try:
             res[rel] = out[i:i + size].decode("utf-8")
         except UnicodeDecodeError:
             pass                                # not text; the caller decides
-        i += size + 1                           # blob, then its trailing newline
+        i += size + 1                           # blob, then its trailing NUL
+    # ONE response per request, no more.  git emits exactly one entry per input
+    # record, so a surplus means the request stream was not the one this walk
+    # thinks it sent -- which is precisely how the superseded line framing failed:
+    # a path holding a newline became two requests, git answered three times for
+    # two wanted entries, and the walk paired response 1 with that path and
+    # response 2 with its NEIGHBOUR while ignoring the third.  It is also what
+    # makes the walk's own arithmetic decidable: `find` re-synchronises on the
+    # next NUL, so a drift inside an oid is absorbed at every entry and shows up
+    # only here, at the end.
+    if i != len(out):
+        over = len(out) - i
+        raise DerivationFailed(
+            ["git", "cat-file", "--batch", "-Z"], 0, "",
+            (f"{over} byte(s) of response remain" if over > 0
+             else f"the walk ran {-over} byte(s) past the response")
+            + f" after all {len(wanted)} requested entries were read")
     return res
 
 
@@ -195,6 +250,27 @@ def _self_test() -> int:
             print(f"  FAIL {name}: {detail}")
             failures.append(name)
 
+    def value(fn):
+        """`fn()`, or the refusal it raised.
+
+        ANY exception on a SUCCESS-path call is a failure of that case and not of
+        the harness.  Letting one escape as a traceback aborts the run, so every
+        case after it is skipped and ONE MUTATION CAN MASK ANOTHER -- the hazard
+        this project recorded one gate over (`v0.35.124`).  Returning the
+        exception makes the comparison fail and prints it as the case's detail,
+        which is the gate's own voice.
+
+        Deliberately `Exception` and not `DerivationFailed`: a mutation that
+        breaks the request ENCODING raises `UnicodeEncodeError` from inside
+        `indexed_contents`, which is the module crashing rather than answering --
+        the very thing a case must be able to report.  Narrowing it to the
+        module's own refusal would leave exactly that mutation aborting the run.
+        """
+        try:
+            return fn()
+        except Exception as exc:                # noqa: BLE001 -- see above
+            return exc
+
     with tempfile.TemporaryDirectory() as td:
         root = os.path.join(td, "repo")
         os.makedirs(os.path.join(root, "docs"))
@@ -216,26 +292,60 @@ def _self_test() -> int:
         git("add", "-A")
 
         # A path with whitespace survives, which is what `-z` buys.
-        listed = listed_at(root, ":")
+        listed = value(lambda: listed_at(root, ":"))
         check("listed_at names every indexed path, whitespace included",
               listed == ["docs/a name.md", "docs/a.md", "docs/b.bin"], listed)
+        md = value(lambda: listed_at(root, ":", "*.md"))
         check("listed_at honours a pathspec",
-              listed_at(root, ":", "*.md") == ["docs/a name.md", "docs/a.md"],
-              listed_at(root, ":", "*.md"))
+              md == ["docs/a name.md", "docs/a.md"], md)
 
         # THE decisive case for `indexed_contents`: the index, not the disk.
         with open(plain, "w", encoding="utf-8") as fh:
             fh.write("WORKING TREE\n")
-        got = indexed_contents(root, ["docs/a.md"])
+        got = value(lambda: indexed_contents(root, ["docs/a.md"]))
         check("indexed_contents reads the INDEX, not the working tree",
               got == {"docs/a.md": "staged text\n"}, got)
 
+        # THE decisive case for the framing: a tracked path containing a NEWLINE.
+        # Under the superseded line-framed request this returned `{}` -- the
+        # newline-bearing path AND its readable neighbour both absent, with no
+        # exception -- so a gate reading the staged domain reported a clean tree.
+        # It is a git-driven case rather than a `parse_batch` fixture because what
+        # was wrong is the REQUEST framing, which a fixture cannot exercise.
+        newline_named = "docs/two\nlines.md"
+        with open(os.path.join(root, newline_named), "w", encoding="utf-8") as fh:
+            fh.write("newline-named\n")
+        # Only this path: a blanket `add -A` would re-stage the working-tree edit
+        # the case above made, and so would quietly undo the index/disk split the
+        # next check is about.
+        git("add", "--", newline_named)
+        both = value(lambda: indexed_contents(
+            root, [newline_named, "docs/a name.md"]))
+        check("a path containing a NEWLINE reads back, and so does its neighbour",
+              both == {newline_named: "newline-named\n",
+                       "docs/a name.md": "spaced\n"}, both)
+        git("rm", "-q", "-f", "--", newline_named)
+
+        # ...and a path whose BYTES are not UTF-8.  `listed_at` decodes with
+        # `surrogateescape`, so such a name comes back carrying lone surrogates,
+        # and a plain `.encode("utf-8")` of the request raises on it -- which is
+        # a crash where the module's contract is a per-entry answer.
+        raw_named = os.fsdecode(b"docs/raw-\xff.md")
+        with open(os.path.join(root, raw_named), "w", encoding="utf-8") as fh:
+            fh.write("raw-named\n")
+        git("add", "--", raw_named)
+        raw = value(lambda: indexed_contents(root, [raw_named]))
+        check("a path whose bytes are not UTF-8 reads back",
+              raw == {raw_named: "raw-named\n"}, raw)
+        git("rm", "-q", "-f", "--", raw_named)
+
         # git's own per-entry answers are answers, not failures.
-        got = indexed_contents(root, ["docs/a.md", "docs/nope.md", "docs/b.bin"])
+        got = value(lambda: indexed_contents(
+            root, ["docs/a.md", "docs/nope.md", "docs/b.bin"]))
         check("a path git reports missing is absent from the result",
-              "docs/nope.md" not in got, sorted(got))
+              not isinstance(got, dict) or "docs/nope.md" not in got, got)
         check("a blob that is not UTF-8 is absent from the result",
-              "docs/b.bin" not in got, sorted(got))
+              not isinstance(got, dict) or "docs/b.bin" not in got, got)
         check("the readable neighbours still come back",
               got.get("docs/a.md") == "staged text\n", got)
 
@@ -245,12 +355,11 @@ def _self_test() -> int:
         # staged files; the working tree has since been edited, which is what
         # makes reading a revision different from reading the disk.
         git("commit", "-q", "-m", "fixture")
-        at_head = listed_at(root, "HEAD")
+        at_head = value(lambda: listed_at(root, "HEAD"))
         check("listed_at reads a REVISION, not just the index",
               at_head == ["docs/a name.md", "docs/a.md", "docs/b.bin"], at_head)
-        check("a revision honours a pathspec too",
-              listed_at(root, "HEAD", "docs/a.md") == ["docs/a.md"],
-              listed_at(root, "HEAD", "docs/a.md"))
+        one = value(lambda: listed_at(root, "HEAD", "docs/a.md"))
+        check("a revision honours a pathspec too", one == ["docs/a.md"], one)
 
         # A derivation that FAILED must not answer like one that found nothing.
         try:
@@ -281,11 +390,17 @@ def _self_test() -> int:
 
     # The two arms git cannot be asked to produce.  Both are the superseded
     # parsers' `break`: a PREFIX of the domain, indistinguishable from all of it.
-    ok_stream = b"deadbeef blob 3\nabc\n"
+    ok_stream = b"deadbeef blob 3\0abc\0"
     check("a well-formed stream parses", parse_batch(ok_stream, ["x"]) == {"x": "abc"},
           parse_batch(ok_stream, ["x"]))
+    # A blob whose CONTENT holds a newline is one entry, not two: the framing is
+    # the size and the NUL, so nothing in the data can end an entry early.
+    nl_blob = b"deadbeef blob 7\0a\nb\nc\nd\0cafe blob 1\0z\0"
+    check("a blob containing newlines is ONE entry",
+          parse_batch(nl_blob, ["x", "y"]) == {"x": "a\nb\nc\nd", "y": "z"},
+          parse_batch(nl_blob, ["x", "y"]))
     try:
-        parse_batch(b"deadbeef blob 3\nabc\n", ["x", "y"])
+        parse_batch(b"deadbeef blob 3\0abc\0", ["x", "y"])
     except DerivationFailed as exc:
         check("a TRUNCATED stream raises rather than returning the prefix",
               "1 of 2" in str(exc), str(exc))
@@ -293,14 +408,30 @@ def _self_test() -> int:
         check("a TRUNCATED stream raises rather than returning the prefix",
               False, "returned a prefix")
     try:
-        parse_batch(b"deadbeef blob NOT-A-NUMBER\nabc\n", ["x"])
+        parse_batch(b"deadbeef blob 3\0abc\0cafe blob 1\0z\0", ["x"])
+    except DerivationFailed as exc:
+        check("a SURPLUS response raises -- one entry per request",
+              "remain after" in str(exc), str(exc))
+    else:
+        check("a SURPLUS response raises -- one entry per request",
+              False, "returned quietly")
+    try:
+        parse_batch(b"deadbeef blob 4\0abc\0", ["x"])
+    except DerivationFailed as exc:
+        check("a size that overruns its terminator raises",
+              "not \nNUL-terminated".replace("\n", "") in str(exc), str(exc))
+    else:
+        check("a size that overruns its terminator raises",
+              False, "returned quietly")
+    try:
+        parse_batch(b"deadbeef blob NOT-A-NUMBER\0abc\0", ["x"])
     except DerivationFailed as exc:
         check("an unreadable header raises rather than stopping quietly",
               "unreadable header" in str(exc), str(exc))
     else:
         check("an unreadable header raises rather than stopping quietly",
               False, "returned quietly")
-    miss = parse_batch(b":x missing\n", ["x"])
+    miss = parse_batch(b":x missing\0", ["x"])
     check("a `missing` line is an ANSWER, not a refusal", miss == {}, miss)
 
     if failures:
