@@ -177,25 +177,69 @@ _RECV_OPEN = r"(?:\(\s*)*"
 _RECV_CLOSE = r"(?:\s*\))*"
 
 
+#: The end of a Lean operation NAME.  `\b` is the wrong assertion here: Lean
+#: admits `?`, `!` and `'` in an identifier, so after `get?` the next character is
+#: already a non-word one and `\b` does not hold -- measured by this file's own
+#: `branch_symmetry_violations`, which reported all three qualified spellings of
+#: `get?` unrecognised the moment the branch was first written with `\b`.  What
+#: the question means is *the name stops here*, which is a negative lookahead for
+#: any character that could continue it.
+_NAME_END = r"(?![\w'?!])"
+
+
 def _table_access(kinds: tuple[str, ...], extra_method: str = "") -> str:
     """The method and qualified spellings of every operation of one of `kinds`.
 
     One alternation, two branches, so a widening reaches both by construction.
 
-    Both branches compose `_RECV_OPEN` / `_RECV_CLOSE`; see them for why a
-    receiver's parentheses are part of this question and not a separate one.  The
-    qualified branch additionally admits a parenthesised APPLICATION as the
-    projection's head (`RHTable.erase (spliceOutMidQueueNode st tid).objects k`),
-    which `[\w'.]*` structurally cannot span -- a shape this tree already writes at
-    five sites for theorem helpers, so a write spelled that way is one rename away.
+    **The two branches ask the receiver question differently, and only one of
+    them has to.**  The METHOD branch never looks left of `.objects` at all --
+    `_RECV_CLOSE` closes whatever parentheses the projection sits inside -- so
+    every receiver shape reaches it by construction, at any nesting depth.
+
+    **The QUALIFIED branch over-approximates to the LINE** (`v0.35.153`, PR
+    #897's review).  Its receiver is a Lean *term* in argument position: an
+    identifier chain, or a parenthesised term whose inside may be an application
+    containing further parenthesised applications.  A regex cannot balance
+    parentheses, and a bounded-depth alternation is the enumeration this file
+    spends its length retiring -- so the branch requires only that a qualified
+    table operation be followed, on the same line, by a `.objects` projection.
+    Its predecessor spelled the receiver `(?:\([^()\n]*\)|[\w'.]*)`, a FLAT
+    paren group, so `RHTable.erase ((st)).objects k` and
+    `RHTable.erase (f (g st)).objects k` matched nothing and an executable raw
+    write could sit outside an enforced zero.
+
+    The over-approximation's direction is the one a violations census must fail
+    in: a line carrying a qualified table operation *and* an unrelated
+    `.objects` is reported, which stops Tier 0 and names the declaration, where
+    reading too little passes silently.  Measured before taking it -- over all
+    405 tracked `.lean` files the widened branch admits **zero** lines the flat
+    one did not, so it costs the tree nothing and every witness is planted.
     """
-    alt = _op_alternation(kinds)
-    method = rf"\.objects{_RECV_CLOSE}\.{alt}"
+    method = _method_branch(kinds)
     if extra_method:
         method = rf"(?:{method}|{extra_method})"
-    qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}"
-                 rf"(?:\([^()\n]*\)|[\w'.]*)\.objects\b")
-    return rf"{method}|{qualified}"
+    return rf"{method}|{_qualified_branch(kinds)}"
+
+
+def _method_branch(kinds: tuple[str, ...]) -> str:
+    """`st.objects.insert k v`, at any receiver and any projection nesting.
+
+    ONE owner, because the self-test's mutation cases rebuild the pattern with a
+    single piece removed: with the branches spelled inline there, a case meant to
+    isolate the method side silently re-spelled the qualified one too, and what it
+    then measured was two changes.
+    """
+    return rf"\.objects{_RECV_CLOSE}\.{_op_alternation(kinds)}"
+
+
+def _qualified_branch(kinds: tuple[str, ...]) -> str:
+    """`RHTable.insert st.objects k v`, over-approximated to the line.
+
+    ONE owner, for the reason `_method_branch` gives.
+    """
+    return (rf"\b(?:RHTable|FrozenMap)\.{_op_alternation(kinds)}{_NAME_END}"
+            rf"[^\n]*?\.objects\b")
 
 
 # `st.objects[k]?` is the subscript spelling of the keyed read and has no
@@ -475,18 +519,61 @@ def table_op_violations() -> list[str]:
 #: a spelling checks it for every operation.  A hand-written pair of `if`s is what
 #: let `set` live in one branch and not the other past an enforced zero.
 _OPERATION_SPELLINGS = (
-    ("METHOD", "  let t := st.objects.{op} k v"),
-    ("QUALIFIED", "  let t := RHTable.{op} st.objects k v"),
-    # ...and the same two with the receiver parenthesised.  Lean permits it, this
+    ("METHOD", "  let t := {recv}.objects.{op} k v"),
+    ("QUALIFIED", "  let t := RHTable.{op} {recv}.objects k v"),
+    # ...and the same two with the PROJECTION parenthesised.  Lean permits it, this
     # tree already writes the parenthesised projection at five sites, and every
     # pattern here keys on the receiver's TEXT -- see `_RECV_OPEN` / `_RECV_CLOSE`.
-    ("PARENTHESISED METHOD", "  let t := (st.objects).{op} k v"),
-    ("PARENTHESISED QUALIFIED ARGUMENT",
-     "  let t := RHTable.{op} (st.objects) k v"),
-    # The projection's head may itself be a parenthesised application, which
-    # `[\w'.]*` structurally cannot span.
-    ("PARENTHESISED QUALIFIED HEAD",
-     "  let t := RHTable.{op} (spliceOutMidQueueNode st tid).objects k v"),
+    ("PARENTHESISED PROJECTION, METHOD", "  let t := ({recv}.objects).{op} k v"),
+    ("PARENTHESISED PROJECTION, QUALIFIED",
+     "  let t := RHTable.{op} ({recv}.objects) k v"),
+)
+
+#: Every shape the projection's RECEIVER may take, taken from LEAN'S GRAMMAR
+#: rather than from a finding.  A term in projection position is an identifier
+#: chain or a parenthesised term, and a parenthesised term may be parenthesised
+#: again or hold an application that itself holds one -- so the axis has these
+#: five values and no others.
+#:
+#: `v0.35.151` added this axis and enumerated THREE of its values, which is this
+#: project's own *a new axis is enumerated at all of its values on the day it is
+#: added* unrun: the two it did not (a doubled parenthesis, and a NESTED
+#: application) were a live hole, because the qualified branch spelled its
+#: receiver `(?:\([^()\n]*\)|[\w'.]*)` -- a FLAT paren group that structurally
+#: cannot span either.  An executable raw write spelled
+#: `RHTable.erase (f (g st)).objects k` was therefore outside an enforced zero
+#: (PR #897's review, `v0.35.153`).
+_RECEIVER_SHAPES = (
+    ("BARE", "st"),
+    ("PARENTHESISED", "(st)"),
+    ("DOUBLY PARENTHESISED", "((st))"),
+    ("PARENTHESISED APPLICATION", "(spliceOutMidQueueNode st tid)"),
+    ("NESTED APPLICATION", "(f (spliceOutMidQueueNode st tid))"),
+)
+
+#: ...and every spelling of the object-table TYPE, which is the same substitution
+#: one derivation over: `_TABLE_TYPE` feeds `table_receivers`, so a binder whose
+#: type this does not recognise binds no receiver and its keyed accesses are in
+#: NEITHER census.  Lean resolves a qualified name to the same constant, so each
+#: of the type's identifiers may carry a qualifier independently.
+_TABLE_TYPE_SPELLINGS = (
+    ("SHORT", "(objs : RHTable ObjId KernelObject)"),
+    ("QUALIFIED KEY", "(objs : RHTable SeLe4n.ObjId KernelObject)"),
+    ("QUALIFIED TABLE",
+     "(objs : SeLe4n.Kernel.RobinHood.RHTable ObjId KernelObject)"),
+    ("QUALIFIED VALUE", "(objs : RHTable ObjId SeLe4n.Model.KernelObject)"),
+    ("FROZEN SHORT", "(fm : FrozenMap)"),
+    ("FROZEN QUALIFIED", "(fm : SeLe4n.Model.FrozenMap)"),
+)
+
+#: ...and the spellings that must NOT be a table type, so the qualifier does not
+#: turn the recognition into "anything ending in the right word".  Both are real
+#: shapes: a predicate named after the table, and the same table at another key.
+_NOT_TABLE_TYPE_SPELLINGS = (
+    ("A PREDICATE NAMED AFTER THE TABLE",
+     "(h : SeLe4n.Model.FrozenMapWellFormed t)"),
+    ("THE SAME TABLE AT ANOTHER KEY",
+     "(x : SeLe4n.Model.RHTable ThreadId KernelObject)"),
 )
 
 
@@ -500,9 +587,20 @@ def branch_symmetry_violations() -> list[str]:
     stating the rule a fourth time is what had already failed.
 
     Since `v0.35.151` the spellings are `_OPERATION_SPELLINGS` rather than two
-    inline templates, for the reason the whole cut is about: the receiver may be
+    inline templates, for the reason that cut is about: the receiver may be
     parenthesised, seven positions ask that question, and a reconciliation that
     names two of them is the presence check this file spends its length retiring.
+
+    Since `v0.35.153` it is a CROSSING of three axes rather than one list, and
+    each axis is taken from Lean's grammar rather than from a finding:
+    `_OPERATION_SPELLINGS` x `_RECEIVER_SHAPES` for the access, and
+    `_TABLE_TYPE_SPELLINGS` (with its negative twin) for the binder that feeds
+    the indirect census.  A spelling this gate has not considered is then a
+    missing ROW -- visible, and addable without waiting for a review round to
+    supply it -- which is what the enumerate-the-space rule asks for.  Its first
+    run in that shape reported all three qualified spellings of `get?`
+    unrecognised, because the widened branch had been written with `\b` and Lean
+    admits `?` in an identifier.
 
     The SUBSCRIPT read has no per-operation form -- it is notation, not a named
     operation -- so it is asserted once, in both spellings, beside the crossing.
@@ -513,10 +611,27 @@ def branch_symmetry_violations() -> list[str]:
         if pat is None:
             continue
         for what, template in _OPERATION_SPELLINGS:
-            probe = template.format(op=op)
-            if not pat.search(probe):
-                out.append(f"`{op}` is classified `{kind}` and the {what} spelling "
-                           f"`{probe.strip()}` is not recognised")
+            for shape, recv in _RECEIVER_SHAPES:
+                probe = template.format(op=op, recv=recv)
+                if not pat.search(probe):
+                    out.append(
+                        f"`{op}` is classified `{kind}` and the {what} spelling "
+                        f"with a {shape} receiver `{probe.strip()}` is not "
+                        f"recognised")
+    # ...and the TYPE axis, which decides the indirect census's whole domain: a
+    # binder this does not recognise binds no receiver, so its keyed accesses are
+    # in neither population.  Both directions, because a qualifier that admitted
+    # anything ending in the right word would be a widening nothing bounds.
+    for what, binder in _TABLE_TYPE_SPELLINGS:
+        if not TABLE_BINDER.search(binder):
+            out.append(f"the {what} object-table type `{binder}` binds no "
+                       f"receiver, so a keyed access through it is in neither "
+                       f"the direct nor the indirect census")
+    for what, binder in _NOT_TABLE_TYPE_SPELLINGS:
+        if TABLE_BINDER.search(binder):
+            out.append(f"`{binder}` is {what} and is recognised as an "
+                       f"object-table binder -- the qualifier must not widen "
+                       f"the type into a suffix match")
     for what, probe in (("SUBSCRIPT", "  have h : st.objects[k]? = none"),
                         ("PARENTHESISED SUBSCRIPT",
                          "  have h : (st.objects)[k]? = none")):
@@ -1422,9 +1537,26 @@ def census(view: Path, pattern=READ, registry: dict = ACCESSOR_BODIES):
 # both spellings of the indirection go through one classifier.
 # ---------------------------------------------------------------------------
 
+#: An optional QUALIFIER on a Lean name.  Lean resolves
+#: `SeLe4n.Kernel.RobinHood.RHTable` and `RHTable` to one constant, so a qualified
+#: spelling is not a different type -- and a pattern that recognises only the short
+#: one measures a *spelling*, which is the substitution this file is named for.
+#:
+#: Its predecessor wrote `(?:SeLe4n\.)?` on `ObjId` alone: one of the type's three
+#: identifiers, at one of its qualifications.  That is an enumeration standing in
+#: for a derivation, and it left `SeLe4n.Kernel.RobinHood.RHTable ObjId
+#: KernelObject`, `RHTable ObjId SeLe4n.Model.KernelObject` and
+#: `SeLe4n.Model.FrozenMap` binding no receiver at all -- so an `objs.insert k o`
+#: under such a binder was in neither the direct nor the indirect census and could
+#: leave an enforced zero green (PR #897's review, `v0.35.153`).
+_QUALIFIER = r"(?:[A-Za-z_][\w']*\.)*"
+
 #: The object-table type, in either spelling.  ONE definition, so a bracketed
 #: binder and an unbracketed ascription cannot disagree about what a table is.
-_TABLE_TYPE = (r"(?:RHTable\s+(?:SeLe4n\.)?ObjId\s+KernelObject|FrozenMap)"
+#: The trailing lookahead is what keeps `FrozenMapWellFormed` from reading as a
+#: qualified `FrozenMap`, and it does that job for every qualification too.
+_TABLE_TYPE = (rf"(?:{_QUALIFIER}RHTable\s+{_QUALIFIER}ObjId\s+"
+               rf"{_QUALIFIER}KernelObject|{_QUALIFIER}FrozenMap)"
                r"(?![\w'.])")
 
 #: A BRACKETED binder of object-table type: `(objs : RHTable ObjId KernelObject)`,
@@ -1602,6 +1734,29 @@ INDIRECT_BASELINE = {
      "queueNeighbourPatch", "param", "read"): 1,
     ("SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean",
      "queueNeighbourPatch", "param", "write"): 1,
+    # ...and a FOURTH, visible only since `v0.35.153` made `_TABLE_TYPE` tolerate a
+    # qualified name: this walk's parameter is spelled
+    # `SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject`, and the
+    # predecessor pattern accepted a qualifier on `ObjId` alone -- so it was in
+    # neither the direct nor the indirect census.  (PR #897's review reported the
+    # pattern; the site is what running it found.)
+    #
+    # Unlike the three above it is NOT scheduled for removal, and the measurement
+    # is why.  Taking the table rather than the state is a stated design decision
+    # at the declaration, and it is load-bearing: the predicate it serves
+    # (`noStaleEndpointQueueReferences`) is a conjunct of a 12-conjunct bundle
+    # whose transports across a non-object state update are `rfl` PRECISELY
+    # because the walk cannot mention a non-object field.  Migrating it to
+    # `st.getTcb?` was implemented and measured rather than argued: the walk and
+    # its six theorems port cleanly -- `getTcb?` is definitionally the
+    # discrimination the body performs by hand, and the two CX-M01 proofs SHRINK,
+    # their eight-constructor `KernelObject` splits collapsing to two arms -- and
+    # then `SeLe4n/Kernel/Architecture/Invariant.lean` alone fails seven bundle
+    # transports that had been definitional, against 320+ mentions of that bundle
+    # across twelve files.  A machine-checked `_objects_congr` replaces a
+    # definitional equality with an explicit rewrite at every one of them, which
+    # is a worse trade than recording the site.
+    ("SeLe4n/Kernel/CrossSubsystem.lean", "collectQueueMembers", "param", "read"): 1,
 }
 
 #: The exemptions `table_primitive_declarations` is expected to match, so a
@@ -2585,23 +2740,53 @@ def self_test() -> int:
         ("a receiver whose CLOSING bracket is not admitted is reported",
          "WRITE",
          re.compile(rf"\.objects\.{_op_alternation(('write',))}"
+                    rf"|{_qualified_branch(('write',))}"),
+         "PARENTHESISED PROJECTION, METHOD"),
+        # `v0.35.153`: the qualified branch's receiver, reverted to the FLAT
+        # paren group it was spelled with until PR #897's review.  Two of the
+        # receiver axis's five values are invisible under it -- a doubly
+        # parenthesised receiver and a NESTED application -- which is the live
+        # hole that widening closed, and these two cases are what pin it.  They
+        # are separate rows because they fail for different reasons: `((st))`
+        # defeats `[^()\n]*` by nesting the group, `(f (g st))` by nesting an
+        # application inside it.
+        ("a qualified receiver that admits no NESTED parenthesis is reported",
+         "WRITE",
+         re.compile(rf"{_method_branch(('write',))}"
                     rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
                     rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
-         "PARENTHESISED METHOD"),
+         "DOUBLY PARENTHESISED receiver"),
+        ("...and the same mutation loses a nested APPLICATION receiver",
+         "WRITE",
+         re.compile(rf"{_method_branch(('write',))}"
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
+                    rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
+         "NESTED APPLICATION receiver"),
         # The opening run: `RHTable.insert (st.objects) k v` becomes invisible.
         ("a receiver whose OPENING bracket is not admitted is reported",
          "WRITE",
-         re.compile(rf"\.objects{_RECV_CLOSE}\.{_op_alternation(('write',))}"
+         re.compile(rf"{_method_branch(('write',))}"
                     rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
                     rf"\s+(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
-         "PARENTHESISED QUALIFIED ARGUMENT"),
+         "PARENTHESISED PROJECTION, QUALIFIED"),
         # The parenthesised APPLICATION head, which `[\w'.]*` cannot span.
         ("a parenthesised projection HEAD that is not admitted is reported",
          "WRITE",
-         re.compile(rf"\.objects{_RECV_CLOSE}\.{_op_alternation(('write',))}"
+         re.compile(rf"{_method_branch(('write',))}"
                     rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('write',))}"
                     rf"\s+{_RECV_OPEN}[\w'.]*\.objects\b"),
-         "PARENTHESISED QUALIFIED HEAD"),
+         "PARENTHESISED APPLICATION receiver"),
+        # `v0.35.153`: the operation NAME's end.  Lean admits `?` in an
+        # identifier, so `\b` -- the assertion the widened branch was first
+        # written with -- does not hold after `get?`, and every qualified read
+        # spelling of it went unrecognised.  The gate's own crossing reported it
+        # before the code was run against the tree, which is the case this pins.
+        ("an operation-name boundary that assumes a WORD character is reported",
+         "READ",
+         re.compile(rf"{_method_branch(('read',))}|\.objects{_RECV_CLOSE}\["
+                    rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('read',))}"
+                    rf"\b[^\n]*?\.objects\b"),
+         "`get?` is classified `read`"),
         # The SUBSCRIPT is notation rather than a named operation, so it is
         # asserted once beside the crossing -- and each of its two spellings
         # needs the case the other cannot produce.  Here the bracket is
@@ -2633,6 +2818,31 @@ def self_test() -> int:
                     rf"|\b(?:RHTable|FrozenMap)\.{_op_alternation(('read',))}"
                     rf"\s+{_RECV_OPEN}(?:\([^()\n]*\)|[\w'.]*)\.objects\b"),
          "application to a list literal"),
+        # `v0.35.153`: the TYPE axis, which decides the indirect census's whole
+        # DOMAIN rather than one pattern -- a binder this does not recognise binds
+        # no receiver, so its keyed accesses are in neither population.  It
+        # mutates `TABLE_BINDER`, which is why the loop takes the global's name
+        # rather than assuming an access pattern.
+        #
+        # The first case restores the predecessor's `(?:SeLe4n\.)?` on `ObjId`
+        # alone: one of the type's three identifiers, at one of its
+        # qualifications, which is an enumeration standing in for a derivation and
+        # is what hid `collectQueueMembers` from every store census.
+        ("a table type that admits ONE qualification spelling is reported",
+         "TABLE_BINDER",
+         re.compile(r"[(\{⦃]\s*(?P<names>[\w'][\w' ]*?)\s*:\s*"
+                    r"(?:RHTable\s+(?:SeLe4n\.)?ObjId\s+KernelObject|FrozenMap)"
+                    r"(?![\w'.])"),
+         "QUALIFIED TABLE object-table type"),
+        # ...and the other direction, which is what keeps the qualifier from
+        # widening the type into a suffix match: without the trailing lookahead a
+        # predicate NAMED after the table reads as the table.
+        ("a table type widened into a SUFFIX match is reported",
+         "TABLE_BINDER",
+         re.compile(r"[(\{⦃]\s*(?P<names>[\w'][\w' ]*?)\s*:\s*"
+                    + _QUALIFIER + r"RHTable\s+" + _QUALIFIER + r"ObjId\s+"
+                    + _QUALIFIER + r"KernelObject|" + _QUALIFIER + r"FrozenMap"),
+         "A PREDICATE NAMED AFTER THE TABLE"),
     ]:
         saved = globals()[kind]
         try:

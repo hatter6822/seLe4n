@@ -1,3 +1,90 @@
+## v0.35.153 — a receiver may NEST, and a type may be QUALIFIED
+
+Two holes in the two enforced store zeros, reported in PR #897's review, and
+they are the same substitution one derivation apart.  **The METHOD branch never
+looks left of `.objects`**, so every receiver shape reaches it at any nesting
+depth; **the QUALIFIED branch spelled its receiver as a FLAT paren group**
+(`(?:\([^()\n]*\)|[\w'.]*)`), so `RHTable.erase ((st)).objects k` and
+`RHTable.erase (f (g st)).objects k` matched nothing at all and an executable
+raw write could sit outside `STORE_WRITE_CODE = 0`.
+
+**A regex cannot balance parentheses, and a bounded depth is the enumeration
+this tree retires**, so the branch over-approximates to the **line**: a
+qualified table operation followed, on the same line, by a `.objects`
+projection.  The direction is the one a violations census must fail in — a line
+carrying a qualified operation *and* an unrelated projection is reported, which
+stops Tier 0 and names the declaration, where reading too little passes
+silently.  Measured before taking it: over all 405 tracked `.lean` files the
+widened branch admits **zero** lines the flat one did not.
+
+**The operation NAME's end is not `\b`.**  Lean admits `?` in an identifier, so
+after `get?` the next character is already a non-word one — and the gate's own
+crossing reported all three qualified spellings of `get?` unrecognised the
+moment the branch was first written that way, before any of it ran against the
+tree.  `_NAME_END` is the negative lookahead that says what the question means.
+
+**And the TYPE is the same substitution one derivation over.**  `_TABLE_TYPE`
+feeds `table_receivers`, so a binder it does not recognise binds no receiver and
+its keyed accesses are in **neither** census.  Its predecessor wrote
+`(?:SeLe4n\.)?` on `ObjId` alone: one of the type's three identifiers, at one of
+its qualifications.  Lean resolves a qualified name to the same constant, so each
+identifier now carries its own `_QUALIFIER`, bounded by the trailing lookahead
+that keeps `FrozenMapWellFormed` from reading as a `FrozenMap`.
+
+### The widening was not free, and the measurement is the finding
+
+It admitted exactly one live site: **`collectQueueMembers`**
+(`SeLe4n/Kernel/CrossSubsystem.lean`), whose table parameter is spelled
+`SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject` — outside
+`STORE_READ_CODE`, `STORE_WRITE_CODE` *and* `STORE_INDIRECT_CODE`, because the
+predecessor accepted a qualifier on the key alone.  Three indirect-holding
+declarations were already recorded; this is a fourth.
+
+**It is recorded rather than migrated, and the migration was implemented before
+being reverted rather than argued away.**  The walk and its six theorems port
+cleanly — `getTcb?` is definitionally the discrimination the body performs by
+hand, and the two CX-M01 proofs *shrink*, their eight-constructor `KernelObject`
+splits collapsing to the two arms the walk distinguishes.  Then
+`SeLe4n/Kernel/Architecture/Invariant.lean` alone fails **seven** bundle
+transports that had been definitional, against **320+** mentions of that bundle
+across twelve files: the declaration's own docstring gives taking the table as a
+deliberate decision so the predicate cannot mention a non-object field, and that
+is load-bearing — it is what makes `{ st with perCoreTlb := t }` transport by
+`rfl`.  A machine-checked `_objects_congr` replaces a definitional equality with
+an explicit rewrite at every one of them, which is a worse trade than recording
+the site.  *When a measurement kills the plan, that is the measurement working.*
+
+### Both are CELLS now, not patches
+
+`branch_symmetry_violations` is a crossing of three axes, each taken from Lean's
+grammar rather than from a finding: `_OPERATION_SPELLINGS` × `_RECEIVER_SHAPES`
+(160 cells) for the access, and `_TABLE_TYPE_SPELLINGS` with its negative twin
+(8 rows) for the binder that feeds the indirect census.  `v0.35.151` added the
+receiver axis and enumerated **three** of its five values, which is this
+project's own *a new axis is enumerated at all of its values on the day it is
+added* unrun — and the two it skipped were the live hole.
+
+`_method_branch` and `_qualified_branch` are one owner each, because the
+self-test's mutation cases rebuild the pattern with a single piece removed: with
+the branches spelled inline there, a case meant to isolate one side silently
+re-spelled the other, and what it then measured was two changes.
+
+### Validation
+
+114 self-test cases (six new, each mutation-verified): the flat receiver reverted
+loses the doubly-parenthesised and the nested-application cells in **separate**
+rows, because they defeat `[^()\n]*` for different reasons; `\b` restored loses
+every `get?` cell; the one-off qualifier restored loses three type spellings; and
+the trailing lookahead dropped makes a predicate named after the table read as
+the table.  Sixteen Tier 3 anchors, both negatives declaration-bounded (the
+self-test carries the retired spellings by design) and both mutation-verified —
+one of them **missed on its first run**, a `\\\(` that never reached `rg`, which
+is this tree's own *a mis-quoted anchor decides nothing* hazard caught by the
+mutation rather than by reading.
+
+`lake build` clean, the census's own rows byte-identical apart from the one new
+site, and both enforced zeros hold at 0.
+
 ## v0.35.152 — an escape hatch keyed on a resemblance is the contract's real width
 
 Six review findings, and four are one class: **`v0.35.150` required probe text

@@ -18236,10 +18236,11 @@ run_negative_check "INVARIANT" rg -F -n 'def word_occurrences(' scripts/scenario
 run_check "INVARIANT" rg -F -n '_RECV_OPEN = r"(?:\(\s*)*"' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -F -n '_RECV_CLOSE = r"(?:\s*\))*"' scripts/lean_store_read_census.py
 # The three DIRECT positions compose them.
-run_check "INVARIANT" rg -F -n 'method = rf"\.objects{_RECV_CLOSE}\.{alt}"' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'return rf"\.objects{_RECV_CLOSE}\.{_op_alternation(kinds)}"' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -F -n 'extra_method=rf"\.objects{_RECV_CLOSE}\[")' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -F -n 'qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}"' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -F -n 'rf"(?:\([^()\n]*\)|[\w'"'"'.]*)\.objects\b")' scripts/lean_store_read_census.py
+# (the QUALIFIED branch's two anchors were retired at `v0.35.153`: it spells no
+# receiver at all now, over-approximating to the line, so `_qualified_branch`'s
+# own anchor and the receiver axis's five cells carry what they claimed.)
 # ...and the three INDIRECT positions.
 run_check "INVARIANT" rg -F -n 'method = rf"(?<![\w'"'"'.]){r}{_RECV_CLOSE}\.{alt}"' scripts/lean_store_read_census.py
 run_check "INVARIANT" rg -F -n 'qualified = (rf"\b(?:RHTable|FrozenMap)\.{alt}\s+{_RECV_OPEN}{r}"' scripts/lean_store_read_census.py
@@ -18257,9 +18258,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _indirect_access\([^\n]*(
 # naming two spellings inline: classifying an operation checks it in every
 # spelling, and adding a spelling checks it for every operation.
 run_check "INVARIANT" rg -F -n '_OPERATION_SPELLINGS = (' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -F -n '("PARENTHESISED METHOD", "  let t := (st.objects).{op} k v"),' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -F -n '("PARENTHESISED QUALIFIED HEAD",' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -F -n 'for what, template in _OPERATION_SPELLINGS:' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '("PARENTHESISED PROJECTION, METHOD", "  let t := ({recv}.objects).{op} k v"),' scripts/lean_store_read_census.py
+# (the PARENTHESISED QUALIFIED HEAD spelling became a value of the RECEIVER axis
+# at `v0.35.153`; `("PARENTHESISED APPLICATION", ...)` is anchored with the rest
+# of that axis below.)
+run_check "INVARIANT" bash -lc 'rg -U -n "for what, template in _OPERATION_SPELLINGS:\n            for shape, recv in _RECEIVER_SHAPES:" scripts/lean_store_read_census.py'
 # ...and the one spelling that must NOT be a read: Lean's lexer separates a
 # subscript from an application to a list literal by exactly that space.
 run_check "INVARIANT" rg -F -n 'if READ.search("  f (st.objects) [a, b]"):' scripts/lean_store_read_census.py
@@ -18309,5 +18312,59 @@ run_check "INVARIANT" rg -F -n 'def resolve_producers(' scripts/select_changed_a
 run_check "INVARIANT" rg -F -n '    if len(chosen) != len(names):' scripts/select_changed_anchors.py
 run_check "INVARIANT" rg -F -n '        related = "\n".join(prelude + [command])' scripts/select_changed_anchors.py
 run_check "INVARIANT" rg -F -n '            command = "; ".join(prelude + [command])' scripts/select_changed_anchors.py
+
+# ============================================================================
+# v0.35.153 -- a receiver may NEST, and a type may be QUALIFIED
+# ============================================================================
+#
+# Two holes in the two enforced store zeros, both the same substitution one
+# derivation apart: the METHOD branch never looks left of `.objects`, so every
+# receiver shape reaches it; the QUALIFIED branch spelled its receiver as a FLAT
+# paren group, so `RHTable.erase ((st)).objects k` and
+# `RHTable.erase (f (g st)).objects k` matched nothing.  It over-approximates to
+# the LINE now -- a regex cannot balance parentheses and a bounded depth is the
+# enumeration this tree retires -- and the direction is the one a violations
+# census must fail in.
+run_check "INVARIANT" rg -F -n 'def _method_branch(kinds: tuple[str, ...]) -> str:' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n 'def _qualified_branch(kinds: tuple[str, ...]) -> str:' scripts/lean_store_read_census.py
+run_check "INVARIANT" bash -lc 'rg -U -n "def _qualified_branch[^\n]*(\n([ \t][^\n]*)?)*\[\^\\\\n\]\*\?\\\\\.objects" scripts/lean_store_read_census.py'
+# ...and the retired FLAT receiver must not come back INSIDE that owner.  Bounded
+# to the declaration, because the self-test's mutation cases carry the retired
+# spelling by design -- that is what makes them decide it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "def _qualified_branch[^\n]*(\n([ \t][^\n]*)?)*\[\^\(\)" scripts/lean_store_read_census.py'
+# ...and the operation NAME ends where a name-continuation character does not
+# follow, never at a `\b`: Lean admits `?` in an identifier, so `get?` has no
+# word boundary after it and all three of its qualified spellings went
+# unrecognised the moment the branch was first written.
+run_check "INVARIANT" rg -F -n "_NAME_END = r\"(?![\\w'?!])\"" scripts/lean_store_read_census.py
+#
+# The TYPE is the same substitution one derivation over: `_TABLE_TYPE` feeds
+# `table_receivers`, so a binder it does not recognise binds no receiver and its
+# keyed accesses are in NEITHER census.  Lean resolves a qualified name to the
+# same constant, so each identifier carries its own optional qualifier -- where
+# the predecessor wrote `(?:SeLe4n\.)?` on `ObjId` alone.
+run_check "INVARIANT" rg -F -n "_QUALIFIER = r\"(?:[A-Za-z_][\\w']*\\.)*\"" scripts/lean_store_read_census.py
+run_check "INVARIANT" bash -lc 'rg -U -n "_TABLE_TYPE = \(rf\"\(\?:\{_QUALIFIER\}RHTable[^\n]*(\n([ \t][^\n]*)?)*\{_QUALIFIER\}FrozenMap\)\"" scripts/lean_store_read_census.py'
+# ...and the retired one-off must not come back INSIDE the definition.  Bounded
+# to it, because the self-test's decisive case carries that spelling by design
+# -- which is what makes the case decide the qualifier rather than the fixture.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "_TABLE_TYPE = \([^\n]*(\n([ \t][^\n]*)?)*SeLe4n" scripts/lean_store_read_census.py'
+#
+# Both are CELLS of a crossing now rather than patches, and each axis is taken
+# from Lean's grammar: a term in projection position is an identifier chain or a
+# parenthesised term, which may nest or hold an application that nests.
+run_check "INVARIANT" rg -F -n '_RECEIVER_SHAPES = (' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '    ("DOUBLY PARENTHESISED", "((st))"),' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '    ("NESTED APPLICATION", "(f (spliceOutMidQueueNode st tid))"),' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '_TABLE_TYPE_SPELLINGS = (' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -F -n '_NOT_TABLE_TYPE_SPELLINGS = (' scripts/lean_store_read_census.py
+run_check "INVARIANT" bash -lc 'rg -U -n "for what, template in _OPERATION_SPELLINGS:\n            for shape, recv in _RECEIVER_SHAPES:" scripts/lean_store_read_census.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "for what, binder in _NOT_TABLE_TYPE_SPELLINGS:\n        if TABLE_BINDER.search\(binder\):" scripts/lean_store_read_census.py'
+#
+# ...and the FOURTH indirect site the type widening made visible.  It is recorded
+# rather than migrated, and the measurement is in the entry: taking the table is a
+# stated design decision that keeps a 12-conjunct bundle's transports
+# DEFINITIONAL, and the migration was implemented before being reverted.
+run_check "INVARIANT" rg -F -n '("SeLe4n/Kernel/CrossSubsystem.lean", "collectQueueMembers", "param", "read"): 1,' scripts/lean_store_read_census.py
 
 finalize_report

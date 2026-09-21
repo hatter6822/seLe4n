@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.152.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.153.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3529,6 +3529,41 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   assignment of that name before the anchor, and the relation, the disposition
   and the executed text are one answer.  An unbound name resolves to nothing at
   all rather than to a partial prelude.
+
+  **And a new AXIS is only as good as the values you enumerate on it** (PR #897
+  review, `v0.35.153`).  `v0.35.151` gave the store census's symmetry matrix a
+  *receiver* axis and enumerated three of its five values; the two it skipped —
+  a doubly parenthesised receiver and a NESTED application — were a live hole in
+  the qualified branch, whose receiver was a FLAT paren group, so
+  `RHTable.erase (f (g st)).objects k` was outside an enforced zero.  That is
+  this file's own *a new axis is enumerated at all of its values on the day it is
+  added* rule, unrun by the cut that created the axis.  **Take the axis's values
+  from the grammar**: a Lean term in projection position is an identifier chain
+  or a parenthesised term, which may nest or hold an application that nests, so
+  the axis has five values and no others.  The same review found the same
+  substitution one derivation over — `_TABLE_TYPE` wrote `(?:SeLe4n\.)?` on one
+  of the type's three identifiers, at one of its qualifications, so a binder
+  spelled `SeLe4n.Kernel.RobinHood.RHTable …` bound no receiver and its keyed
+  accesses were in **neither** census.  A qualified Lean name denotes the same
+  constant, so the qualifier is per identifier and bounded by a
+  name-continuation lookahead.
+
+  Three things that cut records.  **A regex cannot balance parentheses, so the
+  qualified branch over-approximates to the LINE** and says so — a bounded
+  nesting depth is the enumeration this file retires, and over-reporting a
+  violation stops Tier 0 and names the declaration where under-reporting passes
+  silently (measured: zero lines admitted on the live tree).  **The operation
+  name's end is not `\b`** — Lean admits `?` in an identifier, so after `get?`
+  there is no word boundary, and the crossing reported all three of its qualified
+  spellings unrecognised before the branch ever ran against the tree.  And **a
+  widening that admits a live site is a finding, not a failure**: the type
+  widening surfaced `collectQueueMembers`, whose migration to the state accessor
+  was *implemented and then reverted* — the walk and its six theorems port
+  cleanly and two proofs shrink, but seven bundle transports in one module stop
+  being definitional, against 320+ mentions across twelve files, because taking
+  the table is what keeps the predicate unable to mention a non-object field.
+  It is recorded in the indirect floor with that measurement.  *When a
+  measurement kills the plan, that is the measurement working.*
 
 - **Retired code is removed, not left to pollute the tree.**  When a cut
   supersedes a definition, a theorem, a resolver or a policy, the superseded
