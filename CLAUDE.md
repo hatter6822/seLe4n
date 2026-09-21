@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.146.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.147.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1401,6 +1401,64 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   registering the parameter as a provider.  That is round 16's `.macro` hazard
   arriving through the fix for a different one; a preprocessor line is not split
   and contributes nothing.
+
+  **And a FAILED derivation is not an EMPTY one — the same rule at the point
+  where a gate learns its own domain** (PR #897 review, `v0.35.147`).  The rule
+  above is about *input* a scanner cannot read.  This is about the *question it
+  asks the outside world*: four Tier 0 gates derive their whole domain by running
+  git, and every one of them answered a failed run with an **empty** one —
+  `except (CalledProcessError, FileNotFoundError): return []` and its `{}` twin.
+  `[]` is also what a clean scan of a tree with nothing in it returns, so the
+  caller iterates over nothing, finds nothing, and the gate prints PASS.
+
+  **The review reported one site; the sweep found seven**, and the sweep is the
+  point.  Its first form keyed on `subprocess.` and so missed the *reported*
+  one, which runs git through a helper — *a helper the scanner cannot see is a
+  spelling that evades the metric*, inside the measurement written to size the
+  class — so the domain is closed **transitively** over intra-module calls.  The
+  test that separates a defect from a deliberate sentinel is sharp and needs no
+  registry: **a failure branch is a defect when its value is one the SUCCESS path
+  can also return.**  `-> list[str]` returning `[]` is indistinguishable;
+  `-> str | None` returning `None` is a sentinel the caller reads.  Measured over
+  every tracked `scripts/*.py`: 10 failure branches in the git-derivation domain,
+  **8 indistinguishable and 2 sentinels, with nothing undecidable**.
+
+  Three things this cut records.  **The consequence is measured per site, not
+  asserted**: only `check_deferral_registration.tracked_files` was run to ground,
+  and what it produced was not a silent pass but a **misdiagnosis** — 35 false
+  "row cites a path the index does not track" findings, naming the register
+  instead of git, which is *answering in the words of a fault it does not have*;
+  the rest are the same wrong shape at lower or unmeasured reachability, and the
+  fix is the shape.  Claiming seven silent passes would have been the overstatement
+  the measurement exists to prevent.  **The shared answer is
+  `scripts/indexed_source.py`**, because `check_deferral_registration.indexed_contents`
+  and `generate_smp_theorem_manifest.indexed_text` were the same `cat-file --batch`
+  parser — same loop, same header split, same `i += size + 1`, same trailing
+  comment — under two names; collapsing them found a **third** instance inside
+  the body itself, since both `break` on an unreadable header and return the
+  **prefix** they had parsed, which is a truncated domain indistinguishable from
+  a complete one.  And **not everything that runs git should raise**:
+  `select_changed_anchors._git` stays status-returning because three of its
+  callers ask git a question whose answer IS the exit status (`rev-parse
+  --verify`; `diff --no-index`, where 1 means "they differ"), so only the two for
+  which a nonzero status is a *failure* raise.  A raise cannot be mistaken for an
+  answer, which is why the shared module raises and that helper must not be folded
+  into it.
+
+  The fifth instance is the same rule one artefact over, and it is the one that
+  says where to look next: `check_anchor_consistency`'s `filtered` bucket means
+  *composed*, and its **membership** was a fall-through from every other arm — so
+  `LC_ALL=C rg PATTERN FILE` inside a `bash -lc`, which heads no option table and
+  is not a `SEARCH_TOOLS` head either, landed in the EXCLUDED bucket on a stated
+  ground that is false of it, while the bare-argv sibling answered `unparsed`.
+  `_is_composed` decides that bucket positively now and everything else that
+  searches and does not reduce is `unparsed`, whatever its head.  **When a
+  category has a stated reason, its membership test must BE that relation** — and
+  a bucket reached by falling through is not one.  The widening admits nothing on
+  the live tree (5211 / 827 / 38, byte-identical), so every witness is planted,
+  and the two new fixtures are decided by *different* conditions: restoring the
+  fall-through flips both, while opening the assignment set flips only one — which
+  is what keeps either from being inert.
 
   **And a default branch over a closed inductive is a decision five artefacts got
   wrong** (PR #897 review, `v0.35.114` and `v0.35.115`).  The rule above is about

@@ -613,17 +613,50 @@ def select(
     return out
 
 
-def _git(*args: str, cwd: pathlib.Path | None = None) -> tuple[int, str]:
+def _git(*args: str, cwd: pathlib.Path | None = None) -> tuple[int, str, str]:
+    """`(status, stdout, stderr)` -- deliberately NOT raising on a nonzero status.
+
+    Three callers ask git a *question* whose answer IS the exit status:
+    `rev-parse --verify` ("does this ref exist"), and `diff --no-index` / `diff`
+    ("do these differ", where 1 means yes).  A nonzero status there is data, so
+    this helper must stay status-returning and each caller decides whether its
+    own nonzero status is an answer or a failure.  That is why the two callers
+    for which it is a *failure* raise `UnknownChangeSet` rather than this
+    function raising for all of them, and why this one is not folded into
+    `indexed_source.run_git`, whose whole contract is the opposite.
+
+    The stderr is carried because a gate that says only "git failed" sends a
+    reader to reproduce it by hand.
+    """
     r = subprocess.run(
         ["git", *args], cwd=cwd or REPO_ROOT, capture_output=True, text=True
     )
-    return r.returncode, r.stdout
+    return r.returncode, r.stdout, r.stderr
 
 
 def _names(*args: str) -> list[str]:
-    code, out = _git("diff", "--no-renames", "--name-only", *args)
+    """The paths `git diff` names, or `UnknownChangeSet`.
+
+    A failed diff RAISES rather than answering `[]`, because `[]` is also what
+    a clean tree returns -- and the two are not interchangeable *here* in a way
+    this file already documents: `changed_paths` tries three derivations in
+    order and takes the first that is non-empty, so an empty answer from the
+    first silently promotes the **next** one.  `_untracked`'s own docstring
+    names the consequence for a different cause: the gate "sweeps the
+    *previous* cut's change set while reporting a clean run".  A `git diff` that
+    fails produces exactly that, and `changed_paths`' docstring already states
+    the contract ("**failing** rather than answering 'nothing' when none
+    applies") this branch used to violate.
+    """
+    code, out, err = _git("diff", "--no-renames", "--name-only", *args)
     if code != 0:
-        return []
+        raise UnknownChangeSet(
+            f"FAIL: changed-file anchor sweep — `git diff --no-renames "
+            f"--name-only {' '.join(args)}` exited {code}, so this gate cannot "
+            f"say what this cut changes.  It will not fall through to an older "
+            f"derivation and sweep a different cut's change set."
+            + (f"\n  git said: {err.strip()}" if err.strip() else "")
+        )
     return [l for l in out.splitlines() if l.strip()]
 
 
@@ -637,10 +670,20 @@ def _untracked(repo: pathlib.Path | None = None) -> list[str]:
     it, which is the first thing it reported.
 
     `--exclude-standard` honours `.gitignore`, so build output is not a change.
+
+    A failed listing RAISES for the reason `_names` gives: answering `[]` is
+    indistinguishable from "this cut adds no file", and the derivation order
+    turns that into the very fall-through the paragraph above describes.
     """
-    code, out = _git("ls-files", "--others", "--exclude-standard", cwd=repo)
+    code, out, err = _git("ls-files", "--others", "--exclude-standard", cwd=repo)
     if code != 0:
-        return []
+        raise UnknownChangeSet(
+            f"FAIL: changed-file anchor sweep — `git ls-files --others "
+            f"--exclude-standard` exited {code}, so this gate cannot say which "
+            f"files this cut adds.  It will not fall through to an older "
+            f"derivation and sweep a different cut's change set."
+            + (f"\n  git said: {err.strip()}" if err.strip() else "")
+        )
     return [l for l in out.splitlines() if l.strip()]
 
 
@@ -743,7 +786,7 @@ def added_anchor_lines(
     for p in tier_scripts(scripts_dir):
         rel = str(p.relative_to(root)) if p.is_relative_to(root) else str(p)
         if rel in untracked:
-            code, diff = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)
+            code, diff, _err = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)
             if code > 1:
                 raise UnknownChangeSet(
                     f"FAIL: changed-file anchor sweep — `git diff --no-index` "
@@ -753,7 +796,7 @@ def added_anchor_lines(
                     f"sweep over a suite it could not read."
                 )
         else:
-            code, diff = _git("diff", "-U0", base, "--", rel, cwd=repo)
+            code, diff, _err = _git("diff", "-U0", base, "--", rel, cwd=repo)
             if code != 0:
                 raise UnknownChangeSet(
                     f"FAIL: changed-file anchor sweep — `git diff -U0 {base}` "

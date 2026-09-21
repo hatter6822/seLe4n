@@ -16512,11 +16512,17 @@ run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_the_unbracketed_label_sh
 # reduction placed first would file them as positives.  The gap bounds both to
 # `classify_line`.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        wrapped = _wrapped_search\(script\)" scripts/check_anchor_consistency.py'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*            reduced = _search_invocation\(inner\)" scripts/check_anchor_consistency.py'
+# `v0.35.147` REPOINTED the next two: the reduction reads `stripped`, and
+# `filtered` is now decided POSITIVELY by `_is_composed` rather than fallen into.
+# The claims are the same two -- the reduction happens, and a composition is
+# still excluded -- pinned at the expressions that now carry them.  A positive
+# left naming the retired spelling would fail outright; one left naming a
+# retired *negation* would have been the tautology this file warns about.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        reduced = None if stripped is None else _search_invocation\(stripped\)" scripts/check_anchor_consistency.py'
 # ...and `_is_composed` still decides what a composition is, so the 11 genuinely
 # composed invocations keep their honest exclusion.  A mutation that drops this
 # guard compares a pipeline's first search as though it were the whole anchor.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        if not _is_composed\(inner\):" scripts/check_anchor_consistency.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*        if _is_composed\(inner\):" scripts/check_anchor_consistency.py'
 # ...and an uncomposed wrapped search this parser cannot reduce FAILS the gate,
 # the same direction a bare argv gets: "could not read" must not answer like
 # "read and clean".  Both fail-closed exits are pinned -- the unreadable script
@@ -16527,7 +16533,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]
 # left it green.  That is *a presence check is not a relation check* inside an
 # anchor written for this cut, caught by its own mutation.  The comment lines are a
 # bounded run rather than text this depends on.
-run_check "INVARIANT" bash -lc 'rg -U -n "            if inner and inner\[0\] in SEARCH_TOOLS:\n(                #[^\n]*\n)*                return \(\"unparsed\", False, None, \[\], frozenset\(\)\)" scripts/check_anchor_consistency.py'
+# `v0.35.147`: that exit is now UNCONDITIONAL -- an uncomposed search this
+# parser cannot reduce is `unparsed` whatever its head, which is what closed the
+# env-prefix hole.  The pin is still the RELATION and still the return VALUE:
+# the arm that follows the successful reduction must be the fail-closed one, so
+# a mutation restoring a `filtered` fall-through between them is caught.  The
+# retired `if inner and inner[0] in SEARCH_TOOLS:` guard is refused tree-wide by
+# the negative in this file's `v0.35.147` block.
+run_check "INVARIANT" bash -lc 'rg -U -n "                    reduced\[0\], reduced\[1\], reduced\[2\]\)\n        return \(\"unparsed\" if SEARCH_TOOL_RE.search\(script\) else \"plain\"," scripts/check_anchor_consistency.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def classify_line[^\n]*(\n([ \t][^\n]*)?)*            # An unbalanced quote inside the script\." scripts/check_anchor_consistency.py'
 # ...and the measurement is recorded where the branch is, so a later reader can
 # re-run it rather than re-trust it.
@@ -16614,7 +16627,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def changed_paths[^\n]*(\n([ \t][^\n]
 # that `cwd`.  The RELATION is unchanged and is what is pinned -- the untracked
 # set is `ls-files --others --exclude-standard`, read at a call rather than in
 # prose.)
-run_check "INVARIANT" rg -F -n 'code, out = _git("ls-files", "--others", "--exclude-standard", cwd=repo)' scripts/select_changed_anchors.py
+# (`v0.35.147` repoints it again for the same reason: `_git` now returns its
+# stderr as well, because a gate that says only "git failed" sends a reader to
+# reproduce it by hand.  The RELATION is unchanged and is still what is pinned.)
+run_check "INVARIANT" rg -F -n 'code, out, err = _git("ls-files", "--others", "--exclude-standard", cwd=repo)' scripts/select_changed_anchors.py
 # ...AND THE SAME FACT REACHES `added_anchor_lines` (`v0.35.140`, PR #897's
 # review).  `changed_paths` knew `git diff` cannot see an untracked file and this
 # function, twenty lines below, asked `git diff` anyway -- so every anchor in a
@@ -16632,7 +16648,11 @@ run_check "INVARIANT" rg -F -n 'code, out = _git("ls-files", "--others", "--excl
 # escaped quote ends the argument early and the anchor silently decides
 # nothing -- which is exactly the shape `check_anchor_consistency.py` refuses.)
 run_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*    untracked = set\(_untracked\(repo\)\)" scripts/select_changed_anchors.py'
-run_check "INVARIANT" rg -F -n 'code, diff = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)' scripts/select_changed_anchors.py
+# (`v0.35.147`: `_git` carries its stderr now, so the unpack gained a third
+# name.  This call is one of the three whose nonzero STATUS is an answer rather
+# than a failure -- `diff --no-index` exits 1 when the files differ -- which is
+# why `_git` stays status-returning while `_names` and `_untracked` raise.)
+run_check "INVARIANT" rg -F -n 'code, diff, _err = _git("diff", "--no-index", "-U0", os.devnull, rel, cwd=repo)' scripts/select_changed_anchors.py
 # ...with `--no-index`'s exit 1 read as THE ANSWER (the two files differ), so only
 # a status above it is an error.
 run_check "INVARIANT" bash -lc 'rg -U -n "^    \\x22\\x22\\x22Anchor lines this cut adds or changes[^\n]*(\n([ \t][^\n]*)?)*            if code > 1:" scripts/select_changed_anchors.py'
@@ -17960,5 +17980,52 @@ run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen removal, which
 run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen pop, which promoted NOTHING' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -F -n 'FO-049 PAYOFF: a later removal of the promoted head succeeds on both surfaces' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -F -n '  differentialQueueNeighbourResolutionAgrees' tests/FrozenOpsSuite.lean
+# --- v0.35.147: a failed derivation is not an empty one -----------------------
+#
+# Four Tier 0 gates derived a domain from git and answered a FAILED derivation
+# with an EMPTY one -- `[]` / `{}`, which is exactly what a clean scan of an
+# empty tree returns.  The shared answer is `scripts/indexed_source.py`, which
+# raises; the negatives refuse each superseded spelling inside the declaration
+# that carried it, because the same `except ...: return []` shape is legitimate
+# elsewhere and a file-wide negative would fire on a clean tree.
+
+# The shared derivation refuses rather than answering.
+run_check "INVARIANT" rg -F -n 'raise DerivationFailed(full, proc.returncode,' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'could not be run ({exc})' scripts/indexed_source.py
+# ...and the batch parser refuses a PREFIX of the domain, which is the same
+# defect one level in: the two superseded copies `break` here.
+run_check "INVARIANT" rg -F -n 'output ended after {n} of {len(wanted)} entries' scripts/indexed_source.py
+run_check "INVARIANT" rg -F -n 'unreadable header for {rel!r}: {header!r}' scripts/indexed_source.py
+
+# The four gates read the shared answer, and none of them re-spells the swallow.
+run_check "INVARIANT" rg -F -n 'return listed_at(str(REPO_ROOT), ":")' scripts/check_deferral_registration.py
+run_check "INVARIANT" rg -F -n 'return _indexed_contents(str(REPO_ROOT), paths)' scripts/check_deferral_registration.py
+run_check "INVARIANT" rg -F -n 'return _indexed_contents(str(REPO_ROOT), rels)' scripts/generate_smp_theorem_manifest.py
+run_check "INVARIANT" rg -F -n 'for rel in listed_at(str(REPO), ":", "*.md"):' scripts/check_workstream_plan.py
+run_negative_check "INVARIANT" rg -U -n 'def tracked_files[^\n]*(\n([ \t][^\n]*)?)*return \[\]' scripts/check_deferral_registration.py
+run_negative_check "INVARIANT" rg -U -n 'def indexed_text[^\n]*(\n([ \t][^\n]*)?)*except \(subprocess' scripts/generate_smp_theorem_manifest.py
+run_negative_check "INVARIANT" rg -U -n 'def list_tracked[^\n]*(\n([ \t][^\n]*)?)*except subprocess' scripts/check_workstream_plan.py
+run_negative_check "INVARIANT" rg -U -n 'def prose_count_sources[^\n]*(\n([ \t][^\n]*)?)*return \{\}' scripts/check_workstream_plan.py
+
+# The changed-file sweep refuses an underivable change set rather than falling
+# through to an older derivation and sweeping a DIFFERENT cut -- the consequence
+# `_untracked`'s own docstring already named for another cause.
+run_check "INVARIANT" rg -U -n 'def _names[^\n]*(\n([ \t][^\n]*)?)*raise UnknownChangeSet' scripts/select_changed_anchors.py
+run_check "INVARIANT" rg -U -n 'def _untracked[^\n]*(\n([ \t][^\n]*)?)*raise UnknownChangeSet' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -U -n 'def _names[^\n]*(\n([ \t][^\n]*)?)*if code != 0:\n        return \[\]' scripts/select_changed_anchors.py
+run_negative_check "INVARIANT" rg -U -n 'def _untracked[^\n]*(\n([ \t][^\n]*)?)*if code != 0:\n        return \[\]' scripts/select_changed_anchors.py
+# ...while `_git` stays status-returning, because three callers ask git a
+# question whose answer IS the status.
+run_check "INVARIANT" rg -F -n 'def _git(*args: str, cwd: pathlib.Path | None = None) -> tuple[int, str, str]:' scripts/select_changed_anchors.py
+
+# `filtered` means COMPOSED, decided positively, so an env-prefixed search no
+# longer falls into the excluded bucket.  The negative refuses the retired
+# fall-through by the name it tested (`inner`), which the bare-argv sibling
+# does not use.
+run_check "INVARIANT" rg -F -n 'if _is_composed(inner):' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -F -n 'if m.group(1) not in COLLATION_ONLY_ASSIGNMENTS:' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -F -n 'bare = None if _is_composed(argv) else _strip_env_prefix(argv)' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -F -n 'stripped = _strip_env_prefix(inner)' scripts/check_anchor_consistency.py
+run_negative_check "INVARIANT" rg -F -n 'if inner and inner[0] in SEARCH_TOOLS:' scripts/check_anchor_consistency.py
 
 finalize_report

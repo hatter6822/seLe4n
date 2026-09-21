@@ -1,3 +1,130 @@
+## v0.35.147 — a failed derivation is not an empty one
+
+PR #897 review, and the sweep it opened.  Four Tier 0 gates derive their whole
+domain by running git, and every one of them answered a **failed** run with an
+**empty** one — `except (CalledProcessError, FileNotFoundError): return []` and
+its `{}` twin.  `[]` is also what a clean scan of a tree with nothing in it
+returns, so the caller iterates over nothing, finds nothing, and the gate prints
+PASS.
+
+**The review reported one site.  The sweep found seven**, and the sweep's own
+first form found six: it keyed on `subprocess.` and so missed the *reported*
+one, which runs git through a helper — a helper the scanner cannot see is a
+spelling that evades the metric, inside the measurement written to size the
+class.  The domain is closed transitively over intra-module calls, and the test
+that separates a defect from a deliberate sentinel needs no registry:
+
+> **a failure branch is a defect when its value is one the SUCCESS path can also
+> return.**
+
+`-> list[str]` answering `[]` is indistinguishable; `-> str | None` answering
+`None` is a sentinel the caller reads.  Measured over every tracked
+`scripts/*.py`: 10 failure branches in the git-derivation domain, **8
+indistinguishable and 2 sentinels, nothing undecidable**.
+
+### The consequence is measured per site, not asserted
+
+Only `check_deferral_registration.tracked_files` was run to ground, and what it
+produced was not a silent pass but a **misdiagnosis**:
+
+```
+$ PATH=<no git> python3 scripts/check_deferral_registration.py     # superseded
+  docs/REGISTERED_DEBT.md: row 94 cites `tests/An10CascadeSuite.lean`, which the index does not track
+  ... 35 findings, every one false, naming the register instead of git
+$ PATH=<no git> python3 scripts/check_deferral_registration.py     # v0.35.147
+FAIL: the scan domain could not be derived from git -- `git ls-files -z --`;
+      could not be run ([Errno 2] No such file or directory: 'git')
+```
+
+That is *answering in the words of a fault it does not have*.  The other six are
+the same wrong shape at lower or unmeasured reachability; claiming seven silent
+passes would have been the overstatement the measurement exists to prevent.
+
+### The shared answer, and the third instance inside it
+
+`scripts/indexed_source.py` is new and is where the four gates now ask.  It
+exists because `check_deferral_registration.indexed_contents` and
+`generate_smp_theorem_manifest.indexed_text` were the **same** `cat-file
+--batch` parser — same loop, same `<sha> <type> <size>` split, same
+`i += size + 1`, same trailing comment explaining it — under two names in two
+files.  Collapsing them found a third instance of the class *inside the body*:
+both `break` on an unreadable or truncated header and return the **prefix** they
+had managed to parse, which is a truncated domain indistinguishable from a
+complete one.  It raises.
+
+### Not everything that runs git should raise
+
+`select_changed_anchors._git` stays status-returning, because three of its
+callers ask git a question whose answer **is** the exit status (`rev-parse
+--verify` — does this ref exist; `diff --no-index` — do these differ, where 1
+means yes).  Only the two for which a nonzero status is a *failure* raise.  A
+raise cannot be mistaken for an answer, which is why the shared module raises and
+that helper must not be folded into it.  `_untracked`'s own docstring already
+named this defect's consequence for a different cause — the gate "sweeps the
+*previous* cut's change set while reporting a clean run" — and `changed_paths`'
+docstring already stated the contract ("**failing** rather than answering
+'nothing' when none applies") the branch violated.
+
+### `filtered` is decided, not fallen into
+
+The fifth instance is the same rule one artefact over.
+`check_anchor_consistency`'s `filtered` bucket means *composed*, and its
+**membership** was a fall-through from every other arm — so `LC_ALL=C rg PATTERN
+FILE` inside a `bash -lc`, which heads no option table and is not a
+`SEARCH_TOOLS` head either, landed in the EXCLUDED bucket on a stated ground that
+is false of it, while the bare-argv sibling answered `unparsed`.  `_is_composed`
+decides that bucket positively now, everything else that searches and does not
+reduce is `unparsed` whatever its head, and `_strip_env_prefix` reduces a
+**collation-only** assignment while refusing any other (`RIPGREP_CONFIG_PATH`
+injects flags, so it can change what matches).
+
+The widening admits nothing on the live tree — 5211 positive, 827 negative, 38
+filtered, byte-identical before and after — so every witness is planted, and the
+two new fixtures are decided by *different* conditions: restoring the
+fall-through flips both, while opening the assignment set flips only one.  A
+guard whose conjuncts rescue each other hides a dead half.
+
+### What changed
+
+- **New** `scripts/indexed_source.py` — `DerivationFailed`, `run_git`,
+  `listed_at`, `indexed_contents`, `parse_batch`, with a 15-case `--self-test`
+  wired into Tier 0 **before** the four gates that read it: a shared derivation
+  that has stopped refusing fails silently in four places at once, and naming it
+  at the source beats four downstream mysteries.  The parser is split out so the
+  self-test can drive the two refusals git will not produce on demand (a
+  truncated stream, an unreadable header), and the `ls-tree` arm has success
+  cases of its own — without them only its raise would be exercised and a typo
+  in the revision spelling would be silent.  All 6 mutations caught.
+- `check_deferral_registration.py`, `check_workstream_plan.py`,
+  `generate_smp_theorem_manifest.py` — five listings and two `cat-file` parsers
+  repointed onto it; each `__main__` reports the refusal in its own voice.
+- `select_changed_anchors.py` — `_git` carries stderr; `_names` and `_untracked`
+  raise `UnknownChangeSet`.
+- `check_anchor_consistency.py` — `filtered` decided positively;
+  `COLLATION_ONLY_ASSIGNMENTS` and `_strip_env_prefix`, applied to the wrapped
+  **and** the bare spelling.
+- 22 Tier 3 anchors, each mutation-verified; **four pre-existing anchors were
+  repointed**, found by `check_changed_file_anchors.sh` rather than by reading —
+  three `v0.35.120` pins over the retired `classify_line` spellings and one over
+  `_git`'s arity.  *Sweep what was pinning the thing you deleted.*
+
+Every gate's production output is unchanged: 763 files scanned, 8 plans, 1135
+manifest entries, 5211/827/38 anchors.
+
+### The residue is reported, not implied empty
+
+The census's domain is **derivations that run an external tool**, because there
+the failure is environmental and the empty answer makes the gate examine nothing.
+Over every function, the same measurement reports **14** indistinguishable
+failure branches; the 6 outside this domain are file reads, regex compiles and
+self-test internals, and they are a different question — at least one of them is
+correct by design with its reason written at the code:
+`_regex_matches_literal` answers `False` on an uncompilable pattern *because a
+pattern `rg` itself would reject never runs, so it pins nothing and cannot
+contradict*.  A rule applied to that population without judgement would have
+refused it.  Widening the census to file reads is a separate cut, and each member
+needs its own reading rather than a shared remedy.
+
 ## v0.35.146 — the frozen queue primitives resolve and write their neighbours as the live ones do
 
 **PR #897 review, and the sweep it opened.**  `SeLe4n/Kernel/FrozenOps/` is this

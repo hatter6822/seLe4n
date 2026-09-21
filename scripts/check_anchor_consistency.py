@@ -329,6 +329,37 @@ def _split_short_cluster(tok: str, valued: set[str], bare: set[str]) -> bool:
     return True
 
 
+#: Environment assignments that change a search's COLLATION and nothing it
+#: pins.  A `NAME=VALUE` prefix is part of the command, so `LC_ALL=C rg P F`
+#: still pins pattern `P` in file `F` -- but only for a variable that cannot
+#: change what MATCHES.  `RIPGREP_CONFIG_PATH` and `GREP_OPTIONS` can (they
+#: inject flags), so the set is closed and anything outside it makes the
+#: invocation unreadable rather than silently reduced.
+COLLATION_ONLY_ASSIGNMENTS = frozenset({"LC_ALL", "LANG", "LC_COLLATE", "LC_CTYPE"})
+
+_ENV_ASSIGNMENT = re.compile(r"^([A-Za-z_][A-Za-z_0-9]*)=")
+
+
+def _strip_env_prefix(argv: list[str]) -> list[str] | None:
+    """`argv` without its leading `NAME=VALUE` words, or `None` to refuse it.
+
+    `None` for an assignment outside `COLLATION_ONLY_ASSIGNMENTS`, so an
+    unmodelled variable reaches the caller's `unparsed` arm -- a hard failure --
+    rather than being reduced as though the prefix were absent.  That is the
+    fail-closed direction for a scanner building *requirements*: a requirement
+    dropped is a check nobody runs.
+    """
+    i = 0
+    while i < len(argv):
+        m = _ENV_ASSIGNMENT.match(argv[i])
+        if m is None:
+            break
+        if m.group(1) not in COLLATION_ONLY_ASSIGNMENTS:
+            return None
+        i += 1
+    return argv[i:]
+
+
 def _search_invocation(argv: list[str]):
     """`(pattern, targets)` if `argv` is a plain search, else `None`.
 
@@ -528,10 +559,11 @@ def classify_line(line: str):
         # An unbalanced quote — a form this cannot read.
         return ("unparsed" if searches else "plain", False, None, [], frozenset())
 
-    inv = None if _is_composed(argv) else _search_invocation(argv)
+    bare = None if _is_composed(argv) else _strip_env_prefix(argv)
+    inv = None if bare is None else _search_invocation(bare)
     if inv is not None:
         return ("anchor", bool(m.group("neg")), inv[0], inv[1], inv[2])
-    if argv and argv[0] in SEARCH_TOOLS:
+    if bare and bare[0] in SEARCH_TOOLS:
         return ("unparsed", False, None, [], frozenset())
 
     script = _bash_script(argv)
@@ -584,17 +616,37 @@ def classify_line(line: str):
             # "could not read" must not answer the same as "read and clean".
             return ("unparsed" if SEARCH_TOOL_RE.search(script) else "plain",
                     False, None, [], frozenset())
-        if not _is_composed(inner):
-            reduced = _search_invocation(inner)
-            if reduced is not None:
-                return ("anchor", bool(m.group("neg")),
-                        reduced[0], reduced[1], reduced[2])
-            if inner and inner[0] in SEARCH_TOOLS:
-                # A single, uncomposed search this parser cannot reduce is the
-                # `unparsed` case, not a tolerated middle one — exactly as it is
-                # for a bare argv four lines above.
-                return ("unparsed", False, None, [], frozenset())
-        return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
+        # `v0.35.147`: `filtered` IS DECIDED, NOT FALLEN INTO.
+        #
+        # `v0.35.120` narrowed this branch by reducing an uncomposed script to
+        # an anchor, and left the *membership* test for `filtered` where it was:
+        # a fall-through from every other arm.  A bucket whose stated reason is
+        # "it composes the result" and whose membership is "nothing else
+        # matched" is this file's own finding one level up — the reason is a
+        # claim about the members, and a default branch is a decision.
+        #
+        # Measured: `LC_ALL=C rg PATTERN FILE` inside a `bash -lc` reduced to
+        # nothing (`LC_ALL=C` heads no option table), was not a `SEARCH_TOOLS`
+        # head either, and so landed in `filtered` — EXCLUDED from the
+        # comparison on a stated ground that is false of it, since an
+        # env-prefixed search is a single search.  The bare-argv branch above
+        # had no such fall-through and answered `unparsed`, so one spelling of
+        # one anchor was compared and the other was not.
+        #
+        # `_is_composed` now decides `filtered` positively and everything else
+        # that searches and does not reduce is `unparsed` — a hard failure,
+        # whatever its head, which is strictly the fail-closed direction and is
+        # what makes an unmodelled prefix visible on the day it is written
+        # rather than silently uncompared.
+        if _is_composed(inner):
+            return ("filtered" if SEARCH_TOOL_RE.search(script) else "plain",
+                    False, None, [], frozenset())
+        stripped = _strip_env_prefix(inner)
+        reduced = None if stripped is None else _search_invocation(stripped)
+        if reduced is not None:
+            return ("anchor", bool(m.group("neg")),
+                    reduced[0], reduced[1], reduced[2])
+        return ("unparsed" if SEARCH_TOOL_RE.search(script) else "plain",
                 False, None, [], frozenset())
 
     return ("unparsed" if searches else "plain", False, None, [], frozenset())
@@ -1558,6 +1610,102 @@ def self_test() -> int:
             )
             return 1
 
+        # `v0.35.147`: AN ENV PREFIX IS PART OF THE COMMAND.
+        #
+        # The reported case.  `LC_ALL=C` heads no option table, so
+        # `_search_invocation` could not reduce it; it is not a `SEARCH_TOOLS`
+        # head either, so the wrapper branch fell through to `filtered` — the
+        # EXCLUDED bucket, on a stated ground ("it composes the result") that is
+        # false of a single env-prefixed search.  The pair below is a genuine
+        # contradiction that was never compared.
+        envpre_p = d / "wrapped_env_prefix.sh"
+        envpre_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C rg -n \"zeta_present\" F.py'\n"
+            "run_negative_check \"INVARIANT\" rg -n 'zeta_present' F.py\n")
+        both, *_ = find_contradictions([str(envpre_p)])
+        if both != [("zeta_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — an `LC_ALL=C` prefixed search inside a "
+                f"shell wrapper was not reduced (got {both}); a collation "
+                f"assignment cannot change what pattern is pinned in what file.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and the BARE argv spelling reduces identically.  Keeping the two
+        # tables symmetric is the rule this gate has paid for before: a fix
+        # applied to one branch and not its sibling leaves the class open.
+        envbare_p = d / "bare_env_prefix.sh"
+        envbare_p.write_text(
+            "run_check \"INVARIANT\" LC_ALL=C rg -n 'eta_present' F.py\n"
+            "run_negative_check \"INVARIANT\" rg -n 'eta_present' F.py\n")
+        both, *_ = find_contradictions([str(envbare_p)])
+        if both != [("eta_present", "F.py")]:
+            print(
+                f"FAIL: --self-test — an `LC_ALL=C` prefixed BARE argv was not "
+                f"reduced (got {both}); the two spellings must reduce alike.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and an assignment OUTSIDE the closed set is refused rather than
+        # reduced as though it were absent.  `RIPGREP_CONFIG_PATH` injects
+        # flags, so it can change what MATCHES — the one thing a reduction may
+        # not get wrong.
+        envbad_p = d / "wrapped_env_unmodelled.sh"
+        envbad_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'RIPGREP_CONFIG_PATH=x rg -n \"theta\" F.py'\n")
+        try:
+            find_contradictions([str(envbad_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an unmodelled environment assignment was "
+                "reduced rather than refused; only a collation-only variable "
+                "leaves what a search pins unchanged.",
+                file=sys.stderr,
+            )
+            return 1
+
+        # …and THE RESTRUCTURE ITSELF: an uncomposed search this parser cannot
+        # reduce, whose head is NOT a search tool, is `unparsed` and FAILS.
+        # Before `v0.35.147` that arm fell through to `filtered` — which is how
+        # the env prefix escaped.
+        #
+        # The prefix here is a MODELLED one deliberately, and the two fixtures
+        # are decided by different conditions — which is the only thing that
+        # keeps either of them from being inert.  Measured on both mutants:
+        # restoring the fall-through flips BOTH this case and the unmodelled one
+        # from `unparsed` to `filtered`, but opening
+        # `COLLATION_ONLY_ASSIGNMENTS` flips only the unmodelled one (it then
+        # reduces to an anchor) and leaves this one `unparsed`.  So this case is
+        # the one that survives a widening of the assignment set, and the
+        # unmodelled one is the only one that can see that widening at all.  A
+        # guard whose conjuncts rescue each other hides a dead half.
+        #
+        # With `LC_ALL=C` the strip succeeds and the reduction then fails on its
+        # own merits (no pattern), so the only thing left to decide the outcome
+        # is whether the unreducible remainder falls into `filtered` or into
+        # `unparsed`.  The mutation that decides it keeps every token and
+        # restores the `inner[0] in SEARCH_TOOLS` fall-through, under which
+        # `inner[0]` is the assignment rather than `rg`.
+        fellthrough_p = d / "wrapped_unreducible_head.sh"
+        fellthrough_p.write_text(
+            "run_check \"INVARIANT\" bash -lc 'LC_ALL=C rg --colors=never'\n")
+        try:
+            find_contradictions([str(fellthrough_p)])
+        except SystemExit:
+            pass
+        else:
+            print(
+                "FAIL: --self-test — an uncomposed, unreducible search whose "
+                "head is not a search tool was tolerated; `filtered` must mean "
+                "COMPOSED and nothing else may fall into it.",
+                file=sys.stderr,
+            )
+            return 1
+
         # …and the absence-wrapper path is unchanged: `! rg` inside the same
         # wrapper is still read as a NEGATIVE, so the reduction did not capture
         # a form the older branch already owned.
@@ -1592,7 +1740,10 @@ def self_test() -> int:
         "the reverse did not, case-insensitivity was compared in the direction "
         "that implies and skipped in the one that does not, a plain search "
         "quoted through `bash -lc` was compared while a piped one stayed "
-        "counted, an unreducible wrapped search failed the gate, the `! rg` "
+        "counted, an unreducible wrapped search failed the gate, a collation "
+        "env prefix was reduced in both the wrapped and the bare spelling "
+        "while an unmodelled assignment and an unreducible non-search head "
+        "each failed rather than falling into `filtered`, the `! rg` "
         "absence wrapper was not shadowed, the clean "
         "set passed, and a commented-out anchor was not counted."
     )

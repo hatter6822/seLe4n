@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "c3c4d0573a83cee44246d5352641d87af1e37f04",
-      "tree_sha": "4156c866127fef3fe986afe773e50ba9c5d72158",
-      "committed_at_utc": "2026-09-21T14:02:25+00:00"
+      "commit_sha": "0b068e56c7aabf69d4c4b05538def897faa0a1f8",
+      "tree_sha": "13ed00a55b39c62e6de2952b434da4a001cde46b",
+      "committed_at_utc": "2026-09-21T14:58:46+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "4557d1c845f99bfc34cf19294aba5ca96b1ce1e21cc38b2ce6075b63bc90ac15"
+    "source_digest": "7e20bb1a2cd6a1a2c814f8d8d1ce454828f23aafdac16c4acd64578c0a03e4e4"
   },
   "summary": {
     "module_count": 404,
-    "declaration_count": 22101
+    "declaration_count": 22100
   },
   "readme_sync": {
-    "version": "0.35.146",
+    "version": "0.35.147",
     "lean_toolchain": "v4.28.0",
     "production_files": 334,
     "production_loc": 396557,
     "test_files": 70,
-    "test_loc": 80877,
+    "test_loc": 80872,
     "proved_theorem_lemma_decls": 13128,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -283298,7 +283298,7 @@
     {
       "module": "tests.FrozenOpsSuite",
       "path": "tests/FrozenOpsSuite.lean",
-      "declaration_count": 105,
+      "declaration_count": 104,
       "declarations": [
         {
           "kind": "namespace",
@@ -284905,24 +284905,8 @@
         },
         {
           "kind": "def",
-          "name": "sentinelViews",
-          "line": 2240,
-          "called": [
-            "FrozenSystemState",
-            "KernelObject",
-            "ObjId",
-            "RHTable.empty",
-            "SystemState",
-            "default",
-            "freezeObject",
-            "frozenStateOf",
-            "insert"
-          ]
-        },
-        {
-          "kind": "def",
           "name": "rawFrozenNeighbourRead",
-          "line": 2254,
+          "line": 2232,
           "called": [
             "FrozenSystemState",
             "TCB",
@@ -284934,7 +284918,7 @@
         {
           "kind": "def",
           "name": "refusesObjectNotFound",
-          "line": 2260,
+          "line": 2238,
           "called": [
             "KernelError"
           ]
@@ -284942,7 +284926,7 @@
         {
           "kind": "def",
           "name": "frozenLinksOf",
-          "line": 2268,
+          "line": 2246,
           "called": [
             "FrozenSystemState",
             "QueuePPrev",
@@ -284954,7 +284938,7 @@
         {
           "kind": "def",
           "name": "liveLinksOf",
-          "line": 2272,
+          "line": 2250,
           "called": [
             "QueuePPrev",
             "SystemState",
@@ -284966,7 +284950,7 @@
         {
           "kind": "def",
           "name": "differentialQueueNeighbourResolutionAgrees",
-          "line": 2309,
+          "line": 2296,
           "called": [
             "Endpoint",
             "IpcMessage",
@@ -285008,18 +284992,16 @@
             "rawFrozenNeighbourRead",
             "refusesObjectNotFound",
             "sentinel",
-            "sentinelViews",
             "state",
             "tail",
             "toNat",
-            "toObjId",
             "unitResultAgrees"
           ]
         },
         {
           "kind": "def",
           "name": "differentialSchedContextBindClearsOrigin",
-          "line": 2442,
+          "line": 2437,
           "called": [
             "Priority",
             "SchedContext",
@@ -285058,7 +285040,7 @@
         {
           "kind": "def",
           "name": "differentialSchedContextUnbindClearsOrigin",
-          "line": 2524,
+          "line": 2519,
           "called": [
             "SchedContext",
             "TCB",
@@ -285085,7 +285067,7 @@
         {
           "kind": "def",
           "name": "differentialSchedContextBindRefusalsAgree",
-          "line": 2556,
+          "line": 2551,
           "called": [
             "FrozenSystemState",
             "KernelError",
@@ -285123,7 +285105,7 @@
         {
           "kind": "def",
           "name": "liveSchedContextConfigureState",
-          "line": 2643,
+          "line": 2638,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -285137,7 +285119,7 @@
         {
           "kind": "def",
           "name": "fusedGateConfigurePropagate",
-          "line": 2657,
+          "line": 2652,
           "called": [
             "FrozenSystemState",
             "ObjId",
@@ -285157,7 +285139,7 @@
         {
           "kind": "def",
           "name": "differentialSchedContextConfigureDomainOnlyKeepsOrder",
-          "line": 2700,
+          "line": 2695,
           "called": [
             "Priority",
             "SchedContext",
@@ -285192,7 +285174,7 @@
         {
           "kind": "def",
           "name": "differentialSendFromAbsentSenderAgrees",
-          "line": 2782,
+          "line": 2777,
           "called": [
             "Endpoint",
             "IpcMessage",
@@ -285226,7 +285208,7 @@
         {
           "kind": "def",
           "name": "differentialSendRendezvousDeliversAgrees",
-          "line": 2820,
+          "line": 2815,
           "called": [
             "Endpoint",
             "IpcMessage",
@@ -285263,7 +285245,7 @@
         {
           "kind": "def",
           "name": "differentialWakeAtUnqueuedPriorityAgrees",
-          "line": 2857,
+          "line": 2852,
           "called": [
             "Endpoint",
             "Notification",
@@ -285301,7 +285283,7 @@
         {
           "kind": "def",
           "name": "differentialScenarios",
-          "line": 2893,
+          "line": 2888,
           "called": [
             "FrozenOpBranch",
             "differentialEndpointCallAgrees",
@@ -285322,7 +285304,7 @@
         {
           "kind": "def",
           "name": "operationDifferentialScenarios",
-          "line": 2929,
+          "line": 2924,
           "called": [
             "FrozenOpBranch",
             "differentialEndpointReplyDonationAgrees",
@@ -285334,7 +285316,7 @@
         {
           "kind": "def",
           "name": "differentialRegistryMatchesClaim",
-          "line": 2939,
+          "line": 2934,
           "called": [
             "all",
             "contains",
@@ -285348,7 +285330,7 @@
         {
           "kind": "def",
           "name": "differentialComparisonHasBite",
-          "line": 2973,
+          "line": 2968,
           "called": [
             "Endpoint",
             "Notification",
@@ -285380,7 +285362,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2990,
+          "line": 2985,
           "called": [
             "differentialComparisonHasBite",
             "differentialQueueNeighbourResolutionAgrees",

@@ -24,10 +24,18 @@ new comment that quietly opts out does not.
 
 from __future__ import annotations
 
+import os
 import pathlib
 import re
 import subprocess
 import sys
+
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from indexed_source import (  # noqa: E402  (needs the path insert above)
+    DerivationFailed,
+    indexed_contents as _indexed_contents,
+    listed_at,
+)
 
 REPO_ROOT = pathlib.Path(__file__).resolve().parent.parent
 
@@ -224,13 +232,16 @@ def tracked_files() -> list[str]:
     """Paths as git sees them.  Walking the working tree instead would scan
     build output and untracked scratch while still missing nothing that
     matters, so the index is both narrower and the right authority: a deferral
-    that is not committed is not yet a deferral."""
-    try:
-        out = subprocess.run(["git", "ls-files", "-z"], cwd=REPO_ROOT,
-                             capture_output=True, text=True, check=True).stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return []
-    return sorted(x for x in out.split("\0") if x)
+    that is not committed is not yet a deferral.
+
+    A failed listing RAISES (`indexed_source.DerivationFailed`) rather than
+    answering `[]`, because `[]` is also what a clean empty tree returns: git
+    missing or an index that cannot be read would otherwise make this gate scan
+    **nothing** and print PASS over every deferral in the repository.  Since
+    `v0.35.147` that is the one answer, shared with the three other gates that
+    derive a domain from the index.
+    """
+    return listed_at(str(REPO_ROOT), ":")
 
 
 def files_to_scan() -> list[str]:
@@ -258,7 +269,7 @@ def _decode(raw: bytes) -> str | None:
 
 
 def indexed_contents(paths: list[str]) -> dict[str, str]:
-    """Each path's **staged** content.
+    """Each path's **staged** content, from `indexed_source`.
 
     Enumerating from the index while reading from the working tree is a hole,
     not an inconsistency: stage a source edit carrying an unregistered
@@ -267,41 +278,16 @@ def indexed_contents(paths: list[str]) -> dict[str, str]:
     bytes have to come from the same place, and for a gate the place is the
     index -- what is being committed, not what happens to be on disk.
 
-    One `git cat-file --batch` rather than 683 `git show` calls; the batch
-    protocol answers `<sha> <type> <size>` and then the raw bytes, so a
-    missing entry is reported per line instead of failing the run.
+    The body this delegates to was written out here AND in
+    `generate_smp_theorem_manifest.indexed_text` -- the same `cat-file --batch`
+    loop, the same header split, the same `i += size + 1` and the same comment
+    explaining it -- so `v0.35.147` collapsed the pair.  Both copies also
+    answered a failed derivation with `{}`, and the comment that stood here
+    described a working-tree fallback the code did not perform; the shared one
+    raises, which is the only answer a caller cannot mistake for "the index
+    holds nothing".
     """
-    if not paths:
-        return {}
-    try:
-        out = subprocess.run(
-            ["git", "cat-file", "--batch"], cwd=REPO_ROOT,
-            input="".join(f":{p}\n" for p in paths).encode(),
-            capture_output=True, check=True).stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        # No git, or no index (a tarball checkout).  Fall back to the working
-        # tree rather than scanning nothing -- narrower, and said out loud by
-        # the caller rather than inferred from a pass.
-        return {}
-    res: dict[str, str] = {}
-    i = 0
-    for rel in paths:
-        nl = out.find(b"\n", i)
-        if nl < 0:
-            break
-        header = out[i:nl].decode("utf-8", "replace")
-        i = nl + 1
-        if header.endswith(("missing", "ambiguous")):
-            continue
-        try:
-            size = int(header.rsplit(" ", 1)[1])
-        except (IndexError, ValueError):
-            break
-        text = _decode(out[i:i + size])
-        i += size + 1                      # blob, then its trailing newline
-        if text is not None:
-            res[rel] = text
-    return res
+    return _indexed_contents(str(REPO_ROOT), paths)
 
 
 def read_indexed(rel: str) -> str | None:
@@ -486,6 +472,11 @@ def _self_test() -> int:
         (root / "scripts").mkdir()
         (root / "docs").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
+        # The gate imports `indexed_source` from its own directory, so the
+        # fixture tree has to carry it: a self-test whose copy cannot import
+        # what the real script imports tests a different program.
+        shutil.copy(src.parent / "indexed_source.py",
+                    root / "scripts" / "indexed_source.py")
         (root / "docs" / "REGISTERED_DEBT.md").write_text(
             "| 1 | `scripts/probe.S` | a row |\n", encoding="utf-8")
         probe = root / "scripts" / "probe.S"
@@ -550,8 +541,14 @@ def main(argv: list[str]) -> int:
     if not contents and paths:
         # Reading nothing is not a clean run.  Said out loud rather than
         # reported as 683 files with no findings.
-        print("FAIL: could not read any file from the git index "
-              "(no repository, or no index); nothing was scanned.")
+        #
+        # Since `v0.35.147` a *failed* derivation raises instead of answering
+        # `{}`, so the cause this guard once named ("no repository, or no
+        # index") can no longer reach it.  What can is a domain in which every
+        # path is binary or absent from the index -- a real zero rather than an
+        # unknown one, and still not a clean run.
+        print("FAIL: every path in the scan domain was binary or absent from "
+              f"the index ({len(paths)} path(s)); nothing was scanned.")
         return 1
     for rel in paths:
         text = contents.get(rel)
@@ -577,4 +574,11 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except DerivationFailed as exc:
+        # The domain is UNKNOWN, not empty.  Reporting it as a pass over zero
+        # files is the fail-open this gate exists to remove, one level up from
+        # the deferrals it scans for.
+        print(f"FAIL: the scan domain could not be derived from git -- {exc}")
+        sys.exit(1)

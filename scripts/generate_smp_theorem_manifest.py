@@ -78,6 +78,10 @@ LEAN_SKIP_PREFIXES = (".lake/", "docs/dev_history/")
 
 sys.path.insert(0, str(REPO_ROOT / "scripts"))
 import lean_code_view  # noqa: E402  (needs the path insert above)
+from indexed_source import (  # noqa: E402  (same path insert)
+    DerivationFailed,
+    indexed_contents as _indexed_contents,
+)
 
 # The eleven WS-SM phases, each constructor bound to the code its label must
 # carry.  Stated here rather than derived from the manifest: a phase absent
@@ -314,7 +318,7 @@ def _count_re(inv: str) -> re.Pattern[str]:
 
 
 def indexed_text(rels: list[str]) -> dict[str, str]:
-    """Each path's **staged** content, in one `git cat-file --batch`.
+    """Each path's **staged** content, from `indexed_source`.
 
     Enumerating from the index and then reading the working tree is a hole, not
     an inconsistency: stage an inventory's witnesses, revert the module on
@@ -322,36 +326,15 @@ def indexed_text(rels: list[str]) -> dict[str, str]:
     so the new inventory can be committed with no phase claiming it, which is
     the one failure this gate exists to prevent.  The paths and the bytes come
     from the same place, and for a gate that place is the index.
+
+    The `cat-file --batch` loop this delegates to was written out here AND in
+    `check_deferral_registration.indexed_contents`, identically, and both
+    answered a failed derivation with `{}` -- which is what a batch of paths
+    none of which are in the index also returns, so the gate would evaluate
+    nothing and report every inventory claimed.  `v0.35.147` collapsed the pair
+    onto one answer that raises.
     """
-    if not rels:
-        return {}
-    try:
-        out = subprocess.run(
-            ["git", "cat-file", "--batch"], cwd=REPO_ROOT,
-            input="".join(f":{r}\n" for r in rels).encode(),
-            capture_output=True, check=True).stdout
-    except (subprocess.CalledProcessError, FileNotFoundError):
-        return {}
-    res: dict[str, str] = {}
-    i = 0
-    for rel in rels:
-        nl = out.find(b"\n", i)
-        if nl < 0:
-            break
-        header = out[i:nl].decode("utf-8", "replace")
-        i = nl + 1
-        if header.endswith(("missing", "ambiguous")):
-            continue
-        try:
-            size = int(header.rsplit(" ", 1)[1])
-        except (IndexError, ValueError):
-            break
-        try:
-            res[rel] = out[i:i + size].decode("utf-8")
-        except UnicodeDecodeError:
-            pass
-        i += size + 1                       # blob, then its trailing newline
-    return res
+    return _indexed_contents(str(REPO_ROOT), rels)
 
 
 def read_code(path: pathlib.Path) -> str:
@@ -1379,4 +1362,11 @@ def main(argv: list[str]) -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except DerivationFailed as exc:
+        # The staged sources are UNKNOWN, not empty.  `--check` evaluating
+        # nothing and reporting the manifest fresh is the fail-open this raise
+        # removes.
+        print(f"ERROR: the staged sources could not be read from git -- {exc}")
+        sys.exit(1)

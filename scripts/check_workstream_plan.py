@@ -51,6 +51,12 @@ from pathlib import Path
 
 REPO = Path(__file__).resolve().parent.parent
 
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+from indexed_source import (  # noqa: E402  (needs the path insert above)
+    DerivationFailed,
+    listed_at,
+)
+
 # Documents that cite plan sub-task IDs and must not cite a stale one.
 COMPANIONS = [
     "docs/planning/UNFINISHED_SMP_WORK.md",
@@ -291,16 +297,16 @@ def list_tracked(ref: str) -> list[str]:
     make a plan staged for deletion invisible: the glob would not find it, so
     its prefix would never be checked and a companion still citing its
     sub-tasks would pass.  The gate reads the index for content, so it must
-    enumerate from the index too."""
+    enumerate from the index too.
+
+    A failed listing RAISES (`indexed_source.DerivationFailed`) rather than
+    answering `[]`.  The `ls-tree` arm is the one that can really fail -- a
+    `SELE4N_PLAN_BASE_REF` that CI never fetched -- and `[]` there is also what
+    a base revision holding no plans returns, so the comparison would report
+    every plan present at a base it could not read."""
     paths = ["docs/planning/", "docs/dev_history/planning/"]
-    cmd = (["git", "ls-files", "--", *[x + "*.md" for x in paths]] if ref == ":"
-           else ["git", "ls-tree", "-r", "--name-only", ref, "--", *paths])
-    try:
-        out = subprocess.run(cmd, cwd=REPO, capture_output=True, text=True,
-                             check=True).stdout
-    except subprocess.CalledProcessError:
-        return []
-    return sorted(x for x in out.splitlines() if x.endswith(".md"))
+    specs = [x + "*.md" for x in paths] if ref == ":" else list(paths)
+    return [x for x in listed_at(str(REPO), ref, *specs) if x.endswith(".md")]
 
 
 def read_at(ref: str, rel: str) -> str | None:
@@ -623,13 +629,10 @@ def prose_count_sources() -> dict[str, str]:
     # this check exists for was in `CLAUDE.md` and `AGENTS.md` as well, and a
     # scan that cannot see the canonical index cannot see the claim readers
     # actually read.
-    try:
-        listing = subprocess.run(["git", "ls-files", "--", "*.md"], cwd=REPO,
-                                 capture_output=True, text=True,
-                                 check=True).stdout.splitlines()
-    except subprocess.CalledProcessError:
-        return {}
-    for rel in sorted(listing):
+    # A failed listing RAISES rather than answering `{}`: an empty map is also
+    # what a tree with no Markdown returns, so swallowing the failure would
+    # report every prose count verified having read none of them.
+    for rel in listed_at(str(REPO), ":", "*.md"):
         if rel == "CHANGELOG.md" or rel.startswith("docs/dev_history/"):
             continue
         body = read_indexed(rel)
@@ -857,6 +860,11 @@ def _cli_cases():
         (root / "docs" / "planning").mkdir(parents=True)
         (root / "scripts").mkdir()
         shutil.copy(src, root / "scripts" / src.name)
+        # The gate imports `indexed_source` from its own directory, so the
+        # fixture tree carries it too: a copy that cannot import what the real
+        # script imports is a different program.
+        shutil.copy(src.parent / "indexed_source.py",
+                    root / "scripts" / "indexed_source.py")
         (root / "docs" / "planning" / "XX_PLAN.md").write_text(CLEAN, encoding="utf-8")
         # Names the plan as well as citing a sub-task: WS-RR RR7.32 requires a
         # canonical index to name every plan, and a fixture repository whose
@@ -1308,4 +1316,10 @@ def self_test() -> int:
 
 
 if __name__ == "__main__":
-    sys.exit(main(sys.argv[1:]))
+    try:
+        sys.exit(main(sys.argv[1:]))
+    except DerivationFailed as exc:
+        # The plan set is UNKNOWN, not empty.  A gate that reports "8 plans
+        # consistent" having listed none is the fail-open this raise removes.
+        print(f"FAIL: the plan set could not be derived from git -- {exc}")
+        sys.exit(1)

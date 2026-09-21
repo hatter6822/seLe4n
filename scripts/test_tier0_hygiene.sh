@@ -175,6 +175,19 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_website_links.sh"
 run_check "HYGIENE" "${SCRIPT_DIR}/check_version_sync.sh"
 
 # A plan's numbering, counts and cross-references are relational data kept in
+# `v0.35.147`: the SHARED git derivation, run before the four gates that read
+# it.  Four Tier 0 gates derive their whole domain from the index, and each
+# answered a FAILED run with an EMPTY one -- `[]` / `{}`, which is also what a
+# clean scan of an empty tree returns, so the caller iterated over nothing and
+# the gate printed PASS.  `indexed_source` raises instead, and its self-test
+# runs FIRST for the reason every other self-test here does: a shared derivation
+# that has stopped refusing fails silently in four places at once, and naming it
+# at the source beats four downstream mysteries.  Its two decisive cases are the
+# ones git will not produce on demand -- a truncated batch stream and an
+# unreadable header, where the superseded parsers returned the PREFIX they had
+# managed to read.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/indexed_source.py" --self-test
+
 # prose.  They drifted in five consecutive cuts -- declared totals of
 # 126/143/145/146/149 against the real row count, references to rows that a
 # renumber had moved, and a phase whose acceptance arithmetic (46 + 4 = 49)
