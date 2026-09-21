@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.135.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.136.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4908,18 +4908,20 @@ binding constructor* (WS-CB's hierarchical servers) must be classified.  It is
 the counterpart to `scId?`, the one a thread *runs on*, and the two split a
 thread's scheduling parameters: **reservation-owned** (budget, period, deadline)
 read `scId?` at every binding, **thread-owned** (base priority, domain) are the
-thread's, and are **stored in two places** for a `.bound` thread: the TCB field
-and, mirrored onto it by the AK2-B convention, `ownScId?`'s SchedContext.  Which
-one a reader takes is not uniform and that is the hazard — `threadBasePriority`
-reads the *reservation* at `.bound` while `TCB.boostedPriority`, which every
-run-queue insert is keyed by, reads the *thread* — so every writer of either
-must move both, which is `boundThreadPriorityConsistent` and which
-`v0.35.98` found `.tcbSetPriority` not doing (see the standing constraint
-below).  **The improvement is one home, not two kept in sync**: reading the TCB
-at every binding would make the pair unfalsifiable by construction and retire
-the invariant, and it is registered in `docs/REGISTERED_DEBT.md` table C rather
-than done here, because a scheduling-model change must not ride along with a
-security fix.  It is a **narrowing** of `scId?`
+thread's, and — **at `v0.35.3`, when this was written** — were **stored in two
+places** for a `.bound` thread: the TCB field and, mirrored onto it by the AK2-B
+convention, `ownScId?`'s SchedContext.  Which one a *reader* took was not uniform
+and that was the hazard — `threadBasePriority` read the *reservation* at `.bound`
+while `TCB.boostedPriority`, which every run-queue insert is keyed by, read the
+*thread* — so every writer of either had to move both, which is
+`boundThreadPriorityConsistent` and which `v0.35.98` found `.tcbSetPriority` not
+doing.  **The improvement named here — one home, not two kept in sync — was
+taken**: `v0.35.133` for the band and `v0.35.136` for the domain, so no reader
+consults a reservation for either and the standing constraint below is the live
+text.  What the collapse did *not* do is retire the invariant, because the
+**writes** remain two: PR #897's review found the pair falsifiable on a reachable
+donation pop, which is its own table C row and which the two predicates'
+docstrings now state.  `ownScId?` is a **narrowing** of `scId?`
 (`ownScId?_eq_scId?_of_isSome`), so the two can never name different contexts.  (2) **The one answer is
 `SystemState.threadBasePriority`**, and a new priority reader calls it rather
 than matching the binding.  The three scheduler resolvers also need the
@@ -8038,9 +8040,17 @@ code may assume:
   exactly the mixed-criticality deployments MCS exists for, and it needed no
   authority beyond what the syscall already requires.
 
-  **The remedy is structural rather than another writer**: with one home the pair
-  is unfalsifiable by construction, so a stale mirror is not a defect that was
-  fixed but a state no writer can reach.  Six things new code must respect.
+  **The remedy is structural rather than another writer** — for *reads*, and
+  `v0.35.136` is where that qualification stops being implied and starts being
+  printed.  This paragraph said "with one home the pair is unfalsifiable by
+  construction, so a stale mirror is not a defect that was fixed but a state no
+  writer can reach", and PR #897's review found the writer: the collapse gave the
+  band one **reading** home and left it two **writing** homes, so a stale mirror
+  is still reachable and `boundThreadPriorityConsistent` is still falsifiable —
+  it just no longer mis-schedules anything, which is the whole of what the
+  collapse bought.  See the standing constraint *a `bound*Consistent` predicate
+  is a writer fact* below for the two routes and the register row.  Six things
+  new code must respect.
 
   (1) **Every reader reads `TCB.priority`, at every binding.**  Five did the
   classification and all five are collapsed: `SystemState.threadBasePriority`,
@@ -8241,6 +8251,66 @@ code may assume:
   consumer lost seventy lines of case analysis for one citation.  **When a cut
   collapses a definition, the theorems whose hypotheses that definition supplied
   are part of the collapse** — the sweep is the family, not the body.
+
+- **A `bound*Consistent` predicate is a WRITER fact, not an invariant — and the
+  domain mirror had the same hole** (`v0.35.136`, PR #897's review, reported for
+  the priority half).  `returnDonatedSchedContext`'s bottom arm installs a
+  `.bound` binding and writes neither the recipient's `priority` / `domain` nor
+  the reservation's, so whichever home moved while the reservation was on loan
+  comes back disagreeing: `boundThreadPriorityConsistent` and
+  `boundThreadDomainConsistent` are both **false** on a state the kernel reaches.
+  Five things new code must respect.
+
+  (1) **Two routes, both ordinary syscalls, and the second breaks both predicates
+  at once.**  `.tcbSetPriority` on the **unbound** donor writes its TCB alone —
+  correctly, since it owns no reservation to mirror to — and
+  `schedContextConfigure` of the **donated** reservation writes `sc.priority` and
+  `sc.domain` alone, also correctly, the propagation being gated on the donee's
+  `ownScId?`, which is `none` (WS-OD `v0.35.3`, and the whole point of that gate).
+  Either way the pop then rebinds the origin under the disagreement.
+
+  (2) **Neither reconciliation is available to the pop**, which is what makes this
+  a fact about the *writers* rather than a defect in the pop.  `tcb.* := sc.*`
+  would undo a demotion, or **migrate a thread's partition**, on an IPC reply — at
+  the instance of a holder of a capability on the *reservation*, which says
+  nothing about the thread, and which is the crossing WS-OD closed from the other
+  side.  `sc.* := tcb.*` would silently retune what that capability's holder had
+  just set, and is projection-**visible** besides, since `SchedContext.priority`
+  survives `projectKernelObject`.  A cut that decides otherwise must change
+  `donationReturnSchedContext_priority` / `…_domain`, which exist so that it has
+  to.
+
+  (3) **The domain now has one reading home too.**  `v0.35.133` collapsed the
+  *band*'s readers and left `effectiveSchedParams`'s `.bound` arm reporting
+  `sc.domain`, on the stated ground that the domain mirror had *"no writer known
+  to break it"* — and this finding is that writer.  `effectiveSchedParams_domain_eq`
+  is the unconditional pin that every arm reports `tcb.domain`, the sibling of
+  `effectiveSchedParams_fst_eq_boostedPriority`; it was **free**, the component
+  having no live consumer (every domain filter reads `tcb.domain` directly through
+  `chooseBestRunnableInDomainEffective`) and the golden trace staying
+  byte-identical.  *A stated reason that no writer exists is a claim about every
+  writer, and it is the kind that ages.*
+
+  (4) **So the residue is a verification gap and not a scheduling one**, and that
+  distinction is measured rather than asserted: the origin resumes at its own band
+  in its own partition.  `boundThreadPriorityConsistent` is consumed by nothing at
+  all; `boundThreadDomainConsistent` is a conjunct of
+  `schedulerInvariantBundleExtended`, whose scope is the boot and scheduler
+  surface, and no IPC transition claims that bundle — so no theorem in the tree is
+  false.  A proof that takes either predicate of a post-pop state is asking for a
+  premise the kernel refutes.
+
+  (5) **The refutation is executed, and it has a control.**
+  `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the configure and
+  the pop as **live operations** and asserts both pairs disagree; WS-RR-PRIO-10 is
+  the same fixture and the same pop with the reconfiguration omitted, where both
+  pairs agree — which is what makes the witness a statement about the
+  reconfiguration rather than about the pop, and what shows the pop is not what
+  breaks the agreement but what *installs the binding under which it is asserted*.
+  The closure is the model change `v0.35.133`'s register row named and deferred —
+  retire `SchedContext.priority` and `SchedContext.domain` as thread-band homes,
+  which is what seL4-MCS does, its `sched_context` carrying neither — and it is
+  **WS-CB**'s, whose plan already reshapes this surface.
 
 - **The scheduler liveness trace model is boot-core-pinned** (SM4.C.11's
   residual).  SM5.J lifted the per-core Liveness *predicates* at v0.31.64 —

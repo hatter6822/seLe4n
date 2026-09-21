@@ -1039,6 +1039,120 @@ private def pm_od_08_configureBoundControlStillPropagates : IO Unit := do
         (tcb'.domain == ⟨5⟩)
     | _ => throw <| IO.userError "bound TCB not found after configure"
 
+/-- WS-RR-PRIO-09 (PR #897's review, `v0.35.136`): **a reservation reconfigured
+while on loan comes back disagreeing** — the refutation of
+`boundThreadPriorityConsistent` and `boundThreadDomainConsistent` as *invariants*.
+
+The review reported the priority half through `.tcbSetPriority` on the unbound
+donor.  Sweeping for the shape found a second route that breaks **both**
+predicates with one syscall and no TCB capability at all, and it is the one this
+witness drives, because every step of it is a live operation:
+
+1. the reservation is on loan (`.donated`), which is the state `applyCallDonation`
+   leaves on every passive-server call;
+2. `schedContextConfigure` rewrites `sc.priority` and `sc.domain` — and
+   propagates to nobody, since `schedContextConfigurePropagates` reads the
+   donee's `ownScId?`, which is `none` (WS-OD `v0.35.3`, and `pm_od_07` is that
+   assertion);
+3. `returnDonatedSchedContext`'s bottom arm rebinds the **origin** `.bound scId`,
+   writing neither `TCB.priority` nor `TCB.domain` nor either of the
+   reservation's.
+
+So the post-pop state has a `.bound` thread whose two priority homes and two
+domain homes both disagree.  Neither reconciliation is available: writing
+`tcb.priority := sc.priority` would undo a demotion by an IPC reply, and writing
+`sc.priority := tcb.priority` would silently retune a band the SchedContext
+capability's holder set (and is projection-visible besides).  The predicates are
+therefore facts about `schedContextBind`, `schedContextConfigureBoundPropagate`
+and `updatePrioritySource`, not invariants of the system.
+
+**No scheduling decision is affected**, which is what `v0.35.133` and `v0.35.136`
+bought: every band read is `tcb.priority` and every domain filter is
+`tcb.domain`, so the origin resumes demoted and in its own partition, as it
+should.  The assertions below read the *fields*, not a resolver, because the
+claim is about the pair rather than about what the scheduler does with it. -/
+private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do
+  let originTid : SeLe4n.ThreadId := ⟨7⟩
+  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some doneeTid,
+    donationOrigin := some originTid
+  }
+  -- The origin has given up its binding and waits on its reply — the shape
+  -- `donateSchedContext` leaves and `donationRecipientAcceptable` requires.
+  -- Its own band and partition agree with the reservation's at this point.
+  let st := mkState [
+    (originTid.toObjId, .tcb (mkTcb 7 (prio := 50) (mcp := 200)
+      (binding := .unbound))),
+    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
+      (binding := .donated scId originTid))),
+    (scObjId, .schedContext sc)
+  ]
+  -- Step 2: the SchedContext capability's holder retunes the reservation while
+  -- it is on loan.  Priority 50 -> 123 and domain 0 -> 5, propagated to nobody.
+  match SeLe4n.Kernel.SchedContextOps.schedContextConfigure ⟨scObjId, by decide⟩ 100 200 123 0 5 st with
+  | .error e => throw <| IO.userError s!"configure on the loaned reservation failed: {repr e}"
+  | .ok ((), stCfg) =>
+    expect "the loan's origin is untouched by the reconfiguration"
+      (match stCfg.objects[originTid.toObjId]? with
+       | some (.tcb t) => t.priority == ⟨50⟩ && t.domain == ⟨0⟩
+       | _ => false)
+    -- Step 3: the server replies, and the bottom arm hands the reservation back.
+    match returnDonatedSchedContext stCfg doneeTid scId originTid none with
+    | .error e => throw <| IO.userError s!"the donation pop failed: {repr e}"
+    | .ok stPop =>
+      match stPop.objects[originTid.toObjId]?, stPop.objects[scObjId]? with
+      | some (.tcb origin'), some (.schedContext sc') =>
+        expect "the pop rebinds the origin .bound"
+          (origin'.schedContextBinding == .bound scId)
+        expect "REFUTATION: its two priority homes disagree (50 vs 123)"
+          (origin'.priority == ⟨50⟩ && sc'.priority == ⟨123⟩)
+        expect "REFUTATION: its two domain homes disagree (0 vs 5)"
+          (origin'.domain == ⟨0⟩ && sc'.domain == ⟨5⟩)
+      | _, _ => throw <| IO.userError "origin TCB or SC not found after the pop"
+
+/-- WS-RR-PRIO-10: the control for `pm_od_09`, and what makes it a statement
+about the **reconfiguration** rather than about the pop.
+
+The same fixture and the same pop, with step 2 omitted: the reservation is handed
+back exactly as it was lent, and both pairs agree.  So the pop is not what breaks
+the agreement — it is what *installs the binding under which the agreement is
+asserted*, which is precisely why no write available to it can repair one. -/
+private def pm_od_10_unreconfiguredLoanComesBackAgreeing : IO Unit := do
+  let originTid : SeLe4n.ThreadId := ⟨7⟩
+  let doneeTid : SeLe4n.ThreadId := ⟨42⟩
+  let scObjId : SeLe4n.ObjId := ⟨100⟩
+  let scId : SeLe4n.SchedContextId := ⟨100⟩
+  let sc : SeLe4n.Kernel.SchedContext := {
+    scId := scId, budget := ⟨100⟩, period := ⟨200⟩,
+    priority := ⟨50⟩, deadline := ⟨0⟩, domain := ⟨0⟩,
+    budgetRemaining := ⟨100⟩, boundThread := some doneeTid,
+    donationOrigin := some originTid
+  }
+  let st := mkState [
+    (originTid.toObjId, .tcb (mkTcb 7 (prio := 50) (mcp := 200)
+      (binding := .unbound))),
+    (doneeTid.toObjId, .tcb (mkTcb 42 (prio := odDoneePriority) (mcp := 200)
+      (binding := .donated scId originTid))),
+    (scObjId, .schedContext sc)
+  ]
+  match returnDonatedSchedContext st doneeTid scId originTid none with
+  | .error e => throw <| IO.userError s!"the donation pop failed: {repr e}"
+  | .ok stPop =>
+    match stPop.objects[originTid.toObjId]?, stPop.objects[scObjId]? with
+    | some (.tcb origin'), some (.schedContext sc') =>
+      expect "control: the pop rebinds the origin .bound here too"
+        (origin'.schedContextBinding == .bound scId)
+      expect "control: with no reconfiguration the priority homes agree"
+        (origin'.priority == sc'.priority)
+      expect "control: ...and so do the domain homes"
+        (origin'.domain == sc'.domain)
+    | _, _ => throw <| IO.userError "origin TCB or SC not found after the pop"
+
 /-- **`v0.35.99`: the frozen surface writes both homes too, and the differential
 is what says so.**  `v0.35.98` fixed the live writer and left `frozenSetPriority`
 writing the reservation alone, so the *same* operation produced divergent states
@@ -1419,6 +1533,9 @@ def main : IO Unit := do
   pm_od_06_boundControlStillWritesTheReservation
   pm_od_07_configureOnDonatedReservationSparesTheDonee
   pm_od_08_configureBoundControlStillPropagates
+  IO.println "--- `v0.35.136`: the two `bound*Consistent` pairs are writer facts ---"
+  pm_od_09_reconfiguredLoanComesBackDisagreeing
+  pm_od_10_unreconfiguredLoanComesBackAgreeing
   IO.println "--- `v0.35.98`: the bound thread's base priority has two homes ---"
   pm_basePriorityWritesBothHomes
   pm_basePrioritySurvivesBlockAndWake
@@ -1427,4 +1544,4 @@ def main : IO Unit := do
   pm_frozenCeilingAgreesWithTheLiveWrite
   pm_frozenBasePriorityRebucketsLikeTheLiveWrite
   pm_frozenCeilingRebucketsLikeTheLiveWrite
-  IO.println "=== All D2 priority management tests passed (42 tests) ==="
+  IO.println "=== All D2 priority management tests passed (44 tests) ==="

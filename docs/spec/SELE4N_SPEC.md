@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.135` (`lakefile.toml`) |
+| **Package version** | `0.35.136` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,219 across 334 Lean files |
-| **Test LoC** | 80,490 across 70 Lean test suites |
-| **Proved declarations** | 13,126 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 396,365 across 334 Lean files |
+| **Test LoC** | 80,607 across 70 Lean test suites |
+| **Proved declarations** | 13,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5559,16 +5559,35 @@ deadline) come from the SchedContext a thread *runs on* (`scId?` — `.bound` or
 the thread's own TCB fields, mirrored onto the SchedContext it *owns*
 (`ownScId?` — `.bound` alone) by the AK2-B propagation convention.
 
-Since `v0.35.133` that mirror is **write-only for the base priority**: a
-reservation still configures its bound thread's band and
-`boundThreadPriorityConsistent` still states that it did, but no scheduling
-decision reads `SchedContext.priority` any more, so the base has one home and
-the pair cannot go stale under a reader.  That closes the `v0.35.98` divergence
-structurally rather than by adding a writer: a `seL4_TCB_SetPriority` demotion of
-a bound thread used to re-bucket it at the new band while every later wake
-re-inserted it at the old one, permanently, because the run queue is keyed by
-`TCB.boostedPriority` and the resolver read the reservation's field.  The domain
-half keeps both homes and `boundThreadDomainConsistent`.
+Since `v0.35.133` for the band and `v0.35.136` for the domain, that mirror is
+**write-only**: a reservation still configures its bound thread's band and
+partition, but no scheduling decision reads either of its fields — every band
+read is `tcb.priority` (`resolveEffectivePrioDeadline_fst_eq_boostedPriority`)
+and every domain read is `tcb.domain` (`effectiveSchedParams_domain_eq`), both
+unconditional — so each parameter has one reading home and no reader can see a
+stale mirror.  That closes the `v0.35.98` divergence structurally rather than by
+adding a writer: a `seL4_TCB_SetPriority` demotion of a bound thread used to
+re-bucket it at the new band while every later wake re-inserted it at the old
+one, permanently, because the run queue is keyed by `TCB.boostedPriority` and the
+resolver read the reservation's field.
+
+**What that does *not* buy is the invariant, and PR #897's review is where the
+distinction gets printed** (`v0.35.136`).  The *writes* are still two, so
+`boundThreadPriorityConsistent` and `boundThreadDomainConsistent` are facts about
+their writers — `schedContextBind`, `schedContextConfigureBoundPropagate` and
+`updatePrioritySource` — and not invariants of the system.
+`returnDonatedSchedContext`'s bottom arm installs a `.bound` binding and writes
+neither home, so a reservation whose band or domain moved while it was on loan
+comes back disagreeing: a `.tcbSetPriority` on the **unbound** donor writes its
+TCB alone, and a `schedContextConfigure` of the **donated** reservation writes
+`sc.priority` and `sc.domain` alone (its propagation being gated on the donee's
+`ownScId?`, which is `none`).  Neither reconciliation is available to the pop —
+`tcb.* := sc.*` would undo a demotion or migrate a partition on an IPC reply, and
+`sc.* := tcb.*` would retune what a SchedContext capability's holder had just set
+and is projection-visible besides — so the closure is to stop storing either
+parameter twice, which is WS-CB's (`docs/REGISTERED_DEBT.md` table C).  Nothing
+is mis-scheduled by the residue, and the refutation is executed rather than
+asserted: `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09/10.
 
 A donation
 therefore moves budget, period and deadline and **not** priority or domain: a

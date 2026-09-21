@@ -451,9 +451,22 @@ R5.C.1 retired that variant in favour of this total form. -/
     match st.getSchedContext? scId with
     -- WS-RR (`v0.35.133`): the boost is applied to the THREAD's base at every
     -- binding, because that is the only base there is -- one
-    -- `Priority.raisedBy`, one base (`Prelude.lean`).  `sc.domain` stays: the
-    -- domain mirror is a separate pair, with no writer known to break it.
-    | some sc => (tcb.boostedPriority, sc.deadline, sc.domain)
+    -- `Priority.raisedBy`, one base (`Prelude.lean`).
+    --
+    -- **WS-RR (`v0.35.136`): and the DOMAIN is the thread's at every binding
+    -- too.**  `v0.35.133` left `sc.domain` here on the stated ground that "the
+    -- domain mirror is a separate pair, with no writer known to break it", and
+    -- PR #897's review found the writer: `schedContextConfigure` rewrites
+    -- `sc.domain` while the reservation is **donated**, where its propagation is
+    -- gated off (a donee's `ownScId?` is `none`), and
+    -- `returnDonatedSchedContext` then rebinds the origin `.bound` with its own
+    -- `tcb.domain` untouched.  So this arm reported a partition set by a holder
+    -- of a capability on the RESERVATION rather than on the thread -- which is
+    -- the v0.35.3 argument for the `.donated` arm below, arriving at the arm it
+    -- left alone.  Free on the live tree: every domain filter reads
+    -- `tcb.domain` (`chooseBestRunnableInDomainEffective`), so this component
+    -- has no live consumer and the golden trace is byte-identical.
+    | some sc => (tcb.boostedPriority, sc.deadline, tcb.domain)
     | none => (tcb.boostedPriority, tcb.deadline, tcb.domain)
   | .donated scId _ =>
     -- WS-OD (v0.35.3): the donor's **deadline** — the reservation-owned
@@ -516,6 +529,40 @@ theorem effectiveSchedParams_fst_eq_boostedPriority (st : SystemState) (tcb : TC
   have hFst : (effectiveSchedParams st tcb).1 = (resolveEffectivePrioDeadline st tcb).1 :=
     congrArg Prod.fst hPair
   rw [hFst, resolveEffectivePrioDeadline_fst_eq_boostedPriority]
+
+/-- **WS-RR (`v0.35.136`): the reported domain is the THREAD's, at every
+binding** — the third component's counterpart to the first's pin above, and the
+statement that closes the mirror `v0.35.133` left on the `.bound` arm.
+
+It is stated rather than left to be read off the definition for the reason that
+cut records about the priority half: the *readers* are what make a two-homed
+field a hazard, so a cut that sends this component back to consulting a
+reservation must fail to elaborate rather than merely look different.  A
+reservation's `domain` survives on the write side alone, as the partition
+`schedContextBind` requires a thread to already be in (`tcb.domain != sc.domain`
+is that bind's own refusal) and `schedContextConfigureBoundPropagate` moves it
+to; nothing reads it as a running thread's partition.
+
+PR #897's review is what made this necessary rather than tidy: the pop rebinds
+an origin `.bound` without touching either field, so a `schedContextConfigure`
+of a **donated** reservation — whose propagation is gated off, the donee's
+`ownScId?` being `none` — left the pair disagreeing on a state the kernel
+reaches.  `boundThreadDomainConsistent` is therefore no more an invariant than
+`boundThreadPriorityConsistent` is; both are facts about their writers, and
+`returnDonatedSchedContext_refutes_boundThreadConsistency`
+(`SeLe4n/Kernel/IPC/Operations/Endpoint.lean`) is the refutation that keeps a
+later cut from assuming either across a pop. -/
+theorem effectiveSchedParams_domain_eq (st : SystemState) (tcb : TCB) :
+    (effectiveSchedParams st tcb).2.2 = tcb.domain := by
+  unfold effectiveSchedParams
+  cases hBind : tcb.schedContextBinding with
+  | unbound => simp only [hBind]
+  | bound scId =>
+    simp only [hBind]
+    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
+  | donated scId owner =>
+    simp only [hBind]
+    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
 
 
 /-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.

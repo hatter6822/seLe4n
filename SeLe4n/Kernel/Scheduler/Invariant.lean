@@ -772,10 +772,41 @@ theorem default_effectiveParamsMatchRunQueue :
 -- ============================================================================
 
 /-- AE3-A/U-11: For every thread bound to a SchedContext, the thread's domain
-must match the SchedContext's domain. This invariant is established by the
-domain check in `schedContextBind` (AE3-A2) and preserved by all binding-
-modifying operations (unbind/cancelDonation clear `.bound`; donation uses
-`.donated` not `.bound`). -/
+must match the SchedContext's domain.  Established by the domain check in
+`schedContextBind` (AE3-A2), which refuses a cross-domain bind outright, and
+maintained by `schedContextConfigureBoundPropagate`, which moves both homes
+under `schedContextConfigurePropagates`.
+
+**WS-RR (`v0.35.136`): it is NOT an invariant, and the enumeration that stood
+here said otherwise.**  *"Preserved by all binding-modifying operations
+(unbind/cancelDonation clear `.bound`; donation uses `.donated` not `.bound`)"*
+was written before the donation **pop** existed, and `returnDonatedSchedContext`
+is a binding-modifying operation that installs `.bound` — writing neither
+`TCB.domain` nor `SchedContext.domain`.  So the agreement survives a loan only
+while nothing moves either home during it, and `schedContextConfigure` on a
+**donated** reservation moves one: its propagation is gated on the donee's
+`ownScId?`, which is `none`, so `sc.domain` changes alone and the pop then
+rebinds the origin under it.  `tests/PriorityManagementSuite.lean`'s
+WS-RR-PRIO-09 drives exactly that, through two live operations, with
+WS-RR-PRIO-10 as the unreconfigured control.
+
+Neither reconciliation is available to the pop: writing `tcb.domain :=
+sc.domain` would **migrate a thread's partition** on an IPC reply, at the
+instance of a holder of a capability on the reservation rather than on the
+thread — the crossing WS-OD `v0.35.3` closed on the other side — and writing
+`sc.domain := tcb.domain` would silently retune a reservation its capability's
+holder had just configured.  So this is a fact about its two writers, as
+`boundThreadPriorityConsistent` is about its three, and the residue is
+registered in `docs/REGISTERED_DEBT.md` table C with the model change that
+closes it.
+
+**Nothing reads it.**  Since `v0.35.136` every arm of `effectiveSchedParams`
+reports `tcb.domain` (`effectiveSchedParams_domain_eq`) and every live domain
+filter reads `tcb.domain` directly (`chooseBestRunnableInDomainEffective`), so a
+stale mirror changes no scheduling decision — which is what makes the residue a
+verification gap rather than a partition break.  It stays a conjunct of
+`schedulerInvariantBundleExtended`, whose scope is the boot and scheduler
+surface: no IPC transition claims that bundle. -/
 def boundThreadDomainConsistent (st : SystemState) : Prop :=
   ∀ (tid : ThreadId) (scId : SchedContextId),
     match (st.objects[tid.toObjId]? : Option KernelObject) with

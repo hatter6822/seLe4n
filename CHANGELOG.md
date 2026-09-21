@@ -1,3 +1,114 @@
+## v0.35.136 — a `bound*Consistent` predicate is a writer fact, and the domain mirror had the same hole
+
+PR #897's review, against `v0.35.133`: when a bound client donates its
+scheduling context the client becomes `.unbound`, so an authorised
+`.tcbSetPriority` during the outstanding call updates only its `TCB.priority`;
+`returnDonatedSchedContext`'s bottom arm then rebinds it `.bound` while the
+reservation keeps its old `priority`, and the post-pop state falsifies
+`boundThreadPriorityConsistent`.  *"Making scheduling readers use the TCB
+prevents the old scheduling-band regression, but it does not make this retained
+invariant unfalsifiable; reconcile the fields safely on return or narrow/retire
+the invariant rather than claiming every writer preserves it."*  Correct, and the
+tree said so in one place and denied it in two: §9 of
+`Scheduler/Invariant/PerCore.lean` named the pop as the one remaining writer and
+cited a register row **that does not exist** (the only candidate was CLOSED and
+said the predicate *"remains as the statement that the propagation happened"*),
+while `CLAUDE.md`'s one-home constraint said in terms that with one home *"a
+stale mirror is not a defect that was fixed but a state no writer can reach"*.
+
+**Sweeping the shape rather than the reported instance found a second route and
+a second predicate.**  `schedContextConfigure` of a **donated** reservation
+rewrites `sc.priority` *and* `sc.domain` and propagates to nobody — correctly,
+the propagation being gated on the donee's `ownScId?`, which is `none` (WS-OD
+`v0.35.3`) — so one syscall, needing no TCB capability at all, breaks both
+predicates at once.  `boundThreadDomainConsistent`'s own docstring claimed it was
+*"preserved by all binding-modifying operations (unbind/cancelDonation clear
+`.bound`; donation uses `.donated` not `.bound`)"*, an enumeration written before
+the donation pop existed and false of it: the pop **is** a binding-modifying
+operation and it installs `.bound`.
+
+### The improvement: the domain has one reading home too
+
+`v0.35.133` collapsed the band's five readers and left `effectiveSchedParams`'s
+`.bound` arm reporting `sc.domain`, on the stated ground that *"the domain mirror
+is a separate pair, with no writer known to break it"*.  This finding is that
+writer, so the arm reads `tcb.domain` and `effectiveSchedParams_domain_eq` is the
+unconditional pin — the sibling of `v0.35.134`'s
+`effectiveSchedParams_fst_eq_boostedPriority`, and stated for the same reason:
+the *readers* are what make a two-homed field a hazard, so a cut that sends this
+component back to a reservation must fail to elaborate rather than merely look
+different.
+
+**Free, and measured rather than argued**: the component has no live consumer
+(every domain filter reads `tcb.domain` directly through
+`chooseBestRunnableInDomainEffective`), the whole library builds with no proof
+repaired anywhere, and the golden trace is byte-identical at 239/239.  *A stated
+reason that no writer exists is a claim about every writer, and it is the kind
+that ages.*
+
+### Why neither reconciliation is available, and what that makes the predicates
+
+The review offered two remedies and the measurement rejected the first in both
+directions.  Writing `tcb.* := sc.*` at the pop would **undo a demotion, or
+migrate a thread's partition, on an IPC reply** — at the instance of a holder of
+a capability on the *reservation*, which says nothing about the thread, and which
+is precisely the authority crossing WS-OD closed from the other side.  Writing
+`sc.* := tcb.*` would silently retune what that capability's holder had just set,
+and is projection-**visible** besides, since `SchedContext.priority` survives
+`projectKernelObject`.  Narrowing has no store-visible discriminator.
+
+So the predicates are facts about their writers — `schedContextBind`,
+`schedContextConfigureBoundPropagate` and `updatePrioritySource` — and the
+closure is the model change `v0.35.133`'s register row named and deferred:
+retire `SchedContext.priority` and `SchedContext.domain` as thread-band homes,
+which is what seL4-MCS does, its `sched_context` carrying neither field.  That is
+a scheduling-model change, it is **WS-CB**'s (whose CB0.3 / CB1.6 already own
+`schedContextConfigure`'s missing caller-MCP check), and it is registered in
+`docs/REGISTERED_DEBT.md` table C rather than ridden along here.
+
+### The residue is a verification gap, not a scheduling one
+
+Measured, not implied.  Every band read has been `tcb.priority` since `v0.35.133`
+and every domain read is `tcb.domain` since this cut, both unconditional, so the
+origin resumes at its own band in its own partition.
+`boundThreadPriorityConsistent` is consumed by **nothing at all**;
+`boundThreadDomainConsistent` is a conjunct of `schedulerInvariantBundleExtended`,
+whose scope is the boot and scheduler surface, and no IPC transition claims that
+bundle — so no theorem in the tree is false.  Both predicates stay, with their
+docstrings and §9 stating the refutation, because a proof that takes either of a
+post-pop state is asking for a premise the kernel refutes.
+
+### The refutation is executed, and it has a control
+
+`tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the configure and the
+pop as **live operations** on a state the donation path produces and asserts both
+pairs disagree (priority 50 vs 123, domain 0 vs 5).  WS-RR-PRIO-10 is the same
+fixture and the same pop with the reconfiguration omitted, where both pairs agree
+— which is what makes the witness a statement about the *reconfiguration* rather
+than about the pop, and what shows the pop is not what breaks the agreement but
+what **installs the binding under which it is asserted**.  That is also why no
+write available to the pop can repair one.
+
+`donationReturnSchedContext_domain` joins `…_priority` so both halves are pinned
+symmetrically and a cut that decides to reconcile at the pop has to change a
+theorem rather than a record.
+
+### Validation and the anchor that needed tightening
+
+Eleven Tier 3 anchors, and one of them was wrong on its first draft in exactly
+the way this project keeps recording: with the domain collapsed, the `.bound` and
+`.donated` arms of `effectiveSchedParams` compute the *same* triple, so a pattern
+matching the arm's line is satisfied by either and a mutation of one leaves it
+green — a presence check standing in for the relation.  It is bounded by the
+`.donated` header that follows the `.bound` arm, and the mutation restoring
+`sc.domain` is caught three ways: the bounded positive goes silent, the tree-wide
+negative fires, and `effectiveSchedParams_domain_eq` fails to elaborate.
+
+The arms are deliberately **not** merged, though they are now identical: an
+existing Tier 3 negative refuses a merged `.bound | .donated` arm per
+declaration, and `SchedContextBinding`'s cases are where WS-CB's new binding
+constructor must be classified.
+
 ## v0.35.135 — the declared sort is normalised too
 
 PR #897's review, against the domain `v0.35.128` widened: when a state alias'

@@ -17481,4 +17481,42 @@ run_negative_check "INVARIANT" rg -n 'effectiveBucketPriority_frame_weak|effecti
 # store agreement the accessor no longer reads.
 run_check "INVARIANT" bash -lc 'rg -n -U "^private theorem saveOutgoingContext_effectiveBucketPriority_eq[^\n]*(\n([ \t][^\n]*)?)*" SeLe4n/Kernel/Scheduler/Operations/Preservation.lean | rg -F "effectiveBucketPriority_congr st (saveOutgoingContext st) tcb"'
 
+# --------------------------------------------------------------------------
+# `v0.35.136` (PR #897's review): the two `bound*Consistent` predicates are
+# WRITER facts, and the domain mirror had the same hole as the band.
+# --------------------------------------------------------------------------
+# `effectiveSchedParams` reports the THREAD's domain at every binding, which is
+# `v0.35.133`'s collapse applied to the arm it left on the stated ground that the
+# domain mirror had "no writer known to break it" -- the writer being
+# `schedContextConfigure` of a DONATED reservation, whose propagation is gated
+# off, followed by the pop rebinding the origin under it.
+# The positive is pinned at the `.bound` arm SPECIFICALLY, by the `.donated`
+# header that follows it: both arms now compute the same triple, so a pattern
+# matching the line alone is satisfied by either and a mutation of one would
+# leave it green -- a presence check standing in for the relation.  The
+# structural guard is the unconditional theorem below, which cannot elaborate if
+# either arm reads `sc.domain`.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| some sc => \(tcb\.boostedPriority, sc\.deadline, tcb\.domain\)\n    \| none => \(tcb\.boostedPriority, tcb\.deadline, tcb\.domain\)\n  \| \.donated scId _ =>" SeLe4n/Kernel/Scheduler/Operations/Selection.lean'
+run_check "INVARIANT" rg -F -n 'theorem effectiveSchedParams_domain_eq (st : SystemState) (tcb : TCB) :' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -F -n '    (effectiveSchedParams st tcb).2.2 = tcb.domain := by' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+# ...and the retired reading must not come back: it keeps every token of the arm
+# and changes only which record the domain is read from.
+run_negative_check "INVARIANT" rg -F -n '(tcb.boostedPriority, sc.deadline, sc.domain)' SeLe4n/ tests/
+# ...with the pop pinned as writing NEITHER reservation field, so a cut that
+# decides to reconcile at the pop has to change a theorem rather than a record.
+run_check "INVARIANT" rg -F -n 'theorem donationReturnSchedContext_domain (sc : SchedContext)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -F -n 'theorem donationReturnSchedContext_priority (sc : SchedContext)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# ...and the refutation EXECUTED, with the control that isolates the
+# reconfiguration from the pop -- a witness without it would pass with the pop
+# blamed for a disagreement it does not create.
+run_check "INVARIANT" rg -F -n 'private def pm_od_09_reconfiguredLoanComesBackDisagreeing : IO Unit := do' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -F -n 'private def pm_od_10_unreconfiguredLoanComesBackAgreeing : IO Unit := do' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -F -n '  pm_od_09_reconfiguredLoanComesBackDisagreeing' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -F -n '  pm_od_10_unreconfiguredLoanComesBackAgreeing' tests/PriorityManagementSuite.lean
+# ...and the stale enumeration that called the domain agreement "preserved by all
+# binding-modifying operations" must not return: the pop is one and installs
+# `.bound`.
+run_negative_check "INVARIANT" rg -F -n 'preserved by all binding-' SeLe4n/
+
+
 finalize_report

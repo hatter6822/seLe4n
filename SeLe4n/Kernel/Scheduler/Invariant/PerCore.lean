@@ -1818,21 +1818,17 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 -- §9  AK2-B carrier: bound-thread base-priority consistency (SM5.I)
 -- ============================================================================
 --
--- The SchedContext-bound / -donated effective-priority resolver
--- `resolveEffectivePrioDeadline` (Selection.lean) reads the *SchedContext's*
--- base priority, whereas `TCB.boostedPriority` — the bucket that
--- `schedulerPriorityMatchOnCore` records — reads the *TCB's* base priority.
--- They coincide exactly when a bound thread's base priority equals its
--- SchedContext's base priority: the "Option B propagation" agreement that
--- `schedContextBind` / `schedContextConfigure` establish (see the
--- `effectiveBucketPriority` docstring in `Scheduler/Invariant.lean`).
---
--- `boundThreadPriorityConsistent` packages that agreement.  It is the discharge
--- for preserving `schedulerPriorityMatchOnCore` through the SchedContext-priced
--- run-queue inserts (`updatePipBoostOnCore` and the bound budget re-enqueue,
--- both at `resolveInsertPriority = (resolveEffectivePrioDeadline st tcb).1`):
--- under this agreement that inserted bucket equals the TCB-based
--- `tcb.boostedPriority` that `schedulerPriorityMatch` records.
+-- **What this was for, and what it is for now (`v0.35.133`).**  Until that cut
+-- `resolveEffectivePrioDeadline` read the *SchedContext's* base priority while
+-- `TCB.boostedPriority` — the bucket `schedulerPriorityMatchOnCore` records —
+-- read the *TCB's*, so the two coincided exactly under the "Option B
+-- propagation" agreement `schedContextBind` / `schedContextConfigure` establish,
+-- and `boundThreadPriorityConsistent` was the discharge for preserving
+-- `schedulerPriorityMatchOnCore` through the SchedContext-priced run-queue
+-- inserts.  With `TCB.priority` the base's one home,
+-- `resolveEffectivePrioDeadline_fst_eq_boostedPriority` is unconditional and
+-- that discharge needs no agreement at all.  What the predicate states now is
+-- the propagation itself: that the two writers below moved both homes.
 --
 -- It is stated system-wide (a property of the object store, core-independent).
 -- It ranged over both `.bound` and `.donated` via `SchedContextBinding.scId?`
@@ -1857,9 +1853,36 @@ theorem schedulerInvariant_smp_extended_of_bootCore_preservation
 --   `updatePrioritySource_preserves_boundThreadPriorityConsistent` (at the end
 --   of this module) is the statement.
 -- * `returnDonatedSchedContext`'s bottom arm rebinds a recipient `.bound`
---   without refreshing the reservation's record, so it **still** breaks it;
---   that is the one remaining writer and it is registered in
---   `docs/REGISTERED_DEBT.md`.
+--   without refreshing the reservation's record, so it **still** breaks it.
+--
+-- **WS-RR (`v0.35.136`, PR #897's review): that last bullet made this a
+-- statement about writers and not an invariant, and the sentence claiming it
+-- was "registered in `docs/REGISTERED_DEBT.md`" named no row — the register's
+-- only candidate was CLOSED and said the predicate "remains as the statement
+-- that the propagation happened".**  It is registered now, in table C, with the
+-- model change that closes it.  Two routes reach the disagreement, and the
+-- review reported the first: a `.tcbSetPriority` on the **unbound** donor writes
+-- its TCB alone (correctly — it owns no reservation to mirror to), and a
+-- `schedContextConfigure` of the **donated** reservation writes `sc.priority`
+-- alone (correctly — its propagation is gated on the donee's `ownScId?`, which
+-- is `none`).  Either way the pop then rebinds the origin `.bound` under the
+-- disagreement.  `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09 drives the
+-- second route through two live operations, with WS-RR-PRIO-10 as the
+-- unreconfigured control.
+--
+-- **Neither reconciliation is available to the pop**, which is what makes this a
+-- fact about the writers rather than a defect in the pop: writing `tcb.priority
+-- := sc.priority` would undo a demotion by an IPC reply, and writing
+-- `sc.priority := tcb.priority` would silently retune the band a SchedContext
+-- capability's holder set — and is projection-visible besides, since
+-- `SchedContext.priority` survives `projectKernelObject`.  The sibling
+-- `boundThreadDomainConsistent` (`Scheduler/Invariant.lean`) has the same hole
+-- for the same reason and its docstring carries the same correction.
+--
+-- Nothing reads the mirror: `resolveEffectivePrioDeadline_fst_eq_boostedPriority`
+-- and `effectiveSchedParams_domain_eq` are both unconditional, so a stale mirror
+-- changes no scheduling decision.  That is what makes the residue a verification
+-- gap rather than a scheduling defect.
 --
 -- The default state satisfies it vacuously.
 
@@ -1900,7 +1923,17 @@ now, and the `_of_agree` form that used to consume this predicate is deleted.  S
 this is no longer load-bearing for a *read*.  It is kept, and is not a tautology:
 it states that `schedContextBind` and `schedContextConfigureBoundPropagate`
 actually propagated the band a reservation configures its bound thread to, which
-is a real property of those two writers and the only artefact saying they did. -/
+is a real property of those two writers and the only artefact saying they did.
+
+**WS-RR (`v0.35.136`): and it is NOT an invariant — read that sentence as scoped
+to those writers.**  `returnDonatedSchedContext`'s bottom arm installs a `.bound`
+binding without writing either home, so a reservation whose band moved while it
+was on loan comes back disagreeing.  See §9's writer enumeration above for the
+two routes, for why neither reconciliation is available to the pop, and for the
+register row; and `tests/PriorityManagementSuite.lean`'s WS-RR-PRIO-09/10 for the
+executed refutation and its control.  A proof that takes this predicate of a
+state reached through a donation pop is asking for a premise the kernel
+refutes. -/
 def boundThreadPriorityConsistent (st : SystemState) : Prop :=
   ∀ (tid : SeLe4n.ThreadId) (tcb : TCB), st.getTcb? tid = some tcb →
     ∀ scId, tcb.schedContextBinding.ownScId? = some scId →

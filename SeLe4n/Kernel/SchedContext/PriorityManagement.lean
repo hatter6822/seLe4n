@@ -297,8 +297,11 @@ def updatePrioritySource (st : SystemState) (tid : SeLe4n.ThreadId)
     -- write is what changes the thread's band and the SchedContext write is what
     -- keeps `boundThreadPriorityConsistent` true -- the statement that a
     -- reservation's configured band tracks its bound thread's.  Dropping it would
-    -- leave the mirror stale at the old value for `schedContextConfigure` to
-    -- propagate back later.
+    -- leave the mirror stale at the old value for the next `schedContextBind` of
+    -- this reservation to propagate back, since that operation writes
+    -- `tcb.priority := sc.priority`.  (`schedContextConfigure` writes its
+    -- caller's argument to both homes, so it is not a route back; naming it here
+    -- was wrong and is corrected at `v0.35.136`.)
     --
     -- `boundThreadPriorityConsistent` is the agreement between them,
     -- `schedContextBind` establishes it and
