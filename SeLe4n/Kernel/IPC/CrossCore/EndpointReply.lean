@@ -2837,10 +2837,10 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
   rw [hEp]
   simp only [hHead]
   cases hPop : endpointQueuePopHead endpointId false st with
-  | error e => simp [hPop]
+  | error e => rfl
   | ok triple =>
       obtain ⟨popTid, popTcb, st1⟩ := triple
-      simp only [hPop]
+      dsimp only
       have hF1 : determineTargetCore st1 x = determineTargetCore st x :=
         endpointQueuePopHead_determineTargetCore_eq endpointId false st st1 popTid popTcb x
           hObjInv hPop
@@ -2851,23 +2851,23 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
       · -- `Call` rendezvous: the caller is parked `.blockedOnReply` and linked.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid
             (.blockedOnReply endpointId (some receiver)) none with
-        | error e => simp [hS2]
+        | error e => rfl
         | ok st2 =>
-            simp only [hS2]
+            dsimp only
             have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
               rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid _ none x
                 hI1 hS2, hF1]
             have hI2 : st2.objects.invExt :=
               storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 popTid _ none hI1 hS2
             cases hRid : replyId with
-            | none => simp [hRid]
+            | none => rfl
             | some rid =>
-                simp only [hRid]
+                dsimp only
                 cases hLink : SystemState.linkCallerReply popTid rid st2 with
-                | error e => simp [hLink]
+                | error e => rfl
                 | ok pair =>
                     obtain ⟨_, st3⟩ := pair
-                    simp only [hLink]
+                    dsimp only
                     have hF3 : determineTargetCore st3 x = determineTargetCore st x := by
                       rw [linkCallerReply_determineTargetCore_eq st2 st3 popTid rid x hI2 hLink,
                         hF2]
@@ -2875,16 +2875,16 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
                       linkCallerReply_preserves_objects_invExt st2 st3 popTid rid hI2 hLink
                     cases hS4 : storeTcbIpcStateAndMessage st3 receiver .ready
                         popTcb.pendingMessage with
-                    | error e => simp [hS4]
+                    | error e => rfl
                     | ok st4 =>
-                        simp only [hS4]
+                        dsimp only
                         exact (storeTcbIpcStateAndMessage_determineTargetCore_eq st3 st4 receiver
                           .ready popTcb.pendingMessage x hI3 hS4).trans hF3
       · -- plain `Send` rendezvous: the sender is made `.ready` and woken.
         cases hS2 : storeTcbIpcStateAndMessage st1 popTid .ready none with
-        | error e => simp [hS2]
+        | error e => rfl
         | ok st2 =>
-            simp only [hS2]
+            dsimp only
             have hF2 : determineTargetCore st2 x = determineTargetCore st x := by
               rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st1 st2 popTid .ready none x
                 hI1 hS2, hF1]
@@ -2898,9 +2898,9 @@ theorem endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous
               wakeThread_preserves_objects_invExt st2 popTid executingCore hI2
             cases hS3 : storeTcbIpcStateAndMessage (wakeThread st2 popTid executingCore).1
                 receiver .ready popTcb.pendingMessage with
-            | error e => simp [hS3]
+            | error e => rfl
             | ok st3 =>
-                simp only [hS3]
+                dsimp only
                 exact (storeTcbIpcStateAndMessage_determineTargetCore_eq _ st3 receiver .ready
                   popTcb.pendingMessage x hIW hS3).trans hFW
 

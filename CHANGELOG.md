@@ -1,3 +1,101 @@
+## v0.35.156 — the post-merge audit of PR #897: a warning is a finding, and a hypothesis nobody needs is a claim nobody made
+
+A deep read of everything PR #897 merged (`v0.35.106` → `v0.35.155`, fifty cuts),
+with every docstring treated as a claim to check against the code rather than a
+description to trust.  The kernel held: the head-driven donation pop, the origin
+redirect and its two guards, the splice, the `.replyRecv` holder deschedule, the
+fifth `dualQueueSystemInvariant` conjunct and its runtime check, the `.receive`
+scheduler footprint and its `Call`-keyed replenish segment, WS-RR RR8.16's two
+flow facts, and the frozen queue primitives all do what their sections in
+`CLAUDE.md` say.  The two open halves the PR left registered — the depth-2
+donation accounting (`donationOriginRebindable` is a proxy) and the reclaimed
+holder that runs unbudgeted — are still open, still registered, and still
+consistently described at every live site.  What the audit changed is below.
+
+### Every build warning is understood and gone
+
+The default target built with **26** warnings, none of them noise, and all of
+them the same shape: a `simp` argument that the tree no longer needs.  All 26
+are PR #897's — twenty-four sit in proof text the PR wrote, and the other two
+are a hypothesis the PR's own `v0.35.133` collapse made dead — which is checked
+against the PR's base commit rather than assumed (an earlier draft of this
+entry said seven predated the PR, on the strength of a `git blame` whose
+shallow-clone boundary sits at the PR's first commit).
+
+* **Five are the `v0.35.133`/`v0.35.136` collapses arriving one proof late.**
+  `effectiveSchedParams_domain_eq` (`v0.35.136`) passed `hBind` and `hSc` to
+  `simp` after a `cases h : e` had already substituted `e` in the goal; its
+  proof is now one `split` per matcher and `rfl` at every leaf, which is what
+  the theorem says — every arm's third component is the literal `tcb.domain`.
+  (A `cases` on the inner scrutinee cannot reach it, since it sits under the
+  outer matcher's binder; `split` can.)  `getCurrentPriority_donated` carried a
+  `.donated`-binding hypothesis that, since `TCB.priority` became the base
+  priority's one home, narrowed nothing — the compiler reported the variable
+  **and** the simp argument unused. It is **retired** for the reason `v0.35.133`
+  gave for the resolver's arm lemmas rather than kept beside its replacement: a
+  name kept past its hypothesis teaches a false dependency.
+  `getCurrentPriority_eq_priority` is the unconditional form, `rfl`, and
+  deliberately **not** a `simp` lemma — marking it one made `simp` rewrite
+  `getCurrentPriority` inside `setPriorityOnCore_raise_no_sgi`'s goal before its
+  `hRaise` hypothesis could match, which turned a green module into a red one,
+  measured before this landed.  `docs/CLAIM_EVIDENCE_INDEX.md` row 75 and the
+  codebase map cite the new name; a Tier 3 positive pins it and a negative
+  refuses the retired one returning as code, mutation-tested in both directions
+  on the code-view overlay.
+* **Fourteen sit in one theorem written at `v0.35.107`**
+  (`endpointReceiveDualOnCore_determineTargetCore_eq_of_rendezvous`): each
+  `cases hX : …` was followed by `simp [hX]` / `simp only [hX]` on a goal `cases`
+  had already rewritten.  The refusal branches close by `rfl` and the success
+  branches by `dsimp only`, which is the iota reduction the unused argument was
+  riding on.
+* **Five are in the fifth conjunct's discharges and the store congruence**
+  (`PerOperation.lean`'s three `endpointQueueHeadDisjoint` discharges from
+  `v0.35.106`, and `LookupCongruence.lean`'s `storeObject` congruence): each
+  drops exactly the argument the linter named, and each module rebuilds clean.
+  The remaining two are `getCurrentPriority_donated`'s, above.
+
+Every module outside the default target that Tier 2 builds — the 69 suites, the
+staged surface, the six censuses — now builds with **zero** warnings as well.
+
+### Two more instances of the registered `.unbound` class, measured and recorded
+
+Reading the `.replyRecv` deschedule (`v0.35.149`) against its sibling arm found
+that a plain-`Send` rendezvous is decided by the two readings of `.unbound` on
+two arms: the non-`Call` arm of `.replyRecv` deschedules the holder the pop
+unbound (the MCS-passive reading — a passive server handed a plain `Send` is
+parked `.ready`, `.unbound`, unplaced), while a `.receive` by an already-unbound
+running thread leaves it current (the legacy reading).  And what is parked here
+stays parked: `schedContextBind` re-buckets only a thread already queued on its
+home core, where seL4-MCS's `schedContext_bindTCB` — read at `13.0.0` — ends in
+`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`.  So
+upstream's recovery for a passive thread left runnable without a context (bind
+it one) is closed in this kernel, and WS-OD OD1.7's list of closed recovery
+paths records a **divergence** from upstream rather than a fact about the
+pattern.  Both are added to the WS-CB row in `docs/REGISTERED_DEBT.md` table C
+and to the `CLAUDE.md` / `AGENTS.md` bullet, with the upstream fact cited at its
+tag.  Neither is fixed here, on the same reasoning that row already carries: a
+bind that places a thread is a scheduler-domain write `.schedContextBind`
+declares nowhere yet (WS-RR RR8.12's order is declare, bracket, then widen),
+and the plain-`Send` decision is the passive/legacy split that row names.
+
+### The gates, run rather than read
+
+`shellcheck` was absent from the environment, which is the one Tier 0 failure
+the audit met and the environment's rather than the tree's; with it installed
+the shell lint passes.  The codebase map had been generated at `v0.35.153` and
+carried forward through two cuts; it is regenerated, and the six-line
+production-LoC delta is propagated to the README, the spec, the eleven locales
+and the GitBook surfaces.  Measured on the audited tree with every fix applied:
+Tier 1 builds the library root, the static archive, the staged surface and the
+six censuses with **zero** warnings; Tier 2's trace, determinism and negative
+stages pass, the golden trace byte-identical at 239/239 with sequences identical
+and all 69 suites green; `test_rust.sh` and the aarch64 cross build pass with no
+warnings; and Tier 0 and Tier 3 pass in full (`--continue`, every anchor run).
+No transition, refusal, footprint or fixture moved: this cut changes proofs, one
+theorem's name, and prose.
+
+Refs: docs/REGISTERED_DEBT.md table C (WS-CB row); docs/CLAIM_EVIDENCE_INDEX.md row 75
+
 ## v0.35.155 — a LINE is not the declaration, and one decision drawn from two subjects
 
 Two findings from PR #897's review, and both are this file's own *the view you

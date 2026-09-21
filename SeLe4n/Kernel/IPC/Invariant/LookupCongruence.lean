@@ -675,7 +675,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     hRel.declassificationRefusals, hRel.declassificationTaint⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
   · simp only [hRel.objectIndexSet]
-  · simp only [hRel.objects id, hRel.lifecycle]
+  · simp only [hRel.lifecycle]
   · simp only [hRel.objects id, hRel.asidTable]
 
 open SeLe4n.Model.SystemState in

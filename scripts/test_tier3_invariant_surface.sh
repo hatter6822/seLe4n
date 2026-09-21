@@ -3643,6 +3643,16 @@ run_negative_check "INVARIANT" rg -n 'boostedPriority_eq_resolve_unbound' SeLe4n
 run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_resolve' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+# v0.35.156 (the post-merge audit): the priority-management reader's own pin is
+# unconditional too.  `getCurrentPriority_donated` took a `.donated` binding as a
+# hypothesis that, since the one-home collapse, narrowed nothing -- the compiler
+# reported the variable and the simp argument unused -- and it is retired for the
+# reason the three negatives above give: a name kept past its hypothesis teaches
+# a false dependency.  The positive pins the unconditional form; the negative
+# refuses the hypothesis-bearing one coming back as code (its tombstone lives in
+# a docstring, which the code view strips, so the clean tree is silent).
+run_check "INVARIANT" rg -F -n 'theorem getCurrentPriority_eq_priority (st : SystemState) (tcb : TCB) :' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_negative_check "INVARIANT" rg -n 'getCurrentPriority_donated' SeLe4n/ tests/
 
 # The frozen mirror answers the same question the same way.  The frozen base-
 # priority write is `updatePrioritySource`'s second implementation, and the two

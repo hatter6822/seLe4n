@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.155.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.156.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8374,6 +8374,25 @@ code may assume:
   suspension of its client, escapes CBS admission entirely.  New code must not
   read a successful reclaim as leaving the holder budget-limited, and **v1.0.0
   must not claim that a thread without a reservation does not consume CPU.**
+  **Two more instances of the same class, measured by the post-merge audit
+  (`v0.35.156`).**  (1) A plain-`Send` rendezvous is decided by the two readings
+  on two arms: `.replyRecv`'s non-`Call` arm deschedules the holder the pop
+  unbound -- the MCS-passive reading, so a passive server handed a plain `Send`
+  is parked `.ready`, `.unbound` and unplaced -- while a `.receive` by an
+  already-unbound running thread leaves it current on a plain `Send`, the legacy
+  reading.  (2) What is parked here stays parked, and that is a **divergence from
+  upstream** rather than a fact about the pattern: `schedContextBind` re-buckets
+  only a thread already queued on its home core, where seL4-MCS's
+  `schedContext_bindTCB` (read at `13.0.0`) ends in
+  `if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`, so
+  upstream's recovery for a passive thread left runnable without a context --
+  bind it one -- is closed in this kernel, and WS-OD OD1.7's list of closed
+  recovery paths records that divergence.  Both are the WS-CB row in
+  `docs/REGISTERED_DEBT.md` table C; neither is a soundness gap, and neither is
+  fixed there, because a bind that places a thread is a scheduler-domain write
+  `.schedContextBind` declares nowhere yet (WS-RR RR8.12's order: declare, then
+  bracket, then widen), and the plain-`Send` decision is the passive/legacy
+  split that row names.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

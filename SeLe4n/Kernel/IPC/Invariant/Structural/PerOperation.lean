@@ -1573,7 +1573,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                 refine endpointQueueHeadDisjoint_of_singleQueueUpdate (recvQ := isReceiveQ)
                                   hEpBackC hObj hEpNewC ?_ ?_ hHD
                                 · cases isReceiveQ <;>
-                                    simp [hQ, queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext]
+                                    simp [queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext]
                                 · intro hd h
                                   refine Or.inl ?_
                                   rw [hQ]
@@ -2046,14 +2046,12 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                   have hHDStF : endpointQueueHeadDisjoint stF := by
                                     refine endpointQueueHeadDisjoint_of_singleQueueUpdate (recvQ := isReceiveQ)
                                       hEpBackD hObj hEpNewD ?_ ?_ hHD
-                                    · cases isReceiveQ <;>
-                                        simp [hQ, queueRemoveBoundary_midMore hTailPair hQHeadNeTid hNext]
+                                    · cases isReceiveQ <;> simp
                                     · intro hd h
                                       refine Or.inl ?_
                                       rw [hQ]
                                       revert h
-                                      cases isReceiveQ <;>
-                                        simp [queueRemoveBoundary_midMore hTailPair hQHeadNeTid hNext]
+                                      cases isReceiveQ <;> simp
                                   exact ⟨hEpWfD, hLinkStF, hAcycSF, hPPSF, hHDStF⟩
 
 -- ============================================================================

@@ -554,15 +554,12 @@ reaches.  `boundThreadDomainConsistent` is therefore no more an invariant than
 later cut from assuming either across a pop. -/
 theorem effectiveSchedParams_domain_eq (st : SystemState) (tcb : TCB) :
     (effectiveSchedParams st tcb).2.2 = tcb.domain := by
+  -- One `split` per matcher: the binding first, then (on the two arms that read
+  -- the store) the lookup, and every leaf is a literal triple whose third
+  -- component is `tcb.domain`.  `split` exposes the inner scrutinee that a
+  -- `cases` on it cannot reach, since it sits under the outer matcher's binder.
   unfold effectiveSchedParams
-  cases hBind : tcb.schedContextBinding with
-  | unbound => simp only [hBind]
-  | bound scId =>
-    simp only [hBind]
-    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
-  | donated scId owner =>
-    simp only [hBind]
-    cases hSc : st.getSchedContext? scId <;> simp only [hSc]
+  split <;> (try split) <;> rfl
 
 
 /-- AG1-A: Resolve the effective insertion priority for RunQueue re-enqueue.
