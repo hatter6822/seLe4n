@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.145` (`lakefile.toml`) |
+| **Package version** | `0.35.146` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,485 across 334 Lean files |
-| **Test LoC** | 80,680 across 70 Lean test suites |
+| **Production LoC** | 396,557 across 334 Lean files |
+| **Test LoC** | 80,877 across 70 Lean test suites |
 | **Proved declarations** | 13,128 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -3656,6 +3656,25 @@ management:
   `frozenEndpointCall`.
 - **7 preservation theorems** prove that enqueue operations maintain all frozen
   state invariants via `frozenQueuePushTail_only_modifies_objects`.
+- **Neighbour resolution mirrors the live primitives** (PR #897 review,
+  `v0.35.146`).  Each of these primitives resolves the thread it is *about*
+  through `frozenLookupTcb` — which refuses a reserved id exactly as the live
+  `lookupTcb` does — and read the queue's **tail** (`frozenQueuePushTailObjects`)
+  and its **predecessor** and **successor** (`frozenQueueRemove`) with the bare
+  store read, so a queue whose neighbour sits at `ThreadId.sentinel` was
+  accepted here and refused `.objectNotFound` by `endpointQueueEnqueue` /
+  `endpointQueueRemoveDual`.  All three now read through `frozenLookupTcb`.
+- **`frozenQueuePopHead` promotes its successor.**  The live
+  `endpointQueuePopHead` writes the new head's `queuePrev := none` and
+  `queuePPrev := some .endpointHead`; this mirror wrote nothing, so the thread
+  the pop *made* the head went on naming the popped one — failing
+  `intrusiveQueueWellFormed`'s P2 and, through `dualQueueRemovalEnabled`'s
+  `queuePPrevHeadPositionAgrees` factor, making every later
+  `frozenQueueRemove` of it `.illegalState`.  One ordinary
+  `frozenEndpointSend` rendezvous into a two-deep receive queue produced it.
+  The promotion reads through `frozenLookupTcb` and runs in the live order
+  (endpoint, successor, then the head's own clear).  `FO-049` is the four-half
+  witness, each half mutation-verified against the fix it is about.
 - **Commutativity**: `FrozenMap` set/get? roundtrip proofs ensure lookup
   consistency after frozen state mutations.
 - **Verified CNode radix tree**: the frozen phase consumes the

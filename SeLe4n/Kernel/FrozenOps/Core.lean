@@ -1336,7 +1336,23 @@ def frozenQueuePushTailObjects (st : FrozenSystemState)
       | .ok st1 => frozenWithObjectStored st1 tid.toObjId (.tcb tcb')
       | .error e => .error e
   | some tailTid =>
-      match st.getTcb? tailTid with
+      -- **PR #897 review: `frozenLookupTcb`, not `getTcb?`.**  The live
+      -- `endpointQueueEnqueue` resolves its tail neighbour with `lookupTcb`,
+      -- which refuses a reserved id; this read did not, so a queue whose tail is
+      -- `ThreadId.sentinel` and whose object map holds a TCB at that slot was
+      -- **accepted here and refused there** -- measured on the two operations,
+      -- `.ok` against `.error .objectNotFound`.  A mirror that succeeds where
+      -- the kernel refuses is the direction that matters on a differential
+      -- surface: `frozenRunAgrees` compares outcomes, so it certifies agreement
+      -- on states the kernel never reaches and says nothing about the states
+      -- that distinguish them.
+      --
+      -- The asymmetry was *within this file*: `frozenQueuePushTail` resolves the
+      -- enqueued thread through `frozenLookupTcb` two lines above its call to
+      -- this helper, and `frozenQueuePopHead` resolves its head the same way.
+      -- Only the **neighbours** were read raw, which is why no scenario driving
+      -- the principal could see it.
+      match frozenLookupTcb st tailTid with
       | some tailTcb =>
           -- AE2-D Phase 1: Validate all target keys exist before any mutation
           if !(st.objects.contains endpointId && st.objects.contains tailTid.toObjId
@@ -1506,7 +1522,13 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                 match tcb.queuePrev with
                 | none => .ok st2
                 | some prevTid =>
-                  match st2.getTcb? prevTid with
+                  -- **PR #897 review**: `frozenLookupTcb`, for the reason
+                  -- `frozenQueuePushTailObjects`'s tail read carries.  The live
+                  -- `endpointQueueRemoveDual` resolves this neighbour with
+                  -- `lookupTcb`; measured on a queue whose head is the sentinel
+                  -- slot, this mirror answered `.ok` and the kernel
+                  -- `.error .objectNotFound`.
+                  match frozenLookupTcb st2 prevTid with
                   | some prevTcb =>
                       if !queuePredecessorNamesSuccessor prevTcb tid then .error .illegalState
                       else
@@ -1520,7 +1542,11 @@ def frozenQueueRemove (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
                 match tcb.queueNext with
                 | none => .ok st3
                 | some nextTid =>
-                  match st3.getTcb? nextTid with
+                  -- **PR #897 review**: `frozenLookupTcb`, the third of this
+                  -- surface's raw neighbour reads and the same measurement --
+                  -- a queue whose *tail* is the sentinel slot was removed from
+                  -- here and refused by `endpointQueueRemoveDual`.
+                  match frozenLookupTcb st3 nextTid with
                   | some nextTcb =>
                       frozenWithObjectStored st3 nextTid.toObjId (.tcb { nextTcb with
                         queuePrev := tcb.queuePrev,

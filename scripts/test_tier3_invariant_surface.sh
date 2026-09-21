@@ -17911,4 +17911,54 @@ run_negative_check "INVARIANT" rg -F -n 'def receiveLegPipHandoffWriteSet' SeLe4
 run_check "INVARIANT" rg -F -n 'theorem replyRecvBody_confinedToCores (endpointId : SeLe4n.ObjId)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -F -n 'theorem pipChainWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
+# --- `v0.35.146` (PR #897 review, and the sweep it opened): the frozen queue
+# primitives resolve and write their NEIGHBOURS as the live ones do.
+#
+# Each of these three resolves the thread it is *about* through `frozenLookupTcb`
+# -- this surface's one spelling of "is this id usable", which refuses a reserved
+# id exactly as the live `lookupTcb` does -- and read its NEIGHBOURS with the bare
+# store read.  Measured on the two programs: a queue whose tail, predecessor or
+# successor sits at `ThreadId.sentinel` was ACCEPTED here and refused
+# `.objectNotFound` by `endpointQueueEnqueue` / `endpointQueueRemoveDual`.
+run_check "INVARIANT" rg -F -n 'match frozenLookupTcb st tailTid with' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -F -n 'match frozenLookupTcb st2 prevTid with' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -F -n 'match frozenLookupTcb st3 nextTid with' SeLe4n/Kernel/FrozenOps/Core.lean
+# ...and neither declaration may read the store bare again.  Bounded to the
+# declaration rather than file-wide, because the claim IS about these two: six
+# other frozen definitions read `getTcb?` and are FAITHFUL -- their live
+# counterparts (`computeMaxWaiterPriority`, `blockingServer`,
+# `outerCallerAcceptable`, `updatePipBoostOnCore`, `saveOutgoingContext`,
+# `restoreIncomingContext`) read it raw too, which is why a tree-wide negative
+# would fire on a clean tree and say nothing.  The negative forbids the RELATION
+# rather than a retired variable name, so a revert that renames still trips it.
+run_negative_check "INVARIANT" rg -U -n 'def frozenQueuePushTailObjects[^\n]*(\n([ \t][^\n]*)?)*getTcb\?' SeLe4n/Kernel/FrozenOps/Core.lean
+run_negative_check "INVARIANT" rg -U -n 'def frozenQueueRemove[^\n]*(\n([ \t][^\n]*)?)*getTcb\?' SeLe4n/Kernel/FrozenOps/Core.lean
+# The FOURTH site is structural rather than a refusal, and no review reported it:
+# `frozenQueuePopHead` wrote NO successor patch, where the live
+# `endpointQueuePopHead` promotes the successor to head.  The thread the pop makes
+# the head went on naming the popped one, which fails `intrusiveQueueWellFormed`'s
+# P2 and -- through `dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees`
+# factor -- made every later removal of it `.illegalState`: stranded for good, by
+# the surface's own ordinary rendezvous.  The positive is what catches a revert,
+# since that mutation DELETES the store rather than respelling a read.
+run_check "INVARIANT" rg -U -n 'match frozenLookupTcb st1 nextTid with[^\n]*(\n([ \t][^\n]*)?)*queuePPrev := some \.endpointHead' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_negative_check "INVARIANT" rg -U -n 'private def frozenQueuePopHead[^\n]*(\n([ \t][^\n]*)?)*getTcb\?' SeLe4n/Kernel/FrozenOps/Operations.lean
+# ...and FO-049's four halves, each mutation-verified against the fix it is about.
+# EVERY half runs through the ordinary builder: `Builder.createObject` accepts a
+# reserved `ObjId` -- measured, and the opposite of this scenario's first draft,
+# which asserted it would not and built two stores by hand.  So each half is one
+# `IntermediateState` and its own `freeze`, which a hand-built pair cannot be.
+run_check "INVARIANT" rg -F -n 'let aIst := diffAddTcb (diffAddTcb' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'private def rawFrozenNeighbourRead (st : FrozenSystemState) (t : SeLe4n.ThreadId)' tests/FrozenOpsSuite.lean
+# ...and the retired below-API pair must not come back: two stores assembled side
+# by side have two schedulers that do not correspond, which is what makes a
+# comparison over them a comparison of fixtures.
+run_negative_check "INVARIANT" rg -F -n 'sentinelViews' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen enqueue, which ACCEPTED it' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen removal, which ACCEPTED that predecessor' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen removal, which ACCEPTED that successor' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'FO-049: ...and so does the frozen pop, which promoted NOTHING' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n 'FO-049 PAYOFF: a later removal of the promoted head succeeds on both surfaces' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -F -n '  differentialQueueNeighbourResolutionAgrees' tests/FrozenOpsSuite.lean
+
 finalize_report

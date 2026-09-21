@@ -563,9 +563,55 @@ private def frozenQueuePopHead (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
               let headTcb' := { headTcb with queuePrev := none, queueNext := none, queuePPrev := none }
               match frozenWithObjectStored st endpointId (.endpoint ep') with
               | .ok st1 =>
-                  match frozenStoreTcb headTid headTcb' st1 with
+                  -- **PR #897 review, swept: THE SUCCESSOR IS PROMOTED.**  The
+                  -- live `endpointQueuePopHead` writes
+                  -- `storeTcbQueueLinks st1 nextTid none (some .endpointHead)
+                  -- nextTcb.queueNext` here; this mirror wrote **nothing**, so
+                  -- the thread the pop makes the head went on naming the popped
+                  -- thread as its predecessor.
+                  --
+                  -- That is not a refusal-set divergence but a *structural* one,
+                  -- and it is the worse of the two: the new head then fails
+                  -- `intrusiveQueueWellFormed`'s P2 (`queuePrev = none` and
+                  -- `queuePPrev = some .endpointHead`) and, because
+                  -- `dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees`
+                  -- factor reads exactly that pair, **every later
+                  -- `frozenQueueRemove` of it is refused `.illegalState`** -- the
+                  -- thread is stranded in the queue for good.  Measured on the
+                  -- surface's own operations, with no hand-built state: one
+                  -- `frozenEndpointSend` rendezvous into a two-deep receive queue
+                  -- leaves the promoted head undequeueable where the live
+                  -- `endpointSendDual` leaves it removable.  It is the
+                  -- OD1.1 / OD3.9 stranding class -- *a removal that writes one
+                  -- of a node's two back-pointers and not the other* -- arriving
+                  -- on the surface that had no theorems to catch it.
+                  --
+                  -- Every existing scenario popped from a **one**-deep queue,
+                  -- where there is no successor and the two programs agree by
+                  -- construction.  That is FO-043's lesson on a different
+                  -- primitive: *a sweep for fixtures that would break is not a
+                  -- sweep for fixtures that would exercise.*
+                  --
+                  -- The read is `frozenLookupTcb`, so an unresolvable or
+                  -- reserved successor is `.objectNotFound` as it is live, and
+                  -- the order is the live order -- endpoint, successor, then the
+                  -- head's own clear -- so a self-linked head resolves the same
+                  -- way on both surfaces.
+                  let afterSuccessor : Except KernelError FrozenSystemState :=
+                    match newHead with
+                    | none => .ok st1
+                    | some nextTid =>
+                      match frozenLookupTcb st1 nextTid with
+                      | none => .error .objectNotFound
+                      | some nextTcb =>
+                          frozenWithObjectStored st1 nextTid.toObjId (.tcb { nextTcb with
+                            queuePrev := none, queuePPrev := some .endpointHead })
+                  match afterSuccessor with
                   | .error e => .error e
-                  | .ok ((), st2) => .ok (headTid, headTcb, st2)
+                  | .ok st2 =>
+                    match frozenStoreTcb headTid headTcb' st2 with
+                    | .error e => .error e
+                    | .ok ((), st3) => .ok (headTid, headTcb, st3)
               | .error e => .error e
   | _ => .error .objectNotFound
 

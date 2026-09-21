@@ -1,3 +1,100 @@
+## v0.35.146 — the frozen queue primitives resolve and write their neighbours as the live ones do
+
+**PR #897 review, and the sweep it opened.**  `SeLe4n/Kernel/FrozenOps/` is this
+architecture's *execute* phase, compared against the live kernel by
+`frozenRunAgrees` — so a mirror that **succeeds where the kernel refuses**
+certifies agreement on states the kernel never reaches and says nothing about
+the states that distinguish them.  Four such divergences, all in how the queue
+primitives handle a node's **neighbours**, and all measured on the two programs
+rather than read out of the bodies.
+
+Each primitive resolves the thread it is *about* through `frozenLookupTcb` —
+this surface's one spelling of *is this id usable*, which refuses a reserved id
+exactly as the live `lookupTcb` does — and read its neighbours with the bare
+store read:
+
+| | frozen | live |
+|---|---|---|
+| enqueue behind a **sentinel tail** | `.ok` | `.error .objectNotFound` |
+| remove a node whose **predecessor** is the sentinel | `.ok` | `.error .objectNotFound` |
+| remove a node whose **successor** is the sentinel | `.ok` | `.error .objectNotFound` |
+
+The asymmetry was inside one file: `frozenQueuePushTail` and `frozenQueueRemove`
+resolve their principal two lines above the neighbour read, and
+`frozenQueuePopHead` resolves its head the same way.  Only the neighbours were
+raw, which is why no scenario driving the principal could see it.
+
+**The fourth was reported by nobody and is the severe one.**
+`frozenQueuePopHead` wrote **no successor patch at all**, where the live
+`endpointQueuePopHead` promotes the successor to head
+(`storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext`).
+The thread the pop *makes* the head therefore went on naming the popped thread
+as its predecessor — which fails `intrusiveQueueWellFormed`'s P2 and, because
+`dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees` factor reads exactly
+that pair, made **every later removal of it `.illegalState`**: stranded in the
+queue for good.  That is the WS-OD OD1.1 / OD3.9 class — *a removal that writes
+one of a node's two back-pointers and not the other* — arriving on the surface
+that has no theorems to catch it, and it needs no hand-built state: one ordinary
+`frozenEndpointSend` rendezvous into a **two**-deep receive queue produces it,
+and the live `endpointSendDual` leaves the same thread removable.
+
+Measured before and after, on the live operations:
+
+```
+  post FROZEN thread 3: prev=some 2  pprev=some (tcbNext 2)  next=none   ← before
+  FROZEN: a later removal of thread 3 is REFUSED .illegalState
+  post LIVE   thread 3: prev=none    pprev=some endpointHead next=none
+  LIVE:   a later removal of thread 3 SUCCEEDS
+```
+
+**Why every scenario was green, and it is not that the states were
+unreachable.**  `Builder.createObject` accepts a reserved `ObjId` — measured, and
+the opposite of this cut's own first reading, which had asserted the shapes could
+only be built below the API and built FO-049's first three halves by hand.  Only
+`BootstrapBuilder.withObject` refuses the slot, and generalising from it was the
+error.  What made the three invisible is simpler and worse: **no scenario had ever
+driven a neighbour.**  Every fixture exercises the thread a primitive is *about*,
+which is the half that was already guarded.  And every existing pop scenario pops
+from a **one**-deep queue, where there is no successor and the two programs agree
+by construction.  That is FO-043's lesson on a different primitive: *a sweep for
+fixtures that would break is not a sweep for fixtures that would exercise, and
+only the second measures a flip.*
+
+### What changed
+
+- `frozenQueuePushTailObjects` resolves its **tail** neighbour, and
+  `frozenQueueRemove` its **predecessor** and **successor**, through
+  `frozenLookupTcb`.
+- `frozenQueuePopHead` promotes its successor — through `frozenLookupTcb`, so an
+  unresolvable or reserved successor is `.objectNotFound` as it is live, and in
+  the **live order** (endpoint, successor, then the head's own clear) so a
+  self-linked head resolves the same way on both surfaces.
+- **The sweep found no fifth site.**  Six other frozen definitions read
+  `getTcb?` and are *faithful*: `frozenComputeMaxWaiterPriority`,
+  `frozenBlockingServer`, `frozenUpdatePipBoost`, `frozenOuterCallerAcceptable`,
+  `frozenSaveOutgoingContext` and `frozenRestoreIncomingContext` each mirror a
+  live counterpart that reads the store raw too.  That is why the Tier 3
+  negatives are **declaration-bounded** rather than file-wide: a tree-wide one
+  would fire on a clean tree and say nothing.
+- `tests/FrozenOpsSuite.lean` **FO-049**, four halves, each mutation-verified
+  against the fix it is about and each with its own label so the failure is
+  attributable.  The first three compute the **retired** reading
+  (`rawFrozenNeighbourRead`) beside the live one, so the state is known to hold a
+  TCB the guarded readers refuse — the halves discriminate rather than merely
+  pass.  **Every half is one `IntermediateState` and its own `freeze`**, through
+  the ordinary builder, so each compares two *programs* on one state rather than
+  two stores assembled side by side — whose schedulers would not even correspond.
+  The fourth ends in a **payoff**: the promoted head is dequeueable on both
+  surfaces, which is the consequence the link comparison only implies.
+- Tier 3: three positives on the guarded neighbour reads, one on the pop's
+  promotion, three declaration-bounded negatives forbidding the **relation**
+  (so a revert that renames a variable still trips them), and nine over FO-049 —
+  the last of which refuses the retired below-API pair coming back.  All silent
+  on the clean tree and firing on the mutation that reverts their own subject.
+
+The golden trace is **byte-identical** at 239/239: the cut is confined to the
+frozen surface.
+
 ## v0.35.145 — WS-RR RR8.12 Cut 8b-i: the `.replyRecv` arm's write sets are production, beside their transitions
 
 **The plan row's stated reason was half the obstacle, and measuring it is what

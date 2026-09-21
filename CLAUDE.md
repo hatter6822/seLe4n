@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.145.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.146.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -4433,6 +4433,52 @@ name, so no `frozenRunAgrees` comparison could have reached them and none did.
 coverage set is derived, a cut that touches a live transition with a frozen mirror
 sweeps the mirror by reading both, and a cut that adds a *field* to a shared record
 sweeps every writer of it on both surfaces.
+
+**...and a seventh, where the divergence is inside ONE DECLARATION: a primitive
+that guards its principal and not its neighbours** (PR #897 review, `v0.35.146`).
+The three queue primitives resolve the thread they are *about* through
+`frozenLookupTcb` -- which refuses a reserved id exactly as the live `lookupTcb`
+does -- and read the queue's **tail**, **predecessor** and **successor** with the
+bare `getTcb?` two lines below.  So a queue whose neighbour sits at
+`ThreadId.sentinel` was accepted here and refused `.objectNotFound` by
+`endpointQueueEnqueue` / `endpointQueueRemoveDual`.  No scenario driving the
+principal could see it, and **none driving the neighbour existed** -- every fixture
+on this surface exercises the thread a primitive is *about*, which is the half
+that was already guarded.  Not because the states are unreachable:
+`Builder.createObject` accepts a reserved `ObjId`, measured, and the cut's own
+first reading had asserted the opposite and built its fixtures by hand on the
+strength of it.  (`BootstrapBuilder.withObject` does refuse the slot, and
+generalising from that one builder to both was the error.)  **When a declaration
+resolves two threads, ask whether it resolves them the same way**; a shared name
+two lines apart reads as one convention and is not -- and *a claim about what a
+builder will not accept is measured, not inferred from its sibling.*
+
+**And a MISSING WRITE is not a refusal, so no refusal-set comparison can find
+it.**  The fourth site in that cut is the one no review reported and the worse
+of the two kinds: `frozenQueuePopHead` wrote **no successor patch at all**, where
+the live `endpointQueuePopHead` promotes the successor to head.  The thread the
+pop *makes* the head went on naming the popped one, which fails
+`intrusiveQueueWellFormed`'s P2 and -- through `dualQueueRemovalEnabled`'s
+`queuePPrevHeadPositionAgrees` factor -- made **every later removal of it
+`.illegalState`**: stranded for good, by one ordinary `frozenEndpointSend`
+rendezvous into a **two**-deep receive queue, with no hand-built state anywhere.
+That is WS-OD OD1.1 / OD3.9's own class -- *a removal that writes one of a node's
+two back-pointers and not the other* -- arriving on the surface that has no
+theorems to catch it, five cuts after this file recorded the class twice.
+Every existing scenario pops from a **one**-deep queue, where there is no
+successor and the two programs agree by construction: FO-043's lesson on a
+different primitive, *a sweep for fixtures that would break is not a sweep for
+fixtures that would exercise*.
+
+Two things that cut records.  **The sweep found no fifth site, and saying so took
+the measurement**: six other frozen definitions read `getTcb?` and are *faithful*,
+each mirroring a live counterpart that reads the store raw too -- which is why the
+Tier 3 negatives are **declaration-bounded** rather than file-wide, a tree-wide one
+firing on a clean tree and saying nothing.  And **the two kinds of divergence need
+two kinds of anchor**: a respelled read is caught by a negative forbidding the
+relation, while a *deleted* store is caught only by the positive over what replaced
+it -- *test a gate by breaking the relation, not by deleting the token*, read in
+the direction where the defect **is** a deletion.
 
 So: **the gates' domains nearly all key on library-root reachability, which makes
 "not in a root" a silent exemption from most of this tree's defences.**  A

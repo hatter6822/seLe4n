@@ -2221,6 +2221,197 @@ private def differentialRemovalRefusalSetAgrees : IO Unit := do
   expect "FO-046: ...and so does the frozen mirror, which answered .illegalState"
     (refusesQueueEmpty (frozenQueueRemove diffEpId false diffA (freeze istDetached)))
 
+/-- **The retired frozen neighbour reading**, computed beside the live one.
+
+The three queue primitives resolved their *neighbours* with the bare store read
+while resolving their *principal* through `frozenLookupTcb` two lines above.  The
+spelling lives here, private to the witness that refutes it, so FO-049 is known
+to **discriminate** rather than merely to pass: on the states below this answers
+`some` and `frozenLookupTcb` answers `none`, which is the whole of the
+divergence. -/
+private def rawFrozenNeighbourRead (st : FrozenSystemState) (t : SeLe4n.ThreadId)
+    : Option TCB :=
+  st.getTcb? t
+
+/-- `.objectNotFound`, matched rather than compared, for the reason
+`refusesIllegalState` above is. -/
+private def refusesObjectNotFound {α : Type} (r : Except KernelError α) : Bool :=
+  match r with
+  | .error .objectNotFound => true
+  | _ => false
+
+/-- The queue links a TCB carries, as a triple the two surfaces can be compared
+on.  `IntrusiveQueue` membership is what these halves are about, and reading the
+three fields is what says *which* of them moved. -/
+private def frozenLinksOf (st : FrozenSystemState) (t : SeLe4n.ThreadId)
+    : Option (Option SeLe4n.ThreadId × Option QueuePPrev × Option SeLe4n.ThreadId) :=
+  (st.getTcb? t).map (fun tcb => (tcb.queuePrev, tcb.queuePPrev, tcb.queueNext))
+
+private def liveLinksOf (st : SystemState) (t : SeLe4n.ThreadId)
+    : Option (Option SeLe4n.ThreadId × Option QueuePPrev × Option SeLe4n.ThreadId) :=
+  (st.getTcb? t).map (fun tcb => (tcb.queuePrev, tcb.queuePPrev, tcb.queueNext))
+
+/-- FO-049 (**PR #897 review, and the sweep it opened**): **the frozen queue
+primitives resolve and write their NEIGHBOURS as the live ones do.**
+
+Four halves, and the fourth is the one no review reported.
+
+`frozenQueuePushTail` and `frozenQueueRemove` resolve the thread they are *about*
+through `frozenLookupTcb`, which refuses a reserved id exactly as the live
+`lookupTcb` does.  Their **neighbours** — the queue's tail on an enqueue, the
+predecessor and successor on a removal — were read with the bare `getTcb?`, so a
+queue whose neighbour sits at `ThreadId.sentinel` was accepted here and refused
+by `endpointQueueEnqueue` / `endpointQueueRemoveDual`.  A mirror that succeeds
+where the kernel refuses is the direction that matters on a differential
+surface: `frozenRunAgrees` compares outcomes, so it certifies agreement on
+states the kernel never reaches and says nothing about the states that
+distinguish them.
+
+The **fourth** half is structural rather than a refusal, and it is worse.
+`frozenQueuePopHead` wrote no successor patch at all, where the live
+`endpointQueuePopHead` promotes the successor to head
+(`storeTcbQueueLinks st1 nextTid none (some .endpointHead) nextTcb.queueNext`).
+The thread the pop *makes* the head therefore went on naming the popped thread
+as its predecessor — which fails `intrusiveQueueWellFormed`'s P2 and, because
+`dualQueueRemovalEnabled`'s `queuePPrevHeadPositionAgrees` factor reads exactly
+that pair, made **every later removal of it `.illegalState`**: stranded in the
+queue for good.  That is the OD1.1 / OD3.9 class — *a removal that writes one of
+a node's two back-pointers and not the other* — arriving on the surface that has
+no theorems to catch it, and it needs no hand-built state: one ordinary
+`frozenEndpointSend` rendezvous into a **two**-deep receive queue produces it.
+
+Every existing scenario pops from a one-deep queue, where there is no successor
+and the two programs agree by construction.  That is FO-043's lesson on a
+different primitive: *a sweep for fixtures that would break is not a sweep for
+fixtures that would exercise, and only the second measures a flip.*
+
+**Every half runs through the ordinary builder.**  This scenario's first draft
+built the first three by hand, on the asserted ground that `Builder.createObject`
+would not elaborate at a reserved `ObjId`; measured, it does — only
+`BootstrapBuilder.withObject` refuses the slot, and the draft had generalised
+from that.  Building each half as one `IntermediateState` is strictly stronger:
+the state is reachable through the tree's own construction path, and the live and
+frozen views are that state and its own `freeze` rather than two stores assembled
+side by side, whose schedulers would not even correspond. -/
+private def differentialQueueNeighbourResolutionAgrees : IO Unit := do
+  let msg : IpcMessage := { registers := #[⟨41⟩], caps := #[], badge := none }
+  let sentinelTid : SeLe4n.ThreadId := SeLe4n.ThreadId.sentinel
+  let epId : SeLe4n.ObjId := ⟨70⟩
+  let mover : SeLe4n.ThreadId := ⟨71⟩
+  let parked (t : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId)
+      (pprev : Option QueuePPrev) (next : Option SeLe4n.ThreadId) : TCB :=
+    { diffTcb t.toNat with
+        ipcState := .blockedOnSend epId,
+        pendingMessage := some msg,
+        queuePrev := prev, queuePPrev := pprev, queueNext := next }
+  -- One `IntermediateState` per half, through the **ordinary builder**, so each
+  -- is the live state and its own freeze rather than two stores built side by
+  -- side.  `Builder.createObject` accepts a reserved `ObjId` — measured rather
+  -- than assumed, and the opposite of this scenario's first draft, which had
+  -- asserted that it would not elaborate there and built both views by hand.
+  -- (`BootstrapBuilder.withObject` really does refuse the slot, which is what
+  -- that draft had generalised from.)  So the shapes below are reachable through
+  -- the tree's own construction path, and `freeze` derives the frozen scheduler
+  -- from the same state the live side carries — a hand-built pair cannot say
+  -- that, and its two schedulers would differ.
+
+  -- ── (1) the ENQUEUE's tail neighbour ──
+  let aIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId
+      { sendQ := { head := some sentinelTid, tail := some sentinelTid }, receiveQ := {} })
+    (parked sentinelTid none (some .endpointHead) none))
+    { diffTcb mover.toNat with ipcState := .ready }
+  expect "FO-049 control: the store really holds a TCB at the sentinel slot"
+    ((rawFrozenNeighbourRead (freeze aIst) sentinelTid).isSome
+      && (aIst.state.getTcb? sentinelTid).isSome)
+  expect "FO-049 control: ...and BOTH guarded readers refuse it"
+    ((frozenLookupTcb (freeze aIst) sentinelTid).isNone
+      && (SeLe4n.Kernel.lookupTcb aIst.state sentinelTid).isNone)
+  expect "FO-049: the live enqueue refuses a sentinel TAIL"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueEnqueue epId false mover aIst.state))
+  expect "FO-049: ...and so does the frozen enqueue, which ACCEPTED it"
+    (refusesObjectNotFound (frozenQueuePushTail epId false mover (freeze aIst)))
+
+  -- ── (2) the REMOVAL's predecessor ──
+  let bEp : Endpoint :=
+    { sendQ := { head := some sentinelTid, tail := some mover }, receiveQ := {} }
+  let bMover : TCB := parked mover (some sentinelTid) (some (.tcbNext sentinelTid)) none
+  let bIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId bEp)
+    (parked sentinelTid none (some .endpointHead) (some mover))) bMover
+  expect "FO-049 control: the removal's enabling condition ADMITS the predecessor shape"
+    (SeLe4n.Model.dualQueueRemovalEnabled bEp.sendQ mover bMover (.tcbNext sentinelTid))
+  expect "FO-049: the live removal refuses a sentinel PREDECESSOR"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueRemoveDual epId false mover bIst.state))
+  expect "FO-049: ...and so does the frozen removal, which ACCEPTED that predecessor"
+    (refusesObjectNotFound (frozenQueueRemove epId false mover (freeze bIst)))
+
+  -- ── (3) the REMOVAL's successor ──
+  let cEp : Endpoint :=
+    { sendQ := { head := some mover, tail := some sentinelTid }, receiveQ := {} }
+  let cMover : TCB := parked mover none (some .endpointHead) (some sentinelTid)
+  let cIst := diffAddTcb (diffAddTcb
+    (diffAddEndpoint mkEmptyIntermediateState epId cEp) cMover)
+    (parked sentinelTid (some mover) (some (.tcbNext mover)) none)
+  expect "FO-049 control: ...and the successor shape too, so neither is a guard refusal"
+    (SeLe4n.Model.dualQueueRemovalEnabled cEp.sendQ mover cMover .endpointHead)
+  expect "FO-049: the live removal refuses a sentinel SUCCESSOR"
+    (refusesObjectNotFound
+      (SeLe4n.Kernel.endpointQueueRemoveDual epId false mover cIst.state))
+  expect "FO-049: ...and so does the frozen removal, which ACCEPTED that successor"
+    (refusesObjectNotFound (frozenQueueRemove epId false mover (freeze cIst)))
+
+  -- ── (4) the POP promotes its successor ──
+  --
+  -- No **sentinel** either: three ordinary thread ids and one rendezvous, which
+  -- is what makes this half the severe one.  The three above need a reserved id
+  -- in the store; this one needs only a receive queue two deep.
+  let recvHead : TCB :=
+    { diffTcb 62 with
+        ipcState := .blockedOnReceive diffEpId,
+        queuePrev := none, queuePPrev := some .endpointHead, queueNext := some diffB }
+  let recvNext : TCB :=
+    { diffTcb 63 with
+        ipcState := .blockedOnReceive diffEpId,
+        queuePrev := some diffA, queuePPrev := some (.tcbNext diffA), queueNext := none }
+  let twoDeep : Endpoint :=
+    { sendQ := {}, receiveQ := { head := some diffA, tail := some diffB } }
+  let ist := diffAddTcb (diffAddTcb (diffAddTcb
+    (diffAddEndpoint (diffAddCSpace mkEmptyIntermediateState
+      [(SeLe4n.Slot.ofNat 0, diffObjCap diffEpId)]) diffEpId twoDeep)
+    recvHead) recvNext) { diffTcb 65 with ipcState := .ready }
+  let behindTheHead := some (some diffA, some (QueuePPrev.tcbNext diffA), none)
+  let promotedToHead := some ((none : Option SeLe4n.ThreadId),
+    some QueuePPrev.endpointHead, (none : Option SeLe4n.ThreadId))
+  expect "FO-049 control: the successor names the head it sits behind, on both surfaces"
+    (liveLinksOf ist.state diffB == behindTheHead
+      && frozenLinksOf (freeze ist) diffB == behindTheHead)
+  let liveSent := SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate msg ist.state
+  let frozenSent := frozenEndpointSend diffEpId diffDelegate msg (freeze ist)
+  expect "FO-049 control: the rendezvous succeeds on both surfaces"
+    (liveSent.toOption.isSome && frozenSent.toOption.isSome)
+  expect "FO-049: the live pop PROMOTES the successor to head"
+    ((liveSent.toOption.map (fun p => liveLinksOf p.2 diffB)) == some promotedToHead)
+  expect "FO-049: ...and so does the frozen pop, which promoted NOTHING"
+    ((frozenSent.toOption.map (fun p => frozenLinksOf p.2 diffB)) == some promotedToHead)
+  expect "FO-049 DIFFERENTIAL: the whole post-rendezvous state agrees, links included"
+    (frozenRunAgrees unitResultAgrees frozenSent
+      (liveWithTaint .send diffDelegate (SeLe4n.CPtr.ofNat 0)
+        (SeLe4n.Kernel.endpointSendDual diffEpId diffDelegate msg) ist.state))
+  -- The PAYOFF: the promoted head is dequeueable.  Before the fix the frozen
+  -- side answered `.illegalState` here for good, which is the consequence the
+  -- link comparison above only implies.
+  expect "FO-049 PAYOFF: a later removal of the promoted head succeeds on both surfaces"
+    ((match liveSent with
+      | .ok (_, post) =>
+          (SeLe4n.Kernel.endpointQueueRemoveDual diffEpId true diffB post).toOption.isSome
+      | .error _ => false)
+     && (match frozenSent with
+         | .ok (_, post) => (frozenQueueRemove diffEpId true diffB post).toOption.isSome
+         | .error _ => false))
+
 /-- FO-047 (**PR #897 review**): **the frozen bind and unbind clear the
 reservation's recorded origin, and the bind refuses what the live bind refuses.**
 
@@ -2844,6 +3035,7 @@ def main : IO Unit := do
   differentialRefusalsAgree
   differentialRemovalGuardRefusalsAgree
   differentialRemovalRefusalSetAgrees
+  differentialQueueNeighbourResolutionAgrees
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextBindRefusalsAgree
