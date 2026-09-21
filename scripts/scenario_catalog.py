@@ -345,6 +345,18 @@ class FixtureRow:
     `names` is every filename the `Fixture` and `Hash` cells declare -- the
     membership question `check_fixture_index` asks -- and `fixture` is the
     `Fixture` cell's own, which is the file the `Used by` cell is a claim about.
+
+    **The two are the SAME question, and `fixture_table_rows` enforces that**
+    (PR #897's review, `v0.35.136`).  `fixture` used to be `fixture_cell[0]`, a
+    positional pick out of a set: a row naming `foo.expected` and `bar.expected`
+    put both in `names`, so `check_fixture_index` accounted for both, while
+    `check_fixture_consumers` validated the `Used by` claim for `foo` alone --
+    and an `.expected` placed only in the `Hash` cell was accounted for and never
+    validated at all.  Either way a new golden fixture could be listed, hashed,
+    and compared by nothing with both fixture gates green.  A row now declares
+    exactly one fixture and at most its own `.sha256` companion, so
+    `names` is `{fixture}` or `{fixture, fixture + ".sha256"}` by construction
+    and there is no second reading left to differ.
     """
 
     def __init__(self, fixture: str | None, names: set[str], used_by: str,
@@ -376,6 +388,7 @@ def fixture_table_rows(readme: Path) -> tuple[list[FixtureRow], list[str]]:
             f"the question cannot be answered without it"
         ]
     rows: list[FixtureRow] = []
+    errors: list[str] = []
     for offset, line in enumerate(lines[start:]):
         if MD_HEADING.match(line):
             break
@@ -387,17 +400,61 @@ def fixture_table_rows(readme: Path) -> tuple[list[FixtureRow], list[str]]:
         # and separator rows carry no backticks and so declare nothing, with no
         # special case.
         cells = stripped.split("|")
-        names: set[str] = set()
-        for cell in cells[1:3]:
-            names |= set(TABLE_FILENAME.findall(cell))
+        lineno = start + offset + 1
         fixture_cell = TABLE_FILENAME.findall(cells[1]) if len(cells) > 1 else []
+        hash_cell = TABLE_FILENAME.findall(cells[2]) if len(cells) > 2 else []
+        names = set(fixture_cell) | set(hash_cell)
+        if not names:
+            # The header, the separator, and any prose row between them: nothing
+            # is declared, so there is no shape to enforce.
+            rows.append(FixtureRow(fixture=None, names=names,
+                                   used_by=cells[3] if len(cells) > 3 else "",
+                                   lineno=lineno))
+            continue
+        # ONE fixture per row, and the `Hash` cell holds only that fixture's own
+        # companion.  This is the canonical spelling the table already uses at
+        # every one of its live rows -- measured before it was required -- and
+        # requiring it is what keeps the membership question and the consumer
+        # question asking about the same file.
+        if len(fixture_cell) != 1:
+            errors.append(
+                f"{readme}:{lineno}: the `Fixture` cell declares "
+                f"{len(fixture_cell)} filename(s) "
+                f"({', '.join(sorted(fixture_cell)) or 'none'}) — a row declares "
+                f"exactly one fixture, because `check_fixture_index` accounts "
+                f"for every name in the row while the `Used by` claim is about "
+                f"one file, so any other shape leaves a fixture listed, hashed "
+                f"and validated against no consumer; give each fixture its own "
+                f"row"
+            )
+            continue
+        fixture = fixture_cell[0]
+        if fixture.endswith(".sha256"):
+            errors.append(
+                f"{readme}:{lineno}: the `Fixture` cell names `{fixture}`, a "
+                f"checksum companion rather than a fixture — a `.sha256` pins a "
+                f"fixture against itself and has no consumer of its own, so a "
+                f"row about one describes no comparison"
+            )
+            continue
+        expected_hash = fixture + ".sha256"
+        stray = [h for h in hash_cell if h != expected_hash]
+        if len(hash_cell) > 1 or stray:
+            errors.append(
+                f"{readme}:{lineno}: the `Hash` cell for `{fixture}` names "
+                f"{', '.join(sorted(hash_cell))} — it may name only "
+                f"`{expected_hash}`, its own companion, or no file at all; any "
+                f"other name is accounted for by `check_fixture_index` and "
+                f"validated by nothing"
+            )
+            continue
         rows.append(FixtureRow(
-            fixture=fixture_cell[0] if fixture_cell else None,
+            fixture=fixture,
             names=names,
             used_by=cells[3] if len(cells) > 3 else "",
-            lineno=start + offset + 1,
+            lineno=lineno,
         ))
-    return rows, []
+    return rows, errors
 
 
 def fixture_table_filenames(readme: Path) -> tuple[set[str], list[str]]:
@@ -602,6 +659,15 @@ def check_fixture_consumers(directory: Path, readme: Path,
     which is what caught `two_phase_arch_smoke.expected`: its cell read "same two
     gates", a back-reference to the row above that a reader resolves by eye and a
     check cannot resolve at all.
+
+    **And the claim is about the row's ONE fixture, which is now a contract
+    rather than a positional pick** (PR #897's review, `v0.35.136`).  `row.fixture`
+    was `fixture_cell[0]`, so a row naming two fixtures had its `Used by` claim
+    validated for the first alone while `check_fixture_index` accounted for both;
+    a fixture in the `Hash` cell was never a `row.fixture` at all.  The row shape
+    is enforced in `fixture_table_rows`, which both checks read, so neither can
+    proceed on a row the other refused -- a fix applied at one of the two
+    questions and not the other is exactly what this class keeps producing.
     """
     if repo_root is None:
         repo_root = REPO_ROOT
@@ -702,6 +768,17 @@ def check_fixture_index(directory: Path, readme: Path,
     and a row naming a DELETED file was never inspected at all, because the loop
     ran over the directory.  Both halves are the presence-for-relation defect
     this function was written to close, one level down.
+
+    **And the row it reads is the row `check_fixture_consumers` validates**
+    (PR #897's review, `v0.35.136`).  This question accounts for every name in a
+    row and that one validates a claim about ONE file, so until the row shape was
+    a checked contract the two could part: a row naming two fixtures was
+    accounted for whole and validated in part, and a fixture placed in the `Hash`
+    cell was accounted for and validated not at all -- either way listed, hashed,
+    and compared by nothing with both gates green.  `fixture_table_rows` now
+    requires exactly one fixture per row and at most its own companion, so the
+    set this function reads and the file that one validates are the same file by
+    construction.
 
     `exempt` defaults to `FIXTURE_INDEX_EXEMPT`, which is this tree's own
     classification; the CLI never passes anything else, and the parameter exists

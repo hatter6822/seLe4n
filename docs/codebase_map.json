@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/keen-franklin-0d575u",
-      "commit_sha": "ece5994ddfa402902cb2ed2e0fb94a444da27032",
-      "tree_sha": "6289dbc38e7c1020988786f08868af60677d37c2",
-      "committed_at_utc": "2026-09-21T07:53:41+00:00"
+      "commit_sha": "ddfd7964c83fa36af61a2d9432e28e01c7503791",
+      "tree_sha": "b415a94cd92e92710465a6894d86af58bee962f5",
+      "committed_at_utc": "2026-09-21T08:41:51+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 22094
   },
   "readme_sync": {
-    "version": "0.35.136",
+    "version": "0.35.137",
     "lean_toolchain": "v4.28.0",
     "production_files": 334,
     "production_loc": 396365,

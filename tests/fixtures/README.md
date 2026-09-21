@@ -28,6 +28,16 @@ explicit hash refresh in the same commit.
 | `syscall_return_shape.expected` | `syscall_return_shape.expected.sha256` | `tests/SyscallReturnAbiSuite.lean` **and** `rust/sele4n-abi/tests/conformance.rs` (WS-RR RR7.17 — the `<id> <shape>` return-shape table, asserted byte-for-byte on both sides of the ABI, so the Lean `syscallReturnShape` and the Rust mirror cannot disagree about what a syscall returns; regenerate BOTH deliberately) |
 | `qemu_boot_expected.txt` | *(none — see below)* | `scripts/test_qemu.sh` (AG9-A — two-column `CHECK_NAME` / `expected_fragment` rows, each a substring the QEMU boot log must contain, checked in order).  It carries **no** `.sha256` companion deliberately: the gate SKIPs before launching QEMU until the SM10.1 binary target exists, so nothing compares it yet and a hash would pin it against itself and nothing else — the very shape this file warns about below.  When the boot path lands, the companion lands with it. |
 
+**One fixture per row, and the `Hash` cell holds only that fixture's own
+companion.**  `scripts/scenario_catalog.py check-fixture-index` enforces that
+shape (`v0.35.136`), because the table answers two questions and they are asked
+of the same row: which files it enumerates, and which gate reads each one.  The
+first accounts for every name in a row; the second validates a claim about one
+file.  A row naming two fixtures was therefore accounted for whole and validated
+in part, and a fixture placed in the `Hash` cell was accounted for and validated
+not at all — either way listed, hashed and compared by nothing.  Give each
+fixture its own row; a `Hash` cell may name `<fixture>.sha256` or no file at all.
+
 The Tier 2 trace gate (`scripts/test_tier2_trace.sh`) walks every
 `*.expected.sha256` file in this directory and runs `sha256sum -c` on
 the full set in a single invocation, so a missing or stale hash for any

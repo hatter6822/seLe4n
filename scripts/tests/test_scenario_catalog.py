@@ -490,20 +490,29 @@ class TestFixtureIndex(unittest.TestCase):
             self.assertEqual(len(errors), 1)
             self.assertIn("stale FIXTURE_INDEX_EXEMPT", errors[0])
 
-    def test_a_companion_mention_is_not_a_row(self) -> None:
+    def test_a_substring_mention_is_not_a_row(self) -> None:
         """THE decisive case for the substring membership test.
 
-        Preserving: `c.expected` really does occur in the table — inside its own
-        `.sha256` companion's cell, which is how every row in the real README is
-        written.  The superseded check joined the table's lines and asked
-        `name not in rows`, so the fixture passed while no row said which gate
-        compares it, and an omission of exactly this shape is invisible.
+        Preserving: `c.expected` really does occur in the table — inside another
+        row's `xc.expected` and its companion — and that table is **fully
+        well-formed**, so the case survives the `v0.35.136` row-shape contract
+        rather than being refused before the membership question is asked.  The
+        superseded check joined the table's lines and asked `name not in rows`,
+        so `c.expected` passed while no row said which gate compares it, and an
+        omission of exactly this shape is invisible.
+
+        (Until `v0.35.136` this case was written with a `| *(pending)* |
+        `c.expected.sha256` |` row, which reproduced the same substring but is
+        now malformed in its own right — a companion whose fixture has no row —
+        and is covered by `TestFixtureRowShape`.  Restating it over a legal table
+        is what keeps the two properties separately witnessed.)
         """
         with tempfile.TemporaryDirectory() as d:
             root = self._tree(
                 d, "a.expected", "a.expected.sha256", "b.txt",
-                "c.expected", "c.expected.sha256",
-                readme=self.TABLE + "| *(pending)* | `c.expected.sha256` | gate C |\n")
+                "c.expected", "xc.expected", "xc.expected.sha256",
+                readme=self.TABLE
+                + "| `xc.expected` | `xc.expected.sha256` | gate C |\n")
             errors = sc.check_fixture_index(root, root / "README.md", exempt={})
             self.assertEqual(len(errors), 1)
             self.assertIn("c.expected:", errors[0])
@@ -602,6 +611,155 @@ class TestFixtureIndex(unittest.TestCase):
 
     def test_the_real_tree_is_complete(self) -> None:
         self.assertEqual(sc.check_fixture_index(FIXTURES, FIXTURES / "README.md"), [])
+
+
+class TestFixtureRowShape(unittest.TestCase):
+    """One fixture per row, and the `Hash` cell holds only its own companion.
+
+    PR #897's review, `v0.35.136`.  The table answers two questions -- *which
+    files does it enumerate* and *which gate reads each one* -- and they were
+    asked of the same row in two different ways: `names` is the SET of filenames
+    in the `Fixture` and `Hash` cells, which `check_fixture_index` accounts for,
+    while `fixture` was `fixture_cell[0]`, a positional pick out of that set,
+    which is the only file `check_fixture_consumers` validates.  So a row naming
+    two fixtures, or an `.expected` sitting in the `Hash` cell, is accounted for
+    whole and validated in part: a new golden fixture can be listed, hashed and
+    compared by nothing with both gates green.
+
+    The remedy is the canonical spelling every live row already uses -- measured
+    before it was required, which is what makes it free -- so `names` is
+    `{fixture}` or `{fixture, fixture + ".sha256"}` by construction and there is
+    no second reading left to differ.  Each rejecting case below keeps a
+    well-formed row beside the malformed one, so it fails on the shape rather
+    than on the table being empty.
+    """
+
+    HEAD = "## Files\n\n| Fixture | Hash | Used by |\n| --- | --- | --- |\n"
+    GOOD = "| `a.expected` | `a.expected.sha256` | `gates/r.lean` |\n"
+
+    def _errors(self, d: str, table: str, *present: str) -> list[str]:
+        root = Path(d)
+        for n in present:
+            (root / n).write_text("x\n", encoding="utf-8")
+        readme = root / "README.md"
+        readme.write_text(table, encoding="utf-8")
+        return sc.check_fixture_index(root, readme, exempt={})
+
+    def test_accepts_the_canonical_row(self) -> None:
+        """The control: without it every rejecting case below is satisfied by a
+        parser that refuses every row."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._errors(d, self.HEAD + self.GOOD,
+                             "a.expected", "a.expected.sha256"), [])
+
+    def test_accepts_a_row_with_no_hash_companion(self) -> None:
+        """The second control, and a shape the live table really has: the QEMU
+        boot fixture's `Hash` cell reads *(none -- see below)*, which names no
+        file.  A contract requiring a companion would refuse it."""
+        with tempfile.TemporaryDirectory() as d:
+            self.assertEqual(
+                self._errors(d, self.HEAD + "| `b.txt` | *(none)* | `g` |\n",
+                             "b.txt"), [])
+
+    def test_rejects_two_fixtures_in_one_row(self) -> None:
+        """The reported defect, reproduced: both files are accounted for by
+        `check_fixture_index` and only the first is ever handed to
+        `check_fixture_consumers`, so the second is listed, hashed and validated
+        against nothing."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._errors(
+                d,
+                self.HEAD + self.GOOD
+                + "| `foo.expected` `bar.expected` | | `gates/r.lean` |\n",
+                "a.expected", "a.expected.sha256", "foo.expected",
+                "bar.expected")
+            self.assertTrue(errors)
+            self.assertIn("declares 2 filename(s)", errors[0])
+
+    def test_rejects_a_fixture_in_the_hash_cell(self) -> None:
+        """The other half of the same defect: a name in the `Hash` cell is in
+        `names`, so it is accounted for, and it is never the row's `fixture`, so
+        no `Used by` claim is ever checked against it."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._errors(
+                d,
+                self.HEAD + self.GOOD
+                + "| `c.expected` | `d.expected` | `gates/r.lean` |\n",
+                "a.expected", "a.expected.sha256", "c.expected", "d.expected")
+            self.assertTrue(errors)
+            self.assertIn("d.expected", errors[0])
+
+    def test_rejects_a_checksum_declared_as_the_fixture(self) -> None:
+        """A `.sha256` pins a fixture against itself and has no consumer of its
+        own, so a row about one describes no comparison -- and its `Used by`
+        cell would be validated as though it did."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._errors(
+                d, self.HEAD + self.GOOD
+                + "| `e.expected.sha256` | | `gates/r.lean` |\n",
+                "a.expected", "a.expected.sha256", "e.expected.sha256")
+            self.assertTrue(errors)
+            self.assertIn("checksum companion", errors[0])
+
+    def test_rejects_a_companion_belonging_to_another_fixture(self) -> None:
+        """Preserving: both cells hold exactly one name and both files exist --
+        the companion simply is not this fixture's, so the `.sha256` gate pins
+        it against a fixture no row validates."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._errors(
+                d, self.HEAD + self.GOOD
+                + "| `f.expected` | `g.expected.sha256` | `gates/r.lean` |\n",
+                "a.expected", "a.expected.sha256", "f.expected",
+                "g.expected.sha256")
+            self.assertTrue(errors)
+            self.assertIn("f.expected.sha256", errors[0])
+
+    def test_rejects_a_companion_named_twice(self) -> None:
+        """The witness for the `len(hash_cell) > 1` conjunct, which `stray`
+        cannot rescue: repeating the *right* companion leaves `stray` empty, so
+        without the count the cell would pass.  A conjunct no case can reach is
+        indistinguishable from a wrong one, and `names` being a set is exactly
+        what hides a duplicated cell from every other check."""
+        with tempfile.TemporaryDirectory() as d:
+            errors = self._errors(
+                d, self.HEAD + self.GOOD
+                + "| `h.expected` | `h.expected.sha256` `h.expected.sha256` "
+                  "| `gates/r.lean` |\n",
+                "a.expected", "a.expected.sha256", "h.expected",
+                "h.expected.sha256")
+            self.assertTrue(errors)
+            self.assertIn("h.expected.sha256", errors[0])
+
+    def test_the_header_and_separator_declare_nothing(self) -> None:
+        """They carry no backticked filename, so the shape contract has no
+        subject there -- and a contract that fired on them would refuse every
+        table."""
+        with tempfile.TemporaryDirectory() as d:
+            rows, errors = sc.fixture_table_rows(
+                self._readme(d, self.HEAD + self.GOOD))
+            self.assertEqual(errors, [])
+            self.assertEqual([r.fixture for r in rows],
+                             [None, None, "a.expected"])
+
+    def test_the_consumer_check_also_refuses_a_malformed_row(self) -> None:
+        """Both questions read `fixture_table_rows`, so the shape is enforced
+        once and neither check can proceed on a row the other refused -- which is
+        what stops the fix from closing one gate and leaving its sibling."""
+        with tempfile.TemporaryDirectory() as d:
+            root = Path(d)
+            errors, validated = sc.check_fixture_consumers(
+                root,
+                self._readme(
+                    d, self.HEAD + "| `p.expected` `q.expected` | | `g` |\n"),
+                repo_root=root)
+            self.assertTrue(errors)
+            self.assertEqual(validated, 0)
+
+    def _readme(self, d: str, table: str) -> Path:
+        readme = Path(d) / "README.md"
+        readme.write_text(table, encoding="utf-8")
+        return readme
 
 
 class TestFixtureConsumers(unittest.TestCase):

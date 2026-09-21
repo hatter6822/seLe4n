@@ -16395,7 +16395,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def nonExecutedTransitionsPri
 # so prose in the `Used by` column cannot stand in for a row.
 run_check "INVARIANT" rg -n '^def fixture_table_filenames' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^FIXTURE_TABLE_HEADING = "## Files"' scripts/scenario_catalog.py
-run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*cells\[1:3\]" scripts/scenario_catalog.py'
+# (`v0.35.137` repoints this: the `cells[1:3]` slice it used to pin is retired,
+# the two declaring cells now being read separately so the row-shape contract can
+# say which of them named what.  The RELATION is unchanged and is what is pinned
+# -- the `Fixture` and `Hash` cells declare and the `Used by` cell does not.)
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*fixture_cell = TABLE_FILENAME.findall\(cells\[1\]\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*hash_cell = TABLE_FILENAME.findall\(cells\[2\]\)" scripts/scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*names = set\(fixture_cell\) \| set\(hash_cell\)" scripts/scenario_catalog.py'
+run_negative_check "INVARIANT" rg -F -n 'TABLE_FILENAME.findall(cells[3])' scripts/scenario_catalog.py
 run_check "INVARIANT" bash -lc 'rg -U -n "def fixture_table_rows[^\n]*(\n([ \t][^\n]*)?)*MD_HEADING.match\(line\):\n *break" scripts/scenario_catalog.py'
 # ...and BOTH directions are asked: a file with no row, and a row with no file.
 run_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*(\n([ \t][^\n]*)?)*sorted\(present - accounted\)" scripts/scenario_catalog.py'
@@ -17517,6 +17524,43 @@ run_check "INVARIANT" rg -F -n '  pm_od_10_unreconfiguredLoanComesBackAgreeing' 
 # binding-modifying operations" must not return: the pop is one and installs
 # `.bound`.
 run_negative_check "INVARIANT" rg -F -n 'preserved by all binding-' SeLe4n/
+
+
+# --------------------------------------------------------------------------
+# `v0.35.136` (PR #897's review): ONE fixture per README row, so the membership
+# question and the consumer question are about the same file.
+# --------------------------------------------------------------------------
+# `row.fixture` was `fixture_cell[0]`, a positional pick out of the SET the
+# membership check accounts for -- so a row naming two fixtures was accounted for
+# whole and validated in part, and a fixture in the `Hash` cell was accounted for
+# and validated not at all.  Either way listed, hashed and compared by nothing.
+run_check "INVARIANT" rg -F -n '        if len(fixture_cell) != 1:' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '        if fixture.endswith(".sha256"):' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '        stray = [h for h in hash_cell if h != expected_hash]' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -F -n '        if len(hash_cell) > 1 or stray:' scripts/scenario_catalog.py
+# ...and the retired positional pick must not come back.  The ASSIGNMENT is the
+# subject, not the bare subscript: three docstrings quote `fixture_cell[0]` in
+# order to explain what it was, and a negative that counted those would force the
+# file to stop explaining itself -- this gate reads `.py` raw.
+run_negative_check "INVARIANT" rg -F -n 'fixture=fixture_cell[0] if fixture_cell else None' scripts/
+# ...with both controls and every rejecting case, each conjunct separately
+# witnessed: M2..M5 each fail a different set, so none is rescued by a partner.
+# (The CLASS is deliberately not anchored: `unittest` discovers it by reflection,
+# so nothing reads the name and `check_anchor_symbol_liveness.py` reports such a
+# pin as a tautology -- correctly, and it caught this one on its first run.  Its
+# sibling classes in the same file are unanchored for the same reason; the CASES
+# are what carry the claims.)
+run_check "INVARIANT" rg -F -n '    def test_accepts_the_canonical_row(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_accepts_a_row_with_no_hash_companion(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_rejects_two_fixtures_in_one_row(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_rejects_a_fixture_in_the_hash_cell(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_rejects_a_checksum_declared_as_the_fixture(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_rejects_a_companion_belonging_to_another_fixture(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_rejects_a_companion_named_twice(self) -> None:' scripts/tests/test_scenario_catalog.py
+run_check "INVARIANT" rg -F -n '    def test_the_consumer_check_also_refuses_a_malformed_row(self) -> None:' scripts/tests/test_scenario_catalog.py
+# ...and the README states the contract it is governed by, since that table is
+# hand-written and its shape is now a checked claim about it.
+run_prose_check "INVARIANT" rg -F -n "**One fixture per row, and the \`Hash\` cell holds only that fixture's own" tests/fixtures/README.md
 
 
 finalize_report

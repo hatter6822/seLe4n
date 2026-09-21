@@ -1,3 +1,102 @@
+## v0.35.137 — one fixture per README row, so both fixture questions are about the same file
+
+PR #897's review, against `v0.35.116`'s fixture catalogue: *"When the `Fixture`
+cell contains multiple backticked filenames, `names` makes `check_fixture_index`
+account for all of them, but `fixture_cell[0]` makes `check_fixture_consumers`
+validate only the first. Likewise, an `.expected` filename placed only in the
+`Hash` cell is accounted for while consumer validation skips it. I reproduced
+both index and consumer checks passing for a row containing `foo.expected` and
+`bar.expected` even though the named consumer mentions only `foo.expected`, so a
+new ordinary golden fixture can remain entirely unexecuted."*
+
+Exact, and it is `v0.35.116`'s own finding one level down.  That cut established
+that a fixture can be **listed, hashed and compared by nothing**, and closed it
+by making the `Used by` column a checked claim.  What it left is the same hole
+reachable through the *row*: the table answers two questions — which files it
+enumerates, and which gate reads each one — and they were asked of one row in
+two different ways.  `names` is the **set** of filenames in the `Fixture` and
+`Hash` cells; `fixture` was `fixture_cell[0]`, a **positional pick** out of that
+set.  A row naming two fixtures was therefore accounted for whole and validated
+in part, and a fixture placed in the `Hash` cell was accounted for and validated
+not at all.
+
+### The remedy is the canonical spelling, measured before it was required
+
+Both remedies the review offered were on the table — refuse rows that do not
+declare exactly one fixture, or build a separately validated row per fixture.
+The measurement decided it: **every live row already uses the canonical shape**
+(fifteen rows, each one fixture and either its own `.sha256` companion or
+`*(none — see below)*`), so requiring it costs the tree nothing and the figures
+are unchanged at 30 files and 15 `Used by` claims.  It is also this project's own
+exit where the subject is text it writes — *require a canonical spelling and
+refuse the rest* — and it makes the two readings agree **by construction**:
+`names` is `{fixture}` or `{fixture, fixture + ".sha256"}`, so there is no second
+reading left to differ.
+
+The contract is four conditions, enforced once in `fixture_table_rows`, which
+**both** checks read — so neither can proceed on a row the other refused, which
+is what stops this fix from closing one question and leaving its sibling:
+
+* the `Fixture` cell names exactly one filename;
+* that filename is not itself a `.sha256` (a checksum pins a fixture against
+  itself and has no consumer of its own, so a row about one describes no
+  comparison);
+* the `Hash` cell names at most one filename;
+* and if it names one, it is that fixture's own companion.
+
+A row with no backticked filename at all — the header, the separator, any prose
+row between them — declares nothing and has no shape to enforce, which is stated
+rather than special-cased.
+
+### Every conjunct is separately witnessed
+
+`TestFixtureRowShape` carries both controls (the canonical row, and the
+companion-less shape the QEMU boot fixture really has — a contract requiring a
+companion would refuse it) and five rejecting cases, and the four mutations each
+fail a **different** set:
+
+| mutation | fails |
+|---|---|
+| drop the one-fixture count | two fixtures in one row; the consumer check's refusal |
+| drop the `.sha256`-as-fixture refusal | a checksum declared as the fixture |
+| drop the companion match | a companion belonging to another fixture; a fixture in the `Hash` cell |
+| drop the hash-cell count | a companion named twice |
+
+That last case exists because of this project's own rule: `stray` is empty when
+the *right* companion is repeated, so without the count the cell would pass —
+and `names` being a set is exactly what hides a duplicated cell from every other
+check.  *A conjunct no case can reach is indistinguishable from a wrong one.*
+Disabling the contract entirely fails all five rejecting cases and leaves both
+controls green.
+
+### One existing case had to be restated rather than deleted
+
+`test_a_companion_mention_is_not_a_row` reproduced the superseded substring
+membership test with a `| *(pending)* | \`c.expected.sha256\` |` row — which the
+new contract refuses in its own right, as a companion whose fixture has no row.
+Deleting the case would have lost the property it witnesses, so it is restated
+over a **fully well-formed** table (`xc.expected` and its companion, in which
+`c.expected` still occurs as a substring) and renamed
+`test_a_substring_mention_is_not_a_row`.  The shape it used to carry is now
+`TestFixtureRowShape`'s, so the two properties are separately witnessed instead
+of one standing in for the other.
+
+The README states the contract it is governed by, since that table is
+hand-written and its shape is now a checked claim about it; a `run_prose_check`
+pins the sentence, because the subject genuinely is the text.
+
+### One anchor detail worth keeping
+
+The negative refuses the retired **assignment**, not the bare subscript: three
+docstrings quote `fixture_cell[0]` in order to explain what it was, this gate
+reads `.py` raw, and a negative counting those would force the file to stop
+explaining itself.
+
+### Validation
+
+Tier 0 exit 0 (`check-fixture-index` at 30 files / 15 claims, unchanged; 65
+unit tests). Tier 3 exit 0 with `--continue`; all fourteen new anchors verified.
+
 ## v0.35.136 — a `bound*Consistent` predicate is a writer fact, and the domain mirror had the same hole
 
 PR #897's review, against `v0.35.133`: when a bound client donates its
