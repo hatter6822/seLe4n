@@ -256,19 +256,26 @@ fi
 # virtual addresses tripped the negative — the very shape this project's
 # conventions forbid (*never contort prose to satisfy a scanner*).
 #
-# Views go to files rather than into a pipeline: under `pipefail`, `grep -q`
-# closes the pipe on its first match and the writer takes SIGPIPE, so the status
-# is 141 exactly when the pattern *is* present.
+# Views are read from the shared overlay (`lean_code_view.py --overlay`),
+# refreshed once here and read in place, rather than emitted by one `python3`
+# invocation per file: the per-file form was five hundred interpreter
+# start-ups, twenty-three seconds of a gate whose scans take a fraction of one
+# (test-performance audit, v0.35.159).  The overlay's `.lean` entries are
+# `lean_code_view.strip` of the source and its `.rs` entries are
+# `rust_code_view.code` -- the two functions the per-file calls ran -- and a
+# suffix its table does not name is linked whole, which is the raw read the
+# `.toml` arm below wants.  Reading the overlay also keeps `grep -q` off a
+# pipeline: under `pipefail` it closes the pipe on its first match and a
+# writer takes SIGPIPE, so a piped status is 141 exactly when the pattern *is*
+# present.
+CODE_VIEW="$(python3 scripts/lean_code_view.py --overlay .lake/build/leancodeview)"
 WIDTH_VIEW_DIR="$(mktemp -d)"
 trap 'rm -rf "${WIDTH_VIEW_DIR}"' EXIT
 
-# Emit the comment-free view of a Lean file and echo the path.
+# The comment-free view of a Lean file: its overlay entry.
 lean_view_of() {
   local src="$1"
-  local out
-  out="${WIDTH_VIEW_DIR}/$(echo "${src}" | tr '/' '_')"
-  python3 scripts/lean_code_view.py "${src}" > "${out}"
-  echo "${out}"
+  echo "${CODE_VIEW}/${src}"
 }
 
 require_width_binding() {
@@ -301,10 +308,9 @@ width_48_hits="${WIDTH_VIEW_DIR}/forbidden_48"
 while IFS= read -r src; do
   case "${src}" in
     *.lean) view="$(lean_view_of "${src}")" ;;
-    *.rs)
-      view="${WIDTH_VIEW_DIR}/$(echo "${src}" | tr '/' '_')"
-      python3 scripts/rust_code_view.py "${src}" > "${view}"
-      ;;
+    # The overlay's `.rs` entry is `rust_code_view.code`: comments blanked,
+    # string contents kept, byte-aligned.
+    *.rs) view="${CODE_VIEW}/${src}" ;;
     # A language with no stripper in the table is read raw, deliberately: this
     # scan builds a set of REFUSALS, and a refusal it drops is a check nobody
     # runs, so the fail-closed direction is to over-report.

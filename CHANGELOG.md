@@ -1,3 +1,215 @@
+## v0.35.159 — the tests get faster without checking less, again
+
+Test-performance audit, the second (`v0.34.47` was the first).  Every gate
+keeps its verdict and every suite keeps every assertion; what changed is how
+the same answers are computed, and every function that changed was held
+**byte-identical** to the one it replaced -- over the whole tree, in every mode
+it has, and over hundreds of thousands of random strings drawn from its own
+delimiter alphabet, raised exceptions included -- before it landed.  Every
+gate's output was diffed against a reference taken before the first edit, and
+the 360 Tier anchors whose subject this cut touches were swept and pass.
+**Nothing is skipped, sampled, or trusted that was checked before.**
+
+### Where the time went, and where it goes now
+
+Measured on the four-core box the tiers run on, with the tree built (the
+`v0.35.158` full run against this one).  Tier 1's figures are omitted because
+that run's 357 s was the genuine recompilation the previous cut forced, not a
+harness cost: with nothing to rebuild the whole tier is one minute of
+`lake env lean` probes and Lake no-ops (0.3 s each).
+
+| Tier | Item | Before | After |
+|------|------|--------|-------|
+| 0 | `ak7_cascade_check_monotonic.sh` | 95.0 s | 10.9 s |
+| 0 | `check_ipc_invariant_dethreading.py` | 74.8 s | 18.6 s |
+| 0 | `check_changed_file_anchors.sh` | 36.2 s | 3.2 s |
+| 0 | `check_devicetree_legacy_consumers.sh` | 30.4 s | 1.6 s |
+| 0 | `lean_store_read_census.py --self-test` | 28.7 s | 9.0 s |
+| 0 | `check_physical_address_width.sh` | 23.7 s | 1.5 s |
+| 0 | `check_identifier_naming.py` | 15.3 s | 4.4 s |
+| 0 | `check_tlbi_broadcast_discipline.py` | 14.5 s | 1.7 s |
+| 0 | `check_claim_evidence_citations.py` | 9.6 s | 6.1 s |
+| 0 | whole tier | 403.7 s | 115.3 s |
+| 2 | `test_tier2_negative.sh`, tree built | 89 s | 59.7 s |
+| 3 | one `rg` anchor / one `bash -lc` anchor | 13.9 ms / 109 ms | 4.6 ms / 8.5 ms |
+| 3 | whole tier | 244.5 s | 76.6 s |
+| — | `test_full.sh`, tree built | ~20 min (1218 s, of which 357 s were real rebuilds) | 334 s, with Tier 0 at 133.5 s before the census's second round took it to 115.3 s |
+
+### The harness: six forks and a login shell per anchor
+
+Tier 3 runs some 6300 checks, and `test_lib.sh` paid for each of them in
+process creation.  `log_section` read its two colours through `$(...)`, a
+fork each, twice per check; `_now_ms` was `$(date +%s%3N)`, a fork and an
+exec, twice per check; and 1218 anchors are spelled `bash -lc '…'`, which
+starts a **login** shell -- `/etc/profile`, `/etc/profile.d/*`, `~/.profile` --
+at about 100 ms apiece on an ordinary toolchain-rich machine (measured: 4.9 s
+for fifty empty `bash -lc true` against 0.1 s for `bash -c`).  Two of Tier 3's
+four minutes were the login shells alone.
+
+`log_section` is one function with its two `case` tables inlined; `_now_ms`
+reads bash 5's `EPOCHREALTIME` into a global (the `date` fallback stays for a
+shell without it); and every helper runs its command through `_run_command`,
+which runs `bash -lc SCRIPT` as `bash -c SCRIPT` -- inside a `timeout` prefix
+too, so `run_check_with_timeout` composes.  Nothing an anchor may depend on
+comes from the profile files: the tier has already put the toolchain on `PATH`
+in the shell every child inherits, and each Lean probe sources `~/.elan/env`
+itself.  The script, its quoting, its working directory and the code-view
+routing are untouched, so the classifier sees the anchor as written.  Measured
+on two 400-anchor samples, old harness against new, verdicts and log lines
+identical apart from the durations: 5.56 s → 1.86 s for plain `rg` anchors,
+43.7 s → 3.4 s for `bash -lc` ones.  `test_code_view_wiring.sh` gained the
+shell-quoted form in both directions (12 checks), because a shell that no
+longer started would fail a positive and pass a negated one for the wrong
+reason.
+
+`run_check_with_timeout` is now timed like every other check, and the first
+thing that showed is in the Tier 2 section below.
+
+### One stripper, five gates: the Lean and Rust code views
+
+`lean_code_view.strip` is the view every text gate reads, and it walked the
+source one character at a time -- ~150 ns each, 7.6 s per pass over the tree,
+paid once by every gate that builds a view (the dethreading gate, the claim
+index, the TLBI discipline, the theorem manifest, the two self-tests).  It is
+run-based now: each state jumps to the next character it decides on
+(`_CODE_TRIGGER`, `_BLOCK_TOKEN`, `_STRING_TOKEN`) and copies or blanks the
+run between whole.  The states, their transitions and the character each emits
+are the loop's own; verified byte-identical over every `.lean` file in both
+modes, over 300 000 random strings, and by rebuilding the overlay from scratch
+against the old stripper: 7.65 s → 1.94 s.
+
+`rust_code_view._scan` was **quadratic**: it tested the raw-string opener with
+`re.match(pattern, src[i:])` at every offset, a fresh slice of the rest of the
+file per character.  It matches in place at the offset now and jumps between
+the six characters a construct can begin with; spans identical over every
+tracked `.rs` file and 300 000 random strings, exceptions included: 4.67 s →
+0.07 s, and `check_tlbi_broadcast_discipline.py` (14.5 s → 1.7 s),
+`check_unsafe_block_justifications.py` (5.5 s → 0.8 s) and
+`check_kernel_entry_exports.py` follow.
+
+### The dethreading gate: 75 s → 18.6 s
+
+Three per-character passes and two regexes.  `_blank_strings` (25 s of the
+gate's 75) and `_blank_syntax_quotations` are run-based on the same principle
+as `strip`, verified the same way (21.6 s → 0.31 s for the pair over the
+tree).  `_SCOPE_RE`, `_DECL_RE` and `_VARIABLE_RE` began `^\s*` under
+`MULTILINE`, which at every line start eats the blank lines and the
+indentation *below* it before failing the keyword and then backtracks through
+them one character at a time retrying the alternation -- 9.3 s per pass for
+each of the first two, 1.6 s with the class bounded to the line
+(`^[^\S\n]*`).  What that changes is only where a match preceded by blank
+lines is said to START; every match, its end and its groups are the same, and
+the two consumers of a start -- the namespace bisection and the `variable`
+interval sort -- were checked to answer identically on every declaration in
+the tree, which they must, because a breakpoint ends mid-line and a
+declaration never begins inside blank lines.  `_declared_names` is identical
+as a dict.
+
+### The store-read census: one parse, and a signature head re-read per line
+
+`ak7_cascade_check_monotonic.sh` is the census: its capture runs
+`lean_store_read_census.py --rows`, which was 95 of the gate's 95 seconds --
+measured alone, against the previous commit's census over a copy of the
+tree: 95.2 s, its output byte-identical to today's.  Two things were wrong
+with how the census spent them, and each took a round.
+
+`classify` recomputed `_signature_head(signature)` -- a depth-zero walk over
+the accumulated signature -- on **every line** of every declaration, and the
+`Prop` verdict beside it, so a long declaration cost quadratically: 183 of the
+263 profiled seconds of `--rows`.  The head is computed once per change of the
+signature (the string is rebound exactly when its text changes, so identity is
+the test), and while the signature is still open its head IS the accumulated
+text -- the per-line terminator scan carries the bracket depth across lines
+exactly as a scan of the joined text would, so no depth-zero terminator exists
+in it yet.  The verdict follows the head and the scope.
+
+And `main` ran the parse four times over every file -- once per census
+(`READ`, `WRITE`, `SWEEP`) and once for the indirect census -- re-deciding on
+each pass which declaration owns a line, whether it is executable and which
+region an access sits in, none of which depends on the pattern being counted.
+The parse is `_line_regions` now, memoised on the file's text and the alias
+set (never the path: the self-test rewrites one path with many contents), and
+`classify` is the count over its records; a mutation of the parse still
+reaches every census, because there is still one parse.  Under it the three
+depth walks -- `_depth_zero_scan`, `_split_binder_defaults`, `_result_type`,
+with `_returns_prop`'s arrow split -- go by run rather than by character, each
+held to its predecessor over 120 000 random strings from its own delimiter
+alphabet and over every declaration in the tree; `census_view` and
+`prop_aliases` are memoised on the text they read; and `table_receivers`
+answers before running its three patterns on a declaration that spells neither
+table type nor the projection, which is every one of those patterns' own
+precondition.  The `classify` streams, `collect` hooks and refusal channels
+are identical over every file and all three patterns; `census` and
+`indirect_accesses` are identical as tuples; `--rows`, `--totals` and
+`--attribution` are byte-identical; the AK7 capture is byte-identical and its
+self-test passes.  `--rows` 95 s → 30 s after the first change and → 9.7 s
+after the second, the gate 95 s → 10.9 s, the census self-test 28.7 s →
+9.0 s.
+
+### The naming gate: 15 s → 4.4 s
+
+Three things.  `strip_pairs` walked a block comment's body one character at a
+time with two `startswith` per step, and docstrings are most of a proof file;
+it jumps between the comment's own openers and closers now.  Its raw-string
+test was `re.match(r'r(#*)"', text[i:])` -- a slice of the rest of the file at
+every `r`, one of the commonest letters; it matches in place.  `is_coded` is a
+pure function of a token asked 1.8 million times of some fifty thousand
+distinct spellings, and is memoised.  `strip_lean` and `strip_rust` are
+byte-identical over every tracked file (8.1 s → 1.2 s) and over random
+strings; the gate's own witness suite (331 checks) passes.
+
+### Two shell gates: five hundred interpreters
+
+`check_devicetree_legacy_consumers.sh` ran `python3 lean_code_view.py FILE`
+for each of ~400 Lean files, twice (30.4 s), and
+`check_physical_address_width.sh` once per Lean, Rust and TOML file under
+three directories (23.7 s) -- interpreter start-ups, for scans that take a
+fraction of a second.  Both read the shared overlay (`lean_code_view.py
+--overlay`, refreshed once), whose `.lean` entries are `strip` of the source
+and whose `.rs` entries are `rust_code_view.code`, the two functions the
+per-file calls ran.  Outputs identical.  The Tier 3 anchor that pinned the
+per-file emission is repointed at the overlay read, with a negative refusing
+the retired spelling on each script.
+
+### Tier 2: the interpreter path
+
+With the suite runs timed, three lines were a third of the tier:
+`lake env lean --run tests/InformationFlowSuite.lean` (24.4 s),
+`NegativeStateSuite` (5.2 s) and `RobinHoodSuite` -- each re-elaborating the
+suite on every run to reach a `main` whose compiled form runs in half a
+second.  The interpreter runs date from the day the first of them blew clang's
+`-fbracket-depth`; the thin-dispatcher pattern ended that, and WS-RR RR7.35
+then made the three compile in the tier's prebuild so the hazard is checked
+rather than routed around.  They run as those executables now, exactly as the
+other seventy suites do; the verdict lines are identical, and the two Tier 3
+anchors over the interpreter lines pin the compiled lines instead.
+
+### What is left, and why
+
+* `lake exe asid_pool_suite` is 37.7 s -- the whole of what remains in Tier 2
+  above the noise -- and stays: it exercises the real 65 535 × 65 535 rollover
+  scan that `docs/REGISTERED_DEBT.md` registers, and the register's own row
+  says the test keeps exercising it until the post-v1.0.0 representation
+  change.  Making the suite fast would mean making the kernel's allocator
+  fast, which is that row's work and not a harness cut's.
+* `check_ipc_invariant_dethreading.py` is 18.6 s spread over ten tree-wide
+  regex passes with no single hotspot -- the next step there is one read of
+  the tree shared across them, a restructuring rather than a harness cut;
+  `lean_store_read_census.py --self-test` is 9 s of fixture trees and live
+  reconciliations; `check_declaration_kind_askers.py` is mostly per-node
+  subtree walks in its call and assembly locators (the memoised whole-tree
+  walks were free, and modest); `shellcheck` is 10 s, of which the 18 600-line
+  Tier 3 script is 6 s; an `rg` over the overlay is 4-5 ms per anchor and is
+  the work.
+* Tier 1 is elaboration: the censuses that read the environment take 50-100 s
+  each when their inputs change, and the two routing gates each load the
+  whole tree into `lake env lean`.  A chain of imports (`Platform.Staged` →
+  `ReplyStackWriteCensus` → `StoreReadClassificationCensus`) puts most of it
+  on one critical path, so building them in one Lake invocation would buy
+  little; it was measured and not done.
+
+Refs: docs/REGISTERED_DEBT.md (the ASID rollover row)
+
 ## v0.35.158 — the cancellation reclaim deschedules the holder it unbinds, so no client suspension hands a server the CPU on nobody's budget
 
 The second of the two open halves PR #897 left registered is closed on its

@@ -59,19 +59,25 @@ unauthorized=""
 # gate's own `filter_comments` asserted the names were "distinctive enough that
 # every match is a real consumer", which stopped being true the moment one of
 # them appeared in prose.
+#
+# The view is the shared overlay (`lean_code_view.py --overlay`), refreshed once
+# and read in place, rather than one `python3` invocation per Lean file per
+# scan: that was two interpreter start-ups for each of ~400 files, thirty
+# seconds of a gate whose scan takes a fraction of one (test-performance
+# audit, v0.35.159).  The overlay's `.lean` entries are exactly
+# `lean_code_view.strip` of the source -- the same function the per-file call
+# ran -- byte-aligned with it, so every path and line number below means what
+# it did.
 scan() {
   local pattern="$1" exempt_host="$2"
-  local view
   (
-    cd "${REPO_ROOT}"
+    cd "${CODE_VIEW}"
     while IFS= read -r src; do
       if [ "${exempt_host}" = "exempt-host" ] \
           && [ "${src}" = "./SeLe4n/Platform/DeviceTree.lean" ]; then
         continue
       fi
-      view="${VIEW_DIR}/$(echo "${src}" | tr '/.' '__')"
-      python3 "${SCRIPT_DIR}/lean_code_view.py" "${src}" > "${view}" 2>/dev/null || continue
-      grep -nwE "${pattern}" "${view}" 2>/dev/null | sed "s|^|${src}:|" || true
+      grep -nwE "${pattern}" "${src}" 2>/dev/null | sed "s|^|${src}:|" || true
     done < <(find . -name '*.lean' -not -path './.lake/*' 2>/dev/null)
   )
 }
@@ -83,8 +89,7 @@ filter_comments() {
   cat
 }
 
-VIEW_DIR="$(mktemp -d)"
-trap 'rm -rf "${VIEW_DIR}"' EXIT
+CODE_VIEW="$(python3 "${SCRIPT_DIR}/lean_code_view.py" --overlay "${REPO_ROOT}/.lake/build/leancodeview")"
 
 # `classifyMemoryRegion` is still declared in the host file; `findMemoryRegProperty`
 # is not declared anywhere, so it may not be named anywhere.

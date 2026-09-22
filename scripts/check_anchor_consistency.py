@@ -581,7 +581,7 @@ def classify_line(line: str):
     if not m:
         # PR #873 round 14: **a helper line this cannot parse is `unparsed`, not
         # absent.**  `HELPER_RE` demands a `[A-Z-]+` label, but `test_lib.sh`
-        # accepts any category string through its default `category_color` arm.
+        # accepts any category string through `log_section`'s default arm.
         # An anchor labelled `"SM9_D"` or `"Tier1"` therefore failed the regex,
         # returned `None`, and the caller read that as "not a helper line" --
         # the anchor vanished from the comparison while the gate reported PASS.

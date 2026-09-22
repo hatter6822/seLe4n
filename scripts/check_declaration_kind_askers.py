@@ -80,6 +80,7 @@ Usage:  scripts/check_declaration_kind_askers.py [--rows] [--self-test]
 from __future__ import annotations
 
 import ast
+import functools
 import os
 import re
 import subprocess
@@ -309,6 +310,14 @@ def _module_string_bindings(tree: ast.AST) -> dict[str, str]:
             if len(t) == 1 and t[0] is not None}
 
 
+# Memoised per tree (test-performance audit, v0.35.159): the three helpers so
+# marked are pure functions of the parsed module and were asked of the same
+# tree by four or five callers each, so every file's AST was walked whole once
+# per asker.  A tree is hashed by identity, nothing here mutates one, and every
+# caller only reads the result.  Measured, the saving is modest -- the gate's
+# cost is mostly the per-node subtree walks of the call and assembly locators,
+# which ask a different question -- and it is kept because it is free.
+@functools.lru_cache(maxsize=None)
 def _name_bindings(tree: ast.AST) -> dict[str, list[str | None]]:
     """Every name binding in the module, as the literal text bound or `None`.
 
@@ -704,6 +713,7 @@ def _reconstruct(node: ast.AST, consts: dict[str, str]) -> str | None:
     return None if text is None or _HOLE in text else text
 
 
+@functools.lru_cache(maxsize=None)
 def _string_assembly_shapes(tree: ast.AST) -> list[ast.AST]:
     """Every expression that builds a string out of PARTS.
 
@@ -976,6 +986,7 @@ def _unreadable_assemblies(tree: ast.AST) -> list[tuple[ast.AST, str]]:
 _PROBE_TEXT_SINKS: tuple[tuple[str, ...], ...] = (("ast", "parse"),)
 
 
+@functools.lru_cache(maxsize=None)
 def _module_name_bindings(tree: ast.AST) -> tuple[dict[str, str], set[str]]:
     """`(imported, assigned)` -- every name this module binds, by how it binds it.
 

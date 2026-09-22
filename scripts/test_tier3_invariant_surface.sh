@@ -177,7 +177,7 @@ run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Pr
 run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^def runInformationFlowChecks' tests/InformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake env lean --run tests/InformationFlowSuite\.lean' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
@@ -186,7 +186,7 @@ run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
-run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake env lean --run tests/NegativeStateSuite\.lean' scripts/test_tier2_negative.sh
+run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
 run_check "INVARIANT" rg -n '^def runMainTrace' SeLe4n/Testing/MainTraceHarness.lean
 run_check "INVARIANT" rg -n '^def bootstrapState' SeLe4n/Testing/MainTraceHarness.lean
@@ -8196,7 +8196,7 @@ run_check "INVARIANT" rg -n 'stripper = _STRIPPERS.get' scripts/lean_code_view.p
 # forms are exercised, since the stripper handles them separately.
 run_check "INVARIANT" rg -n 'code_view_witness_prose_only' scripts/test_code_view_wiring.sh
 run_check "INVARIANT" rg -n 'code_view_witness_block_comment_only' scripts/test_code_view_wiring.sh
-run_check "INVARIANT" rg -n 'SELF-TEST PASS \(10 checks\)' scripts/test_code_view_wiring.sh
+run_check "INVARIANT" rg -n 'SELF-TEST PASS \(12 checks\)' scripts/test_code_view_wiring.sh
 # (c) the application IPC label: the debt is out of the review narrative and
 # has a stated constraint, two candidate designs and a named owner.
 run_prose_check "INVARIANT" rg -n 'owner WS-CB — the application IPC label' docs/planning/SYSCALL_RETURN_ABI_PLAN.md
@@ -14116,6 +14116,12 @@ run_negative_check "INVARIANT" rg -n -U 'regions\.all fun r =>\n    dt\.peripher
 # would read as a directive — SC1073.)
 run_check "INVARIANT" rg -n -U 'require_width_binding\(\) \{\n  local src="[$]1" width="[$]2" message="[$]3"\n  local view\n  view="[$]\(lean_view_of "[$]\{src\}"\)"\n  if ! grep -q "physicalAddressWidth := [$]\{width\}" "[$]\{view\}"; then' scripts/check_physical_address_width.sh
 run_check "INVARIANT" rg -n '2 width-view cases' scripts/check_physical_address_width.sh
+# The views are the shared overlay's entries, refreshed once (v0.35.159); a
+# per-file `python3 … lean_code_view.py "${src}"` emission must not come back
+# outside the self-test's own fixtures.
+run_check "INVARIANT" rg -n -U 'lean_view_of\(\) \{\n  local src="[$]1"\n  echo "[$]\{CODE_VIEW\}/[$]\{src\}"\n\}' scripts/check_physical_address_width.sh
+run_check "INVARIANT" rg -n '\*\.rs\) view="[$]\{CODE_VIEW\}/[$]\{src\}" ;;' scripts/check_physical_address_width.sh
+run_negative_check "INVARIANT" rg -n 'python3 scripts/rust_code_view\.py "[$]\{src\}" > "[$]\{view\}"' scripts/check_physical_address_width.sh
 # NEGATIVE: the raw scans.
 run_negative_check "INVARIANT" rg -n "grep -q 'physicalAddressWidth := 44' SeLe4n/Platform/RPi5/Board\.lean" scripts/check_physical_address_width.sh
 
@@ -14173,7 +14179,13 @@ run_negative_check "INVARIANT" rg -n -U 'memoryAccessAllowed := fun _ addr =>\n 
 # The legacy-consumer gate exempts the host file per SYMBOL, and reads code.
 run_check "INVARIANT" rg -n "scan 'findMemoryRegProperty' scan-everywhere" scripts/check_devicetree_legacy_consumers.sh
 run_check "INVARIANT" rg -n "scan 'classifyMemoryRegion' exempt-host" scripts/check_devicetree_legacy_consumers.sh
-run_check "INVARIANT" rg -n 'lean_code_view\.py" "\$\{src\}" > "\$\{view\}"' scripts/check_devicetree_legacy_consumers.sh
+# The scan reads the shared code-view overlay in place (v0.35.159); the per-file
+# `python3 lean_code_view.py "${src}"` emission it replaced must not come back.
+run_check "INVARIANT" rg -n 'lean_code_view\.py" --overlay "\$\{REPO_ROOT\}/\.lake/build/leancodeview"' scripts/check_devicetree_legacy_consumers.sh
+# `[$]` rather than an escaped dollar, for the SC2016 reason the width anchors
+# below record.
+run_check "INVARIANT" rg -n -U 'scan\(\) \{\n  local pattern="[$]1" exempt_host="[$]2"\n  \(\n    cd "[$]\{CODE_VIEW\}"' scripts/check_devicetree_legacy_consumers.sh
+run_negative_check "INVARIANT" rg -n 'lean_code_view\.py" "\$\{src\}" > "\$\{view\}"' scripts/check_devicetree_legacy_consumers.sh
 # NEGATIVE: the unconditional host-file exemption, which let the removed walker
 # be reintroduced at exactly the place it was deleted from.
 run_negative_check "INVARIANT" rg -n -U "grep -v '\^\./SeLe4n/Platform/DeviceTree\\\\\.lean:' \|\| true\n    else\n      find \. -name '\*\.lean'" scripts/check_devicetree_legacy_consumers.sh

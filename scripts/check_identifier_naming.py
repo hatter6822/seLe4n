@@ -475,6 +475,11 @@ def components(token: str) -> list[str]:
 BARE_AMBIGUOUS = frozenset({"ws"})
 
 
+# Memoised (test-performance audit, v0.35.159): a pure function of the token,
+# asked 1.8 million times per run of the same few tens of thousands of
+# distinct spellings -- nine seconds of splitting and re-matching identifiers
+# the scan had already classified.
+@functools.lru_cache(maxsize=None)
 def is_coded(token: str) -> bool:
     parts = components(token)
     for c in parts:
@@ -621,6 +626,9 @@ def _opens_asm_macro(text: str, at: int) -> bool:
 # which is what would have happened anyway.
 CHAR_LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)'")
 
+# The opener of a raw string literal (`r"…"`, `r#"…"#`), matched at an offset.
+RAW_STRING_OPEN = re.compile(r'r(#*)"')
+
 
 # The characters at which `strip_pairs` has anything to decide: the first
 # character of the line-comment and block-comment openers, the two quote
@@ -628,6 +636,12 @@ CHAR_LITERAL = re.compile(r"'(?:[^'\\\n]|\\.)'")
 # the delimiters that move the nesting depth.  Everything else passes through
 # unchanged, so the loop copies each run of such characters in one slice
 # instead of one character per iteration (32 of this gate's 54 seconds).
+@functools.lru_cache(maxsize=None)
+def _block_comment_tokens(open_b: str, close_b: str) -> re.Pattern:
+    """The two tokens a block comment's body is walked by, opener first."""
+    return re.compile(re.escape(open_b) + "|" + re.escape(close_b))
+
+
 @functools.lru_cache(maxsize=None)
 def _strip_pairs_triggers(line_comment: str, open_b: str,
                           asm_templates: bool) -> re.Pattern:
@@ -663,19 +677,30 @@ def strip_pairs(text: str, line_comment: str, block: tuple[str, str],
             out.append(" " * (j - i)); i = j
         elif text.startswith(open_b, i):
             depth, j = 1, i + len(open_b)     # Lean block comments nest
-            while j < n and depth:
-                if text.startswith(open_b, j):
-                    depth, j = depth + 1, j + len(open_b)
-                elif text.startswith(close_b, j):
-                    depth, j = depth - 1, j + len(close_b)
-                else:
-                    j += 1
+            # Jump between the comment's own openers and closers rather than
+            # stepping every character of its body (test-performance audit,
+            # v0.35.159: docstrings are most of a proof file, and the
+            # per-character walk was ten of this gate's fifteen seconds).  The
+            # leftmost token from `j` is the one the walk would have reached
+            # first, so the nesting count and the end are the same.
+            tokens = _block_comment_tokens(open_b, close_b)
+            while depth:
+                t = tokens.search(text, j)
+                if t is None:
+                    j = n
+                    break
+                depth += 1 if t.group() == open_b else -1
+                j = t.end()
             out.append(blank_prose(text[i:j])); i = j
         elif text[i] == "'" and (m := CHAR_LITERAL.match(text, i)):
             out.append(m.group(0)); i = m.end()   # data, not a delimiter
-        elif text[i] == "r" and (m := re.match(r'r(#*)"', text[i:])):
+        elif text[i] == "r" and (m := RAW_STRING_OPEN.match(text, i)):
+            # Matched IN PLACE: `re.match(pattern, text[i:])` sliced the rest
+            # of the file at every `r` -- one of the commonest letters -- so
+            # the walk copied the file once per occurrence (test-performance
+            # audit, v0.35.159).  Same match, absolute offsets.
             close = '"' + m.group(1)
-            j = text.find(close, i + m.end() - 1)
+            j = text.find(close, m.end() - 1)
             j = n if j < 0 else j + len(close)
             out.append(text[i:j] if asm_at is not None or keeps_identifiers(text, i)
                        else blank_literal(text[i:j])); i = j

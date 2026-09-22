@@ -45,12 +45,28 @@ Usage:
 from __future__ import annotations
 
 import os
+import re
 import shutil
 import sys
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 _IDENT_TAIL = set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_'?!")
+
+#: Where the code state of `strip` has a decision to make: a `--` or `/-`
+#: opener, a string or raw-string opener, a char literal, a guillemet.  Every
+#: other character is copied through, so the scanner copies runs of them whole.
+_CODE_TRIGGER = re.compile(r'[-/"\'r«]')
+#: Inside a block comment only its own openers and closers matter (they nest).
+_BLOCK_TOKEN = re.compile(r"/-|-/")
+#: Inside a string literal only an escape or the closing quote matters.
+_STRING_TOKEN = re.compile(r'[\\"]')
+#: Every character but a newline becomes a space: geometry is preserved.
+_NON_NEWLINE = re.compile(r"[^\n]")
+
+
+def _blanked(text: str) -> str:
+    return _NON_NEWLINE.sub(" ", text)
 
 
 class UnterminatedComment(Exception):
@@ -85,58 +101,72 @@ def strip(src: str, blank_strings: bool = False) -> str:
     would desynchronise the string state on any file containing a primed name,
     which is most of them.
     """
-    out = list(src)
+
+    # Run-based, not character-based (test-performance audit, v0.35.159).  The
+    # character loop this replaced cost ~150 ns per source character -- 7.5 s
+    # per pass over the tree, paid by every gate that builds a view -- and did
+    # nothing at most of them: in code it copied the character, in a comment
+    # it blanked it.  Each state now jumps to the next character it has a
+    # decision to make at (`_CODE_TRIGGER` / `_BLOCK_TOKEN` / `_STRING_TOKEN`)
+    # and copies or blanks the run in between whole.  The states and their
+    # transitions are the ones the loop had, and the result is byte-identical
+    # to it: verified over every `.lean` file in the tree in both modes and
+    # over 300 000 random strings drawn from the delimiter alphabet, exceptions
+    # included.
+    pieces: list[str] = []
     n = len(src)
     i = 0
     depth = 0
-    in_line = False
     in_string = False
 
-    def blank(j: int) -> None:
-        if out[j] != "\n":
-            out[j] = " "
-
     while i < n:
-        c = src[i]
-        nxt = src[i + 1] if i + 1 < n else ""
-
-        if in_line:
-            if c == "\n":
-                in_line = False
-            else:
-                blank(i)
-            i += 1
-            continue
-
         if depth:
-            if c == "/" and nxt == "-":
-                depth += 1
-                blank(i), blank(i + 1)
-                i += 2
-                continue
-            if c == "-" and nxt == "/":
-                depth -= 1
-                blank(i), blank(i + 1)
-                i += 2
-                continue
-            blank(i)
-            i += 1
+            m = _BLOCK_TOKEN.search(src, i)
+            if m is None:
+                pieces.append(_blanked(src[i:]))
+                i = n
+                break
+            pieces.append(_blanked(src[i:m.start()]))
+            pieces.append("  ")
+            depth += 1 if m.group() == "/-" else -1
+            i = m.end()
             continue
 
         if in_string:
-            if c == "\\":
+            m = _STRING_TOKEN.search(src, i)
+            if m is None:
+                pieces.append(_blanked(src[i:]) if blank_strings else src[i:])
+                i = n
+                break
+            run = src[i:m.start()]
+            pieces.append(_blanked(run) if blank_strings else run)
+            j = m.start()
+            if src[j] == "\\":
+                # The escape and the character it escapes; a blanked escape
+                # keeps a newline in place, as `blank` did.
                 if blank_strings:
-                    blank(i)
-                    if i + 1 < n:
-                        blank(i + 1)
-                i += 2
+                    pieces.append(" ")
+                    if j + 1 < n:
+                        pieces.append("\n" if src[j + 1] == "\n" else " ")
+                else:
+                    pieces.append(src[j:j + 2])
+                i = j + 2
                 continue
-            if c == '"':
-                in_string = False
-            elif blank_strings:
-                blank(i)
-            i += 1
+            pieces.append('"')
+            in_string = False
+            i = j + 1
             continue
+
+        m = _CODE_TRIGGER.search(src, i)
+        if m is None:
+            pieces.append(src[i:])
+            i = n
+            break
+        if m.start() > i:
+            pieces.append(src[i:m.start()])
+            i = m.start()
+        c = src[i]
+        nxt = src[i + 1] if i + 1 < n else ""
 
         # A **raw** string literal: `r"…"`, `r#"…"#`, `r##"…"##` (PR #889
         # review round 15).  Its body ends at a `"` followed by exactly the
@@ -156,24 +186,38 @@ def strip(src: str, blank_strings: bool = False) -> str:
                 close = src.find(terminator, j + 1)
                 end = n if close == -1 else close + len(terminator)
                 if blank_strings:
-                    for k in range(j + 1, min(end - len(terminator), n) if close != -1 else n):
-                        blank(k)
+                    body_end = min(end - len(terminator), n) if close != -1 else n
+                    pieces.append(src[i:j + 1])
+                    pieces.append(_blanked(src[j + 1:body_end]))
+                    pieces.append(src[body_end:end])
+                else:
+                    pieces.append(src[i:end])
                 i = end
                 continue
+            pieces.append(c)
+            i += 1
+            continue
 
         if c == '"':
+            pieces.append(c)
             in_string = True
             i += 1
             continue
 
         # A char literal, but only where `'` cannot be an identifier's prime.
-        if c == "'" and (i == 0 or src[i - 1] not in _IDENT_TAIL):
-            if nxt == "\\" and i + 3 < n and src[i + 3] == "'":
-                i += 4
-                continue
-            if i + 2 < n and src[i + 2] == "'":
-                i += 3
-                continue
+        if c == "'":
+            if i == 0 or src[i - 1] not in _IDENT_TAIL:
+                if nxt == "\\" and i + 3 < n and src[i + 3] == "'":
+                    pieces.append(src[i:i + 4])
+                    i += 4
+                    continue
+                if i + 2 < n and src[i + 2] == "'":
+                    pieces.append(src[i:i + 3])
+                    i += 3
+                    continue
+            pieces.append(c)
+            i += 1
+            continue
 
         # A guillemet-quoted identifier is a single token: `--` or `/-`
         # inside `«a--b»` is identifier text, not a comment opener, and a
@@ -186,27 +230,40 @@ def strip(src: str, blank_strings: bool = False) -> str:
             close = src.find("»", i + 1)
             newline = src.find("\n", i + 1)
             if close != -1 and (newline == -1 or close < newline):
+                pieces.append(src[i:close + 1])
                 i = close + 1
                 continue
+            pieces.append(c)
+            i += 1
+            continue
 
-        if c == "-" and nxt == "-":
-            in_line = True
-            blank(i), blank(i + 1)
-            i += 2
+        if c == "-":
+            if nxt == "-":
+                nl = src.find("\n", i)
+                if nl == -1:
+                    pieces.append(" " * (n - i))
+                    i = n
+                else:
+                    pieces.append(" " * (nl - i))
+                    i = nl
+                continue
+            pieces.append(c)
+            i += 1
             continue
 
         if c == "/" and nxt == "-":
             depth = 1
-            blank(i), blank(i + 1)
+            pieces.append("  ")
             i += 2
             continue
 
+        pieces.append(c)
         i += 1
 
     if depth:
         raise UnterminatedComment(f"block comment still open at end of input (depth {depth})")
 
-    return "".join(out)
+    return "".join(pieces)
 
 
 def code_no_strings(src: str) -> str:

@@ -70,6 +70,16 @@ import sys
 
 FILE_SCOPE = "<file scope>"
 
+#: Where `_scan` has a decision to make: a comment opener, a string or raw
+#: string opener (plain, byte or C), a char literal.  Nothing else begins a
+#: construct the scanner recognises, so the runs between are code.
+_SCAN_TRIGGER = re.compile(r"[/\"'rbc]")
+#: The raw-string opener, matched IN PLACE at an offset rather than against a
+#: slice of the remainder.
+_RAW_STRING_OPEN = re.compile(r'(?:b|c)?r(#*)"')
+#: Inside a block comment only its own openers and closers matter (they nest).
+_BLOCK_COMMENT_TOKEN = re.compile(r"/\*|\*/")
+
 
 class UnterminatedLiteral(Exception):
     """A comment or string literal ran to end of file.
@@ -102,6 +112,17 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
     the body is reported as a separate span nested in the literal, so a
     caller can blank the interior while keeping the quotes.
     """
+    # Trigger-driven (test-performance audit, v0.35.159).  The character
+    # loop this replaced tested a raw-string pattern with `re.match(pattern,
+    # src[i:])` at EVERY offset -- a fresh slice of the rest of the file per
+    # character, so the scan was quadratic in the file (4.7 s over the Rust
+    # tree, paid once per gate that reads it; 0.07 s now).  Every construct
+    # the scanner recognises begins with one of six characters, so it jumps
+    # to the next of those and copies the code run before it whole; the
+    # branches, their order and what each emits are the loop's own, and the
+    # spans are identical to it -- verified over every tracked `.rs` file and
+    # over 300 000 random strings drawn from the delimiter alphabet, raised
+    # exceptions included.
     spans: list[tuple[str, int, int]] = []
     i, n = 0, len(src)
     code_start = 0
@@ -111,6 +132,10 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
             spans.append(("code", code_start, at))
 
     while i < n:
+        m = _SCAN_TRIGGER.search(src, i)
+        if m is None:
+            break
+        i = m.start()
         ch = src[i]
         # --- comments -----------------------------------------------------
         if ch == "/" and i + 1 < n and src[i + 1] == "/":
@@ -122,35 +147,30 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
             continue
         if ch == "/" and i + 1 < n and src[i + 1] == "*":
             close_code(i)
-            start, depth, i = i, 0, i
-            while i < n:
-                if src.startswith("/*", i):
+            start, depth, j = i, 0, i
+            while True:
+                token = _BLOCK_COMMENT_TOKEN.search(src, j)
+                if token is None:
+                    raise UnterminatedLiteral(
+                        f"block comment opened at offset {start} is unterminated"
+                    )
+                j = token.end()
+                if token.group() == "/*":
                     depth += 1
-                    i += 2
-                elif src.startswith("*/", i):
+                else:
                     depth -= 1
-                    i += 2
                     if depth == 0:
                         break
-                else:
-                    i += 1
-            else:
-                raise UnterminatedLiteral(
-                    f"block comment opened at offset {start} is unterminated"
-                )
-            if depth != 0:
-                raise UnterminatedLiteral(
-                    f"block comment opened at offset {start} is unterminated"
-                )
+            i = j
             spans.append(("comment", start, i))
             code_start = i
             continue
         # --- raw strings: r"..", r#".."#, br#".."#, cr#".."# ---------------
-        raw = re.match(r'(?:b|c)?r(#*)"', src[i:])
+        raw = _RAW_STRING_OPEN.match(src, i)
         if raw and (i == 0 or not _is_ident_char(src[i - 1])):
             close_code(i)
             hashes = raw.group(1)
-            body_start = i + raw.end()
+            body_start = raw.end()
             terminator = '"' + hashes
             end = src.find(terminator, body_start)
             if end < 0:
@@ -215,10 +235,17 @@ def _scan(src: str) -> list[tuple[str, int, int]]:
 
 def _preceded_by_keyword(src: str, at: int, keyword: str) -> bool:
     """Is the token immediately before `at` exactly `keyword`?"""
-    head = src[:at].rstrip()
-    return head.endswith(keyword) and (
-        len(head) == len(keyword) or not _is_ident_char(head[-len(keyword) - 1])
-    )
+    # Walks back over the whitespace rather than slicing and stripping the
+    # whole prefix (`src[:at].rstrip()` was a copy of the file per string
+    # literal); same answer, since `str.rstrip` strips exactly the characters
+    # `str.isspace` names.
+    j = at
+    while j > 0 and src[j - 1].isspace():
+        j -= 1
+    k = len(keyword)
+    if j < k or src[j - k:j] != keyword:
+        return False
+    return j == k or not _is_ident_char(src[j - k - 1])
 
 
 def _is_ident_char(ch: str) -> bool:
