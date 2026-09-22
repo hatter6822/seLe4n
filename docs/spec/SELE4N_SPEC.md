@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.169` (`lakefile.toml`) |
+| **Package version** | `0.35.170` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 404,112 across 336 Lean files |
-| **Test LoC** | 82,662 across 70 Lean test suites |
-| **Proved declarations** | 13,396 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 404,629 across 336 Lean files |
+| **Test LoC** | 82,811 across 70 Lean test suites |
+| **Proved declarations** | 13,414 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4732,7 +4732,41 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   all six kinds (`lifecyclePreRetypeCleanup_replenishQueueOnCore_ne`, over two
   step frames and two arm frames), `tests/SmpIpcSuite.lean` §3.33 is the witness —
   computing the run-only reading beside the live footprint on both target shapes —
-  and `maxLockSetSize` is unmoved.  `.tcbSuspend` is the one arm left.
+  and `maxLockSetSize` is unmoved.
+
+  **And the last arm declares its own — and the two parametric footprints it
+  replaces were false** (WS-RR RR8.12 Cut C3b-iv, `v0.35.170`).
+  `schedLockSet_suspendThreadOnCore` is the sixteenth and last of the arms Cut 7's
+  sequence enumerated, so every arm it identified as writing a scheduler slot now
+  has a footprint resolved from the state rather than handed to it; which of the
+  remaining nineteen write one is the next cut's question.  Declaring it found that
+  **neither** parametric footprint over the suspend's G2 named the replenish queues
+  that step writes.  Since WS-RR RR8.11 (`v0.35.86`) the teardown is
+  `cancelIpcBlockingMigrated`, and since RR8.12's second cut (`v0.35.90`) the live
+  pipeline runs it: it moves the reclaimed reservation from the **holder's** home
+  core to the home the context is bound to at the torn state, writing both.
+  `cancelIpcBlockingOnCoreSchedLockSet`'s replenish segment was `[]` and
+  `suspendThreadOnCoreSchedLockSet`'s was G3's migration read off the *victim's*
+  binding, so neither endpoint was named — RR8.12's second cut widened the *run*
+  segment by the holder's placed core and did not ask the same question of the
+  replenish segment.  Latent rather than live (the syscall seam does not yet
+  bracket the scheduler domain), so it is a verification defect of RR8.11's and
+  OD3.9's own posture: everything stated over those footprints was silent about
+  the two queues rather than conservative.  Both are fixed, each taking a
+  `reclaimReplenish : List CoreId` whose resolver
+  (`cancelIpcBlockingReplenishCores`) lives beside `cancelIpcBlockingMigrated`,
+  because both footprints must name it and neither can see the resolved-footprint
+  module.  Neither half of the arm's own replenish segment is pre-state
+  computable — G3's resolver is read at the post-revert state, the reclaim having
+  rebound the victim (WS-OD OD5.3) — so the segment re-runs the spine as
+  `replyRecvBodyWriteSet` does.  Exactness is over the whole arm
+  (`suspendThreadOnCore_replenishQueueOnCore_ne`, seven stages, two of which move
+  a reservation), the donation-arm frame gained one owner at an explicit purge
+  core (`donationArmAt_replenishQueueOnCore_ne`, of which the destroy path's is
+  now an instance), coverage against the parametric form is stated over the
+  run-queue half alone, `tests/SmpCancellationSuite.lean` §3.27 is the witness —
+  computing both retired readings beside the live ones, with core 3 as the control
+  — and `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)
@@ -5011,7 +5045,9 @@ because each is false without the other.
   arm fires on a victim that entered `.unbound`, and its migration's destination
   is the *outer caller's* home core.  That core is not resolvable from the
   victim's pre-state binding, because at the pre-state the victim has none, so
-  `suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.
+  `suspendThreadOnCoreSchedLockSet`'s replenish segment carries a **triple** for
+  G3 — beside which `v0.35.170` appends G2's own migration pair, read off the
+  holder's affinity and the torn state rather than off the victim's binding.
 - **Retype refuses both halves of a live stack** (OD5.4).  A Reply that is not
   `Reply.isFree` is a frame; a SchedContext with `scReply ≠ none` is a head,
   and by the chain's own completeness clause that is exactly "some frame names

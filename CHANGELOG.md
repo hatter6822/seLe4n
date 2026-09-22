@@ -1,3 +1,108 @@
+## v0.35.170 — the last arm declares its scheduler footprint, and the two it replaces were false
+
+WS-RR RR8.12 Cut C3b-iv: the live `.tcbSuspend` arm declares
+`schedLockSet_suspendThreadOnCore` — the **sixteenth and last** of the arms this
+row's sequence enumerated, so every arm it identified as writing a scheduler slot
+now has a footprint resolved from the state rather than handed to it.  *Which* of
+the remaining nineteen write one is `declaredSchedFootprintSyscall`'s question,
+and Cut 8 is where it is answered as an enumeration a negative pins rather than
+as a reading of this row.  Inert until the bracket cut, as its fifteen siblings
+are.
+
+### The finding: both parametric footprints over the reclaim omitted its migration
+
+Declaring the resolved form is what a resolved form is for, and this one found
+that **neither** parametric footprint over the suspend's G2 named the replenish
+queues that step writes.
+
+Since WS-RR RR8.11 (`v0.35.86`) the teardown is `cancelIpcBlockingMigrated`, and
+since RR8.12's second cut (`v0.35.90`) the live `.tcbSuspend` pipeline runs it:
+it moves the reclaimed reservation's replenishments from the **holder's** home
+core to the home the context is bound to at the torn state, writing the
+replenish queue of both.  `cancelIpcBlockingOnCoreSchedLockSet`'s replenish
+segment was `[]`; `suspendThreadOnCoreSchedLockSet`'s was
+`[home, ownerHome, outerHome]`, which is G3's migration read off the **victim's**
+binding — a different thread and a different state.  Neither endpoint is any of
+those three cores, so a footprint that omits a written lock stood for four cuts.
+
+RR8.12's second cut widened the *run* segment by the holder's placed core and
+did not ask the same question of the replenish segment: *a fix applied at one
+site and not at its sibling*, the shape this workstream keeps producing and the
+reason the resolved forms are worth declaring ahead of the bracket.
+
+It is **latent rather than live** — the syscall seam does not yet bracket the
+scheduler domain (`UncoveredLockDomain.syscallSeamSchedulerDomain`) — so it is a
+*verification* defect of the same posture as RR8.11's and OD3.9's: everything
+stated over those two footprints was **silent** about the two queues rather than
+conservative.
+
+Both are fixed in this cut.  Each takes a `reclaimReplenish : List CoreId` — the
+shape `schedFootprintOfCores` takes and the shape the resolver answers in — and
+`cancelIpcBlockingReplenishCores` is that resolver, declared in
+`SeLe4n/Kernel/Lifecycle/Suspend.lean` **beside `cancelIpcBlockingMigrated`**,
+reading the same `let`s the transition reads, because both parametric footprints
+must name it and neither can see the resolved-footprint module: *when a question
+has one owner and an asker that cannot see it, the owner is in the wrong layer*.
+`cancelIpcBlockingOnCoreSchedLockSet_covers_migration` and
+`suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes` are the
+relations the two lacked.
+
+### What the arm declares
+
+* **Run segment** — `suspendThreadOnCoreWriteSet`, SM8.B's own, relocated to
+  production with a tombstone as its four siblings were at C3b-i..iii: the
+  holder's placed core (G2's deschedule), the reverted chain's home cores, the
+  victim's placement, and the executing core.
+* **Replenish segment** — `suspendThreadReplenishCores`, and neither half of it
+  is pre-state computable, which is why this arm is a cut of its own.  G2's
+  reclaim resolver is read at the pre-state (it resolves the torn state itself);
+  G3's arm resolver is read at the **post-revert** state, because the reclaim
+  rebinds the victim and WS-OD OD5.3's second pop then migrates to the *outer
+  caller's* home — a core the pre-state cannot name, since the victim holds no
+  binding there.  So the segment re-runs the spine, exactly as
+  `replyRecvBodyWriteSet` does.  The one core read from the pre-state is G3's
+  purge core, because the pipeline itself captures it there.
+
+### The exactness half
+
+`suspendThreadOnCore_replenishQueueOnCore_ne`: the live arm writes no replenish
+queue the segment does not name, over all seven stages.  Two move a reservation
+and every other frames every replenish queue — G2b's chain revert re-buckets run
+queues, G4's placement dequeue is a run-queue removal, G5 and G6 write TCBs, and
+G7's scheduling point at most dispatches a successor.  Read with
+`schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes` that is
+the pair a resolved footprint owes: every queue the arm writes is declared, and
+every queue declared is one the arm can write.
+`cancelIpcBlockingOnCore_replenishQueueOnCore_ne` is the same pair for the
+cancellation composite, whose fixed footprint had gained the *names what is
+written* half and needed the other.
+
+`donationArmAt_replenishQueueOnCore_ne` is the donation-arm frame at an
+**explicit** purge core, and both askers are instances of it: the destroy path
+reads that core off the state it runs on, the suspend's G3 was handed it from
+the pre-G2 state, and a frame stated at `determineTargetCore st tid` covers the
+first and not the second.  `cancelDonationArmOnCore_replenishQueueOnCore_ne` is
+now its instance rather than a second proof.
+
+`schedLockSet_suspendThreadOnCore_covers_parametric_runQueue` is the coverage
+relation, over the run-queue half alone — the honest scope, since the parametric
+replenish segment is four free parameters and a coverage claim over it would
+have to hypothesise that a caller passed what the transition writes, which is
+the conclusion.
+
+### The witness
+
+`tests/SmpCancellationSuite.lean` §3.27 drives the live reclaim and the live
+suspend on a state the kernel reaches — the reservation queued on the holder's
+home core, the victim homed elsewhere — and computes **both** retired parametric
+readings beside the live ones, so each assertion is known to discriminate.  Its
+control is core 3, in neither footprint and written by neither transition, which
+is what makes the membership assertions statements about the migration rather
+than about width.
+
+`maxLockSetSize` is unmoved — a `SchedLockSet` carries no cardinality bound — and
+the golden trace is byte-identical.
+
 ## v0.35.169 — the destroy path declares its scheduler footprint
 
 WS-RR RR8.12 Cut C3b-iii: the live `.lifecycleRetype` arm declares

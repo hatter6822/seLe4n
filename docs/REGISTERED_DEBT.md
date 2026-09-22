@@ -639,7 +639,8 @@ depth three (`tests/SmpIpcSuite.lean` §3.22): the original owner's reservation
 ends up with the caller immediately above the cut.  OD5.3 found the consequence for the suspend footprint:
 the teardown can rebind the victim `.donated`, the arm selector re-reads the
 *post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
-`suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.
+`suspendThreadOnCoreSchedLockSet`'s replenish segment carries a **triple** for
+G3 (`v0.35.170` appends G2's own migration pair beside it).
 
 OD6 states the payoff (`passiveServerHoldsDonatedContext_atCallDepthTwo`: a
 passive server reached at call depth ≥ 2 holds a scheduling context whose

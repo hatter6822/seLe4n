@@ -1059,6 +1059,54 @@ def cancelIpcBlockingMigrated (victim : SeLe4n.ThreadId) (tcb : TCB) (st : Syste
         (replenishHomeOfSchedContext torn scId fromCore)
   | none => cancelIpcBlocking st victim tcb
 
+/-- **`v0.35.170`: the cores the reclaim's teardown moves a RESERVATION
+between** — the holder's home, where per-core ticks enqueued the donated
+context's replenishments, and the home the context is bound to once the teardown
+has returned it (`replenishHomeOfSchedContext` at the torn state, WS-RR RR8.11's
+rule for a step that can refuse).
+
+Read exactly as `cancelIpcBlockingMigrated` reads them — the same `let`s, the
+same resolvers, the same torn state — so the footprints that declare this pair
+and the transition that writes it cannot name different cores.
+
+It lives here, beside the transition, rather than in the resolved-footprint
+module, because both of the *parametric* footprints over this step
+(`cancelIpcBlockingOnCoreSchedLockSet`, `suspendThreadOnCoreSchedLockSet`) must
+name it too and neither can see that module — *when a question has one owner and
+an asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`).  It
+mentions no `SchedLockId`, so nothing about it belongs above this layer. -/
+def cancelIpcBlockingReplenishCores (st : SystemState) (victim : SeLe4n.ThreadId)
+    (tcb : TCB) : List CoreId :=
+  match Lifecycle.Suspend.cancelledCallerDonation? st victim tcb with
+  | some (scId, holder) =>
+      let torn := Lifecycle.Suspend.cancelIpcBlocking st victim tcb
+      let fromCore := determineTargetCore st holder
+      [fromCore, replenishHomeOfSchedContext torn scId fromCore]
+  | none => []
+
+/-- `v0.35.170`: with nothing donated the reclaim migrates nothing, so the pair
+is empty — every arm but a reply arm whose caller had donated. -/
+@[simp] theorem cancelIpcBlockingReplenishCores_of_no_donation (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
+    cancelIpcBlockingReplenishCores st victim tcb = [] := by
+  unfold cancelIpcBlockingReplenishCores
+  rw [h]
+
+/-- `v0.35.170`: ...and where a donation is reclaimed the pair is exactly the
+migration's two endpoints, in the order `cancelIpcBlockingMigrated` hands them
+to `migrateSchedContextReplenishment`. -/
+theorem cancelIpcBlockingReplenishCores_of_donation (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder)) :
+    cancelIpcBlockingReplenishCores st victim tcb
+      = [determineTargetCore st holder,
+         replenishHomeOfSchedContext (Lifecycle.Suspend.cancelIpcBlocking st victim tcb) scId
+           (determineTargetCore st holder)] := by
+  unfold cancelIpcBlockingReplenishCores
+  rw [h]
+
 /-- The migrated teardown is the plain teardown when nothing was donated — which
 is every arm but a reply arm whose caller had donated. -/
 @[simp] theorem cancelIpcBlockingMigrated_of_no_donation (victim : SeLe4n.ThreadId)

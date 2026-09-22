@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "72a02c2e69b16f514e6089245eba2e9df1c40a33",
-      "tree_sha": "bdb4ae28396b67b1aa9b5122eb3f32159d0f1f36",
-      "committed_at_utc": "2026-09-22T16:56:43+00:00"
+      "commit_sha": "d1c6c1071b006e6405c58e4734fe0a3e1c2859a0",
+      "tree_sha": "b9ea59aa584e11ffc9ef87cfe15f8dabd9acc4a0",
+      "committed_at_utc": "2026-09-22T17:23:51+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "e4687835a8e4a7f7eedcc99d97d864f491badd8257d29c2e1690a041f5a0bf40"
+    "source_digest": "4a28f0d62ccbf01d664819e5452c8d19c8b85dd7a33d43726b9af7ae09e42f38"
   },
   "summary": {
     "module_count": 406,
-    "declaration_count": 22473
+    "declaration_count": 22498
   },
   "readme_sync": {
-    "version": "0.35.169",
+    "version": "0.35.170",
     "lean_toolchain": "v4.28.0",
     "production_files": 336,
-    "production_loc": 404112,
+    "production_loc": 404629,
     "test_files": 70,
-    "test_loc": 82662,
-    "proved_theorem_lemma_decls": 13396,
+    "test_loc": 82811,
+    "proved_theorem_lemma_decls": 13414,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -67821,7 +67821,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.Cancellation",
       "path": "SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean",
-      "declaration_count": 240,
+      "declaration_count": 242,
       "declarations": [
         {
           "kind": "namespace",
@@ -70417,7 +70417,7 @@
         {
           "kind": "def",
           "name": "cancelIpcBlockingOnCoreSchedLockSet",
-          "line": 3498,
+          "line": 3525,
           "called": [
             "AccessMode",
             "CoreId",
@@ -70429,7 +70429,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_none",
-          "line": 3505,
+          "line": 3533,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCoreSchedLockSet",
@@ -70443,7 +70443,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_dedup",
-          "line": 3517,
+          "line": 3545,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCoreSchedLockSet",
@@ -70457,7 +70457,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_write_only",
-          "line": 3530,
+          "line": 3558,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCoreSchedLockSet",
@@ -70467,7 +70467,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write",
-          "line": 3544,
+          "line": 3573,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCoreSchedLockSet",
@@ -70477,7 +70477,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write",
-          "line": 3553,
+          "line": 3582,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCoreSchedLockSet",
@@ -70487,7 +70487,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule",
-          "line": 3568,
+          "line": 3597,
           "called": [
             "CoreId",
             "SystemState",
@@ -70498,6 +70498,7 @@
             "cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write",
             "cancelIpcBlockingReclaimed",
             "cancelIpcBlockingReclaimed_placedCoreOf",
+            "cancelIpcBlockingReplenishCores",
             "cancelUnboundHolderCore",
             "placedCoreOf",
             "st"
@@ -70506,7 +70507,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule",
-          "line": 3585,
+          "line": 3614,
           "called": [
             "CoreId",
             "SystemState",
@@ -70515,6 +70516,7 @@
             "cancelIpcBlockingMigrated",
             "cancelIpcBlockingOnCoreSchedLockSet",
             "cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write",
+            "cancelIpcBlockingReplenishCores",
             "cancelUnboundHolder",
             "cancelUnboundHolderCore",
             "placedCoreOf",
@@ -70522,9 +70524,33 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingOnCoreSchedLockSet_covers_migration",
+          "line": 3642,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingOnCoreSchedLockSet",
+            "cancelIpcBlockingReplenishCores",
+            "cancelIpcBlockingReplenishCores_of_donation",
+            "cancelUnboundHolderCore",
+            "cancelledCallerDonation",
+            "determineTargetCore",
+            "mem_schedFootprintOfCores_replenishQueue_iff",
+            "placedCoreOf",
+            "replenishHomeOfSchedContext",
+            "scId",
+            "st"
+          ]
+        },
+        {
           "kind": "def",
           "name": "cancelBoundDonationOnCoreSchedLockSet",
-          "line": 3605,
+          "line": 3665,
           "called": [
             "AccessMode",
             "CoreId",
@@ -70535,7 +70561,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_length",
-          "line": 3611,
+          "line": 3671,
           "called": [
             "CoreId",
             "cancelBoundDonationOnCoreSchedLockSet",
@@ -70545,7 +70571,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_write_only",
-          "line": 3616,
+          "line": 3676,
           "called": [
             "CoreId",
             "cancelBoundDonationOnCoreSchedLockSet"
@@ -70554,7 +70580,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_contains_objStore_write",
-          "line": 3625,
+          "line": 3685,
           "called": [
             "CoreId",
             "cancelBoundDonationOnCoreSchedLockSet",
@@ -70564,7 +70590,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_contains_replenishQueue_write",
-          "line": 3633,
+          "line": 3693,
           "called": [
             "CoreId",
             "cancelBoundDonationOnCoreSchedLockSet"
@@ -70573,7 +70599,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_keys_nodup",
-          "line": 3640,
+          "line": 3700,
           "called": [
             "CoreId",
             "cancelBoundDonationOnCoreSchedLockSet"
@@ -70582,7 +70608,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCoreSchedLockSet_pairwise_le",
-          "line": 3646,
+          "line": 3706,
           "called": [
             "CoreId",
             "ReplenishQueueLockId",
@@ -70595,7 +70621,7 @@
         {
           "kind": "def",
           "name": "cancelDonatedDonationOnCoreSchedLockSet",
-          "line": 3666,
+          "line": 3726,
           "called": [
             "AccessMode",
             "CoreId",
@@ -70606,7 +70632,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCoreSchedLockSet_write_only",
-          "line": 3672,
+          "line": 3732,
           "called": [
             "CoreId",
             "cancelDonatedDonationOnCoreSchedLockSet",
@@ -70616,7 +70642,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCoreSchedLockSet_contains_victimHome_write",
-          "line": 3680,
+          "line": 3740,
           "called": [
             "CoreId",
             "cancelDonatedDonationOnCoreSchedLockSet",
@@ -70626,7 +70652,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCoreSchedLockSet_contains_ownerHome_write",
-          "line": 3688,
+          "line": 3748,
           "called": [
             "CoreId",
             "cancelDonatedDonationOnCoreSchedLockSet",
@@ -70636,7 +70662,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCoreSchedLockSet_keys_nodup",
-          "line": 3697,
+          "line": 3757,
           "called": [
             "CoreId",
             "cancelDonatedDonationOnCoreSchedLockSet",
@@ -70646,7 +70672,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCoreSchedLockSet_pairwise_le",
-          "line": 3705,
+          "line": 3765,
           "called": [
             "CoreId",
             "cancelDonatedDonationOnCoreSchedLockSet",
@@ -70656,7 +70682,7 @@
         {
           "kind": "def",
           "name": "cancelDonationOnCoreSchedLockSet",
-          "line": 3716,
+          "line": 3776,
           "called": [
             "AccessMode",
             "CoreId",
@@ -70667,7 +70693,7 @@
         {
           "kind": "theorem",
           "name": "suspendDonationArm_eq_cancelDonationArmOnCore",
-          "line": 3739,
+          "line": 3799,
           "called": [
             "KernelError",
             "SystemState",
@@ -70683,7 +70709,7 @@
         {
           "kind": "theorem",
           "name": "suspendDonationArm_eq_cancelDonationOnCore",
-          "line": 3747,
+          "line": 3807,
           "called": [
             "KernelError",
             "SystemState",
@@ -70701,7 +70727,7 @@
         {
           "kind": "def",
           "name": "suspendThreadOnCoreSchedLockSet",
-          "line": 3837,
+          "line": 3918,
           "called": [
             "AccessMode",
             "CoreId",
@@ -70713,7 +70739,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCoreSchedLockSet_contains_holder_runQueue_write",
-          "line": 3850,
+          "line": 3932,
           "called": [
             "CoreId",
             "mem_schedFootprintOfCores_runQueue_iff",
@@ -70723,7 +70749,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCoreSchedLockSet_contains_placed_runQueue_write",
-          "line": 3858,
+          "line": 3942,
           "called": [
             "CoreId",
             "mem_schedFootprintOfCores_runQueue_iff",
@@ -70733,7 +70759,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCoreSchedLockSet_contains_executing_runQueue_write",
-          "line": 3868,
+          "line": 3952,
           "called": [
             "CoreId",
             "mem_schedFootprintOfCores_runQueue_iff",
@@ -70742,8 +70768,18 @@
         },
         {
           "kind": "theorem",
+          "name": "suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes",
+          "line": 3968,
+          "called": [
+            "CoreId",
+            "mem_schedFootprintOfCores_replenishQueue_iff",
+            "suspendThreadOnCoreSchedLockSet"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_migrates_to_recorded_owner",
-          "line": 3888,
+          "line": 3989,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -70761,7 +70797,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCoreSchedLockSet_pairwise_le",
-          "line": 3907,
+          "line": 4008,
           "called": [
             "CoreId",
             "schedFootprintOfCores_pairwise_le",
@@ -70771,13 +70807,13 @@
         {
           "kind": "namespace",
           "name": "Lifecycle.Suspend",
-          "line": 3917,
+          "line": 4019,
           "called": []
         },
         {
           "kind": "def",
           "name": "suspendRescheduleOnCore",
-          "line": 3933,
+          "line": 4035,
           "called": [
             "CoreId",
             "KernelError",
@@ -70791,7 +70827,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_sgi_shape",
-          "line": 3959,
+          "line": 4061,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70804,7 +70840,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_local_no_sgi",
-          "line": 3987,
+          "line": 4089,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70818,7 +70854,7 @@
         {
           "kind": "def",
           "name": "suspendThreadOnCore",
-          "line": 4080,
+          "line": 4182,
           "called": [
             "CoreId",
             "KernelError",
@@ -70848,7 +70884,7 @@
         {
           "kind": "theorem",
           "name": "tcbInsert_notification_backward",
-          "line": 4184,
+          "line": 4286,
           "called": [
             "Notification",
             "ObjId",
@@ -70866,7 +70902,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_preserves_objects_invExt",
-          "line": 4201,
+          "line": 4303,
           "called": [
             "SystemState",
             "ThreadId",
@@ -70879,7 +70915,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_notification_backward",
-          "line": 4208,
+          "line": 4310,
           "called": [
             "Notification",
             "ObjId",
@@ -70895,7 +70931,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_state_dichotomy",
-          "line": 4222,
+          "line": 4324,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70909,7 +70945,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_notification_backward",
-          "line": 4259,
+          "line": 4361,
           "called": [
             "CoreId",
             "Notification",
@@ -70926,7 +70962,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_preserves_objects_invExt",
-          "line": 4272,
+          "line": 4374,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70941,7 +70977,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_rejects_absent",
-          "line": 4284,
+          "line": 4386,
           "called": [
             "CoreId",
             "SystemState",
@@ -70955,7 +70991,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_rejects_inactive",
-          "line": 4292,
+          "line": 4394,
           "called": [
             "CoreId",
             "SystemState",
@@ -70969,7 +71005,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_sgi_remote_reschedule",
-          "line": 4305,
+          "line": 4407,
           "called": [
             "CoreId",
             "SgiKind",
@@ -70985,7 +71021,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_local_no_sgi",
-          "line": 4329,
+          "line": 4431,
           "called": [
             "CoreId",
             "SgiKind",
@@ -71001,7 +71037,7 @@
         {
           "kind": "def",
           "name": "cancellationVictimIpcStateObserver",
-          "line": 4373,
+          "line": 4475,
           "called": [
             "ThreadId",
             "threadIpcStateObserver"
@@ -71010,7 +71046,7 @@
         {
           "kind": "theorem",
           "name": "cancellationObserver_insensitiveOn",
-          "line": 4379,
+          "line": 4481,
           "called": [
             "AcquireInsensitiveOn",
             "CoreId",
@@ -71024,7 +71060,7 @@
         {
           "kind": "theorem",
           "name": "cancellationObserver_acquireInsensitiveOn",
-          "line": 4389,
+          "line": 4491,
           "called": [
             "AcquireInsensitiveOn",
             "CoreId",
@@ -71037,7 +71073,7 @@
         {
           "kind": "theorem",
           "name": "cancellationObserver_unwindInsensitiveOn",
-          "line": 4397,
+          "line": 4499,
           "called": [
             "CoreId",
             "ThreadId",
@@ -71050,7 +71086,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_observer_atomic",
-          "line": 4411,
+          "line": 4513,
           "called": [
             "CoreId",
             "ObjId",
@@ -71081,7 +71117,7 @@
         {
           "kind": "def",
           "name": "cancellationVictimBindingObserver",
-          "line": 4458,
+          "line": 4560,
           "called": [
             "SystemState",
             "ThreadId",
@@ -71091,7 +71127,7 @@
         {
           "kind": "theorem",
           "name": "cancellationBindingObserver_insensitiveOn",
-          "line": 4462,
+          "line": 4564,
           "called": [
             "AcquireInsensitiveOn",
             "CoreId",
@@ -71107,7 +71143,7 @@
         {
           "kind": "theorem",
           "name": "cancellationBindingObserver_acquireInsensitiveOn",
-          "line": 4475,
+          "line": 4577,
           "called": [
             "AcquireInsensitiveOn",
             "CoreId",
@@ -71120,7 +71156,7 @@
         {
           "kind": "theorem",
           "name": "cancellationBindingObserver_unwindInsensitiveOn",
-          "line": 4482,
+          "line": 4584,
           "called": [
             "CoreId",
             "ThreadId",
@@ -71133,7 +71169,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationOnCore_observer_atomic",
-          "line": 4494,
+          "line": 4596,
           "called": [
             "CoreId",
             "ReplyId",
@@ -71163,7 +71199,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_bootPlaced_state_eq",
-          "line": 4544,
+          "line": 4646,
           "called": [
             "CoreId",
             "SystemState",
@@ -71185,7 +71221,7 @@
         {
           "kind": "theorem",
           "name": "descheduleThread_fully_descheduled",
-          "line": 4566,
+          "line": 4668,
           "called": [
             "CoreId",
             "SystemState",
@@ -71207,7 +71243,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_replenishments_purged",
-          "line": 4613,
+          "line": 4715,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -71228,7 +71264,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationOnCore_bootHome_ok",
-          "line": 4640,
+          "line": 4742,
           "called": [
             "SystemState",
             "TCB",
@@ -71248,7 +71284,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationOnCore_bootHome_error",
-          "line": 4667,
+          "line": 4769,
           "called": [
             "KernelError",
             "SystemState",
@@ -71269,7 +71305,7 @@
         {
           "kind": "structure",
           "name": "IpcInvariantStage",
-          "line": 4701,
+          "line": 4803,
           "called": [
             "SystemState",
             "invExt",
@@ -71280,13 +71316,13 @@
         {
           "kind": "namespace",
           "name": "IpcInvariantStage",
-          "line": 4707,
+          "line": 4809,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "refl",
-          "line": 4709,
+          "line": 4811,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71296,7 +71332,7 @@
         {
           "kind": "theorem",
           "name": "trans",
-          "line": 4711,
+          "line": 4813,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71307,7 +71343,7 @@
         {
           "kind": "theorem",
           "name": "of_objects_eq",
-          "line": 4718,
+          "line": 4820,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71318,7 +71354,7 @@
         {
           "kind": "theorem",
           "name": "of_notification_backward",
-          "line": 4725,
+          "line": 4827,
           "called": [
             "IpcInvariantStage",
             "Notification",
@@ -71331,7 +71367,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlocking_ipcInvariantStage",
-          "line": 4738,
+          "line": 4840,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71346,7 +71382,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingReclaimed_ipcInvariantStage",
-          "line": 4747,
+          "line": 4849,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71363,7 +71399,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_ipcInvariantStage",
-          "line": 4755,
+          "line": 4857,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71379,7 +71415,7 @@
         {
           "kind": "theorem",
           "name": "cancelSuspendDonation_ipcInvariantStage",
-          "line": 4767,
+          "line": 4869,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71401,7 +71437,7 @@
         {
           "kind": "theorem",
           "name": "removeRunnableOnCore_ipcInvariantStage",
-          "line": 4802,
+          "line": 4904,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71416,7 +71452,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingState_ipcInvariantStage",
-          "line": 4807,
+          "line": 4909,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71431,7 +71467,7 @@
         {
           "kind": "theorem",
           "name": "tcbStore_ipcInvariantStage",
-          "line": 4815,
+          "line": 4917,
           "called": [
             "IpcInvariantStage",
             "RHTable_insert_preserves_invExt",
@@ -71448,7 +71484,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_ipcInvariantStage",
-          "line": 4824,
+          "line": 4926,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71464,7 +71500,7 @@
         {
           "kind": "theorem",
           "name": "descheduleAt_ipcInvariantStage",
-          "line": 4841,
+          "line": 4943,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71479,7 +71515,7 @@
         {
           "kind": "theorem",
           "name": "updateTcb_ipcInvariantStage",
-          "line": 4852,
+          "line": 4954,
           "called": [
             "IpcInvariantStage",
             "SystemState",
@@ -71493,7 +71529,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_ipcInvariantStage",
-          "line": 4878,
+          "line": 4980,
           "called": [
             "CoreId",
             "IpcInvariantStage",
@@ -71521,7 +71557,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_preserves_objects_invExt",
-          "line": 4925,
+          "line": 5027,
           "called": [
             "CoreId",
             "SgiKind",
@@ -71536,7 +71572,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_preserves_ipcInvariant",
-          "line": 4940,
+          "line": 5042,
           "called": [
             "CoreId",
             "SgiKind",
@@ -71552,7 +71588,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_threadPlacedOnSomeCore",
-          "line": 4985,
+          "line": 5087,
           "called": [
             "CoreId",
             "SystemState",
@@ -71568,7 +71604,7 @@
         {
           "kind": "theorem",
           "name": "descheduleAt_threadPlacedOnSomeCore_ne",
-          "line": 5000,
+          "line": 5102,
           "called": [
             "CoreId",
             "SystemState",
@@ -71589,7 +71625,7 @@
         {
           "kind": "theorem",
           "name": "handleRescheduleSgiOnCore_preserves_unplaced",
-          "line": 5048,
+          "line": 5150,
           "called": [
             "CoreId",
             "SystemState",
@@ -71608,7 +71644,7 @@
         {
           "kind": "theorem",
           "name": "suspendRescheduleOnCore_preserves_unplaced",
-          "line": 5076,
+          "line": 5178,
           "called": [
             "CoreId",
             "SgiKind",
@@ -71626,7 +71662,7 @@
         {
           "kind": "theorem",
           "name": "cancelSuspendDonation_threadPlacedOnSomeCore",
-          "line": 5092,
+          "line": 5194,
           "called": [
             "CoreId",
             "KernelError",
@@ -71646,7 +71682,7 @@
         {
           "kind": "theorem",
           "name": "cancelSuspendDonation_runQueueOnCore",
-          "line": 5127,
+          "line": 5229,
           "called": [
             "CoreId",
             "KernelError",
@@ -71665,7 +71701,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_holder_unplaced",
-          "line": 5182,
+          "line": 5284,
           "called": [
             "CoreId",
             "Kernel",
@@ -165149,7 +165185,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.NonInterferenceCrossCore",
       "path": "SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean",
-      "declaration_count": 217,
+      "declaration_count": 216,
       "declarations": [
         {
           "kind": "namespace",
@@ -167013,30 +167049,9 @@
           ]
         },
         {
-          "kind": "def",
-          "name": "suspendThreadOnCoreWriteSet",
-          "line": 2486,
-          "called": [
-            "CoreId",
-            "SystemState",
-            "ValidThreadId",
-            "blockingServer",
-            "cancelIpcBlockingMigrated",
-            "cancelIpcBlockingReclaimed",
-            "cancelUnboundHolderCore",
-            "descheduleAtPlacementCores",
-            "getTcb",
-            "length",
-            "none",
-            "pipChainWriteSet",
-            "st",
-            "toList"
-          ]
-        },
-        {
           "kind": "theorem",
           "name": "suspendInactiveStore_confinedToCores",
-          "line": 2519,
+          "line": 2476,
           "called": [
             "SystemState",
             "ThreadId",
@@ -167050,7 +167065,7 @@
         {
           "kind": "theorem",
           "name": "suspendDonationArms_confinedToCores",
-          "line": 2527,
+          "line": 2484,
           "called": [
             "CoreId",
             "KernelError",
@@ -167068,7 +167083,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationArmOnCore_confinedToCores",
-          "line": 2542,
+          "line": 2499,
           "called": [
             "SystemState",
             "TCB",
@@ -167083,7 +167098,7 @@
         {
           "kind": "theorem",
           "name": "releaseSchedContextBinding_confinedToCores",
-          "line": 2555,
+          "line": 2512,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -167103,7 +167118,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_confinedToCores",
-          "line": 2576,
+          "line": 2533,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167137,7 +167152,7 @@
         {
           "kind": "theorem",
           "name": "suspendThreadOnCore_crossCoreNonInterference",
-          "line": 2639,
+          "line": 2596,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167157,7 +167172,7 @@
         {
           "kind": "theorem",
           "name": "resumeReadyMidState_confinedToCores",
-          "line": 2671,
+          "line": 2628,
           "called": [
             "SystemState",
             "ThreadId",
@@ -167172,7 +167187,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_confinedToCores",
-          "line": 2684,
+          "line": 2641,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167197,7 +167212,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCore_crossCoreNonInterference",
-          "line": 2728,
+          "line": 2685,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167217,7 +167232,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadEnqueueOnly_confinedToCores",
-          "line": 2746,
+          "line": 2703,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167237,7 +167252,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCoreLive_confinedToCores",
-          "line": 2786,
+          "line": 2743,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167256,7 +167271,7 @@
         {
           "kind": "theorem",
           "name": "resumeThreadOnCoreLive_crossCoreNonInterference",
-          "line": 2809,
+          "line": 2766,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167276,7 +167291,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualOnCore_confinedToCores",
-          "line": 2850,
+          "line": 2807,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -167313,7 +167328,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCapsOnCore_scheduler_eq",
-          "line": 2924,
+          "line": 2881,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167333,7 +167348,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCapsOnCore_machine_eq",
-          "line": 2944,
+          "line": 2901,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167353,7 +167368,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCapsOnCore_confinedToCores",
-          "line": 2967,
+          "line": 2924,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167379,7 +167394,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendCrossCoreDispatchChecked_confinedToCores",
-          "line": 2988,
+          "line": 2945,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167402,7 +167417,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendDualWithCapsOnCore_crossCoreNonInterference",
-          "line": 3010,
+          "line": 2967,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167427,7 +167442,7 @@
         {
           "kind": "theorem",
           "name": "endpointSendCrossCoreDispatchChecked_crossCoreNonInterference",
-          "line": 3029,
+          "line": 2986,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -167452,7 +167467,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_confinedToCores",
-          "line": 3088,
+          "line": 3045,
           "called": [
             "SystemState",
             "ValidObjId",
@@ -167484,7 +167499,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbind_crossCoreNonInterference",
-          "line": 3146,
+          "line": 3103,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167503,7 +167518,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_confinedToCores",
-          "line": 3175,
+          "line": 3132,
           "called": [
             "KernelObject",
             "RHTable.insert_preserves_invExt",
@@ -167544,7 +167559,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinity_scheduler_machine_eq",
-          "line": 3270,
+          "line": 3227,
           "called": [
             "CoreId",
             "SystemState",
@@ -167556,7 +167571,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_confinedToCores",
-          "line": 3303,
+          "line": 3260,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167582,7 +167597,7 @@
         {
           "kind": "theorem",
           "name": "setThreadCpuAffinityWithMigration_crossCoreNonInterference",
-          "line": 3377,
+          "line": 3334,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167603,7 +167618,7 @@
         {
           "kind": "theorem",
           "name": "schedContextBind_crossCoreNonInterference",
-          "line": 3395,
+          "line": 3352,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167624,7 +167639,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_confinedToCores",
-          "line": 3419,
+          "line": 3376,
           "called": [
             "CoreId",
             "KernelObject",
@@ -167671,7 +167686,7 @@
         {
           "kind": "theorem",
           "name": "schedContextConfigure_crossCoreNonInterference",
-          "line": 3550,
+          "line": 3507,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167691,7 +167706,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbindOnCore_confinedToCores",
-          "line": 3576,
+          "line": 3533,
           "called": [
             "CoreId",
             "SgiKind",
@@ -167709,7 +167724,7 @@
         {
           "kind": "theorem",
           "name": "schedContextUnbindOnCore_crossCoreNonInterference",
-          "line": 3595,
+          "line": 3552,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167729,7 +167744,7 @@
         {
           "kind": "theorem",
           "name": "updatePrioritySource_confinedToCores",
-          "line": 3627,
+          "line": 3584,
           "called": [
             "Priority",
             "SystemState",
@@ -167745,7 +167760,7 @@
         {
           "kind": "theorem",
           "name": "migrateRunQueueBucketOnCore_confinedToCores",
-          "line": 3641,
+          "line": 3598,
           "called": [
             "CoreId",
             "Priority",
@@ -167766,7 +167781,7 @@
         {
           "kind": "theorem",
           "name": "priorityUpdateAndMigrate_confinedToCores",
-          "line": 3663,
+          "line": 3620,
           "called": [
             "CoreId",
             "Priority",
@@ -167785,7 +167800,7 @@
         {
           "kind": "theorem",
           "name": "applyPriorityChangeOnCore_confinedToCores",
-          "line": 3684,
+          "line": 3641,
           "called": [
             "CoreId",
             "Priority",
@@ -167804,7 +167819,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_confinedToCores",
-          "line": 3707,
+          "line": 3664,
           "called": [
             "CoreId",
             "Priority",
@@ -167821,7 +167836,7 @@
         {
           "kind": "theorem",
           "name": "setPriorityOnCore_crossCoreNonInterference",
-          "line": 3729,
+          "line": 3686,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167842,7 +167857,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOnCore_confinedToCores",
-          "line": 3751,
+          "line": 3708,
           "called": [
             "CoreId",
             "KernelObject",
@@ -167873,7 +167888,7 @@
         {
           "kind": "theorem",
           "name": "setMCPriorityOnCore_crossCoreNonInterference",
-          "line": 3811,
+          "line": 3768,
           "called": [
             "CoreId",
             "IfObserver",
@@ -167895,7 +167910,7 @@
         {
           "kind": "theorem",
           "name": "setTlbOnCore_scheduler",
-          "line": 3846,
+          "line": 3803,
           "called": [
             "CoreId",
             "SystemState",
@@ -167907,7 +167922,7 @@
         {
           "kind": "theorem",
           "name": "setTlbOnCore_machine",
-          "line": 3850,
+          "line": 3807,
           "called": [
             "CoreId",
             "SystemState",
@@ -167919,7 +167934,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_scheduler",
-          "line": 3855,
+          "line": 3812,
           "called": [
             "CoreId",
             "SystemState",
@@ -167931,7 +167946,7 @@
         {
           "kind": "theorem",
           "name": "drainInitiatorPerCoreView_machine",
-          "line": 3859,
+          "line": 3816,
           "called": [
             "CoreId",
             "SystemState",
@@ -167943,7 +167958,7 @@
         {
           "kind": "abbrev",
           "name": "SchedulerMachineFramed",
-          "line": 3869,
+          "line": 3826,
           "called": [
             "SystemState",
             "st"
@@ -167952,7 +167967,7 @@
         {
           "kind": "theorem",
           "name": "observableSlotsConfinedToCores_nil_of_framed",
-          "line": 3872,
+          "line": 3829,
           "called": [
             "SchedulerMachineFramed",
             "SystemState",
@@ -167964,7 +167979,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPage_framed",
-          "line": 3878,
+          "line": 3835,
           "called": [
             "ASID",
             "SchedulerMachineFramed",
@@ -167979,7 +167994,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithFlush_framed",
-          "line": 3890,
+          "line": 3847,
           "called": [
             "ASID",
             "SchedulerMachineFramed",
@@ -167993,7 +168008,7 @@
         {
           "kind": "theorem",
           "name": "withShootdownRound_framed",
-          "line": 3904,
+          "line": 3861,
           "called": [
             "CoreId",
             "SchedulerMachineFramed",
@@ -168007,7 +168022,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdown_framed",
-          "line": 3914,
+          "line": 3871,
           "called": [
             "ASID",
             "CoreId",
@@ -168023,7 +168038,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownPerCore_framed",
-          "line": 3929,
+          "line": 3886,
           "called": [
             "ASID",
             "CoreId",
@@ -168040,7 +168055,7 @@
         {
           "kind": "theorem",
           "name": "tlbFillOnCore_scheduler",
-          "line": 3947,
+          "line": 3904,
           "called": [
             "ASID",
             "CoreId",
@@ -168053,7 +168068,7 @@
         {
           "kind": "theorem",
           "name": "tlbFillOnCore_machine",
-          "line": 3953,
+          "line": 3910,
           "called": [
             "ASID",
             "CoreId",
@@ -168066,7 +168081,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPage_framed",
-          "line": 3960,
+          "line": 3917,
           "called": [
             "ASID",
             "PAddr",
@@ -168083,7 +168098,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithFlushFromState_framed",
-          "line": 3971,
+          "line": 3928,
           "called": [
             "ASID",
             "PAddr",
@@ -168100,7 +168115,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromState_framed",
-          "line": 3995,
+          "line": 3952,
           "called": [
             "ASID",
             "CoreId",
@@ -168118,7 +168133,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore_confinedToCores",
-          "line": 4019,
+          "line": 3976,
           "called": [
             "ASID",
             "CoreId",
@@ -168140,7 +168155,7 @@
         {
           "kind": "theorem",
           "name": "vspaceMapPageCheckedWithShootdownFromStatePerCore_crossCoreNonInterference",
-          "line": 4040,
+          "line": 3997,
           "called": [
             "ASID",
             "CoreId",
@@ -168161,7 +168176,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_framed",
-          "line": 4054,
+          "line": 4011,
           "called": [
             "ICacheInvalidation",
             "Kernel",
@@ -168174,7 +168189,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_confinedToCores",
-          "line": 4080,
+          "line": 4037,
           "called": [
             "ASID",
             "CoreId",
@@ -168191,7 +168206,7 @@
         {
           "kind": "theorem",
           "name": "vspaceUnmapPageWithShootdownAndIcacheBroadcast_crossCoreNonInterference",
-          "line": 4094,
+          "line": 4051,
           "called": [
             "ASID",
             "CoreId",
@@ -168210,7 +168225,7 @@
         {
           "kind": "theorem",
           "name": "withIcacheBroadcast_confinedToCores",
-          "line": 4133,
+          "line": 4090,
           "called": [
             "CoreId",
             "ICacheInvalidation",
@@ -168225,7 +168240,7 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_confinedToCores",
-          "line": 4173,
+          "line": 4130,
           "called": [
             "KernelObject",
             "ObjId",
@@ -168254,7 +168269,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirect_framed",
-          "line": 4244,
+          "line": 4201,
           "called": [
             "Capability",
             "KernelObject",
@@ -168270,7 +168285,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanup_confinedToCores",
-          "line": 4264,
+          "line": 4221,
           "called": [
             "Capability",
             "KernelObject",
@@ -168294,7 +168309,7 @@
         {
           "kind": "theorem",
           "name": "retypeInitiatorDrain_scheduler",
-          "line": 4297,
+          "line": 4254,
           "called": [
             "ASID",
             "CoreId",
@@ -168306,7 +168321,7 @@
         {
           "kind": "theorem",
           "name": "retypeInitiatorDrain_machine",
-          "line": 4303,
+          "line": 4260,
           "called": [
             "ASID",
             "CoreId",
@@ -168318,7 +168333,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdown_confinedToCores",
-          "line": 4311,
+          "line": 4268,
           "called": [
             "Capability",
             "CoreId",
@@ -168341,7 +168356,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCore_confinedToCores",
-          "line": 4334,
+          "line": 4291,
           "called": [
             "Capability",
             "CoreId",
@@ -168362,7 +168377,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores",
-          "line": 4365,
+          "line": 4322,
           "called": [
             "Capability",
             "CoreId",
@@ -168380,7 +168395,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference",
-          "line": 4387,
+          "line": 4344,
           "called": [
             "Capability",
             "CoreId",
@@ -168401,7 +168416,7 @@
         {
           "kind": "theorem",
           "name": "lifecycleRetypeWriteSet_nil_of_not_tcb",
-          "line": 4405,
+          "line": 4362,
           "called": [
             "ObjId",
             "SystemState",
@@ -168415,7 +168430,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalOnCore_crossCoreNonInterference",
-          "line": 4430,
+          "line": 4387,
           "called": [
             "Badge",
             "CoreId",
@@ -168438,7 +168453,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaitOnCore_crossCoreNonInterference",
-          "line": 4447,
+          "line": 4404,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168458,7 +168473,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallOnCore_crossCoreNonInterference",
-          "line": 4462,
+          "line": 4419,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168481,7 +168496,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyOnCore_crossCoreNonInterference",
-          "line": 4478,
+          "line": 4435,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168502,7 +168517,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualOnCore_crossCoreNonInterference",
-          "line": 4494,
+          "line": 4451,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168526,7 +168541,7 @@
         {
           "kind": "theorem",
           "name": "endpointReceiveDualWithCapsOnCore_crossCoreNonInterference",
-          "line": 4521,
+          "line": 4478,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168551,7 +168566,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyRecvOnCore_crossCoreNonInterference",
-          "line": 4542,
+          "line": 4499,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168576,7 +168591,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalBoundOnCore_crossCoreNonInterference",
-          "line": 4561,
+          "line": 4518,
           "called": [
             "Badge",
             "CoreId",
@@ -168599,7 +168614,7 @@
         {
           "kind": "theorem",
           "name": "descheduleThread_crossCoreNonInterference",
-          "line": 4577,
+          "line": 4534,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168618,7 +168633,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingOnCore_crossCoreNonInterference",
-          "line": 4591,
+          "line": 4548,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168643,7 +168658,7 @@
         {
           "kind": "theorem",
           "name": "wakeThread_crossCoreNonInterference_of_visible_thread",
-          "line": 4632,
+          "line": 4589,
           "called": [
             "CoreId",
             "IfObserver",
@@ -168662,7 +168677,7 @@
         {
           "kind": "structure",
           "name": "DeclassificationEffectFootprint",
-          "line": 4692,
+          "line": 4649,
           "called": [
             "CoreId",
             "ObjId",
@@ -168673,7 +168688,7 @@
         {
           "kind": "def",
           "name": "declassifiedSignalEffectFootprint",
-          "line": 4709,
+          "line": 4666,
           "called": [
             "DeclassificationEffectFootprint",
             "ObjId",
@@ -168688,7 +168703,7 @@
         {
           "kind": "theorem",
           "name": "declassifiedSignalEffectFootprint_receiver",
-          "line": 4722,
+          "line": 4679,
           "called": [
             "ObjId",
             "SystemState",
@@ -168701,7 +168716,7 @@
         {
           "kind": "theorem",
           "name": "declassifiedSignalEffectFootprint_cores",
-          "line": 4730,
+          "line": 4687,
           "called": [
             "ObjId",
             "SystemState",
@@ -168715,7 +168730,7 @@
         {
           "kind": "theorem",
           "name": "footprint_does_not_authorize",
-          "line": 4749,
+          "line": 4706,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -168733,7 +168748,7 @@
         {
           "kind": "theorem",
           "name": "notificationSignalDeclassifiedOnCore_confinedToCores",
-          "line": 4774,
+          "line": 4731,
           "called": [
             "Badge",
             "CoreId",
@@ -168759,7 +168774,7 @@
         {
           "kind": "theorem",
           "name": "declassificationRelativeNonInterference",
-          "line": 4816,
+          "line": 4773,
           "called": [
             "Badge",
             "CoreId",
@@ -168791,7 +168806,7 @@
         {
           "kind": "theorem",
           "name": "declassifiedSignalDispatch_confinedToCores",
-          "line": 4852,
+          "line": 4809,
           "called": [
             "Badge",
             "CoreId",
@@ -168822,7 +168837,7 @@
         {
           "kind": "theorem",
           "name": "declassifiedSignalDispatch_crossCoreNonInterference",
-          "line": 4895,
+          "line": 4852,
           "called": [
             "Badge",
             "CoreId",
@@ -168852,7 +168867,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_confinedToCores",
-          "line": 4929,
+          "line": 4886,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -168873,7 +168888,7 @@
         {
           "kind": "theorem",
           "name": "declassifyObjectFromCore_crossCoreNonInterference",
-          "line": 4960,
+          "line": 4917,
           "called": [
             "CoreId",
             "DeclassificationPolicy",
@@ -168893,7 +168908,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_confinedToCores",
-          "line": 4976,
+          "line": 4933,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -168910,7 +168925,7 @@
         {
           "kind": "theorem",
           "name": "auditReadFromCore_crossCoreNonInterference",
-          "line": 4994,
+          "line": 4951,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -168930,7 +168945,7 @@
         {
           "kind": "theorem",
           "name": "auditDrainVisiblePrefix_confinedToCores",
-          "line": 5011,
+          "line": 4968,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -168947,7 +168962,7 @@
         {
           "kind": "theorem",
           "name": "auditDrainVisiblePrefix_crossCoreNonInterference",
-          "line": 5029,
+          "line": 4986,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -168967,7 +168982,7 @@
         {
           "kind": "theorem",
           "name": "auditReadDispatch_confinedToCores",
-          "line": 5053,
+          "line": 5010,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -168990,7 +169005,7 @@
         {
           "kind": "theorem",
           "name": "auditReadDispatch_crossCoreNonInterference",
-          "line": 5076,
+          "line": 5033,
           "called": [
             "AuditReadOp",
             "CoreId",
@@ -169014,7 +169029,7 @@
         {
           "kind": "theorem",
           "name": "auditDrainDispatch_confinedToCores",
-          "line": 5093,
+          "line": 5050,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -169037,7 +169052,7 @@
         {
           "kind": "theorem",
           "name": "auditDrainDispatch_crossCoreNonInterference",
-          "line": 5113,
+          "line": 5070,
           "called": [
             "CoreId",
             "GenericLabelingContext",
@@ -169061,7 +169076,7 @@
         {
           "kind": "inductive",
           "name": "CrossCoreTransition",
-          "line": 5135,
+          "line": 5092,
           "called": [
             "cancelIpcBlocking",
             "endpointCall",
@@ -169077,7 +169092,7 @@
         {
           "kind": "def",
           "name": "CrossCoreTransition.all",
-          "line": 5236,
+          "line": 5193,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -169094,7 +169109,7 @@
         {
           "kind": "theorem",
           "name": "CrossCoreTransition.mem_all",
-          "line": 5262,
+          "line": 5219,
           "called": [
             "CrossCoreTransition",
             "CrossCoreTransition.all"
@@ -169103,13 +169118,13 @@
         {
           "kind": "theorem",
           "name": "CrossCoreTransition.all_nodup",
-          "line": 5267,
+          "line": 5224,
           "called": []
         },
         {
           "kind": "def",
           "name": "crossCoreNiTheorem",
-          "line": 5272,
+          "line": 5229,
           "called": [
             "CrossCoreTransition",
             "auditDrainDispatch_crossCoreNonInterference",
@@ -169156,7 +169171,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreNiTheorem_count",
-          "line": 5328,
+          "line": 5285,
           "called": [
             "length"
           ]
@@ -169164,7 +169179,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionIsLiveArm",
-          "line": 5367,
+          "line": 5324,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -169181,7 +169196,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionIsLiveArm_count",
-          "line": 5401,
+          "line": 5358,
           "called": [
             "crossCoreTransitionIsLiveArm",
             "filter",
@@ -169191,7 +169206,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreNiTheorem_injective",
-          "line": 5411,
+          "line": 5368,
           "called": [
             "CrossCoreTransition",
             "crossCoreNiTheorem"
@@ -169200,7 +169215,7 @@
         {
           "kind": "inductive",
           "name": "LiveArmEvidence",
-          "line": 5445,
+          "line": 5402,
           "called": [
             "SyscallId",
             "syscallDelegates"
@@ -169209,7 +169224,7 @@
         {
           "kind": "def",
           "name": "LiveArmEvidence.isDelegationBacked",
-          "line": 5454,
+          "line": 5411,
           "called": [
             "LiveArmEvidence"
           ]
@@ -169217,7 +169232,7 @@
         {
           "kind": "def",
           "name": "LiveArmEvidence.syscall",
-          "line": 5460,
+          "line": 5417,
           "called": [
             "LiveArmEvidence",
             "SyscallId",
@@ -169227,7 +169242,7 @@
         {
           "kind": "def",
           "name": "crossCoreLiveArmSyscall",
-          "line": 5466,
+          "line": 5423,
           "called": [
             "CrossCoreTransition",
             "SyscallId",
@@ -169249,7 +169264,7 @@
         {
           "kind": "def",
           "name": "crossCoreLiveArmEvidence",
-          "line": 5499,
+          "line": 5456,
           "called": [
             "CrossCoreTransition",
             "LiveArmEvidence",
@@ -169282,7 +169297,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreLiveArmEvidence_syscall_matches",
-          "line": 5549,
+          "line": 5506,
           "called": [
             "CrossCoreTransition",
             "LiveArmEvidence.syscall",
@@ -169294,7 +169309,7 @@
         {
           "kind": "def",
           "name": "crossCoreLiveArmDelegationBacked",
-          "line": 5573,
+          "line": 5530,
           "called": [
             "CrossCoreTransition",
             "crossCoreLiveArmEvidence",
@@ -169306,7 +169321,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreLiveArmDelegationBacked_count",
-          "line": 5577,
+          "line": 5534,
           "called": [
             "length"
           ]
@@ -169314,7 +169329,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreLiveArm_readOffTheArm_count",
-          "line": 5582,
+          "line": 5539,
           "called": [
             "crossCoreLiveArmEvidence",
             "crossCoreTransitionIsLiveArm",
@@ -169326,7 +169341,7 @@
         {
           "kind": "def",
           "name": "crossCoreTransitionWritesRemote",
-          "line": 5593,
+          "line": 5550,
           "called": [
             "CrossCoreTransition",
             "cancelIpcBlocking",
@@ -169343,7 +169358,7 @@
         {
           "kind": "theorem",
           "name": "crossCoreTransitionWritesRemote_count",
-          "line": 5632,
+          "line": 5589,
           "called": [
             "Kernel",
             "crossCoreTransitionWritesRemote",
@@ -191869,7 +191884,7 @@
     {
       "module": "SeLe4n.Kernel.Lifecycle.Suspend",
       "path": "SeLe4n/Kernel/Lifecycle/Suspend.lean",
-      "declaration_count": 96,
+      "declaration_count": 99,
       "declarations": [
         {
           "kind": "namespace",
@@ -192535,9 +192550,59 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "cancelIpcBlockingReplenishCores",
+          "line": 1078,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "cancelledCallerDonation",
+            "determineTargetCore",
+            "none",
+            "replenishHomeOfSchedContext",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingReplenishCores_of_no_donation",
+          "line": 1089,
+          "called": [
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlockingReplenishCores",
+            "cancelledCallerDonation",
+            "none",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingReplenishCores_of_donation",
+          "line": 1099,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingReplenishCores",
+            "cancelledCallerDonation",
+            "determineTargetCore",
+            "replenishHomeOfSchedContext",
+            "scId",
+            "st"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_of_no_donation",
-          "line": 1064,
+          "line": 1112,
           "called": [
             "SystemState",
             "TCB",
@@ -192552,7 +192617,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_objects",
-          "line": 1073,
+          "line": 1121,
           "called": [
             "SystemState",
             "TCB",
@@ -192567,7 +192632,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_runQueueOnCore",
-          "line": 1084,
+          "line": 1132,
           "called": [
             "CoreId",
             "SystemState",
@@ -192584,7 +192649,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_getTcb",
-          "line": 1095,
+          "line": 1143,
           "called": [
             "SystemState",
             "TCB",
@@ -192599,7 +192664,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_determineTargetCore",
-          "line": 1103,
+          "line": 1151,
           "called": [
             "SystemState",
             "TCB",
@@ -192614,7 +192679,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingMigrated_currentOnCore",
-          "line": 1112,
+          "line": 1160,
           "called": [
             "CoreId",
             "SystemState",
@@ -192631,7 +192696,7 @@
         {
           "kind": "def",
           "name": "cancelHolderBlockedEndpoint",
-          "line": 1136,
+          "line": 1184,
           "called": [
             "ObjId",
             "SystemState",
@@ -192644,7 +192709,7 @@
         {
           "kind": "def",
           "name": "cancelHolderSpliceNeighbors",
-          "line": 1156,
+          "line": 1204,
           "called": [
             "SystemState",
             "ThreadId",
@@ -192656,7 +192721,7 @@
         {
           "kind": "theorem",
           "name": "cancelHolderBlockedEndpoint",
-          "line": 1171,
+          "line": 1219,
           "called": [
             "SystemState",
             "none",
@@ -192666,7 +192731,7 @@
         {
           "kind": "theorem",
           "name": "cancelHolderSpliceNeighbors",
-          "line": 1175,
+          "line": 1223,
           "called": [
             "SystemState",
             "none",
@@ -192676,7 +192741,7 @@
         {
           "kind": "def",
           "name": "cancelUnboundHolder",
-          "line": 1231,
+          "line": 1279,
           "called": [
             "SystemState",
             "TCB",
@@ -192689,7 +192754,7 @@
         {
           "kind": "def",
           "name": "descheduleUnboundHolder",
-          "line": 1261,
+          "line": 1309,
           "called": [
             "SystemState",
             "TCB",
@@ -192702,7 +192767,7 @@
         {
           "kind": "def",
           "name": "cancelUnboundHolderCore",
-          "line": 1271,
+          "line": 1319,
           "called": [
             "CoreId",
             "SystemState",
@@ -192716,7 +192781,7 @@
         {
           "kind": "theorem",
           "name": "cancelUnboundHolder",
-          "line": 1277,
+          "line": 1325,
           "called": [
             "SystemState",
             "TCB",
@@ -192728,7 +192793,7 @@
         {
           "kind": "theorem",
           "name": "cancelUnboundHolder",
-          "line": 1296,
+          "line": 1344,
           "called": [
             "SystemState",
             "TCB",
@@ -192739,7 +192804,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_of_no_donation",
-          "line": 1319,
+          "line": 1367,
           "called": [
             "SystemState",
             "TCB",
@@ -192753,7 +192818,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_objects",
-          "line": 1327,
+          "line": 1375,
           "called": [
             "SystemState",
             "TCB",
@@ -192765,7 +192830,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_getTcb",
-          "line": 1336,
+          "line": 1384,
           "called": [
             "SystemState",
             "TCB",
@@ -192778,7 +192843,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_determineTargetCore",
-          "line": 1343,
+          "line": 1391,
           "called": [
             "SystemState",
             "TCB",
@@ -192791,7 +192856,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_replenishQueueOnCore",
-          "line": 1351,
+          "line": 1399,
           "called": [
             "CoreId",
             "SystemState",
@@ -192805,7 +192870,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_machine_eq",
-          "line": 1361,
+          "line": 1409,
           "called": [
             "SystemState",
             "TCB",
@@ -192817,7 +192882,7 @@
         {
           "kind": "theorem",
           "name": "cancelUnboundHolderCore",
-          "line": 1370,
+          "line": 1418,
           "called": [
             "SystemState",
             "TCB",
@@ -192830,7 +192895,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_of_some",
-          "line": 1381,
+          "line": 1429,
           "called": [
             "SystemState",
             "TCB",
@@ -192847,7 +192912,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_runQueueOnCore_ne",
-          "line": 1392,
+          "line": 1440,
           "called": [
             "CoreId",
             "SystemState",
@@ -192864,7 +192929,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_currentOnCore_ne",
-          "line": 1411,
+          "line": 1459,
           "called": [
             "CoreId",
             "SystemState",
@@ -192881,7 +192946,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_currentOnCore_iff_of_ne",
-          "line": 1434,
+          "line": 1482,
           "called": [
             "CoreId",
             "SystemState",
@@ -192900,7 +192965,7 @@
         {
           "kind": "theorem",
           "name": "descheduleUnboundHolder_holder_unplaced",
-          "line": 1471,
+          "line": 1519,
           "called": [
             "CoreId",
             "SystemState",
@@ -192919,7 +192984,7 @@
         {
           "kind": "def",
           "name": "cancelIpcBlockingReclaimed",
-          "line": 1523,
+          "line": 1571,
           "called": [
             "SystemState",
             "TCB",
@@ -192932,7 +192997,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingReclaimed_of_no_donation",
-          "line": 1530,
+          "line": 1578,
           "called": [
             "SystemState",
             "TCB",
@@ -192949,7 +193014,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingReclaimed_objects",
-          "line": 1542,
+          "line": 1590,
           "called": [
             "SystemState",
             "TCB",
@@ -192964,7 +193029,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingReclaimed_getTcb",
-          "line": 1550,
+          "line": 1598,
           "called": [
             "SystemState",
             "TCB",
@@ -192980,7 +193045,7 @@
         {
           "kind": "theorem",
           "name": "cancelledCallerDonation",
-          "line": 1560,
+          "line": 1608,
           "called": [
             "Kernel",
             "SchedContextId",
@@ -192993,13 +193058,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel.Lifecycle.Suspend",
-          "line": 1579,
+          "line": 1627,
           "called": []
         },
         {
           "kind": "def",
           "name": "clearPendingStateValid",
-          "line": 1597,
+          "line": 1645,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -193010,7 +193075,7 @@
         {
           "kind": "theorem",
           "name": "clearPendingStateValid_eq",
-          "line": 1601,
+          "line": 1649,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -193022,7 +193087,7 @@
         {
           "kind": "def",
           "name": "cancelIpcBlockingValid",
-          "line": 1605,
+          "line": 1653,
           "called": [
             "SystemState",
             "TCB",
@@ -193034,7 +193099,7 @@
         {
           "kind": "theorem",
           "name": "cancelIpcBlockingValid_eq",
-          "line": 1609,
+          "line": 1657,
           "called": [
             "SystemState",
             "TCB",
@@ -193047,7 +193112,7 @@
         {
           "kind": "def",
           "name": "cancelDonationValid",
-          "line": 1614,
+          "line": 1662,
           "called": [
             "KernelError",
             "SystemState",
@@ -193060,7 +193125,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonationValid_eq",
-          "line": 1618,
+          "line": 1666,
           "called": [
             "Kernel",
             "SystemState",
@@ -193075,7 +193140,7 @@
         {
           "kind": "def",
           "name": "currentEffectivePrio",
-          "line": 1641,
+          "line": 1689,
           "called": [
             "CoreId",
             "SystemState",
@@ -193090,7 +193155,7 @@
         {
           "kind": "def",
           "name": "currentDeboostedFrom",
-          "line": 1657,
+          "line": 1705,
           "called": [
             "CoreId",
             "SystemState",
@@ -193104,7 +193169,7 @@
         {
           "kind": "def",
           "name": "suspendThread",
-          "line": 1686,
+          "line": 1734,
           "called": [
             "KernelError",
             "SystemState",
@@ -193132,7 +193197,7 @@
         {
           "kind": "def",
           "name": "resumeThread",
-          "line": 1833,
+          "line": 1881,
           "called": [
             "KernelError",
             "Priority",
@@ -193160,7 +193225,7 @@
         {
           "kind": "def",
           "name": "suspendThread_transientWindowInvariant",
-          "line": 1954,
+          "line": 2002,
           "called": [
             "SystemState",
             "ThreadId",
@@ -193172,7 +193237,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_transientWindowInvariant_default",
-          "line": 1967,
+          "line": 2015,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -193186,7 +193251,7 @@
         {
           "kind": "def",
           "name": "suspendThread_atomicity_precondition",
-          "line": 1980,
+          "line": 2028,
           "called": [
             "SystemState",
             "st"
@@ -193195,7 +193260,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_under_ffi_bracket_default",
-          "line": 2008,
+          "line": 2056,
           "called": [
             "RHTable_get",
             "SystemState",
@@ -193211,7 +193276,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_atomicity_precondition_default",
-          "line": 2023,
+          "line": 2071,
           "called": [
             "SystemState",
             "default",
@@ -193221,7 +193286,7 @@
         {
           "kind": "theorem",
           "name": "suspendThread_default_rejects_with_invalidArgument",
-          "line": 2032,
+          "line": 2080,
           "called": [
             "SystemState",
             "ValidThreadId",
@@ -243650,7 +243715,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallSchedFootprint",
       "path": "SeLe4n/Kernel/SyscallSchedFootprint.lean",
-      "declaration_count": 75,
+      "declaration_count": 93,
       "declarations": [
         {
           "kind": "namespace",
@@ -244606,7 +244671,7 @@
         },
         {
           "kind": "def",
-          "name": "cancelDonationArmReplenishCores",
+          "name": "cancelDonationArmReplenishCoresAt",
           "line": 1054,
           "called": [
             "CoreId",
@@ -244620,8 +244685,22 @@
         },
         {
           "kind": "def",
+          "name": "cancelDonationArmReplenishCores",
+          "line": 1067,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelDonationArmReplenishCoresAt",
+            "determineTargetCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "releaseSchedContextBindingReplenishCores",
-          "line": 1073,
+          "line": 1080,
           "called": [
             "CoreId",
             "SchedContext",
@@ -244636,7 +244715,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeReplenishCoresOf",
-          "line": 1085,
+          "line": 1092,
           "called": [
             "CoreId",
             "KernelObject",
@@ -244650,7 +244729,7 @@
         {
           "kind": "def",
           "name": "lifecycleRetypeReplenishCores",
-          "line": 1093,
+          "line": 1100,
           "called": [
             "CoreId",
             "ObjId",
@@ -244664,7 +244743,7 @@
         {
           "kind": "def",
           "name": "schedLockSet_lifecycleRetypeOnCore",
-          "line": 1101,
+          "line": 1108,
           "called": [
             "AccessMode",
             "ObjId",
@@ -244679,7 +244758,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_contains_occupied_runQueue_write",
-          "line": 1108,
+          "line": 1115,
           "called": [
             "CoreId",
             "ObjId",
@@ -244699,13 +244778,14 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_contains_bound_replenishQueue_write",
-          "line": 1121,
+          "line": 1128,
           "called": [
             "ObjId",
             "SchedContextId",
             "SystemState",
             "TCB",
             "cancelDonationArmReplenishCores",
+            "cancelDonationArmReplenishCoresAt",
             "determineTargetCore",
             "getObject",
             "lifecycleRetypeReplenishCores",
@@ -244719,7 +244799,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_contains_donated_replenishQueue_writes",
-          "line": 1134,
+          "line": 1142,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -244727,6 +244807,7 @@
             "TCB",
             "ThreadId",
             "cancelDonationArmReplenishCores",
+            "cancelDonationArmReplenishCoresAt",
             "cleanupDonatedSchedContext",
             "determineTargetCore",
             "getObject",
@@ -244741,7 +244822,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_contains_release_replenishQueue_write",
-          "line": 1152,
+          "line": 1161,
           "called": [
             "ObjId",
             "SchedContext",
@@ -244762,7 +244843,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_contains_every_replenishQueue_write_of_sweep",
-          "line": 1169,
+          "line": 1178,
           "called": [
             "CoreId",
             "ObjId",
@@ -244784,7 +244865,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_lifecycleRetypeOnCore_empty_of_other",
-          "line": 1190,
+          "line": 1199,
           "called": [
             "KernelObject",
             "ObjId",
@@ -244805,7 +244886,7 @@
         {
           "kind": "theorem",
           "name": "cancelBoundDonationOnCore_replenishQueueOnCore_ne",
-          "line": 1212,
+          "line": 1221,
           "called": [
             "CoreId",
             "SystemState",
@@ -244822,7 +244903,7 @@
         {
           "kind": "theorem",
           "name": "cancelDonatedDonationOnCore_replenishQueueOnCore_ne",
-          "line": 1228,
+          "line": 1237,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -244841,18 +244922,19 @@
         },
         {
           "kind": "theorem",
-          "name": "cancelDonationArmOnCore_replenishQueueOnCore_ne",
-          "line": 1247,
+          "name": "donationArmAt_replenishQueueOnCore_ne",
+          "line": 1264,
           "called": [
             "CoreId",
+            "KernelError",
             "SystemState",
             "TCB",
             "ThreadId",
+            "cancelBoundDonationOnCore",
             "cancelBoundDonationOnCore_replenishQueueOnCore_ne",
             "cancelDonatedDonationOnCore",
             "cancelDonatedDonationOnCore_replenishQueueOnCore_ne",
-            "cancelDonationArmOnCore",
-            "cancelDonationArmReplenishCores",
+            "cancelDonationArmReplenishCoresAt",
             "cleanupDonatedSchedContext",
             "mem_singleton",
             "replenishQueueOnCore",
@@ -244863,8 +244945,25 @@
         },
         {
           "kind": "theorem",
+          "name": "cancelDonationArmOnCore_replenishQueueOnCore_ne",
+          "line": 1299,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelDonationArmOnCore",
+            "cancelDonationArmReplenishCores",
+            "determineTargetCore",
+            "donationArmAt_replenishQueueOnCore_ne",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "releaseSchedContextBinding_replenishQueueOnCore_ne",
-          "line": 1280,
+          "line": 1310,
           "called": [
             "CoreId",
             "SchedContext",
@@ -244887,10 +244986,9 @@
         {
           "kind": "theorem",
           "name": "lifecyclePreRetypeCleanup_replenishQueueOnCore_ne",
-          "line": 1309,
+          "line": 1339,
           "called": [
             "CoreId",
-            "Kernel",
             "KernelObject",
             "ObjId",
             "SystemState",
@@ -244904,6 +245002,318 @@
             "releaseSchedContextBinding_replenishQueueOnCore_ne",
             "replenishQueueOnCore",
             "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "descheduleAt_replenishQueueOnCore",
+          "line": 1413,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "descheduleAt",
+            "none",
+            "removeRunnableOnCore_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendRescheduleOnCore_replenishQueueOnCore",
+          "line": 1424,
+          "called": [
+            "CoreId",
+            "SgiKind",
+            "SystemState",
+            "handleRescheduleSgiOnCore_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "st",
+            "suspendRescheduleOnCore"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingMigrated_replenishQueueOnCore_ne",
+          "line": 1443,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlocking_scheduler_eq",
+            "cancelledCallerDonation",
+            "determineTargetCore",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "replenishHomeOfSchedContext",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingMigrated_replenishQueueOnCore_of_no_donation",
+          "line": 1459,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingMigrated_of_no_donation",
+            "cancelIpcBlocking_scheduler_eq",
+            "cancelledCallerDonation",
+            "none",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingReclaimed_replenishQueueOnCore",
+          "line": 1469,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingReclaimed",
+            "descheduleUnboundHolder_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadOnCoreWriteSet",
+          "line": 1498,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ValidThreadId",
+            "blockingServer",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingReclaimed",
+            "cancelUnboundHolderCore",
+            "descheduleAtPlacementCores",
+            "getTcb",
+            "length",
+            "none",
+            "pipChainWriteSet",
+            "st",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "suspendThreadReplenishCores",
+          "line": 1543,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ValidThreadId",
+            "blockingServer",
+            "cancelDonationArmReplenishCoresAt",
+            "cancelIpcBlockingReclaimed",
+            "cancelIpcBlockingReplenishCores",
+            "determineTargetCore",
+            "getTcb",
+            "none",
+            "propagatePipChainCrossCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedLockSet_suspendThreadOnCore",
+          "line": 1568,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "SchedLockId",
+            "SystemState",
+            "ValidThreadId",
+            "schedFootprintOfCores",
+            "st",
+            "suspendThreadOnCoreWriteSet",
+            "suspendThreadReplenishCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_of_inactive",
+          "line": 1575,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ValidThreadId",
+            "canonicalCores",
+            "getTcb",
+            "schedCoreSegment",
+            "schedFootprintOfCores",
+            "schedLockSet_suspendThreadOnCore",
+            "schedObjStoreLockId",
+            "st",
+            "suspendThreadOnCoreWriteSet",
+            "suspendThreadReplenishCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write",
+          "line": 1588,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ValidThreadId",
+            "getTcb",
+            "mem_schedFootprintOfCores_runQueue_iff",
+            "schedLockSet_suspendThreadOnCore",
+            "st",
+            "suspendThreadOnCoreWriteSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write",
+          "line": 1600,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ValidThreadId",
+            "descheduleAtPlacementCores",
+            "getTcb",
+            "mem_schedFootprintOfCores_runQueue_iff",
+            "placedCoreOf",
+            "schedLockSet_suspendThreadOnCore",
+            "st",
+            "suspendThreadOnCoreWriteSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes",
+          "line": 1614,
+          "called": [
+            "CoreId",
+            "SchedContextId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "ValidThreadId",
+            "cancelIpcBlocking",
+            "cancelIpcBlockingReplenishCores",
+            "cancelledCallerDonation",
+            "determineTargetCore",
+            "getTcb",
+            "mem_schedFootprintOfCores_replenishQueue_iff",
+            "replenishHomeOfSchedContext",
+            "scId",
+            "schedLockSet_suspendThreadOnCore",
+            "st",
+            "suspendThreadReplenishCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_covers_parametric_runQueue",
+          "line": 1648,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ValidThreadId",
+            "cancelIpcBlockingMigrated",
+            "cancelUnboundHolderCore",
+            "descheduleAtPlacementCores",
+            "getTcb",
+            "mem_schedFootprintOfCores_runQueue_iff",
+            "none",
+            "placedCoreOf",
+            "schedLockSet_suspendThreadOnCore",
+            "st",
+            "suspendThreadOnCoreSchedLockSet",
+            "suspendThreadOnCoreWriteSet"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingReclaimed_replenishQueueOnCore_ne",
+          "line": 1684,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlockingMigrated_replenishQueueOnCore_ne",
+            "cancelIpcBlockingMigrated_replenishQueueOnCore_of_no_donation",
+            "cancelIpcBlockingReclaimed",
+            "cancelIpcBlockingReclaimed_replenishQueueOnCore",
+            "cancelIpcBlockingReplenishCores",
+            "cancelledCallerDonation",
+            "none",
+            "replenishQueueOnCore",
+            "scId",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "cancelIpcBlockingOnCore_replenishQueueOnCore_ne",
+          "line": 1710,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "cancelIpcBlockingOnCore",
+            "cancelIpcBlockingOnCore_eq_reclaimed_deschedule",
+            "cancelIpcBlockingReclaimed_replenishQueueOnCore_ne",
+            "cancelIpcBlockingReplenishCores",
+            "descheduleAtPlacement",
+            "descheduleAt_replenishQueueOnCore",
+            "descheduleThread",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "suspendThreadOnCore_replenishQueueOnCore_ne",
+          "line": 1735,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SgiKind",
+            "SystemState",
+            "ValidThreadId",
+            "blockingServer",
+            "cancelIpcBlockingReclaimed_replenishQueueOnCore_ne",
+            "clearPendingStateValid_eq",
+            "clearPendingState_scheduler_eq",
+            "descheduleAt_replenishQueueOnCore",
+            "determineTargetCore",
+            "donationArmAt_replenishQueueOnCore_ne",
+            "getTcb",
+            "none",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "st",
+            "suspendRescheduleOnCore_replenishQueueOnCore",
+            "suspendThreadOnCore",
+            "suspendThreadReplenishCores",
+            "updateTcb_scheduler"
           ]
         }
       ]
@@ -309219,12 +309629,12 @@
     {
       "module": "tests.SmpCancellationSuite",
       "path": "tests/SmpCancellationSuite.lean",
-      "declaration_count": 114,
+      "declaration_count": 117,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Testing.SmpCancellation",
-          "line": 43,
+          "line": 44,
           "called": [
             "RHTable.fold_pointwise",
             "RHTable.fold_preserves_of_lookup",
@@ -309576,13 +309986,13 @@
         {
           "kind": "section",
           "name": "ElaborationExamples",
-          "line": 502,
+          "line": 503,
           "called": []
         },
         {
           "kind": "variable",
           "name": "victim",
-          "line": 504,
+          "line": 505,
           "called": [
             "CoreId",
             "TCB",
@@ -309592,7 +310002,7 @@
         {
           "kind": "variable",
           "name": "st",
-          "line": 505,
+          "line": 506,
           "called": [
             "SystemState"
           ]
@@ -309600,7 +310010,7 @@
         {
           "kind": "variable",
           "name": "blEp",
-          "line": 506,
+          "line": 507,
           "called": [
             "ObjId",
             "ReplyId"
@@ -309609,15 +310019,6 @@
         {
           "kind": "variable",
           "name": "sc",
-          "line": 507,
-          "called": [
-            "SchedContextId",
-            "ThreadId"
-          ]
-        },
-        {
-          "kind": "variable",
-          "name": "rdSc",
           "line": 508,
           "called": [
             "SchedContextId",
@@ -309626,8 +310027,17 @@
         },
         {
           "kind": "variable",
+          "name": "rdSc",
+          "line": 509,
+          "called": [
+            "SchedContextId",
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "variable",
           "name": "hEp",
-          "line": 511,
+          "line": 512,
           "called": [
             "ObjId"
           ]
@@ -309635,7 +310045,7 @@
         {
           "kind": "variable",
           "name": "hNb",
-          "line": 512,
+          "line": 513,
           "called": [
             "ThreadId"
           ]
@@ -309643,7 +310053,7 @@
         {
           "kind": "variable",
           "name": "bhR",
-          "line": 515,
+          "line": 516,
           "called": [
             "ReplyId",
             "ThreadId"
@@ -309652,7 +310062,7 @@
         {
           "kind": "variable",
           "name": "rh",
-          "line": 518,
+          "line": 519,
           "called": [
             "ReplyId"
           ]
@@ -309660,7 +310070,7 @@
         {
           "kind": "variable",
           "name": "sb",
-          "line": 520,
+          "line": 521,
           "called": [
             "ReplyId"
           ]
@@ -309668,7 +310078,7 @@
         {
           "kind": "variable",
           "name": "dh1",
-          "line": 522,
+          "line": 523,
           "called": [
             "ReplyId",
             "ThreadId"
@@ -309676,8 +310086,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:528>",
-          "line": 528,
+          "name": "<anonymous:example:529>",
+          "line": 529,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCore",
@@ -309689,8 +310099,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:535>",
-          "line": 535,
+          "name": "<anonymous:example:536>",
+          "line": 536,
           "called": [
             "CoreId",
             "cancelIpcBlockingOnCore",
@@ -309703,8 +310113,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:542>",
-          "line": 542,
+          "name": "<anonymous:example:543>",
+          "line": 543,
           "called": [
             "CoreId",
             "cancelIpcBlocking",
@@ -309717,8 +310127,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:557>",
-          "line": 557,
+          "name": "<anonymous:example:558>",
+          "line": 558,
           "called": [
             "CoreId",
             "cancelIpcBlockingMigrated",
@@ -309732,8 +310142,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:568>",
-          "line": 568,
+          "name": "<anonymous:example:569>",
+          "line": 569,
           "called": [
             "CoreId",
             "cancelIpcBlockingMigrated",
@@ -309741,9 +310151,11 @@
             "cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write",
             "cancelIpcBlockingOnCoreSchedLockSet_contains_placed_runQueue_write",
             "cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule",
+            "cancelIpcBlockingOnCoreSchedLockSet_covers_migration",
             "cancelIpcBlockingOnCoreSchedLockSet_dedup",
             "cancelIpcBlockingOnCoreSchedLockSet_none",
             "cancelIpcBlockingOnCoreSchedLockSet_write_only",
+            "cancelIpcBlockingReplenishCores_of_donation",
             "cancelUnboundHolder",
             "cancelUnboundHolderCore",
             "cancellation_cross_core_correct",
@@ -309762,13 +310174,16 @@
             "descheduleUnboundHolder_runQueueOnCore_ne",
             "placedCoreOf",
             "runQueueOnCore",
-            "st"
+            "schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes",
+            "st",
+            "suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes",
+            "suspendThreadOnCore_replenishQueueOnCore_ne"
           ]
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:609>",
-          "line": 609,
+          "name": "<anonymous:example:617>",
+          "line": 617,
           "called": [
             "CoreId",
             "SystemState",
@@ -309785,8 +310200,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:621>",
-          "line": 621,
+          "name": "<anonymous:example:629>",
+          "line": 629,
           "called": [
             "acquireAll",
             "cancelIpcBlocking",
@@ -309800,8 +310215,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:635>",
-          "line": 635,
+          "name": "<anonymous:example:643>",
+          "line": 643,
           "called": [
             "acquireAll",
             "cancelDonationOnCore",
@@ -309814,8 +310229,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:647>",
-          "line": 647,
+          "name": "<anonymous:example:655>",
+          "line": 655,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingOnCore_preserves_objects_invExt",
@@ -309825,8 +310240,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:653>",
-          "line": 653,
+          "name": "<anonymous:example:661>",
+          "line": 661,
           "called": [
             "ObjId",
             "allTimeoutBudgetsNone",
@@ -309841,8 +310256,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:665>",
-          "line": 665,
+          "name": "<anonymous:example:673>",
+          "line": 673,
           "called": [
             "IntrusiveQueue",
             "head",
@@ -309853,8 +310268,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:672>",
-          "line": 672,
+          "name": "<anonymous:example:680>",
+          "line": 680,
           "called": [
             "ObjId",
             "allTimeoutBudgetsNone",
@@ -309869,8 +310284,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:689>",
-          "line": 689,
+          "name": "<anonymous:example:697>",
+          "line": 697,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -309890,8 +310305,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:716>",
-          "line": 716,
+          "name": "<anonymous:example:724>",
+          "line": 724,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -309914,8 +310329,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:735>",
-          "line": 735,
+          "name": "<anonymous:example:743>",
+          "line": 743,
           "called": [
             "ObjId",
             "ThreadId",
@@ -309930,8 +310345,8 @@
         },
         {
           "kind": "example",
-          "name": "<anonymous:example:746>",
-          "line": 746,
+          "name": "<anonymous:example:754>",
+          "line": 754,
           "called": [
             "ObjId",
             "none",
@@ -309944,7 +310359,7 @@
         {
           "kind": "def",
           "name": "assertBool",
-          "line": 760,
+          "line": 768,
           "called": [
             "throw"
           ]
@@ -309952,7 +310367,7 @@
         {
           "kind": "def",
           "name": "core1",
-          "line": 766,
+          "line": 774,
           "called": [
             "CoreId"
           ]
@@ -309960,7 +310375,7 @@
         {
           "kind": "def",
           "name": "epId",
-          "line": 768,
+          "line": 776,
           "called": [
             "ObjId"
           ]
@@ -309968,7 +310383,7 @@
         {
           "kind": "def",
           "name": "nId",
-          "line": 769,
+          "line": 777,
           "called": [
             "ObjId"
           ]
@@ -309976,7 +310391,7 @@
         {
           "kind": "def",
           "name": "rId",
-          "line": 770,
+          "line": 778,
           "called": [
             "ReplyId"
           ]
@@ -309984,7 +310399,7 @@
         {
           "kind": "def",
           "name": "scId",
-          "line": 771,
+          "line": 779,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -309993,7 +310408,7 @@
         {
           "kind": "def",
           "name": "cnRoot",
-          "line": 772,
+          "line": 780,
           "called": [
             "ObjId"
           ]
@@ -310001,7 +310416,7 @@
         {
           "kind": "def",
           "name": "victimTid",
-          "line": 773,
+          "line": 781,
           "called": [
             "ThreadId"
           ]
@@ -310009,7 +310424,7 @@
         {
           "kind": "def",
           "name": "ownerTid",
-          "line": 774,
+          "line": 782,
           "called": [
             "ThreadId"
           ]
@@ -310017,7 +310432,7 @@
         {
           "kind": "def",
           "name": "bystanderTid",
-          "line": 775,
+          "line": 783,
           "called": [
             "ThreadId"
           ]
@@ -310025,7 +310440,7 @@
         {
           "kind": "def",
           "name": "prevTid",
-          "line": 776,
+          "line": 784,
           "called": [
             "ThreadId"
           ]
@@ -310033,7 +310448,7 @@
         {
           "kind": "def",
           "name": "nextTid",
-          "line": 777,
+          "line": 785,
           "called": [
             "ThreadId"
           ]
@@ -310041,7 +310456,7 @@
         {
           "kind": "def",
           "name": "runnerTid",
-          "line": 778,
+          "line": 786,
           "called": [
             "ThreadId"
           ]
@@ -310049,7 +310464,7 @@
         {
           "kind": "def",
           "name": "mkTcb",
-          "line": 780,
+          "line": 788,
           "called": [
             "CoreId",
             "TCB",
@@ -310060,7 +310475,7 @@
         {
           "kind": "def",
           "name": "victimTcb",
-          "line": 787,
+          "line": 795,
           "called": [
             "SystemState",
             "TCB",
@@ -310074,7 +310489,7 @@
         {
           "kind": "def",
           "name": "stCallBase",
-          "line": 797,
+          "line": 805,
           "called": [
             "SystemState",
             "build",
@@ -310093,7 +310508,7 @@
         {
           "kind": "def",
           "name": "stCallBlocked",
-          "line": 807,
+          "line": 815,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310109,7 +310524,7 @@
         {
           "kind": "def",
           "name": "runEndpointCancelChecks",
-          "line": 812,
+          "line": 820,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310141,7 +310556,7 @@
         {
           "kind": "def",
           "name": "stNtfnBase",
-          "line": 866,
+          "line": 874,
           "called": [
             "SystemState",
             "build",
@@ -310159,7 +310574,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlocked",
-          "line": 873,
+          "line": 881,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310174,7 +310589,7 @@
         {
           "kind": "def",
           "name": "runNotificationCancelChecks",
-          "line": 878,
+          "line": 886,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310194,7 +310609,7 @@
         {
           "kind": "def",
           "name": "stReplyBlocked",
-          "line": 908,
+          "line": 916,
           "called": [
             "SystemState",
             "build",
@@ -310213,7 +310628,7 @@
         {
           "kind": "def",
           "name": "stReplyBlockedStaleLinks",
-          "line": 922,
+          "line": 930,
           "called": [
             "SystemState",
             "build",
@@ -310234,7 +310649,7 @@
         {
           "kind": "def",
           "name": "runReplyCancelChecks",
-          "line": 935,
+          "line": 943,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310264,7 +310679,7 @@
         {
           "kind": "def",
           "name": "stRunningRemote",
-          "line": 992,
+          "line": 1000,
           "called": [
             "SystemState",
             "build",
@@ -310283,7 +310698,7 @@
         {
           "kind": "def",
           "name": "runRemoteRunningCancelChecks",
-          "line": 1002,
+          "line": 1010,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310302,7 +310717,7 @@
         {
           "kind": "def",
           "name": "runLocalRunningCancelChecks",
-          "line": 1028,
+          "line": 1036,
           "called": [
             "assertBool",
             "cancelIpcBlockingOnCore",
@@ -310317,7 +310732,7 @@
         {
           "kind": "def",
           "name": "mkSc",
-          "line": 1042,
+          "line": 1050,
           "called": [
             "SchedContext",
             "ThreadId",
@@ -310327,7 +310742,7 @@
         {
           "kind": "def",
           "name": "stBoundDonation",
-          "line": 1048,
+          "line": 1056,
           "called": [
             "SystemState",
             "build",
@@ -310347,7 +310762,7 @@
         {
           "kind": "def",
           "name": "runBoundDonationCancelChecks",
-          "line": 1060,
+          "line": 1068,
           "called": [
             "any",
             "assertBool",
@@ -310374,7 +310789,7 @@
         {
           "kind": "def",
           "name": "stDonated",
-          "line": 1105,
+          "line": 1113,
           "called": [
             "SystemState",
             "build",
@@ -310396,7 +310811,7 @@
         {
           "kind": "def",
           "name": "runDonatedDonationCancelChecks",
-          "line": 1119,
+          "line": 1127,
           "called": [
             "any",
             "assertBool",
@@ -310421,7 +310836,7 @@
         {
           "kind": "def",
           "name": "runDispatcherEdgeChecks",
-          "line": 1156,
+          "line": 1164,
           "called": [
             "ThreadId",
             "assertBool",
@@ -310446,7 +310861,7 @@
         {
           "kind": "def",
           "name": "stNtfnTwoWaiters",
-          "line": 1199,
+          "line": 1207,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310468,7 +310883,7 @@
         {
           "kind": "def",
           "name": "runNotificationStateCorrectionChecks",
-          "line": 1214,
+          "line": 1222,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310487,7 +310902,7 @@
         {
           "kind": "def",
           "name": "stThreeDeep",
-          "line": 1247,
+          "line": 1255,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310509,7 +310924,7 @@
         {
           "kind": "def",
           "name": "runMidQueueSpliceChecks",
-          "line": 1266,
+          "line": 1274,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310533,7 +310948,7 @@
         {
           "kind": "def",
           "name": "stRunningBoot",
-          "line": 1338,
+          "line": 1346,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310550,7 +310965,7 @@
         {
           "kind": "def",
           "name": "runMirrorSgiChecks",
-          "line": 1346,
+          "line": 1354,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310565,7 +310980,7 @@
         {
           "kind": "def",
           "name": "stSuspendLocal",
-          "line": 1359,
+          "line": 1367,
           "called": [
             "SystemState",
             "build",
@@ -310583,7 +310998,7 @@
         {
           "kind": "def",
           "name": "runPerCoreSuspendChecks",
-          "line": 1370,
+          "line": 1378,
           "called": [
             "any",
             "assertBool",
@@ -310611,7 +311026,7 @@
         {
           "kind": "def",
           "name": "runSendReceiveCancelChecks",
-          "line": 1425,
+          "line": 1433,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310634,7 +311049,7 @@
         {
           "kind": "def",
           "name": "serverTid",
-          "line": 1468,
+          "line": 1476,
           "called": [
             "ThreadId"
           ]
@@ -310642,7 +311057,7 @@
         {
           "kind": "def",
           "name": "core2",
-          "line": 1469,
+          "line": 1477,
           "called": [
             "CoreId"
           ]
@@ -310650,7 +311065,7 @@
         {
           "kind": "def",
           "name": "stPipDonation",
-          "line": 1477,
+          "line": 1485,
           "called": [
             "SystemState",
             "build",
@@ -310672,7 +311087,7 @@
         {
           "kind": "def",
           "name": "runPipDonationDropChecks",
-          "line": 1493,
+          "line": 1501,
           "called": [
             "any",
             "assertBool",
@@ -310703,7 +311118,7 @@
         {
           "kind": "def",
           "name": "stLocalDeboost",
-          "line": 1569,
+          "line": 1577,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310727,7 +311142,7 @@
         {
           "kind": "def",
           "name": "stRemoteDeboost",
-          "line": 1589,
+          "line": 1597,
           "called": [
             "SystemState",
             "build",
@@ -310748,7 +311163,7 @@
         {
           "kind": "def",
           "name": "runDisinheritanceSchedulingChecks",
-          "line": 1604,
+          "line": 1612,
           "called": [
             "any",
             "assertBool",
@@ -310772,7 +311187,7 @@
         {
           "kind": "def",
           "name": "stUnboundRunningRemote",
-          "line": 1659,
+          "line": 1667,
           "called": [
             "SystemState",
             "build",
@@ -310789,7 +311204,7 @@
         {
           "kind": "def",
           "name": "runUnboundRunningSuspendChecks",
-          "line": 1667,
+          "line": 1675,
           "called": [
             "any",
             "assertBool",
@@ -310812,7 +311227,7 @@
         {
           "kind": "def",
           "name": "stUnpinnedQueuedRemote",
-          "line": 1708,
+          "line": 1716,
           "called": [
             "SystemState",
             "build",
@@ -310829,7 +311244,7 @@
         {
           "kind": "def",
           "name": "retiredHomeAndRunningDeschedule",
-          "line": 1722,
+          "line": 1730,
           "called": [
             "SystemState",
             "ThreadId",
@@ -310843,7 +311258,7 @@
         {
           "kind": "def",
           "name": "runPlacementDescheduleChecks",
-          "line": 1730,
+          "line": 1738,
           "called": [
             "assertBool",
             "bootCoreId",
@@ -310869,7 +311284,7 @@
         {
           "kind": "def",
           "name": "stEdfPre",
-          "line": 1794,
+          "line": 1802,
           "called": [
             "SystemState",
             "build",
@@ -310885,7 +311300,7 @@
         {
           "kind": "def",
           "name": "stEdfWith",
-          "line": 1803,
+          "line": 1811,
           "called": [
             "SystemState",
             "TCB",
@@ -310900,7 +311315,7 @@
         {
           "kind": "def",
           "name": "stEdfCurPre",
-          "line": 1810,
+          "line": 1818,
           "called": [
             "SystemState",
             "build",
@@ -310916,7 +311331,7 @@
         {
           "kind": "def",
           "name": "stEdfCurWith",
-          "line": 1818,
+          "line": 1826,
           "called": [
             "SystemState",
             "TCB",
@@ -310931,7 +311346,7 @@
         {
           "kind": "def",
           "name": "runDiffSeamEdfChecks",
-          "line": 1824,
+          "line": 1832,
           "called": [
             "any",
             "assertBool",
@@ -310954,7 +311369,7 @@
         {
           "kind": "def",
           "name": "staleRequestRegs",
-          "line": 1880,
+          "line": 1888,
           "called": [
             "RegisterFile"
           ]
@@ -310962,7 +311377,7 @@
         {
           "kind": "def",
           "name": "mkTcbWithStaleRegs",
-          "line": 1884,
+          "line": 1892,
           "called": [
             "CoreId",
             "TCB",
@@ -310973,7 +311388,7 @@
         {
           "kind": "def",
           "name": "stCallBlockedStale",
-          "line": 1888,
+          "line": 1896,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -310996,7 +311411,7 @@
         {
           "kind": "def",
           "name": "stNtfnBlockedStale",
-          "line": 1901,
+          "line": 1909,
           "called": [
             "SystemState",
             "bootCoreId",
@@ -311018,7 +311433,7 @@
         {
           "kind": "def",
           "name": "runUnblockFrameStagingChecks",
-          "line": 1912,
+          "line": 1920,
           "called": [
             "SystemState",
             "assertBool",
@@ -311054,7 +311469,7 @@
         {
           "kind": "def",
           "name": "runDonationDoublePopFootprintChecks",
-          "line": 2005,
+          "line": 2013,
           "called": [
             "CoreId",
             "assertBool",
@@ -311071,7 +311486,7 @@
         {
           "kind": "def",
           "name": "bindingDrivenCancelledCallerDonation",
-          "line": 2039,
+          "line": 2047,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -311086,7 +311501,7 @@
         {
           "kind": "def",
           "name": "mkStackedSc",
-          "line": 2052,
+          "line": 2060,
           "called": [
             "ReplyId",
             "SchedContext",
@@ -311098,7 +311513,7 @@
         {
           "kind": "def",
           "name": "stFrameHeadReclaim",
-          "line": 2062,
+          "line": 2070,
           "called": [
             "SystemState",
             "build",
@@ -311124,7 +311539,7 @@
         {
           "kind": "def",
           "name": "stOrphanHeadReclaim",
-          "line": 2105,
+          "line": 2113,
           "called": [
             "SystemState",
             "build",
@@ -311151,7 +311566,7 @@
         {
           "kind": "def",
           "name": "runFrameHeadReclaimChecks",
-          "line": 2138,
+          "line": 2146,
           "called": [
             "all",
             "any",
@@ -311186,7 +311601,7 @@
         {
           "kind": "def",
           "name": "scIdOther",
-          "line": 2225,
+          "line": 2233,
           "called": [
             "SchedContextId",
             "ofNat"
@@ -311195,7 +311610,7 @@
         {
           "kind": "def",
           "name": "retiredVictimHomeMigration",
-          "line": 2233,
+          "line": 2241,
           "called": [
             "SystemState",
             "TCB",
@@ -311212,7 +311627,7 @@
         {
           "kind": "def",
           "name": "stRefusedReclaimRemoteHolder",
-          "line": 2257,
+          "line": 2265,
           "called": [
             "SystemState",
             "build",
@@ -311239,7 +311654,7 @@
         {
           "kind": "def",
           "name": "replenishHolds",
-          "line": 2275,
+          "line": 2283,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -311252,7 +311667,7 @@
         {
           "kind": "def",
           "name": "runReplenishDestinationChecks",
-          "line": 2294,
+          "line": 2302,
           "called": [
             "assertBool",
             "bind",
@@ -311278,7 +311693,7 @@
         {
           "kind": "def",
           "name": "bareTeardownG2",
-          "line": 2348,
+          "line": 2356,
           "called": [
             "SystemState",
             "TCB",
@@ -311290,7 +311705,7 @@
         {
           "kind": "def",
           "name": "retiredHolderWake",
-          "line": 2361,
+          "line": 2369,
           "called": [
             "SystemState",
             "TCB",
@@ -311310,7 +311725,7 @@
         {
           "kind": "def",
           "name": "placedCores",
-          "line": 2383,
+          "line": 2391,
           "called": [
             "CoreId",
             "SystemState",
@@ -311325,7 +311740,7 @@
         {
           "kind": "def",
           "name": "stStrandedHolderReclaim",
-          "line": 2399,
+          "line": 2407,
           "called": [
             "SystemState",
             "build",
@@ -311352,7 +311767,7 @@
         {
           "kind": "def",
           "name": "stReadyHolderReclaim",
-          "line": 2431,
+          "line": 2439,
           "called": [
             "SystemState",
             "build",
@@ -311378,7 +311793,7 @@
         {
           "kind": "def",
           "name": "stQueuedHolderReclaim",
-          "line": 2451,
+          "line": 2459,
           "called": [
             "SystemState",
             "core2",
@@ -311390,7 +311805,7 @@
         {
           "kind": "def",
           "name": "stRunningHolderReclaim",
-          "line": 2456,
+          "line": 2464,
           "called": [
             "SystemState",
             "core2",
@@ -311402,7 +311817,7 @@
         {
           "kind": "def",
           "name": "runReclaimCompleteSuspendChecks",
-          "line": 2483,
+          "line": 2491,
           "called": [
             "assertBool",
             "bareTeardownG2",
@@ -311410,6 +311825,7 @@
             "cancelIpcBlockingMigrated",
             "cancelIpcBlockingOnCoreSchedLockSet",
             "cancelIpcBlockingReclaimed",
+            "cancelIpcBlockingReplenishCores",
             "cancelUnboundHolder",
             "cancelUnboundHolderCore",
             "cancelledCallerDonation",
@@ -311445,8 +311861,66 @@
         },
         {
           "kind": "def",
+          "name": "retiredSuspendSchedLockSet",
+          "line": 2668,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "SchedLockId",
+            "schedFootprintOfCores",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "retiredCancelSchedLockSet",
+          "line": 2674,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "SchedLockId",
+            "schedFootprintOfCores",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runReclaimMigrationFootprintChecks",
+          "line": 2678,
+          "called": [
+            "CoreId",
+            "assertBool",
+            "bootCoreId",
+            "cancelIpcBlockingMigrated",
+            "cancelIpcBlockingOnCoreSchedLockSet",
+            "cancelIpcBlockingReclaimed",
+            "cancelIpcBlockingReplenishCores",
+            "cancelUnboundHolderCore",
+            "core1",
+            "core2",
+            "core3",
+            "determineTargetCore",
+            "none",
+            "placedCoreOf",
+            "replenishHolds",
+            "replenishQueueOnCore",
+            "retiredCancelSchedLockSet",
+            "retiredSuspendSchedLockSet",
+            "scId",
+            "schedLockSet_suspendThreadOnCore",
+            "serverTid",
+            "stQueuedHolderReclaim",
+            "suspendThreadOnCore",
+            "suspendThreadOnCoreSchedLockSet",
+            "toValid",
+            "victimTcb",
+            "victimTid"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpCancellationChecks",
-          "line": 2633,
+          "line": 2781,
           "called": [
             "runBoundDonationCancelChecks",
             "runDiffSeamEdfChecks",
@@ -311465,6 +311939,7 @@
             "runPipDonationDropChecks",
             "runPlacementDescheduleChecks",
             "runReclaimCompleteSuspendChecks",
+            "runReclaimMigrationFootprintChecks",
             "runRemoteRunningCancelChecks",
             "runReplenishDestinationChecks",
             "runReplyCancelChecks",
@@ -311476,7 +311951,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 2662,
+          "line": 2811,
           "called": [
             "runSmpCancellationChecks"
           ]

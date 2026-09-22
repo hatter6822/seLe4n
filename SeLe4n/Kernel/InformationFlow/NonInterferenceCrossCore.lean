@@ -2465,54 +2465,11 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
         (migrateSchedContextReplenishment_confinedToCores stCleanup _ _ _)
   · exact absurd h (by simp)
 
-/-- SM8.B.2: **the cores the live `.tcbSuspend` may write**, mirroring
-`suspendThreadOnCore`'s own control flow. Four contributions, all read off the
-**pre-state** exactly as the transition reads them:
-
-* the reverted priority-inheritance chain's home cores, walked from the
-  captured `blockingServer` at the post-teardown state;
-* the core the pre-state **places** the victim on (`descheduleAtPlacementCores`,
-  WS-RR RR8.6 — queued or current; its home and its running core until then,
-  two proxies that between them missed a victim queued off its home), where it
-  is dequeued;
-* the **executing** core, where G7 may run a local preemption point.
-
-Both donation arms, `clearPendingState` and the `.Inactive` store are per-core
-silent and contribute nothing.  The teardown was too until **WS-RR RR8.12** gave
-G2 the reclaim's scheduler step; since `v0.35.158` that step deschedules the
-holder the reclaim unbound (WS-OD OD1.7's wake of it until then), so G2
-contributes that holder's placed core, and no other
-(`cancelIpcBlockingReclaimed_confinedToCores`). -/
-def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) : List CoreId :=
-  match st.getTcb? vtid.val with
-  | none => []
-  | some tcb =>
-    if tcb.threadState == .Inactive then []
-    else
-      -- One entry per pipeline step, in execution order; `[]` marks a step that
-      -- writes no core at all, so this reads as the transition's own shape.
-      --
-      -- **WS-RR RR8.12**, re-keyed at `v0.35.158`: G2 is the teardown with its
-      -- reclaim COMPLETED, so the first entry is no longer `[]`: the reclaim's
-      -- holder deschedule removes the holder it unbound from the holder's **own**
-      -- placement, which is neither the victim's placement nor the executing
-      -- core (until `v0.35.158` the step was OD1.7's wake and the entry the
-      -- holder's home core).  A write set that omits a written core is as false
-      -- as a footprint that does, and until RR8.12 this one named none because
-      -- the live pipeline performed no such step.
-      (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
-        vtid.val tcb).toList -- the reclaim's holder deschedule
-      ++ (match PriorityInheritance.blockingServer st vtid.val with
-       | some serverId =>
-           pipChainWriteSet (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore
-             (cancelIpcBlockingReclaimed vtid.val tcb st).objectIndex.length
-       | none => []) -- the chain reversion, on the post-teardown state
-      ++ [] -- donation cancellation
-      ++ descheduleAtPlacementCores st vtid.val -- the placement dequeue
-      ++ [] -- clearPendingState
-      ++ [] -- the `.Inactive` store
-      ++ [executingCore] -- the G7 scheduling point
+-- WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): `suspendThreadOnCoreWriteSet` moved to
+-- the production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_suspendThreadOnCore`, whose run segment IS it -- the last of the
+-- SM8.B write sets a production footprint needed and this module held.  Same
+-- name, same namespace; the confinement theorems below stay here.
 
 /-- SM8.B.2: marking the victim `.Inactive` is per-core silent — one object
 store write. -/

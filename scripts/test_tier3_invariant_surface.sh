@@ -2860,9 +2860,17 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut'
 # made the arity an argument (`schedCoreSegment` over a core *set*) and its sixth
 # cut made the whole three-domain ladder one constructor, so the anchor pins the
 # three-core list as that constructor's replenish argument.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome : CoreId\) \(placed holderPlaced : Option CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(\[placed\.getD executingCore, executingCore\] \+\+ holderPlaced\.toList\)\n[ \t]*\[home, ownerHome, outerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet\n[ \t]*\(home executingCore ownerHome outerHome : CoreId\) \(placed holderPlaced : Option CoreId\)\n[ \t]*\(reclaimReplenish : List CoreId\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(\[placed\.getD executingCore, executingCore\] \+\+ holderPlaced\.toList\)\n[ \t]*\(\[home, ownerHome, outerHome\] \+\+ reclaimReplenish\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores[^\n]*\n[ \t]*\[home, ownerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): and the replenish segment must not go
+# back to naming G3's three cores alone.  It did for four cuts, while G2's
+# reclaim migrated the reservation between two cores none of them names -- the
+# holder's home and the torn state's binding home -- so the footprint was FALSE
+# of the transition.  The negative refuses the retired list standing as the
+# whole argument; the positive above is what says the reclaim's own resolver is
+# appended to it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "holderPlaced\.toList\)\n[ \t]*\[home, ownerHome, outerHome\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The two theorems that make the third core a consequence rather than a guess:
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
@@ -5493,7 +5501,9 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNo
 run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvBody_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem replyRecvBody_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# `v0.35.170` (WS-RR RR8.12 Cut C3b-iv): repointed -- production now, beside the
+# resolved footprint that reads it, as its four siblings were at C3b-i..iii.
+run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The leaf frames those bounds rest on: per-core confinement reads the domain
@@ -16428,6 +16438,19 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet[^
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_holder_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_placed_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_executing_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): the member the triple above could not
+# name.  G2's reclaim migrates the reclaimed reservation between the holder's
+# home core and the torn state's binding home, and both parametric footprints
+# over that step declared neither -- a footprint that omits a written lock is
+# false.  The resolver both of them read is `cancelIpcBlockingReplenishCores`,
+# declared beside the transition so the two composites over one migration
+# cannot name different cores.
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_migration' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) reclaimReplenish" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) \[\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingReplenishCores \(st : SystemState\) \(victim : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*let torn := Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb(\n([ \t][^\n]*)?)*let fromCore := determineTargetCore st holder(\n([ \t][^\n]*)?)*\[fromCore, replenishHomeOfSchedContext torn scId fromCore\]" SeLe4n/Kernel/Lifecycle/Suspend.lean'
+run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # The same shape one level down, found by sweeping rather than by a review: the
 # pipeline's G3 spells `cancelDonationOnCore`'s three-way match out again, so a
 # step added to that dispatcher would not reach the live path either.  The two
@@ -19382,5 +19405,66 @@ run_negative_check "INVARIANT" rg -F -n '(?P<body>[^)]*)' scripts/select_changed
 # pattern holds `\|` and a `grep` pattern holds `| ` inside quotes.
 run_check "INVARIANT" rg -F -n '        words = _shell_words(body)' scripts/select_changed_anchors.py
 run_negative_check "INVARIANT" rg -F -n 'for stage in body.split("|"):' scripts/select_changed_anchors.py
+
+# ============================================================================
+# WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): the `.tcbSuspend` arm's resolved
+# scheduler-domain footprint -- the last of the declared arms, and the one whose
+# replenish segment is two migrations read at intermediate states.
+# ============================================================================
+#
+# The footprint is `schedFootprintOfCores` of the arm's own write set and of a
+# replenish segment that is G2's reclaim resolver concatenated with G3's arm
+# resolver, each read at the state its own step runs on -- the `replyRecvBody`
+# discipline, because neither is pre-state computable: the reclaim rebinds the
+# victim, so G3's arm selector reads a binding the pre-state does not carry.
+run_check "INVARIANT" rg -n '^def schedLockSet_suspendThreadOnCore \(st : SystemState\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_suspendThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(suspendThreadOnCoreWriteSet st vtid executingCore\)(\n([ \t][^\n]*)?)*\(suspendThreadReplenishCores st vtid executingCore\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" rg -n '^def suspendThreadReplenishCores \(st : SystemState\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The two halves of the segment, and that each is read at its own state: the
+# reclaim's at the pre-state (the resolver reads the torn state itself), G3's at
+# the post-revert state `stG2b` with the purge core from the PRE-state, which is
+# where the pipeline captures it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelIpcBlockingReplenishCores st vtid\.val tcb(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt stG2b vtid\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st vtid\.val\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# A pre-state reading of G3's arm would be a proxy for a binding the reclaim
+# rewrites (WS-OD OD5.3), so the segment must not resolve it at `st`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt st vtid\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# Membership, per written core.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_of_inactive' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue' SeLe4n/Kernel/SyscallSchedFootprint.lean
+#
+# The EXACTNESS half -- the pair a resolved footprint owes.  The pipeline has
+# seven stages and exactly two of them move a reservation; every other stage
+# frames every replenish queue, which is what makes the segment's two halves the
+# whole of it.
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_replenishQueueOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAt_replenishQueueOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# ...and it is stated over the whole arm rather than over a component: a claim
+# about `cancelIpcBlockingReclaimed` alone would be a claim about a prefix of
+# the transition the live `.tcbSuspend` runs.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c . suspendThreadReplenishCores st vtid executingCore[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.suspendThreadOnCore st vtid executingCore = \.ok \(st., sgi\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+#
+# The donation-arm frame has ONE owner, at an explicit purge core, because the
+# two askers hand it different cores: the destroy path reads it off the state it
+# runs on, and the suspend's G3 was handed it from the PRE-G2 state.  A frame
+# stated at `determineTargetCore st tid` covers the first and not the second.
+run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+#
+# The witness computes both retired parametric readings beside the live ones, on
+# a state the live operations reach: the reservation on the holder's home core,
+# the victim homed elsewhere, and a migration between them.
+run_check "INVARIANT" rg -n 'private def retiredSuspendSchedLockSet' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'private def retiredCancelSchedLockSet' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^  runReclaimMigrationFootprintChecks$' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -F -n 'NEGATIVE: the RETIRED suspend footprint omits the migration'"'"'s SOURCE core' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -F -n 'CONTROL: core 3'"'"'s replenish queue is in NEITHER footprint' tests/SmpCancellationSuite.lean
 
 finalize_report

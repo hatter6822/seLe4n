@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.169.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.170.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,19 +222,19 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78252 lines)
+- `CHANGELOG.md` (~78351 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6812 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6845 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5635 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5299 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5592 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5397 lines)
 - `tests/SmpIpcSuite.lean` (~5165 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
@@ -270,8 +270,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2820 lines)
+- `tests/SmpCancellationSuite.lean` (~2812 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2786 lines)
-- `tests/SmpCancellationSuite.lean` (~2663 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
@@ -298,11 +298,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2038 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
@@ -328,6 +328,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~1761 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
@@ -357,7 +358,6 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~1370 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
@@ -4348,7 +4348,9 @@ bottom frame, and that is closed instead by the reservation's recorded origin
 One consequence for the suspend footprint:
 the teardown can rebind the victim `.donated`, and the arm selector re-reads the
 *post*-teardown binding, so the pipeline pops twice at depth ≥ 2 and
-`suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.  The payoff
+`suspendThreadOnCoreSchedLockSet`'s replenish segment carries a **triple** for
+G3 alone (`v0.35.170` appends G2's own migration pair beside it, which is a
+different thread's home and a different state).  The payoff
 is `passiveServerHoldsDonatedContext_atCallDepthTwo`.
 
 Six things new code must respect once this lands, and each is a decision the plan
@@ -9250,6 +9252,82 @@ code may assume:
   is the one arm left**, and it is a cut of its own: its run segment re-runs a
   seven-stage pipeline and its replenish segment two migrations read at
   intermediate states.
+- **...and the last arm declares one — and the two parametric footprints it
+  replaces were FALSE** (WS-RR RR8.12 Cut C3b-iv, `v0.35.170`).
+  `schedLockSet_suspendThreadOnCore` is the live `.tcbSuspend` arm's
+  scheduler-domain footprint — **inert** until the bracket cut, and the
+  sixteenth and last of the arms RR8.12's sequence enumerated (which of the
+  remaining nineteen write a scheduler slot at all is
+  `declaredSchedFootprintSyscall`'s question, and the next cut's).  Six things
+  new code must respect.
+
+  (1) **The finding, which is what declaring a resolved form is for.**  Since
+  WS-RR RR8.11 (`v0.35.86`) the suspend's G2 teardown is
+  `cancelIpcBlockingMigrated`, and since RR8.12's second cut (`v0.35.90`) the
+  live pipeline runs it: it moves the reclaimed reservation's replenishments
+  from the **holder's** home core to the home the context is bound to at the
+  torn state, writing the replenish queue of *both*.
+  `cancelIpcBlockingOnCoreSchedLockSet`'s replenish segment was `[]` and
+  `suspendThreadOnCoreSchedLockSet`'s was `[home, ownerHome, outerHome]`, which
+  is G3's migration read off the **victim's** binding — a different thread and a
+  different state — so neither endpoint was named by either.  RR8.12's second
+  cut widened the *run* segment by the holder's placed core and did not ask the
+  same question of the replenish segment: *a fix applied at one site and not at
+  its sibling*.  Latent rather than live (the syscall seam does not yet bracket
+  the scheduler domain), so everything stated over those footprints was
+  **silent** about the two queues rather than conservative — RR8.11's and
+  OD3.9's own posture.  Both are fixed here, each taking a
+  `reclaimReplenish : List CoreId`.
+
+  (2) **The resolver lives beside the transition, not beside the footprints.**
+  `cancelIpcBlockingReplenishCores` is in `Lifecycle/Suspend.lean` next to
+  `cancelIpcBlockingMigrated`, reading the same `let`s, because both parametric
+  footprints must name it and neither can see the resolved-footprint module —
+  *when a question has one owner and an asker that cannot see it, the owner is
+  in the wrong layer* (`v0.35.59`).  It mentions no `SchedLockId`, so nothing
+  about it belonged above that layer.  A Tier 3 negative refuses it coming back
+  upstream, and the positive pins its name **followed by its parameter list**,
+  because `^def X` matches a suffix-renamed `X_Moved` — the presence-check one
+  character down that Cut 7 recorded for theorems.
+
+  (3) **Neither half of the replenish segment is pre-state computable**, which
+  is why this arm is a cut of its own.  G2's reclaim resolver is read at the
+  pre-state (it resolves the torn state itself); G3's arm resolver is read at
+  the **post-revert** state, because the reclaim rebinds the victim and WS-OD
+  OD5.3's second pop then migrates to the *outer caller's* home — a core the
+  pre-state cannot name, the victim holding no binding there.  So the segment
+  re-runs the spine, exactly as `replyRecvBodyWriteSet` does, and a Tier 3
+  negative refuses a pre-state reading of G3's arm.
+
+  (4) **The donation-arm frame has ONE owner, at an explicit purge core.**
+  `donationArmAt_replenishQueueOnCore_ne` is stated over the three-way match at
+  a `home` argument, because the two askers hand it different cores — the
+  destroy path reads it off the state it runs on, the suspend's G3 was handed it
+  from the pre-G2 state — and a frame at `determineTargetCore st tid` covers the
+  first and not the second.  `cancelDonationArmOnCore_replenishQueueOnCore_ne`
+  is its instance rather than a second proof.
+
+  (5) **Exactness is over the whole arm**:
+  `suspendThreadOnCore_replenishQueueOnCore_ne`, all seven stages, of which two
+  move a reservation and five frame every replenish queue, with
+  `cancelIpcBlockingOnCore_replenishQueueOnCore_ne` the same pair for the
+  cancellation composite — a footprint owes both halves, and the fixed one had
+  gained only *names what is written*.  A claim stated over
+  `cancelIpcBlockingReclaimed` alone would be a claim about a prefix of the
+  transition the live `.tcbSuspend` runs, and a Tier 3 relation anchor refuses
+  that shape.  Coverage against the parametric form
+  (`…_covers_parametric_runQueue`) is stated over the **run-queue half alone**,
+  which is the honest scope: the parametric replenish segment is four free
+  parameters, so a coverage claim over it would have to hypothesise that a
+  caller passed what the transition writes — which is the conclusion.
+
+  (6) **The witness computes both retired readings beside the live ones.**
+  `tests/SmpCancellationSuite.lean` §3.27 drives the live reclaim and the live
+  suspend on a state the kernel reaches — the reservation queued on the holder's
+  home core, the victim homed elsewhere — with core 3 as the control, in neither
+  footprint and written by neither transition, so the membership assertions are
+  about the migration rather than about width.  `maxLockSetSize` is unmoved and
+  the golden trace is byte-identical.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with
