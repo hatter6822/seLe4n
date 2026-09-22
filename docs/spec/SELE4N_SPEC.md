@@ -49,9 +49,9 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.172` (`lakefile.toml`) |
+| **Package version** | `0.35.173` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 405,258 across 336 Lean files |
+| **Production LoC** | 405,604 across 337 Lean files |
 | **Test LoC** | 83,005 across 70 Lean test suites |
 | **Proved declarations** | 13,430 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -4812,6 +4812,30 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   state-dependent by construction: an `.Inactive` victim declares the
   object-store lock alone and an active one, one field apart, additionally
   declares the executing core's run queue.
+
+  **And the family that resolver dispatches to is derived and reconciled** (WS-RR
+  RR8.12 Cut C5, `v0.35.173`).  `SeLe4n/Testing/SchedFootprintCensus.lean` (Tier
+  1) is `LockFootprintBoundCensus`'s counterpart for the scheduler domain, and it
+  exists for the measurement Cut 8a-ii recorded: thirty-three of the family's
+  forty-seven theorems had neither a consumer nor an anchor, every one silently
+  deletable.  It asks two questions and reports seventeen footprints, all
+  canonical, fifteen consumed and two registered as superseded.  **Every
+  footprint is `schedFootprintOfCores` applied to two core lists at its full
+  arity** — the premise every generic lemma is consumed under, since
+  `_write_only`, `_pairwise_le`, `_keys_nodup`, `_subset` and `mem_…_iff` are
+  stated once of that function and inherited by shape, so a footprint written any
+  other way loses all five silently and `SchedLockSet.ofList?` may then refuse it
+  and leave the arm undeclared.  The question goes to the elaborator, reducing
+  *towards* the constant (`Meta.whnfUntil`) rather than to weak head normal form,
+  which would run past it into the `List.cons` the body builds.  **And every
+  footprint is NAMED by `schedLockSetForSyscall` or registered with a reason** —
+  named rather than reached, since a transitive closure would count a footprint
+  as consumed because a reachable helper mentions it; the register holds the bare
+  notification signal and the dispatch-level reply footprint, both superseded by
+  the arm the live dispatch takes, reconciled in both directions.  Neither
+  failing branch can fire on the live tree, so the module carries plants on the
+  far side of each decision plus a wiring case drawn from the tree itself — a
+  write-set helper named by a footprint and by no arm.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

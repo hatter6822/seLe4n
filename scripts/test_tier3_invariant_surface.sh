@@ -19582,4 +19582,56 @@ run_check "INVARIANT" rg -F -n 'the five scheduler operands do not move the OBJE
 run_check "INVARIANT" rg -F -n 'and an ACTIVE one additionally declares the executing core' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -F -n 'NEGATIVE: an undeclared arm declares no scheduler footprint' tests/SmpCrossCoreCallSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C5 (`v0.35.173`): the scheduler domain's footprint census.
+# ============================================================================
+#
+# The object domain has had `LockFootprintBoundCensus` since RR7.18 because a
+# hand-written conjunction cannot notice that it is missing members.  Cut 8a-ii
+# measured the same gap here -- thirty-three of the family's forty-seven
+# theorems with neither a consumer nor an anchor -- and eight hand anchors were
+# the stopgap.  This is what retires the hand-written list.
+run_check "INVARIANT" rg -n '^def isSchedFootprintDecl \(env : Environment\) \(n : Name\) : MetaM Bool' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^def shapeViolation \(env : Environment\) \(n : Name\) : MetaM \(Option String\)' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^def namedBy \(env : Environment\) \(root : Name\) : NameSet' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^def resolverExemptions : List \(Name × String\)' SeLe4n/Testing/SchedFootprintCensus.lean
+# The shape question is put to the elaborator, and it is asked by reducing
+# TOWARDS the constant: `whnf` would run past `schedFootprintOfCores` into the
+# `List.cons` its body builds, so the question would be unaskable.
+run_check "INVARIANT" rg -F -n 'whnfUntil applied ``SeLe4n.Kernel.schedFootprintOfCores' SeLe4n/Testing/SchedFootprintCensus.lean
+# ...and with no arity test beside it: the applied term is the definition at its
+# full telescope and its type is a `List`, so a reduction stopping at that head
+# has it fully applied by type-correctness.  An inert condition reads exactly
+# like a decisive one, so it must not come back.
+run_negative_check "INVARIANT" rg -F -n 'isAppOfArity' SeLe4n/Testing/SchedFootprintCensus.lean
+# The consumption reading is `named`, not `reached`.  A transitive closure
+# answers a weaker question -- a footprint mentioned by some other footprint's
+# write-set helper would count as consumed while no arm names it -- so the
+# census's own claim would go silent exactly where it is meant to fire.
+run_check "INVARIANT" rg -U -n '^def resolverConsumed \(env : Environment\) : NameSet :=\n  namedBy env ``SeLe4n\.Kernel\.schedLockSetForSyscall' SeLe4n/Testing/SchedFootprintCensus.lean
+run_negative_check "INVARIANT" rg -F -n 'partial def' SeLe4n/Testing/SchedFootprintCensus.lean
+# The two registered exemptions are supersessions, not dead code: a second
+# footprint exists for the same syscall and the live dispatch reaches the other
+# one.  Both directions of the register are reconciled in the run itself.
+run_check "INVARIANT" rg -F -n '``SeLe4n.Kernel.schedLockSet_notificationSignalOnCore,' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -F -n '``SeLe4n.Kernel.schedLockSet_endpointReplyOnCore,' SeLe4n/Testing/SchedFootprintCensus.lean
+# The witnesses.  Neither failing branch can fire on the live tree, so each
+# plant sits on the far side of one decision: the canonical shape and a
+# hand-written ladder carrying a member the canonical form also carries; a
+# constant with the family's NAME and not its TYPE, which must stay out of the
+# family permanently rather than for the length of one mutation run; and the
+# namer pair, whose indirect half is what separates `named` from `reached`.
+run_check "INVARIANT" rg -n '^private def censusPlantedCanonical' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedInlined' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def schedLockSet_censusPlantedNotAFootprint : Nat' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedNamer' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedIndirectNamer' SeLe4n/Testing/SchedFootprintCensus.lean
+# ...and the WIRING case, which the plants alone cannot supply: they decide
+# `namedBy`, and a `resolverConsumed` that closed over it transitively would
+# pass every one of them.  A write-set helper is named by a footprint and by no
+# arm, so it separates the two readings on the live tree.
+run_check "INVARIANT" rg -F -n 'consumed.contains ``SeLe4n.Kernel.notificationSignalBoundWriteSet' SeLe4n/Testing/SchedFootprintCensus.lean
+# Building the module IS the check, so Tier 1 must build it.
+run_check "INVARIANT" rg -F -n 'run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus' scripts/test_tier1_build.sh
+
 finalize_report

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "816b1c95ec9916aaabc92fb2ba66ea02574d378c",
-      "tree_sha": "1a8c2660ea0f6d5a150ed9f3c81380fc5a4bd177",
-      "committed_at_utc": "2026-09-22T18:47:45+00:00"
+      "commit_sha": "af6e7fd8d8c7f5630341126a66bf37d2c7e9834b",
+      "tree_sha": "6dbe684e439850371a7d7a3be381ec76005268fe",
+      "committed_at_utc": "2026-09-22T19:18:50+00:00"
     }
   },
   "source_sync": {
@@ -17,17 +17,17 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "ecf85f42f4ca75de7a2eabfefc5cfb707ab63efdbeb7d786831a3fc5a265bd39"
+    "source_digest": "12a90c9f46da91a4055d58ad45e53d4d8295492d3225cf872c418c159dc7b530"
   },
   "summary": {
-    "module_count": 406,
-    "declaration_count": 22522
+    "module_count": 407,
+    "declaration_count": 22534
   },
   "readme_sync": {
-    "version": "0.35.172",
+    "version": "0.35.173",
     "lean_toolchain": "v4.28.0",
-    "production_files": 336,
-    "production_loc": 405258,
+    "production_files": 337,
+    "production_loc": 405604,
     "test_files": 70,
     "test_loc": 83005,
     "proved_theorem_lemma_decls": 13430,
@@ -281410,6 +281410,168 @@
           "called": [
             "RuntimeBoundaryContract",
             "st"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "SeLe4n.Testing.SchedFootprintCensus",
+      "path": "SeLe4n/Testing/SchedFootprintCensus.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.SchedFootprintCensus",
+          "line": 82,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "footprintPrefix",
+          "line": 92,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "resolverExemptions",
+          "line": 101,
+          "called": [
+            "TCB",
+            "delivery",
+            "notificationSignal",
+            "notificationSignalBoundCrossCoreDispatch",
+            "replyTransferOnCore",
+            "schedLockSet_endpointReplyOnCore",
+            "schedLockSet_notificationSignalBoundOnCore",
+            "schedLockSet_notificationSignalBoundOnCore_of_no_target",
+            "schedLockSet_notificationSignalOnCore",
+            "schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault",
+            "set"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "isSchedFootprintDecl",
+          "line": 125,
+          "called": [
+            "AccessMode",
+            "SchedLockId",
+            "bodyBearing",
+            "footprintPrefix",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "shapeViolation",
+          "line": 153,
+          "called": [
+            "all",
+            "none",
+            "of",
+            "ofList",
+            "schedFootprintOfCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "namedBy",
+          "line": 182,
+          "called": [
+            "insert",
+            "none",
+            "value"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "resolverConsumed",
+          "line": 191,
+          "called": [
+            "SchedLockId",
+            "any",
+            "canonical",
+            "consumed",
+            "contains",
+            "isSchedFootprintDecl",
+            "namedBy",
+            "none",
+            "of",
+            "pure",
+            "resolverExemptions",
+            "schedFootprintOfCores",
+            "schedLockSetForSyscall",
+            "shapeViolation",
+            "size",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusPlantedCanonical",
+          "line": 252,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "SchedLockId",
+            "schedFootprintOfCores"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusPlantedInlined",
+          "line": 260,
+          "called": [
+            "AccessMode",
+            "CoreId",
+            "SchedLockId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusPlantedNamer",
+          "line": 267,
+          "called": [
+            "AccessMode",
+            "SchedLockId",
+            "bootCoreId",
+            "schedLockSet_notificationWaitOnCore"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusPlantedIndirectNamer",
+          "line": 277,
+          "called": [
+            "AccessMode",
+            "SchedLockId",
+            "censusPlantedNamer"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "schedLockSet_censusPlantedNotAFootprint",
+          "line": 287,
+          "called": [
+            "censusPlantedCanonical",
+            "censusPlantedIndirectNamer",
+            "censusPlantedInlined",
+            "censusPlantedNamer",
+            "consumed",
+            "contains",
+            "count",
+            "isSchedFootprintDecl",
+            "namedBy",
+            "notificationSignalBoundWriteSet",
+            "of",
+            "resolverConsumed",
+            "schedLockSetForSyscall",
+            "schedLockSet_endpointCallOnCore",
+            "schedLockSet_endpointReplyOnCore",
+            "schedLockSet_notificationWaitOnCore",
+            "shapeViolation",
+            "size",
+            "toList"
           ]
         }
       ]

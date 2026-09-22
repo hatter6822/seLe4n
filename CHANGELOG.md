@@ -1,3 +1,100 @@
+## v0.35.173 — the scheduler domain's footprint census
+
+WS-RR RR8.12 Cut C5: `SeLe4n/Testing/SchedFootprintCensus.lean` (Tier 1) is
+`LockFootprintBoundCensus`'s counterpart for the scheduler domain.  It reports
+**17 declared footprints, every one canonical, 15 consumed by
+`schedLockSetForSyscall` and 2 registered as superseded**.
+
+### Why it exists
+
+Cut 8a-ii measured the gap and wrote it down: **thirty-three of the family's
+forty-seven theorems had neither a consumer nor a Tier 3 anchor** — every RR2.4 /
+RR2.10 / RR8.12 footprint property, silently deletable, because their consumer is
+the bracket cut and the bracket cut has not landed.  Eight hand anchors were the
+stopgap.  A hand-written list is what a census retires, for the same reason the
+object domain got one at RR7.18: a hand-written conjunction cannot notice that it
+is missing members.
+
+### Question one — every footprint is the canonical ladder
+
+A scheduler footprint restates none of `schedFootprintOfCores_write_only`,
+`_pairwise_le`, `_keys_nodup`, `_subset` or `mem_schedFootprintOfCores_*_iff`.
+They are stated once, of `schedFootprintOfCores`, and every footprint inherits
+them *because it is that function applied to two core lists*.  Restating them per
+footprint would be a delegation with no content — which is why Cut 7 and every cut
+after it omitted them — and that economy is sound exactly as long as the shape
+holds.
+
+A footprint written any other way loses all five **silently**.  `_keys_nodup` is
+`SchedLockSet.ofList?`'s own obligation, so such a footprint can make the
+constructor **refuse** and the resolver's arm then answers `none` — an
+*undeclared* arm, which the bracket treats as "no exclusion established", so it is
+sound, and it drops the arm out of the very coverage this workstream is building,
+with nothing saying so.  `_pairwise_le` is the acquisition-order obligation the
+bracket's ladder rests on, and there is no other proof of it in the tree.
+
+So the shape is not a style rule; it is the premise every generic lemma is
+consumed under.  The census requires it at each footprint's **full arity**, decided
+by reducing the applied definition *towards* `schedFootprintOfCores`
+(`Meta.whnfUntil`) rather than by reading its source — `whnf` would run past that
+head into the `List.cons` its body builds, and the question would be unaskable.
+
+### Question two — every footprint is named, or registered
+
+A footprint the syscall resolver never names is a footprint nobody acquires.  The
+consumed set is `schedLockSetForSyscall`'s own elaborated value, read **one level**
+and deliberately not closed: *named*, not *reached*.  A transitive closure answers
+a weaker question — a footprint mentioned by some other footprint's write-set
+helper would count as consumed while no arm names it — which is the
+presence-for-relation substitution one level down, and would silence the census
+exactly where it is meant to fire.
+
+Two entries are registered, both supersessions: the **bare** notification signal
+(the live dispatch routes `.notificationSignal` through the bound arm, and the two
+genuinely differ, the bound path's woken thread being the bound TCB whose home core
+the bare signal's set does not name) and the **dispatch**-level reply footprint
+(`.reply`'s arm is `doReplyTransfer`, whose footprint sits over it, and `v0.35.163`
+proved the fault-abandon branch writes a home core the dispatch never does).  Both
+directions are reconciled: an unregistered orphan fails, and a stale exemption
+fails too, because a stale exemption reads exactly like coverage.
+
+### Witnesses
+
+Neither failing branch can fire on the live tree, so the module carries plants on
+the far side of each decision: a canonical footprint and a hand-written ladder
+carrying a member the canonical form also carries; a constant with the family's
+**name** and not its **type**, which must stay outside the derived family
+permanently rather than for the length of one mutation run; and a namer pair whose
+indirect half separates *named* from *reached*.
+
+The pair alone is not enough — it decides `namedBy`, and a `resolverConsumed` that
+closed over it transitively would pass every plant — so the self-test carries a
+**wiring case** drawn from the live tree: a write-set helper is named by a footprint
+and by no arm, so it is reached at depth two and named at depth one by nothing.
+
+### What the shape check deliberately omits
+
+There is no arity test beside the reduction.  The applied term is the definition at
+its full telescope and its type is `List (SchedLockId × AccessMode)`, so a
+reduction stopping with `schedFootprintOfCores` as head has it fully applied by
+type-correctness: the condition could only ever be true, and a condition no input
+can decide is indistinguishable from a wrong one.  A Tier 3 negative refuses it
+coming back.
+
+### Gates
+
+Seven census-branch mutations and ten anchor mutations, all decisive.  Five of the
+anchors had to be rewritten first: **a Lean `Name` literal's double backtick inside
+a double-quoted `bash -lc` argument is an empty command substitution**, so it
+deletes itself from the pattern — the five searched for a string the file does not
+contain, and the changed-file sweep *deferred* all five as "substituting a command"
+while printing PASS, so a mutation run over them reported every mutation as missed.
+An anchor over a Lean name is now written as bare argv with a single-quoted
+pattern, and `CLAUDE.md`'s anchor-writing mechanics record both the hazard and the
+rule that a sweep's deferral count is part of its verdict.
+
+No production behaviour changed; the golden trace is byte-identical.
+
 ## v0.35.172 — one decode, two domains: the ABI seam's scheduler footprint
 
 WS-RR RR8.12 Cut C4b: `declaredSchedLockSetForAbiEntry` is

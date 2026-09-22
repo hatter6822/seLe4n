@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.172.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.173.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3323,7 +3323,8 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   mutation-tested in both directions — silent on the clean tree, firing on a
   mutation that keeps the token and moves it into the target declaration.
 
-  **Two mechanical facts about writing one, both earned at `v0.35.140`.**  The
+  **Three mechanical facts about writing one, two earned at `v0.35.140` and one
+  at `v0.35.173`.**  The
   gap stops at the *first* column-0 line, so it cannot cross a **multi-line
   signature's own closing line** — a Python `) -> set[tuple[str, int]]:` or the
   equivalent sits at column 0 and is not a continuation.  That is the bound
@@ -3333,7 +3334,16 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   shell quotes **ends the argument early**, so an anchor over a Python or Lean
   docstring marker writes the quote `\x22`: the shell-quoting failure does not
   error, it silently decides nothing, which is the one outcome
-  `check_anchor_consistency.py` exists to refuse.
+  `check_anchor_consistency.py` exists to refuse.  And **a Lean `Name` literal's
+  `` `` `` inside a double-quoted `bash -lc` argument is an EMPTY command
+  substitution**, so it deletes itself from the pattern: five anchors written that
+  way at `v0.35.173` searched for `whnfUntil applied SeLe4n.Kernel.…` — a string
+  the file does not contain — and the changed-file sweep *deferred* all five as
+  "substitutes a command" while printing PASS, so a mutation run over them reported
+  every mutation as missed.  An anchor over a Lean name is written as bare argv
+  with a single-quoted pattern (`run_check "INVARIANT" rg -F -n '``X.Y' file`),
+  never through `bash -lc`; and the deferral **count** in a sweep's own epilogue is
+  part of its verdict, not decoration.
 
   **And a DELIMITER that can occur in the data is not a delimiter** (PR #897's
   review, `v0.35.150`).  Six findings, one class, and it is this family's
@@ -9419,6 +9429,61 @@ code may assume:
   construction: an `.Inactive` victim declares the object-store lock alone and an
   **active** one, one field apart, additionally declares the executing core's run
   queue, which a resolver ignoring the state could not do.
+- **...and the family that resolver dispatches to is derived and reconciled**
+  (WS-RR RR8.12 Cut C5, `v0.35.173`).
+  `SeLe4n/Testing/SchedFootprintCensus.lean` (Tier 1) is the object domain's
+  `LockFootprintBoundCensus` for the scheduler domain, and it exists because Cut
+  8a-ii measured the gap: **thirty-three of the family's forty-seven theorems
+  had neither a consumer nor a Tier 3 anchor**, every one silently deletable,
+  because their consumer is the bracket cut and the bracket cut has not landed.
+  Eight hand anchors were the stopgap; a hand-written list is what a census
+  retires.  It asks two questions, and reports **17 footprints, all canonical,
+  15 consumed, 2 registered as superseded**.
+
+  (1) **Every footprint is the canonical `schedFootprintOfCores` ladder, at its
+  full arity** — and that is not a style rule, it is the premise every generic
+  lemma is consumed under.  The scheduler domain restates none of
+  `_write_only` / `_pairwise_le` / `_keys_nodup` / `_subset` / `mem_…_iff` per
+  footprint, because they are stated once of `schedFootprintOfCores` and
+  inherited *by being that function applied to two core lists*; a footprint
+  written any other way loses all five **silently**.  `_keys_nodup` is
+  `SchedLockSet.ofList?`'s own obligation, so such a footprint can make the
+  constructor refuse and the arm then answers `none` — an *undeclared* arm,
+  which the bracket treats as no exclusion established, so it is sound and it
+  drops the arm out of the coverage this workstream is building.  `_pairwise_le`
+  is the ladder's acquisition order, and there is no other proof of it.  The
+  question is put to the elaborator by reducing **towards** the constant
+  (`Meta.whnfUntil`), since `whnf` would run past it into the `List.cons` the
+  body builds and the question would be unaskable.
+
+  (2) **Every footprint is NAMED by `schedLockSetForSyscall`, or registered with
+  a reason** — and *named*, not *reached*: a transitive closure would count a
+  footprint as consumed because some reachable helper mentions it, which is the
+  presence-for-relation substitution one level down and would silence the census
+  exactly where it fires.  The register holds two supersessions — the **bare**
+  notification signal (the live dispatch routes through the bound arm) and the
+  **dispatch**-level reply footprint (the arm's sits over it, and `v0.35.163`
+  proved the abandon's home-core member is one the dispatch never writes) —
+  reconciled in both directions, so a stale exemption fails as loudly as an
+  orphan footprint.
+
+  (3) **Neither failing branch can fire on the live tree, so the plants are the
+  measurement.**  A canonical footprint and a hand-written ladder carrying a
+  member the canonical form also carries; a constant with the family's **name**
+  and not its **type**, which must stay outside the derived family permanently
+  rather than for the length of one mutation run; and a namer pair whose
+  indirect half is what separates *named* from *reached*.  The pair alone is not
+  enough — it decides `namedBy`, and a `resolverConsumed` that closed over it
+  transitively would pass every plant — so the self-test carries a **wiring
+  case** drawn from the live tree: a write-set helper is named by a footprint and
+  by no arm, so it is reached at depth two and named at depth one by nothing.
+
+  (4) **The shape check carries no arity test, deliberately.**  The applied term
+  is the definition at its full telescope and its type is
+  `List (SchedLockId × AccessMode)`, so a reduction stopping with
+  `schedFootprintOfCores` as head has it fully applied by type-correctness: the
+  condition could only ever be true, and *a condition no input can decide is
+  indistinguishable from a wrong one*.  A Tier 3 negative refuses it coming back.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

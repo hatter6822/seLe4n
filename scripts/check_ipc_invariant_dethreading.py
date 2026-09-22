@@ -364,6 +364,17 @@ MACHINERY_PINS = {
     # reconciliation and the per-site discipline check; it mints no
     # declaration.
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
+    # WS-RR RR8.12 Cut C5: the scheduler-footprint census, decided over the
+    # elaborated environment.  TWO `run_cmd`s and no minting: the census itself
+    # (it derives the `SchedLockId` footprint family, reduces each member
+    # towards `schedFootprintOfCores` and reconciles consumption against the
+    # exemption register in both directions), and its self-test, which decides
+    # both branches of the shape check, the type half of the family test, and
+    # `namedBy` against a planted namer pair plus a live-tree wiring case.  The
+    # self-test is separate because neither failing branch can fire on the live
+    # tree, and a check that cannot fire and carries no witness is
+    # indistinguishable from one that is wrong.
+    ("SeLe4n/Testing/SchedFootprintCensus.lean", "run_cmd"): 2,
     # The store-read classifier's Tier 1 reconciliation: it compares the text
     # classifier's per-line verdicts against `findDeclarationRanges?` and the
     # conclusion of each declaration's type, and throws on disagreement.  It

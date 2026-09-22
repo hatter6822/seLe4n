@@ -100,6 +100,21 @@ run_check "BUILD" lake build SeLe4n.Testing.DeclarationKind
 # check.
 run_check "BUILD" lake build SeLe4n.Testing.LockFootprintBoundCensus
 
+# WS-RR RR8.12 Cut C5: the object census's counterpart for the scheduler domain,
+# asking the two questions that domain's economy rests on.  A scheduler
+# footprint restates none of `_write_only` / `_pairwise_le` / `_keys_nodup` /
+# `_subset` / `mem_..._iff`: they are stated once of `schedFootprintOfCores` and
+# inherited BECAUSE each footprint is that function applied to two core lists,
+# so a footprint written any other way loses all five silently -- and
+# `_keys_nodup` is `SchedLockSet.ofList?`'s own obligation, so the constructor
+# then refuses and the arm answers `none`, which is an undeclared arm rather
+# than a failure.  And a footprint the syscall resolver names nowhere is one
+# nobody acquires: Cut 8a-ii measured thirty-three of the family's forty-seven
+# theorems with neither a consumer nor an anchor.  Both are derived from the
+# environment and reconciled against the exemption register in both directions;
+# building the module IS the check, and its self-test decides every branch.
+run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus
+
 # WS-RM RM5.3: every definition that writes reply-stack data names a chain
 # result, or is recorded as a half-step of the composite that does.  `v0.35.4`
 # made the reply stack doubly linked and `donationChainWellFormed` says the
