@@ -4343,6 +4343,86 @@ theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend
                  exact ipcUnwrapCaps_getTcb?_eq _ receiverCspaceRoot receiverSlotBase _ stRecv _ _
                    sender hLegInv hUnwrap)
 
+/-- **`v0.35.161` / WS-RR RR8.12 Cut C2 (`v0.35.162`)**: the replenish-queue cores the
+receive leg's BLOCK path migrates between — the receiver's home and its loan's owner's,
+when the receiver blocks holding a `.donated` context, read through `receivePreReturn?`,
+the resolver the object domain reads the same return through
+(`lockSet_endpointReplyRecvOnCore_covers_preReturn`).
+
+One owner for both receiving arms: `.receive`'s segment
+(`endpointReceiveHandoffReplenishCores`) takes it on the block branch, and
+`.replyRecv`'s (`replyRecvHandoffReplenishCores`) reads it at the state its receive
+leg runs on.  Two spellings of "which cores does the pre-receive return move between"
+would be the divergence hazard §0b closed one hand-off over, and
+`receivePreReturnReplenishCores_eq_migration` is the licence — stated once, consumed by
+both — that the pre-state pair **is** the migration's. -/
+def receivePreReturnReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receivePreReturn? st endpointId receiver with
+  | some (_, owner) => [determineTargetCore st receiver, determineTargetCore st owner]
+  | none => []
+
+/-- Where the resolver answers nothing, no core. -/
+@[simp] theorem receivePreReturnReplenishCores_of_none (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (h : receivePreReturn? st endpointId receiver = none) :
+    receivePreReturnReplenishCores st endpointId receiver = [] := by
+  unfold receivePreReturnReplenishCores; rw [h]
+
+/-- A receive with a sender queued rendezvouses rather than blocking, so the block
+path's pair is empty there. -/
+theorem receivePreReturnReplenishCores_of_sender (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver sender : SeLe4n.ThreadId)
+    (hSender : receiveRendezvousSender? st endpointId = some sender) :
+    receivePreReturnReplenishCores st endpointId receiver = [] :=
+  receivePreReturnReplenishCores_of_none st endpointId receiver
+    (receivePreReturn?_of_sender st endpointId receiver sender hSender)
+
+/-- And a block by a receiver holding no loan migrates nothing. -/
+theorem receivePreReturnReplenishCores_of_no_sender_no_loan (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hNoDon : endpointReplyDonation? st receiver = none) :
+    receivePreReturnReplenishCores st endpointId receiver = [] := by
+  unfold receivePreReturnReplenishCores
+  rw [receivePreReturn?_of_no_sender st endpointId receiver hNoSender, hNoDon]
+
+/-- A block by a receiver holding a loan names the receiver's home and the owner's. -/
+theorem receivePreReturnReplenishCores_of_no_sender_returning (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hDon : endpointReplyDonation? st receiver = some (scId, owner)) :
+    receivePreReturnReplenishCores st endpointId receiver
+      = [determineTargetCore st receiver, determineTargetCore st owner] := by
+  unfold receivePreReturnReplenishCores
+  rw [receivePreReturn?_of_no_sender st endpointId receiver hNoSender, hDon]
+
+/-- **The block path's licence, stated once for both receiving arms.**  On a block that
+returns a loan, the pre-state pair **is** the pair `preReceiveReturnMigration` migrates
+between at the state it runs on: the source is the receiver's home by definition, and
+the destination `replenishHomeOfSchedContext` resolves off the post-pop state is the
+owner's home (`preReceiveReturnMigration_destination`), because the pop binds the
+context to the owner the binding names and writes no `cpuAffinity`.  Not "agrees
+with" and not "over-approximates": the two lists are equal, which is what keeps a
+footprint a bracket resolves before the transition and the migration the transition
+then performs from naming different cores.  Conditioned on the pop's OWN guard
+(`preReceiveDonation?`) and on the pop having committed, because those are the only
+shapes on which there is a migration to equal. -/
+theorem receivePreReturnReplenishCores_eq_migration (st stClean : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt)
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hDon : preReceiveDonation? st receiver = some (scId, owner))
+    (hClean : cleanupPreReceiveDonationChecked st receiver = .ok stClean) :
+    receivePreReturnReplenishCores st endpointId receiver
+      = [determineTargetCore st receiver,
+         replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)] := by
+  rw [receivePreReturnReplenishCores_of_no_sender_returning st endpointId receiver scId owner
+    hNoSender (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon),
+    preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean]
+
 /-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
 write** — the dequeued donor's home and the receiver's, on a rendezvous whose
 donation the resolver would carry out, and none at all otherwise.
@@ -4416,10 +4496,7 @@ def endpointReceiveHandoffReplenishCores (st : SystemState) (endpointId : SeLe4n
     (receiver : SeLe4n.ThreadId) : List CoreId :=
   match receiveRendezvousDonatingSender? st endpointId receiver with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
-  | none =>
-      match receivePreReturn? st endpointId receiver with
-      | some (_, owner) => [determineTargetCore st receiver, determineTargetCore st owner]
-      | none => []
+  | none => receivePreReturnReplenishCores st endpointId receiver
 
 /-- The base sender resolver on the block path: an endpoint the store resolves with an
 empty send queue names no sender. -/
@@ -4446,8 +4523,8 @@ theorem endpointReceiveHandoffReplenishCores_of_blocked (st : SystemState)
   unfold endpointReceiveHandoffReplenishCores
   rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
     (receiveRendezvousCallSender?_of_blocked st endpointId ep hEp hHead)]
-  rw [receivePreReturn?_of_no_sender st endpointId receiver
-    (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead), hNoDon]
+  exact receivePreReturnReplenishCores_of_no_sender_no_loan st endpointId receiver
+    (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead) hNoDon
 
 /-- **`v0.35.161` (register row 57)**: on the block path with a loan to return, the
 segment is the receiver's home core and the owner's — the two cores the pre-receive
@@ -4464,8 +4541,8 @@ theorem endpointReceiveHandoffReplenishCores_of_blocked_returning (st : SystemSt
   unfold endpointReceiveHandoffReplenishCores
   rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
     (receiveRendezvousCallSender?_of_blocked st endpointId ep hEp hHead)]
-  rw [receivePreReturn?_of_no_sender st endpointId receiver
-    (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead), hDon]
+  exact receivePreReturnReplenishCores_of_no_sender_returning st endpointId receiver scId owner
+    (receiveRendezvousSender?_of_blocked st endpointId ep hEp hHead) hDon
 
 /-- **`v0.35.161`: the block path's licence.**  On a block that returns a loan, the
 pre-state pair **is** the pair `preReceiveReturnMigration` migrates between at the
@@ -4511,7 +4588,8 @@ theorem endpointReceiveHandoffReplenishCores_of_blockedOnSend (st : SystemState)
   unfold endpointReceiveHandoffReplenishCores
   rw [receiveRendezvousDonatingSender?_of_no_callSender st endpointId receiver
     (receiveRendezvousCallSender?_of_blockedOnSend st endpointId ep sender senderTcb sendEp
-      hEp hHead hTcb hSend), receivePreReturn?_of_sender st endpointId receiver sender hSender]
+      hEp hHead hTcb hSend)]
+  exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
 
 /-- **WS-RR RR8.12 Cut C1**: and empty on a queued `Call` the donation resolver
 declines — the receiver holds a context of its own, or the sender holds none — which
@@ -4533,7 +4611,8 @@ theorem endpointReceiveHandoffReplenishCores_of_no_donation (st : SystemState)
   unfold endpointReceiveHandoffReplenishCores
   rw [receiveRendezvousDonatingSender?_of_no_donation st endpointId receiver sender
     (receiveRendezvousCallSender?_of_blockedOnCall st endpointId ep sender senderTcb callEp
-      hEp hHead hTcb hCall) hNone, receivePreReturn?_of_sender st endpointId receiver sender hSender]
+      hEp hHead hTcb hCall) hNone]
+  exact receivePreReturnReplenishCores_of_sender st endpointId receiver sender hSender
 
 /-- **WS-RR RR8.12: the licence.**  On a **`Call`** rendezvous the resolver would
 **donate**, the pre-state reading **is** the pair of cores WS-OD OD3.6's donation

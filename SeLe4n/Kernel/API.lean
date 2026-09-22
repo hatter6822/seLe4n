@@ -977,6 +977,74 @@ theorem replyRecvPopDonation_holder_eq_frameHead (rid : SeLe4n.ReplyId)
           -- so what remains is the pair equality the pop's result carries.
           exact hPair
 
+/-- **WS-RR RR8.12 Cut C2 (`v0.35.162`)**: a pop that hands a context back **is** the
+resolved return followed by the SM5.H migration between the holder's home and the
+recipient's, both read off the pop's own pre-state — the decomposition the
+scheduler-domain footprint's coverage theorem
+(`schedLockSet_endpointReplyRecvOnCore_covers_pop`) consumes.  The recipient is
+`replyDonationRecipient` (WS-HP HP10.7), the one answer to which thread receives the
+context, so the migration's destination and the footprint's cannot differ. -/
+theorem replyRecvPopDonation_ok_some_decompose (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (st st' : SystemState)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : replyRecvPopDonation rid target st = .ok (some (scId, holder), st')) :
+    ∃ st1', returnDonatedSchedContextResolved st holder scId
+        (replyDonationRecipient st scId target) = .ok st1' ∧
+      st' = migrateSchedContextReplenishment st1' scId (determineTargetCore st holder)
+        (determineTargetCore st (replyDonationRecipient st scId target)) := by
+  have hHead := replyRecvPopDonation_holder_eq_frameHead rid target st st' scId holder h
+  unfold replyRecvPopDonation at h
+  rw [hHead] at h
+  simp only [] at h
+  cases hHV : holder.toValid? with
+  | none => rw [hHV] at h; simp only [] at h; cases h
+  | some holderV =>
+    cases hTV : target.toValid? with
+    | none => rw [hHV, hTV] at h; simp only [] at h; cases h
+    | some targetV =>
+      rw [hHV, hTV] at h
+      simp only [] at h
+      cases hRet : returnDonatedSchedContextResolved st holder scId
+          (replyDonationRecipient st scId target) with
+      | error e => rw [hRet] at h; simp only [] at h; cases h
+      | ok st1' =>
+        rw [hRet] at h
+        simp only [] at h
+        exact ⟨st1', rfl, ((Prod.mk.inj (Except.ok.inj h)).2).symm⟩
+
+/-- **WS-RR RR8.12 Cut C2**: and a pop that hands nothing back commits nothing —
+the only `none` arm is the identity, so a `.replyRecv` whose answered frame heads no
+context runs its receive leg on the reply leg's own post-state.  What licenses the
+footprint's empty pop pair. -/
+theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (h : replyRecvPopDonation rid target st = .ok (none, st')) : st' = st := by
+  unfold replyRecvPopDonation at h
+  cases hHead : replyFrameHeadHolder? st rid with
+  | none =>
+      rw [hHead] at h
+      simp only [] at h
+      exact ((Prod.mk.inj (Except.ok.inj h)).2).symm
+  | some pair =>
+    obtain ⟨oldScId, holder⟩ := pair
+    rw [hHead] at h
+    simp only [] at h
+    cases hHV : holder.toValid? with
+    | none => rw [hHV] at h; simp only [] at h; cases h
+    | some holderV =>
+      cases hTV : target.toValid? with
+      | none => rw [hHV, hTV] at h; simp only [] at h; cases h
+      | some targetV =>
+        rw [hHV, hTV] at h
+        simp only [] at h
+        cases hRet : returnDonatedSchedContextResolved st holder oldScId
+            (replyDonationRecipient st oldScId target) with
+        | error e => rw [hRet] at h; simp only [] at h; cases h
+        | ok st1' =>
+          rw [hRet] at h
+          simp only [] at h
+          exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
+
 /-- **WS-RM (`v0.35.6`): the post-receive half** — everything the donation
 resolution cannot decide until the receive leg has run.
 
@@ -1931,6 +1999,552 @@ def replyRecvBodyWriteSet (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadI
                      | .ok (_, st3) =>
                         receiveLegPipHandoffWriteSet st3 receiver nextThread
                           ((recordedReplyServer? st prevCaller).getD receiver) executingCore))))
+
+-- ============================================================================
+-- WS-RR RR8.12 Cut C2 (`v0.35.162`): the `.replyRecv` arm's scheduler-domain footprint
+-- ============================================================================
+--
+-- The arm performs up to THREE SchedContext hand-offs, each migrating a
+-- reservation's CBS replenishments between two cores: the pop between the reply
+-- leg and the receive leg (`replyRecvPopDonation`, WS-RM), the pre-receive return on
+-- the receive leg's block path (`cleanupPreReceiveDonationMigrated`, `v0.35.161`),
+-- and the re-donation to the receiver when the receive leg dequeues a `Call`
+-- (`replyRecvPostReceiveDonation`, WS-RR RR2.20).  The replenish segment below
+-- mirrors the spine exactly, the way `replyRecvBodyWriteSet` mirrors it for the run
+-- segment: each hand-off is read AT THE STATE IT RUNS ON, through ITS OWN arm
+-- selector -- the pop's `returned?`, the block path's `receivePreReturn?`, the
+-- re-donation's `callDonationSchedContext?` -- so the footprint and the transition
+-- cannot disagree about which cores a hand-off moves between.  Nothing is a
+-- parameter, and no core is resolved a second way: every reading is one the
+-- transition itself performs.
+--
+-- Why this arm could not take the `.receive` footprint's pre-state form: the pop
+-- rewrites the receiver's binding between the reply leg and the receive leg, so a
+-- pre-state reading of the receive leg's donation guard would be a proxy for the
+-- guard the transition reads two legs later (*a proxy is not the fact*).  Reading
+-- each leg at its own state is what `replyRecvBodyWriteSet` has done since SM8.B.2,
+-- and it is what WS-HP HP10.8 registered the reply arm's ORIGIN member for lacking;
+-- this footprint has no such asymmetry, because its resolution and the
+-- transition's are the same computation.
+--
+-- What is deliberately NOT declared here is the two chain walks -- the reversion
+-- from the recorded server inside `replyRecvPostReceiveDonation` and the receive
+-- leg's hand-off (`applyReceiveLegPipHandoff`, WS-OD OD3.14): a walked chain is
+-- state-discovered and unbounded, so no static footprint can enumerate its cores,
+-- and `PriorityInheritance.pipChainSchedFootprint` declares them per walked member
+-- under the `pipChainStart_replyRecv*` obligations, exactly as every sibling
+-- footprint over a walking arm does.
+
+/-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the pop migrates between --
+the holder's home and the recipient's, both read off the pop's own pre-state, keyed
+on the arm selector the pop returns (`returned?`), as
+`replyRecvPostReceiveDonationWriteSet` is keyed on the same value.  The recipient is
+`replyDonationRecipient`, the one answer to "which thread receives the context"
+(WS-HP HP10.7), so the migration's destination and the footprint's cannot differ.
+`replyRecvPopDonation_ok_some_decompose` is the licence that these ARE the two
+cores the pop's migration is stated at. -/
+def replyRecvPopReplenishCores (target : SeLe4n.ThreadId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    List Concurrency.CoreId :=
+  match returned? with
+  | some (scId, holder) =>
+      [determineTargetCore st holder,
+       determineTargetCore st (replyDonationRecipient st scId target)]
+  | none => []
+
+@[simp] theorem replyRecvPopReplenishCores_none (target : SeLe4n.ThreadId) (st : SystemState) :
+    replyRecvPopReplenishCores target none st = [] := rfl
+
+@[simp] theorem replyRecvPopReplenishCores_some (target : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (st : SystemState) :
+    replyRecvPopReplenishCores target (some (scId, holder)) st
+      = [determineTargetCore st holder,
+         determineTargetCore st (replyDonationRecipient st scId target)] := rfl
+
+/-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the post-receive half
+migrates between -- the dequeued caller's home and the receiver's, when the pop
+handed a context back AND the receive leg dequeued a `Call` AND the donation's own
+resolver answers `some` at the state the donation runs on (the post-deschedule
+state, which is scheduler-only relative to the receive leg's post-state).  Every
+other arm migrates nothing: the never-donated arm walks the chain only, and the
+non-`Call` arm deschedules and walks.
+
+The three-way gate is the transition's own, clause for clause
+(`replyRecvPostReceiveDonation`): a footprint keyed on fewer conditions would
+declare two replenish locks for a migration that does not happen, and lock
+contention is an observable channel (SM8.D's CC-5). -/
+def replyRecvPostReceiveReplenishCores (tid nextThread : SeLe4n.ThreadId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (st : SystemState) :
+    List Concurrency.CoreId :=
+  match returned? with
+  | none => []
+  | some (_, holder) =>
+      if rendezvousDequeuedCall st nextThread then
+        rendezvousCallDonationReplenishCores (replyRecvHolderDeschedule tid holder st)
+          tid nextThread
+      else []
+
+@[simp] theorem replyRecvPostReceiveReplenishCores_none (tid nextThread : SeLe4n.ThreadId)
+    (st : SystemState) :
+    replyRecvPostReceiveReplenishCores tid nextThread none st = [] := rfl
+
+theorem replyRecvPostReceiveReplenishCores_of_no_call (tid nextThread : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (st : SystemState)
+    (h : rendezvousDequeuedCall st nextThread = false) :
+    replyRecvPostReceiveReplenishCores tid nextThread (some (scId, holder)) st = [] := by
+  unfold replyRecvPostReceiveReplenishCores
+  simp [h]
+
+theorem replyRecvPostReceiveReplenishCores_of_call (tid nextThread : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId) (st : SystemState)
+    (h : rendezvousDequeuedCall st nextThread = true) :
+    replyRecvPostReceiveReplenishCores tid nextThread (some (scId, holder)) st
+      = rendezvousCallDonationReplenishCores (replyRecvHolderDeschedule tid holder st)
+          tid nextThread := by
+  unfold replyRecvPostReceiveReplenishCores
+  simp [h]
+
+/-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores the live `.replyRecv` may
+write, mirroring the arm's own control flow -- the pop's pair at the reply leg's
+post-state, the receive leg's block-path return at the pop's post-state, and the
+post-receive half's re-donation at the receive leg's post-state.  Each leg is read
+at the state that leg actually runs at, which is the discipline
+`replyRecvBodyWriteSet` established for the run segment: reading a later leg at
+`st` would name a different pair.
+
+A failed leg contributes nothing, because the body then commits nothing and there
+is no migration to cover. -/
+def replyRecvHandoffReplenishCores (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st : SystemState) : List Concurrency.CoreId :=
+  match endpointReplyOnCore receiver prevCaller msg executingCore st with
+  | (_, .error _) => []
+  | (st1, .ok _) =>
+      match replyRecvPopDonation replyId prevCaller st1 with
+      | .error _ => []
+      | .ok (returnedSc?, st1p) =>
+          replyRecvPopReplenishCores prevCaller returnedSc? st1 ++
+            (receivePreReturnReplenishCores st1p endpointId receiver ++
+              (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+                  receiverCspaceRoot receiverSlotBase executingCore st1p with
+               | (_, .error _) => []
+               | (st2, .ok (nextThread, _, _)) =>
+                  replyRecvPostReceiveReplenishCores receiver nextThread returnedSc? st2))
+
+/-- **WS-RR RR8.12 Cut C2**: the scheduler-domain footprint of the live `.replyRecv`
+arm -- the object-store table write lock, the run-queue write locks of
+`replyRecvBodyWriteSet` (the arm's own SM8.B write set, which its confinement
+theorem `replyRecvBody_confinedToCores` is stated at, so the footprint and the
+confinement claim cannot name different cores -- Cut 7's rule), and the
+replenish-queue write locks of `replyRecvHandoffReplenishCores`.
+
+**Every core is derived; nothing is a parameter.**  The remaining arguments are the
+syscall's own operands, so a bracket resolving this footprint has everything it
+needs before the transition runs.  Inert until the bracket cut, like every sibling.
+
+The three hand-offs are covered by theorem, each at the cores the migration
+actually resolves on the state it runs on
+(`schedLockSet_endpointReplyRecvOnCore_covers_pop`, `…_covers_preReturnMigration`,
+`…_covers_postReceiveDonation`); and where no hand-off fires the segment is empty
+(`…_no_replenishQueue_of_no_donation`) and the transition writes no replenish queue
+(`replyRecvBody_replenishQueueOnCore_of_no_donation`), so the declaration is exact
+in both directions on that shape.  The run segment's coverage is
+`replyRecvBody_confinedToCores`, stated at the same list. -/
+def schedLockSet_endpointReplyRecvOnCore (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st : SystemState) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st)
+    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg
+      receiverCspaceRoot receiverSlotBase executingCore st)
+
+-- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
+-- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
+-- footprint's own arguments, so a consumer reaches for the shared lemma directly.
+
+/-- The segment once the reply leg and the pop have run: the pop's pair, the
+block-path pair at the pop's post-state, and the post-receive pair under the receive
+leg's own match.  The one unfolding every consumer reads. -/
+theorem replyRecvHandoffReplenishCores_eq_of_pop (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st st1 st1p : SystemState)
+    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
+    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = replyRecvPopReplenishCores prevCaller returned? st1 ++
+          (receivePreReturnReplenishCores st1p endpointId receiver ++
+            (match endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+                receiverCspaceRoot receiverSlotBase executingCore st1p with
+             | (_, .error _) => []
+             | (st2, .ok (nextThread, _, _)) =>
+                replyRecvPostReceiveReplenishCores receiver nextThread returned? st2)) := by
+  unfold replyRecvHandoffReplenishCores
+  simp only [hReply, hPop]
+
+/-- ...and once the receive leg has run too, the third component is the post-receive
+pair at that leg's post-state. -/
+theorem replyRecvHandoffReplenishCores_eq_of_legs (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st st1 st1p st2 : SystemState)
+    (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (nextThread : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p))
+    (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+        receiverCspaceRoot receiverSlotBase executingCore st1p
+      = (st2, .ok (nextThread, summary, sgi2))) :
+    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st
+      = replyRecvPopReplenishCores prevCaller returned? st1 ++
+          (receivePreReturnReplenishCores st1p endpointId receiver ++
+            replyRecvPostReceiveReplenishCores receiver nextThread returned? st2) := by
+  rw [replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi returned? hReply hPop]
+  simp only [hRecv]
+
+/-- **WS-RR RR8.12 Cut C2**: the reply leg's wake — the answered caller's home
+core — is a run-queue write member, unconditionally: it is the head of the arm's
+own write set. -/
+theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId) (st : SystemState) :
+    (SchedLockId.runQueue ⟨determineTargetCore st prevCaller⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+          receiverCspaceRoot receiverSlotBase executingCore st := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold replyRecvBodyWriteSet
+  exact List.mem_cons_self ..
+
+/-- **WS-RR RR8.12 Cut C2**: every core the receive leg writes — resolved at the
+pop's post-state, the state that leg runs on — is a run-queue write member. -/
+theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p)) :
+    ∀ c ∈ endpointReceiveDualWriteSet st1p endpointId executingCore,
+      (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+        ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+            receiverCspaceRoot receiverSlotBase executingCore st := by
+  intro c hc
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold replyRecvBodyWriteSet
+  simp only [hReply, hPop, List.mem_cons, List.mem_append]
+  exact Or.inr (Or.inl hc)
+
+/-- **WS-RR RR8.12 Cut C2 (coverage, the pop)**: the `.replyRecv` footprint covers the
+pop's migration footprint member for member — at the two cores the pop's migration
+is actually stated at (`replyRecvPopDonation_ok_some_decompose`), on the reply leg's
+post-state, which is the state the pop runs on.  A `withLockSet` bracket over this
+footprint therefore holds both slots the pop migrates between.  Conditioned on the
+pop having handed a context back, because that is the only shape on which there is
+a migration to cover. -/
+theorem schedLockSet_endpointReplyRecvOnCore_covers_pop
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId, holder), st1p)) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st1 holder)
+             (determineTargetCore st1 (replyDonationRecipient st1 scId prevCaller)),
+      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+            receiverCspaceRoot receiverSlotBase executingCore st := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
+    or_false] at hp
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi _ hReply hPop
+  rcases hp with h | h <;> subst h <;>
+  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
+    rw [hSeg]
+    simp
+
+/-- **WS-RR RR8.12 Cut C2 (coverage, the block path)**: on a receive leg that blocks
+holding a loan, the footprint covers the pre-receive return's migration footprint
+member for member — at the cores the migration actually resolves on the post-pop
+state it runs on (`receivePreReturnReplenishCores_eq_migration`).  The `.replyRecv`
+sibling of `schedLockSet_endpointReceiveOnCore_covers_preReturnMigration`, read at
+the state the arm's receive leg runs on rather than at the syscall's pre-state,
+because that is where this arm's leg runs.  Conditioned on the pop's OWN guard and
+on the pop having committed, as its sibling is. -/
+theorem schedLockSet_endpointReplyRecvOnCore_covers_preReturnMigration
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p stClean : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (ep : Endpoint) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (returned?, st1p))
+    (hObjInv : st1p.objects.invExt)
+    (hEp : st1p.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none)
+    (hDon : preReceiveDonation? st1p receiver = some (scId, owner))
+    (hClean : cleanupPreReceiveDonationChecked st1p receiver = .ok stClean) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet (determineTargetCore st1p receiver)
+             (replenishHomeOfSchedContext stClean scId (determineTargetCore st1p receiver)),
+      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+            receiverCspaceRoot receiverSlotBase executingCore st := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
+    or_false] at hp
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi returned? hReply hPop
+  have hPre := receivePreReturnReplenishCores_eq_migration st1p stClean endpointId receiver scId
+    owner hObjInv (receiveRendezvousSender?_of_blocked st1p endpointId ep hEp hHead) hDon hClean
+  rcases hp with h | h <;> subst h <;>
+  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
+    rw [hSeg, hPre]
+    simp
+
+/-- **WS-RR RR8.12 Cut C2 (coverage, the re-donation)**: on a receive leg that
+dequeues a `Call` after the pop handed a context back, the footprint covers WS-OD
+OD3.6's donation footprint member for member — hence, by
+`applyCallDonationOnCoreSchedLockSet_covers_migration`, the SM5.H migration's two
+replenish-queue write locks — at the cores the donation **actually** resolves, on the
+post-deschedule state it runs on, under the donation's OWN resolver
+(`applyRendezvousCallDonation_ok_migrates` is the licence that those are the
+migration's endpoints).  Conditioned on all three of the arm's own gates, because
+those are the only shapes on which there is a migration to cover; a coverage claim
+elsewhere would be covering nothing while reading like coverage. -/
+theorem schedLockSet_endpointReplyRecvOnCore_covers_postReceiveDonation
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p st2 : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (scId0 scId : SeLe4n.SchedContextId) (holder nextThread : SeLe4n.ThreadId)
+    (summary : CapTransferSummary)
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (some (scId0, holder), st1p))
+    (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+        receiverCspaceRoot receiverSlotBase executingCore st1p
+      = (st2, .ok (nextThread, summary, sgi2)))
+    (hCall : rendezvousDequeuedCall st2 nextThread = true)
+    (hDon : callDonationSchedContext? (replyRecvHolderDeschedule receiver holder st2)
+        nextThread receiver = some scId) :
+    ∀ p ∈ applyCallDonationOnCoreSchedLockSet
+             (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) nextThread)
+             (determineTargetCore (replyRecvHolderDeschedule receiver holder st2) receiver),
+      p ∈ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+            receiverCspaceRoot receiverSlotBase executingCore st := by
+  have hSeg := replyRecvHandoffReplenishCores_eq_of_legs endpointId receiver replyId prevCaller
+    msg receiverCspaceRoot receiverSlotBase executingCore st st1 st1p st2 sgi sgi2 _ nextThread
+    summary hReply hPop hRecv
+  refine schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun c hc => ?_)
+  rw [hSeg, replyRecvPostReceiveReplenishCores_of_call receiver nextThread scId0 holder st2 hCall,
+    rendezvousCallDonationReplenishCores_of_donation _ receiver nextThread scId hDon]
+  simp only [List.mem_append]
+  exact Or.inr (Or.inr hc)
+
+/-- **WS-RR RR8.12 Cut C2**: where no hand-off fires — the pop handed nothing back
+and the receive leg's block path returns no loan — the segment is empty, so the
+footprint is the table lock and the run queues alone.  The post-receive half needs
+no hypothesis: with nothing handed back it walks and never donates. -/
+theorem replyRecvHandoffReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st st1 st1p : SystemState)
+    (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hPre : receivePreReturn? st1p endpointId receiver = none) :
+    replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st = [] := by
+  rw [replyRecvHandoffReplenishCores_eq_of_pop endpointId receiver replyId prevCaller msg
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi none hReply hPop,
+    replyRecvPopReplenishCores_none, receivePreReturnReplenishCores_of_none st1p endpointId
+    receiver hPre, List.nil_append, List.nil_append]
+  split <;> rfl
+
+/-- **WS-RR RR8.12 Cut C2 (the empty segment)**: a `.replyRecv` that hands nothing
+back and returns no loan declares **no** replenish-queue lock — over-declaring is
+sound and not free (SM8.D's CC-5), and
+`replyRecvBody_replenishQueueOnCore_of_no_donation` is the licence that the
+transition writes none there either. -/
+theorem schedLockSet_endpointReplyRecvOnCore_no_replenishQueue_of_no_donation
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p : SystemState) (sgi : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hPre : receivePreReturn? st1p endpointId receiver = none) (c : Concurrency.CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId prevCaller msg
+          receiverCspaceRoot receiverSlotBase executingCore st := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [replyRecvHandoffReplenishCores_of_no_donation endpointId receiver replyId prevCaller msg
+    receiverCspaceRoot receiverSlotBase executingCore st st1 st1p sgi hReply hPop hPre] at this
+  simp at this
+
+/-- **WS-RR RR8.12 Cut C2 (frame)**: the receive leg writes no replenish queue where
+`receivePreReturn?` answers `none` — on a rendezvous (the leg itself donates
+nothing; the arm's donation is a later step), on a block by a receiver holding no
+loan, and on an endpoint the store does not resolve (the leg commits nothing).  The
+resolver's `none` is exactly the disjunction of the frames the leg already has. -/
+theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : Concurrency.CoreId) (st : SystemState)
+    (hPre : receivePreReturn? st endpointId receiver = none) (c : Concurrency.CoreId) :
+    (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold receivePreReturn? at hPre
+  cases hEp : st.getEndpoint? endpointId with
+  | none =>
+      rw [endpointReceiveDualWithCapsOnCore_scheduler_eq,
+        endpointReceiveDualOnCore_state_of_no_endpoint endpointId receiver replyId executingCore
+          st hEp]
+  | some ep =>
+      cases hHead : ep.sendQ.head with
+      | some sender =>
+          exact endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous endpointId
+            receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hEp
+            hHead c
+      | none =>
+          have hSender : receiveRendezvousSender? st endpointId = none := by
+            unfold receiveRendezvousSender?; rw [hEp]; exact hHead
+          rw [hSender] at hPre
+          simp only [] at hPre
+          have hNoDon : preReceiveDonation? st receiver = none := by
+            cases hP : preReceiveDonation? st receiver with
+            | none => rfl
+            | some pr =>
+                obtain ⟨scId, owner⟩ := pr
+                have h := endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hP
+                rw [hPre] at h
+                cases h
+          exact endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_donation endpointId
+            receiver replyId receiverCspaceRoot receiverSlotBase executingCore st ep hEp hHead
+            hNoDon c
+
+/-- The post-receive half's never-donated arm is the chain walk from the recorded
+server, and nothing else. -/
+theorem replyRecvPostReceiveDonation_ok_none_eq (tid recordedServer nextThread : SeLe4n.ThreadId)
+    (serverCore : Concurrency.CoreId) (st st' : SystemState) (u : Unit)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
+      = .ok (u, st')) :
+    st' = (PriorityInheritance.propagatePipChainCrossCore st recordedServer serverCore).1 := by
+  unfold replyRecvPostReceiveDonation at h
+  simp only [] at h
+  exact ((Prod.mk.inj (Except.ok.inj h)).2).symm
+
+/-- ...so it writes no replenish queue (WS-RR RR2.20's frame over the walk)... -/
+theorem replyRecvPostReceiveDonation_replenishQueueOnCore_of_none
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (st st' : SystemState) (u : Unit) (hObjInv : st.objects.invExt)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
+      = .ok (u, st')) (c : Concurrency.CoreId) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u h]
+  exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings st recordedServer
+    serverCore _ hObjInv).1 c
+
+/-- ...and keeps object-store integrity, which the walk after it reads. -/
+theorem replyRecvPostReceiveDonation_preserves_objects_invExt_of_none
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (st st' : SystemState) (u : Unit) (hObjInv : st.objects.invExt)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore none st
+      = .ok (u, st')) :
+    st'.objects.invExt := by
+  rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u h]
+  exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st recordedServer
+    serverCore _ hObjInv
+
+/-- **WS-RR RR8.12 Cut C2 (the exactness licence)**: where the segment is empty —
+the pop handed nothing back and the receive leg's block path returns no loan — the
+live `.replyRecv` writes **no** replenish queue on any core.  The composition a
+bracket consumer cites: the reply leg's wake is a run-queue insert
+(`endpointReplyOnCore_replenishQueueOnCore`), a pop that returns nothing is the
+identity (`replyRecvPopDonation_ok_none_eq`), the receive leg is a frame on both its
+paths (`endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn`), the
+post-receive half's never-donated arm is the chain walk, which is a frame
+(`propagatePipChainCrossCore_replenish_readings`), the receive leg's hand-off is the
+identity or another walk (`applyReceiveLegPipHandoff_cases`), and the two stagers
+write registers only.
+
+**This theorem also pins a divergence the register records** (the WS-CB
+passive/legacy row): on a `.replyRecv` whose pop returned nothing, a dequeued `Call`
+caller's context is NOT donated to an `.unbound` receiver — the never-donated arm
+walks only — where seL4-MCS's `receiveIPC` and this kernel's own `.receive` arm
+would donate.  A cut that makes that arm donate widens the segment
+(`replyRecvPostReceiveReplenishCores`'s `none` arm) and breaks this theorem, which is
+the intended coupling: the footprint and the transition move together or not at
+all. -/
+theorem replyRecvBody_replenishQueueOnCore_of_no_donation
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st st1 st1p st2 st3 stOut : SystemState) (sgi sgi2 : Option (Concurrency.CoreId × Concurrency.SgiKind))
+    (nextThread : SeLe4n.ThreadId) (summary summary' : CapTransferSummary)
+    (hObjInv : st.objects.invExt)
+    (hReply : endpointReplyOnCore receiver prevCaller msg executingCore st = (st1, .ok sgi))
+    (hPop : replyRecvPopDonation replyId prevCaller st1 = .ok (none, st1p))
+    (hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+        receiverCspaceRoot receiverSlotBase executingCore st1p
+      = (st2, .ok (nextThread, summary, sgi2)))
+    (hPre : receivePreReturn? st1p endpointId receiver = none)
+    (hPost : replyRecvPostReceiveDonation receiver ((recordedReplyServer? st prevCaller).getD receiver)
+        nextThread (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+        none st2 = .ok ((), st3))
+    (hBody : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st = .ok (summary', stOut))
+    (c : Concurrency.CoreId) :
+    stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  -- the pop hands nothing back, so it commits nothing
+  have hPopEq : st1p = st1 := replyRecvPopDonation_ok_none_eq replyId prevCaller st1 st1p hPop
+  rw [hPopEq] at hPop hRecv hPre
+  -- object-store integrity along the spine, for the two walks' frames
+  have hInv1 : st1.objects.invExt := by
+    have h := endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg executingCore
+      st hObjInv
+    rw [hReply] at h; exact h
+  have hInv2 : st2.objects.invExt := by
+    have h := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId receiver
+      (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1 hInv1
+    rw [hRecv] at h; exact h
+  have hInv3 : st3.objects.invExt :=
+    replyRecvPostReceiveDonation_preserves_objects_invExt_of_none _ _ _ _ st2 st3 () hInv2 hPost
+  -- the legs' frames
+  have hR1 : st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+    have h := endpointReplyOnCore_replenishQueueOnCore receiver prevCaller msg executingCore st c
+    rw [hReply] at h; exact h
+  have hR2 : st2.scheduler.replenishQueueOnCore c = st1.scheduler.replenishQueueOnCore c := by
+    have h := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_preReturn endpointId
+      receiver (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1 hPre c
+    rw [hRecv] at h; exact h
+  have hR3 : st3.scheduler.replenishQueueOnCore c = st2.scheduler.replenishQueueOnCore c :=
+    replyRecvPostReceiveDonation_replenishQueueOnCore_of_none _ _ _ _ st2 st3 () hInv2 hPost c
+  -- the body's post-state is the stagers over the hand-off over `st3`
+  unfold replyRecvBody at hBody
+  simp only [hReply, hPop, hRecv, hPost] at hBody
+  have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
+  rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
+    Architecture.stageDeliveredMessage_scheduler_eq]
+  rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
+      ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
+  · rw [hH, hR3, hR2, hR1]
+  · rw [hH]
+    unfold applyReceiverPipHandoff
+    rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st3 receiver
+      executingCore st3.objectIndex.length hInv3).1 c, hR3, hR2, hR1]
 
 -- ============================================================================
 -- Syscall soundness theorems

@@ -1,3 +1,76 @@
+## v0.35.162 — the `.replyRecv` arm declares its scheduler-domain footprint
+
+WS-RR RR8.12 Cut C2 (8b-ii).  `schedLockSet_endpointReplyRecvOnCore` is
+`schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write
+set, which `replyRecvBody_confinedToCores` is stated at — and of
+`replyRecvHandoffReplenishCores`, the replenish-queue cores the arm's **three**
+SchedContext hand-offs migrate between: the pop between the reply leg and the
+receive leg (`replyRecvPopDonation`, WS-RM), the receive leg's block-path return
+(`cleanupPreReceiveDonationMigrated`, `v0.35.161`) and the re-donation to the
+receiver when the receive leg dequeues a `Call` (`replyRecvPostReceiveDonation`,
+RR2.20).  Inert until the bracket cut, like every sibling.
+
+**Each hand-off is read at the state it runs on, through its own arm selector.**
+The pop's pair (`replyRecvPopReplenishCores`) is keyed on the `returned?` the pop
+answers and read at the reply leg's post-state; the block path's pair
+(`receivePreReturnReplenishCores`) on `receivePreReturn?` at the pop's post-state;
+the re-donation's pair (`replyRecvPostReceiveReplenishCores`, over the post-state
+form `rendezvousCallDonationReplenishCores` beside `applyRendezvousCallDonation`) on
+the arm's three gates — `returned?`, the dequeued `Call`, and
+`callDonationSchedContext?` at the post-deschedule state.  That is
+`replyRecvBodyWriteSet`'s discipline for the run segment, and it is why this arm
+could not take `.receive`'s pre-state form: the pop rewrites the receiver's binding
+between the legs, so a pre-state reading of the receive leg's donation guard would
+be a proxy for the guard the transition consults two legs later.  The footprint's
+resolution and the transition's are therefore one computation, and the
+footprint/transition asymmetry WS-HP HP10.8 registered for the reply arm's origin
+member has no instance here.  The block-path pair became **one definition for both
+receiving arms** — `endpointReceiveHandoffReplenishCores` reads
+`receivePreReturnReplenishCores` on its block branch now — with
+`receivePreReturnReplenishCores_eq_migration` the shared licence that the pair is
+the migration's.
+
+**Coverage is by theorem at the cores each migration actually resolves**:
+`schedLockSet_endpointReplyRecvOnCore_covers_pop` (through the new
+`replyRecvPopDonation_ok_some_decompose`), `…_covers_preReturnMigration`, and
+`…_covers_postReceiveDonation` (through the new
+`applyRendezvousCallDonation_ok_migrates`); `…_contains_prevCaller_runQueue_write`
+and `…_covers_receiveLeg` on the run segment.  **The empty segment is exact in both
+directions**: where the pop hands nothing back and the block path returns no loan,
+`…_no_replenishQueue_of_no_donation` says no replenish lock is declared and
+`replyRecvBody_replenishQueueOnCore_of_no_donation` says the live transition writes
+none — composed from the reply leg's new frame
+`endpointReplyOnCore_replenishQueueOnCore`, the pop's identity arm
+(`replyRecvPopDonation_ok_none_eq`), the receive leg's
+`…_replenishQueueOnCore_of_no_preReturn` frame, and the two chain walks' frames.
+The chain walks stay declared dynamically; `maxLockSetSize` is unmoved.
+
+**Declaring it found a divergence, registered rather than fixed.**  On a
+`.replyRecv` whose pop returned nothing, a dequeued `Call` caller's context is not
+donated to an `.unbound` receiver — `replyRecvPostReceiveDonation`'s never-donated
+arm walks the chain only — where this kernel's own `.receive` arm runs
+`applyReceiveRendezvousHandoff` unconditionally and seL4-MCS's `receiveIPC`
+donates whenever the receiver has no context.  Reachable with one legacy
+`.unbound` client; the register's WS-CB row records it as the third instance of the
+passive/legacy split, `tests/SmpIpcSuite.lean` §3.29 (b) measures it beside the
+`.receive` step on the same state, and the exactness licence above pins it, so the
+cut that makes the arm donate must widen the segment in the same cut.  Not fixed
+here because a donation added to a live transition is a bundle, confinement and
+dispatch-payoff obligation rather than a footprint edit.
+
+**Witness.**  §3.29 drives three shapes through the live operations: the MCS steady
+state with a second client on a third core (the pop and the re-donation fire, the
+segment is `[1, 0, 2, 1]`, and the post-state replenish queues moved `1 → 0` and
+`2 → 1`); the legacy client (segment empty, footprint names no replenish lock, no
+replenishment moves, and the `.receive` reading computed beside it declares two
+cores); and a delegated invoker that answers another server's client and then
+blocks holding a loan of its own (all four cores named, `1 → 0` and `3 → 2`, the
+server the pop unbound parked).  Thirty-nine assertions; the golden trace is
+byte-identical.  Twenty-six Tier 3 anchors, relation positives over the
+footprint's body and the three-state segment, negatives refusing the `.receive`
+reading and a parameter inside the declaration, and the moved block-path anchor
+repointed.
+
 ## v0.35.161 — the pre-receive donation return migrates its replenishments
 
 WS-RR RR8.12, the fix cut between C1 and C2: register row 57 is closed.  The block

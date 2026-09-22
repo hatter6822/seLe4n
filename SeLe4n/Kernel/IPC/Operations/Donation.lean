@@ -1064,6 +1064,84 @@ theorem applyRendezvousCallDonation_ok_decompose
         SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hD,
         SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hR, h⟩
 
+-- ============================================================================
+-- WS-RR RR8.12 Cut C2 (`v0.35.162`): the cores the rendezvous hand-off migrates between
+-- ============================================================================
+
+/-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores
+`applyRendezvousCallDonation st receiver donor` migrates between, read at the state
+the donation runs on — the donor's home and the receiver's, exactly when
+`callDonationSchedContext?` resolves, and no core otherwise.
+
+This is the post-state form of the `.receive` footprint's pre-state segment
+(`endpointReceiveHandoffReplenishCores`).  That one is read *before* the receive leg
+runs and licensed across it by a binding frame, because a bracket resolves a
+footprint before the transition; this one is read by a footprint that already
+computes the state its leg runs on (`replyRecvBodyWriteSet`'s discipline, where each
+leg is read at the state it actually runs at), so it asks the donation's OWN guard
+on the donation's OWN state and needs no bridge.  The two are not merged, and
+deliberately: a pre-state reading of `callDonationSchedContext?` at the `.replyRecv`
+arm would be a proxy for the guard the transition reads two legs later, after the
+pop has rewritten the receiver's binding. -/
+def rendezvousCallDonationReplenishCores (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId) : List CoreId :=
+  match callDonationSchedContext? st donor receiver with
+  | some _ => [determineTargetCore st donor, determineTargetCore st receiver]
+  | none => []
+
+/-- Where the resolver declines, no core: the hand-off migrates nothing there
+(`applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation`). -/
+@[simp] theorem rendezvousCallDonationReplenishCores_of_no_donation (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId)
+    (h : callDonationSchedContext? st donor receiver = none) :
+    rendezvousCallDonationReplenishCores st receiver donor = [] := by
+  unfold rendezvousCallDonationReplenishCores; rw [h]
+
+/-- And where it resolves, the donor's home and the receiver's — the migration's
+own two endpoints (`applyRendezvousCallDonation_ok_migrates`). -/
+theorem rendezvousCallDonationReplenishCores_of_donation (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : callDonationSchedContext? st donor receiver = some scId) :
+    rendezvousCallDonationReplenishCores st receiver donor
+      = [determineTargetCore st donor, determineTargetCore st receiver] := by
+  unfold rendezvousCallDonationReplenishCores; rw [h]
+
+/-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
+answers `some` **is** the single-core donation followed by the SM5.H migration between
+exactly the two cores `rendezvousCallDonationReplenishCores` names — so a footprint
+declaring that pair declares the migration's own endpoints, not a proxy for them. -/
+theorem applyRendezvousCallDonation_ok_migrates
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hDon : callDonationSchedContext? st donor receiver = some scId)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    ∃ st', st'' = migrateSchedContextReplenishment st' scId
+      (determineTargetCore st donor) (determineTargetCore st receiver) := by
+  obtain ⟨donorV, receiverV, hDv, hRv, hCore⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  obtain ⟨st', _, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
+  rw [hDv, hRv] at harm
+  rcases harm with ⟨hNone, _⟩ | ⟨scId', hSome, hEq⟩
+  · exact absurd (hDon.symm.trans hNone) (by simp)
+  · obtain rfl : scId' = scId := Option.some.inj (hSome.symm.trans hDon)
+    exact ⟨st', hEq⟩
+
+/-- **WS-RR RR8.12 Cut C2**: and where the resolver declines, a successful hand-off
+moves no replenishment on any core — the single-core donation writes objects only,
+and the migration arm is not taken.  The empty segment is therefore exact rather
+than merely narrow. -/
+theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (hNone : callDonationSchedContext? st donor receiver = none)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨donorV, receiverV, hDv, hRv, hCore⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
+  rw [hDv, hRv] at harm
+  rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st donorV receiverV st' hDon]
+  · exact absurd (hNone.symm.trans hSome) (by simp)
+
 /-- WS-OD OD3.6: the rendezvous hand-off keeps the SM5.H replenish-queue
 affinity, because the primitive it composes does and both home cores are read
 off the very state the donation runs on — the `rfl` instantiation of the

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.161.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.162.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7422,7 +7422,7 @@ code may assume:
   leg is not pre-state computable at all (`receiveRendezvousHandoffWriteSet` takes
   the post-donation state) — those cores are declared through the dynamic chain
   extension, as the object domain declares them.  `.receive` is declared at Cut
-  8a-ii (`v0.35.107`, the bullet below); `.replyRecv` is not.  **And that sentence named two arms where the
+  8a-ii (`v0.35.107`, the bullet below), `.replyRecv` at Cut C2 (`v0.35.162`, the bullet after that).  **And that sentence named two arms where the
   derivation gives many more** (`v0.35.104`, found by running the sweep on this
   note rather than by a review): four arms declare a scheduler footprint and the
   staged non-interference module holds **24** per-core write sets, so `.call`,
@@ -8831,6 +8831,60 @@ code may assume:
   invariant — the bare pop is still a live definition, the migrated return's own
   first half, so the retired reading needs no private copy — with a no-loan
   control and a same-core control, where the two returns agree.
+- **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
+  RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
+  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write
+  set, which `replyRecvBody_confinedToCores` is stated at — and of
+  `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
+  migrate between: the pop between the legs (`replyRecvPopDonation`, WS-RM), the
+  receive leg's block-path return (`cleanupPreReceiveDonationMigrated`,
+  `v0.35.161`) and the re-donation to the receiver on a dequeued `Call`
+  (`replyRecvPostReceiveDonation`, WS-RR RR2.20).  **Inert** until the bracket
+  cut.  Six things new code must respect.  (1) **Each hand-off is read at the
+  state it runs on, through its own arm selector** — the pop's `returned?` at the
+  reply leg's post-state (`replyRecvPopReplenishCores`), the block path's
+  `receivePreReturn?` at the pop's post-state (`receivePreReturnReplenishCores`),
+  the re-donation's `callDonationSchedContext?` at the post-deschedule state
+  (`replyRecvPostReceiveReplenishCores`, over the post-state form
+  `rendezvousCallDonationReplenishCores`) — which is the discipline
+  `replyRecvBodyWriteSet` established for the run segment, and the reason this arm
+  could not take `.receive`'s pre-state form: the pop rewrites the receiver's
+  binding between the legs, so a pre-state reading of the receive leg's donation
+  guard would be a proxy for the guard the transition reads two legs later.  The
+  footprint's resolution and the transition's are the same computation, so the
+  asymmetry WS-HP HP10.8 registered for the reply arm's origin member has no
+  instance here.  (2) **The block-path pair has one owner for both receiving
+  arms**: `receivePreReturnReplenishCores` is what
+  `endpointReceiveHandoffReplenishCores` reads on its block branch too, and
+  `receivePreReturnReplenishCores_eq_migration` is the licence — stated once,
+  consumed by both — that the pair **is** the migration's.  (3) **Every hand-off
+  is covered by theorem at the cores its migration actually resolves**:
+  `schedLockSet_endpointReplyRecvOnCore_covers_pop` (through
+  `replyRecvPopDonation_ok_some_decompose`), `…_covers_preReturnMigration`, and
+  `…_covers_postReceiveDonation` (through `applyRendezvousCallDonation_ok_migrates`).
+  (4) **The empty segment is exact in both directions**: where the pop hands
+  nothing back and the block path returns no loan, the footprint names no
+  replenish lock (`…_no_replenishQueue_of_no_donation`) and the live transition
+  writes none (`replyRecvBody_replenishQueueOnCore_of_no_donation`, composed from
+  the reply leg's new frame `endpointReplyOnCore_replenishQueueOnCore`, the pop's
+  `none` arm being the identity, the receive leg's `…_of_no_preReturn` frame and
+  the two walks' frames).  (5) **That licence pins a divergence, deliberately.**
+  On a `.replyRecv` whose pop returned nothing, a dequeued `Call` caller's context
+  is **not** donated to an `.unbound` receiver — `replyRecvPostReceiveDonation`'s
+  never-donated arm walks only — where this kernel's own `.receive` arm
+  (`applyReceiveRendezvousHandoff`, unconditional) and seL4-MCS's `receiveIPC`
+  would donate.  Reachable with one legacy `.unbound` client, measured in
+  `tests/SmpIpcSuite.lean` §3.29 (b) beside the `.receive` step on the same
+  state, and recorded in the register's WS-CB row as the third instance of the
+  passive/legacy split; a cut that makes the arm donate widens
+  `replyRecvPostReceiveReplenishCores`'s `none` arm and breaks the licence, so the
+  footprint and the transition move together or not at all.  (6) **The two chain
+  walks stay declared dynamically** (`pipChainSchedFootprint`), and
+  `maxLockSetSize` is unmoved.  §3.29 drives all three shapes through the live
+  operations — the steady state with a second client on a third core (three cores
+  named), the legacy client (none), and a delegated invoker that blocks holding a
+  loan (all four) — asserting the segment, the footprint and the post-state
+  replenish queues.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

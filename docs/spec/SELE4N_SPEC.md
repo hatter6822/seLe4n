@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.161` (`lakefile.toml`) |
+| **Package version** | `0.35.162` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 399,198 across 334 Lean files |
-| **Test LoC** | 81,487 across 70 Lean test suites |
-| **Proved declarations** | 13,210 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 399,995 across 334 Lean files |
+| **Test LoC** | 81,812 across 70 Lean test suites |
+| **Proved declarations** | 13,242 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4516,8 +4516,36 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   (register row 57).  The arm's PIP chain walk stays
   declared *dynamically* through `pipChainSchedFootprint` and the
   `pipChainStart_endpointReceive` obligation, since a walked chain is unbounded and
-  no static footprint can enumerate it.  `.replyRecv` remains undeclared;
-  `maxLockSetSize` is unmoved, a `SchedLockSet` carrying no cardinality bound.
+  no static footprint can enumerate it.  `maxLockSetSize` is unmoved, a
+  `SchedLockSet` carrying no cardinality bound.
+
+  **And the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
+  RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
+  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's SM8.B write set,
+  which `replyRecvBody_confinedToCores` is stated at — and of
+  `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
+  migrate between: the pop between the legs, the receive leg's block-path return
+  (`v0.35.161`) and the re-donation on a dequeued `Call`.  Each is read **at the
+  state it runs on, through its own arm selector** — the pop's `returned?`, the
+  block path's `receivePreReturn?`, the re-donation's `callDonationSchedContext?`
+  at the post-deschedule state — because the pop rewrites the receiver's binding
+  between the legs, so `.receive`'s pre-state form would read a proxy for the guard
+  the transition consults two legs later; the footprint's resolution and the
+  transition's are one computation, and WS-HP HP10.8's registered asymmetry has no
+  instance here.  The block-path pair is one definition for both receiving arms
+  (`receivePreReturnReplenishCores`, with `…_eq_migration` its shared licence).
+  Coverage is by theorem at the cores each migration actually resolves
+  (`schedLockSet_endpointReplyRecvOnCore_covers_pop`, `…_covers_preReturnMigration`,
+  `…_covers_postReceiveDonation`), and the empty segment is exact in both
+  directions (`…_no_replenishQueue_of_no_donation`,
+  `replyRecvBody_replenishQueueOnCore_of_no_donation`, over the reply leg's new
+  frame `endpointReplyOnCore_replenishQueueOnCore`).  That last licence pins a
+  divergence deliberately: a `.replyRecv` whose pop returned nothing does **not**
+  donate a dequeued `Call` caller's context to an `.unbound` receiver, where
+  `.receive` and seL4-MCS's `receiveIPC` would — the register's WS-CB row records
+  it as the third instance of the passive/legacy split, `tests/SmpIpcSuite.lean`
+  §3.29 (b) measures it beside the `.receive` step, and a cut that closes it must
+  widen the segment in the same cut.  `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

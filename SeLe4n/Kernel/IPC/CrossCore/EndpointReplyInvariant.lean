@@ -124,6 +124,32 @@ theorem endpointReplyOnCore_preserves_objects_invExt
     · -- PR #827 #3 fold: the consume is two object-store writes; invExt carries.
       exact removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hWake hCons
 
+/-- **WS-RR RR8.12 Cut C2 (`v0.35.162`, frame)**: the reply leg writes **no replenish
+queue** on any path.  Its one scheduler write is the woken caller's run-queue insert
+(`wakeThread`), and the two object stores around it — the delivery and the reply
+frame's removal — leave the scheduler untouched.  The `.replyRecv` footprint's
+replenish segment starts after this leg, and this is the frame that licenses it: a
+footprint that declared nothing for a leg that migrated would be false. -/
+theorem endpointReplyOnCore_replenishQueueOnCore
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId) :
+    (endpointReplyOnCore replier target msg executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hSched : st'.scheduler = st.scheduler :=
+      storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
+    have hWake : (wakeThread st' target executingCore).1.scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+      rw [wakeThread_replenishQueueOnCore, hSched]
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hRem⟩
+    · rw [hEq]; exact hWake
+    · rw [removeCallerReplyFrame_scheduler_eq _ _ target rid hRem]
+      exact hWake
+
 -- ============================================================================
 -- §3  `ipcInvariant` (notification well-formedness) preservation
 -- ============================================================================

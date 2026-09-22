@@ -4288,6 +4288,330 @@ private def runPreReceiveReturnMigrationChecks : IO Unit := do
           && replenishAffinityConsistentB stBareSame)
     | _, _ => assertBool "row 57 same-core: both returns succeed" false
 
+-- ============================================================================
+-- §3.29 the `.replyRecv` scheduler footprint's replenish segment follows the spine
+--        (WS-RR RR8.12 Cut C2, `v0.35.162`)
+-- ============================================================================
+
+/-! The live `.replyRecv` performs up to three SchedContext hand-offs, each migrating
+a reservation's replenishments between two cores — the pop between its legs, the
+receive leg's block-path return, and the re-donation to the receiver when the
+receive leg dequeues a `Call` — and `schedLockSet_endpointReplyRecvOnCore` declares
+their cores by re-running the spine and reading each hand-off at the state it runs
+on, through its own arm selector.  The coverage theorems say the declared cores ARE
+the migrations' endpoints; what no theorem states is that **every hand-off is
+reachable by the live operations and the segment differs between the shapes**,
+which is this section's subject.
+
+Three shapes, each built through the live operations.  (a) The MCS steady state with
+a second client on a third core: the pop and the re-donation both fire, and the
+segment names three cores.  (b) A first client that never donated (a legacy
+`.unbound` thread): the pop hands nothing back and the segment is EMPTY — and this
+is the shape on which the `.receive` arm's pre-state reading, computed beside the
+live one, declares two cores for a migration the `.replyRecv` transition does not
+perform.  That divergence between the two receiving arms is the one
+`docs/REGISTERED_DEBT.md`'s WS-CB row records: on a `.replyRecv` whose pop returned
+nothing, a dequeued `Call` caller's context is not donated to an `.unbound`
+receiver, where `.receive` and seL4-MCS's `receiveIPC` would donate.  The assertion
+that pins it is labelled MEASURED and must flip when that row closes.  (c) A
+delegated invoker that answers another server's client and then blocks holding a
+loan of its own: the pop and the block-path return both fire, on four distinct
+cores, and the post-receive half deschedules the holder the pop unbound. -/
+
+/-- The second client, pinned to core 2, with its own context and a replenishment
+on that core. -/
+private def fpClient2 : SeLe4n.ThreadId := ⟨871⟩
+private def fpClient2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 872
+
+private def fpClient2SchedContext : SchedContext :=
+  { scId := fpClient2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some fpClient2, isActive := true }
+
+/-- The shape (c) needs: a second endpoint with its own passive server (home core
+3) and a bound client pinned to core 2. -/
+private def fpEp2 : SeLe4n.ObjId := ⟨874⟩
+private def fpDelegate : SeLe4n.ThreadId := ⟨875⟩
+private def fpClientX : SeLe4n.ThreadId := ⟨876⟩
+private def fpClientXSc : SeLe4n.SchedContextId := SchedContextId.ofNat 877
+private def fpReplyX : SeLe4n.ReplyId := ⟨878⟩
+
+private def fpClientXSchedContext : SchedContext :=
+  { scId := fpClientXSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨45⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some fpClientX, isActive := true }
+
+/-- `stDonBase` — a bound client homed on the boot core, a passive server homed on
+core 1 — plus the second client on core 2, with one replenishment per context on
+its holder's home core.  The shape the invariant is about: a queue holding no entry
+for a context satisfies it vacuously and could witness no migration. -/
+private def stFpPassiveBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
+    |>.insert fpClient2.toObjId
+        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
+  { base with scheduler := sched }
+
+/-- The same, with the FIRST client a legacy `.unbound` thread — its `Call` donates
+nothing, so the server's reply hands nothing back. -/
+private def stFpLegacyBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
+    |>.insert fpClient2.toObjId
+        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+    |>.insert donClient.toObjId
+        (.tcb { mkTcb 841 60 none with schedContextBinding := SchedContextBinding.unbound })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
+  { base with scheduler := sched }
+
+/-- `stDonBase` plus the second endpoint's pair: a passive delegate homed on core 3
+and a bound client on core 2, each context's replenishment on its holder's home. -/
+private def stFpDelegatedBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpEp2 (.endpoint {})
+    |>.insert fpClientXSc.toObjId (.schedContext fpClientXSchedContext)
+    |>.insert fpClientX.toObjId
+        (.tcb { mkTcb 876 45 (some c2) with schedContextBinding := .bound fpClientXSc })
+    |>.insert fpDelegate.toObjId
+        (.tcb { mkTcb 875 20 (some c3) with schedContextBinding := SchedContextBinding.unbound })
+    |>.insert fpReplyX.toObjId (.reply { replyId := fpReplyX })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClientXSc 100)
+  { base with scheduler := sched }
+
+/-- The MCS steady state, built the way a real one arrives at it: the server blocks
+on `Recv`, the first client `Call`s, the server's home core dispatches it, and the
+second client `Call`s from its own core and queues behind the busy server. -/
+private def fpSteadyState (base : SystemState) : Option SystemState := do
+  let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let _ ← okExcept resCall
+  let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
+  let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp fpClient2 IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stDispatched
+  let _ ← okExcept resQueued
+  pure stQueued
+
+/-- Shape (c)'s state: the first pair as above (no second client), then the delegate
+blocks on the second endpoint, its client `Call`s from core 2 donating, and core 3
+dispatches the delegate — which then answers the FIRST server's client. -/
+private def fpDelegatedState (base : SystemState) : Option SystemState := do
+  let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let _ ← okExcept resCall
+  let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
+  let (stRecv2, _) ← okPair (endpointReceiveDualOnCore fpEp2 fpDelegate (some fpReplyX) c3
+    stDispatched)
+  let (stCall2, resCall2) := endpointCallCrossCoreDispatch fpEp2 fpClientX IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stRecv2
+  let _ ← okExcept resCall2
+  okExcept (handleRescheduleSgiOnCore stCall2 c3)
+
+/-- How many replenish-queue write locks a footprint names. -/
+private def replenishMemberCount (fp : List (SchedLockId × Concurrency.AccessMode)) : Nat :=
+  (fp.filter (fun p => p.1 matches SchedLockId.replenishQueue _)).length
+
+private def hasReplenishWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+    Bool :=
+  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+private def hasRunQueueWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+    Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+private def runReplyRecvFootprintChecks : IO Unit := do
+  IO.println "--- §3.29 WS-RR RR8.12 Cut C2: the `.replyRecv` footprint's replenish segment ---"
+  -- (a) the steady state: the pop AND the re-donation fire, on three cores.
+  match fpSteadyState stFpPassiveBase with
+  | none => assertBool "Cut C2 setup (a): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(a) setup: the server holds the first client's context on loan"
+      (match stQ.getTcb? donServer with
+       | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+    assertBool "(a) setup: the first Call's hand-off migrated that context's replenishment to core 1"
+      (replenishCountFor stQ c1 scClient == 1 && replenishCountFor stQ c0 scClient == 0)
+    assertBool "(a) setup: the second client's Call is queued, and its replenishment sits on core 2"
+      (ipcStateIs stQ fpClient2 (.blockedOnCall donEp)
+        && replenishCountFor stQ c2 fpClient2Sc == 1)
+    assertBool "(a) setup: the answered frame heads the loaned context, bound to the server"
+      (replyFrameHeadHolder? stQ donReply == some (scClient, donServer))
+    assertBool "(a) setup: the affinity invariant holds before the ReplyRecv"
+      (replenishAffinityConsistentB stQ)
+    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    -- The segment mirrors the spine: the pop's pair (server's home, client's home),
+    -- nothing for the rendezvousing receive leg, the re-donation's pair (second
+    -- client's home, server's home).
+    assertBool "(a) the segment is the pop's pair, then the re-donation's pair: [1, 0, 2, 1]"
+      (decide (seg = [c1, c0, c2, c1]))
+    assertBool "(a) the footprint names replenish-queue write locks on cores 0, 1 and 2 -- and not 3"
+      (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
+        && !hasReplenishWrite fp c3 && replenishMemberCount fp == 3)
+    assertBool "(a) ...and the run-queue write lock of the answered client's home core"
+      (hasRunQueueWrite fp c0)
+    -- The live arm, end to end: both migrations happen, between exactly those cores.
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(a) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(a) PAYOFF: the pop migrated the first context back to the client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(a) PAYOFF: the re-donation migrated the second context to the server's home (2 -> 1)"
+        (replenishCountFor stOut c1 fpClient2Sc == 1 && replenishCountFor stOut c2 fpClient2Sc == 0)
+      assertBool "(a) PAYOFF: the affinity invariant holds after the ReplyRecv"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(a) the bindings moved with the replenishments"
+        (match stOut.getTcb? donServer, stOut.getTcb? donClient, stOut.getTcb? fpClient2 with
+         | some s, some a, some b =>
+             s.schedContextBinding == .donated fpClient2Sc fpClient2
+               && a.schedContextBinding == .bound scClient
+               && b.schedContextBinding == SchedContextBinding.unbound
+         | _, _, _ => false)
+    -- CONTROL: on THIS shape the `.receive` arm's pre-state reading of the receive
+    -- leg, taken at the pop's post-state, agrees with the re-donation pair -- so an
+    -- implementation that read the `.receive` segment there would pass (a) and be
+    -- caught only by (b).  That is what makes (b) the measurement.
+    let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    match replyRecvPopDonation donReply donClient st1 with
+    | .error e => assertBool s!"(a) the pop must succeed (got {reprStr e})" false
+    | .ok (returned?, st1p) =>
+      assertBool "(a) CONTROL: the pop hands the loaned context back, naming the holder"
+        (returned? == some (scClient, donServer))
+      assertBool "(a) CONTROL: the `.receive` arm's pre-state segment at the pop's post-state agrees here"
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
+  -- (b) a first client that never donated: the pop hands nothing back, the segment
+  --     is EMPTY, and the `.receive` reading declares two cores for a migration the
+  --     `.replyRecv` transition does not perform.
+  match fpSteadyState stFpLegacyBase with
+  | none => assertBool "Cut C2 setup (b): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(b) setup: the server is passive and holds no loan -- the legacy client donated nothing"
+      (match stQ.getTcb? donServer, stQ.getTcb? donClient with
+       | some s, some a =>
+           s.schedContextBinding == SchedContextBinding.unbound
+             && a.schedContextBinding == SchedContextBinding.unbound
+       | _, _ => false)
+    assertBool "(b) setup: the answered frame heads no context"
+      (replyFrameHeadHolder? stQ donReply == none)
+    assertBool "(b) setup: the second client's Call is queued, bound, its replenishment on core 2"
+      (ipcStateIs stQ fpClient2 (.blockedOnCall donEp)
+        && replenishCountFor stQ c2 fpClient2Sc == 1)
+    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    assertBool "(b) PAYOFF: the segment is EMPTY" (decide (seg = []))
+    assertBool "(b) PAYOFF: the footprint names NO replenish-queue write lock"
+      (replenishMemberCount fp == 0)
+    assertBool "(b) ...while it still names the answered client's run queue"
+      (hasRunQueueWrite fp c0)
+    let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    match replyRecvPopDonation donReply donClient st1 with
+    | .error e => assertBool s!"(b) the pop must succeed (got {reprStr e})" false
+    | .ok (returned?, st1p) =>
+      assertBool "(b) the pop hands nothing back" (returned? == none)
+      -- The decisive comparison: same state, same endpoint, same receiver -- the
+      -- `.receive` arm's reading names two cores here.
+      assertBool "(b) NEGATIVE: the `.receive` arm's pre-state segment declares TWO cores on this state"
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
+      -- ...and the reason the `.replyRecv` reading is the right one for THIS arm: at the
+      -- state its post-receive half runs on, the `.receive` step WOULD donate --
+      -- which is the divergence the register records, not a fact about the shape.
+      let st2 := (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 st1p).1
+      assertBool "(b) the receive leg dequeues the second client's Call"
+        (decide (rendezvousDequeuedCall st2 fpClient2 = true))
+      assertBool "(b) MEASURED (register, WS-CB): the `.receive` arm's donation step WOULD hand the context over here"
+        (match applyReceiveRendezvousDonation st2 donServer fpClient2 with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .donated fpClient2Sc fpClient2
+              | none => false)
+         | .error _ => false)
+    -- The live arm: no replenishment moves on any core (the exactness licence,
+    -- measured), and no context is handed over (the divergence, measured).
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(b) PAYOFF: the live `.replyRecv` moves NO replenishment on any core"
+        (Concurrency.allCores.all fun c => replenishEntriesOn stOut c == replenishEntriesOn stQ c)
+      assertBool "(b) MEASURED (register, WS-CB): the `.replyRecv` never-donated arm hands NO context to the passive receiver"
+        (match stOut.getTcb? donServer, stOut.getTcb? fpClient2 with
+         | some s, some b =>
+             s.schedContextBinding == SchedContextBinding.unbound
+               && b.schedContextBinding == .bound fpClient2Sc
+         | _, _ => false)
+      assertBool "(b) ...although the second client IS the one now awaiting the server's reply"
+        (match stOut.getTcb? fpClient2 with
+         | some t => match t.ipcState with
+                     | .blockedOnReply _ _ => true
+                     | _ => false
+         | none => false)
+  -- (c) a delegated invoker: it answers the first server's client (the pop unbinds
+  --     the server and migrates 1 -> 0) and then blocks on the empty endpoint holding
+  --     its own loan (the block-path return migrates 3 -> 2).  Four cores, all named.
+  match fpDelegatedState stFpDelegatedBase with
+  | none => assertBool "Cut C2 setup (c): both pairs' recv, call and dispatch succeed" false
+  | some stD =>
+    assertBool "(c) setup: the server holds the first client's context, the delegate its own client's"
+      (match stD.getTcb? donServer, stD.getTcb? fpDelegate with
+       | some s, some d =>
+           s.schedContextBinding == .donated scClient donClient
+             && d.schedContextBinding == .donated fpClientXSc fpClientX
+       | _, _ => false)
+    assertBool "(c) setup: both replenishments sit on the holders' homes (cores 1 and 3)"
+      (replenishCountFor stD c1 scClient == 1 && replenishCountFor stD c3 fpClientXSc == 1)
+    assertBool "(c) setup: the first endpoint's send queue is empty, so the delegate's receive will block"
+      (receiveRendezvousSender? stD donEp == none)
+    assertBool "(c) setup: the delegate's own guard resolves its loan"
+      (decide (preReceiveDonation? stD fpDelegate = some (fpClientXSc, fpClientX)))
+    let seg := replyRecvHandoffReplenishCores donEp fpDelegate donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c3 stD
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp fpDelegate donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c3 stD
+    assertBool "(c) the segment is the pop's pair, then the block-path return's pair: [1, 0, 3, 2]"
+      (decide (seg = [c1, c0, c3, c2]))
+    assertBool "(c) the footprint names replenish-queue write locks on all four cores"
+      (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
+        && hasReplenishWrite fp c3 && replenishMemberCount fp == 4)
+    match replyRecvBody donEp fpDelegate donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c3 stD with
+    | .error e => assertBool s!"(c) the delegated `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(c) PAYOFF: the pop migrated the first context back to its client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(c) PAYOFF: the block-path return migrated the delegate's loan to its owner's home (3 -> 2)"
+        (replenishCountFor stOut c2 fpClientXSc == 1 && replenishCountFor stOut c3 fpClientXSc == 0)
+      assertBool "(c) PAYOFF: the affinity invariant holds after the delegated ReplyRecv"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(c) the delegate parks `.blockedOnReceive` on the first endpoint, holding nothing"
+        (ipcStateIs stOut fpDelegate (.blockedOnReceive donEp)
+          && (match stOut.getTcb? fpDelegate with
+              | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+      assertBool "(c) ...its client holds its own context again, and the first client its own"
+        (match stOut.getTcb? fpClientX, stOut.getTcb? donClient with
+         | some x, some a =>
+             x.schedContextBinding == .bound fpClientXSc && a.schedContextBinding == .bound scClient
+         | _, _ => false)
+      assertBool "(c) ...and the server the pop unbound is parked: `.unbound`, on no core"
+        (match stOut.getTcb? donServer with
+         | some s => s.schedContextBinding == SchedContextBinding.unbound
+             && !runnableOnSomeCore stOut donServer && !runningOnSomeCore stOut donServer
+         | none => false)
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4321,6 +4645,7 @@ def runSmpIpcChecks : IO Unit := do
   runReceiveReplenishSegmentChecks
   runReplyRecvHolderDescheduleChecks
   runPreReceiveReturnMigrationChecks
+  runReplyRecvFootprintChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."
