@@ -1,3 +1,80 @@
+## v0.35.169 — the destroy path declares its scheduler footprint
+
+WS-RR RR8.12 Cut C3b-iii: the live `.lifecycleRetype` arm declares
+`schedLockSet_lifecycleRetypeOnCore`, in
+`SeLe4n/Kernel/SyscallSchedFootprint.lean` for the reason `v0.35.167` states in
+that module's header, and **inert** until the bracket cut.  `.tcbSuspend` — the
+one arm left — is the next cut: its run segment re-runs a seven-stage pipeline
+and its replenish segment two migrations read at intermediate states, so it is a
+slice of its own rather than a rider on this one.
+
+### SM8.B's write set is silent about replenishments, and that is the finding
+
+`observableSlotsConfinedToCores` covers six per-core slots and the replenish
+queue is not one of them.  `lifecycleRetypeWriteSet` is therefore a **run-queue**
+write set and says nothing about the two reservation steps `v0.35.164` and
+`v0.35.165` put on the destroy path — `cancelDonationArmOnCore` on a TCB target
+and `releaseSchedContextBinding` on a SchedContext target.  A footprint built
+from it alone would be **false** of the operation, which is exactly what
+`tests/SmpIpcSuite.lean` §3.33 measures: on both target shapes the run-only
+reading declares no replenish lock while the live retype moves a replenishment.
+
+### What the arm declares
+
+* **Run segment** — `lifecycleRetypeWriteSet`, SM8.B's own: the cores a TCB
+  target's doomed thread occupies, and nothing for any other kind.
+* **Replenish segment** — `lifecycleRetypeReplenishCoresOf`, keyed on the object
+  kind, with exactly two kinds naming a core because the cleanup has exactly two
+  reservation steps.  A `.tcb` target's is `cancelDonationArmReplenishCores`:
+  nothing for `.unbound`, the thread's home core for `.bound`, and the return's
+  two migration endpoints for `.donated`, the destination read at the
+  **post-return** state exactly as `cancelDonatedDonationOnCore` reads it.  A
+  `.schedContext` target's is `releaseSchedContextBindingReplenishCores`: the
+  bound thread's home core, or **every** core where that thread is already gone
+  from the store — `purgeReplenishmentFromAllCores`' own reasoning, and the
+  second segment in this module to be `allCores` after `v0.35.168`'s unbind.
+
+Both resolvers read the **pre-state**, and that is a fact rather than a
+convenience: for a SchedContext target every earlier step of the cleanup is the
+identity, and for a TCB target the donation arm *is* the first step.  So the
+whole footprint is pre-state computable with no mid-state bridge.
+
+### Exactness, in both directions
+
+`cancelBoundDonationOnCore_replenishQueueOnCore_ne` and
+`cancelDonatedDonationOnCore_replenishQueueOnCore_ne` are the two step frames;
+`cancelDonationArmOnCore_replenishQueueOnCore_ne` and
+`releaseSchedContextBinding_replenishQueueOnCore_ne` state each arm against its
+own resolver; and `lifecyclePreRetypeCleanup_replenishQueueOnCore_ne` composes
+them over **all six object kinds** — the reference sweep, the service-registry
+revoke, the CDT detach and the reply and VSpace guards each framing the scheduler
+outright.  `schedLockSet_lifecycleRetypeOnCore_empty_of_other` is the
+declaration's own half for every kind with no scheduling effect: the footprint is
+then the object-store write lock and nothing else.
+
+### Relocations
+
+`threadOccupiedCores`, `lifecycleRetypeWriteSetOf` and `lifecycleRetypeWriteSet`
+move from the staged `InformationFlow/NonInterferenceCrossCore.lean` to
+production with tombstones; the confinement theorems and `threadOccupiedCores`'
+own lemma family stay staged, those being about the destroy sweep's confinement,
+which is that module's question.  Two Tier 3 anchors that pinned a relocated
+definition at its old home are repointed rather than deleted.
+`SyscallSchedFootprint.lean` imports `Lifecycle/Invariant/RetypeReservation.lean`
+for the reference sweep's frame, which `v0.35.166` put beside the fact its proof
+rests on.
+
+### Anchors
+
+Positives on the three relocated definitions, the four new resolvers, the
+footprint, the six membership halves and the five exactness theorems; three
+relation anchors (the footprint **is** `schedFootprintOfCores` of its write set
+*and* its replenish segment; the segment is keyed on the object kind with the two
+reservation arms naming cores; the release's segment has an `allCores` arm); one
+negative refusing the relocated definitions' return to the staged module; and
+the witness, whose runner call extends the WS-OD contiguous-run anchor rather
+than adding a sibling.  Five mutations, all decisive.
+
 ## v0.35.168 — the three SchedContext arms declare theirs, and a duplicate resolver is retired
 
 WS-RR RR8.12 Cut C3b-ii: `.schedContextConfigure`, `.schedContextBind` and

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.168` (`lakefile.toml`) |
+| **Package version** | `0.35.169` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 403,754 across 336 Lean files |
-| **Test LoC** | 82,595 across 70 Lean test suites |
-| **Proved declarations** | 13,385 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 404,112 across 336 Lean files |
+| **Test LoC** | 82,662 across 70 Lean test suites |
+| **Proved declarations** | 13,396 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4711,6 +4711,28 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   tree-wide.  `tests/SmpCbsSuite.lean` §4.6 is the witness, computing the retired
   home-only reading beside the live segment on the sweep fixture.
   `maxLockSetSize` is unmoved.
+
+  **And the destroy path declares its own** (WS-RR RR8.12 Cut C3b-iii,
+  `v0.35.169`).  `schedLockSet_lifecycleRetypeOnCore` is the live
+  `.lifecycleRetype` arm's footprint, and declaring it is what made visible that
+  SM8.B's `lifecycleRetypeWriteSet` is a **run-queue** write set:
+  `observableSlotsConfinedToCores` covers six per-core slots and the replenish
+  queue is not one of them, so that set says nothing about the two reservation
+  steps `v0.35.164` and `v0.35.165` put on the destroy path, and a footprint built
+  from it alone would be false of the operation.  The replenish segment is keyed
+  on the object kind — a `.tcb` target's is the donation arm's cores (nothing for
+  `.unbound`, the thread's home for `.bound`, the return's two migration endpoints
+  for `.donated`), a `.schedContext` target's is the release's (the bound thread's
+  home, or **every** core where that thread is already gone from the store), and
+  every other kind's is empty, with the declaration's own half stated so a kind
+  that acquires a scheduling effect has to move a definition rather than a proof.
+  Both resolvers read the pre-state, which is a fact rather than a convenience:
+  for a SchedContext target every earlier step of the cleanup is the identity, and
+  for a TCB target the donation arm is the first step.  Exactness is composed over
+  all six kinds (`lifecyclePreRetypeCleanup_replenishQueueOnCore_ne`, over two
+  step frames and two arm frames), `tests/SmpIpcSuite.lean` §3.33 is the witness —
+  computing the run-only reading beside the live footprint on both target shapes —
+  and `maxLockSetSize` is unmoved.  `.tcbSuspend` is the one arm left.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

@@ -2300,16 +2300,10 @@ theorem priorityRescheduleOnCoreLive_confinedToCores (st st' : SystemState)
       st st' running? executingCore shouldPreempt sgi h]
     exact observableSlotsConfinedToCores_refl _ _
 
-/-- SM8.B.2 (PR #861 review round 35): **the cores a destroy sweep actually
-touches** — those the thread occupies in the pre-state.
-
-`removeRunnableFromAllCores` folds over *every* core, so the naive bound is
-`allCores`, which is true and useless. Round 17 rewrote the step to be
-**guarded** by `threadOccupiesCore` precisely so a sharper bound would be
-available: an unoccupied core is left literally untouched, not rewritten with
-equal values. This is that bound. -/
-def threadOccupiedCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
-  Concurrency.allCores.filter (threadOccupiesCore st tid)
+-- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `threadOccupiedCores` moved to the
+-- production `SeLe4n/Kernel/SyscallSchedFootprint.lean` with the retype write
+-- set that reads it.  Its lemma family stays here: those are about the destroy
+-- sweep's confinement, which is this module's question.
 
 /-- SM8.B.2: a core outside the occupancy set does not hold the thread. -/
 theorem not_threadOccupiesCore_of_not_mem (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -4154,29 +4148,11 @@ theorem withIcacheBroadcast_confinedToCores
         subst he
         exact observableSlotsConfinedToCores_of_framed_suffix (stMid := stK) rfl rfl hInner
 
-/-- SM8.B.2: **where a `.lifecycleRetype` writes**, as a function of the object
-being destroyed.
-
-Only the TCB arm names any core, and it names the ones the doomed thread
-occupies. Every other kind of object — CNode, endpoint, notification, reply,
-VSpace root, untyped, scheduling context — is scheduler-silent, so its write set
-is empty. -/
-def lifecycleRetypeWriteSetOf (st : SystemState) (currentObj : KernelObject) :
-    List CoreId :=
-  match currentObj with
-  | .tcb tcb => threadOccupiedCores st tcb.tid
-  | _ => []
-
-/-- SM8.B.2: the same set, resolved from the target's id through the pre-state
-store. Retyping an absent object writes nothing (the pipeline errors out).
-
-Read through the AN10-B accessor `getObject?` rather than the store directly:
-this is a live-path definition, and the retype's own pipeline is the last place
-this subsystem should be reintroducing raw matches. -/
-def lifecycleRetypeWriteSet (st : SystemState) (target : SeLe4n.ObjId) : List CoreId :=
-  match st.getObject? target with
-  | some obj => lifecycleRetypeWriteSetOf st obj
-  | none => []
+-- WS-RR RR8.12 Cut C3b-iii (`v0.35.169`): `lifecycleRetypeWriteSetOf` and
+-- `lifecycleRetypeWriteSet` moved to the production
+-- `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_lifecycleRetypeOnCore`, whose run segment IS the second.  Same
+-- names, same namespace; the confinement theorems below stay here.
 
 -- `v0.35.164`: `tcbCleanupArm_confinedToCores` is gone with the two mid-states it
 -- abstracted over; the pipeline's first step is the reservation arm, composed

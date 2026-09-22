@@ -5051,6 +5051,72 @@ private def runRetypeSchedContextChecks : IO Unit := do
       | _, _ => assertBool "(d) CONTROL: both retypes of an unbound context succeed" false
   | _, _ => assertBool "(a) setup: the context and the client resolve" false
 
+-- ============================================================================
+-- §3.33 the `.lifecycleRetype` arm's resolved scheduler-domain footprint
+--       (WS-RR RR8.12 Cut C3b-iii, `v0.35.169`)
+-- ============================================================================
+
+/-! The destroy path's replenish writes are the cleanup's two reservation arms —
+`cancelDonationArmOnCore` on a TCB target (`v0.35.164`) and
+`releaseSchedContextBinding` on a SchedContext target (`v0.35.165`) — and SM8.B's
+`lifecycleRetypeWriteSet` is **silent** about them: `observableSlotsConfinedToCores`
+covers six per-core slots and the replenish queue is not one of them.
+
+So a footprint built from that write set alone would be **false** of the
+operation, and that is the retired reading computed beside the live footprint
+here: on both target shapes it declares no replenish lock while the live arm
+moves a replenishment.  The CONTROL is an endpoint target, where the two agree
+because the destroy path has no scheduling effect at all. -/
+
+/-- The RETIRED reading: SM8.B's write set as a whole footprint, with no
+replenish segment.  Spelled here and nowhere else. -/
+private def runOnlyRetypeFootprint (st : SystemState) (target : SeLe4n.ObjId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (lifecycleRetypeWriteSet st target) []
+
+private def runRetypeFootprintChecks : IO Unit := do
+  IO.println "--- §3.33 Cut C3b-iii: the .lifecycleRetype arm's scheduler footprint ---"
+  -- (a) a BOUND TCB target: the arm purges on the thread's home core.
+  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  let fpTcb := schedLockSet_lifecycleRetypeOnCore stBound donClient.toObjId
+  assertBool "(a) setup: the client owns its context and is homed on core 1"
+    (decide (determineTargetCore stBound donClient = c1)
+      && replenishCountFor stBound c1 scClient == 1)
+  assertBool "(a) the footprint declares the home core's replenish write lock"
+    (hasReplenishWrite fpTcb c1)
+  assertBool "(a) NEGATIVE: the run-only reading declares none, on any core"
+    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stBound
+      donClient.toObjId) c))
+  match liveRetypeTcb stBound donClient with
+  | none => assertBool "(a) the live retype of the bound owner succeeds" false
+  | some stNew =>
+    assertBool "(a) ...and the live retype really does write that queue"
+      (replenishCountFor stNew c1 scClient == 0)
+    assertBool "(a) ...and no other core's"
+      (allCores.all (fun c => c == c1 ||
+        replenishEntriesOn stNew c == replenishEntriesOn stBound c))
+  -- (b) a SCHEDCONTEXT target bound to a resolving thread: the release purges on
+  --     that thread's home core.
+  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  let fpSc := schedLockSet_lifecycleRetypeOnCore stSc scClient.toObjId
+  assertBool "(b) the footprint declares the bound thread's home core's replenish write lock"
+    (hasReplenishWrite fpSc c1)
+  assertBool "(b) NEGATIVE: the run-only reading declares none there either"
+    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stSc
+      scClient.toObjId) c))
+  match liveRetypeObj stSc scClient.toObjId with
+  | none => assertBool "(b) the live retype of the bound context succeeds" false
+  | some stNew =>
+    assertBool "(b) ...and the live retype really does purge that queue"
+      (replenishCountFor stNew c1 scClient == 0)
+  -- (c) the CONTROL: an endpoint target has no scheduling effect at all, so the
+  --     two readings agree and both are the object-store lock alone.
+  let fpEp := schedLockSet_lifecycleRetypeOnCore stSc donEp
+  assertBool "(c) CONTROL: an endpoint target's footprint is the object-store write lock alone"
+    (decide (fpEp = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)]))
+  assertBool "(c) CONTROL: ...which is exactly what the run-only reading gives too"
+    (decide (fpEp = runOnlyRetypeFootprint stSc donEp))
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -5088,6 +5154,7 @@ def runSmpIpcChecks : IO Unit := do
   runCallReplyFootprintChecks
   runRetypeReservationChecks
   runRetypeSchedContextChecks
+  runRetypeFootprintChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

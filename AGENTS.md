@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.168.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.169.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,21 +222,21 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78175 lines)
+- `CHANGELOG.md` (~78252 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6790 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6812 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5659 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5635 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5299 lines)
+- `tests/SmpIpcSuite.lean` (~5165 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
-- `tests/SmpIpcSuite.lean` (~5098 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5063 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
@@ -357,6 +357,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~1370 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
@@ -401,7 +402,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~994 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~988 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~984 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~973 lines)
@@ -9213,6 +9213,43 @@ code may assume:
   the witness: the sweep fixture's entries sit on two cores, the live unbind
   purges both, and the retired home-only reading — a `private def` in the suite
   and nowhere else — declares neither.  `maxLockSetSize` is unmoved.
+- **...and the destroy path declares its own, over a write set that is silent
+  about the thing it moves** (WS-RR RR8.12 Cut C3b-iii, `v0.35.169`).
+  `schedLockSet_lifecycleRetypeOnCore` is the live `.lifecycleRetype` arm's
+  scheduler-domain footprint — **inert** until the bracket cut.  Five things new
+  code must respect.  (1) **SM8.B's write set is a RUN-QUEUE write set**:
+  `observableSlotsConfinedToCores` covers six per-core slots and the replenish
+  queue is not one of them, so `lifecycleRetypeWriteSet` says nothing about the
+  two reservation steps `v0.35.164` and `v0.35.165` put on the destroy path, and
+  a footprint built from it alone is **false** of the operation.  That is what
+  `tests/SmpIpcSuite.lean` §3.33 measures, computing the run-only reading beside
+  the live footprint on both target shapes.  (2) **The replenish segment is keyed
+  on the OBJECT KIND**, with exactly two kinds naming a core because the cleanup
+  has exactly two reservation steps: a `.tcb` target's is the donation arm's
+  (nothing for `.unbound`, the thread's home for `.bound`, the return's two
+  migration endpoints for `.donated`, the destination read at the post-return
+  state), a `.schedContext` target's is the release's, and every other kind's is
+  empty — with `schedLockSet_lifecycleRetypeOnCore_empty_of_other` the
+  declaration's own half, so a kind that acquires a scheduling effect has to move
+  a definition rather than a proof.  (3) **The release's segment is `allCores`
+  where the bound TCB is gone**, for the reason `v0.35.168`'s unbind gives on the
+  same shape: with no `cpuAffinity` left to read there is no home core to name.
+  (4) **Both resolvers read the PRE-state, and that is a fact rather than a
+  convenience**: for a SchedContext target every earlier step of the cleanup is
+  the identity, and for a TCB target the donation arm *is* the first step — so
+  this whole footprint is pre-state computable with no mid-state bridge, which is
+  what `.replyRecv` and `.tcbSuspend` do not get.  (5) **Exactness is composed
+  over all six kinds**: two step frames, two arm frames stated against their own
+  resolvers, and `lifecyclePreRetypeCleanup_replenishQueueOnCore_ne` over the
+  whole cleanup, every other step of it framing the scheduler outright.
+  `threadOccupiedCores` and the two retype write sets moved to production with
+  tombstones — their lemma family and the confinement theorems stay staged, being
+  about the destroy sweep's confinement, which is that module's question — and
+  `SyscallSchedFootprint.lean` imports `Lifecycle/Invariant/RetypeReservation.lean`
+  for the reference sweep's frame.  `maxLockSetSize` is unmoved.  **`.tcbSuspend`
+  is the one arm left**, and it is a cut of its own: its run segment re-runs a
+  seven-stage pipeline and its replenish segment two migrations read at
+  intermediate states.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with
