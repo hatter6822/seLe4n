@@ -2640,24 +2640,50 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | none => false
   IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
 
-  -- SCO-020d (WS-OD OD1.7): **and the reclaim puts the aborted holder back on a
-  -- run queue.**  SCO-020b shows the abort ends the holder's call; on its own
-  -- that left the holder `.ready`, spliced off its endpoint and on *no* run
-  -- queue, with every recovery path closed — `.tcbResume` demands `.Inactive`,
-  -- `schedContextBind` re-buckets only an already-queued thread, and
-  -- `chooseThreadOnCore` never scans ready TCBs.  The server was stranded
-  -- permanently.  The cross-core composite now places it, on the **holder's**
-  -- home core, which this fixture deliberately makes a *different* core from the
-  -- victim's: core 1 rather than the boot core.  So the run-queue write the
-  -- reclaim performs is one the victim's own deschedule does not cover, which is
-  -- why `cancelIpcBlockingOnCoreSchedLockSet` names it.
+  -- SCO-020d (`v0.35.158`; WS-OD OD1.7 until then): **and the reclaim takes the
+  -- holder it unbound OFF the scheduler.**  SCO-020b shows the abort ends the
+  -- holder's call, leaving it `.ready`, `.unbound` and spliced off its endpoint;
+  -- OD1.7 then placed it on its home core's run queue, where an unbound thread
+  -- runs at its legacy TCB band charged to no reservation — the temporal-isolation
+  -- break PR #897's review measured on the live suspend.  The reclaim's scheduler
+  -- step is now the deschedule every other donation pop performs.  On THIS
+  -- fixture the holder was blocked, hence placed nowhere, so the step is the
+  -- identity: the holder stays parked, recoverable by its own manager.  The holder
+  -- is pinned to core 1 so that the placement the next line removes from is one
+  -- the victim's own deschedule (core 0) does not cover — which is why
+  -- `cancelIpcBlockingOnCoreSchedLockSet` names it.
   let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
   let stPin := stR.withObjectStored hTid.toObjId (.tcb holderPinned)
-  let stWoken := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
-  let holderQueued := (stWoken.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
-  let holderRunnable := SeLe4n.Kernel.runnableOnSomeCore stWoken hTid
-  let victimDescheduled := !((stWoken.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
-  IO.println s!"[SCO-020d] reclaim holder_queued={holderQueued} holder_runnable={holderRunnable} victim_descheduled={victimDescheduled}"
+  let stParked := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
+  let parkedUnplaced := !SeLe4n.Kernel.runnableOnSomeCore stParked hTid
+    && !SeLe4n.Kernel.runningOnSomeCore stParked hTid
+  let parkedUnbound := match stParked.getTcb? hTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | none => false
+  let victimDescheduled := !((stParked.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
+  IO.println s!"[SCO-020d] reclaim blocked_holder_parked={parkedUnplaced} holder_unbound={parkedUnbound} victim_descheduled={victimDescheduled}"
+
+  -- SCO-020e (`v0.35.158`): **the queued holder — the case the wake never
+  -- touched.**  The same reclaim with the holder `.ready` and QUEUED on core 1
+  -- while holding the victim's donated reservation: the ordinary passive server
+  -- servicing a request when its client is suspended.  The abort is inert, the
+  -- pop unbinds the server, and the deschedule takes it off core 1's run queue —
+  -- where OD1.7's wake, whose guards declined a queued thread, left it running
+  -- `.unbound` on nobody's budget.  The resolver names the core the step wrote.
+  let holderReady : TCB := { holderPinned with ipcState := .ready, queuePPrev := none }
+  let epIdle : Endpoint := { sendQ := {}, receiveQ := {} }
+  let stReady := stR.withObjectStored epH (.endpoint epIdle)
+      |>.withObjectStored hTid.toObjId (.tcb holderReady)
+  let stQueued := SeLe4n.Kernel.enqueueRunnableOnCore stReady ⟨1, by decide⟩ hTid
+  let queuedBefore := (stQueued.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let stDesch := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stQueued).1
+  let queuedAfter := (stDesch.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let holderUnplaced := !SeLe4n.Kernel.runnableOnSomeCore stDesch hTid
+    && !SeLe4n.Kernel.runningOnSomeCore stDesch hTid
+  let holderCoreNamed := decide (SeLe4n.Kernel.cancelUnboundHolderCore? stQueued
+    (SeLe4n.Kernel.cancelIpcBlockingMigrated vTid victimTcb stQueued) vTid victimTcb
+      = some ⟨1, by decide⟩)
+  IO.println s!"[SCO-020e] reclaim queued_holder queued_before={queuedBefore} queued_after={queuedAfter} holder_unplaced={holderUnplaced} holder_core_named={holderCoreNamed}"
 
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩

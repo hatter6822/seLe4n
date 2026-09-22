@@ -2401,33 +2401,31 @@ theorem switchToThreadOnCore_preserves_threadInactiveFlagConsistent
 
 
 -- ============================================================================
--- WS-RR RR8.12 (Cut 4) — the scheduling point keeps a placed thread placed
+-- WS-RR RR8.12 (Cut 4) / `v0.35.158` — the scheduling point and placement
 -- ============================================================================
 --
--- WS-OD OD1.7's payoff (`wakeAbortedDonationHolder_holder_runnable`) says the
--- cancellation reclaim leaves the aborted donation holder queued or running.
--- The guarantee a user sees is that a `.tcbSuspend` does not strand the server
--- its victim called, and that is the payoff *after the whole suspend pipeline*
--- — six more stages, of which the last is a scheduling point.  These three are
--- what that stage needs; the composition is
--- `suspendThreadOnCore_holder_still_placed` in `IPC/CrossCore/Cancellation.lean`.
+-- Two directions.  WS-RR RR8.12 (Cut 4) proved the switch keeps a *placed*
+-- thread placed, for WS-OD OD1.7's wake of the cancellation reclaim's holder.
+-- `v0.35.158` retired that wake — the reclaim now DESCHEDULES the holder it
+-- unbinds, as every other donation pop does — and the payoff a user sees turned
+-- around with it: a `.tcbSuspend` leaves the server its victim called on no
+-- scheduler slot, *after the whole suspend pipeline*, whose last stage is a
+-- scheduling point.  So the switch's scheduler shape is stated once
+-- (`switchToThreadOnCore_ok_scheduler`) and both directions read it; the
+-- composition is `suspendThreadOnCore_holder_unplaced` in
+-- `IPC/CrossCore/Cancellation.lean`.  The placed direction is kept: it is what
+-- the wake's consumers read and what the next placed-thread payoff will.
 
-/-- **WS-RR RR8.12 (Cut 4)**: a context switch keeps a placed thread placed —
-given that thread resolves to a TCB.
-
-The hypothesis is not bookkeeping; it is the **one** way the switch can strand a
-thread.  It is the side condition RR7.36 states for that same transition's
-inactive-flag preservation, narrowed from *every thread current on `c`* to the
-one thread this frame is about — which is all a per-thread frame can need.
-`preemptCurrentOnCore` re-enqueues the outgoing thread only when its TCB
-resolves — its `none` arm is the identity — and the `setCurrentOnCore` that
-follows then displaces it with nothing to fall back to. -/
-theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
-    (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId)
-    (hTcb : (st.getTcb? u).isSome)
-    (hStep : switchToThreadOnCore st c tid = .ok st')
-    (h : threadPlacedOnSomeCore st u = true) :
-    threadPlacedOnSomeCore st' u = true := by
+/-- `v0.35.158`: the switch's scheduler, read off a successful step — the
+dispatch shape over the preempted state.  Extracted from the placement frame
+below so the two placement directions (a placed thread stays placed; an unplaced
+one stays unplaced) read one equation rather than each re-deriving the shape. -/
+theorem switchToThreadOnCore_ok_scheduler (st st' : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hStep : switchToThreadOnCore st c tid = .ok st') :
+    st'.scheduler = ({ preemptCurrentOnCore st c tid with
+        scheduler := ((preemptCurrentOnCore st c tid).scheduler.setRunQueueOnCore c
+          (((preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore
+            c (some tid) } : SystemState).scheduler := by
   unfold switchToThreadOnCore at hStep
   split at hStep
   · split at hStep
@@ -2461,47 +2459,95 @@ theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
         show (restoreIncomingContextOnCoreUnlessCurrent _ c tid).scheduler.setCurrentOnCore
           c (some tid) = _
         rw [restoreIncomingContextOnCoreUnlessCurrent_scheduler]
-      rw [threadPlacedOnSomeCore_of_scheduler_eq _ _ u hSched]
-      by_cases hu : u = tid
-      · subst hu
-        exact threadPlacedOnSomeCore_dispatch_self (preemptCurrentOnCore st c u) c u
-      · rw [threadPlacedOnSomeCore_dispatch_ne (preemptCurrentOnCore st c tid) c tid u hu ?_,
-          preemptCurrentOnCore_threadPlacedOnSomeCore]
-        · exact h
-        · intro hCurP
-          rw [preemptCurrentOnCore_currentOnCore] at hCurP
-          obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
-          rw [threadQueuedOnSomeCore_eq_true_iff]
-          refine ⟨c, ?_⟩
-          show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
-          unfold preemptCurrentOnCore
-          rw [hCurP]
-          dsimp only
-          rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
-          dsimp only
-          show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
-          rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
-          exact Or.inr rfl
+      exact hSched
     · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
 
-/-- **WS-RR RR8.12 (Cut 4)**: the per-core scheduling point keeps a placed thread
-placed.  Its two non-identity arms are the switch above; the rest is the
-identity. -/
-theorem handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore
-    (st st' : SystemState) (c : CoreId) (u : SeLe4n.ThreadId)
+/-- **WS-RR RR8.12 (Cut 4)**: a context switch keeps a placed thread placed —
+given that thread resolves to a TCB.
+
+The hypothesis is not bookkeeping; it is the **one** way the switch can strand a
+thread.  It is the side condition RR7.36 states for that same transition's
+inactive-flag preservation, narrowed from *every thread current on `c`* to the
+one thread this frame is about — which is all a per-thread frame can need.
+`preemptCurrentOnCore` re-enqueues the outgoing thread only when its TCB
+resolves — its `none` arm is the identity — and the `setCurrentOnCore` that
+follows then displaces it with nothing to fall back to. -/
+theorem switchToThreadOnCore_preserves_threadPlacedOnSomeCore
+    (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId)
     (hTcb : (st.getTcb? u).isSome)
-    (hStep : handleRescheduleSgiOnCore st c = .ok st')
+    (hStep : switchToThreadOnCore st c tid = .ok st')
     (h : threadPlacedOnSomeCore st u = true) :
     threadPlacedOnSomeCore st' u = true := by
-  unfold handleRescheduleSgiOnCore at hStep
-  split at hStep
-  · exact absurd hStep (by simp)
-  · rw [← Except.ok.inj hStep]; exact h
-  · split at hStep
-    · rename_i tid _ _
-      exact switchToThreadOnCore_preserves_threadPlacedOnSomeCore st st' c tid u hTcb hStep h
-    · rw [← Except.ok.inj hStep]; exact h
+  rw [threadPlacedOnSomeCore_of_scheduler_eq _ _ u
+    (switchToThreadOnCore_ok_scheduler st st' c tid hStep)]
+  by_cases hu : u = tid
+  · subst hu
+    exact threadPlacedOnSomeCore_dispatch_self (preemptCurrentOnCore st c u) c u
+  · rw [threadPlacedOnSomeCore_dispatch_ne (preemptCurrentOnCore st c tid) c tid u hu ?_,
+      preemptCurrentOnCore_threadPlacedOnSomeCore]
+    · exact h
+    · intro hCurP
+      rw [preemptCurrentOnCore_currentOnCore] at hCurP
+      obtain ⟨prevTcb, hPrev⟩ := Option.isSome_iff_exists.mp hTcb
+      rw [threadQueuedOnSomeCore_eq_true_iff]
+      refine ⟨c, ?_⟩
+      show u ∈ (preemptCurrentOnCore st c tid).scheduler.runQueueOnCore c
+      unfold preemptCurrentOnCore
+      rw [hCurP]
+      dsimp only
+      rw [if_neg (by simpa using hu), SystemState.getTcbWitnessed?_eq_some hPrev]
+      dsimp only
+      show u ∈ (st.scheduler.setRunQueueOnCore c _).runQueueOnCore c
+      rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self, RunQueue.mem_insert]
+      exact Or.inr rfl
+
+/-- **`v0.35.158`**: the other direction — a context switch keeps an
+**unplaced** thread unplaced, given it is not the thread being dispatched.
+
+No resolvability side condition this time: the one way the switch can *place* a
+thread is by dispatching it, and the thread it displaces was current, hence
+placed, hence not this one.  The dispatched thread is the caller's to rule out —
+`handleRescheduleSgiOnCore_preserves_unplaced` (`IPC/CrossCore/Cancellation.lean`)
+does it from the chooser's own membership, which is why that half lives beside
+the chooser's consumers rather than here. -/
+theorem switchToThreadOnCore_preserves_unplaced
+    (st st' : SystemState) (c : CoreId) (tid u : SeLe4n.ThreadId) (hu : u ≠ tid)
+    (hStep : switchToThreadOnCore st c tid = .ok st')
+    (h : threadPlacedOnSomeCore st u = false) :
+    threadPlacedOnSomeCore st' u = false := by
+  rw [threadPlacedOnSomeCore_of_scheduler_eq _ _ u
+      (switchToThreadOnCore_ok_scheduler st st' c tid hStep),
+    threadPlacedOnSomeCore_dispatch_ne (preemptCurrentOnCore st c tid) c tid u hu ?_,
+    preemptCurrentOnCore_threadPlacedOnSomeCore]
+  · exact h
+  · intro hCurP
+    rw [preemptCurrentOnCore_currentOnCore] at hCurP
+    exfalso
+    have hPlaced : threadPlacedOnSomeCore st u = true :=
+      (threadPlacedOnSomeCore_eq_true_iff st u).mpr (Or.inl ⟨c, hCurP⟩)
+    rw [h] at hPlaced
+    exact Bool.false_ne_true hPlaced
+
+/-- `v0.35.158`: placement is the resolver's `isSome` — the classification's
+Boolean and `placedCoreOf?`'s witness are one question, so a consumer holding
+`placedCoreOf? st u = none` reads "unplaced" in the vocabulary the suspend
+pipeline's payoff is stated in. -/
+theorem threadPlacedOnSomeCore_eq_isSome_placedCoreOf? (st : SystemState)
+    (u : SeLe4n.ThreadId) :
+    threadPlacedOnSomeCore st u = (placedCoreOf? st u).isSome := by
+  rw [placedCoreOf?_isSome_iff]
+  unfold threadPlacedOnSomeCore threadRunningOnSomeCore threadQueuedOnSomeCore
+  exact Bool.or_comm _ _
+
+-- `v0.35.158`: `handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore` —
+-- the per-core scheduling point keeps a placed thread placed — is retired with
+-- `suspendThreadOnCore_holder_still_placed`, its only consumer.  The switch-level
+-- fact it composed (`switchToThreadOnCore_preserves_threadPlacedOnSomeCore`,
+-- above) stays, as the statement of the side condition under which a dispatch
+-- keeps a placed thread placed; the unplaced direction the payoff reads now is
+-- `handleRescheduleSgiOnCore_preserves_unplaced` (`IPC/CrossCore/Cancellation.lean`),
+-- beside the chooser's membership fact it needs.
 
 -- ============================================================================
 -- WS-SM SM5.H — Per-core CBS (production operations)

@@ -1,3 +1,190 @@
+## v0.35.158 — the cancellation reclaim deschedules the holder it unbinds, so no client suspension hands a server the CPU on nobody's budget
+
+The second of the two open halves PR #897 left registered is closed on its
+reclaim side.  `v0.35.149` measured, on the live `suspendThreadOnCore`, that
+after a `.tcbSuspend` of a reply-blocked client whose donated context was held
+by a server blocked on a nested call, WS-OD OD1.4's abort ended the server's IPC
+and OD1.7's wake placed it on its home core's run queue — `.unbound`, `.ready`,
+`hasSufficientBudget = true`, at its own TCB band, refilled by
+`timerTickBudgetOnCore`'s `.unbound` arm forever — and that a server merely
+*queued* on the donated context stayed queued and unbound, because the wake
+declined a placed thread.  Authority over the *client*, none over the server,
+and the server outside CBS admission entirely; `passiveServerIdle` could not see
+it because its antecedent is *not queued*.  The register row weighed three
+remedies and reported rather than fixed, since parking the holder changes live
+`.tcbSuspend` semantics against OD1.7's documented adjudication.  Read against
+what OD1.7 actually rejected, that adjudication does not bind here: OD1.7
+refused to leave the holder `.ready` off every queue *with nothing owed to it*,
+and the `.ipcTimeout` frame OD1.4's abort stages (WS-RR RR7.14) is precisely
+what makes something owed — a delivery the holder observes the first time it is
+dispatched, which is the first time it holds a reservation.  Every other
+donation pop in the tree already took that reading (`applyReplyDonation`,
+`applyReplyDonationOnCore`, `replyRecvHolderDeschedule`; seL4-MCS's
+`schedContext_donate`, read at `13.0.0`, dequeues the previous holder), and the
+reclaim was the one deliberate outlier.  It is not one now.
+
+### The trigger reads the pop's own writes, and the step is the removal every pop performs
+
+`cancelUnboundHolder? stPre stPost victim tcb` (`Lifecycle/Suspend.lean`)
+resolves the victim's donation on the pre-state and answers the holder exactly
+when the post-teardown state shows the pop's two writes — the holder's binding
+`.unbound` and the victim's not — which distinguishes a landed pop from a
+refused, all-or-nothing reclaim.  It reads no `ipcState`, so it fires on a
+blocked holder and on a queued one alike, where the wake's `.ready`-gated
+trigger was silent on exactly the queued server.  `holder ≠ victim` is
+structural (`cancelUnboundHolder?_ne_victim`: one thread cannot answer both
+conjuncts), so the composite's own deschedule of the victim is an equation now
+(`cancelIpcBlockingReclaimed_placedCoreOf?_victim`,
+`cancelIpcBlockingReclaimed_currentOnCore_victim_iff`) where the wake had left
+a disjunction over a degenerate self-insert no state reached
+(`cancelIpcBlockingOnCore_placedCoreOf?_cases`, deleted).
+`descheduleUnboundHolder` is `descheduleAtPlacement stPost holder` — the
+identity on a holder placed nowhere, a scheduler-only write from the holder's
+own placement otherwise — and `cancelIpcBlockingReclaimed victim tcb st` is the
+migration followed by it.  `cancelIpcBlockingOnCore_objects_eq` and the whole
+`CancellationNI` surface hold verbatim; no SGI is surfaced, because both
+`.tcbSuspend` entry paths derive their pokes from the committed pre/post diff,
+whose `currentSlotChangeSgis` rule reaches a holder taken off a remote current
+slot.
+
+What the holder is left with: `.ready`, `.unbound`, on no slot, the staged
+frame in its register context.  Its own manager recovers it by a `.tcbSuspend`
+then a `.tcbResume` (the resume places it through `determineTargetCore`), or by
+a `schedContextBind` once that arm places a parked thread — the bind half the
+register row keeps open, WS-CB's, and the divergence from seL4-MCS's
+`schedContext_bindTCB` the row records.
+
+### The footprint names the holder's placed core, and the locality clause excludes it on both halves
+
+`cancelIpcBlockingOnCoreSchedLockSet (placed holderPlaced : Option CoreId)` is
+`schedFootprintOfCores (placed.toList ++ holderPlaced.toList) []`; the second
+member is resolved by `cancelUnboundHolderCore?` — `placedCoreOf?` of the
+post-teardown state at the trigger's answer, the same expression the step reads
+— where the wake's member had been the holder's *home*.
+`…_covers_holder_deschedule` is the relation and
+`…_contains_holder_runQueue_write` the membership; `suspendThreadOnCoreSchedLockSet`
+takes the same `holderPlaced` in place of `wakeCore`, and
+`suspendThreadOnCoreWriteSet`'s first entry is `cancelUnboundHolderCore?`.
+`cancellation_cross_core_correct`'s run-queue and current-slot halves are both
+conditioned on `cancelUnboundHolderCore?`; the wake's insert had needed the
+exclusion on the run-queue half alone.
+
+### The bundle frame a removal owes, and the information-flow twin
+
+An insert owes `passiveServerIdle` nothing, its antecedent being *not queued*;
+a removal owes the removed thread's post-state.
+`descheduleUnboundHolder_passiveServerIdleFrame` takes it as the disjunction the
+frame primitive already consumes — the holder's binding is not `.unbound`, or
+its `ipcState` is one the conjunct permits — and
+`cancelIpcBlocking_unboundHolder_binding_or_allowed` discharges it from the
+abort that runs first (`abortHolderPendingIpc_holder_ipcState_allowed`, carried
+across the return, the splice, the restore and the teardown by their other-TCB
+frames), under the reply arm's own `owed` premise.  The arm-complete composite
+and its cross-core lift are unchanged in statement.
+
+`abortHolderWakeHigh` is `descheduledHolderHigh`, with the same discharge
+(`descheduledHolderHigh_of_donationOwnerFlowsToHolder`,
+`descheduledHolderHigh_of_no_donation`): a run-queue removal is filtered by the
+removed thread's own observability exactly as the insert was, so
+`descheduleUnboundHolder_preserves_projection` / `_projectionOnCore` and
+`descheduleUnboundHolder_confinedToCores` are the insert's theorems with the
+direction of the queue edit reversed.
+
+### The pipeline payoff inverts, and needs less
+
+`suspendThreadOnCore_holder_unplaced` replaces
+`suspendThreadOnCore_holder_still_placed`: under single placement of the
+holder in the pre-state and a well-formed run queue on the executing core, the
+live `.tcbSuspend` leaves the holder on **no** scheduler slot.  It is the same
+six stages after G2 — the chain reversion
+(`propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed`, over
+`updatePipBoostOnCore_…` and `pipBoostWithWake_…`), the donation arm
+(`cancelSuspendDonation_runQueueOnCore`), the placement removal
+(`descheduleAt_preserves_runQueueOnCore_wellFormed`), the two TCB writes
+(`SystemState.updateTcb_scheduler`) and the G7 scheduling point
+(`suspendRescheduleOnCore_preserves_unplaced` →
+`handleRescheduleSgiOnCore_preserves_unplaced` →
+`switchToThreadOnCore_preserves_unplaced`, the chooser's selection being a
+member of the queue it selects from) — and what it no longer needs is
+resolvability: a scheduling point cannot *place* an unplaced thread whatever
+its TCB resolves to, so the `_getTcb?_isSome` scaffolding the placed direction
+carried at every stage (`updatePipBoostOnCore_`, `pipBoostWithWake_`,
+`propagatePipChainCrossCore_`, `cancelBoundDonationOnCore_`,
+`cancelDonatedDonationOnCore_`, `cancelSuspendDonation_`,
+`updateTcb_getTcb?_isSome`) and the two placed-direction preservation theorems
+(`handleRescheduleSgiOnCore_` / `suspendRescheduleOnCore_preserves_threadPlacedOnSomeCore`)
+are deleted with tombstones.  `switchToThreadOnCore_preserves_threadPlacedOnSomeCore`
+stays, anchored and consumed.
+
+### Retired, relocated, witnessed
+
+The wake family is deleted, not kept beside its replacement:
+`cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?`,
+`enqueueAbortedHolderOnCore`, `wakeAbortedDonationHolder`, `abortHolderWakeHigh`
+and their theorems (`_holder_runnable`, `_some_decompose`, `_ne_victim`,
+`_donation`, `_agrees_runQueueOnCore`, `_projectRunnableOnCore_high`, the
+projection, confinement and frame lemmas), with
+`cancelIpcBlockingOnCore_eq_descheduleThread` and
+`cancelHolderBlockedEndpoint?_isSome_blocked`, consumed by nothing once the wake
+went.  Each survives in prose only, a tree-wide Tier 3 negative refuses the
+retired names as code, and every citation in `CLAUDE.md` / `AGENTS.md`, the
+spec, the register, the three plans and the Lean docstrings is swept with the
+supersession recorded rather than the history rewritten.
+
+The placement primitives — `removeRunnableOnCore`, `descheduleAt`,
+`descheduleAtPlacement`, `descheduleAtPlacementCores`, the `placedCoreOf?`
+congruences and the `removeRunnableOnCore_*` frame family — move from
+`IPC/CrossCore/EndpointCall.lean` to `Scheduler/Operations/Selection.lean`,
+beside `placedCoreOf?`: the reclaim is declared in `Lifecycle/Suspend.lean`,
+which the cross-core call module imports, so the second asker could not reach
+the shared answer — *when a question has one owner and an asker that cannot see
+it, the owner is in the wrong layer*.  They keep the `SeLe4n.Kernel` namespace,
+so the move renames nothing, and the Tier 3 anchors over them are repointed.
+`placedCoreOf?_none_iff`, `placedCoreOf?_congr_of_bits`,
+`threadPlacedOnSomeCore_eq_isSome_placedCoreOf?`,
+`descheduleAtPlacement_unplaced` and `descheduleAtPlacement_placedCoreOf?_ne`
+are the facts the new direction needed and the old one had never stated.
+
+`tests/SmpCancellationSuite.lean` §3.26 is rewritten around three shapes — a
+holder blocked on a nested call, a holder *queued* on core 2 (which the retired
+wake's `.ready` gate could not see), and a holder *running* there — and
+computes the retired G2 and the retired wake beside the live reclaim on each,
+so the assertions are known to discriminate: the retired wake leaves the queued
+holder queued and unbound, the live reclaim takes it off core 2's run queue,
+and the live suspend and the single-core reference suspend both leave it on no
+scheduler slot, with the payoff's two premises exhibited on the state.  The
+golden trace's `[SCO-020d]` row is relabelled for the deschedule
+(`blocked_holder_parked`) and `[SCO-020e]` is added for the queued holder
+(`queued_before=true queued_after=false holder_unplaced=true
+holder_core_named=true`), so `tests/fixtures/main_trace_smoke.expected` is 240
+lines — a fixture edit with its rationale, the harness measuring what the
+reclaim does rather than what it did.
+
+### What moved in the documentation
+
+`CLAUDE.md` / `AGENTS.md`: the OD1.7 bullet is superseded in place (*the holder
+the reclaim UNBINDS is descheduled, not woken*, six things new code must
+respect); the RR8.12 live-pipeline bullet, the RR8.6 and RR8.8 notes and the
+donation-pop constraint follow it; and the `v0.35.149` bullet records the
+reclaim half closed and the claim v1.0.0 may now make.  The spec's cancellation
+narrative carries the supersession beside the wake it retires; register row 141
+is re-scoped to the bind half and the plain-`Send` split, rows 58, 59 and 66
+and the WS-OD history note the retirement, and the HP5.4, RR8.9, RR8.12 and
+`UNFINISHED_SMP_WORK.md` notes name `descheduledHolderHigh` and
+`cancelUnboundHolder?` where they named their predecessors.
+
+### Measured
+
+The library builds and Tiers 0–3 pass; the cancellation suite and the trace
+harness pass, and the changed-file anchor sweep runs 710 anchors green, with 64
+anchor lines added and 46 removed in `test_tier3_invariant_surface.sh`.
+`maxLockSetSize` is unmoved — a `SchedLockSet` carries no cardinality bound —
+and no object-domain footprint changed.  What stays registered is the bind
+half: `schedContextBind` re-buckets only an already-queued thread, so a parked
+passive server is recovered by its manager and not yet by a reservation, and
+that arm's scheduler footprint is declared before its placement is widened
+(WS-RR RR8.12's order).
+
 ## v0.35.157 — the depth-2 accounting guard is the bind's own admissibility, not a proxy for it
 
 The first of the two open halves PR #897 left registered is closed.  `v0.35.141`

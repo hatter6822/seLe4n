@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.157.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.158.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,19 +222,19 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~74416 lines)
+- `CHANGELOG.md` (~76946 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~7984 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~7869 lines)
-- `SeLe4n/Kernel/API.lean` (~7592 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6419 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8143 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8002 lines)
+- `SeLe4n/Kernel/API.lean` (~7839 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6585 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5881 lines)
-- `SeLe4n/Model/State.lean` (~5685 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5416 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5792 lines)
+- `SeLe4n/Model/State.lean` (~5675 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5417 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5127 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
@@ -244,39 +244,39 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3898 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3813 lines)
+- `tests/SmpIpcSuite.lean` (~4076 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3842 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
-- `tests/SmpIpcSuite.lean` (~3796 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3725 lines)
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3439 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3428 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3454 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3377 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `tests/OperationChainSuite.lean` (~3289 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~3116 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3090 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3129 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~3119 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
+- `tests/FrozenOpsSuite.lean` (~3050 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
-- `tests/FrozenOpsSuite.lean` (~2857 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2788 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2754 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2800 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2786 lines)
+- `tests/SmpCancellationSuite.lean` (~2663 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
 - `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
-- `tests/SmpCancellationSuite.lean` (~2518 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2504 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2481 lines)
@@ -291,27 +291,27 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2232 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2203 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2170 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
-- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2164 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2124 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2077 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
+- `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2038 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
-- `docs/planning/UNFINISHED_SMP_WORK.md` (~2016 lines)
+- `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~2000 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1981 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1980 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1955 lines)
 - `tests/LockSetSuite.lean` (~1951 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1934 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.1_WORKSTREAM_PLAN.md` (~1917 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean` (~1909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/TicketLock.lean` (~1901 lines)
@@ -329,27 +329,27 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1765 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~1734 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1710 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `tests/FaultHandlingSuite.lean` (~1660 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1648 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1650 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1611 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1583 lines)
+- `tests/PriorityManagementSuite.lean` (~1547 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1455 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1436 lines)
-- `tests/PriorityManagementSuite.lean` (~1430 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1421 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1415 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
@@ -364,17 +364,18 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1256 lines)
+- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1255 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
-- `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1239 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1178 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1173 lines)
 - `tests/SmpCacheMaintenanceSuite.lean` (~1170 lines)
+- `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1169 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1165 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
@@ -386,16 +387,15 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1121 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
-- `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1110 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1107 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `tests/SmpCbsSuite.lean` (~1015 lines)
-- `tests/DeadlockFreedomSuite.lean` (~1007 lines)
+- `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~994 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
@@ -405,6 +405,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Donation/Primitives.lean` (~962 lines)
 - `SeLe4n/Kernel/IPC/Operations/SchedulerLemmas.lean` (~960 lines)
 - `docs/dev_history/planning/WS_X_LEAN_ETHEREUM_FORMALIZATION_PLAN.md` (~958 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~955 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean` (~951 lines)
 - `tests/SmpCrossCoreNotificationSuite.lean` (~937 lines)
 - `SeLe4n/Kernel/Concurrency/MemoryModel.lean` (~935 lines)
@@ -415,12 +416,11 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~907 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~896 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~885 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~883 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
@@ -429,7 +429,6 @@ To find files that need pagination today, run:
 - `tests/SuspendResumeSuite.lean` (~856 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~851 lines)
 - `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
-- `SeLe4n/Kernel/SchedContext/Operations.lean` (~843 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~839 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
@@ -439,10 +438,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~811 lines)
+- `docs/REGISTERED_DEBT.md` (~811 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
 - `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
-- `docs/REGISTERED_DEBT.md` (~807 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
 `scripts/find_large_lean_files.sh --check` (called from
@@ -6175,7 +6175,9 @@ replaces, and it is the fact HP6 consumes.
 
 One thing HP5 measured rather than predicted, and one it got wrong first.  The wake
 and both below-head footprint members needed **no** re-resolution, because
-`cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?`, `cancelBelowHeadReads?`
+`cancelAbortedHolderWake?`, `cancelAbortedHolderWakeCore?` (the wake's resolvers,
+retired with the wake at `v0.35.158` for `cancelUnboundHolder?` /
+`cancelUnboundHolderCore?`, which derive the same way), `cancelBelowHeadReads?`
 and `cancelReclaimHead?` are all *derived from* the trigger — the derivation
 discipline paying off where an enumeration would have needed five edits.
 
@@ -7371,7 +7373,8 @@ code may assume:
   set answered by an `if`-chain over its two possible elements, which is item
   (2) above one level up and which RR8.12's first cut did not sweep onto its own
   sibling.  With the branch gone,
-  `cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write` is
+  `cancelIpcBlockingOnCoreSchedLockSet_contains_wake_runQueue_write`
+  (`…_contains_holder_runQueue_write` since `v0.35.158`) is
   **unconditional**, where it used to need `placed ≠ some c`.  (3) **A composite
   covers a component by `schedFootprintOfCores_subset`**, not by a second
   member-by-member case analysis; over-declaring is the safe direction and the
@@ -7633,61 +7636,71 @@ code may assume:
   remediation is weakened on the states it held for, and the general discharge is
   registered WS-OD debt.  New code must not read either projection theorem as
   unconditional.
-- **...and the unblocked holder is placed on a run queue, not merely unblocked**
-  (WS-OD OD1.7, v0.34.108).  `cancelIpcBlockingOnCore`'s state is
-  `descheduleAtPlacement (wakeAbortedDonationHolder st (cancelIpcBlockingMigrated
-  …) …) victim` (the removal at the victim's *home* until WS-RR RR8.6, see the
-  placement bullet below).  Without the wake the abort left the holder `.ready`,
-  spliced off its endpoint and on **no** run queue, and every recovery path was
-  closed — `resumeThreadOnCore` demands `threadState = .Inactive` and the abort
-  leaves `.Ready`; `schedContextBind` re-buckets only a thread already queued
-  (`if tid ∈ runQueueOnCore bindHome`); `chooseThreadOnCore` selects exclusively
-  from `runQueueOnCore` and never scans ready TCBs — so the reclaim stranded the
-  server permanently, reachable from an ordinary `.tcbSuspend` on its client.
-  The premise the omission rested on is *false in this model*: an unbound thread
-  is fully schedulable here (`resolveEffectivePrioDeadline`'s `.unbound` arm
-  returns the legacy TCB priority), which `schedContextUnbind`'s own H2 step had
-  already recorded, having fixed the identical defect — one question answered
-  twice, the second time wrongly.  Six things new code must respect.  (1) **Waking
-  is the answer, not suspending**: the abort stages `.ipcTimeout` into the
-  holder's register context (WS-RR RR7.14), and a staged error frame the thread
-  can never observe is that defect one level over; leaving it `.Inactive` would
-  also suspend a *bystander* because its client was suspended.  (2) **The wake is
-  at the cross-core layer**, where the composite already writes the scheduler, so
-  `cancelIpcBlocking_scheduler_eq` and its four consumers are untouched — the same
-  division that puts the SM5.H replenishment migration there.  (3) **It is a
-  scheduler-only insert** (`enqueueAbortedHolderOnCore`), because the abort already
-  wrote `.ready`; writing it again would make the step touch `objects`, and
-  `cancelIpcBlockingOnCore_objects_eq` and the whole `CancellationNI` surface say
-  it does not.  `enqueueAbortedHolderOnCore_agrees_runQueueOnCore` ties it to
-  `enqueueRunnableOnCore` rather than leaving a second spelling of "enqueue" to
-  drift.  (4) **The gate is the post-state**: `cancelAbortedHolderWake?` fires on
-  the holder being `.ready` *after* the teardown, which is what distinguishes "the
-  abort ran" from "the abort was inert" (`.blockedOnReceive`) and from "the whole
-  reclaim was discarded" (OD1.4's all-or-nothing error arm); a pre-state guard
-  fires on the third — and the pre-state half is not optional in the other
-  direction either: `donationOwnerValid` constrains the donation's *owner*, never
-  its holder, so a `.donated` holder that is `.ready` and **currently running** is
-  admissible (the ordinary passive-server-running state), and on it the abort is
-  inert while the holder stays `.ready`, so a post-state-only gate would enqueue a
-  running thread.  `enqueueAbortedHolderOnCore` also refuses a running *or* queued
-  thread, since `runnableOnSomeCore` is run-queue membership only and
-  dequeue-on-dispatch means it does not catch a dispatched thread.  (5) **The
-  declared scheduler footprint names the woken core**: `cancelIpcBlockingOnCoreSchedLockSet` takes a `wakeCore : Option CoreId`,
-  because the holder's home core is neither the victim's nor the executing core,
-  and a footprint naming only `home` would be *false* of the transition — which
-  this project rates worse than a wide one.  (6) **The per-core locality clause
-  has a second stated exclusion**: `cancellation_cross_core_correct`'s run-queue
-  half is conditioned on `cancelAbortedHolderWakeCore?` and its current-slot half
-  is unconditional; the previous unconditional run-queue clause was true only
-  because the holder was placed nowhere.  The information-flow obligation is
-  `abortHolderWakeHigh`, the scheduler twin of OD1.4's
-  `abortHolderProjectionStable` — a run-queue insert is filtered by the inserted
-  thread's own observability, and the holder's label is not determined by the
-  victim's — discharged outright where no donation is resolved and registered as
-  WS-OD debt otherwise.
-- **...and the live `.tcbSuspend` performs that wake — since `v0.35.90`, and not
-  before** (WS-RR RR8.12, second cut).  OD1.7's wake and WS-RR RR7.22/RR8.11's
+- **...and the holder the reclaim UNBINDS is descheduled, not woken**
+  (`v0.35.158`; WS-OD OD1.7's wake of it from v0.34.108 until then).
+  `cancelIpcBlockingOnCore`'s state is `descheduleAtPlacement
+  (cancelIpcBlockingReclaimed victim tcb st) victim`, and the reclaim-complete
+  teardown is the migration followed by `descheduleUnboundHolder` — the holder
+  the pop unbound, taken off the scheduler slot the post-teardown state places
+  it on.  OD1.7 had placed that holder on its home core's run queue, on the
+  reasoning that an unbound thread is fully schedulable in this model; it is,
+  **at its legacy TCB band charged to no reservation**, refilled by
+  `timerTickBudgetOnCore`'s `.unbound` arm forever — which PR #897's review
+  measured on the live `suspendThreadOnCore`: a server that Called onward and
+  blocked, plus an ordinary `.tcbSuspend` of its *client*, left the server
+  runnable and unbudgeted, outside CBS admission entirely.  The premise the wake
+  rested on read `.unbound` as *legacy time-sliced* where the passive-server
+  pattern reads it as *MCS-passive*, and every other donation pop in the tree
+  takes the second reading (`applyReplyDonation`, `applyReplyDonationOnCore`,
+  `replyRecvHolderDeschedule`, and seL4-MCS's `schedContext_donate`, which
+  dequeues the previous holder); the reclaim was the one deliberate outlier.
+  Six things new code must respect.  (1) **The trigger reads the POP's two
+  writes off the post-teardown state** (`cancelUnboundHolder?`): the holder's
+  binding cleared and the victim's installed, which is exactly the pop having
+  landed and distinguishes it from a refused, all-or-nothing reclaim.  It reads
+  no `ipcState`, so it fires on a blocked holder and on a queued one alike —
+  the wake's `.ready`-gated trigger was silent on exactly the queued server this
+  cut is about.  (2) **`holder ≠ victim` is structural**
+  (`cancelUnboundHolder?_ne_victim`): one thread cannot answer both conjuncts,
+  so the composite's own deschedule of the victim is stated with no case on the
+  holder (`cancelIpcBlockingReclaimed_placedCoreOf?_victim` is an equation where
+  the wake left a disjunction over a degenerate self-insert no state reached).
+  (3) **The step is `descheduleAtPlacement`**, the one removal every other pop
+  performs: the identity on a holder placed nowhere — every holder the abort
+  unblocked, and every holder blocked in receive — and a removal from the
+  holder's own placement otherwise.  A scheduler-only write, so
+  `cancelIpcBlockingOnCore_objects_eq` and the whole `CancellationNI` surface
+  hold verbatim; no SGI is surfaced, because both `.tcbSuspend` entry paths
+  derive their pokes from the committed pre/post diff, whose
+  `currentSlotChangeSgis` rule reaches a holder taken off a remote current slot.
+  (4) **What the holder is left with**: `.ready`, `.unbound`, on no slot, with
+  the `.ipcTimeout` frame the abort staged (WS-RR RR7.14) still in its register
+  context — delivered the first time it is dispatched, which is the first time
+  it holds a reservation.  Its own manager recovers it: a `.tcbSuspend` then a
+  `.tcbResume`, or a `schedContextBind` once that arm places a parked thread
+  (seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE`; this kernel's bind
+  re-buckets only an already-queued thread — the divergence
+  `docs/REGISTERED_DEBT.md` table C keeps, owner WS-CB).  What no ordinary
+  client suspension can do any more is hand a server the CPU on nobody's
+  budget.  (5) **The declared scheduler footprint names the holder's PLACED
+  core**: `cancelIpcBlockingOnCoreSchedLockSet` takes a `holderPlaced : Option
+  CoreId`, resolved by `cancelUnboundHolderCore?` through the same
+  `placedCoreOf?` the step reads (the wake's member was the holder's *home*),
+  and `…_covers_holder_deschedule` is the relation; a footprint naming only the
+  victim's core would be *false* of the transition.  (6) **The per-core locality
+  clause excludes that core on BOTH halves**: `cancellation_cross_core_correct`'s
+  run-queue and current-slot halves are conditioned on
+  `cancelUnboundHolderCore?`, where the wake's insert had needed the exclusion
+  on the run-queue half alone.  The bundle frame the removal owes — an insert
+  owed none — is discharged from the abort that runs first
+  (`cancelIpcBlocking_unboundHolder_binding_or_allowed`, under the reply arm's
+  own `owed` premise), and the information-flow obligation is
+  `descheduledHolderHigh`, `abortHolderWakeHigh`'s successor with the same
+  discharge (`descheduledHolderHigh_of_donationOwnerFlowsToHolder`): a removal
+  is filtered by the removed thread's own observability exactly as an insert is.
+- **...and the live `.tcbSuspend` performs that step — since `v0.35.90`, and not
+  before** (WS-RR RR8.12, second cut; the step was OD1.7's wake until
+  `v0.35.158`).  OD1.7's wake and WS-RR RR7.22/RR8.11's
   replenishment migration were both added to `cancelIpcBlockingOnCore`, a
   composite **no production path calls**: the live arm and the
   `suspend_thread_cross_core` seam run `Lifecycle.Suspend.suspendThreadOnCore`,
@@ -7701,7 +7714,7 @@ code may assume:
   naming a deactivated SchedContext.  Five things new code must respect.  (1)
   **The shared step is the composite's PREFIX, and it has a name**:
   `cancelIpcBlockingReclaimed` is the teardown with its migration and its holder
-  wake, `cancelIpcBlockingOnCore` is that plus the victim's deschedule
+  deschedule, `cancelIpcBlockingOnCore` is that plus the victim's deschedule
   (`cancelIpcBlockingOnCore_eq_reclaimed_deschedule`, `rfl`), and G2 is the
   prefix — so every object-level, bundle and information-flow result about the
   composite's teardown half reaches the live path with no second statement.  (2)
@@ -7709,39 +7722,53 @@ code may assume:
   about the victim's own placement belongs to the composite.  A composite whose
   prefix a second consumer needs is a shared answer that consumer cannot reach,
   which is how two cuts each believed they had closed this.  (3) **The state pair
-  is `(st, cancelIpcBlockingMigrated … st)`** — `wakeAbortedDonationHolder` reads
-  the pre-state to resolve the holder and its home and the post-teardown state to
-  check the abort unblocked it, and handing it a state further down the pipeline
-  is a different predicate.  (4) **Both declarations grew by the wake core**:
-  `suspendThreadOnCoreSchedLockSet` takes a `wakeCore : Option CoreId` (the
-  run-queue segment is the placed and executing cores *plus* it) and
+  is `(st, cancelIpcBlockingMigrated … st)`** — `descheduleUnboundHolder` reads
+  the pre-state to resolve the holder and the post-teardown state to check the
+  pop landed and to place the removal, and handing it a state further down the
+  pipeline is a different predicate.  (4) **Both declarations grew by the
+  holder's core**: `suspendThreadOnCoreSchedLockSet` takes a `holderPlaced :
+  Option CoreId` (the run-queue segment is the placed and executing cores *plus*
+  it; it was the wake's home core until `v0.35.158`) and
   `suspendThreadOnCoreWriteSet`'s first entry is no longer `[]` — a write set that
   omits a written core is as false as a footprint that does, and both were silent
-  because the pipeline performed no wake.  `maxLockSetSize` does not move: a
-  `SchedLockSet` carries no cardinality bound.  (5) **The guarantee is proved of
-  the whole pipeline, not only measured** (`v0.35.92`, RR8.12's fourth cut):
-  `suspendThreadOnCore_holder_still_placed` lifts OD1.7's payoff through the six
-  stages after G2 — the chain reversion, the donation arm, the placement
-  deschedule, the pending-state clear, the `.Inactive` store and the G7 scheduling
-  point — and `tests/SmpCancellationSuite.lean` §3.26 exhibits its premises and its
-  conclusion on a state the live operations reach, computing the retired G2 beside
-  the live one, because a hypothesis nothing exhibits is indistinguishable from one
-  that cannot hold.  Two things new code must respect.  **`holder ≠ victim` is
-  derived, not assumed**: `cancelAbortedHolderWake?_ne_victim` reads it off the
-  wake's own two guards, which ask the same TCB's `ipcState` for incompatible
-  constructors — it had been a sentence in the G4-precapture comment, and a
-  sentence is not a licence.  And **resolvability travels with placement**: a
-  scheduling point strands a thread whose TCB does not resolve
-  (`preemptCurrentOnCore` re-enqueues the outgoing thread only when it does), so
-  every stage carries `(getTcb? holder).isSome` forward and
-  `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` **states** that side
-  condition rather than hiding it.  The chain walk's run-queue and `current` frames
+  because the pipeline performed no such step.  `maxLockSetSize` does not move:
+  a `SchedLockSet` carries no cardinality bound.  (5) **The guarantee is proved of
+  the whole pipeline, not only measured** (`v0.35.92`, RR8.12's fourth cut;
+  inverted at `v0.35.158`): `suspendThreadOnCore_holder_unplaced` lifts the
+  reclaim's payoff through the six stages after G2 — the chain reversion, the
+  donation arm, the placement deschedule, the pending-state clear, the
+  `.Inactive` store and the G7 scheduling point — and
+  `tests/SmpCancellationSuite.lean` §3.26 exhibits its premises and its
+  conclusion on a state the live operations reach, computing the retired wake
+  beside the live deschedule on the blocked, the queued and the running holder,
+  because a hypothesis nothing exhibits is indistinguishable from one that cannot
+  hold.  (Until `v0.35.158` the theorem was `suspendThreadOnCore_holder_still_placed`,
+  the opposite fact about the wake, retired with it.)  Three things new code must
+  respect.  **`holder ≠ victim` is derived, not assumed**:
+  `cancelUnboundHolder?_ne_victim` reads it off the trigger's own two conjuncts,
+  which ask the holder's binding to be `.unbound` and the victim's not to be —
+  it had been a sentence in the G4-precapture comment, and a sentence is not a
+  licence.  **Single placement is a hypothesis, not a bundle**: one removal is a
+  removal from every core only if the holder sat on at most one, which the
+  scheduler maintains by construction, and the statement takes that fact so a
+  caller holding only the scheduler invariant can discharge it.  And
+  **well-formedness travels to the scheduling point where resolvability used
+  to**: a scheduling point places a thread only by dispatching it, and the
+  dispatched thread is one the chooser took out of the executing core's run
+  queue (`chooseThreadEffectiveOnCore_some_mem_runQueueOnCore`, stated under that
+  queue's well-formedness), so every stage carries `wellFormed` forward
+  (`handleRescheduleSgiOnCore_preserves_unplaced`,
+  `switchToThreadOnCore_preserves_unplaced`) and the holder's TCB is never
+  consulted; the placed direction's resolvability chain
+  (`propagatePipChainCrossCore_getTcb?_isSome` and its siblings) went with it.
+  The chain walk's run-queue and `current` frames
   moved to `Scheduler/PriorityInheritance/Propagate.lean` for the reason the second
   cut named a prefix — `IPC/Invariant/FaultProgress.lean`, where they sat, imports
   `IPC.CrossCore.Fault`, which imports `Cancellation` — and its three
   `_not_mem_of_not_mem` forms were retired with them, the biconditional being the
   answer.  **And the single-core reference path reads it too, since `v0.35.93`**
-  (RR8.12's fifth cut): `cancelIpcBlockingReclaimed` and the wake family were
+  (RR8.12's fifth cut): `cancelIpcBlockingReclaimed` and the wake family (the
+  holder-deschedule family since `v0.35.158`) were
   declared in `IPC/CrossCore/Cancellation.lean`, which *imports*
   `Lifecycle/Suspend.lean`, so `Lifecycle.Suspend.suspendThread`'s G2 could not see
   them and the same strand was reachable on it.  They are declared beside the
@@ -7913,8 +7940,8 @@ code may assume:
   theorem, with an observer that sees exactly one of the two.  So **an
   endpoint/notification queue label-uniformity invariant is unestablishable**, not
   merely absent; it was the registered closure for `abortHolderProjectionStable`,
-  `abortHolderWakeHigh` and the three queue arms' `hTeardownProj`, and it is
-  retracted.  A proof that reaches for it is asking for a premise the gate
+  `abortHolderWakeHigh` (`descheduledHolderHigh` since `v0.35.158`) and the three
+  queue arms' `hTeardownProj`, and it is retracted.  A proof that reaches for it is asking for a premise the gate
   refutes.  (2) **What the gate gives is the other direction, and with one
   added conjunct it is enough for everything but the neighbours.**  Every
   waiter's label flows to its endpoint's **flow** label
@@ -7938,8 +7965,11 @@ code may assume:
   licensed it.  The **queue neighbours** are covered by nothing: their labels are
   constrained only against the endpoint's.  So `abortHolderWakeHigh` is
   **reduced to that fact** (`abortHolderWakeHigh_of_donationOwnerFlowsToHolder`,
-  `v0.35.84`) — it is a single `threadObservable` of the holder and needed no
-  queue reasoning at all — while `abortHolderProjectionStable` and
+  `v0.35.84`; `descheduledHolderHigh_of_donationOwnerFlowsToHolder` since
+  `v0.35.158`, a removal being filtered by the removed thread's own
+  observability exactly as an insert is) — it is a single `threadObservable` of
+  the holder and needed no queue reasoning at all — while
+  `abortHolderProjectionStable` and
   `hTeardownProj` reduce to the neighbour class and no further
   (`abortHolderSpliceHigh_of_victimHigh`, over the shared
   `endpointSpliceHigh`).  **Read that as a reduction, not a closure**: `v0.35.84`
@@ -8341,14 +8371,15 @@ code may assume:
   The wake's ghost-guard is not mirrored, because a removal takes a placed thread
   off its core whether or not a TCB backs it, so a guard on the TCB would clear a
   slot and poke nobody.  (3) **The composite is `descheduleThread` on the
-  post-wake state by `rfl`**, and the footprint is declared on the pre-state;
-  `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the relation (the post-wake
-  placement is the pre-state's, or the pre-state placed the victim nowhere and
-  it is the declared wake core) and
-  `cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` is its payoff.  (4)
-  **The scheduler footprints take the placement**: `descheduleThreadLockSet
-  (placed : Option CoreId)`, `cancelIpcBlockingOnCoreSchedLockSet (placed
-  wakeCore : Option CoreId)`, and `suspendThreadOnCoreSchedLockSet (home
+  reclaim's post-state by `rfl`**, and the footprint is declared on the
+  pre-state; `cancelIpcBlockingReclaimed_placedCoreOf?_victim` is the relation
+  (the victim's post-reclaim placement *is* the pre-state's — an equation since
+  `v0.35.158`, where the wake's degenerate self-insert had left it a
+  disjunction) and `cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule` is
+  its payoff.  (4) **The scheduler footprints take the placement**:
+  `descheduleThreadLockSet (placed : Option CoreId)`,
+  `cancelIpcBlockingOnCoreSchedLockSet (placed holderPlaced : Option CoreId)`,
+  and `suspendThreadOnCoreSchedLockSet (home
   executingCore ownerHome outerHome : CoreId) (placed : Option CoreId)`, whose
   run-queue segment is a *pair* over the placed and executing cores — the home
   stays a replenish member, since the `.bound` arm's purge is keyed on it, and
@@ -8389,51 +8420,62 @@ code may assume:
   resolver).  (3) **The idle-state obligation moved with the thread** —
   `hHolderIdleAllowed`, conditioned on the pair the pop returned rather than
   stated unconditionally at a proxy, in the transition's own theorem and in both
-  dispatch packs.  (4) **The cancellation reclaim is the one pop that ENQUEUES**,
-  and that is a decision rather than an omission: `abortPendingIpcOnEndpoint`
-  stages `Architecture.timeoutFrame` into the holder's register context (WS-RR
-  RR7.14), so the kernel owes it a delivery it can only observe by running, where
-  a pop owes nothing.  See the registered temporal-isolation residue that choice
-  carries in `docs/REGISTERED_DEBT.md` table C.
-- **A reclaimed holder runs unbudgeted, and `passiveServerIdle` cannot see it**
-  (PR #897 review, `v0.35.149`; registered, unfixed).  `.unbound` in this kernel
-  means *both* "MCS-passive" and "legacy time-sliced at `tcb.priority`":
-  `hasSufficientBudget`'s `.unbound` arm is `true` by design,
-  `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever, and
-  `schedContextUnbind` deliberately re-buckets an unbound thread.  So the
-  cancellation reclaim cannot both return the reservation and keep the holder off
-  the CPU.  Measured on the live `suspendThreadOnCore`: after a `.tcbSuspend` of a
-  reply-blocked client whose donated context is held by a server blocked on a
-  nested call, the server ends `.unbound`, `.ready`, **on its home core's run
-  queue**, `hasSufficientBudget = true`, at its own TCB band, and
-  `chooseThreadOnCore` selects it.  `passiveServerIdle`'s antecedent is *not
-  queued*, so a runnable unbound thread satisfies it vacuously — PR #895 round 8's
-  rule, on the conjunct that rule was written about.  A properly passivated server
-  is otherwise never runnable-and-unbound (it is unbound while blocked in receive
-  and enqueued only by a donation), so **the reclaim is what creates the state**:
-  a malicious passive server that Calls onward and blocks, plus an ordinary
-  suspension of its client, escapes CBS admission entirely.  New code must not
-  read a successful reclaim as leaving the holder budget-limited, and **v1.0.0
-  must not claim that a thread without a reservation does not consume CPU.**
-  **Two more instances of the same class, measured by the post-merge audit
-  (`v0.35.156`).**  (1) A plain-`Send` rendezvous is decided by the two readings
-  on two arms: `.replyRecv`'s non-`Call` arm deschedules the holder the pop
-  unbound -- the MCS-passive reading, so a passive server handed a plain `Send`
-  is parked `.ready`, `.unbound` and unplaced -- while a `.receive` by an
-  already-unbound running thread leaves it current on a plain `Send`, the legacy
-  reading.  (2) What is parked here stays parked, and that is a **divergence from
-  upstream** rather than a fact about the pattern: `schedContextBind` re-buckets
-  only a thread already queued on its home core, where seL4-MCS's
-  `schedContext_bindTCB` (read at `13.0.0`) ends in
-  `if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`, so
-  upstream's recovery for a passive thread left runnable without a context --
-  bind it one -- is closed in this kernel, and WS-OD OD1.7's list of closed
-  recovery paths records that divergence.  Both are the WS-CB row in
-  `docs/REGISTERED_DEBT.md` table C; neither is a soundness gap, and neither is
-  fixed there, because a bind that places a thread is a scheduler-domain write
-  `.schedContextBind` declares nowhere yet (WS-RR RR8.12's order: declare, then
-  bracket, then widen), and the plain-`Send` decision is the passive/legacy
-  split that row names.
+  dispatch packs.  (4) **The cancellation reclaim deschedules too, since
+  `v0.35.158`** — it was the one pop that ENQUEUED (WS-OD OD1.7), on the
+  reasoning that `abortPendingIpcOnEndpoint` stages `Architecture.timeoutFrame`
+  into the holder's register context (WS-RR RR7.14) and the kernel owes it a
+  delivery it can only observe by running.  It still owes it, and the frame still
+  waits in the register context; what changed is *who* pays for the run — the
+  holder's next reservation, through its manager's resume or a bind, rather than
+  nobody's budget.  All four production pops now take the thread they unbind off
+  its placement (`descheduleUnboundHolder`); see the bullet below for what is
+  left.
+- **A reclaimed holder no longer runs unbudgeted — the reclaim parks it**
+  (PR #897 review, `v0.35.149`; the reclaim half **closed at `v0.35.158`**, the
+  bind half WS-CB's).  `.unbound` in this kernel means *both* "MCS-passive" and
+  "legacy time-sliced at `tcb.priority`": `hasSufficientBudget`'s `.unbound` arm
+  is `true` by design, `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice`
+  forever, and `schedContextUnbind` deliberately re-buckets an unbound thread.
+  So a reclaim that returned the reservation *and* left the holder placed handed
+  it the CPU on nobody's budget — measured on the live `suspendThreadOnCore`
+  at `v0.35.149`: after a `.tcbSuspend` of a reply-blocked client whose donated
+  context was held by a server blocked on a nested call, the server ended
+  `.unbound`, `.ready`, **on its home core's run queue**, `hasSufficientBudget =
+  true`, at its own TCB band, selected by `chooseThreadOnCore`; and a server
+  merely *queued* on the donated context stayed queued, unbound, because OD1.7's
+  wake declined a placed thread.  `passiveServerIdle`'s antecedent is *not
+  queued*, so a runnable unbound thread satisfied it vacuously — PR #895 round
+  8's rule, on the conjunct that rule was written about.  Since `v0.35.158` the
+  reclaim takes the holder it unbinds off the scheduler
+  (`descheduleUnboundHolder`, the bullet on the reclaim above) and
+  `suspendThreadOnCore_holder_unplaced` carries that to the end of the live
+  pipeline, so a suspension of the *client* — authority over the client, none
+  over the server — no longer puts the server outside CBS admission.  What it
+  costs is stated: a passive server whose client is suspended while it services
+  the request is parked `.ready`, `.unbound` and unplaced until its own manager
+  resumes it or a reservation is bound to it, which is the MCS-passive reading
+  and the one every other pop takes.  **Two instances of the same class remain,
+  measured by the post-merge audit (`v0.35.156`).**  (1) A plain-`Send`
+  rendezvous is decided by the two readings on two arms: `.replyRecv`'s
+  non-`Call` arm deschedules the holder the pop unbound -- the MCS-passive
+  reading, so a passive server handed a plain `Send` is parked `.ready`,
+  `.unbound` and unplaced -- while a `.receive` by an already-unbound running
+  thread leaves it current on a plain `Send`, the legacy reading.  (2) What is
+  parked stays parked, and that is a **divergence from upstream** rather than a
+  fact about the pattern: `schedContextBind` re-buckets only a thread already
+  queued on its home core, where seL4-MCS's `schedContext_bindTCB` (read at
+  `13.0.0`) ends in `if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb);
+  rescheduleRequired(); }`, so upstream's recovery for a passive thread left
+  runnable without a context -- bind it one -- is closed in this kernel, and the
+  reclaim's parking makes that recovery the one a manager reaches for.  Both are
+  the WS-CB row in `docs/REGISTERED_DEBT.md` table C; neither is a soundness gap,
+  and neither is fixed there, because a bind that places a thread is a
+  scheduler-domain write `.schedContextBind` declares nowhere yet (WS-RR RR8.12's
+  order: declare, then bracket, then widen), and the plain-`Send` decision is the
+  passive/legacy split that row names.  Until the bind half lands, **v1.0.0 must
+  not claim that a parked passive server can be recovered by binding it a
+  reservation**; it may claim, since `v0.35.158`, that no client suspension
+  hands a server the CPU on nobody's budget.
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

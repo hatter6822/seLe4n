@@ -58,83 +58,29 @@ open SeLe4n.Kernel.Concurrency
 -- ============================================================================
 -- §1 Per-core caller blocking — `removeRunnableOnCore`
 -- ============================================================================
-
-/-- WS-SM SM6.A.1 (plan §3.2 steps 5–6): the per-core generalisation of
-`removeRunnable`. Removes `tid` from core `c`'s run queue and, if `tid` is
-core `c`'s current thread, clears `c`'s current slot. Only core `c`'s
-scheduler slots are touched; every other core is framed out.
-
-The single-core `removeRunnable` (bootCore-pinned) is exactly the `bootCoreId`
-instance — see `removeRunnableOnCore_bootCoreId`. -/
-def removeRunnableOnCore (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
-    SystemState :=
-  { st with
-      scheduler := (st.scheduler.setRunQueueOnCore c
-          ((st.scheduler.runQueueOnCore c).remove tid)).setCurrentOnCore c
-          (if (st.scheduler.currentOnCore c) = some tid then none
-            else (st.scheduler.currentOnCore c)) }
-
-/-- **WS-RR RR8.6**: remove `tid` from a placement its caller has already
-resolved — `descheduleAtPlacement`'s body, split out so a transition that must
-declare its footprint *before* it runs can resolve the placement on the
-pre-state and remove at it later, through the one primitive the state-resolved
-form is defined by.  `suspendThreadOnCore` is that transition: its scheduler
-footprint (`suspendThreadOnCoreSchedLockSet`) is declared over `placedCoreOf?`
-of the syscall's pre-state, and nothing between the resolution and this removal
-moves a thread between scheduler slots — the IPC teardown and both donation
-arms write no run queue and no current slot, and the priority-inheritance
-revert re-buckets a chain member inside the queue it already sits in — so the
-pre-resolved placement is the placement the removal finds.
-
-A removal at `none` is the identity: a thread the state places nowhere is on no
-scheduler slot to be taken off. -/
-def descheduleAt (st : SystemState) (tid : SeLe4n.ThreadId) (placed : Option CoreId) :
-    SystemState :=
-  match placed with
-  | some c => removeRunnableOnCore st tid c
-  | none => st
-
-/-- **Deschedule `tid` wherever it actually is.**
-
-The one step for "take this thread off the scheduler", for the reason round 10
-gave and then did not finish applying: `removeRunnableOnCore` accepts a core
-from *anyone*, so protecting one named wrapper leaves every direct caller free
-to hand it a proxy.  Round 10 removed the core parameter from
-`replyRecvHolderDeschedule` and left its sibling arm calling the primitive
-directly with `determineExecutingCore`'s answer, so the same defect survived
-twenty-five lines away (PR #895 review round 11).
-
-A caller that knows the core — the executing core of a syscall, a wake target
-it just computed — still calls `removeRunnableOnCore` directly and should.  This
-is for the other case: a thread *resolved from the state*, whose placement is a
-fact to look up rather than a parameter to pass. -/
-def descheduleAtPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
-  descheduleAt st tid (placedCoreOf? st tid)
-
-/-- The cores `descheduleAtPlacement` may write, read off the SAME resolver the
-step itself uses — so a footprint and its transition cannot name different
-cores, which is the divergence round 10's cut introduced. -/
-def descheduleAtPlacementCores (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
-  match placedCoreOf? st tid with
-  | some c => [c]
-  | none => []
+--
+-- **`v0.35.158` — the placement primitives live in the scheduler layer.**
+-- `removeRunnableOnCore`, `descheduleAt`, `descheduleAtPlacement` and
+-- `descheduleAtPlacementCores` were declared here from SM6.A.1 / WS-RR RR8.6 on,
+-- with their per-core frames (§11 below) and the `placedCoreOf?` congruences.
+-- They now sit in `SeLe4n/Kernel/Scheduler/Operations/Selection.lean`, beside
+-- `placedCoreOf?`, the resolver the state-resolved form is defined by.  The
+-- cancellation reclaim's holder deschedule (`descheduleUnboundHolder`,
+-- `Lifecycle/Suspend.lean`) needed the state-resolved removal and could not see
+-- it: this module imports the scheduler layer, `Lifecycle/Suspend.lean` imports
+-- the scheduler layer, and neither imports the other.  *When a question has one
+-- owner and an asker that cannot see it, the owner is in the wrong layer* — a
+-- removal from a run queue and a current slot is a scheduler operation, and an
+-- IPC cross-core module never had a claim on it.  The `SeLe4n.Kernel` namespace
+-- is unchanged, so every reference in the tree is untouched.  The one theorem
+-- kept here is the bridge to the single-core `removeRunnable`, which the
+-- scheduler layer cannot name.
 
 /-- WS-SM SM6.A.1: `removeRunnableOnCore` at the boot core is exactly the
 single-core `removeRunnable` — the backward-compatibility bridge. -/
 @[simp] theorem removeRunnableOnCore_bootCoreId (st : SystemState)
     (tid : SeLe4n.ThreadId) :
     removeRunnableOnCore st tid bootCoreId = removeRunnable st tid := rfl
-
-/-- WS-RR RR2.9 (frame): descheduling a thread on a core writes that core's run
-queue and current slot and nothing else — in particular **no** replenish queue.
-The reply path's donation return composes the SM5.H replenishment migration with
-this deschedule, so the affinity invariant the migration establishes has to
-survive it. -/
-@[simp] theorem removeRunnableOnCore_replenishQueueOnCore (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c c' : CoreId) :
-    (removeRunnableOnCore st tid c).scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  simp [removeRunnableOnCore]
 
 -- ============================================================================
 -- §2 Lock-set pre-resolution helpers (plan §3.1 / §4.2)
@@ -942,32 +888,17 @@ theorem endpointCallOnCore_atomic_under_lockSet
   lockSet_atomic_under_2pl _ executingCore _ s
 
 -- ============================================================================
--- §11 `removeRunnableOnCore` frame lemmas
+-- §11 `removeRunnableOnCore` frame lemmas — relocated (`v0.35.158`)
 -- ============================================================================
-
-/-- `removeRunnableOnCore` touches only the scheduler — every object is preserved. -/
-theorem removeRunnableOnCore_preserves_objects (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).objects = st.objects := rfl
-
-/-- The step writes no object, at either branch. -/
-@[simp] theorem descheduleAtPlacement_preserves_objects (st : SystemState)
-    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objects = st.objects := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · exact removeRunnableOnCore_preserves_objects _ _ _
-  · rfl
-
-/-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
-object frame it is derived from, because the SM5.H replenish-affinity invariant
-reads `determineTargetCore` at whichever thread a scheduling context is bound to
-and the cancellation composite ends in this removal. -/
-@[simp] theorem descheduleAtPlacement_determineTargetCore (st : SystemState)
-    (tid x : SeLe4n.ThreadId) :
-    determineTargetCore (descheduleAtPlacement st tid) x = determineTargetCore st x := by
-  refine determineTargetCore_congr st _ x ?_
-  unfold SystemState.getTcb?
-  rw [descheduleAtPlacement_preserves_objects]
+--
+-- The frame family of the placement primitives (`_preserves_objects`,
+-- `_getTcb?`, `_runQueueOnCore_self` / `_ne`, `_currentOnCore_self` / `_ne`,
+-- `_not_mem_self`, `_currentOnCore_ne_self`, `_replenishQueueOnCore`,
+-- `_determineTargetCore`, `descheduleAtPlacement_{preserves_objects,
+-- determineTargetCore,machine_eq,replenishQueueOnCore}`,
+-- `descheduleAtPlacementCores_eq_toList` and the `placedCoreOf?` congruences)
+-- moved with the definitions to `Scheduler/Operations/Selection.lean` — see the
+-- §1 note above.  Nothing is renamed.
 
 -- ============================================================================
 -- WS-RR RR8.12: the home-core frame layer
@@ -1356,21 +1287,6 @@ theorem endpointQueueEnqueue_determineTargetCore_eq (endpointId : SeLe4n.ObjId)
                         rw [storeTcbQueueLinks_determineTargetCore_eq st2 st3 tid (some tailTid)
                           (some (.tcbNext tailTid)) none x hInv2 hLink2, hT2]
 
-/-- **WS-RR RR8.12**: the bare removal moves no thread's home core either.
-
-`removeRunnableOnCore` writes only `scheduler`, and `determineTargetCore` reads
-`cpuAffinity` through the object store -- so a *pre-state* scheduler footprint
-may name a core that a deschedule-shaped step later writes at, rather than
-assuming the two coincide.  The sibling of
-`descheduleAtPlacement_determineTargetCore` above, at the primitive that one
-composes. -/
-@[simp] theorem removeRunnableOnCore_determineTargetCore (st : SystemState)
-    (tid x : SeLe4n.ThreadId) (c : CoreId) :
-    determineTargetCore (removeRunnableOnCore st tid c) x = determineTargetCore st x := by
-  refine determineTargetCore_congr st _ x ?_
-  unfold SystemState.getTcb?
-  rw [removeRunnableOnCore_preserves_objects]
-
 /-- `storeTcbIpcStateAndMessage` preserves every thread's `cpuAffinity` (it writes
 only `ipcState` / `pendingMessage`), hence preserves `determineTargetCore`. -/
 theorem storeTcbIpcStateAndMessage_determineTargetCore_eq
@@ -1469,167 +1385,6 @@ theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
           ((SystemState.getTcb?_eq_some_iff st' x tcb').mp hT')
         rw [(SystemState.getTcb?_eq_some_iff st x tcb').mpr hBwd]
   exact determineTargetCore_congr st st' x (by rw [hEq])
-
-/-- `placedCoreOf?` reads exactly two per-core scheduler slices, so a step that
-frames both at every core frames it.  The pointwise form, because the migration
-frames them per core rather than by handing back the whole scheduler. -/
-theorem placedCoreOf?_congr_of_runQueue_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    placedCoreOf? st' tid = placedCoreOf? st tid := by
-  unfold placedCoreOf?
-  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
-      || st'.scheduler.currentOnCore c == some tid)
-      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
-      || st.scheduler.currentOnCore c == some tid) := by
-    funext c; rw [(h c).1, (h c).2]
-  rw [hp]
-
-/-- ...and the core list it produces moves with it. -/
-theorem descheduleAtPlacementCores_congr_of_runQueue_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    descheduleAtPlacementCores st' tid = descheduleAtPlacementCores st tid := by
-  unfold descheduleAtPlacementCores
-  rw [placedCoreOf?_congr_of_runQueue_current_eq tid h]
-
-/-- The core list is the resolver's answer as a list — the shape a pre-resolved
-removal's write set (`descheduleAt … placed`, confined to `placed.toList`) is
-stated in, so the two spellings of "the cores a placement removal writes" are
-one fact rather than two definitions a reader must compare. -/
-theorem descheduleAtPlacementCores_eq_toList (st : SystemState) (tid : SeLe4n.ThreadId) :
-    descheduleAtPlacementCores st tid = (placedCoreOf? st tid).toList := by
-  unfold descheduleAtPlacementCores
-  cases placedCoreOf? st tid <;> rfl
-
-/-- `placedCoreOf?` reads only `tid`'s membership in each queue and each core's
-current slot, so two states agreeing on those place `tid` alike — finer than
-`placedCoreOf?_congr_of_runQueue_current_eq`, which asks the queues themselves
-to agree, and the form a run-queue insert of some *other* thread satisfies. -/
-theorem placedCoreOf?_congr_of_contains_current_eq {st st' : SystemState}
-    (tid : SeLe4n.ThreadId)
-    (h : ∀ c : CoreId,
-      (st'.scheduler.runQueueOnCore c).contains tid
-        = (st.scheduler.runQueueOnCore c).contains tid
-      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
-    placedCoreOf? st' tid = placedCoreOf? st tid := by
-  unfold placedCoreOf?
-  have hp : (fun c : CoreId => (st'.scheduler.runQueueOnCore c).contains tid
-      || st'.scheduler.currentOnCore c == some tid)
-      = (fun c : CoreId => (st.scheduler.runQueueOnCore c).contains tid
-      || st.scheduler.currentOnCore c == some tid) := by
-    funext c; rw [(h c).1, (h c).2]
-  rw [hp]
-
-/-- A thread placed on exactly one core — queued or current on `w`, and on no
-other core — is placed there by the resolver.  The `find?` takes the first
-satisfying core, and with one candidate there is no other to take. -/
-theorem placedCoreOf?_eq_some_of_unique (st : SystemState) (tid : SeLe4n.ThreadId)
-    (w : CoreId)
-    (hw : ((st.scheduler.runQueueOnCore w).contains tid
-      || st.scheduler.currentOnCore w == some tid) = true)
-    (hOther : ∀ c : CoreId, c ≠ w →
-      ((st.scheduler.runQueueOnCore c).contains tid
-        || st.scheduler.currentOnCore c == some tid) = false) :
-    placedCoreOf? st tid = some w := by
-  cases hp : placedCoreOf? st tid with
-  | none =>
-    have hIs := placedCoreOf?_isSome_iff st tid
-    rw [hp, Option.isSome_none] at hIs
-    have hAny : (runnableOnSomeCore st tid || runningOnSomeCore st tid) = true := by
-      unfold runnableOnSomeCore runningOnSomeCore
-      rcases Bool.or_eq_true_iff.mp hw with h1 | h2
-      · exact Bool.or_eq_true_iff.mpr (Or.inl
-          (List.any_eq_true.mpr ⟨w, SeLe4n.Kernel.Concurrency.mem_allCores w, h1⟩))
-      · exact Bool.or_eq_true_iff.mpr (Or.inr
-          (List.any_eq_true.mpr ⟨w, SeLe4n.Kernel.Concurrency.mem_allCores w, h2⟩))
-    rw [hAny] at hIs
-    exact absurd hIs Bool.false_ne_true
-  | some x =>
-    have hx := placedCoreOf?_sound st tid x hp
-    by_cases hxw : x = w
-    · rw [hxw]
-    · rw [hOther x hxw] at hx
-      exact absurd hx Bool.false_ne_true
-
-/-- ...and never advances the machine timer, at either branch (`v0.35.37`).  The
-reply path's donation return composes this step, and its `machine` frame reaches
-back to the return through it. -/
-@[simp] theorem descheduleAtPlacement_machine_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).machine = st.machine := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · simp only [removeRunnableOnCore]
-  · rfl
-
-/-- ...and no replenish queue, at either branch.  All three facts are proved HERE
-rather than at each consumer: a caller that re-derives them per core is how the
-`serverCore` parameter got threaded into three proofs and one of them kept it
-after the transition stopped using it. -/
-@[simp] theorem descheduleAtPlacement_replenishQueueOnCore (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (descheduleAtPlacement st tid).scheduler.replenishQueueOnCore c
-      = st.scheduler.replenishQueueOnCore c := by
-  unfold descheduleAtPlacement descheduleAt
-  split
-  · exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
-  · rfl
-
-/-- `removeRunnableOnCore` preserves every `getTcb?` lookup (objects unchanged). -/
-theorem removeRunnableOnCore_getTcb? (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) (x : SeLe4n.ThreadId) :
-    (removeRunnableOnCore st tid c).getTcb? x = st.getTcb? x := rfl
-
-/-- `removeRunnableOnCore` writes core `c`'s run-queue slot to `remove tid`. -/
-@[simp] theorem removeRunnableOnCore_runQueueOnCore_self (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).scheduler.runQueueOnCore c
-      = (st.scheduler.runQueueOnCore c).remove tid := by
-  simp [removeRunnableOnCore]
-
-/-- `removeRunnableOnCore` clears core `c`'s current slot when it held `tid`. -/
-theorem removeRunnableOnCore_currentOnCore_self (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).scheduler.currentOnCore c
-      = if st.scheduler.currentOnCore c = some tid then none
-        else st.scheduler.currentOnCore c := by
-  simp [removeRunnableOnCore]
-
-/-- After `removeRunnableOnCore`, `tid` is not in core `c`'s run queue. -/
-theorem removeRunnableOnCore_not_mem_self (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    tid ∉ (removeRunnableOnCore st tid c).scheduler.runQueueOnCore c := by
-  rw [removeRunnableOnCore_runQueueOnCore_self]
-  exact RunQueue.not_mem_remove_self _ tid
-
-/-- After `removeRunnableOnCore`, `tid` is not core `c`'s current thread. -/
-theorem removeRunnableOnCore_currentOnCore_ne_self (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c : CoreId) :
-    (removeRunnableOnCore st tid c).scheduler.currentOnCore c ≠ some tid := by
-  rw [removeRunnableOnCore_currentOnCore_self]
-  split
-  · simp
-  · assumption
-
-/-- Cross-core frame: `removeRunnableOnCore` on core `c` leaves a *different*
-core `c'`'s run-queue slot untouched (per-core locality). -/
-theorem removeRunnableOnCore_runQueueOnCore_ne (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c c' : CoreId) (h : c ≠ c') :
-    (removeRunnableOnCore st tid c).scheduler.runQueueOnCore c'
-      = st.scheduler.runQueueOnCore c' := by
-  simp [removeRunnableOnCore, SchedulerState.setCurrentOnCore_runQueueOnCore,
-    SchedulerState.setRunQueueOnCore_runQueueOnCore_ne, h]
-
-/-- Cross-core frame: `removeRunnableOnCore` on core `c` leaves a *different*
-core `c'`'s current slot untouched (per-core locality). -/
-theorem removeRunnableOnCore_currentOnCore_ne (st : SystemState)
-    (tid : SeLe4n.ThreadId) (c c' : CoreId) (h : c ≠ c') :
-    (removeRunnableOnCore st tid c).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  simp [removeRunnableOnCore, SchedulerState.setRunQueueOnCore_currentOnCore,
-    SchedulerState.setCurrentOnCore_currentOnCore_ne, h]
 
 -- ============================================================================
 -- §12 SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)

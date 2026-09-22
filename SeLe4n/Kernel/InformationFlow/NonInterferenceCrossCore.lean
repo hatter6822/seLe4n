@@ -1056,75 +1056,76 @@ theorem cancelIpcBlockingMigrated_confinedToCores (victim : SeLe4n.ThreadId) (tc
     exact migrateSchedContextReplenishment_confinedToCores _ scId _ _
   · exact observableSlotsConfinedToCores_refl _ _
 
-/-- **WS-OD OD1.7**: the reclaim's holder wake writes exactly the woken holder's
-home core — and no core at all when it does not fire, which is every arm but a
-reply arm whose caller had donated. -/
-theorem wakeAbortedDonationHolder_confinedToCores (stPre stPost : SystemState)
+/-- **`v0.35.158`** (WS-OD OD1.7's wake until then): the reclaim's holder
+deschedule writes exactly the unbound holder's placed core — and no core at all
+when it does not fire, which is every arm but a reply arm whose caller had
+donated, and a holder placed nowhere. -/
+theorem descheduleUnboundHolder_confinedToCores (stPre stPost : SystemState)
     (victim : SeLe4n.ThreadId) (tcb : TCB) :
     observableSlotsConfinedToCores stPost
-      (wakeAbortedDonationHolder stPre stPost victim tcb)
-      (cancelAbortedHolderWakeCore? stPre stPost victim tcb).toList := by
-  unfold wakeAbortedDonationHolder cancelAbortedHolderWakeCore?
-  cases hW : cancelAbortedHolderWake? stPre stPost victim tcb with
+      (descheduleUnboundHolder stPre stPost victim tcb)
+      (cancelUnboundHolderCore? stPre stPost victim tcb).toList := by
+  unfold descheduleUnboundHolder cancelUnboundHolderCore?
+  cases hW : cancelUnboundHolder? stPre stPost victim tcb with
   | none => exact observableSlotsConfinedToCores_refl _ _
   | some holder =>
-    exact ⟨fun c hc => enqueueAbortedHolderOnCore_runQueueOnCore_ne stPost _ holder c
-        (fun h => hc (by simp [h])),
-      fun c _ => enqueueAbortedHolderOnCore_currentOnCore stPost _ holder c,
-      fun c _ => enqueueAbortedHolderOnCore_activeDomainOnCore stPost _ holder c,
-      fun c _ => enqueueAbortedHolderOnCore_domainTimeRemainingOnCore stPost _ holder c,
-      fun c _ => enqueueAbortedHolderOnCore_domainScheduleIndexOnCore stPost _ holder c,
-      fun _ _ => by rw [enqueueAbortedHolderOnCore_machineEq]⟩
+    show observableSlotsConfinedToCores stPost (descheduleAtPlacement stPost holder)
+      (placedCoreOf? stPost holder).toList
+    rw [← descheduleAtPlacementCores_eq_toList]
+    exact descheduleAtPlacement_confinedToCores stPost holder
 
-/-- **WS-RR RR8.12**: the teardown with its reclaim completed writes exactly the
-woken holder's home core — the migration contributing nothing observable and the
-teardown itself nothing per-core.
+/-- **WS-RR RR8.12**, re-keyed at `v0.35.158`: the teardown with its reclaim
+completed writes exactly the unbound holder's placed core — the migration
+contributing nothing observable and the teardown itself nothing per-core.
 
 Derived once here, because both consumers need it: the composite below, and the
 live suspend pipeline's G2 (`suspendThreadOnCoreWriteSet`), which until RR8.12
-took the bare teardown and so declared no core for a wake it did not perform. -/
+took the bare teardown and so declared no core for a step it did not perform. -/
 theorem cancelIpcBlockingReclaimed_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) :
     observableSlotsConfinedToCores st (cancelIpcBlockingReclaimed victim tcb st)
-      (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+      (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
         victim tcb).toList := by
   have h := observableSlotsConfinedToCores_trans
     (observableSlotsConfinedToCores_trans
       (cancelIpcBlocking_confinedToCores st victim tcb)
       (cancelIpcBlockingMigrated_confinedToCores victim tcb st))
-    (wakeAbortedDonationHolder_confinedToCores st
+    (descheduleUnboundHolder_confinedToCores st
       (cancelIpcBlockingMigrated victim tcb st) victim tcb)
   simpa only [List.nil_append, cancelIpcBlockingReclaimed] using h
 
 /-- SM8.B.2 (**SM6.E, the composed cancellation**): `cancelIpcBlockingOnCore`
 writes the core the pre-state **places** the victim on (WS-RR RR8.6), and —
-since WS-OD OD1.7 — the home core of the holder its reclaim unblocked, when
-there is one.  Not the core running the cancellation, and not any core the
+since `v0.35.158` — the core its reclaim's holder deschedule removes the unbound
+holder from, when there is one (WS-OD OD1.7's wake wrote that holder's *home*
+core until then).  Not the core running the cancellation, and not any core the
 victim's endpoint or notification neighbours are homed on.
 
-`[] ++ [] ++ wake ++ placed`: the teardown contributes nothing per-core, WS-RR
+`[] ++ [] ++ holder ++ placed`: the teardown contributes nothing per-core, WS-RR
 RR7.22's replenishment migration contributes nothing either (it writes a
-replenish queue, which is not an observable slot), OD1.7's holder wake
-contributes the holder's home core exactly when it fires, and the placement
-removal contributes at most one core.  The removal resolves its core on the
-post-wake state and this list is stated on the **pre**-state, which is the only
-state a caller holds; `cancelIpcBlockingOnCore_placedCoreOf?_cases` is the
-pushback, and it is why the list is stated as a superset rather than an
-equality: on the degenerate insert the wake could perform on the victim itself
-the removal's core is the wake core, already listed.
+replenish queue, which is not an observable slot), the holder deschedule
+contributes the holder's placed core exactly when it fires, and the victim's
+placement removal contributes at most one core.  The victim's removal resolves
+its core on the post-reclaim state and this list is stated on the **pre**-state,
+which is the only state a caller holds;
+`cancelIpcBlockingReclaimed_placedCoreOf?_victim` is the pushback, an equation —
+until `v0.35.158` it was a disjunction, because the wake could on no reachable
+state insert the victim itself, and the list is still stated through `mono`
+only to put the cores in reading order.
 
-**The second core is the point of OD1.7, not a regression.**  The list read
-`[determineTargetCore st victim]` before OD1.7, and that was true only because
-the reclaim's abort left the holder on no run queue at all — the stranding
-defect.  Placing it necessarily writes its home core, which is neither the
-victim's nor the executing core, so the honest statement names it.  Where no
-donation is resolved the wake list is empty and this is the pre-OD1.7 statement
-at the placed core (`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
+**The second core is the point of the reclaim's scheduler step, not a
+regression.**  The list read `[determineTargetCore st victim]` before OD1.7, and
+that was true only because the reclaim's abort left the holder on no run queue
+at all — the stranding defect.  Taking the holder the reclaim unbound off its
+placement necessarily writes that core, which is neither the victim's nor the
+executing core, so the honest statement names it.  Where no donation is resolved
+the holder list is empty and this is the pre-OD1.7 statement at the placed core
+(`cancelIpcBlockingOnCore_confinedToCores_of_no_donation`). -/
 theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) :
     observableSlotsConfinedToCores st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
-      ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+      ((cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
           victim tcb).toList ++ descheduleAtPlacementCores st victim) := by
   have hStep := observableSlotsConfinedToCores_trans
     (cancelIpcBlockingReclaimed_confinedToCores victim tcb st)
@@ -1134,21 +1135,15 @@ theorem cancelIpcBlockingOnCore_confinedToCores (victim : SeLe4n.ThreadId) (tcb 
   simp only [List.mem_append] at hc ⊢
   rcases hc with hw | hd
   · exact Or.inl hw
-  · -- `cancelIpcBlockingReclaimed` is the post-wake state by definition, which is
-    -- the vocabulary `…_placedCoreOf?_cases` is stated in.
-    rw [show cancelIpcBlockingReclaimed victim tcb st
-          = wakeAbortedDonationHolder st (cancelIpcBlockingMigrated victim tcb st) victim tcb
-        from rfl] at hd
-    rw [descheduleAtPlacementCores_eq_toList] at hd ⊢
-    rcases cancelIpcBlockingOnCore_placedCoreOf?_cases victim tcb st with hEq | ⟨hPre, hPost⟩
-    · rw [hEq] at hd
-      exact Or.inr hd
-    · rw [hPost] at hd
-      exact Or.inl hd
+  · rw [descheduleAtPlacementCores_eq_toList, cancelIpcBlockingReclaimed_placedCoreOf?_victim]
+      at hd
+    rw [descheduleAtPlacementCores_eq_toList]
+    exact Or.inr hd
 
-/-- WS-OD OD1.7: with no donation resolved the reclaim wakes nobody, so the
-composite is confined to the victim's placed core exactly as it was before
-OD1.7 — which is every arm but a reply arm whose caller had donated. -/
+/-- `v0.35.158` (WS-OD OD1.7's wake until then): with no donation resolved the
+reclaim deschedules nobody, so the composite is confined to the victim's placed
+core exactly as it was before OD1.7 — which is every arm but a reply arm whose
+caller had donated. -/
 theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.ThreadId)
     (tcb : TCB) (executingCore : CoreId) (st : SystemState)
     (h : Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = none) :
@@ -1156,7 +1151,7 @@ theorem cancelIpcBlockingOnCore_confinedToCores_of_no_donation (victim : SeLe4n.
       (cancelIpcBlockingOnCore victim tcb executingCore st).1
       (descheduleAtPlacementCores st victim) := by
   have hW := cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st
-  rwa [cancelAbortedHolderWakeCore?_of_no_donation _ _ victim tcb h, Option.toList,
+  rwa [cancelUnboundHolderCore?_of_no_donation _ _ victim tcb h, Option.toList,
     List.nil_append] at hW
 
 /-- SM8.B.2: SchedContext donation is per-core silent — it rewrites bindings in
@@ -2570,8 +2565,10 @@ theorem cancelDonatedDonationOnCore_confinedToCores (st st' : SystemState)
 
 Both donation arms, `clearPendingState` and the `.Inactive` store are per-core
 silent and contribute nothing.  The teardown was too until **WS-RR RR8.12** gave
-G2 the reclaim's holder wake; it now contributes that holder's home core, and no
-other (`cancelIpcBlockingReclaimed_confinedToCores`). -/
+G2 the reclaim's scheduler step; since `v0.35.158` that step deschedules the
+holder the reclaim unbound (WS-OD OD1.7's wake of it until then), so G2
+contributes that holder's placed core, and no other
+(`cancelIpcBlockingReclaimed_confinedToCores`). -/
 def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
     (executingCore : CoreId) : List CoreId :=
   match st.getTcb? vtid.val with
@@ -2582,14 +2579,16 @@ def suspendThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
       -- One entry per pipeline step, in execution order; `[]` marks a step that
       -- writes no core at all, so this reads as the transition's own shape.
       --
-      -- **WS-RR RR8.12**: G2 is the teardown with its reclaim COMPLETED, so the
-      -- first entry is no longer `[]`: the reclaim's holder wake places the
-      -- aborted donation holder on the holder's **own** home core, which is
-      -- neither the victim's placement nor the executing core.  A write set that
-      -- omits a written core is as false as a footprint that does, and until
-      -- RR8.12 this one named none because the live pipeline performed no wake.
-      (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
-        vtid.val tcb).toList -- the reclaim's holder wake
+      -- **WS-RR RR8.12**, re-keyed at `v0.35.158`: G2 is the teardown with its
+      -- reclaim COMPLETED, so the first entry is no longer `[]`: the reclaim's
+      -- holder deschedule removes the holder it unbound from the holder's **own**
+      -- placement, which is neither the victim's placement nor the executing
+      -- core (until `v0.35.158` the step was OD1.7's wake and the entry the
+      -- holder's home core).  A write set that omits a written core is as false
+      -- as a footprint that does, and until RR8.12 this one named none because
+      -- the live pipeline performed no such step.
+      (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+        vtid.val tcb).toList -- the reclaim's holder deschedule
       ++ (match PriorityInheritance.blockingServer st vtid.val with
        | some serverId =>
            pipChainWriteSet (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore
@@ -2629,8 +2628,9 @@ writes no core outside `suspendThreadOnCoreWriteSet`.
 
 Four of its steps are per-core silent (both donation arms, `clearPendingState`,
 the `.Inactive` store); the four that are not are the teardown's own reclaim
-wake (**WS-RR RR8.12**), the priority-inheritance reversion, the placement
-dequeue and the G7 scheduling point, and all four are named. The closing `mono`
+step (**WS-RR RR8.12**; the holder deschedule since `v0.35.158`), the
+priority-inheritance reversion, the placement dequeue and the G7 scheduling
+point, and all four are named. The closing `mono`
 is only re-ordering — the composition produces the cores in execution order, the
 declared set lists them in reading order. -/
 theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
@@ -2652,7 +2652,7 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
       rw [if_neg hInact] at hStep
       have hCancel : observableSlotsConfinedToCores st
           (cancelIpcBlockingReclaimed vtid.val tcb st)
-          (cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+          (cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
             vtid.val tcb).toList :=
         cancelIpcBlockingReclaimed_confinedToCores vtid.val tcb st
       -- The chain reversion, stated over the same `blockingServer` scrutinee the
@@ -2663,7 +2663,7 @@ theorem suspendThreadOnCore_confinedToCores (st st' : SystemState)
              (PriorityInheritance.propagatePipChainCrossCore
                (cancelIpcBlockingReclaimed vtid.val tcb st) serverId executingCore).1
            | none => cancelIpcBlockingReclaimed vtid.val tcb st)
-          ((cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
+          ((cancelUnboundHolderCore? st (cancelIpcBlockingMigrated vtid.val tcb st)
               vtid.val tcb).toList
             ++ match PriorityInheritance.blockingServer st vtid.val with
                | some serverId =>
@@ -4741,14 +4741,15 @@ theorem descheduleThread_crossCoreNonInterference (ctx : LabelingContext)
   crossCoreNonInterference_ofCores ctx observer hne
     (descheduleThread_confinedToCores st tid executingCore) hShared
 
-/-- SM8.B.2 (SM6.E, composed), re-keyed at WS-RR RR8.6: a cross-core
-IPC-blocking cancellation is invisible to any core that is neither the one the
-pre-state places the victim on nor the one the reclaim's holder wake writes. -/
+/-- SM8.B.2 (SM6.E, composed), re-keyed at WS-RR RR8.6 and `v0.35.158`: a
+cross-core IPC-blocking cancellation is invisible to any core that is neither
+the one the pre-state places the victim on nor the one the reclaim's holder
+deschedule writes. -/
 theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
     (observer : IfObserver) (victim : SeLe4n.ThreadId) (tcb : TCB)
     (executingCore : CoreId) (st : SystemState) (c : CoreId)
     (hne : c ∉ descheduleAtPlacementCores st victim)
-    (hWake : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+    (hHolder : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
       victim tcb ≠ some c)
     (hShared : sharedViewUnchanged ctx observer st
       (cancelIpcBlockingOnCore victim tcb executingCore st).1) :
@@ -4757,17 +4758,17 @@ theorem cancelIpcBlockingOnCore_crossCoreNonInterference (ctx : LabelingContext)
       = projectStateOnCore ctx observer st c :=
   crossCoreNonInterference_ofCores ctx observer
     (by
-      -- WS-OD OD1.7: `c` is neither the victim's placed core nor the core the
-      -- reclaim's holder wake writes.
+      -- `v0.35.158`: `c` is neither the victim's placed core nor the core the
+      -- reclaim's holder deschedule writes.
       intro hMem
       rcases List.mem_append.mp hMem with hw | hd
-      · cases hW : cancelAbortedHolderWakeCore? st (cancelIpcBlockingMigrated victim tcb st)
+      · cases hW : cancelUnboundHolderCore? st (cancelIpcBlockingMigrated victim tcb st)
             victim tcb with
         | none => rw [hW] at hw; simp at hw
         | some w =>
           rw [hW] at hw
           simp only [Option.toList, List.mem_singleton] at hw
-          exact hWake (by rw [hw, hW])
+          exact hHolder (by rw [hw, hW])
       · exact hne hd)
     (cancelIpcBlockingOnCore_confinedToCores victim tcb executingCore st) hShared
 

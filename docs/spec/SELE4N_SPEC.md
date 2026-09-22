@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.157` (`lakefile.toml`) |
+| **Package version** | `0.35.158` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,888 across 334 Lean files |
-| **Test LoC** | 81,087 across 70 Lean test suites |
-| **Proved declarations** | 13,137 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 397,042 across 334 Lean files |
+| **Test LoC** | 81,232 across 70 Lean test suites |
+| **Proved declarations** | 13,131 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4313,7 +4313,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   permanently.  `cancelIpcBlockingOnCore` enqueues it on its **home** core,
   which is neither necessarily the victim's nor the executing core; the declared
   scheduler footprint names that core's run-queue write lock, and the composite's
-  per-core run-queue locality clause excludes it.
+  per-core run-queue locality clause excludes it.  **That placement is retired at
+  `v0.35.158`** — the reclaim deschedules the holder it unbinds; see the
+  paragraph on it below.
 
   **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
   RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
@@ -4325,7 +4327,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   it.  G2 now reads `cancelIpcBlockingReclaimed`, the composite's prefix, so both
   steps are on the live path and every result about the composite's teardown half
   applies to it; `suspendThreadOnCoreSchedLockSet` and `suspendThreadOnCoreWriteSet`
-  each grew by the wake core they had been silent about.
+  each grew by the wake core they had been silent about (the holder's *placed*
+  core, `holderPlaced`, since `v0.35.158`, and the step it declares for is a
+  removal).
 
   **And the holder is *still* placed after the six pipeline stages that follow
   G2** (`suspendThreadOnCore_holder_still_placed`, WS-RR RR8.12 fourth cut,
@@ -4347,6 +4351,53 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` states that side
   condition rather than hiding it.  §3.26 now exhibits the theorem's premises and
   its conclusion on a state the live operations reach.
+
+  **And since `v0.35.158` the reclaim DESCHEDULES the holder it unbinds, so the
+  payoff inverts** (the `v0.35.149` residue's reclaim half, closed).  OD1.7's
+  wake rested on *an unbound thread is fully schedulable in this model*, which is
+  true and is the defect: it is schedulable **at its legacy TCB band charged to no
+  reservation** (`hasSufficientBudget`'s `.unbound` arm is `true`,
+  `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever), so an
+  ordinary `.tcbSuspend` of a *client* — authority over the client, none over the
+  server — handed the server the CPU on nobody's budget, outside CBS admission
+  entirely, and `passiveServerIdle` could not see it because its antecedent is
+  *not queued*.  Every other donation pop in the tree already took the
+  MCS-passive reading (`applyReplyDonation`, `applyReplyDonationOnCore`,
+  `replyRecvHolderDeschedule`; seL4-MCS's `schedContext_donate`, read at
+  `13.0.0`, dequeues the previous holder), and the reclaim was the one outlier.
+  The reclaim-complete teardown is now the migration followed by
+  `descheduleUnboundHolder`: the trigger `cancelUnboundHolder?` reads the pop's
+  two writes off the post-teardown state — the holder's binding cleared, the
+  victim's installed — so it fires on a blocked holder and on a queued one alike
+  (the wake's `.ready`-gated trigger was silent on exactly the queued server),
+  and `holder ≠ victim` is structural (`cancelUnboundHolder?_ne_victim`: one
+  thread cannot answer both conjuncts).  The step is `descheduleAtPlacement`,
+  the removal every other pop performs — the identity on a holder placed nowhere,
+  a scheduler-only write otherwise, so `cancelIpcBlockingOnCore_objects_eq` and
+  the `CancellationNI` surface hold verbatim and the cross-core poke comes from
+  the committed diff's `currentSlotChangeSgis` rule.  The holder is left
+  `.ready`, `.unbound` and on no slot, with the `.ipcTimeout` frame the abort
+  staged still in its register context, for its own manager to resume or to bind
+  a reservation to.  The declared footprint names the holder's **placed** core
+  (`cancelIpcBlockingOnCoreSchedLockSet`'s `holderPlaced`, resolved by
+  `cancelUnboundHolderCore?` through the same `placedCoreOf?` the step reads;
+  `…_covers_holder_deschedule` is the relation), both halves of
+  `cancellation_cross_core_correct`'s locality clause exclude it, the bundle frame
+  a removal owes is discharged from the abort that runs first
+  (`cancelIpcBlocking_unboundHolder_binding_or_allowed`), and the
+  information-flow obligation is `descheduledHolderHigh`, `abortHolderWakeHigh`'s
+  successor with the same discharge.  The pipeline payoff is
+  `suspendThreadOnCore_holder_unplaced`, the inverse of the theorem it retires:
+  under single placement of the holder and a well-formed run queue on the
+  executing core, the live suspend leaves the holder on **no** scheduler slot,
+  through the same six stages — with the chain walk and the placement removal now
+  preserving well-formedness (`propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed`,
+  `descheduleAt_preserves_runQueueOnCore_wellFormed`) and the scheduling point
+  preserving *un*placement (`switchToThreadOnCore_preserves_unplaced`), where the
+  retired direction had needed resolvability carried at every stage.  §3.26
+  computes the retired wake beside the live reclaim on three shapes — a blocked
+  holder, a queued one and a running one — and the golden trace's `[SCO-020d]` /
+  `[SCO-020e]` rows measure the first two on the harness.
 
   **And the single-core reference path completes the reclaim too** (WS-RR RR8.12
   fifth cut, `v0.35.93`).  `cancelIpcBlockingReclaimed` and the aborted-holder wake
@@ -4372,8 +4423,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   merge.  It closes the first cut's unswept sibling:
   `cancelIpcBlockingOnCoreSchedLockSet` answered a set question with an
   `if placed = some c` deduplication branch, and with that branch gone
-  `…_contains_wake_runQueue_write` holds unconditionally where it used to need
-  `placed ≠ some c`.  That the argument is a set is now a theorem
+  `…_contains_wake_runQueue_write` (`…_contains_holder_runQueue_write` since
+  `v0.35.158`, when the member became the holder's placed core) holds
+  unconditionally where it used to need `placed ≠ some c`.  That the argument is a set is now a theorem
   (`Concurrency.canonicalCores_congr`, `schedFootprintOfCores_congr`,
   `canonicalCores_singleton`).  No footprint's member set moved, so the golden
   trace is byte-identical and `maxLockSetSize` is unmoved.

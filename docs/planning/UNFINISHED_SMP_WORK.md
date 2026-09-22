@@ -393,7 +393,8 @@ admitted onto one higher-labelled endpoint —
 `endpointAdmissionAdmitsMixedObservability` is that admission as a
 `decide`-checked theorem, with an observer that sees exactly one of the two.  So
 the target named here, and in the register rows that cited it for
-`abortHolderProjectionStable` and `abortHolderWakeHigh`, is retracted: a proof
+`abortHolderProjectionStable` and `abortHolderWakeHigh` (`descheduledHolderHigh`
+since `v0.35.158`, when the reclaim's wake became a deschedule), is retracted: a proof
 that reaches for it is asking for a premise the gate refutes.
 
 What the gate *does* give is the other direction, and `v0.35.84`'s
@@ -402,7 +403,8 @@ it usable — an endpoint's flow label flows to its own object's label, which
 `v0.35.83` had asserted without it being derivable.  With that,
 `endpointObjectHigh_of_admittedThreadHigh` covers the endpoint's own queue
 boundaries and `donationHolderHigh_of_donorHigh` the aborted holder's TCB, so
-`abortHolderWakeHigh` is **discharged** and `abortHolderProjectionStable` and the
+`abortHolderWakeHigh` is **discharged** (and so is its `v0.35.158` successor
+`descheduledHolderHigh`, by the same fact) and `abortHolderProjectionStable` and the
 three queue arms' `hTeardownProj` reduce to the **queue-neighbour** class and no
 further: a neighbour's label is constrained only against the endpoint's.
 

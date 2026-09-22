@@ -950,10 +950,12 @@ def donationOwnerFlowsToHolder (ctx : LabelingContext) (st : SystemState) : Prop
 
 /-- **WS-RR RR8.8**: a non-observable donor's holder is non-observable too.
 
-The whole content of `abortHolderWakeHigh`, and the first of
-`abortHolderProjectionStable`'s three write classes: a run-queue insert is
-filtered by the inserted thread's own observability, and the holder's own TCB is
-projected away exactly when the holder is. -/
+The whole content of `descheduledHolderHigh` (`abortHolderWakeHigh` until
+`v0.35.158`, when the reclaim started descheduling the holder it unbinds rather
+than waking it), and the first of `abortHolderProjectionStable`'s three write
+classes: a run-queue removal, like the insert it replaced, is filtered by the
+removed thread's own observability, and the holder's own TCB is projected away
+exactly when the holder is. -/
 theorem donationHolderHigh_of_donorHigh
     (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
     (holder owner : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
