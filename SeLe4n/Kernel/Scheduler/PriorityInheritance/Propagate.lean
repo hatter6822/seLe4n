@@ -786,6 +786,35 @@ theorem propagatePipChainCrossCore_replenish_readings (st : SystemState) (tid : 
                fun scId => (hS scId).trans (hHere.2.1 scId),
                fun t => (hT t).trans (hHere.2.2 t)⟩
 
+/-- **WS-RR RR8.12 Cut C3a (frame)**: the whole cross-core chain walk writes **no
+replenish queue**, on any core, under no hypothesis at all — each step's only
+scheduler write is a run-queue bucket migration
+(`updatePipBoostOnCore_replenishQueueOnCore`).
+
+The first component of `propagatePipChainCrossCore_replenish_readings` without that
+theorem's object-store hypothesis, which its other two components genuinely need and
+this one never did.  Stated on its own because the footprint exactness licences that
+read it — `endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation` and its
+`.reply` sibling — are claims about what a transition *writes*, and a claim about a
+write should not have to assume the invariant the transition preserves. -/
+theorem propagatePipChainCrossCore_replenishQueueOnCore (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (c : CoreId) :
+    (propagatePipChainCrossCore st tid ec fuel).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hStep : (pipBoostWithWake st tid ec).1
+        = updatePipBoostOnCore st (determineTargetCore st tid) tid := rfl
+    have hHere : (pipBoostWithWake st tid ec).1.scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+      rw [hStep]; exact updatePipBoostOnCore_replenishQueueOnCore st _ c tid
+    cases hB : blockingServer st tid with
+    | none => exact hHere
+    | some nextServer =>
+        exact (ih (pipBoostWithWake st tid ec).1 nextServer).trans hHere
+
 -- ============================================================================
 -- §  WS-RR RR8.12 (Cut 4) — the walk's scheduler frames
 -- ============================================================================

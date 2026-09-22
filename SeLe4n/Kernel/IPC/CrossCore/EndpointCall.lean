@@ -96,6 +96,55 @@ def endpointCallReceiver? (st : SystemState) (endpointId : SeLe4n.ObjId) :
   | some ep => ep.receiveQ.head
   | none => none
 
+/-- SM8.B.2, relocated to production at **WS-RR RR8.12 Cut C3a**: **the cores a
+cross-core endpoint call may write** — the receiver's home core (when a receiver
+is waiting, so the call rendezvouses and wakes it) together with the caller's own
+core (where the caller is descheduled, on either path).
+
+This is the two-element write set that motivates `observableSlotsConfinedToCores`:
+in the interesting case the two are different cores, and no single-core
+confinement statement covers the transition.  Both are read from the pre-state,
+via `endpointCallReceiver?` above — the same pre-resolution `lockSet_endpointCall`
+uses to decide whether the receiver-TCB write lock is in the footprint — so the
+declared information-flow write set, the declared 2PL footprint and the
+scheduler-domain footprint (`schedLockSet_endpointCallOnCore`, Cut C3a) agree on
+which receiver is meant.
+
+Relocated for the reason `endpointSendWriteSet`'s docstring gives: the
+scheduler-domain footprint is production and
+`InformationFlow/NonInterferenceCrossCore.lean`, where this was declared, is
+staged and imports `Kernel.API`.  Its confinement theorem
+`endpointCallOnCore_confinedToCores` stays there, because
+`observableSlotsConfinedToCores` is that module's predicate. -/
+def endpointCallWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) : List CoreId :=
+  match endpointCallReceiver? st endpointId with
+  | some receiver => [determineTargetCore st receiver, executingCore]
+  | none => [executingCore]
+
+/-- With a receiver waiting: its home core and the caller's own. -/
+@[simp] theorem endpointCallWriteSet_of_receiver (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) (receiver : SeLe4n.ThreadId)
+    (h : endpointCallReceiver? st endpointId = some receiver) :
+    endpointCallWriteSet st endpointId executingCore
+      = [determineTargetCore st receiver, executingCore] := by
+  unfold endpointCallWriteSet; rw [h]
+
+/-- With none: the caller's own core alone, where it blocks. -/
+@[simp] theorem endpointCallWriteSet_of_no_receiver (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (executingCore : CoreId)
+    (h : endpointCallReceiver? st endpointId = none) :
+    endpointCallWriteSet st endpointId executingCore = [executingCore] := by
+  unfold endpointCallWriteSet; rw [h]
+
+/-- The caller's own core is a member on both paths — it is descheduled there
+whether it rendezvouses or blocks. -/
+theorem executingCore_mem_endpointCallWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (executingCore : CoreId) :
+    executingCore ∈ endpointCallWriteSet st endpointId executingCore := by
+  unfold endpointCallWriteSet
+  split <;> simp
+
 /-- **WS-OD OD3.11**: the `.send` / `.call` instance of the queue-structure
 neighbour -- those arms pop the **receive** queue and block on the **send**
 queue.
@@ -410,6 +459,69 @@ theorem endpointCallOnCore_noReceiver_eq
 -- ============================================================================
 -- §6 SM6.A.3 — Cross-core wake: SGI emission (plan Theorem 3.2.1)
 -- ============================================================================
+
+/-- **WS-RR RR8.12 Cut C3a (frame)**: the bare cross-core call writes **no
+replenish queue** on any path.  Its scheduler writes are the receiver's wake on a
+rendezvous and the caller's own deschedule on both paths, and neither touches a
+replenish queue; every store around them writes objects alone.  The `.call`
+footprint's replenish segment is the donation's, and this is the frame that
+licenses it — a footprint that declared nothing for a leg that migrated would be
+false. -/
+theorem endpointCallOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId) :
+    (endpointCallOnCore endpointId caller msg executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointCallOnCore
+  split
+  · rfl
+  · split
+    · rfl
+    · cases hEp : st.getEndpoint? endpointId with
+      | none => simp only []; split <;> rfl
+      | some ep =>
+        simp only []
+        cases hHead : ep.receiveQ.head with
+        | none =>
+          simp only []
+          cases hEnq : endpointQueueEnqueue endpointId false caller st with
+          | error e => rfl
+          | ok st' =>
+            simp only []
+            cases hStore : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId)
+                (some msg) with
+            | error e => rfl
+            | ok st'' =>
+              simp only [removeRunnableOnCore_replenishQueueOnCore]
+              rw [storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hStore,
+                endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq]
+        | some _ =>
+          simp only []
+          cases hPop : endpointQueuePopHead endpointId true st with
+          | error e => rfl
+          | ok triple =>
+            obtain ⟨receiver, _headTcb, st'⟩ := triple
+            simp only []
+            cases hStore : storeTcbIpcStateAndMessage st' receiver .ready (some msg) with
+            | error e => rfl
+            | ok st'' =>
+              simp only []
+              cases hStore2 : storeTcbIpcStateAndMessage
+                  (wakeThread st'' receiver executingCore).1 caller
+                  (.blockedOnReply endpointId (some receiver)) none with
+              | error e => rfl
+              | ok st4 =>
+                simp only []
+                cases hLink : SystemState.linkServerStashedReply caller receiver st4 with
+                | error e => rfl
+                | ok pr =>
+                  obtain ⟨_, st5⟩ := pr
+                  simp only [removeRunnableOnCore_replenishQueueOnCore]
+                  rw [linkServerStashedReply_scheduler_eq st4 st5 caller receiver hLink,
+                    storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hStore2,
+                    wakeThread_replenishQueueOnCore,
+                    storeTcbIpcStateAndMessage_scheduler_eq st' st'' receiver _ _ hStore,
+                    endpointQueuePopHead_scheduler_eq endpointId true st st' receiver hPop]
 
 /-- WS-SM SM6.A.3 (plan §3.2 Theorem 3.2.1,
 `endpointCall_emits_sgi_if_remote_receiver`). When a cross-core `endpointCall`

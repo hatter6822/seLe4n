@@ -1106,6 +1106,26 @@ theorem rendezvousCallDonationReplenishCores_of_donation (st : SystemState)
       = [determineTargetCore st donor, determineTargetCore st receiver] := by
   unfold rendezvousCallDonationReplenishCores; rw [h]
 
+/-- **WS-RR RR8.12 Cut C3a (frame)**: where the donation's own resolver declines, a
+successful cross-core call donation moves no replenishment on any core — the
+single-core donation writes objects alone and the migration arm is not taken.  The
+rendezvous form's `applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation`
+below is this fact at the pair the rendezvous resolves; the `.call` dispatch runs
+this primitive directly, so its empty replenish segment
+(`endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation`) reads this one. -/
+theorem applyCallDonationOnCore_replenishQueueOnCore_of_no_donation
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hNone : callDonationSchedContext? st callerVtid.val receiverVtid.val = none)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'')
+    (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨st', hDon, harm⟩ :=
+    applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
+  rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · exact absurd (hNone.symm.trans hSome) (by simp)
+
 /-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
 answers `some` **is** the single-core donation followed by the SM5.H migration between
 exactly the two cores `rendezvousCallDonationReplenishCores` names — so a footprint

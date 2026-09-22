@@ -1,3 +1,114 @@
+## v0.35.163 — the `.call` and `.reply` arms declare their scheduler-domain footprints
+
+WS-RR RR8.12 Cut C3a (8b-iii).  `schedLockSet_endpointCallOnCore`
+(`IPC/CrossCore/EndpointCallDispatch.lean` §3) is `schedFootprintOfCores` of
+`endpointCallDispatchWriteSet` — the live `.call` arm's SM8.B write set, which
+`endpointCallCrossCoreDispatch_confinedToCores` is stated at — and of
+`endpointCallDispatchReplenishCores`, the two cores the arm's donation migrates
+between.  `schedLockSet_endpointReplyOnCore`
+(`IPC/CrossCore/EndpointReplyDispatch.lean` §6) is the same over
+`endpointReplyDispatchWriteSet` and `endpointReplyDispatchReplenishCores`, the two
+cores the donation **return** migrates between.  And because the arm the API runs
+on `.reply` is `replyTransferOnCore` — seL4's `doReplyTransfer` branch, not the
+dispatch alone — `schedLockSet_replyTransferOnCore` (`IPC/CrossCore/Fault.lean` §6)
+sits over the dispatch's footprint at the message each branch hands it, adding on
+the fault branch what the dispatch cannot see: an abandon deschedules the faulted
+thread on its own home core (`faultReplyApplyCores`), and a footprint that omitted
+that lock would be false.  All three are inert until the bracket cut, like every
+sibling.
+
+**Each replenish segment mirrors the dispatch's own donation guard, at the state
+the dispatch asks it.**  The `.call` segment asks `callDonationSchedContext?` of
+the caller and the receiver at the WithCaps post-state — where
+`applyCallDonationOnCore` asks it — and reads the two homes off the pre-state,
+where the dispatch reads them, so the pair and the migration's endpoints are the
+same two expressions and no home-core frame stands between them.  The `.reply`
+segment re-runs the reply leg and reads the return's pair at that leg's post-state
+through the frame trigger the pop reads (`replyFrameHeadHolder?`), the discipline
+Cut C2 set for `.replyRecv`: reading the recipient at the pre-state is the
+footprint/transition asymmetry WS-HP HP10.8 registered for the object-domain origin
+member.  Coverage is by theorem at the cores each migration actually resolves —
+`schedLockSet_endpointCallOnCore_covers_donation` and `…_covers_parametric` (the
+RR2.4 footprint at the resolved cores is covered member for member, and the chain
+members the parametric form left to the walker are named besides);
+`schedLockSet_endpointReplyOnCore_covers_migration`, `…_covers_deschedule` and
+`…_covers_donation`; the arm's `schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault`,
+`…_covers_dispatch_of_fault` and `…_contains_abandon_runQueue_write` — with
+`applyReplyDonationOnCore_ok_migrates` the new licence on the reply side.  The
+empty segments are exact in both directions: `…_no_replenishQueue_of_no_donation`
+and `…_of_no_receiver` on the call side against
+`endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation` and
+`…_of_no_receiver`; `…_no_replenishQueue_of_no_head` on the reply side against
+`endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head`; and the arm's
+`replyTransferOnCore_replenishQueueOnCore_of_dispatch`, which says the staging and
+the outcome add no replenish write on either branch.  Four frames were owed and
+are new: `endpointCallOnCore_replenishQueueOnCore`,
+`endpointCallWithCapsOnCore_replenishQueueOnCore`,
+`applyCallDonationOnCore_replenishQueueOnCore_of_no_donation` and
+`propagatePipChainCrossCore_replenishQueueOnCore` — the walk's replenish frame
+under **no** object-store hypothesis, which `_replenish_readings`'s first component
+carried only because its other two components need it.
+
+**The pop's replenish pair has one owner, and `.replyRecv` reads it too.**
+`replyDonationReturnReplenishCores st rid target` (`EndpointReplyDispatch.lean` §1)
+is the pair keyed on the frame trigger, spelled through the two named home
+resolvers `replyDonationHolderHome` / `replyDonationRecipientHome` the dispatch
+passes, so the three readers those already keep in step gain a fourth.  Cut C2's
+`replyRecvPopReplenishCores`, keyed on the `returned?` the pop answers, is retired
+for it: the pop's `returned?` **is** the trigger's answer
+(`replyRecvPopDonation_holder_eq_frameHead`, and the new
+`replyRecvPopDonation_ok_none_frameHead` for the other direction), and two
+spellings of one pair held together by a theorem is the duplication this project
+retires.  `replyRecvHandoffReplenishCores` reads it at the reply leg's post-state
+now; every §3.29 value is unchanged.
+
+**Five write sets and one frame moved from the staged
+`InformationFlow/NonInterferenceCrossCore.lean` to production**, beside the
+transitions they mirror and keeping the `SeLe4n.Kernel` namespace so nothing is
+renamed: `endpointCallWriteSet` (beside `endpointCallReceiver?`),
+`endpointCallDispatchChainWriteSet` and `endpointCallDispatchWriteSet` (beside the
+`.call` dispatch), `replyDonationDescheduleCores` (beside the two home resolvers),
+`endpointReplyDispatchWriteSet` (beside the `.reply` dispatch), and
+`endpointCallWithCapsOnCore_scheduler_eq`.  The confinement theorems stay staged,
+`observableSlotsConfinedToCores` being that module's predicate; each old site
+carries a tombstone, and Tier 3 refuses the definitions coming back.  The same
+layering rule Cuts 5, 7, 8a-ii and C2 applied: a write set a production footprint
+cannot read is one it cannot be stated over.
+
+**Two corrections to prose, one of them the previous cut's.**  `v0.35.162`
+recorded `.replyRecv`'s two chain walks as "declared dynamically"; they are in the
+run segment — `replyRecvBodyWriteSet` re-runs the spine to the state each walk
+starts from and appends `pipChainWriteSet` there — as are the `.call` and `.reply`
+walks through `endpointCallDispatchWriteSet` and `endpointReplyDispatchWriteSet`.
+What the `pipChainStart_*` obligations still add through `pipChainSchedFootprint`
+is the object domain's per-member TCB write lock, which no scheduler footprint can
+name; `.receive` (`v0.35.107`) is the one declared arm whose walk is not in its run
+segment.  And RR2.10's parametric `endpointReplyCrossCoreDispatchSchedLockSet`
+declares the executing core's run queue "for the PIP reversion's local
+re-bucketing"; the reversion re-buckets each member on its **home** core and
+nothing in the dispatch writes the replier's own core, so that member is a sound
+over-declaration on a false justification.  The derived footprint drops it, its
+docstring says so, and the relation this cut states for `.reply` is therefore
+coverage of the donation-return footprint the parametric form declares correctly,
+not of the parametric footprint itself.  The `.call` side has no such gap: every
+core the RR2.4 footprint declares is written, which is why `…_covers_parametric`
+exists there and not here.
+
+**Witnesses.**  `tests/SmpIpcSuite.lean` §3.30 drives five shapes through the
+live operations: a `Call` to a waiting passive server on another core (segment
+`[0, 1]`, the RR2.4 parametric footprint at the resolved cores covered member for
+member, the replenishment migrated 0 → 1), a `Call` from a legacy `.unbound`
+client (segment empty, the parametric shape measured wider — two replenish locks
+for a migration that does not happen — and nothing moved), a `Call` with no
+receiver (the caller's own core alone), the server's `.reply` on the steady state
+(segment `[1, 0]`, the arm's footprint equal to the dispatch's on an unfaulted
+caller, the context returned 1 → 0, the affinity invariant restored, the server
+parked) and on the legacy state (empty, nothing moved).
+`tests/FaultHandlingSuite.lean` §7c drives the fault branch: the arm's write set is
+the dispatch's plus nothing on a restart and plus the faulted thread's home on an
+abandon, whose run-queue write lock is a member.  Forty-two new Tier 3 anchors
+and eight repointed, the relations mutation-tested.  `maxLockSetSize` is unmoved.
+
 ## v0.35.162 — the `.replyRecv` arm declares its scheduler-domain footprint
 
 WS-RR RR8.12 Cut C2 (8b-ii).  `schedLockSet_endpointReplyRecvOnCore` is

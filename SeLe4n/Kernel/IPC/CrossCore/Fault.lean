@@ -741,4 +741,254 @@ theorem faultDeliverOnCoreChecked_delivered_flows (ctx : LabelingContext)
       (by simpa using hGate)] at hDelivered
     exact absurd hDelivered (by simp)
 
+-- ============================================================================
+-- §6  WS-RR RR8.12 Cut C3a — the live `.reply` ARM's scheduler-domain footprint
+-- ============================================================================
+--
+-- The arm `API.dispatchWithCap` runs is `replyTransferOnCore`, not the dispatch
+-- alone: seL4's `doReplyTransfer` branch (RR4.14/RR4.15).  On an unfaulted caller
+-- it is the dispatch plus the delivered-message staging, which writes a register
+-- context and no scheduler slot; on a faulted one it is the dispatch at the empty
+-- message, then the decoded outcome — a restart, which writes registers, or an
+-- abandon, which deschedules the faulted thread on its own home core.  A footprint
+-- stated over the dispatch alone would omit that last write, and a footprint that
+-- omits a written lock is false.  So the arm's footprint is declared here, where
+-- both branches are visible, over the dispatch's derived footprint
+-- (`schedLockSet_endpointReplyOnCore`, `EndpointReplyDispatch.lean` §6) at the
+-- message each branch hands it.  Inert until the bracket cut wires
+-- `schedLockSetForSyscall`.
+
+/-- The cores `faultReplyApplyOnCore` may write: none on a restart, the faulted
+thread's own home core on an abandon
+(`faultAbandonOnCore … (determineTargetCore st faulted)`), read off the state the
+apply runs on — the dispatch's post-state, exactly as the apply reads it. -/
+def faultReplyApplyCores (st : SystemState) (faulted : SeLe4n.ThreadId)
+    (outcome : FaultReplyOutcome) : List CoreId :=
+  match outcome with
+  | .restart _ => []
+  | .abandon => [determineTargetCore st faulted]
+
+/-- **WS-RR RR8.12 Cut C3a**: the cores the fault reply may write — the dispatch's
+own set at the empty message, then the outcome's at the dispatch's post-state,
+where the apply runs.  Mirrors `faultReplyOnCore` clause for clause, so every arm on
+which the seam commits nothing returns `[]`. -/
+def faultReplyWriteSet (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (executingCore : CoreId) (st : SystemState) :
+    List CoreId :=
+  match st.getTcb? faulted with
+  | none => []
+  | some tcb =>
+      match tcb.pendingFault with
+      | none => []
+      | some tf =>
+          match endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty
+              executingCore st with
+          | (_, .error _) => []
+          | (st', .ok _) =>
+              endpointReplyDispatchWriteSet replier faulted IpcMessage.empty executingCore st
+                ++ faultReplyApplyCores st' faulted (decodeFaultReply tf.fault tf.context mi regs)
+
+/-- **WS-RR RR8.12 Cut C3a**: the cores the live `.reply` arm may write — the seam's
+own branch, clause for clause: the fault reply's set on a faulted caller, the
+dispatch's at the delivered message otherwise. -/
+def replyTransferWriteSet (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  if threadHasPendingFault st callerTid then
+    faultReplyWriteSet replier callerTid mi regs executingCore st
+  else
+    endpointReplyDispatchWriteSet replier callerTid msg executingCore st
+
+/-- **WS-RR RR8.12 Cut C3a**: and the replenish-queue cores it may migrate between —
+the dispatch's, at the message the branch hands it.  Neither the staging nor the
+outcome touches a replenish queue
+(`replyTransferOnCore_replenishQueueOnCore_of_dispatch`), so the arm's replenish
+story is the dispatch's. -/
+def replyTransferReplenishCores (replier callerTid : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) : List CoreId :=
+  if threadHasPendingFault st callerTid then
+    endpointReplyDispatchReplenishCores replier callerTid IpcMessage.empty executingCore st
+  else
+    endpointReplyDispatchReplenishCores replier callerTid msg executingCore st
+
+/-- **WS-RR RR8.12 Cut C3a**: the scheduler-domain footprint of the live `.reply`
+arm — `schedFootprintOfCores` of the seam's write set and of its replenish cores.
+On an unfaulted caller it is exactly the dispatch's footprint
+(`schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault`, an equality of
+segments); on a faulted one it is the dispatch's footprint at the empty message
+plus, on an abandon, the faulted thread's home-core run-queue write lock.  Every
+core is derived, nothing is a parameter, and the branch is the seam's own
+predicate `threadHasPendingFault`. -/
+def schedLockSet_replyTransferOnCore (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo)
+    (regs : Array SeLe4n.RegValue) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) : List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (replyTransferWriteSet replier callerTid mi regs msg executingCore st)
+    (replyTransferReplenishCores replier callerTid msg executingCore st)
+
+@[simp] theorem replyTransferWriteSet_of_no_fault (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (h : threadHasPendingFault st callerTid = false) :
+    replyTransferWriteSet replier callerTid mi regs msg executingCore st
+      = endpointReplyDispatchWriteSet replier callerTid msg executingCore st := by
+  simp [replyTransferWriteSet, h]
+
+@[simp] theorem replyTransferWriteSet_of_fault (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (h : threadHasPendingFault st callerTid = true) :
+    replyTransferWriteSet replier callerTid mi regs msg executingCore st
+      = faultReplyWriteSet replier callerTid mi regs executingCore st := by
+  simp [replyTransferWriteSet, h]
+
+@[simp] theorem replyTransferReplenishCores_of_no_fault (replier callerTid : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
+    (h : threadHasPendingFault st callerTid = false) :
+    replyTransferReplenishCores replier callerTid msg executingCore st
+      = endpointReplyDispatchReplenishCores replier callerTid msg executingCore st := by
+  simp [replyTransferReplenishCores, h]
+
+@[simp] theorem replyTransferReplenishCores_of_fault (replier callerTid : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
+    (h : threadHasPendingFault st callerTid = true) :
+    replyTransferReplenishCores replier callerTid msg executingCore st
+      = endpointReplyDispatchReplenishCores replier callerTid IpcMessage.empty executingCore st := by
+  simp [replyTransferReplenishCores, h]
+
+/-- The fault reply's write set once the seam has reached its dispatch: the
+dispatch's set at the empty message, then the outcome's at the dispatch's
+post-state. -/
+theorem faultReplyWriteSet_eq_of_dispatch (replier faulted : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
+    (st st' : SystemState) (tcb : TCB) (tf : ThreadFault) (sgi : Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? faulted = some tcb) (hFault : tcb.pendingFault = some tf)
+    (hDisp : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore st
+      = (st', .ok sgi)) :
+    faultReplyWriteSet replier faulted mi regs executingCore st
+      = endpointReplyDispatchWriteSet replier faulted IpcMessage.empty executingCore st
+        ++ faultReplyApplyCores st' faulted (decodeFaultReply tf.fault tf.context mi regs) := by
+  unfold faultReplyWriteSet
+  simp only [hTcb, hFault, hDisp]
+
+/-- **WS-RR RR8.12 Cut C3a (coverage, the ordinary branch)**: on an unfaulted
+caller the arm's footprint **is** the dispatch's, segment for segment. -/
+theorem schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault
+    (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (msg : IpcMessage) (executingCore : CoreId) (st : SystemState)
+    (hNoFault : threadHasPendingFault st callerTid = false) :
+    ∀ p ∈ schedLockSet_endpointReplyOnCore replier callerTid msg executingCore st,
+      p ∈ schedLockSet_replyTransferOnCore replier callerTid mi regs msg executingCore st := by
+  unfold schedLockSet_replyTransferOnCore schedLockSet_endpointReplyOnCore
+  rw [replyTransferWriteSet_of_no_fault replier callerTid mi regs msg executingCore st hNoFault,
+    replyTransferReplenishCores_of_no_fault replier callerTid msg executingCore st hNoFault]
+  exact fun _ h => h
+
+/-- **WS-RR RR8.12 Cut C3a (coverage, the fault branch)**: on a faulted caller the
+arm's footprint covers the dispatch's at the empty message — the message the fault
+branch hands it — member for member, and names besides whatever the outcome writes. -/
+theorem schedLockSet_replyTransferOnCore_covers_dispatch_of_fault
+    (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (msg : IpcMessage) (executingCore : CoreId) (st st' : SystemState) (tcb : TCB)
+    (tf : ThreadFault) (sgi : Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? callerTid = some tcb) (hFault : tcb.pendingFault = some tf)
+    (hDisp : endpointReplyCrossCoreDispatch replier callerTid IpcMessage.empty executingCore st
+      = (st', .ok sgi)) :
+    ∀ p ∈ schedLockSet_endpointReplyOnCore replier callerTid IpcMessage.empty executingCore st,
+      p ∈ schedLockSet_replyTransferOnCore replier callerTid mi regs msg executingCore st := by
+  have hHas : threadHasPendingFault st callerTid = true := by
+    simp [threadHasPendingFault, hTcb, hFault]
+  unfold schedLockSet_replyTransferOnCore schedLockSet_endpointReplyOnCore
+  rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hHas,
+    replyTransferReplenishCores_of_fault replier callerTid msg executingCore st hHas,
+    faultReplyWriteSet_eq_of_dispatch replier callerTid mi regs executingCore st st' tcb tf sgi
+      hTcb hFault hDisp]
+  exact schedFootprintOfCores_subset (fun _ h => List.mem_append.mpr (Or.inl h)) (fun _ h => h)
+
+/-- **WS-RR RR8.12 Cut C3a (the abandon)**: on a faulted caller whose reply decodes
+to an abandon, the footprint names the run-queue write lock of the faulted thread's
+home core at the dispatch's post-state — the core `faultAbandonOnCore` deschedules it
+on.  This is the member a footprint over the dispatch alone would have missed. -/
+theorem schedLockSet_replyTransferOnCore_contains_abandon_runQueue_write
+    (replier callerTid : SeLe4n.ThreadId) (mi : MessageInfo) (regs : Array SeLe4n.RegValue)
+    (msg : IpcMessage) (executingCore : CoreId) (st st' : SystemState) (tcb : TCB)
+    (tf : ThreadFault) (sgi : Option (CoreId × SgiKind))
+    (hTcb : st.getTcb? callerTid = some tcb) (hFault : tcb.pendingFault = some tf)
+    (hDisp : endpointReplyCrossCoreDispatch replier callerTid IpcMessage.empty executingCore st
+      = (st', .ok sgi))
+    (hAbandon : decodeFaultReply tf.fault tf.context mi regs = .abandon) :
+    (SchedLockId.runQueue ⟨determineTargetCore st' callerTid⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_replyTransferOnCore replier callerTid mi regs msg executingCore st := by
+  have hHas : threadHasPendingFault st callerTid = true := by
+    simp [threadHasPendingFault, hTcb, hFault]
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hHas,
+    faultReplyWriteSet_eq_of_dispatch replier callerTid mi regs executingCore st st' tcb tf sgi
+      hTcb hFault hDisp, hAbandon]
+  simp [faultReplyApplyCores]
+
+/-- **WS-RR RR8.12 Cut C3a (frame)**: the outcome writes no replenish queue — a
+restart writes registers, an abandon deschedules. -/
+theorem faultReplyApplyOnCore_replenishQueueOnCore (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (outcome : FaultReplyOutcome) (c : CoreId) :
+    (faultReplyApplyOnCore st faulted outcome).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  cases outcome with
+  | restart frame => simp [faultReplyApplyOnCore]
+  | abandon =>
+    simp only [faultReplyApplyOnCore]
+    rw [faultAbandonOnCore_scheduler_eq]
+    exact removeRunnableOnCore_replenishQueueOnCore _ _ _ _
+
+/-- **WS-RR RR8.12 Cut C3a (the arm's replenish story is the dispatch's)**: whatever
+the dispatch's replenish-queue frame is on a given state, the arm's is the same —
+the staging (`stageDeliveredMessage`) and the outcome
+(`faultReplyApplyOnCore`) add no replenish write on either branch.  Compose with
+`endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head` for the empty
+segment's exactness on the arm, at whichever message the branch hands the dispatch. -/
+theorem replyTransferOnCore_replenishQueueOnCore_of_dispatch (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st stOut : SystemState) (c : CoreId)
+    (hDisp : ∀ (msg' : IpcMessage) (st' : SystemState) (sgi : Option (CoreId × SgiKind)),
+      endpointReplyCrossCoreDispatch replier callerTid msg' executingCore st = (st', .ok sgi) →
+      st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c)
+    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st = .ok ((), stOut)) :
+    stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold replyTransferOnCore at hStep
+  split at hStep
+  · unfold faultReplyOnCore at hStep
+    cases hTcb : st.getTcb? callerTid with
+    | none => rw [hTcb] at hStep; simp at hStep
+    | some tcb =>
+      rw [hTcb] at hStep
+      simp only [] at hStep
+      cases hF : tcb.pendingFault with
+      | none => rw [hF] at hStep; simp at hStep
+      | some tf =>
+        rw [hF] at hStep
+        simp only [] at hStep
+        cases hD : endpointReplyCrossCoreDispatch replier callerTid IpcMessage.empty
+            executingCore st with
+        | mk st' res =>
+          rw [hD] at hStep
+          cases res with
+          | error e => simp at hStep
+          | ok sgi =>
+            simp only [] at hStep
+            have hOut : stOut = faultReplyApplyOnCore st' callerTid
+                (decodeFaultReply tf.fault tf.context mi regs) :=
+              ((Prod.mk.inj (Except.ok.inj hStep)).2).symm
+            rw [hOut, faultReplyApplyOnCore_replenishQueueOnCore]
+            exact hDisp IpcMessage.empty st' sgi hD
+  · cases hD : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+    | mk st' res =>
+      rw [hD] at hStep
+      cases res with
+      | error e => simp at hStep
+      | ok sgi =>
+        simp only [] at hStep
+        have hOut : stOut = Architecture.stageDeliveredMessage st' callerTid 0 :=
+          ((Prod.mk.inj (Except.ok.inj hStep)).2).symm
+        rw [hOut, Architecture.stageDeliveredMessage_scheduler_eq]
+        exact hDisp msg st' sgi hD
+
 end SeLe4n.Kernel

@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -5438,7 +5438,9 @@ run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_e
 # deleted, because a positive anchor on a relocated symbol that keeps pointing at
 # the old module fails, and one simply deleted stops checking anything.
 run_check "INVARIANT" rg -n '^def notificationSignalWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
-run_check "INVARIANT" rg -n '^def endpointCallWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 Cut C3a (`v0.35.163`): `endpointCallWriteSet` is declared in production
+# now, beside the resolver it reads, so the `.call` scheduler footprint can read it.
+run_check "INVARIANT" rg -n '^def endpointCallWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_waiter' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -5482,7 +5484,9 @@ run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly' SeLe4n/Kernel/S
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
-run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 Cut C3a (`v0.35.163`): the `.reply` write set is production now, beside
+# the dispatch it mirrors; the confinement theorem below stays staged.
+run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/API.lean
@@ -5717,8 +5721,10 @@ run_check "INVARIANT" rg -n 'proc.returncode != 0' scripts/check_module_axioms.p
 # mirrors the dispatch's own control flow, not by hand-supplied intermediate
 # states.  NEGATIVE: `endpointCallLiveWriteSet` must stay a composition rule —
 # if it regains the job of guessing the chain, the reduction below is dead.
-run_check "INVARIANT" rg -n '^def endpointCallDispatchChainWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def endpointCallDispatchWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# WS-RR RR8.12 Cut C3a (`v0.35.163`): both write sets are production now, beside the
+# dispatch they mirror; the confinement theorems below stay staged.
+run_check "INVARIANT" rg -n '^def endpointCallDispatchChainWriteSet$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^def endpointCallDispatchWriteSet$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -10167,7 +10173,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyRecvOnC
 # (`st1`), the block-path pair at the pop's post-state (`st1p`), the re-donation
 # pair at the receive leg's post-state (`st2`).  Pinned with each state NAMED, so a
 # component moved to a state its hand-off does not run on fails the anchor.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopReplenishCores prevCaller returnedSc\? st1 \+\+\n *\(receivePreReturnReplenishCores st1p endpointId receiver \+\+" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyDonationReturnReplenishCores st1 replyId prevCaller \+\+\n *\(receivePreReturnReplenishCores st1p endpointId receiver \+\+" SeLe4n/Kernel/API.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*replyRecvPostReceiveReplenishCores receiver nextThread returnedSc\? st2\)\)" SeLe4n/Kernel/API.lean'
 # The re-donation pair is keyed on the arm's OWN three gates -- the pop's
 # `returned?`, the dequeued `Call`, and the donation's OWN resolver at the
@@ -10201,6 +10207,86 @@ run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_eq \(' SeLe4n
 # The run-segment membership lemmas, hand-anchored until Cut 8c's census.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_contains_prevCaller_runQueue_write$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_covers_receiveLeg$' SeLe4n/Kernel/API.lean
+# ---------------------------------------------------------------------------
+# `v0.35.163` (RR8.12 Cut C3a): the `.call` and `.reply` arms declare scheduler
+# footprints, each over its own SM8.B write set (relocated to production) and a
+# replenish segment that mirrors the dispatch's own donation guard; the `.reply`
+# ARM's footprint sits over the dispatch's at the message each branch hands it.
+run_check "INVARIANT" rg -n '^def schedLockSet_endpointCallOnCore$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_endpointReplyOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_replyTransferOnCore \(' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+# RELATION: both segments DERIVED -- the run segment is the arm's SM8.B write set
+# (the confinement theorem is stated at it), the replenish segment the mirror of the
+# dispatch's own guard.  Mutation: keep `schedFootprintOfCores` and resolve either
+# segment a second way inside the body.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointCallOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores\n *\(endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase\n *executingCore st\)\n *\(endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase\n *executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_endpointReplyOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(endpointReplyDispatchWriteSet replier target msg executingCore st\)\n *\(endpointReplyDispatchReplenishCores replier target msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_replyTransferOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(replyTransferWriteSet replier callerTid mi regs msg executingCore st\)\n *\(replyTransferReplenishCores replier callerTid msg executingCore st\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The `.call` segment asks the donation's OWN guard at the WithCaps post-state, where
+# the dispatch asks it, and reads the two homes off the pre-state, where the dispatch
+# reads them -- so the pair and the migration's endpoints are the same expressions.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match callDonationSchedContext\? st. callerV.val receiverV.val with\n *\| some _ => \[determineTargetCore st caller, determineTargetCore st receiverTid\]\n *\| none => \[\]" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# NEGATIVE: the guard asked at the PRE-state is a proxy for the one the dispatch
+# reads (the leg may have changed the receiver's binding).  Declaration-bounded.
+# Mutation: ask `callDonationSchedContext?` of `st` instead of the leg's post-state.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointCallDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*callDonationSchedContext\? st callerV" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# The `.reply` segment reads the return's pair at the reply leg's POST-state through
+# the frame trigger the pop reads, and never a pre-state home (WS-HP HP10.8's
+# asymmetry is what a pre-state reading would reintroduce).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| \.ok _ => replyDonationReturnReplenishCores st1 rid target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyDispatchReplenishCores[^\n]*(\n([ \t][^\n]*)?)*determineTargetCore st " SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+# One owner for the pop's pair -- the two named home resolvers -- on BOTH reply-shaped
+# arms: the `.reply` dispatch's segment above and the `.replyRecv` pop component.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationReturnReplenishCores[^\n]*(\n([ \t][^\n]*)?)*\| some _ => \[replyDonationHolderHome st rid target, replyDonationRecipientHome st rid target\]" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_ok_none_frameHead \(' SeLe4n/Kernel/API.lean
+# NEGATIVE: the retired result-keyed pair must not come back, anywhere in code.
+run_negative_check "INVARIANT" rg -n 'replyRecvPopReplenishCores' SeLe4n tests
+# The ARM's write set branches on the seam's own predicate and, on the fault branch,
+# appends the outcome's core at the dispatch's post-state -- the member a footprint
+# over the dispatch alone would miss.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyTransferWriteSet[^\n]*(\n([ \t][^\n]*)?)*if threadHasPendingFault st callerTid then\n *faultReplyWriteSet replier callerTid mi regs executingCore st\n *else\n *endpointReplyDispatchWriteSet replier callerTid msg executingCore st" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultReplyWriteSet[^\n]*(\n([ \t][^\n]*)?)*\+\+ faultReplyApplyCores st. faulted \(decodeFaultReply tf.fault tf.context mi regs\)" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def faultReplyApplyCores[^\n]*(\n([ \t][^\n]*)?)*\| \.abandon => \[determineTargetCore st faulted\]" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# ...and none of the new declarations takes a core as a PARAMETER (the shape Cut
+# 8a-ii's first form had, and the RR2.4 / RR2.10 shapes these refine).
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def (endpointCallDispatchReplenishCores|schedLockSet_endpointCallOnCore|endpointReplyDispatchReplenishCores|schedLockSet_endpointReplyOnCore|replyTransferWriteSet|replyTransferReplenishCores|schedLockSet_replyTransferOnCore)[^\n]*(\n([ \t][^\n]*)?)*(donorHome|doneeHome|holderHome|ownerHome|replierHome|serverCore|callerHome)" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The coverage relations, each at the cores its migration ACTUALLY resolves, and the
+# two licences they read.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_covers_donation \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_covers_parametric \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyOnCore_covers_migration \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyOnCore_covers_donation \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyOnCore_covers_deschedule \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_covers_dispatch_of_no_fault$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_covers_dispatch_of_fault$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_contains_abandon_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_ok_migrates \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+# The empty segments are exact in BOTH directions: no lock declared, and no replenish
+# queue written by the live transition -- the licences composed from the leg frames,
+# the declined donation and the walk's own frame, which needs no object-store
+# hypothesis.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyOnCore_no_replenishQueue_of_no_head$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head$' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_replenishQueueOnCore_of_dispatch \(' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_replenishQueueOnCore \(' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_replenishQueueOnCore_of_no_donation$' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# The relocated write sets and the relocated frame must not come back to the staged
+# module: a write set a production footprint cannot read is the defect this cut
+# closes at four sites.
+run_negative_check "INVARIANT" rg -n '^def (endpointCallWriteSet|endpointCallDispatchChainWriteSet|endpointCallDispatchWriteSet|replyDonationDescheduleCores|endpointReplyDispatchWriteSet)\b' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_negative_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The witnesses: five live shapes in the IPC suite, with the RR2.4 parametric footprint
+# computed beside the derived one on the shape where the two part, and the fault
+# branch's abandon in the fault suite.
+run_check "INVARIANT" rg -n '\(a\) the replenish segment is the donation.s pair' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) NEGATIVE: the .* parametric shape declares two replenish locks on this state, the derived one none' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(d\) the arm.s footprint IS the dispatch.s on an unfaulted caller' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(e\) PAYOFF: the live ..reply. moves no replenishment on any core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'C3a: an abandon deschedules the faulted thread on its home core' tests/FaultHandlingSuite.lean
 # The witness drives three shapes through the live operations and computes the
 # `.receive` reading beside the live one on the shape where the two part; its two
 # MEASURED rows pin the register's WS-CB divergence and must flip when it closes.
@@ -15196,10 +15282,12 @@ run_negative_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_bootCore
 # WS-HP HP4.4: and through the TRIGGER, because the thread the step deschedules
 # is the holder the trigger resolves rather than the operation's argument.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*replyDonationDescheduleCores st rid" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st holder" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# WS-RR RR8.12 Cut C3a (`v0.35.163`): the deschedule cores are production now, beside
+# the two home resolvers they sit with.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st holder" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 # NEGATIVE: token-preserving -- it keeps the core list and resolves it on the
 # ARGUMENT, which names the answered caller: a thread this leg never deschedules.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st target" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyDonationDescheduleCores[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacementCores st target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
 # NEGATIVE: a fixed singleton core list is the presence-check version of the
 # claim -- it keeps the theorem and stops it being about the resolver.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*observableSlotsConfinedToCores st st. \[serverCore\]" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'

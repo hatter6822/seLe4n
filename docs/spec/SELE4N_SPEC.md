@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.162` (`lakefile.toml`) |
+| **Package version** | `0.35.163` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 399,995 across 334 Lean files |
-| **Test LoC** | 81,812 across 70 Lean test suites |
-| **Proved declarations** | 13,242 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 401,319 across 334 Lean files |
+| **Test LoC** | 81,967 across 70 Lean test suites |
+| **Proved declarations** | 13,282 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4546,6 +4546,40 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   it as the third instance of the passive/legacy split, `tests/SmpIpcSuite.lean`
   §3.29 (b) measures it beside the `.receive` step, and a cut that closes it must
   widen the segment in the same cut.  `maxLockSetSize` is unmoved.
+
+  **And the `.call` and `.reply` arms declare theirs, over write sets that now live
+  in production** (WS-RR RR8.12 Cut C3a, `v0.35.163`).
+  `schedLockSet_endpointCallOnCore` is `schedFootprintOfCores` of
+  `endpointCallDispatchWriteSet` — the arm's SM8.B write set — and of
+  `endpointCallDispatchReplenishCores`, the donation's pair read the way the
+  dispatch reads it: the guard `callDonationSchedContext?` at the WithCaps
+  post-state, the two homes off the pre-state.  `schedLockSet_endpointReplyOnCore`
+  is the same over `endpointReplyDispatchWriteSet` and
+  `endpointReplyDispatchReplenishCores`, the return's pair read at the reply leg's
+  post-state through the frame trigger the pop reads; and because the arm the API
+  runs is `replyTransferOnCore` (seL4's `doReplyTransfer` branch),
+  `schedLockSet_replyTransferOnCore` sits over the dispatch's footprint at the
+  message each branch hands it and adds, on an abandon, the faulted thread's own
+  home core — the member a dispatch-level footprint would miss.  The pop's pair has
+  one owner (`replyDonationReturnReplenishCores`, read by `.reply` and `.replyRecv`
+  alike; `replyRecvPopReplenishCores` is retired).  Coverage is by theorem at the
+  cores each migration actually resolves (`…_covers_donation` and
+  `…_covers_parametric` for the RR2.4 shape on the call side; `…_covers_migration`,
+  `…_covers_deschedule` and `…_covers_donation` on the reply side;
+  `…_covers_dispatch_of_no_fault`, `…_covers_dispatch_of_fault` and
+  `…_contains_abandon_runQueue_write` on the arm), and the empty segments are exact
+  in both directions over four new frames, among them the walk's
+  `propagatePipChainCrossCore_replenishQueueOnCore`, which needs no object-store
+  hypothesis.  The chain walks are in the run segments — each write set re-runs
+  the spine to the state its walk starts from and appends `pipChainWriteSet`
+  there, for `.call`, `.reply` and `.replyRecv` alike — with the
+  `pipChainStart_*` obligations adding the object domain's per-member TCB lock.
+  The RR2.10 parametric `.reply` footprint's executing-core member is an
+  over-declaration on a false justification (the reversion re-buckets each member
+  on its *home* core), which the derived form drops.  Five write sets and one
+  frame moved from the staged non-interference module to production, each leaving
+  a tombstone.  `tests/SmpIpcSuite.lean` §3.30 and `tests/FaultHandlingSuite.lean`
+  §7c are the witnesses.  `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

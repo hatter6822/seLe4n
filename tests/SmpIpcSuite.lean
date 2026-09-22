@@ -4612,6 +4612,134 @@ private def runReplyRecvFootprintChecks : IO Unit := do
              && !runnableOnSomeCore stOut donServer && !runningOnSomeCore stOut donServer
          | none => false)
 
+/-- **WS-RR RR8.12 Cut C3a**: the `.call` and `.reply` footprints, driven through the
+live operations on the shapes where their replenish segments are non-empty, empty by
+the guard, and empty by the path -- with the RR2.4 parametric footprint computed
+beside the derived one on the shape where the two part. -/
+private def runCallReplyFootprintChecks : IO Unit := do
+  IO.println "--- §3.30 WS-RR RR8.12 Cut C3a: the `.call` and `.reply` footprints ---"
+  let slot0 := SeLe4n.Slot.ofNat 0
+  let mi0 : MessageInfo := { length := 0, extraCaps := 0, label := 0 }
+  -- (a) a Call to a waiting passive server homed on another core: the donation
+  --     migrates the client's replenishment 0 -> 1, and the segment names the pair.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stFpPassiveBase) with
+  | none => assertBool "Cut C3a setup (a): the server's recv succeeds" false
+  | some (stRecv, _) =>
+    assertBool "(a) setup: the server waits on the endpoint, passive, homed on core 1"
+      (endpointCallReceiver? stRecv donEp == some donServer
+        && determineTargetCore stRecv donServer == c1
+        && (match stRecv.getTcb? donServer with
+            | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+    let seg := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    let callWriteSet := endpointCallDispatchWriteSet donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    let fp := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    assertBool "(a) the replenish segment is the donation's pair: [caller's home 0, server's home 1]"
+      (decide (seg = [c0, c1]))
+    assertBool "(a) the write set opens with the server's home and the caller's own core"
+      (decide (callWriteSet.take 2 = [c1, c0]))
+    assertBool "(a) the footprint names run-queue write locks on cores 0 and 1 and replenish-queue write locks on 0 and 1, and no other replenish lock"
+      (hasRunQueueWrite fp c0 && hasRunQueueWrite fp c1 && hasReplenishWrite fp c0
+        && hasReplenishWrite fp c1 && replenishMemberCount fp == 2)
+    -- The RR2.4 parametric footprint at the resolved cores, computed beside it.
+    let param := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    assertBool "(a) the derived footprint covers the RR2.4 parametric one at the resolved cores, member for member"
+      (param.all (fun p => decide (p ∈ fp)))
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    match resCall with
+    | .error e => assertBool s!"(a) the live `.call` must succeed (got {reprStr e})" false
+    | .ok _ =>
+      assertBool "(a) PAYOFF: the live `.call` migrated the client's replenishment to the server's home (0 -> 1)"
+        (replenishCountFor stCall c1 scClient == 1 && replenishCountFor stCall c0 scClient == 0)
+      assertBool "(a) PAYOFF: the affinity invariant holds after the Call"
+        (replenishAffinityConsistentB stCall)
+  -- (b) a Call from a legacy `.unbound` client: the guard declines, so the segment is
+  --     empty -- and the RR2.4 parametric shape is measured WIDER here.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stFpLegacyBase) with
+  | none => assertBool "Cut C3a setup (b): the server's recv succeeds" false
+  | some (stRecvL, _) =>
+    assertBool "(b) setup: the client holds no context to hand on"
+      (endpointCallDonatedSc? stRecvL donClient == none)
+    let segL := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    let fpL := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    assertBool "(b) the guard declines for an unbound caller, so the segment is empty and no replenish lock is declared"
+      (decide (segL = []) && replenishMemberCount fpL == 0)
+    assertBool "(b) ...while the run segment still names the server's home and the caller's core"
+      (hasRunQueueWrite fpL c0 && hasRunQueueWrite fpL c1)
+    let paramL := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    assertBool "(b) NEGATIVE: the RR2.4 parametric shape declares two replenish locks on this state, the derived one none"
+      (replenishMemberCount paramL == 2 && replenishMemberCount fpL == 0)
+    let (stCallL, resL) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    match resL with
+    | .error e => assertBool s!"(b) the live legacy `.call` must succeed (got {reprStr e})" false
+    | .ok _ =>
+      assertBool "(b) PAYOFF: the live `.call` moves no replenishment on any core"
+        (allCores.all (fun c =>
+          replenishCountFor stCallL c fpClient2Sc == replenishCountFor stRecvL c fpClient2Sc
+            && replenishCountFor stCallL c scClient == replenishCountFor stRecvL c scClient))
+  -- (c) a Call with no receiver waiting: the block path.
+  let segC := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+    AccessRightSet.empty slot0 c0 stFpPassiveBase
+  let fpC := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+    AccessRightSet.empty slot0 c0 stFpPassiveBase
+  assertBool "(c) with no receiver the segment is empty and the run segment is the caller's own core alone"
+    (endpointCallReceiver? stFpPassiveBase donEp == none && decide (segC = [])
+      && hasRunQueueWrite fpC c0 && !hasRunQueueWrite fpC c1 && replenishMemberCount fpC == 0)
+  -- (d) the `.reply` on the steady state: the server answers the first client from
+  --     core 1, and the pop returns the loaned context 1 -> 0.
+  match fpSteadyState stFpPassiveBase with
+  | none => assertBool "Cut C3a setup (d): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(d) setup: the server executes on core 1 holding the client's context, and the client carries no fault"
+      (determineExecutingCore stQ donServer == c1
+        && (match stQ.getTcb? donServer with
+            | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+        && !threadHasPendingFault stQ donClient)
+    let segD := endpointReplyDispatchReplenishCores donServer donClient IpcMessage.empty c1 stQ
+    let fpDisp := schedLockSet_endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    let fpD := schedLockSet_replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stQ
+    assertBool "(d) the replenish segment is the return's pair: [holder's home 1, client's home 0]"
+      (decide (segD = [c1, c0]))
+    assertBool "(d) the arm's footprint IS the dispatch's on an unfaulted caller"
+      (decide (fpD = fpDisp))
+    assertBool "(d) the footprint names replenish-queue write locks on cores 0 and 1, and run-queue write locks on the client's home and the server's placement"
+      (hasReplenishWrite fpD c0 && hasReplenishWrite fpD c1 && replenishMemberCount fpD == 2
+        && hasRunQueueWrite fpD c0 && hasRunQueueWrite fpD c1)
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stQ with
+    | .error e => assertBool s!"(d) the live `.reply` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(d) PAYOFF: the live `.reply` migrated the context back to the client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(d) PAYOFF: the affinity invariant holds after the reply"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(d) ...and the server the pop unbound is parked: `.unbound`, on no core"
+        (match stOut.getTcb? donServer with
+         | some s => s.schedContextBinding == SchedContextBinding.unbound
+             && !runnableOnSomeCore stOut donServer && !runningOnSomeCore stOut donServer
+         | none => false)
+  -- (e) the `.reply` on the legacy state: the answered frame heads no context.
+  match fpSteadyState stFpLegacyBase with
+  | none => assertBool "Cut C3a setup (e): recv, call, dispatch and second call succeed" false
+  | some stL =>
+    let segE := endpointReplyDispatchReplenishCores donServer donClient IpcMessage.empty c1 stL
+    let fpE := schedLockSet_replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stL
+    assertBool "(e) the server holds no loan, so the segment is empty and no replenish lock is declared"
+      (decide (segE = []) && replenishMemberCount fpE == 0)
+    assertBool "(e) ...while the run segment names the answered client's home"
+      (hasRunQueueWrite fpE c0)
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stL with
+    | .error e => assertBool s!"(e) the live legacy `.reply` must succeed (got {reprStr e})" false
+    | .ok (_, stOutE) =>
+      assertBool "(e) PAYOFF: the live `.reply` moves no replenishment on any core"
+        (allCores.all (fun c =>
+          replenishCountFor stOutE c fpClient2Sc == replenishCountFor stL c fpClient2Sc))
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4646,6 +4774,7 @@ def runSmpIpcChecks : IO Unit := do
   runReplyRecvHolderDescheduleChecks
   runPreReceiveReturnMigrationChecks
   runReplyRecvFootprintChecks
+  runCallReplyFootprintChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

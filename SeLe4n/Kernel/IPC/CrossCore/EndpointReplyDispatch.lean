@@ -240,6 +240,69 @@ theorem replyDonationRecipientHome_eq_target_of_no_origin (st : SystemState)
     obtain ⟨scId, holder⟩ := pair
     simp only [replyDonationRecipient_eq_of_no_origin st scId target (h scId holder hTrig)]
 
+/-- **WS-RR RR8.12 Cut C3a: the replenish-queue cores the reply path's donation
+return migrates between** — the two homes the dispatch hands
+`applyReplyDonationOnCore`, keyed on the trigger the pop itself reads
+(`replyFrameHeadHolder?`), and `[]` where the frame heads nothing, because there
+the return is the identity.
+
+One definition for both reply-shaped arms: the `.reply` dispatch's replenish
+segment reads it at the reply leg's post-state
+(`endpointReplyDispatchReplenishCores`, §6), and so does the `.replyRecv`
+footprint's pop component (`replyRecvHandoffReplenishCores`, `Kernel/API.lean`),
+whose pop resolves the same trigger at the same state
+(`replyRecvPopDonation_holder_eq_frameHead`).  Spelled through the two named home
+resolvers rather than through `determineTargetCore` directly, so the three readers
+those resolvers already keep in step — the dispatch, the affinity proof, the
+per-core write set — gain a fourth for free; `_of_head` is the expanded form the
+`.replyRecv` coverage consumes.  Declared here, beside the resolvers and below both
+askers, because a shared answer must be reachable from every asker. -/
+def replyDonationReturnReplenishCores (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : List CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | some _ => [replyDonationHolderHome st rid target, replyDonationRecipientHome st rid target]
+  | none => []
+
+/-- A frame that heads nothing returns nothing, so there is nothing to migrate. -/
+@[simp] theorem replyDonationReturnReplenishCores_of_no_head (st : SystemState)
+    (rid : SeLe4n.ReplyId) (target : SeLe4n.ThreadId)
+    (h : replyFrameHeadHolder? st rid = none) :
+    replyDonationReturnReplenishCores st rid target = [] := by
+  unfold replyDonationReturnReplenishCores; rw [h]
+
+/-- On the popping arm: the holder's home and the redirected recipient's, expanded
+through `replyDonationHolderHome_of_head` / `replyDonationRecipientHome_of_head`. -/
+theorem replyDonationReturnReplenishCores_of_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (h : replyFrameHeadHolder? st rid = some (scId, holder)) :
+    replyDonationReturnReplenishCores st rid target
+      = [determineTargetCore st holder,
+         determineTargetCore st (replyDonationRecipient st scId target)] := by
+  unfold replyDonationReturnReplenishCores
+  rw [h, replyDonationHolderHome_of_head st rid target scId holder h,
+    replyDonationRecipientHome_of_head st rid target scId holder h]
+
+/-- **WS-HP HP4.4: the cores the head-driven pop's deschedule may write.**
+
+The thread the pop deschedules is the *holder* the trigger resolves, not the
+operation's argument, so the core list is resolved through that same trigger.
+Naming the argument's placement would typecheck and describe a different thread
+entirely -- the answered caller, which this leg does not deschedule at all -- and
+that is the plan's SS3.8.2 hazard reaching an information-flow claim.
+
+Empty when the frame heads nothing, which is exact: there the step is the
+identity.
+
+Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the two home resolvers
+it sits with, so the production `.reply` write set can read it; its confinement
+theorem `applyReplyDonationOnCore_confinedToCores` stays in
+`InformationFlow/NonInterferenceCrossCore.lean`, because
+`observableSlotsConfinedToCores` is that module's predicate. -/
+def replyDonationDescheduleCores (st : SystemState) (rid : SeLe4n.ReplyId) : List CoreId :=
+  match replyFrameHeadHolder? st rid with
+  | none => []
+  | some (_, holder) => descheduleAtPlacementCores st holder
+
 /-- WS-RR RR2.8 (characterisation): the cross-core donation return *is* the
 `replyDonationReturn?` case split — the return, the migration and the
 deschedule on the returning arm, the identity otherwise. -/
@@ -394,6 +457,37 @@ theorem applyReplyDonationOnCore_ok_decompose
         rw [hR] at h
         obtain ⟨n, hRes, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hR
         exact Or.inr ⟨scId, holderVtid, n, st', rfl, hRes, hPop, (Except.ok.inj h).symm⟩
+
+/-- **WS-RR RR8.12 Cut C3a (the licence)**: a successful return whose frame heads a
+context **is** the pop, then the SM5.H migration between exactly the two cores it
+was handed, then the holder's deschedule at its placement — so a footprint
+declaring the pair `replyDonationReturnReplenishCores` names declares the
+migration's own endpoints, not a proxy for them. -/
+theorem applyReplyDonationOnCore_ok_migrates (st st'' : SystemState) (rid : SeLe4n.ReplyId)
+    (targetVtid : SeLe4n.ValidThreadId) (holderHome ownerHome : CoreId)
+    (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId)
+    (hHead : replyFrameHeadHolder? st rid = some (scId, holder))
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    ∃ st', st'' = descheduleAtPlacement
+      (migrateSchedContextReplenishment st' scId holderHome ownerHome) holder := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with
+    ⟨hNone, _⟩ | ⟨scId', holderVtid, _, st', hHead', _, _, hEq⟩
+  · exact absurd (hHead.symm.trans hNone) (by simp)
+  · obtain ⟨rfl, rfl⟩ := Prod.mk.inj (Option.some.inj (hHead'.symm.trans hHead))
+    exact ⟨st', hEq⟩
+
+/-- **WS-RR RR8.12 Cut C3a (frame)**: and where the frame heads nothing the return
+writes no replenish queue, because it writes nothing at all. -/
+theorem applyReplyDonationOnCore_replenishQueueOnCore_of_no_head (st st'' : SystemState)
+    (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId) (holderHome ownerHome : CoreId)
+    (hNone : replyFrameHeadHolder? st rid = none)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'')
+    (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with
+    ⟨_, hEq⟩ | ⟨scId, holderVtid, _, _, hHead, _, _, _⟩
+  · rw [hEq]
+  · exact absurd (hNone.symm.trans hHead) (by simp)
 
 /-- WS-RR RR2.9 (frame): the cross-core donation return never advances the
 machine timer — the return writes objects, the migration writes replenish-queue
@@ -881,5 +975,446 @@ theorem endpointReply_donation_chain_length_bounded
       | some nextServer =>
         simp only [hsgi, List.singleton_append, List.length_cons]
         exact Nat.succ_le_succ (ih (PriorityInheritance.pipBoostWithWake st caller executingCore).1 nextServer)
+
+-- ============================================================================
+-- §6  WS-RR RR8.12 Cut C3a — the live `.reply` dispatch's per-core write set and
+--     its scheduler-domain footprint
+-- ============================================================================
+--
+-- `lockSet_endpointReply` is an object-domain `LockSet` and cannot name a per-core
+-- run-queue or replenish-queue slot at all, so
+-- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.reply` arm's
+-- scheduler writes as outside the footprint the RR7.12 seam acquires.  This
+-- section declares the DISPATCH's: the arm's SM8.B write set (relocated here from
+-- the staged `InformationFlow/NonInterferenceCrossCore.lean`, whose confinement
+-- theorem `endpointReplyCrossCoreDispatch_confinedToCores` is stated at it and
+-- stays there) as the run segment, and the donation return's own two cores as the
+-- replenish segment.  The ARM the API runs is `replyTransferOnCore` — seL4's
+-- `doReplyTransfer` branch, one module up in `IPC/CrossCore/Fault.lean` — and its
+-- footprint is declared there, over this one at the message each branch hands the
+-- dispatch.  Inert until the bracket cut wires `schedLockSetForSyscall`.
+
+/-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
+the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
+same recorded-server resolution, same server-core resolution, same donation
+return — so the walk is keyed where the dispatch keys it: on the *recorded
+server* at the *post-donation* state.
+
+Three legs on the success path: the answered caller's home core, the recorded
+server's own core, and the reverted chain's home cores. Every arm on which the
+dispatch fails closed returns `[]`, which is exact — those arms return the
+pre-state unchanged.
+
+Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
+so the scheduler-domain footprint `schedLockSet_endpointReplyOnCore` can read it; its
+confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
+`observableSlotsConfinedToCores` is that module's predicate. -/
+def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) : List CoreId :=
+  match endpointReplyOnCore replier target msg executingCore st with
+  | (_, .error _) => []
+  | (st1, .ok _) =>
+      match recordedReplyServer? st target with
+      | some expected =>
+          match SeLe4n.ThreadId.toValid? expected with
+          | some _expectedV =>
+              -- **WS-HP HP4.4**: the mirror follows the dispatch onto the answered
+              -- frame and the answered caller, including the arm where there is no
+              -- frame to pop and only the reply leg and the chain walk run.
+              match answeredReplyObject? st target with
+              | none =>
+                  ([determineTargetCore st target]
+                    ++ pipChainWriteSet st1 expected executingCore st1.objectIndex.length)
+              | some rid =>
+                match SeLe4n.ThreadId.toValid? target with
+                | none => []
+                | some targetV =>
+                  -- **WS-HP HP10.7**: the destination home is the redirected
+                  -- recipient's, as the live dispatch passes it -- the write set
+                  -- mirrors the dispatch's control flow, so it has to mirror the
+                  -- same resolver or the two name different cores.
+                  match applyReplyDonationOnCore st1 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) with
+                  | .error _ => []
+                  | .ok st2 =>
+                      -- `v0.35.37`: the donation return's leg is the descheduled
+                      -- thread's **placement**, read off the same resolver the step
+                      -- uses, so the write set and the transition cannot name
+                      -- different cores.  It was `determineExecutingCore st
+                      -- expected`, which answers `bootCoreId` for a queued server —
+                      -- a core the step does not write and, worse, one it would have
+                      -- written had the proxy been the fact.  It is resolved at
+                      -- `st1` because that is the state the donation return runs on,
+                      -- and through the trigger because the thread it deschedules is
+                      -- the trigger's holder.
+                      ([determineTargetCore st target]
+                        ++ replyDonationDescheduleCores st1 rid
+                        ++ pipChainWriteSet st2 expected executingCore
+                             st2.objectIndex.length)
+          | none => []
+      | none => []
+
+/-- **WS-RR RR8.12 Cut C3a**: the replenish-queue cores the live `.reply` dispatch's
+donation return migrates between, recovered from the pre-state by mirroring
+`endpointReplyCrossCoreDispatch`'s own control flow exactly as
+`endpointReplyDispatchWriteSet` does — the same reply leg, the same recorded-server
+validation, the same answered frame, the same `toValid?`, the same return — and
+then the return's own pair at the reply leg's post-state
+(`replyDonationReturnReplenishCores st1 rid target`), which is the state the pop
+runs on and reads its trigger at.  Every arm on which the dispatch migrates nothing
+returns `[]`: a failed leg, no recorded server, a server or target that does not
+validate, no answered frame, a return that refuses, and a frame that heads no
+context.
+
+Why the return's own state and not the syscall's pre-state: WS-HP HP4 keys the pop
+on the frame at the state the pop runs on, and the recipient it redirects to
+(`replyDonationRecipient`) is decided there too — reading either at the pre-state
+is the footprint/transition asymmetry WS-HP HP10.8 registered for the
+object-domain origin member.  Re-running the leg is what makes this footprint's
+resolution and the transition's one computation, which is the discipline Cut C2
+set for `.replyRecv`. -/
+def endpointReplyDispatchReplenishCores (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) : List CoreId :=
+  match endpointReplyOnCore replier target msg executingCore st with
+  | (_, .error _) => []
+  | (st1, .ok _) =>
+      match recordedReplyServer? st target with
+      | some expected =>
+          match SeLe4n.ThreadId.toValid? expected with
+          | some _ =>
+              match answeredReplyObject? st target with
+              | none => []
+              | some rid =>
+                match SeLe4n.ThreadId.toValid? target with
+                | none => []
+                | some targetV =>
+                  match applyReplyDonationOnCore st1 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) with
+                  | .error _ => []
+                  | .ok _ => replyDonationReturnReplenishCores st1 rid target
+          | none => []
+      | none => []
+
+/-- The segment once the dispatch has reached its return: the return's own pair at
+the reply leg's post-state.  The one unfolding every consumer reads. -/
+theorem endpointReplyDispatchReplenishCores_eq_of_return (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st st1 st2 : SystemState)
+    (sgi : Option (CoreId × SgiKind)) (expected : SeLe4n.ThreadId)
+    (expectedV : SeLe4n.ValidThreadId) (rid : SeLe4n.ReplyId)
+    (targetV : SeLe4n.ValidThreadId)
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hSrv : recordedReplyServer? st target = some expected)
+    (hEV : SeLe4n.ThreadId.toValid? expected = some expectedV)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hTV : SeLe4n.ThreadId.toValid? target = some targetV)
+    (hRet : applyReplyDonationOnCore st1 rid targetV (replyDonationHolderHome st1 rid target)
+      (replyDonationRecipientHome st1 rid target) = .ok st2) :
+    endpointReplyDispatchReplenishCores replier target msg executingCore st
+      = replyDonationReturnReplenishCores st1 rid target := by
+  unfold endpointReplyDispatchReplenishCores
+  simp only [hReply, hSrv, hEV, hRid, hTV, hRet]
+
+/-- Where the answered frame heads no context — no frame at all, or a frame with
+no `.head` link at the state the pop reads it — the segment is empty on every arm,
+whatever the dispatch's other readings answered. -/
+theorem endpointReplyDispatchReplenishCores_of_no_head (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st st1 : SystemState)
+    (sgi : Option (CoreId × SgiKind))
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hNoHead : ∀ rid, answeredReplyObject? st target = some rid →
+      replyFrameHeadHolder? st1 rid = none) :
+    endpointReplyDispatchReplenishCores replier target msg executingCore st = [] := by
+  unfold endpointReplyDispatchReplenishCores
+  simp only [hReply]
+  cases hSrv : recordedReplyServer? st target with
+  | none => rfl
+  | some expected =>
+    simp only []
+    cases hEV : SeLe4n.ThreadId.toValid? expected with
+    | none => rfl
+    | some _ =>
+      simp only []
+      cases hRid : answeredReplyObject? st target with
+      | none => rfl
+      | some rid =>
+        simp only []
+        cases hTV : SeLe4n.ThreadId.toValid? target with
+        | none => rfl
+        | some targetV =>
+          simp only []
+          cases hRet : applyReplyDonationOnCore st1 rid targetV
+              (replyDonationHolderHome st1 rid target)
+              (replyDonationRecipientHome st1 rid target) with
+          | error e => rfl
+          | ok st2 =>
+            simp only []
+            exact replyDonationReturnReplenishCores_of_no_head st1 rid target (hNoHead rid hRid)
+
+/-- **WS-RR RR8.12 Cut C3a**: the scheduler-domain footprint of the live `.reply`
+dispatch — the object-store table write lock, the run-queue write locks of every
+core the dispatch writes (the answered caller's home, the holder's placement when
+the pop deschedules it, and the home of each priority-inheritance chain member the
+reversion re-buckets), and the replenish-queue write locks of the two cores the
+donation return migrates between.
+
+**Every core is derived; nothing is a parameter.**  The run segment is
+`endpointReplyDispatchWriteSet`, the arm's own SM8.B write set, which
+`endpointReplyCrossCoreDispatch_confinedToCores` is stated at — so the footprint and
+the confinement claim cannot name different cores (Cut 7's rule).  The replenish
+segment is `endpointReplyDispatchReplenishCores`, the return's own pair by
+construction.  Both mirror the dispatch's own control flow.
+
+**The chain walk is in the run segment, not left to the dynamic extension.**
+`endpointReplyDispatchWriteSet` appends `pipChainWriteSet` at the post-return state
+the reversion really starts from, so every run queue it re-buckets is a static
+member here; what `pipChainStart_endpointReply`'s dynamic walker still adds is the
+object domain's per-member TCB write lock.  The RR2.10 parametric
+`endpointReplyCrossCoreDispatchSchedLockSet` is the shape this refines, and this
+footprint deliberately does **not** cover it member for member: that form declares
+the executing core's run queue on a justification that is false — the reversion
+re-buckets each member on its *home* core, and nothing in the dispatch writes the
+replier's own core — so the parametric member is a sound over-declaration this
+derived form drops.  What the parametric shape declares *correctly* — the
+donation-return footprint at the resolved cores — this one covers
+(`…_covers_donation`), and that is the relation the RR2.10 lemmas rest on. -/
+def schedLockSet_endpointReplyOnCore (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (endpointReplyDispatchWriteSet replier target msg executingCore st)
+    (endpointReplyDispatchReplenishCores replier target msg executingCore st)
+
+-- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
+-- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
+-- footprint's own arguments, so a consumer reaches for the shared lemma directly.
+
+/-- **WS-RR RR8.12 Cut C3a**: whenever the dispatch commits, the answered caller's
+home core is a run-queue write member — it is the head of the arm's own write set
+on both committing arms, since the reply leg wakes the caller there. -/
+theorem schedLockSet_endpointReplyOnCore_contains_target_runQueue_write
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st st' : SystemState) (sgi : Option (CoreId × SgiKind))
+    (hDisp : endpointReplyCrossCoreDispatch replier target msg executingCore st
+      = (st', .ok sgi)) :
+    (SchedLockId.runQueue ⟨determineTargetCore st target⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointReplyCrossCoreDispatch at hDisp
+  unfold endpointReplyDispatchWriteSet
+  cases hRep : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res =>
+    rw [hRep] at hDisp
+    cases res with
+    | error e => simp at hDisp
+    | ok replySgi? =>
+      simp only [] at hDisp ⊢
+      cases hSrv : recordedReplyServer? st target with
+      | none => rw [hSrv] at hDisp; simp at hDisp
+      | some expected =>
+        rw [hSrv] at hDisp
+        simp only [] at hDisp ⊢
+        cases hEV : SeLe4n.ThreadId.toValid? expected with
+        | none => rw [hEV] at hDisp; simp at hDisp
+        | some _ =>
+          rw [hEV] at hDisp
+          simp only [] at hDisp ⊢
+          cases hRid : answeredReplyObject? st target with
+          | none => simp
+          | some rid =>
+            rw [hRid] at hDisp
+            simp only [] at hDisp ⊢
+            cases hTV : SeLe4n.ThreadId.toValid? target with
+            | none => rw [hTV] at hDisp; simp at hDisp
+            | some targetV =>
+              rw [hTV] at hDisp
+              simp only [] at hDisp ⊢
+              cases hRet : applyReplyDonationOnCore st1 rid targetV
+                  (replyDonationHolderHome st1 rid target)
+                  (replyDonationRecipientHome st1 rid target) with
+              | error e => rw [hRet] at hDisp; simp at hDisp
+              | ok st2 => simp
+
+/-- **WS-RR RR8.12 Cut C3a (coverage, the deschedule)**: on the returning arm the
+footprint names the run-queue write lock of every core the pop's deschedule may
+write — `replyDonationDescheduleCores`, the holder's placement at the reply leg's
+post-state, read through the same trigger the step deschedules through. -/
+theorem schedLockSet_endpointReplyOnCore_covers_deschedule (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st st1 st2 : SystemState)
+    (sgi : Option (CoreId × SgiKind)) (expected : SeLe4n.ThreadId)
+    (expectedV : SeLe4n.ValidThreadId) (rid : SeLe4n.ReplyId)
+    (targetV : SeLe4n.ValidThreadId) (c : CoreId)
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hSrv : recordedReplyServer? st target = some expected)
+    (hEV : SeLe4n.ThreadId.toValid? expected = some expectedV)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hTV : SeLe4n.ThreadId.toValid? target = some targetV)
+    (hRet : applyReplyDonationOnCore st1 rid targetV (replyDonationHolderHome st1 rid target)
+      (replyDonationRecipientHome st1 rid target) = .ok st2)
+    (hPlaced : c ∈ replyDonationDescheduleCores st1 rid) :
+    (SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointReplyDispatchWriteSet
+  simp only [hReply, hSrv, hEV, hRid, hTV, hRet]
+  simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
+  exact Or.inl (Or.inr hPlaced)
+
+/-- **WS-RR RR8.12 Cut C3a (coverage, the migration)**: on the returning arm whose
+frame heads a context, the footprint covers `migrateSchedContextReplenishmentLockSet`
+member for member — at the two cores the dispatch hands the return, which are the
+two the segment names (`applyReplyDonationOnCore_ok_migrates` is the licence that
+they are the migration's own endpoints).  Stated without a placement, because the
+migration happens whether or not the holder sits on a core. -/
+theorem schedLockSet_endpointReplyOnCore_covers_migration (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st st1 st2 : SystemState)
+    (sgi : Option (CoreId × SgiKind)) (expected : SeLe4n.ThreadId)
+    (expectedV : SeLe4n.ValidThreadId) (rid : SeLe4n.ReplyId)
+    (targetV : SeLe4n.ValidThreadId) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId)
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hSrv : recordedReplyServer? st target = some expected)
+    (hEV : SeLe4n.ThreadId.toValid? expected = some expectedV)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hTV : SeLe4n.ThreadId.toValid? target = some targetV)
+    (hRet : applyReplyDonationOnCore st1 rid targetV (replyDonationHolderHome st1 rid target)
+      (replyDonationRecipientHome st1 rid target) = .ok st2)
+    (hHead : replyFrameHeadHolder? st1 rid = some (scId, holder)) :
+    ∀ p ∈ migrateSchedContextReplenishmentLockSet (replyDonationHolderHome st1 rid target)
+             (replyDonationRecipientHome st1 rid target),
+      p ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
+  intro p hp
+  simp only [migrateSchedContextReplenishmentLockSet, List.mem_cons, List.not_mem_nil,
+    or_false] at hp
+  have hSeg := endpointReplyDispatchReplenishCores_eq_of_return replier target msg executingCore
+    st st1 st2 sgi expected expectedV rid targetV hReply hSrv hEV hRid hTV hRet
+  have hPair : replyDonationReturnReplenishCores st1 rid target
+      = [replyDonationHolderHome st1 rid target, replyDonationRecipientHome st1 rid target] := by
+    unfold replyDonationReturnReplenishCores; rw [hHead]
+  rcases hp with h | h <;> subst h <;>
+  · refine (mem_schedFootprintOfCores_replenishQueue_iff _ _ _).mpr ?_
+    rw [hSeg, hPair]
+    simp
+
+/-- **WS-RR RR8.12 Cut C3a (coverage, the RR2.10 shape)**: with the holder placed
+on a core, the footprint covers the RR2.10 donation-return footprint
+`applyReplyDonationOnCoreSchedLockSet` at the resolved cores member for member —
+the deschedule's run-queue lock and the migration's two replenish-queue locks —
+which is the relation `endpointReplyCrossCoreDispatchSchedLockSet_covers_donation`
+states for the parametric form. -/
+theorem schedLockSet_endpointReplyOnCore_covers_donation (replier target : SeLe4n.ThreadId)
+    (msg : IpcMessage) (executingCore : CoreId) (st st1 st2 : SystemState)
+    (sgi : Option (CoreId × SgiKind)) (expected : SeLe4n.ThreadId)
+    (expectedV : SeLe4n.ValidThreadId) (rid : SeLe4n.ReplyId)
+    (targetV : SeLe4n.ValidThreadId) (scId : SeLe4n.SchedContextId)
+    (holder : SeLe4n.ThreadId) (c : CoreId)
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hSrv : recordedReplyServer? st target = some expected)
+    (hEV : SeLe4n.ThreadId.toValid? expected = some expectedV)
+    (hRid : answeredReplyObject? st target = some rid)
+    (hTV : SeLe4n.ThreadId.toValid? target = some targetV)
+    (hRet : applyReplyDonationOnCore st1 rid targetV (replyDonationHolderHome st1 rid target)
+      (replyDonationRecipientHome st1 rid target) = .ok st2)
+    (hHead : replyFrameHeadHolder? st1 rid = some (scId, holder))
+    (hPlaced : c ∈ replyDonationDescheduleCores st1 rid) :
+    ∀ p ∈ applyReplyDonationOnCoreSchedLockSet c (replyDonationHolderHome st1 rid target)
+             (replyDonationRecipientHome st1 rid target),
+      p ∈ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
+  have hSeg := endpointReplyDispatchReplenishCores_eq_of_return replier target msg executingCore
+    st st1 st2 sgi expected expectedV rid targetV hReply hSrv hEV hRid hTV hRet
+  have hPair : replyDonationReturnReplenishCores st1 rid target
+      = [replyDonationHolderHome st1 rid target, replyDonationRecipientHome st1 rid target] := by
+    unfold replyDonationReturnReplenishCores; rw [hHead]
+  unfold applyReplyDonationOnCoreSchedLockSet schedLockSet_endpointReplyOnCore
+  rw [hSeg, hPair]
+  refine schedFootprintOfCores_subset (fun c' hc' => ?_) (fun _ h => h)
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hc'
+  subst hc'
+  unfold endpointReplyDispatchWriteSet
+  simp only [hReply, hSrv, hEV, hRid, hTV, hRet]
+  simp only [List.mem_append, List.mem_cons, List.not_mem_nil, or_false]
+  exact Or.inl (Or.inr hPlaced)
+
+/-- **WS-RR RR8.12 Cut C3a (the empty segment, footprint side)**: where the
+answered frame heads no context the footprint names no replenish-queue lock —
+over-declaring is sound and not free (SM8.D's CC-5), and
+`endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head` is the licence that
+the transition writes none there either. -/
+theorem schedLockSet_endpointReplyOnCore_no_replenishQueue_of_no_head
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st st1 : SystemState) (sgi : Option (CoreId × SgiKind))
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hNoHead : ∀ rid, answeredReplyObject? st target = some rid →
+      replyFrameHeadHolder? st1 rid = none) (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointReplyOnCore replier target msg executingCore st := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [endpointReplyDispatchReplenishCores_of_no_head replier target msg executingCore st st1 sgi
+    hReply hNoHead] at this
+  simp at this
+
+/-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: and where the
+answered frame heads no context the live dispatch writes no replenish queue — the
+reply leg never does (`endpointReplyOnCore_replenishQueueOnCore`), the return is
+the identity there (`applyReplyDonationOnCore_replenishQueueOnCore_of_no_head`), and
+the reversion re-buckets run queues alone
+(`propagatePipChainCrossCore_replenishQueueOnCore`).  The refusal arms commit
+nothing.  So the empty segment is exact, not merely narrow. -/
+theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st st1 stDisp : SystemState) (sgi : Option (CoreId × SgiKind))
+    (res : Except KernelError (Option (CoreId × SgiKind)))
+    (hReply : endpointReplyOnCore replier target msg executingCore st = (st1, .ok sgi))
+    (hNoHead : ∀ rid, answeredReplyObject? st target = some rid →
+      replyFrameHeadHolder? st1 rid = none)
+    (hDisp : endpointReplyCrossCoreDispatch replier target msg executingCore st = (stDisp, res))
+    (c : CoreId) :
+    stDisp.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  have hLeg : st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+    have h := endpointReplyOnCore_replenishQueueOnCore replier target msg executingCore st c
+    rw [hReply] at h
+    exact h
+  unfold endpointReplyCrossCoreDispatch at hDisp
+  simp only [hReply] at hDisp
+  cases hSrv : recordedReplyServer? st target with
+  | none =>
+    rw [hSrv] at hDisp; simp only [] at hDisp
+    rw [← (Prod.mk.inj hDisp).1]
+  | some expected =>
+    rw [hSrv] at hDisp; simp only [] at hDisp
+    cases hEV : SeLe4n.ThreadId.toValid? expected with
+    | none =>
+      rw [hEV] at hDisp; simp only [] at hDisp
+      rw [← (Prod.mk.inj hDisp).1]
+    | some _ =>
+      rw [hEV] at hDisp; simp only [] at hDisp
+      cases hRid : answeredReplyObject? st target with
+      | none =>
+        rw [hRid] at hDisp; simp only [] at hDisp
+        rw [← (Prod.mk.inj hDisp).1,
+          PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+        exact hLeg
+      | some rid =>
+        rw [hRid] at hDisp; simp only [] at hDisp
+        cases hTV : SeLe4n.ThreadId.toValid? target with
+        | none =>
+          rw [hTV] at hDisp; simp only [] at hDisp
+          rw [← (Prod.mk.inj hDisp).1]
+        | some targetV =>
+          rw [hTV] at hDisp; simp only [] at hDisp
+          cases hRet : applyReplyDonationOnCore st1 rid targetV
+              (replyDonationHolderHome st1 rid target)
+              (replyDonationRecipientHome st1 rid target) with
+          | error e =>
+            rw [hRet] at hDisp; simp only [] at hDisp
+            rw [← (Prod.mk.inj hDisp).1]
+          | ok st2 =>
+            rw [hRet] at hDisp; simp only [] at hDisp
+            rw [← (Prod.mk.inj hDisp).1,
+              PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore,
+              applyReplyDonationOnCore_replenishQueueOnCore_of_no_head st1 st2 rid targetV _ _
+                (hNoHead rid hRid) hRet c]
+            exact hLeg
 
 end SeLe4n.Kernel

@@ -606,22 +606,11 @@ theorem notificationSignalBoundOnCore_confinedToCores (notificationId : SeLe4n.O
 -- §3 SM6.A — the endpoint call
 -- ============================================================================
 
-/-- SM8.B.2: **the cores a cross-core endpoint call may write** — the receiver's
-home core (when a receiver is waiting, so the call rendezvouses and wakes it)
-together with the caller's own core (where the caller blocks).
-
-This is the two-element write set that motivates `observableSlotsConfinedToCores`:
-in the interesting case the two are different cores, and no single-core
-confinement statement covers the transition. Both are read from the pre-state,
-via SM6.A's own `endpointCallReceiver?` — the same pre-resolution
-`lockSet_endpointCall` uses to decide whether the receiver-TCB write lock is in
-the footprint, so the declared information-flow write set and the declared 2PL
-footprint agree on which receiver is meant. -/
-def endpointCallWriteSet (st : SystemState) (endpointId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  match endpointCallReceiver? st endpointId with
-  | some receiver => [determineTargetCore st receiver, executingCore]
-  | none => [executingCore]
+-- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallWriteSet` moved to
+-- `IPC/CrossCore/EndpointCall.lean`, beside the resolver it reads
+-- (`endpointCallReceiver?`), so the production scheduler footprint
+-- `schedLockSet_endpointCallOnCore` can read it.  The confinement theorem below
+-- stays here: `observableSlotsConfinedToCores` is this module's predicate.
 
 /-- SM8.B.2 (**the flagship two-core instantiation**): a cross-core endpoint
 call's per-core writes stay inside `endpointCallWriteSet`.
@@ -1415,27 +1404,11 @@ theorem ipcUnwrapCaps_confinedToCores (msg : IpcMessage)
     (ipcUnwrapCaps_preserves_machine msg receiverRoot slotBase grantRight
       st st' summary hStep)
 
-/-- SM8.B.2: the WithCaps call leaves the bare call's run queues in place — every
-arm either *is* the bare call's post-state or is that state after an
-`ipcUnwrapCaps`, which preserves the scheduler. -/
-theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
-    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot)
-    (executingCore : CoreId) (st : SystemState) :
-    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
-        receiverSlotBase executingCore st).1.scheduler
-      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
-  unfold endpointCallWithCapsOnCore
-  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
-  | mk stCall res =>
-    cases res with
-    | error e => rfl
-    | ok sgi =>
-      simp only []
-      repeat' split
-      all_goals first
-        | rfl
-        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+-- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallWithCapsOnCore_scheduler_eq`
+-- moved to `IPC/CrossCore/EndpointCallDispatch.lean` §3, beside the leg it frames:
+-- the `.call` footprint's exactness licence composes it, and a staged frame is one
+-- a production footprint cannot read.  `endpointCallWithCapsOnCore_machine_eq`
+-- below stays, having no production consumer.
 
 /-- SM8.B.2: and the register banks, by the same case analysis. -/
 theorem endpointCallWithCapsOnCore_machine_eq (endpointId : SeLe4n.ObjId)
@@ -1482,50 +1455,11 @@ theorem endpointCallWithCapsOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         receiverSlotBase executingCore st))
   simpa using h
 
-/-- SM8.B.2: **the chain leg the live `.call` actually walks**, recovered from
-the pre-state by mirroring `endpointCallCrossCoreDispatch`'s own control flow —
-same receiver resolution, same WithCaps call, same `applyCallDonation` — so the
-walk is keyed on the *resolved receiver* at the *post-donation* state, which is
-where the dispatch keys it. Every arm on which the dispatch does not walk a
-chain returns `[]`. -/
-def endpointCallDispatchChainWriteSet
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
-    (st : SystemState) : List CoreId :=
-  let maybeReceiver := match st.getEndpoint? endpointId with
-    | some ep => ep.receiveQ.head
-    | none => none
-  match endpointCallWithCapsOnCore endpointId caller msg endpointRights
-      receiverSlotBase executingCore st with
-  | (_, .error _) => []
-  | (st', .ok _) =>
-      match maybeReceiver with
-      | some receiverTid =>
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerV, some receiverV =>
-          -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
-          -- chain state named here is the state the dispatch really walks from.
-          match applyCallDonationOnCore st' callerV receiverV
-              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
-          | .error _ => []
-          | .ok st'' =>
-              pipChainWriteSet st'' receiverTid executingCore st''.objectIndex.length
-        | _, _ => []
-      | none => []
-
-/-- SM8.B.2: **the cores the live cross-core `.call` may write** — the endpoint
-call's own two-core set, plus the chain the dispatch really walks. A function of
-the dispatch's own arguments, so it can be evaluated at a call site rather than
-supplied by hand. -/
-def endpointCallDispatchWriteSet
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
-    (st : SystemState) : List CoreId :=
-  endpointCallWriteSet st endpointId executingCore
-    ++ endpointCallDispatchChainWriteSet endpointId caller msg endpointRights
-        receiverSlotBase executingCore st
+-- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointCallDispatchChainWriteSet` and
+-- `endpointCallDispatchWriteSet` moved to `IPC/CrossCore/EndpointCallDispatch.lean`
+-- §3, beside the dispatch they mirror, so the production scheduler footprint
+-- `schedLockSet_endpointCallOnCore` can read them.  The confinement theorem below
+-- stays here: `observableSlotsConfinedToCores` is this module's predicate.
 
 /-- SM8.B.2 (**the live `.call` bound**): `endpointCallCrossCoreDispatch` — the
 function `API.dispatchWithCap`'s `.call` arm routes through — writes no core
@@ -1618,7 +1552,12 @@ theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous (endpointId : SeLe4n.
         receiverSlotBase executingCore st
       = endpointCallLiveWriteSet st endpointId executingCore stDon receiverTid := by
   unfold endpointCallDispatchWriteSet endpointCallDispatchChainWriteSet endpointCallLiveWriteSet
-  simp only [hWith, hRecv, hCallerV, hRecvV, hDon]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => rw [hEp] at hRecv; simp at hRecv
+  | some ep =>
+    rw [hEp] at hRecv
+    simp only [] at hRecv
+    simp only [hWith, hRecv, hCallerV, hRecvV, hDon]
 
 /-- SM8.B.2 (**the live `.call` non-interference**): the syscall arm the kernel
 really runs on a cross-core `Call` is invisible to any core outside its write
@@ -1655,20 +1594,11 @@ theorem endpointCallCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingCo
 -- Legs two and three can each name a core the reply's own write set does not, so
 -- §4's theorem never bounded the live arm (PR #861 review round 4).
 
-/-- **WS-HP HP4.4: the cores the head-driven pop's deschedule may write.**
-
-The thread the pop deschedules is the *holder* the trigger resolves, not the
-operation's argument, so the core list is resolved through that same trigger.
-Naming the argument's placement would typecheck and describe a different thread
-entirely -- the answered caller, which this leg does not deschedule at all -- and
-that is the plan's SS3.8.2 hazard reaching an information-flow claim.
-
-Empty when the frame heads nothing, which is exact: there the step is the
-identity. -/
-def replyDonationDescheduleCores (st : SystemState) (rid : SeLe4n.ReplyId) : List CoreId :=
-  match replyFrameHeadHolder? st rid with
-  | none => []
-  | some (_, holder) => descheduleAtPlacementCores st holder
+-- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `replyDonationDescheduleCores` moved to
+-- `IPC/CrossCore/EndpointReplyDispatch.lean` §1, beside the two home resolvers it
+-- sits with, so the production `.reply` write set can read it.  The confinement
+-- theorem below stays here: `observableSlotsConfinedToCores` is this module's
+-- predicate.
 
 /-- SM8.B.2 / WS-RR RR2.8, corrected at `v0.35.37`: the cross-core donation
 **return** writes at most the core the state **places** the returning server on.
@@ -1731,61 +1661,11 @@ theorem applyReplyDonationOnCore_confinedToCores (st st' : SystemState)
           (migrateSchedContextReplenishment_confinedToCores stRet scId holderHome ownerHome))
       (descheduleAtPlacement_confinedToCores stMig holderVtid.val)
 
-/-- SM8.B.2: **the cores the live cross-core `.reply` may write**, recovered from
-the pre-state by mirroring `endpointReplyCrossCoreDispatch`'s own control flow —
-same recorded-server resolution, same server-core resolution, same donation
-return — so the walk is keyed where the dispatch keys it: on the *recorded
-server* at the *post-donation* state.
-
-Three legs on the success path: the answered caller's home core, the recorded
-server's own core, and the reverted chain's home cores. Every arm on which the
-dispatch fails closed returns `[]`, which is exact — those arms return the
-pre-state unchanged. -/
-def endpointReplyDispatchWriteSet (replier target : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : CoreId) (st : SystemState) : List CoreId :=
-  match endpointReplyOnCore replier target msg executingCore st with
-  | (_, .error _) => []
-  | (st1, .ok _) =>
-      match recordedReplyServer? st target with
-      | some expected =>
-          match SeLe4n.ThreadId.toValid? expected with
-          | some _expectedV =>
-              -- **WS-HP HP4.4**: the mirror follows the dispatch onto the answered
-              -- frame and the answered caller, including the arm where there is no
-              -- frame to pop and only the reply leg and the chain walk run.
-              match answeredReplyObject? st target with
-              | none =>
-                  ([determineTargetCore st target]
-                    ++ pipChainWriteSet st1 expected executingCore st1.objectIndex.length)
-              | some rid =>
-                match SeLe4n.ThreadId.toValid? target with
-                | none => []
-                | some targetV =>
-                  -- **WS-HP HP10.7**: the destination home is the redirected
-                  -- recipient's, as the live dispatch passes it -- the write set
-                  -- mirrors the dispatch's control flow, so it has to mirror the
-                  -- same resolver or the two name different cores.
-                  match applyReplyDonationOnCore st1 rid targetV
-                      (replyDonationHolderHome st1 rid target)
-                      (replyDonationRecipientHome st1 rid target) with
-                  | .error _ => []
-                  | .ok st2 =>
-                      -- `v0.35.37`: the donation return's leg is the descheduled
-                      -- thread's **placement**, read off the same resolver the step
-                      -- uses, so the write set and the transition cannot name
-                      -- different cores.  It was `determineExecutingCore st
-                      -- expected`, which answers `bootCoreId` for a queued server —
-                      -- a core the step does not write and, worse, one it would have
-                      -- written had the proxy been the fact.  It is resolved at
-                      -- `st1` because that is the state the donation return runs on,
-                      -- and through the trigger because the thread it deschedules is
-                      -- the trigger's holder.
-                      ([determineTargetCore st target]
-                        ++ replyDonationDescheduleCores st1 rid
-                        ++ pipChainWriteSet st2 expected executingCore
-                             st2.objectIndex.length)
-          | none => []
-      | none => []
+-- **WS-RR RR8.12 Cut C3a (`v0.35.163`)**: `endpointReplyDispatchWriteSet` moved to
+-- `IPC/CrossCore/EndpointReplyDispatch.lean` §6, beside the dispatch it mirrors, so
+-- the production scheduler footprint `schedLockSet_endpointReplyOnCore` can read
+-- it.  The confinement theorem below stays here: `observableSlotsConfinedToCores`
+-- is this module's predicate.
 
 /-- SM8.B.2 (**the live `.reply` bound**): `endpointReplyCrossCoreDispatch` — the
 function `API.dispatchWithCap`'s `.reply` arm routes through — writes no core

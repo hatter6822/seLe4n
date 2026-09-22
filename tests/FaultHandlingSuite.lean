@@ -1424,6 +1424,12 @@ private def replyGate : SyscallGate :=
 private def replyCapH : Capability :=
   { target := .replyCap replyH, rights := AccessRightSet.ofList [.read, .write] }
 
+/-- WS-RR RR8.12 Cut C3a: does a scheduler-domain footprint name this core's run-queue
+write lock? -/
+private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
 /-- WS-RR RR4.14/RR4.15: the seam under test — a fault handler answers through
 the **ordinary reply syscall**, which is the only reply a handler has.  Before
 this seam existed, `dispatchWithCap` woke the faulted thread `.ready` with its
@@ -1442,6 +1448,26 @@ private def runReplySeamChecks : IO Unit := do
         ((afterFault.getReply? replyH).bind (·.caller) == some faulter)
       assertBool "pre: the seam's own predicate agrees"
         (threadHasPendingFault afterFault faulter)
+      -- WS-RR RR8.12 Cut C3a: the ARM's scheduler-domain footprint on the fault
+      -- branch -- the dispatch's write set at the empty message plus, on an abandon,
+      -- the faulted thread's own home core, where `faultAbandonOnCore` deschedules it.
+      let dispatchWriteSet := endpointReplyDispatchWriteSet handler faulter IpcMessage.empty c1 afterFault
+      let abandonWriteSet := replyTransferWriteSet handler faulter abandonInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      let restartWriteSet := replyTransferWriteSet handler faulter restartInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      let fpAbandon := schedLockSet_replyTransferOnCore handler faulter abandonInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      assertBool "C3a: the dispatch's own write set opens with the faulted thread's home, where the reply leg wakes it"
+        (decide (dispatchWriteSet.take 1 = [c0]))
+      assertBool "C3a: on the fault branch the arm's write set is the dispatch's plus the outcome's -- nothing on a restart, the faulted thread's home on an abandon"
+        (decide (restartWriteSet = dispatchWriteSet ++ []) && decide (abandonWriteSet = dispatchWriteSet ++ [c0]))
+      assertBool "C3a: an abandon deschedules the faulted thread on its home core, and that run-queue write lock is a member"
+        (hasRunQueueWriteLock fpAbandon c0)
+      assertBool "C3a: the fault branch's replenish segment is the dispatch's at the empty message -- here none, the handler holding no loan"
+        (decide (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault
+            = endpointReplyDispatchReplenishCores handler faulter IpcMessage.empty c1 afterFault)
+          && (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault).isEmpty)
       -- The restart reply, through the live dispatch.
       match dispatchWithCap replyDecoded handler replyGate replyCapH afterFault with
       | .ok (_, stD) =>
