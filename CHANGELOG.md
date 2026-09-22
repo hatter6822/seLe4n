@@ -1,3 +1,99 @@
+## v0.35.168 — the three SchedContext arms declare theirs, and a duplicate resolver is retired
+
+WS-RR RR8.12 Cut C3b-ii: `.schedContextConfigure`, `.schedContextBind` and
+`.schedContextUnbind` declare scheduler-domain footprints —
+`schedLockSet_schedContextConfigureOnCore`, `schedLockSet_schedContextBindOnCore`
+and `schedLockSet_schedContextUnbindOnCore`, in
+`SeLe4n/Kernel/SyscallSchedFootprint.lean` for the reason `v0.35.167` states in
+that module's header, and **inert** until the bracket cut.
+
+### One question, two answers, and a docstring asserting otherwise
+
+`SchedContextOps.schedContextBoundThread?` has said since SM8.B that it is
+*"single-sourced here in production because two consumers need it and a second
+copy would drift: this module resolves the core to reschedule, and the
+information-flow write set `schedContextWriteSet` resolves the core to declare.
+Both must name the same thread or the declared bound is not the transition's."*
+
+It was not single-sourced.  The staged
+`InformationFlow/NonInterferenceCrossCore.lean` carried `schedContextSubject?`,
+clause for clause the same function, and `schedContextWriteSet` read *that* one —
+so the drift hazard was named at the owner while the second copy sat in the
+module the owner's docstring points at.  The copy is **deleted**; every reader
+asks the owner, by its own name rather than through an alias, because an alias is
+a second spelling and this is the cut that retires one.  A tree-wide negative
+refuses its return.
+
+### What each arm declares
+
+* **`.schedContextConfigure`** — the bound thread's home core's run-queue write
+  lock (the bucket propagation's) and the SC's home core's replenish-queue write
+  lock (the purge's).  Those are the **same** core whenever the SC is bound
+  (`schedContextConfigureReplenishCores_eq_writeSet_of_bound`), so one core
+  covers an operation with two scheduling effects; they part only for an unbound
+  SC, where the run segment is empty and the purge falls back to the boot core.
+  The replenish segment is keyed on the **SchedContext resolving**, not on its
+  being bound: an unbound SC has no home, the purge still runs on the boot core,
+  and a stale entry left by an earlier binding is exactly what it drops, so a
+  segment keyed on the binding would be false.
+* **`.schedContextBind`** — the bound thread's home core, with an **empty**
+  replenish segment: a bind moves no replenishment
+  (`schedContextBind_replenishQueueOnCore`).
+* **`.schedContextUnbind`** — the demoted thread's home core, the core actually
+  running it, and the executing core (the run segment SM8.B already had, the
+  home and running cores being genuinely different for an unbound-affinity
+  thread on a secondary core), plus a replenish segment with two arms.
+
+### The first segment in this family that is every core
+
+The unbind purges the SC's eligibility entry, and its **sweep** arm — reached
+when the bound TCB is already gone from the store — runs
+`purgeReplenishmentFromAllCores`, because with no `cpuAffinity` left to read
+there is no home core to name.  So `schedContextUnbindReplenishCores` answers
+`allCores` there and one core on the bound arm, both decided on the pre-state.
+
+That is exact rather than conservative, and the direction matters: a footprint
+naming only the home core would be **false** on the sweep arm.
+`tests/SmpCbsSuite.lean` §4.6 measures it on the live transition — the sweep
+fixture's entries sit on cores 1 and 2, the live unbind purges both, and the
+retired home-only reading (spelled as a `private def` in the suite and nowhere
+else) declares neither core 2 nor any second core at all.
+
+### Exactness, in both directions
+
+`observableSlotsConfinedToCores` covers six per-core slots and the replenish
+queue is not one of them, so a write set says nothing about replenishments and
+every segment needs its own statement.  `schedContextBind_replenishQueueOnCore`
+is an absence; `schedContextConfigure_replenishQueueOnCore_ne` and
+`schedContextUnbind_replenishQueueOnCore_ne_of_tcb` are frames — each arm writes
+the one replenish queue its own resolver names and no other — with
+`schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb` lifting the second
+through the scheduling point the per-core wrapper composes, and
+`schedContextConfigureBoundPropagate_replenishQueueOnCore` the frame the first
+needed.  The **sweep** arm needs no such statement and can have none: it writes
+every core, which is what its segment declares.
+
+### Relocations
+
+`schedContextWriteSet`, `schedContextBindWriteSet`, `schedContextUnbindWriteSet`
+and `schedContextUnbindOnCoreWriteSet` move from the staged non-interference
+module to production, byte-identical, with tombstones; the confinement theorems
+stay staged.  A Tier 3 anchor that pinned one of them at its old home is
+repointed rather than deleted — the SM8.B claim it carries (the unbind declares
+the running core as well as the home core) is unchanged.
+
+### Anchors
+
+Positives on the four write sets, the two replenish resolvers, the three
+footprints, the five exactness theorems, the four declaration halves, the
+same-core relation and the witness with its runner call; four relation anchors
+(each footprint **is** `schedFootprintOfCores` of its write set; the unbind's
+segment has an `allCores` arm; the configure's keys on the SchedContext
+resolving; the witness computes the retired reading beside the live one); two
+negatives (the four write sets must not return to the staged module; the
+duplicate resolver must not return anywhere).  Seven mutations, all decisive,
+each keeping every other token.
+
 ## v0.35.167 — the three arms whose own modules cannot name a `SchedLockId`
 
 WS-RR RR8.12 Cut C3b-i: the live `.tcbResume`, `.tcbSetPriority` /

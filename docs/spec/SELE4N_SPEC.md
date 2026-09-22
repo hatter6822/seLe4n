@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.167` (`lakefile.toml`) |
+| **Package version** | `0.35.168` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 403,351 across 336 Lean files |
-| **Test LoC** | 82,491 across 70 Lean test suites |
-| **Proved declarations** | 13,368 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 403,754 across 336 Lean files |
+| **Test LoC** | 82,595 across 70 Lean test suites |
+| **Proved declarations** | 13,385 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4677,6 +4677,39 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   beside the resolved one so the assertions discriminate — and
   `tests/SuspendResumeSuite.lean` SR-035 and
   `tests/PriorityManagementSuite.lean` PM-FP-01 drive the other two arms.
+  `maxLockSetSize` is unmoved.
+
+  **And the three SchedContext arms declare theirs** (WS-RR RR8.12 Cut C3b-ii,
+  `v0.35.168`).  `schedLockSet_schedContextConfigureOnCore`,
+  `schedLockSet_schedContextBindOnCore` and
+  `schedLockSet_schedContextUnbindOnCore` sit in the same module for the same
+  reason, each `schedFootprintOfCores` of its arm's own SM8.B write set — four
+  more moved out of the staged non-interference module — and of a replenish
+  segment read from the arm's own purge.  Three things the cut decided.  The
+  configure's segment keys on the **SchedContext resolving** rather than on its
+  being bound, because an unbound SC has no home, the purge falls back to the boot
+  core, and a stale entry from an earlier binding is what it drops; when the SC is
+  bound the purge and the re-bucket land on one core, so a single lock covers an
+  operation with two scheduling effects.  The unbind's segment is the first in
+  this family that is **every** core: its sweep arm, reached when the bound TCB is
+  already gone from the store, runs `purgeReplenishmentFromAllCores` because there
+  is no `cpuAffinity` left to read, and both arms are decided on the pre-state, so
+  the declaration is exact rather than conservative — a footprint naming only the
+  home core would be *false* there.  And the bind declares no replenish lock at
+  all.  Every narrowing has its theorem in both directions
+  (`schedContextBind_replenishQueueOnCore`,
+  `schedContextConfigure_replenishQueueOnCore_ne`,
+  `schedContextUnbind_replenishQueueOnCore_ne_of_tcb` and its per-core lift),
+  except the sweep arm, which needs none and can have none.
+
+  Declaring them found a duplicate:
+  `SchedContextOps.schedContextBoundThread?`'s docstring has said since SM8.B
+  that it is *"single-sourced here in production because two consumers need it
+  and a second copy would drift"*, and the staged non-interference module carried
+  `schedContextSubject?`, clause for clause the same function, which the write
+  set that docstring names read instead.  The copy is deleted and refused
+  tree-wide.  `tests/SmpCbsSuite.lean` §4.6 is the witness, computing the retired
+  home-only reading beside the live segment on the sweep fixture.
   `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`

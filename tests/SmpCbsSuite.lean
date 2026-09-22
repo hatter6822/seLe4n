@@ -1092,6 +1092,109 @@ private def runAffinityFootprintScenarios : IO Unit := do
         ((stB.scheduler.replenishQueueOnCore core2).entries.contains (scId0, 5000) &&
           !(stB.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
 
+/-- §4.6 (WS-RR RR8.12 Cut C3b-ii) the reading this cut had to reject: a
+one-core replenish segment for the unbind, keyed on the bound thread's home.
+
+It is right on the arm where the bound TCB resolves and **false** on the arm
+where it does not — with the TCB gone from the store there is no `cpuAffinity`
+left to read, `determineTargetCore` falls back to the boot core, and the
+transition sweeps every core instead (`purgeReplenishmentFromAllCores`).  Spelled
+here and nowhere else, so §4.6's assertions are known to discriminate. -/
+private def homeOnlyUnbindReplenishCores (st : SystemState) (scObjId : ObjId) :
+    List CoreId :=
+  match SchedContextOps.schedContextBoundThread? st scObjId with
+  | some tid => [determineTargetCore st tid]
+  | none => []
+
+/-- §4.6 **WS-RR RR8.12 Cut C3b-ii — the three SchedContext arms' resolved
+scheduler-domain footprints.**
+
+Four things this measures that no theorem states of a *state*.
+
+1. The unbind's replenish segment is `allCores` on the **sweep** arm and one
+   core on the bound arm, and the live transition agrees with each: on the sweep
+   fixture it purges core 2, which the home-only reading above does not declare.
+2. The configure's replenish segment is the SC's **home** core, which is the same
+   core its run segment names whenever the SC is bound — one core for an
+   operation with two scheduling effects.
+3. The bind declares no replenish lock at all, and writes none.
+4. Each footprint is `schedFootprintOfCores` of its arm's own write set, so the
+   run segments are the SM8.B ones rather than a second resolution. -/
+private def runSchedContextFootprintScenarios : IO Unit := do
+  IO.println "--- §4.6 Cut C3b-ii: the three SchedContext arms' scheduler footprints ---"
+  -- ── (1) the unbind, on both arms ──
+  let fpUnbindBound := schedLockSet_schedContextUnbindOnCore stCbs scId0.toObjId bootCoreId
+  let fpUnbindSweep := schedLockSet_schedContextUnbindOnCore stDangling scIdDangling.toObjId
+    bootCoreId
+  assertBool "pre: scId0's bound thread resolves and is homed on core 1"
+    ((SchedContextOps.schedContextBoundThread? stCbs scId0.toObjId == some tid0)
+      && determineTargetCore stCbs tid0 == core1
+      && (stCbs.getTcb? tid0).isSome)
+  assertBool "pre: scIdDangling names a thread with NO TCB — the sweep arm's shape"
+    ((SchedContextOps.schedContextBoundThread? stDangling scIdDangling.toObjId
+        == some tidDangling)
+      && (stDangling.getTcb? tidDangling).isNone)
+  assertBool "C3b-ii: the bound arm declares exactly the home core's replenish write lock"
+    (hasReplenishWriteLock fpUnbindBound core1
+      && allCores.all (fun c => c == core1 || !hasReplenishWriteLock fpUnbindBound c))
+  assertBool "C3b-ii: the SWEEP arm declares EVERY core's"
+    (allCores.all (fun c => hasReplenishWriteLock fpUnbindSweep c))
+  assertBool "C3b-ii: the retired home-only reading declares ONE core on the bound arm..."
+    ((homeOnlyUnbindReplenishCores stCbs scId0.toObjId).length == 1)
+  assertBool "C3b-ii: ...and one on the SWEEP arm too, where the live one names all — the narrowing is live in reverse"
+    ((homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).length == 1
+      && (schedContextUnbindReplenishCores stDangling scIdDangling.toObjId).length
+          == allCores.length)
+  -- ...and the live transition writes the cores the sweep segment names.
+  match SchedContextOps.schedContextUnbindOnCore scIdDanglingValid bootCoreId stDangling with
+  | .error e =>
+      assertBool s!"C3b-ii: the sweep-arm unbind must succeed (got {repr e})" false
+  | .ok (stS, _) =>
+      assertBool "C3b-ii: the live sweep purges core 1's entry"
+        ((stS.scheduler.replenishQueueOnCore core1).entries.isEmpty)
+      assertBool "C3b-ii: ...and core 2's, which the home-only reading never declared"
+        ((stS.scheduler.replenishQueueOnCore core2).entries.isEmpty
+          && !(homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).contains core2)
+  match SchedContextOps.schedContextUnbindOnCore scId0Valid bootCoreId stCbs with
+  | .error e =>
+      assertBool s!"C3b-ii: the bound-arm unbind must succeed (got {repr e})" false
+  | .ok (stB, _) =>
+      assertBool "C3b-ii: the bound arm purges the home core and leaves every other alone"
+        ((stB.scheduler.replenishQueueOnCore core1).entries.all (fun e => e.1 != scId0)
+          && allCores.all (fun c => c == core1 ||
+              (stB.scheduler.replenishQueueOnCore c).entries
+                == (stCbs.scheduler.replenishQueueOnCore c).entries))
+  -- ── (2) the configure ──
+  let fpConfigure := schedLockSet_schedContextConfigureOnCore stCbs scId0.toObjId
+  assertBool "C3b-ii: the configure declares the SC's home core's replenish write lock — the purge's"
+    (hasReplenishWriteLock fpConfigure core1)
+  assertBool "C3b-ii: ...and its run segment names the SAME core, so one lock covers both effects"
+    (hasRunQueueWriteLock fpConfigure core1
+      && decide (schedContextConfigureReplenishCores stCbs scId0.toObjId
+          = schedContextWriteSet stCbs scId0.toObjId))
+  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 5 0 0 stCbs with
+  | .error e =>
+      assertBool s!"C3b-ii: the configure must succeed (got {repr e})" false
+  | .ok ((), stC) =>
+      assertBool "C3b-ii: the live configure writes no replenish queue outside the declared core"
+        (allCores.all (fun c => c == core1 ||
+          (stC.scheduler.replenishQueueOnCore c).entries
+            == (stCbs.scheduler.replenishQueueOnCore c).entries))
+  -- ── (3) the bind ──
+  let fpBind := schedLockSet_schedContextBindOnCore stLifecycle tidLifecycle
+  assertBool "C3b-ii: the bind declares the bound thread's home core's run-queue write lock"
+    (hasRunQueueWriteLock fpBind (determineTargetCore stLifecycle tidLifecycle))
+  assertBool "C3b-ii: ...and NO replenish lock on any core"
+    (allCores.all (fun c => !hasReplenishWriteLock fpBind c))
+  match SchedContextOps.schedContextBind scIdLifecycleValid tidLifecycleValid stLifecycle with
+  | .error e =>
+      assertBool s!"C3b-ii: the bind must succeed (got {repr e})" false
+  | .ok ((), stBd) =>
+      assertBool "C3b-ii: ...and the live bind writes no replenish queue on any core"
+        (allCores.all (fun c =>
+          (stBd.scheduler.replenishQueueOnCore c).entries
+            == (stLifecycle.scheduler.replenishQueueOnCore c).entries))
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -1107,6 +1210,7 @@ def main : IO Unit := do
   runInventoryChecks
   runBindingLifecycleScenarios
   runAffinityFootprintScenarios
+  runSchedContextFootprintScenarios
   IO.println "=== SM5.H suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpCbs

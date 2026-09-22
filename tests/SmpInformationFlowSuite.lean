@@ -620,7 +620,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.schedulingCapacityRun
 #check @SeLe4n.Kernel.schedulingCapacityRun_singleton
 #check @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
-#check @SeLe4n.Kernel.schedContextSubject?
+#check @SeLe4n.Kernel.SchedContextOps.schedContextBoundThread?
 #check @SeLe4n.Kernel.schedContextWriteSet
 #check @SeLe4n.Kernel.schedContextUnbind_confinedToCores
 #check @SeLe4n.Kernel.schedContextUnbind_crossCoreNonInterference

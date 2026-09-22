@@ -3062,51 +3062,17 @@ theorem endpointSendCrossCoreDispatchChecked_crossCoreNonInterference
 -- makes them genuine remote writers, and a remote writer without a write set is
 -- exactly the gap this module exists to close.
 
-/-- SM8.B.2: the thread a SchedContext operation's scheduler effects act on,
-resolved from the pre-state — the SC's bound thread, if it has one. -/
-def schedContextSubject? (st : SystemState) (scObjId : SeLe4n.ObjId) :
-    Option SeLe4n.ThreadId :=
-  match st.getSchedContext? (SeLe4n.SchedContextId.ofObjId scObjId) with
-  | some sc => sc.boundThread
-  | none => none
-
-/-- SM8.B.2: **the cores `.schedContextUnbind` and `.schedContextConfigure` may
-write** — the bound thread's home core alone.
-
-Both have a single scheduling effect (clear-and-requeue, or re-bucket) and after
-this cut both land on `determineTargetCore` of the SC's bound thread. An SC with
-no bound thread has no scheduling effect at all, hence the empty set.
-
-**Not `.schedContextBind`**, which resolves its thread from an *argument*:
-binding rejects an SC that already has one (`sc.boundThread.isSome → .error
-.illegalState`), so on every success path this set is empty while bind does write
-a run queue. `schedContextBindWriteSet` is its write set. (The earlier wording
-here claimed to cover "every one of these operations", which was false for bind
-— PR #861 review round 14.) -/
-def schedContextWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) : List CoreId :=
-  match schedContextSubject? st scObjId with
-  | some tid => [determineTargetCore st tid]
-  | none => []
-
-/-- SM8.B.2: **the cores a `.schedContextUnbind` may write** — the subject's
-home core *and* the core actually running it.
-
-Deliberately **not** `schedContextWriteSet` (PR #861 review round 39/40). The
-two differ, and the difference is the defect this set exists to make visible:
-the run-queue re-bucket lands on the subject's **home** core, while the
-preemption guard clears `current` on the core actually **running** it. Those
-coincide whenever affinity is set — a thread is only dispatched on a core its
-affinity admits — and diverge for an unbound-affinity thread running on a
-secondary core, which is admitted (see `runningCoreOf?`).
-
-Keeping `schedContextWriteSet` at the singleton keeps `.schedContextConfigure`'s
-bound sharp: configure only re-buckets, so the running core is not in its
-footprint and declaring it would weaken a statement for no reason. -/
-def schedContextUnbindWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId) :
-    List CoreId :=
-  match schedContextSubject? st scObjId with
-  | some tid => determineTargetCore st tid :: (runningCoreOf? st tid).toList
-  | none => []
+-- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextWriteSet` and
+-- `schedContextUnbindWriteSet` moved to the production
+-- `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside the footprints whose run
+-- segments they are.  Same names, same namespace.
+--
+-- The resolver they read is **deleted** rather than moved: it was a second copy
+-- of `SchedContextOps.schedContextBoundThread?`, clause for clause, under a
+-- docstring on that one asserting it is "single-sourced here in production
+-- because two consumers need it and a second copy would drift" -- the drift
+-- hazard named at the owner while the second copy sat in this module.  Every
+-- reader asks the owner now.
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): unbinding writes no core
 outside `schedContextUnbindWriteSet`.
@@ -3130,7 +3096,7 @@ theorem schedContextUnbind_confinedToCores (vScId : SeLe4n.ValidObjId)
     (hStep : SchedContextOps.schedContextUnbind vScId st = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedContextUnbindWriteSet st vScId.val) := by
   unfold SchedContextOps.schedContextUnbind schedContextUnbindWriteSet
-    schedContextSubject? at *
+    SchedContextOps.schedContextBoundThread? at *
   split at hStep
   · next sc hSc _ =>
     simp only [hSc]
@@ -3193,16 +3159,9 @@ theorem schedContextUnbind_crossCoreNonInterference (ctx : LabelingContext)
     (schedContextUnbind_confinedToCores vScId st st' hStep) hShared
 
 
-/-- SM8.B.2: **the cores a `.schedContextBind` may write** — the bound thread's
-home core.
-
-Deliberately **not** `schedContextWriteSet`: bind rejects an SC that already has
-a bound thread (`sc.boundThread.isSome → .error .illegalState`), so on every
-success path `schedContextSubject?` is `none` and that set is empty — while bind
-genuinely writes a run queue. The thread is an argument here, so this reads it
-directly. -/
-def schedContextBindWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) : List CoreId :=
-  [determineTargetCore st tid]
+-- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextBindWriteSet` moved to the
+-- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_schedContextBindOnCore`.  Same name, same namespace.
 
 /-- SM8.B.2 (**the live `.schedContextBind` bound**): binding writes no core
 outside the bound thread's home core.
@@ -3469,7 +3428,8 @@ theorem schedContextConfigure_confinedToCores (vScId : SeLe4n.ValidObjId)
     (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
       = .ok ((), st')) :
     observableSlotsConfinedToCores st st' (schedContextWriteSet st vScId.val) := by
-  unfold SchedContextOps.schedContextConfigure schedContextWriteSet schedContextSubject? at *
+  unfold SchedContextOps.schedContextConfigure schedContextWriteSet
+    SchedContextOps.schedContextBoundThread? at *
   split at hStep
   · exact absurd hStep (by simp)
   · split at hStep
@@ -3606,19 +3566,10 @@ theorem schedContextConfigure_crossCoreNonInterference (ctx : LabelingContext)
     (schedContextConfigure_confinedToCores vScId budget period priority deadline domain
       st st' hObjInv hStep) hShared
 
-/-- SM8.B.2: **the cores the live `.schedContextUnbind` may write** — the demoted
-thread's home core, where the revocation re-buckets it, and the executing core,
-which runs the demotion's scheduling point inline.
-
-The scheduling point is what PR #861 review round 15 added: revoking a
-SchedContext drops the bound thread to its legacy priority, and the single-core
-transition cleared its `current` slot with nothing to follow. When the running
-core is remote the seam only *posts* its SGI, so the declared set
-over-approximates by one core on that path — over-approximating is the safe
-direction, and it is the shape `resumeThreadOnCoreWriteSet` already uses. -/
-def schedContextUnbindOnCoreWriteSet (st : SystemState) (scObjId : SeLe4n.ObjId)
-    (executingCore : CoreId) : List CoreId :=
-  schedContextUnbindWriteSet st scObjId ++ [executingCore]
+-- WS-RR RR8.12 Cut C3b-ii (`v0.35.168`): `schedContextUnbindOnCoreWriteSet` moved to
+-- the production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_schedContextUnbindOnCore`, whose run segment IS it.  Same name,
+-- same namespace; the confinement theorem below stays here.
 
 /-- SM8.B.2 (**the live `.schedContextUnbind` bound**): the per-core unbind
 writes no core outside the demoted thread's home and the executing core.
