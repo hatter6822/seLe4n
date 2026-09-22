@@ -1,3 +1,131 @@
+## v0.35.160 — the `.receive` replenish segment follows the donation's own resolver, and the binding frame lives where the resolver can see it
+
+WS-RR RR8.12 Cut C1: register row 55 is closed.  `v0.35.112` narrowed the
+`.receive` arm's replenish segment from *is there a queued sender* to *does the
+queued sender carry a `Call`*, and stopped one resolver short: a dequeued `Call`
+whose donation prerequisites fail — the receiver already holds a context, or the
+sender holds none — migrates nothing either, and the transition's own test for that
+is `callDonationSchedContext?`.  The segment keys on it now, through
+`receiveRendezvousDonatingSender?`, so such a `Call` declares no replenish-queue
+lock; `v0.35.112`'s own control fixture (the OD3.14 *active* server) is exactly that
+shape, and was declaring two.
+
+### What stood in the way, and what moved
+
+The row named two obstacles and both were rules this tree already carries.
+
+* **The frame was declared where the resolver could not see it.**  Narrowing on the
+  resolver means reading it on the syscall's pre-state while the transition reads
+  it at the post-receive-leg state, and what carries the answer across the leg is
+  the backward `sameSchedContextBindings` frame — declared in
+  `IPC/Invariant/Defs.lean`, whose closure `IPC/Operations/Donation.lean` does not
+  contain (nor the reverse).  *When a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer* (`v0.35.59`): the predicate and its
+  `refl` / `trans` / `of_objects_eq` live in `IPC/Operations/Endpoint.lean` now,
+  beside the two primitives that write the field they frame, with a tombstone in
+  `Defs.lean`; the two invariant consumers stay there, and the `SeLe4n.Kernel`
+  namespace is kept, so no call site was renamed.  Two members join the namespace:
+  the pointwise `of_objects_getElem_eq` (the wake of a `.ready` thread is
+  object-invisible without its table being *equal*) and `lookupTcb_backward`, the
+  frame read through the reader `callDonationSchedContext?` actually uses.
+* **The receive leg had no frame at all.**  The two theorems that needed one —
+  `endpointReceiveDual_preserves_donationBudgetTransfer` and
+  `…_donationOwnerUnique` — each inlined the whole rendezvous composition.  It is
+  extracted: `endpointReceiveDual_sameSchedContextBindings_of_rendezvous` and
+  `…_of_blocked` (stated from the state the pre-receive cleanup leaves, since the
+  cleanup *returns* a donation), with `endpointReceiveDual_ok_getEndpoint?` the
+  presence fact both branch on.  Both theorems are one case split over the frames —
+  281 lines became 260 that also carry the frames, which is the de-duplication that
+  is the evidence the frame was missing rather than merely unnamed.  The cross-core
+  leg the live arm runs has the same frame composed from the same primitives
+  (`endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous`, its WithCaps
+  twin, and `endpointReceiveDualWithCapsOnCore_preserves_objects_invExt`, which
+  the chain walk's replenish frame reads).
+
+### The bridge, the licence, the payoffs, the coverage
+
+`callDonationSchedContext?_some_of_sameSchedContextBindings` (`Donation.lean`,
+beside the resolver) pulls a post-state `some scId` back to a pre-state
+`some scId`.  That is the one direction a footprint needs — *the transition migrates
+⟹ the footprint declares* — and the only one the backward frame gives; the forward
+direction is neither given nor needed, since declaring on a `some` the transition
+then declines is merely wide.  Its contrapositive is what the segment consumes:
+`endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none`, a
+pre-state `none` is the post-state's answer.  Three payoffs at three units, because
+*a proxy is not the fact*: the donation step is the identity
+(`applyReceiveRendezvousDonation_eq_self_of_no_donation`, over the general
+`applyReceiveRendezvousDonation_of_no_donation`, whose two `ValidThreadId`
+promotions come from `lookupTcb_some_toValid?`), the arm's whole hand-off writes no
+replenish queue (`applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation`
+— **not** the identity, since OD3.14's chain walk still runs on a `Call`), and the
+footprint declares no replenish lock
+(`schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation`).
+`schedLockSet_endpointReceiveOnCore_covers_donation` is stated at the donation's own
+resolver **on its own state** — `hDon` is the post-receive-leg
+`callDonationSchedContext?`, the guard `applyCallDonationOnCore` migrates on —
+bridged back to the pre-state reading the segment keys on; hypothesised on the
+footprint's own reading it would be the footprint vouching for itself.  The licence
+theorem is `endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous`, with
+the pre-state `some` as a hypothesis; `_of_call_rendezvous` asserted the equality on
+a `Call` the resolver declines, where the segment is `[]`, and is refused tree-wide
+as `_of_rendezvous` was.
+
+### The witness, and what the sweep found
+
+`tests/SmpIpcSuite.lean` §3.26 drives three shapes through the live operations with
+**both** retired segments computed as `private def`s beside the live one: a `Call`
+to a passive server (both cores declared; the resolver's answer survives the leg,
+measured, and the donation hands the context over), a plain `Send` (the sender-keyed
+reading declares two cores, the live one none) and a `Call` to an active server (the
+`Call`-keyed reading declares two cores, the live one none, and the donation step
+moves no replenishment and hands nothing over).  34 assertions, all green, and the
+golden 4-core trace is byte-identical.
+
+The sweep that cut owed found the same over-declaration one lock domain over: the
+**object-domain** donation members (`receiveRendezvousDonatedSc?`,
+`endpointCallDonatedSc?`) declare a SchedContext write lock on a `Call` the resolver
+declines, at 55 call sites across nine files.  Not narrowed here — the
+reachable-bound proofs would be restated over the narrowed resolver — and
+registered as a table A row riding Cut C4, where every arm's members are restated
+once.
+
+### And a finding the reading for the next cut produced, measured and registered
+
+Reading the `.receive` arm for the `.replyRecv` footprint found the **fourth**
+SchedContext hand-off: the pre-receive donation return
+(`cleanupPreReceiveDonationChecked`, the block arm of `endpointReceiveDualOnCore`,
+so `.receive` and `.replyRecv`'s receive leg) rebinds a donated context to its owner
+across cores and migrates **no** replenishment.  The SM5.H constraint enumerates
+three hand-offs that migrate, which is the enumeration-for-derivation shape it warns
+about, one hand-off further on.  Measured by execution rather than inferred: a
+client on the boot core `Call`s a passive server homed on core 1, the server's
+`Recv` rendezvouses (donation and migration `0 → 1`), then the server issues a
+plain `Recv` on the empty endpoint — after it the client is `.bound` with its home
+on core 0 and its replenishment still on core 1, so
+`replenishQueueAffinityConsistent_smp` is false on a state three ordinary live
+operations reach.  No theorem claims the leg preserves it, which is how it was
+silent.  Registered in `docs/REGISTERED_DEBT.md` table A with the remedy — a
+migrated return on the block arm, block-path replenish members on both footprints
+resolved from `receivePreReturn?`, the leg's preservation theorem — as the cut
+after this one, because it changes a live transition and this cut does not.
+
+### Gates and documents
+
+Thirty-five new Tier 3 anchors (and three re-keyed): the renamed licence and its relation (the pre-state
+`some` hypothesis in the statement), the resolver's derivation, the retired
+`match receiveRendezvousCallSender?` spelling refused inside the definition, the
+bridge's direction, the relocation (a positive in `Endpoint.lean`, a negative in
+`Defs.lean`, the consumers pinned where they stay), the frames, the two
+invariant theorems citing the frames with the inlined `unfold` refused inside
+each, the coverage claim's post-state hypothesis, and the witness's second retired
+reading and its NEGATIVE.  `CLAUDE.md` / `AGENTS.md` record the closure as (5) of
+the RR8.12 replenish-segment constraint, with the six things new code must respect;
+the spec's `.receive` paragraph and the register follow.  The AK7 store census is
+unmoved by the relocation (a `Prop`-valued definition is specification wherever it
+sits), and the whole library and every executable build with no warnings.
+
+Refs: docs/REGISTERED_DEBT.md table A (row 55, closed; the object-domain row beneath it)
+
 ## v0.35.159 — the tests get faster without checking less, again
 
 Test-performance audit, the second (`v0.34.47` was the first).  Every gate

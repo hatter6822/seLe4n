@@ -354,6 +354,72 @@ theorem callDonationSchedContext?_of_donated_caller
   rw [hCB]
   rfl
 
+/-- **WS-RR RR8.12 Cut C1 (register row 55): the resolver's `some` answer transports
+BACKWARD across a binding-preserving step.**
+
+`sameSchedContextBindings st st'` says every post-state TCB pulls back to a pre-state
+TCB with the same binding, and `callDonationSchedContext?` reads nothing but two
+threads' bindings through `lookupTcb` — so a post-state `some scId` was already the
+pre-state's answer.  This is the direction a footprint needs and the only one the
+backward frame gives: the `.receive` arm's replenish segment is resolved on the
+syscall's PRE-state while WS-OD OD3.6's donation runs at the POST-receive-leg state,
+and a footprint is sound exactly when *the transition migrates ⟹ the footprint
+declares*, i.e. post `some` ⟹ pre `some`.  The forward direction (pre `some` ⟹ post
+`some`) is neither given by the frame nor needed: a footprint that declares on a
+pre-state `some` the transition then declines is wider than its operation, which is
+sound.
+
+Declared beside the resolver, which is why the frame moved down to
+`IPC/Operations/Endpoint.lean` in the same cut: *when a question has one owner and an
+asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`). -/
+theorem callDonationSchedContext?_some_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hPost : callDonationSchedContext? st' caller receiver = some scId) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext? at hPost ⊢
+  cases hR' : lookupTcb st' receiver with
+  | none => rw [hR'] at hPost; simp at hPost
+  | some rTcb' =>
+    rw [hR'] at hPost
+    simp only [] at hPost
+    obtain ⟨rTcb, hR, hRB⟩ := hSame.lookupTcb_backward receiver rTcb' hR'
+    rw [hR]
+    simp only []
+    cases hRB' : rTcb'.schedContextBinding with
+    | bound _ => rw [hRB'] at hPost; simp at hPost
+    | donated _ _ => rw [hRB'] at hPost; simp at hPost
+    | unbound =>
+      rw [hRB'] at hPost
+      simp only [] at hPost
+      rw [hRB, hRB']
+      simp only []
+      cases hC' : lookupTcb st' caller with
+      | none => rw [hC'] at hPost; simp at hPost
+      | some cTcb' =>
+        rw [hC'] at hPost
+        simp only [] at hPost
+        obtain ⟨cTcb, hC, hCB⟩ := hSame.lookupTcb_backward caller cTcb' hC'
+        rw [hC]
+        simp only []
+        rw [hCB]
+        exact hPost
+
+/-- **WS-RR RR8.12 Cut C1**: the contrapositive, in the shape the narrowed replenish
+segment consumes — a pre-state `none` is a post-state `none`, so a receive whose
+pre-state resolver declines migrates nothing at the state its donation runs on. -/
+theorem callDonationSchedContext?_none_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId)
+    (hPre : callDonationSchedContext? st caller receiver = none) :
+    callDonationSchedContext? st' caller receiver = none := by
+  cases hPost : callDonationSchedContext? st' caller receiver with
+  | none => rfl
+  | some scId =>
+    rw [callDonationSchedContext?_some_of_sameSchedContextBindings hSame caller receiver scId
+      hPost] at hPre
+    cases hPre
+
 /-- WS-RR RR2.1 (characterisation): the single-core call donation *is* the
 `callDonationSchedContext?` case split — `donateSchedContext` on the resolved
 SchedContext when there is one, the identity otherwise.  Everything the
@@ -931,6 +997,36 @@ def applyReceiveRendezvousDonation (st : SystemState)
   unfold applyReceiveRendezvousDonation
   rw [h]
   rfl
+
+/-- **WS-RR RR8.12 Cut C1**: and on a `Call` rendezvous whose donation the resolver
+DECLINES — the receiver already holds a context, or the dequeued caller holds none —
+the step is the identity too, for a different reason: the guard fires, the donation
+runs, and `applyCallDonationOnCore` is the identity on a `none` resolver in both its
+halves (`applyCallDonation_eq_ok_self_of_no_donation`; the migration arm is the `none`
+arm).  The two promotions are what the donation's own signature demands of the ids,
+and a thread `lookupTcb` resolves has one (`lookupTcb_some_toValid?`).  Stated on the
+guard's own state, so the `.receive` arm instantiates it at the post-receive-leg state
+its footprint's licence transports the resolver's answer to. -/
+theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (dequeuedV receiverV : SeLe4n.ValidThreadId)
+    (hDV : dequeued.toValid? = some dequeuedV) (hRV : receiver.toValid? = some receiverV)
+    (hNone : callDonationSchedContext? st dequeued receiver = none) :
+    applyReceiveRendezvousDonation st receiver dequeued = .ok st := by
+  unfold applyReceiveRendezvousDonation
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => simp only [Bool.false_eq_true, if_false]
+  | true =>
+    simp only [if_true]
+    unfold applyRendezvousCallDonation
+    rw [hDV, hRV]
+    simp only []
+    unfold applyCallDonationOnCore
+    have hNoneV : callDonationSchedContext? st dequeuedV.val receiverV.val = none := by
+      rw [SeLe4n.ThreadId.toValid?_some_val_eq dequeued dequeuedV hDV,
+        SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hRV]
+      exact hNone
+    rw [applyCallDonation_eq_ok_self_of_no_donation st dequeuedV receiverV hNoneV]
+    simp only [hNoneV]
 
 /-- WS-OD OD3.6: and on a `Call` rendezvous it is exactly the donation. -/
 @[simp] theorem applyReceiveRendezvousDonation_of_call (st : SystemState)

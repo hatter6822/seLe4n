@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.159.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.160.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7459,7 +7459,8 @@ code may assume:
   `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` — *the
   receive leg moves no thread's home core*, because `determineTargetCore` reads
   `cpuAffinity` and only `.tcbSetAffinity` writes it — and
-  `endpointReceiveHandoffReplenishCores_of_call_rendezvous` states that the pre-state
+  `endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous` (the
+  `_of_call_rendezvous` of this cut, re-keyed at Cut C1) states that the pre-state
   list **equals** the pair the donation resolves, not that it agrees with or
   over-approximates it.  So this *closes*, for `.receive`, the
   footprint/transition resolution asymmetry WS-HP HP10.8 registered for the reply
@@ -7815,48 +7816,70 @@ code may assume:
 
   (4) **The rename is the claim.**  `_of_rendezvous` asserted the
   segment/migration equality for *every* rendezvous, which on a plain `Send` is now
-  false (the segment is `[]`), so it is `_of_call_rendezvous` with the hypothesis the
-  name promises, and a Tier 3 negative refuses the retired spelling.  Its four
+  false (the segment is `[]`), so it became `_of_call_rendezvous` with the hypothesis
+  the name promises, and a Tier 3 negative refuses the retired spelling — and Cut C1
+  re-keyed it once more, to `_of_donating_call_rendezvous`, see (5).  Its four
   citations were swept, and the two positive anchors **failed loudly** at the rename —
   which is *sweep what was pinning the thing you deleted* working in the direction it
   is meant to.
 
-  (5) **The residual is a LAYERING defect, registered rather than glossed — and
-  the first statement of it was FALSE, which is the part worth keeping.**  A
-  dequeued `Call` whose donation prerequisites fail migrates nothing either, and the
-  transition's guard for that is `callDonationSchedContext?`; transporting its
-  pre-state answer across the receive leg is the backward `sameSchedContextBindings`
-  frame.  This item first said that frame's four per-primitive members, which sit in
-  `IPC/Invariant/Structural/DualQueueMembership.lean`, are unreachable from the
-  module that declares the footprint, "so the transport cannot be stated there at
-  all".  They are reachable: `EndpointReply.lean` → `EndpointCall` →
-  `Scheduler.Operations.PerCoreWake` → `PerCoreSwitchToThread` →
-  `PerCoreChooseThread` → `Scheduler.Invariant.PerCore` → `CrossSubsystem` →
-  `Capability.Invariant.Defs` → `IPC.Invariant` → `IPC.Invariant.Structural`, every
-  module production, with the first edge already present at `v0.35.111`.  **A
-  module's layer is a fact about the import closure, and a nine-edge path is not
-  visible in the two names at its ends** — RR8.4's *a plan row's premise is a
-  claim* a second time, and what catches it is this file's own *resolve the text
-  into the structure it stands for* applied to the module graph: compute the
-  closure, never infer it from paths — and the decisive check is cheaper still:
-  `#check` the name from a module that imports the asker and let the elaborator
-  answer, which is what settled this one.  What is actually left is two smaller
-  things.
-  **No** `sameSchedContextBindings` frame exists for `endpointReceiveDual` or
-  `endpointReceiveDualWithCaps` at all — the two theorems that need one
+  (5) **The residual was a LAYERING defect, registered rather than glossed — and
+  CLOSED at `v0.35.160` (WS-RR RR8.12 Cut C1, register row 55).**  A dequeued `Call`
+  whose donation prerequisites fail migrates nothing either, and the transition's
+  guard for that is `callDonationSchedContext?`; transporting its pre-state answer
+  across the receive leg is the backward `sameSchedContextBindings` frame.  Two
+  things stood in the way, and each was a rule this file already carries.  **The
+  frame was declared where the resolver could not see it**:
+  `IPC/Operations/Donation.lean`'s closure contained neither
+  `IPC/Invariant/Defs.lean` nor the reverse, so the bridge had no home beside the
+  resolver — *a shared answer must be reachable from every asker* (`v0.35.59`),
+  remedied the same way, the owner moved down.  The predicate and its `refl` /
+  `trans` / `of_objects_eq` live in `IPC/Operations/Endpoint.lean` now, beside the
+  two primitives that write the field they frame; the two invariant consumers stay
+  in `Defs.lean`, and the `SeLe4n.Kernel` namespace is kept so nothing was renamed.
+  **And the receive leg had no frame at all**: the two theorems that needed one
   (`endpointReceiveDual_preserves_donationBudgetTransfer`,
-  `endpointReceiveDual_preserves_donationOwnerUnique`) each inline the whole
-  rendezvous composition, so it must be **extracted**, which is a de-duplication and
-  the evidence the frame was missing rather than merely unnamed.  And
-  `IPC/Operations/Donation.lean`'s closure does not contain
-  `IPC/Invariant/Defs.lean` nor the reverse, so a bridge from that frame to
-  `callDonationSchedContext?` has no home beside the resolver — *that* is *a shared
-  answer must be reachable from every asker* (`v0.35.59`), with the same remedy,
-  move the owner down, keeping the `SeLe4n.Kernel` namespace so that nothing is
-  renamed.  It is table C's row with Cut 9 as its deadline.  So the further
-  narrowing is **available at a placement cost** rather than blocked, and it is
-  deferred because a relocation and a 130-line extraction are not a footprint
-  narrowing.
+  `…_donationOwnerUnique`) each inlined the whole rendezvous composition, so it was
+  extracted — `endpointReceiveDual_sameSchedContextBindings_of_rendezvous`, and
+  `…_of_blocked` from the state the pre-receive cleanup leaves — and both became one
+  case split over the frames, the de-duplication that is the evidence the frame was
+  missing rather than merely unnamed.  (This item first said the per-primitive
+  frames were unreachable from the footprint's module; they were, through a
+  nine-edge production path, and *a module's layer is a fact about the import
+  closure*.)  Six things new code must respect.  (a) **The segment keys on
+  `receiveRendezvousDonatingSender?`**: the `Call`-narrowed resolver narrowed once
+  more by `callDonationSchedContext?`, asked of the same two threads the transition
+  asks it of, on the pre-state.  (b) **The bridge is one direction, and it is the
+  right one**: `callDonationSchedContext?_some_of_sameSchedContextBindings` pulls a
+  post-state `some` back to a pre-state `some`, which is exactly *the transition
+  migrates ⟹ the footprint declares*; the forward direction is neither given by the
+  backward frame nor needed, since declaring on a `some` the transition then
+  declines is merely wide.  (c) **The licence is the leg's binding frame** —
+  `endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous` and its
+  WithCaps twin, composed from the per-primitive frames and the pointwise
+  `sameSchedContextBindings.of_objects_getElem_eq` for the wake of a `.ready`
+  thread — so a pre-state `none` is the post-state's answer
+  (`endpointReceiveDualWithCapsOnCore_callDonationSchedContext?_none_of_none`).
+  (d) **Three payoffs, at three units**: the donation step is the identity
+  (`applyReceiveRendezvousDonation_eq_self_of_no_donation`, over the general
+  `applyReceiveRendezvousDonation_of_no_donation` in `Donation.lean`), the arm's
+  whole hand-off writes no replenish queue
+  (`applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation` — not the
+  identity, since the chain walk still runs), and the footprint declares no
+  replenish lock
+  (`schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation`).
+  (e) **The coverage claim is stated at the donation's OWN resolver on its OWN
+  state**: `schedLockSet_endpointReceiveOnCore_covers_donation`'s `hDon` is the
+  post-receive-leg resolver, the guard `applyCallDonationOnCore` migrates on, bridged
+  back to the pre-state reading the segment keys on — hypothesised on the
+  footprint's own reading it would be the footprint vouching for itself.  The
+  licence theorem is `endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous`
+  now, with the pre-state `some` as a hypothesis, and `_of_call_rendezvous` is
+  refused tree-wide for the reason `_of_rendezvous` was.  (f) **The object-domain
+  members were NOT narrowed, and that is registered**: `receiveRendezvousDonatedSc?`
+  and `endpointCallDonatedSc?` declare a SchedContext write lock for a donation the
+  resolver declines, at 55 call sites across nine files, and ride Cut C4's
+  restatement of every arm's members.
 
   (6) **The claim is made about the step the ARM runs, not only about the donation.**
   `API.lean`'s `.receive` arm calls `applyReceiveRendezvousHandoff`, which is the
@@ -7868,14 +7891,18 @@ code may assume:
   `pipChainSchedFootprint`), so the replenish segment's own licence is still the
   donation half; both exist so neither can be read as the other.
 
-  (7) **The witness computes the retired reading beside the live one.**
-  `tests/SmpIpcSuite.lean` §3.26 drives both shapes from one base state through the
-  live operations and shows the two readings **agreeing** on the `Call` shape (the
-  control) and **disagreeing** on the `Send` shape, where the retired one declares
-  two cores and the live one none.  It then asserts the donation step moves no
-  replenishment, on the replenish *entries* rather than on state equality, because
-  that is the proposition the footprint is about — `SystemState` has no
-  `DecidableEq`, and reaching for one would have been a claim about the wrong thing.
+  (7) **The witness computes the retired readings beside the live one.**
+  `tests/SmpIpcSuite.lean` §3.26 drives three shapes through the live operations —
+  a `Call` to a passive server (both cores declared, and the donation hands the
+  context over at the state it runs on), a plain `Send` (the sender-keyed reading
+  declares two cores, the live one none) and, since Cut C1, a `Call` to an
+  **active** server (the `Call`-keyed reading declares two cores, the live one
+  none) — with both retired segments computed as `private def`s beside the live
+  one, so every assertion is known to discriminate.  Each empty segment is asserted
+  against the donation step moving no replenishment, on the replenish *entries*
+  rather than on state equality, because that is the proposition the footprint is
+  about — `SystemState` has no `DecidableEq`, and reaching for one would have been
+  a claim about the wrong thing.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every

@@ -525,6 +525,22 @@ theorem lookupTcb_of_objects_of_not_reserved
   unfold lookupTcb SystemState.getTcb?
   rw [if_neg hNotReserved, hObj]
 
+/-- **WS-RR RR8.12 Cut C1**: a thread `lookupTcb` resolves is promotable — the
+reserved-id refusal `lookupTcb` performs is exactly the test `ThreadId.toValid?`
+makes, so a resolved id has a `ValidThreadId` form that reads back to itself.  What
+lets a statement over a resolved thread be handed to a primitive whose signature
+demands the promoted form (`applyCallDonationOnCore`) without a second reserved-id
+hypothesis. -/
+theorem lookupTcb_some_toValid?
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : lookupTcb st tid = some tcb) :
+    ∃ v : SeLe4n.ValidThreadId, tid.toValid? = some v ∧ v.val = tid := by
+  have hNR : tid.isReserved = false := by
+    simpa using lookupTcb_some_not_reserved st tid tcb h
+  obtain ⟨v, hV⟩ :=
+    Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff tid).mpr hNR)
+  exact ⟨v, hV, SeLe4n.ThreadId.toValid?_some_val_eq tid v hV⟩
+
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
 theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -1180,6 +1196,84 @@ question; two spellings of it would be free to drift, and the store-chain
 decomposition is the *only* description of the operation. -/
 @[inline] def donationFirstPush (donorTcb : TCB) (scId : SeLe4n.SchedContextId) : Bool :=
   donorTcb.schedContextBinding.ownScId? == some scId
+
+-- ============================================================================
+-- The SchedContext-binding frame (IPC de-threading D6; declared here since
+-- WS-RR RR8.12 Cut C1, `v0.35.160`)
+-- ============================================================================
+
+/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
+post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
+This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
+needs: it is preserved by every core IPC transition that never writes a binding (all but
+the donation primitives `donateSchedContext` / `returnDonatedSchedContext`, which is why
+it is declared beside them).  Stated backward (post ⟹ pre) so it composes directly with
+the store-frame style used throughout the de-threading proofs.
+
+**WS-RR RR8.12 Cut C1 (`v0.35.160`, register row 55): declared HERE, in the operations
+layer, and not in `IPC/Invariant/Defs.lean` where it was born.**
+`callDonationSchedContext?` (`IPC/Operations/Donation.lean`) is the resolver every
+donation-carrying footprint and transition read, and the `.receive` arm's replenish
+segment has to transport its pre-state answer across the receive leg — which is
+exactly this frame.  `Donation.lean`'s import closure did not contain `Defs.lean`, nor
+the reverse, so the bridge from the frame to the resolver had no home beside the
+resolver: *when a question has one owner and an asker that cannot see it, the owner
+is in the wrong layer* (`v0.35.59`).  The predicate reads two model records and
+nothing of the invariant layer, so this is where it always belonged; its two
+invariant consumers (`donationBudgetTransfer_of_sameSchedContextBindings`,
+`donationOwnerUnique_of_sameSchedContextBindings`) stay in `Defs.lean`, and the
+`SeLe4n.Kernel` namespace is kept so that no call site is renamed. -/
+def sameSchedContextBindings (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding
+
+namespace sameSchedContextBindings
+
+/-- Reflexivity: a state has the same bindings as itself. -/
+theorem refl (st : SystemState) : sameSchedContextBindings st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two binding-preserving steps. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
+    sameSchedContextBindings st st'' := by
+  intro tid tcb'' hObj''
+  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
+  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
+  exact ⟨tc, hObj, hEq.trans hEq'⟩
+
+/-- A transition that leaves the object store untouched (a scheduler-only step such
+as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    sameSchedContextBindings st st' :=
+  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
+
+/-- **WS-RR RR8.12 Cut C1**: the pointwise form of `of_objects_eq` — a step invisible
+to every object-store lookup preserves all bindings.  The cross-core `wakeThread` of
+an already-`.ready` thread is such a step (`wakeThread_objects_getElem_eq_of_ready`)
+without its table being *equal* to the pre-state's, which the whole-table form cannot
+see. -/
+theorem of_objects_getElem_eq {st st' : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
+    sameSchedContextBindings st st' :=
+  fun tid tcb' hObj => ⟨tcb', by rw [← h tid.toObjId]; exact hObj, rfl⟩
+
+/-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
+`lookupTcb` at the same thread with an equal binding — the frame read through the
+reader `callDonationSchedContext?` actually uses.  `lookupTcb` is `getTcb?` under the
+reserved-id refusal, and the refusal is a fact about the id alone, so it carries
+across states unchanged. -/
+theorem lookupTcb_backward {st st' : SystemState} (h : sameSchedContextBindings st st')
+    (tid : SeLe4n.ThreadId) (tcb' : TCB) (hL : lookupTcb st' tid = some tcb') :
+    ∃ tcb, lookupTcb st tid = some tcb ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding := by
+  obtain ⟨tcb, hObj, hEq⟩ := h tid tcb' (lookupTcb_some_objects st' tid tcb' hL)
+  exact ⟨tcb, lookupTcb_of_objects_of_not_reserved st tid tcb hObj
+    (lookupTcb_some_not_reserved st' tid tcb' hL), hEq⟩
+
+end sameSchedContextBindings
 
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 

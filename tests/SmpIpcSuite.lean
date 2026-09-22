@@ -3815,46 +3815,84 @@ private def runMiddleRemovalDepthFourChecks : IO Unit := do
 
 -- ============================================================================
 -- §3.26 the `.receive` replenish segment is keyed on the donation's own guard
---        (WS-RR RR8.12, PR #897 Codex review)
+--        (WS-RR RR8.12, PR #897 Codex review; the resolver half is Cut C1,
+--        register row 55)
 -- ============================================================================
 
 /-! The narrowing is pinned definitionally — reverting the segment breaks
-`endpointReceiveHandoffReplenishCores_of_blockedOnSend` at elaboration — so what no
-theorem states is that **both shapes are reachable by the live operations and the
+`endpointReceiveHandoffReplenishCores_of_blockedOnSend` and
+`endpointReceiveHandoffReplenishCores_of_no_donation` at elaboration — so what no
+theorem states is that **every shape is reachable by the live operations and the
 segment differs between them**.  That is this section's whole subject.
 
-The retired reading lives here, `private`, and nowhere else: computed beside the
-live one on both shapes, so the assertions are known to discriminate rather than
-merely to pass. -/
+The two retired readings live here, `private`, and nowhere else: computed beside the
+live one on every shape, so the assertions are known to discriminate rather than
+merely to pass.  Three shapes, and each retired reading is wrong on exactly one of
+them: the sender-keyed segment declares two cores on a plain `Send`, the `Call`-keyed
+one on a `Call` whose donation the resolver declines. -/
 
-/-- The superseded segment: keyed on *is there a queued sender at all*, which named
-both cores on every rendezvous including a plain `Send`. -/
+/-- The first superseded segment (`v0.35.107`): keyed on *is there a queued sender at
+all*, which named both cores on every rendezvous including a plain `Send`. -/
 private def senderKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) : List CoreId :=
   match receiveRendezvousSender? st endpointId with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
   | none        => []
 
+/-- The second superseded segment (`v0.35.112`): keyed on the queued sender carrying a
+`Call`, which named both cores on every `Call` — including one whose donation
+`callDonationSchedContext?` declines because the receiver already holds a context of
+its own, where the donation step is the identity. -/
+private def callKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receiveRendezvousCallSender? st endpointId with
+  | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
+  | none        => []
+
 private def runReceiveReplenishSegmentChecks : IO Unit := do
   IO.println "--- §3.26 WS-RR RR8.12: the `.receive` replenish segment follows the donation ---"
-  -- (a) a `Call` rendezvous: the donation can migrate, so both cores are declared.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  -- (a) a `Call` rendezvous the donation CARRIES OUT: the server is passive, so the
+  --     resolver answers `some` and both cores are declared.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
   | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
   | some (stCall, _) =>
     assertBool "the caller parks `.blockedOnCall`" (ipcStateIs stCall donClient (.blockedOnCall donEp))
-    assertBool "the pre-state guard fires on a queued Call"
+    assertBool "the pre-state Call guard fires on a queued Call"
       (decide (rendezvousSenderIsCall stCall donClient = true))
-    assertBool "...so the narrowed resolver names the queued caller"
+    assertBool "...so the `Call`-narrowed resolver names the queued caller"
       (decide (receiveRendezvousCallSender? stCall donEp = some donClient))
+    assertBool "...the donation resolver would hand the caller's context to the passive server"
+      (decide (callDonationSchedContext? stCall donClient donServer = some scClient))
+    assertBool "...so the donation-keyed resolver names the caller too"
+      (decide (receiveRendezvousDonatingSender? stCall donEp donServer = some donClient))
     assertBool "...and the segment declares the donor's and the receiver's homes"
       (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer
                  = [determineTargetCore stCall donClient,
                     determineTargetCore stCall donServer]))
-    assertBool "CONTROL: the retired reading agrees here — both name two cores"
+    assertBool "CONTROL: both retired readings agree here — each names two cores"
       (decide (senderKeyedReplenishCores stCall donEp donServer
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer
+               ∧ callKeyedReplenishCores stCall donEp donServer
                  = endpointReceiveHandoffReplenishCores stCall donEp donServer))
+    -- ...and the reason both cores are needed: at the state the donation runs on the
+    -- resolver still answers `some` (the binding frame, measured) and the step donates.
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall) with
+    | none => assertBool "RR8.12: the passive server's receive completes the Call rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "the receive dequeues the parked caller" (sender == donClient)
+      assertBool "the post-state Call guard fires"
+        (decide (rendezvousDequeuedCall stRecv donClient = true))
+      assertBool "the resolver's answer survives the receive leg"
+        (decide (callDonationSchedContext? stRecv donClient donServer = some scClient))
+      assertBool "...and the donation step hands the context over"
+        (match applyReceiveRendezvousDonation stRecv donServer donClient with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .donated scClient donClient
+              | none => false)
+         | .error _ => false)
   -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
-  --     lock is declared.  This is the shape the superseded segment over-declared.
+  --     lock is declared.  This is the shape the sender-keyed segment over-declared.
   match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
       stHandoffActiveBase) with
   | none => assertBool "RR8.12 setup: the no-receiver send parks the sender" false
@@ -3862,14 +3900,18 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
     assertBool "the sender parks `.blockedOnSend`" (ipcStateIs stSend donClient (.blockedOnSend donEp))
     assertBool "the pre-state guard is false on a queued plain Send"
       (decide (rendezvousSenderIsCall stSend donClient = false))
-    assertBool "...so the narrowed resolver names nobody"
+    assertBool "...so the `Call`-narrowed resolver names nobody"
       (decide (receiveRendezvousCallSender? stSend donEp = none))
+    assertBool "...and so does the donation-keyed one"
+      (decide (receiveRendezvousDonatingSender? stSend donEp donServer = none))
     assertBool "PAYOFF: the segment declares NO replenish-queue lock"
       (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer = []))
     -- The decisive comparison: same state, same endpoint, same receiver; the
-    -- retired reading declares two cores for a migration that does not happen.
-    assertBool "NEGATIVE (the defect): the retired reading declared TWO cores here"
+    -- sender-keyed reading declares two cores for a migration that does not happen.
+    assertBool "NEGATIVE (the defect): the sender-keyed retired reading declared TWO cores here"
       (decide ((senderKeyedReplenishCores stSend donEp donServer).length = 2))
+    assertBool "CONTROL: the `Call`-keyed retired reading already agreed here"
+      (decide (callKeyedReplenishCores stSend donEp donServer = []))
     -- ...and the reason it is sound to declare none: the donation step is the
     -- identity, because the receive leg leaves the dequeued sender `.ready`.
     match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stSend) with
@@ -3890,6 +3932,50 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
                 == replenishEntriesOn stRecv (determineTargetCore stRecv donClient))
              && (replenishEntriesOn stDon (determineTargetCore stRecv donServer)
                 == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
+         | .error _ => false)
+  -- (c) a `Call` rendezvous the resolver DECLINES: the receiver already holds a context
+  --     of its own (`stHandoffActiveBase`'s active server), so the donation is the
+  --     identity and NO replenish lock is declared.  This is the shape the
+  --     `Call`-keyed segment still over-declared, and the one Cut C1 closes.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
+  | some (stCallActive, _) =>
+    assertBool "the caller parks `.blockedOnCall`"
+      (ipcStateIs stCallActive donClient (.blockedOnCall donEp))
+    assertBool "the pre-state Call guard fires"
+      (decide (rendezvousSenderIsCall stCallActive donClient = true))
+    assertBool "CONTROL: the `Call`-narrowed resolver admits this shape — the decline is the donation resolver's"
+      (decide (receiveRendezvousCallSender? stCallActive donEp = some donClient))
+    assertBool "...but the donation resolver declines: the receiver holds a context of its own"
+      (decide (callDonationSchedContext? stCallActive donClient donServer = none))
+    assertBool "...so the donation-keyed resolver names nobody"
+      (decide (receiveRendezvousDonatingSender? stCallActive donEp donServer = none))
+    assertBool "PAYOFF: the segment declares NO replenish-queue lock"
+      (decide (endpointReceiveHandoffReplenishCores stCallActive donEp donServer = []))
+    assertBool "NEGATIVE (the defect): the `Call`-keyed retired reading declared TWO cores here"
+      (decide ((callKeyedReplenishCores stCallActive donEp donServer).length = 2))
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCallActive) with
+    | none => assertBool "RR8.12: the active server's receive completes the Call rendezvous" false
+    | some (stRecvActive, (sender, _)) =>
+      assertBool "the receive dequeues the parked caller" (sender == donClient)
+      assertBool "the dequeued caller IS `.blockedOnReply`: the post-state Call guard fires"
+        (decide (rendezvousDequeuedCall stRecvActive donClient = true))
+      assertBool "...and the resolver still declines at the state the donation runs on (the licence, measured)"
+        (decide (callDonationSchedContext? stRecvActive donClient donServer = none))
+      assertBool "...so the donation step moves NO replenishment on either core"
+        (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
+         | .ok stDon =>
+             (replenishEntriesOn stDon (determineTargetCore stRecvActive donClient)
+                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donClient))
+             && (replenishEntriesOn stDon (determineTargetCore stRecvActive donServer)
+                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donServer))
+         | .error _ => false)
+      assertBool "...and hands no context over: the server keeps its own reservation"
+        (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .bound scHandoffServer
+              | none => false)
          | .error _ => false)
 
 -- ============================================================================

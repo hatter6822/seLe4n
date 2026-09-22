@@ -4928,41 +4928,14 @@ theorem donationBudgetTransfer_of_no_shared
 -- IPC de-threading D6: SchedContext-binding frame for `donationBudgetTransfer`
 -- ============================================================================
 
-/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
-post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
-This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
-needs: it is preserved by every core IPC transition that never writes a binding (all but
-the donation primitives `donateSchedContext` / `returnDonatedSchedContext`).  Stated
-backward (post ⟹ pre) so it composes directly with the store-frame style used throughout
-the de-threading proofs. -/
-def sameSchedContextBindings (st st' : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-    st'.objects[tid.toObjId]? = some (.tcb tcb') →
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-      tcb.schedContextBinding = tcb'.schedContextBinding
-
-namespace sameSchedContextBindings
-
-/-- Reflexivity: a state has the same bindings as itself. -/
-theorem refl (st : SystemState) : sameSchedContextBindings st st :=
-  fun _ tcb' h => ⟨tcb', h, rfl⟩
-
-/-- Transitivity: chain two binding-preserving steps. -/
-theorem trans {st st' st'' : SystemState}
-    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
-    sameSchedContextBindings st st'' := by
-  intro tid tcb'' hObj''
-  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
-  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
-  exact ⟨tc, hObj, hEq.trans hEq'⟩
-
-/-- A transition that leaves the object store untouched (a scheduler-only step such
-as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
-theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
-    sameSchedContextBindings st st' :=
-  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
-
-end sameSchedContextBindings
+-- `sameSchedContextBindings` and its `refl` / `trans` / `of_objects_eq` were declared
+-- here from IPC de-threading D6 until WS-RR RR8.12 Cut C1 (`v0.35.160`), which moved
+-- them to `IPC/Operations/Endpoint.lean`, beside the two primitives that write the
+-- field they frame: `IPC/Operations/Donation.lean` needs the frame at the resolver
+-- `callDonationSchedContext?` and could not import this module (register row 55).
+-- The namespace is unchanged, so every citation resolves as before; the two
+-- invariant consumers below stay here because they read `donationBudgetTransfer`
+-- and `donationOwnerUnique`, which the operations layer does not know.
 
 /-- IPC de-threading D6: `donationBudgetTransfer` transfers across any transition that
 preserves every TCB's `schedContextBinding`.  The frame reads the two witness TCBs'

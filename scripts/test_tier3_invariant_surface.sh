@@ -9897,13 +9897,17 @@ run_negative_check "INVARIANT" rg -n 'donorHome|doneeHome' SeLe4n/Kernel/IPC/Cro
 # the pair WS-OD OD3.6's donation resolves at the post-receive-leg state.
 run_check "INVARIANT" rg -n '^def endpointReceiveHandoffReplenishCores \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_call_rendezvous \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # RELATION: the licence is an EQUALITY between the pre-state reading and the two
 # `determineTargetCore` calls taken at the WithCaps post-state -- not "agrees with",
 # not "over-approximates".  The mutation that decides keeps the theorem and states
 # it against the *bare* receive leg's post-state, or against the pre-state on the
 # right, either of which makes it a claim about a different pair.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_call_rendezvous[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveHandoffReplenishCores st endpointId receiver\n *= \[determineTargetCore\n *\(endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous[^\n]*(\n([ \t][^\n]*)?)*\(hDon : callDonationSchedContext\? st sender receiver = some scId\) :\n *endpointReceiveHandoffReplenishCores st endpointId receiver\n *= \[determineTargetCore\n *\(endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# ...and the `v0.35.112` spelling `_of_call_rendezvous` must not come back either
+# (`v0.35.160`, RR8.12 Cut C1): it asserted the equality on a `Call` whose donation the
+# resolver declines, where the segment is `[]` -- one resolver short of the transition.
+run_negative_check "INVARIANT" rg -n 'endpointReceiveHandoffReplenishCores_of_call_rendezvous' SeLe4n/ tests/
 # ...and the retired `_of_rendezvous` spelling must not come back: it claimed the
 # equality for EVERY rendezvous, which is the over-declaration v0.35.112 removed --
 # the segment is `[]` on a plain `Send`, so there the equality is false.
@@ -9917,7 +9921,7 @@ run_check "INVARIANT" rg -n '^def rendezvousSenderIsCall \(st : SystemState\)' S
 run_check "INVARIANT" rg -n '^def receiveRendezvousCallSender\? \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # RELATION: the segment reads the NARROWED resolver, and the narrowed resolver is
 # derived from `receiveRendezvousSender?` rather than re-reading `sendQ.head`.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receiveRendezvousCallSender\? st endpointId with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receiveRendezvousDonatingSender\? st endpointId receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousCallSender\?[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousSender\? st endpointId\).bind" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # ...and that it never names a DIFFERENT thread is the derivation behind "the three
 # resolvers cannot disagree about which thread a rendezvous dequeues".  It has no
@@ -9933,6 +9937,77 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffRe
 # segment is empty and the footprint declares no replenish lock.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend[^\n]*(\n([ \t][^\n]*)?)*= false" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blockedOnSend \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# ---------------------------------------------------------------------------
+# `v0.35.160` (RR8.12 Cut C1, register row 55): the segment is keyed on the
+# donation's own RESOLVER, so a queued `Call` whose donation
+# `callDonationSchedContext?` declines -- the receiver already holds a context, or
+# the sender none -- declares nothing.  The resolver is asked on the PRE-state and
+# the transition asks it on the POST-receive-leg state; the two agree in the
+# direction a footprint needs because the receive leg writes no binding.
+run_check "INVARIANT" rg -n '^def receiveRendezvousDonatingSender\? \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# RELATION: derived from the `Call`-narrowed resolver (never a second `sendQ.head`
+# read) and narrowed by the donation resolver asked of the SAME two threads the
+# transition asks it of.  Mutation: key on `endpointCallDonatedSc? st sender` (the
+# object-domain member's sender-only reading) instead.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatingSender\?[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousCallSender\? st endpointId\).bind fun sender =>\n *if \(callDonationSchedContext\? st sender receiver\).isSome then some sender else none" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem receiveRendezvousDonatingSender\?_eq_callSender' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem receiveRendezvousDonatingSender\?_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem receiveRendezvousDonatingSender\?_of_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# ...and the segment must not go back to keying on the `Call`-narrowed resolver
+# alone, which is the spelling that declared two replenish locks on a `Call` the
+# resolver declines.  Mutation: restore `match receiveRendezvousCallSender? st
+# endpointId with` inside the definition, keeping every other token.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receiveRendezvousCallSender\? st endpointId with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The declined-`Call` reading of the segment, its licence, and its three payoffs: the
+# resolver's pre-state `none` is its post-state answer (the receive leg writes no
+# binding), the donation step is the IDENTITY there, the arm's whole hand-off writes
+# no replenish queue, and the footprint declares no replenish lock.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_no_donation \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_callDonationSchedContext\?_none_of_none[^\n]*(\n([ \t][^\n]*)?)*receiverSlotBase executingCore st\).1 sender receiver\n *= none :=" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# RELATION: the coverage claim is stated at the donation's OWN resolver on its OWN
+# state -- `hDon` is `callDonationSchedContext?` of the post-receive-leg state, the
+# guard `applyCallDonationOnCore` migrates on -- and bridged back to the pre-state
+# reading the segment keys on.  Mutation: state `hDon` on the pre-state `st`, which
+# would be the footprint's fact rather than the transition's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_covers_donation[^\n]*(\n([ \t][^\n]*)?)*\(hDon : callDonationSchedContext\?\n *\(endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot\n *receiverSlotBase executingCore st\).1 sender receiver = some scId\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The bridge at the resolver, in the ONE direction the backward frame gives: a
+# post-state `some` pulls back to a pre-state `some`.  Declared beside the resolver,
+# which is what the relocation below exists for.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem callDonationSchedContext\?_some_of_sameSchedContextBindings[^\n]*(\n([ \t][^\n]*)?)*\(hPost : callDonationSchedContext\? st\x27 caller receiver = some scId\) :\n *callDonationSchedContext\? st caller receiver = some scId" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+run_check "INVARIANT" rg -n '^theorem callDonationSchedContext\?_none_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_of_no_donation \(st : SystemState\)' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# The relocation: the frame lives in the operations layer, beside the two primitives
+# that write the field it frames, and NOT in `IPC/Invariant/Defs.lean` any more --
+# `Donation.lean` cannot import that module.  Its two invariant consumers stay put.
+run_check "INVARIANT" rg -n "^def sameSchedContextBindings \(st st' : SystemState\) : Prop :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_negative_check "INVARIANT" rg -n "^def sameSchedContextBindings \(st st' : SystemState\) : Prop :=" SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationBudgetTransfer_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationOwnerUnique_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n "^theorem lookupTcb_backward \{st st' : SystemState\} \(h : sameSchedContextBindings st st'\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n "^theorem of_objects_getElem_eq \{st st' : SystemState\}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem lookupTcb_some_toValid\?$' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# The receive leg's binding frames -- single-core (extracted from the two theorems
+# that inlined the whole composition) and the cross-core leg the live arm runs.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_ok_getEndpoint\?$' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_sameSchedContextBindings_of_rendezvous$' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_sameSchedContextBindings_of_blocked$' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_sameSchedContextBindings_of_rendezvous$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_preserves_objects_invExt$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# RELATION: the two invariant theorems COMPOSE the frames rather than inlining the
+# composition -- the de-duplication that is the evidence the frame was missing.
+# Mutation: re-inline the rendezvous walk in either theorem, keeping the frames.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationBudgetTransfer[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDual_sameSchedContextBindings_of_rendezvous" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationOwnerUnique[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDual_sameSchedContextBindings_of_blocked" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationBudgetTransfer[^\n]*(\n([ \t][^\n]*)?)*unfold endpointReceiveDual SystemState.getObject\? at hStep" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationOwnerUnique[^\n]*(\n([ \t][^\n]*)?)*unfold endpointReceiveDual SystemState.getObject\? at hStep" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# The witness computes BOTH retired readings beside the live one, on the three shapes.
+run_check "INVARIANT" rg -n '^private def callKeyedReplenishCores' tests/SmpIpcSuite.lean
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -n 'NEGATIVE \(the defect\): the `Call`-keyed retired reading declared TWO cores here' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_blockedOnSend' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the step the LIVE arm runs is the identity too: `API.lean`'s `.receive` arm
 # calls `applyReceiveRendezvousHandoff`, which is the donation AND OD3.14's chain walk
