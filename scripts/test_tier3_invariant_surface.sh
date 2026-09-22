@@ -19720,4 +19720,38 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyTransferOnCore_replenish
 # equals wherever its flow gate admits; a denied flow commits nothing.
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6d (`v0.35.177`): the live `.reply` ARM's coverage.
+# ============================================================================
+#
+# The arm is `replyTransferOnCore`, not the dispatch beneath it, and its
+# post-state is not the dispatch's -- the delivered-message staging on an
+# unfaulted caller, the decoded outcome on a faulted one.  So the coverage
+# claim is stated at the ARM, and the confinement chain it consumes is stated
+# at the write sets the ARM's own definitions derive.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+# ...and it is stated of the arm's step, not of the dispatch: the coverage
+# theorem takes the seam's own `.ok` step as a hypothesis, which a claim about
+# `endpointReplyCrossCoreDispatch` structurally cannot.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_replyTransferOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : replyTransferOnCore" SeLe4n/Kernel/SyscallSchedContainment.lean'
+# The chain, each member stated at the write set its own definition derives.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyTransferOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*observableSlotsConfinedToCores st st.\n[ \t]*.replyTransferWriteSet" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*.faultReplyWriteSet replier faulted mi regs executingCore st." SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyApplyOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*.faultReplyApplyCores st faulted outcome." SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# The apply's two arms, each at the core set its own branch of
+# `faultReplyApplyCores` names: none for a restart, the deschedule's core for an
+# abandon.  A restart confined to anything but `[]` would let the apply's arm
+# widen the arm's declared segment for free.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyFaultRestart_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*\(applyFaultRestart st faulted frame\) \[\]" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultAbandonOnCore_confinedToCores[^\n]*(\n([ \t][^\n]*)?)*\(faultAbandonOnCore st tid cc\) \[cc\]" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+# The two machine frames the restart's and the abandon's confinement rest on --
+# a fault outcome writes the THREAD's saved context, never the executing core's
+# register bank, which is the `regs` conjunct of the confinement structure.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem applyFaultRestart_machine_eq[^\n]*(\n([ \t][^\n]*)?)*updateTcb_machine" SeLe4n/Kernel/IPC/Operations/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultAbandonOnCore_machine_eq[^\n]*(\n([ \t][^\n]*)?)*updateTcb_machine" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The measurement the arm's docstring cites rather than asserts: on this tree
+# the abandon's appended core is a DUPLICATE of one the dispatch already names,
+# so the arm's declaration is derived rather than tightened to that coincidence.
+run_check "INVARIANT" rg -n 'C6d: the abandon.s appended core is already a member of the dispatch' tests/FaultHandlingSuite.lean
+
 finalize_report

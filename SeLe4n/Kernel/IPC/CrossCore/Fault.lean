@@ -123,6 +123,15 @@ theorem faultAbandonOnCore_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadI
   unfold faultAbandonOnCore
   exact SystemState.updateTcb_scheduler _ _ _
 
+/-- **WS-RR RR8.12 Cut C6d** (frame): and the machine mirror is the deschedule's
+— the `.Inactive`/`pendingFault := none` store writes the thread's TCB, never
+the executing core's register bank. -/
+theorem faultAbandonOnCore_machine_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) :
+    (faultAbandonOnCore st tid c).machine = (removeRunnableOnCore st tid c).machine := by
+  unfold faultAbandonOnCore
+  exact SystemState.updateTcb_machine _ _ _
+
 /-- WS-RR RR4.12: a suspended thread is out of **its own** core's run queue
 and is not its current thread. -/
 theorem faultSuspendOnCore_not_runnable (st : SystemState) (tid : SeLe4n.ThreadId)
@@ -1017,9 +1026,9 @@ theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.Threa
           st with
       | mk stDisp res =>
         cases res with
-        | error e => simp only [hDisp]
+        | error e => simp only []
         | ok sgi? =>
-          simp only [hDisp, faultReplyApplyOnCore_replenishQueueOnCore]
+          simp only [faultReplyApplyOnCore_replenishQueueOnCore]
           have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier faulted
             IpcMessage.empty executingCore st c hne
           rw [hDisp] at h0

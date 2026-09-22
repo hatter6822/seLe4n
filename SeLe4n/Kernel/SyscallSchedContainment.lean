@@ -289,6 +289,44 @@ theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
     (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller msg
       endpointRights receiverSlotBase executingCore st d hd)
 
+/-- **WS-RR RR8.12 Cut C6d**: `.reply`'s footprint covers its writes — of the
+**arm**, `replyTransferOnCore`, not of the dispatch beneath it.
+
+That distinction is the whole content of this theorem.  The arm's **post-state**
+is not the dispatch's: on an unfaulted caller it is the dispatch's plus the
+delivered-message staging, and on a faulted one the dispatch's plus the decoded
+outcome — a restart frame, or an abandon that *deschedules* the faulted thread.
+A coverage claim proved at the dispatch is therefore a claim about a different
+state, and until this theorem the arm's declared footprint
+(`schedLockSet_replyTransferOnCore`, `IPC/CrossCore/Fault.lean` §6) had nothing
+behind it.
+
+Both halves are keyed on the seam's own predicate `threadHasPendingFault`, so
+the footprint and the transition cannot disagree about which caller is faulted.
+What the abandon's core costs is measured rather than assumed: it is
+`determineTargetCore st' faulted`, and every successful dispatch already names
+`determineTargetCore st target`, so on this tree the append is a duplicate
+(`tests/FaultHandlingSuite.lean` §7c). The declaration is derived from the arm
+anyway, because one tightened to that coincidence would become false the moment
+either side moved. -/
+theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st st' : SystemState) (S : SchedLockSet)
+    (hObjInv : st.objects.invExt)
+    (hS : SchedLockSet.ofList? (schedLockSet_replyTransferOnCore replier callerTid mi regs
+      msg executingCore st) = some S)
+    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+      = .ok ((), st')) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S
+    (replyTransferWriteSet replier callerTid mi regs msg executingCore st)
+    (replyTransferReplenishCores replier callerTid msg executingCore st) st st'
+    (SchedLockSet.ofList?_pairs hS)
+    (replyTransferOnCore_confinedToCores replier callerTid mi regs msg executingCore st st'
+      hObjInv hStep)
+    (fun d hd => replyTransferOnCore_replenishQueueOnCore_ne replier callerTid mi regs msg
+      executingCore st st' d hd hStep)
+
 -- ============================================================================
 -- §7  What the obligation refuses
 -- ============================================================================

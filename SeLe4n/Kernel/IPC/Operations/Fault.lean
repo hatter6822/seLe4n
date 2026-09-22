@@ -566,6 +566,16 @@ scheduled. -/
   unfold applyFaultRestart
   exact SystemState.updateTcb_scheduler st faulted _
 
+/-- **WS-RR RR8.12 Cut C6d** (frame): and it never touches the machine — the
+restart frame goes into the *thread's* saved context, not into the executing
+core's register bank, which is what makes the restart per-core silent and so
+confined to the empty core set. -/
+@[simp] theorem applyFaultRestart_machine_eq (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (frame : Architecture.FaultRestartFrame) :
+    (applyFaultRestart st faulted frame).machine = st.machine := by
+  unfold applyFaultRestart
+  exact SystemState.updateTcb_machine st faulted _
+
 /-- WS-RR RR4.15: the restarted thread's saved `pc` is the frame's — the
 statement RR4.19's progress argument consumes, since "the thread does not
 silently re-execute the faulting instruction" is exactly "its saved `pc` is

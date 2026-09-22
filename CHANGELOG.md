@@ -1,3 +1,72 @@
+## v0.35.177 — WS-RR RR8.12 Cut C6d: the live `.reply` ARM's coverage
+
+`schedLockSet_replyTransferOnCore` (Cut C3a, `v0.35.163`) is the live `.reply`
+arm's scheduler-domain footprint, and nothing could prove it is not **false** of
+the arm: the confinement surface stopped at `endpointReplyCrossCoreDispatch`, and
+the arm `API.dispatchWithCap` actually runs is `replyTransferOnCore` — seL4's
+`doReplyTransfer` branch — whose post-state is **not** the dispatch's.  On an
+unfaulted caller it is the dispatch's plus the delivered-message staging; on a
+faulted one it is the dispatch's plus the decoded outcome, which either installs
+a restart frame or **deschedules** the faulted thread.  A coverage claim proved
+at the dispatch is a claim about a different state.
+
+### The chain
+
+Five confinement theorems in
+`SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` §5c-bis, each
+stated at the write set its own definition derives:
+`applyFaultRestart_confinedToCores` (at `[]` — a restart writes the faulted
+thread's own saved context, which is an object, never the executing core's
+register bank), `faultAbandonOnCore_confinedToCores` (at `[cc]` — the
+deschedule's own confinement), `faultReplyApplyOnCore_confinedToCores` (at
+`faultReplyApplyCores`, the two arms being the definition's own two arms),
+`faultReplyOnCore_confinedToCores` (at `faultReplyWriteSet`) and
+`replyTransferOnCore_confinedToCores` (at `replyTransferWriteSet`, branching on
+the seam's own predicate `threadHasPendingFault`).  The coverage theorem
+`schedLockSet_replyTransferOnCore_coversWrites`
+(`SeLe4n/Kernel/SyscallSchedContainment.lean` §10) is then one application of
+`schedFootprintCoversWrites_of_confined` rather than a second reading of the
+seam.  Two machine frames the chain rests on were missing and are added beside
+the operations they frame: `applyFaultRestart_machine_eq` and
+`faultAbandonOnCore_machine_eq`.
+
+### And the cut's own first draft overstated its finding
+
+The docstring first claimed the abandon "deschedules on a core the dispatch never
+names".  It does not: the abandon's core is `determineTargetCore st' faulted`,
+every arm on which the dispatch succeeds opens its write set with
+`[determineTargetCore st target]`, and no step of the dispatch writes a
+`cpuAffinity` — so on this tree the appended core is a **duplicate**.
+`tests/FaultHandlingSuite.lean` §7c had been measuring exactly that since Cut C3a
+(`abandonWriteSet = dispatchWriteSet ++ [c0]`, with the dispatch's set opening
+`[c0]`), and the draft was written from the shape of the definition rather than
+from the measurement beside it.  *A claim about what a transition writes is read
+off a measurement, not off the shape of the definition that declares it* — and
+when the measurement is already in the tree, read it before writing the sentence.
+
+The claim is corrected at both sites and the measurement is now **asserted**
+rather than cited: the appended core is a member of the dispatch's own set, with
+the restart's empty append as the control, so a write set that happened to name
+every core could not satisfy both.  The arm's write set stays **derived from the
+arm**: a declaration tightened to today's coincidence would become false the
+moment either side moved, and what the coverage theorem is about is the arm's
+post-state, which nothing bounded before.
+
+### Anchors and mutations
+
+Eleven Tier 3 anchors: the coverage theorem, its statement *at the arm's step* (a
+hypothesis a dispatch-level claim structurally cannot carry), the three chain
+members at their own derived write sets, the apply's two arms at `[]` and `[cc]`,
+the two machine frames, and the witness's measured claim.  Nine token-preserving
+mutations, all **DECISIVE** — each re-keys a confinement onto the dispatch's write
+set, widens an arm's core set, or renames a frame, and none of them deletes a
+token.  The changed-file sweep is 254 of 254 rows accounted for with **0
+deferred**.
+
+Scope: the `.reply` arm.  `.receive`, `.replyRecv` and `.lifecycleRetype` are the
+next cuts, and the bracket (with
+`UncoveredLockDomain.syscallSeamSchedulerDomain`'s deletion) the one after.
+
 ## v0.35.176 — the IPC spines' exactness frames, and the `.call` arm covered
 
 WS-RR RR8.12 Cut C6c: six new replenish-queue exactness frames across the call

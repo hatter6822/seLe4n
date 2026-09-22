@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.176` (`lakefile.toml`) |
+| **Package version** | `0.35.177` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 406,451 across 338 Lean files |
-| **Test LoC** | 83,005 across 70 Lean test suites |
-| **Proved declarations** | 13,455 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 406,667 across 338 Lean files |
+| **Test LoC** | 83,019 across 70 Lean test suites |
+| **Proved declarations** | 13,463 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4890,6 +4890,25 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   its write set and confinement result are stated at and what the checked arm
   equals wherever its flow gate admits; `.reply`'s waits on a confinement theorem
   at `replyTransferWriteSet` that does not exist yet.
+
+  **And a coverage claim names the ARM, not the dispatch beneath it** (WS-RR
+  RR8.12 Cut C6d, `v0.35.177`).  `replyTransferOnCore` — seL4's `doReplyTransfer`
+  branch, and what `API.dispatchWithCap`'s `.reply` arm actually runs — has a
+  post-state the dispatch does not: the delivered-message staging on an unfaulted
+  caller, the decoded outcome on a faulted one, the latter either installing a
+  restart frame or *descheduling* the faulted thread.  Five confinement theorems
+  (`applyFaultRestart_confinedToCores` at `[]`,
+  `faultAbandonOnCore_confinedToCores` at `[cc]`,
+  `faultReplyApplyOnCore_confinedToCores`, `faultReplyOnCore_confinedToCores`,
+  `replyTransferOnCore_confinedToCores`), each at the write set its own definition
+  derives, plus two machine frames the `regs` conjunct needs
+  (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`), make
+  `schedLockSet_replyTransferOnCore_coversWrites` one application of
+  `schedFootprintCoversWrites_of_confined`.  The abandon's appended core is a
+  *duplicate* of one the dispatch already names — measured in
+  `tests/FaultHandlingSuite.lean` §7c since Cut C3a, and asserted since this cut —
+  so the arm's declaration is derived from the arm rather than tightened to that
+  coincidence.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

@@ -1464,6 +1464,20 @@ private def runReplySeamChecks : IO Unit := do
         (decide (restartWriteSet = dispatchWriteSet ++ []) && decide (abandonWriteSet = dispatchWriteSet ++ [c0]))
       assertBool "C3a: an abandon deschedules the faulted thread on its home core, and that run-queue write lock is a member"
         (hasRunQueueWriteLock fpAbandon c0)
+      -- WS-RR RR8.12 Cut C6d: the measurement the arm's coverage docstring cites
+      -- instead of asserting.  Every arm on which the dispatch succeeds opens its
+      -- write set with the answered thread's home core, and no step of the
+      -- dispatch writes a `cpuAffinity`, so the core the abandon appends is one
+      -- the dispatch ALREADY names.  The arm's write set is derived from the arm
+      -- all the same -- a declaration tightened to this coincidence would become
+      -- false the moment either side moved -- and this line is what makes the
+      -- claim checkable rather than a sentence.
+      assertBool "C6d: the abandon's appended core is already a member of the dispatch's own write set"
+        (decide (abandonWriteSet = dispatchWriteSet ++ [c0]) && dispatchWriteSet.contains c0)
+      -- ...and the control: a RESTART appends nothing, so the two claims cannot
+      -- both be satisfied by a write set that happens to name every core.
+      assertBool "C6d: control -- a restart appends no core at all, so the append is the abandon's"
+        (decide (restartWriteSet = dispatchWriteSet))
       assertBool "C3a: the fault branch's replenish segment is the dispatch's at the empty message -- here none, the handler holding no loan"
         (decide (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault
             = endpointReplyDispatchReplenishCores handler faulter IpcMessage.empty c1 afterFault)

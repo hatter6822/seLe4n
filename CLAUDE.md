@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.176.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.177.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9596,6 +9596,44 @@ code may assume:
   is the same either way.  `.reply`'s coverage waits on a confinement theorem at
   `replyTransferWriteSet` that does not exist yet, which is Cut C6d's first row
   rather than an omission here.
+- **...and a coverage claim names the ARM, not the dispatch beneath it** (WS-RR
+  RR8.12 Cut C6d, `v0.35.177`).  `schedLockSet_replyTransferOnCore` had nothing
+  behind it because the confinement surface stopped at
+  `endpointReplyCrossCoreDispatch`, and the arm `API.dispatchWithCap` runs is
+  `replyTransferOnCore` — seL4's `doReplyTransfer` branch — whose **post-state is
+  not the dispatch's**: it adds the delivered-message staging on an unfaulted
+  caller and the decoded outcome on a faulted one, the latter either installing a
+  restart frame or *descheduling* the faulted thread.  A coverage claim proved at
+  the dispatch is a claim about a different state, however closely the two write
+  sets agree.  Three things new code must respect.
+
+  (1) **Each member of the chain is stated at the write set its OWN definition
+  derives** — `applyFaultRestart_confinedToCores` at `[]`, the abandon's at
+  `[cc]`, `faultReplyApplyOnCore_confinedToCores` at `faultReplyApplyCores`,
+  `faultReplyOnCore_confinedToCores` at `faultReplyWriteSet`, and the arm's at
+  `replyTransferWriteSet` — so the coverage theorem is one application of
+  `schedFootprintCoversWrites_of_confined` and not a second reading of the seam.
+  The `regs` conjunct is what made two machine frames load-bearing and missing
+  (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`): a fault
+  outcome writes the *thread's* saved context, never the executing core's bank.
+
+  (2) **A claim about what a transition writes is read off a measurement, not off
+  the shape of the definition that declares it.**  This cut's own first draft said
+  the abandon "deschedules on a core the dispatch never names".  It does not:
+  every arm on which the dispatch succeeds opens its write set with
+  `[determineTargetCore st target]` and no step of it writes a `cpuAffinity`, so
+  the appended `determineTargetCore st' faulted` is a **duplicate** — and
+  `tests/FaultHandlingSuite.lean` §7c had been measuring exactly that since Cut
+  C3a.  The draft was written from the definition's shape with the measurement
+  sitting beside it unread.  When a cut's finding is about what a program writes,
+  find the assertion the tree already makes about it *before* writing the
+  sentence; where there is none, the sentence is what the cut owes.
+
+  (3) **The declaration stays derived from the arm, and the measurement becomes an
+  assertion.**  Tightening the segment to today's coincidence would make it false
+  the moment either side moved, so the write set is still the arm's own; what
+  changed is that the duplicate is now asserted, with the restart's *empty* append
+  as its control — a write set naming every core satisfies neither.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

@@ -1748,6 +1748,165 @@ theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference (ctx : LabelingC
     hShared
 
 -- ============================================================================
+-- §5c-bis  WS-RR RR8.12 Cut C6d — the live `.reply` ARM's confinement
+-- ============================================================================
+--
+-- §5c bounds `endpointReplyCrossCoreDispatch`.  The arm `API.dispatchWithCap`
+-- actually runs is `replyTransferOnCore` — seL4's `doReplyTransfer` branch —
+-- whose post-state is not the dispatch's: on an unfaulted caller it is the
+-- dispatch's plus the delivered-message staging, and on a faulted one the
+-- dispatch's plus the decoded outcome, which either installs a restart frame or
+-- **deschedules** the faulted thread.  So §5c's confinement is a statement about
+-- a different state, and nothing said the staging and the outcome write no
+-- per-core slot outside the arm's own declared set — which is what
+-- `schedLockSet_replyTransferOnCore` (`IPC/CrossCore/Fault.lean` §6) declares.
+--
+-- **What the extra core costs, measured rather than assumed.**  The abandon's
+-- deschedule names `determineTargetCore st' faulted`, read at the dispatch's
+-- post-state, and every arm on which the dispatch succeeds opens its write set
+-- with `[determineTargetCore st target]`, read at the pre-state — and no step of
+-- the dispatch writes a `cpuAffinity`.  So on this tree the appended core is a
+-- **duplicate** of one the dispatch already names, which
+-- `tests/FaultHandlingSuite.lean` §7c measures directly (the dispatch's set opens
+-- with `c0`, and the abandon's is that set `++ [c0]`).  The arm's write set is
+-- derived from the arm's own structure all the same, because a declaration
+-- tightened to today's coincidence would become false the moment either side
+-- moved; the coverage claim below is about the arm's post-state, which is where
+-- the content is.
+--
+-- The three theorems below are the chain: the apply's own confinement at
+-- `faultReplyApplyCores`, the fault reply's at `faultReplyWriteSet`, and the
+-- seam's at `replyTransferWriteSet` — each stated at the write set that
+-- *definition* derives, so the coverage theorem in `SyscallSchedContainment` is
+-- one application of `schedFootprintCoversWrites_of_confined` rather than a
+-- second reading of the seam.
+
+/-- **Cut C6d**: installing a restart frame is per-core silent.  The frame goes
+into the faulted thread's own saved context — an object write — never into the
+executing core's register bank, so the restart writes no observable per-core
+slot at all. -/
+theorem applyFaultRestart_confinedToCores (st : SystemState) (faulted : SeLe4n.ThreadId)
+    (frame : Architecture.FaultRestartFrame) :
+    observableSlotsConfinedToCores st (applyFaultRestart st faulted frame) [] :=
+  observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+    (applyFaultRestart_scheduler_eq st faulted frame)
+    (applyFaultRestart_machine_eq st faulted frame)
+
+/-- **Cut C6d**: abandoning a fault writes core `cc`'s run-queue and current
+slots and nothing else per-core — it is `removeRunnableOnCore` followed by an
+object write, so its confinement is the deschedule's. -/
+theorem faultAbandonOnCore_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId)
+    (cc : CoreId) :
+    observableSlotsConfinedToCores st (faultAbandonOnCore st tid cc) [cc] :=
+  observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
+    (observableSlotsConfinedToCores_trans
+      (removeRunnableOnCore_confinedToCores st tid cc)
+      (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+        (faultAbandonOnCore_scheduler_eq st tid cc)
+        (faultAbandonOnCore_machine_eq st tid cc)))
+
+/-- **Cut C6d**: the decoded outcome writes exactly the cores
+`faultReplyApplyCores` names — none on a restart, the faulted thread's own home
+core on an abandon.  The two arms are the definition's own two arms, so the
+write set and the transition cannot disagree about which branch names a core. -/
+theorem faultReplyApplyOnCore_confinedToCores (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (outcome : Architecture.FaultReplyOutcome) :
+    observableSlotsConfinedToCores st (faultReplyApplyOnCore st faulted outcome)
+      (faultReplyApplyCores st faulted outcome) := by
+  unfold faultReplyApplyOnCore faultReplyApplyCores
+  cases outcome with
+  | restart frame => exact applyFaultRestart_confinedToCores st faulted frame
+  | abandon =>
+    exact faultAbandonOnCore_confinedToCores st faulted (determineTargetCore st faulted)
+
+/-- **Cut C6d**: the fault reply writes no core outside `faultReplyWriteSet` —
+the dispatch's own set at the empty message, then the outcome's, read at the
+state the apply runs on.  Every arm on which the seam commits nothing returns
+the pre-state and so is confined to `[]`, which widens into anything. -/
+theorem faultReplyOnCore_confinedToCores (replier faulted : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    observableSlotsConfinedToCores st
+      (faultReplyOnCore replier faulted mi regs executingCore st).1
+      (faultReplyWriteSet replier faulted mi regs executingCore st) := by
+  have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier faulted
+    IpcMessage.empty executingCore st hObjInv
+  unfold faultReplyOnCore faultReplyWriteSet
+  cases hTcb : st.getTcb? faulted with
+  | none => exact observableSlotsConfinedToCores_of_eq _ rfl
+  | some tcb =>
+    simp only []
+    cases hPF : tcb.pendingFault with
+    | none => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+    | some tf =>
+      simp only []
+      cases hDisp : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty
+          executingCore st with
+      | mk stDisp res =>
+        rw [hDisp] at hDispatch
+        cases res with
+        | error e => simp only []; exact observableSlotsConfinedToCores_of_eq _ rfl
+        | ok sgi? =>
+          simp only []
+          exact observableSlotsConfinedToCores_trans hDispatch
+            (faultReplyApplyOnCore_confinedToCores stDisp faulted
+              (Architecture.decodeFaultReply tf.fault tf.context mi regs))
+
+/-- **Cut C6d** (**the live `.reply` arm's bound**): `replyTransferOnCore` — the
+transition `API.dispatchWithCap`'s `.reply` arm routes through — writes no core
+outside `replyTransferWriteSet`.
+
+The branch is the seam's own predicate `threadHasPendingFault`, so the bound and
+the transition cannot disagree about which caller is faulted; the unfaulted arm
+composes the dispatch with the delivered-message staging, which writes a
+register *context* and no per-core slot. -/
+theorem replyTransferOnCore_confinedToCores (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st st' : SystemState) (hObjInv : st.objects.invExt)
+    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+      = .ok ((), st')) :
+    observableSlotsConfinedToCores st st'
+      (replyTransferWriteSet replier callerTid mi regs msg executingCore st) := by
+  by_cases hF : threadHasPendingFault st callerTid = true
+  · rw [replyTransferOnCore_of_fault replier callerTid mi regs msg executingCore st hF]
+      at hStep
+    rw [replyTransferWriteSet_of_fault replier callerTid mi regs msg executingCore st hF]
+    have hFR := faultReplyOnCore_confinedToCores replier callerTid mi regs executingCore st
+      hObjInv
+    cases hFRO : faultReplyOnCore replier callerTid mi regs executingCore st with
+    | mk stF res =>
+      rw [hFRO] at hFR hStep
+      cases res with
+      | error e => simp only [] at hStep; exact absurd hStep (by simp)
+      | ok out =>
+        simp only [] at hStep
+        have hEq : stF = st' := congrArg Prod.snd (Except.ok.inj hStep)
+        subst hEq
+        exact hFR
+  · have hNF : threadHasPendingFault st callerTid = false := by
+      simpa using hF
+    rw [replyTransferOnCore_of_no_fault replier callerTid mi regs msg executingCore st hNF]
+      at hStep
+    rw [replyTransferWriteSet_of_no_fault replier callerTid mi regs msg executingCore st hNF]
+    have hDispatch := endpointReplyCrossCoreDispatch_confinedToCores replier callerTid msg
+      executingCore st hObjInv
+    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+    | mk stDisp res =>
+      rw [hDisp] at hDispatch hStep
+      cases res with
+      | error e => simp only [] at hStep; exact absurd hStep (by simp)
+      | ok sgi? =>
+        simp only [] at hStep
+        have hEq : Architecture.stageDeliveredMessage stDisp callerTid 0 = st' :=
+          congrArg Prod.snd (Except.ok.inj hStep)
+        subst hEq
+        exact observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
+          (observableSlotsConfinedToCores_trans hDispatch
+            (observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
+              (Architecture.stageDeliveredMessage_scheduler_eq stDisp callerTid 0)
+              (Architecture.stageDeliveredMessage_machine_eq stDisp callerTid 0)))
+
+-- ============================================================================
 -- §5d The live `.replyRecv` arm itself
 -- ============================================================================
 --
