@@ -343,6 +343,17 @@ theorem mem_foldl_insert_provenance (moved : List (SchedContextId × Nat))
     (migrateSchedContextReplenishment st scId fromCore toCore).machine = st.machine := by
   unfold migrateSchedContextReplenishment; split <;> rfl
 
+/-- `v0.35.164`: the migration never touches the TLB-shootdown state either — it
+writes the two replenish-queue slots and nothing else.  Stated beside the
+`machine` frame because the destroy path's pipeline
+(`lifecyclePreRetypeCleanup_tlbShootdown_eq`) now composes the migrating return
+and reads exactly this. -/
+@[simp] theorem migrateSchedContextReplenishment_tlbShootdown (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).tlbShootdown
+      = st.tlbShootdown := by
+  unfold migrateSchedContextReplenishment; split <;> rfl
+
 /-- WS-SM SM5.H.4 (frame): the replenishment migration leaves **every** run-queue
 slot untouched (it writes only replenish-queue slots) — so it preserves
 run-queue well-formedness on every core trivially. -/

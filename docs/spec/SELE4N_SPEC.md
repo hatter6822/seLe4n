@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.163` (`lakefile.toml`) |
+| **Package version** | `0.35.164` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 401,319 across 334 Lean files |
-| **Test LoC** | 81,967 across 70 Lean test suites |
-| **Proved declarations** | 13,282 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 401,833 across 334 Lean files |
+| **Test LoC** | 82,175 across 70 Lean test suites |
+| **Proved declarations** | 13,302 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4580,6 +4580,24 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   frame moved from the staged non-interference module to production, each leaving
   a tombstone.  `tests/SmpIpcSuite.lean` §3.30 and `tests/FaultHandlingSuite.lean`
   §7c are the witnesses.  `maxLockSetSize` is unmoved.
+
+  **And the destroy path ends a thread's reservation the way the suspend's G3
+  does** (`v0.35.164`, register row 62).  `lifecyclePreRetypeCleanup`'s TCB arm
+  runs `cancelDonationArmOnCore` (`Lifecycle/Operations/Cleanup.lean`), the
+  suspend pipeline's three-way binding match named — `.unbound` the identity,
+  `.bound` the in-place unbind with the replenish purge on the thread's home
+  core (seL4's `finaliseCap` → `unbindFromSc`), `.donated` the return and the
+  replenishment migration to the owner's home — where it used to run the bare
+  `cleanupDonatedSchedContext` and, for a `.bound` thread, an index-only removal
+  that left the SchedContext bound to a destroyed thread with its replenishment
+  stranded on that thread's home core.  The two per-core arms moved beside the
+  cleanup so the destroy path can reach them, `cancelDonationOnCore` is defined
+  through the arm, the suspend's G3 is pinned to it by `rfl`,
+  `retypeTargetDetached` gained `tcbNotBound`, and the arm carries the affinity
+  theorem neither caller had
+  (`cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp`).
+  `tests/SmpIpcSuite.lean` §3.31 is the witness; the SchedContext-target arm and
+  the composite's own theorem are register row 63.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

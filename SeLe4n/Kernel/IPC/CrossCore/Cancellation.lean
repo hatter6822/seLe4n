@@ -60,7 +60,13 @@ lock-set discipline:
   `cancelBoundDonationOnCore … bootCoreId = cancelBoundDonation` definitionally
   (the SM5.A backward-compatibility bridge pattern).  The donated arm
   (`cancelDonatedDonation` → `returnDonatedSchedContext`) performs object
-  writes only, so it is core-independent and shared as-is.
+  writes only, so it is core-independent and shared as-is.  **Since
+  `v0.35.164` the two arms and their `Except`-shaped dispatcher
+  `cancelDonationArmOnCore` are defined in `Lifecycle/Operations/Cleanup.lean`**,
+  because the destroy path (`lifecyclePreRetypeCleanup`) runs them too and
+  cannot import this module; this module keeps the bracket-shaped
+  `cancelDonationOnCore` — defined through the arm — and every theorem that
+  reads `ipcInvariant` of them.
 
 ## Lock-set footprints (plan §3.1)
 
@@ -437,29 +443,11 @@ def cancelIpcBlockingOnCore (victim : SeLe4n.ThreadId) (tcb : TCB)
   -- victim's own removal at its placement.
   descheduleThread (cancelIpcBlockingReclaimed victim tcb st) victim executingCore
 
-/-- WS-SM SM6.E.3 (plan §3.1): the R5.A in-place SchedContext unbind arm,
-across cores.
-
-Textual twin of `cancelBoundDonation` with the replenish-queue purge
-parametrised by `rqCore` — the core whose replenish queue holds the
-SchedContext's pending replenishments.  Under the SM5.H affinity invariant
-(`replenishQueueAffinityConsistentOnCore`) that is the bound thread's *home*
-core, which the dispatcher `cancelDonationOnCore` resolves via
-`determineTargetCore`; the single-core form is exactly the `bootCoreId`
-instance (`cancelBoundDonationOnCore_bootCoreId`). -/
-def cancelBoundDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (rqCore : CoreId) : Except KernelError SystemState :=
-  match tcb.schedContextBinding with
-  | .bound scId =>
-    let st1 : SystemState := st.updateSchedContext scId fun sc =>
-      -- **WS-HP HP10.4**: and the origin, as the single-core spelling does — the
-      -- `_bootCoreId` bridge below is `rfl`, so the two cannot differ by a field.
-      { sc with boundThread := none, isActive := false, donationOrigin := none }
-    let st2 := { st1 with scheduler := st1.scheduler.setReplenishQueueOnCore rqCore (ReplenishQueue.remove (st1.scheduler.replenishQueueOnCore rqCore) scId) }
-    let st2 := { st2 with scThreadIndex :=
-      (scThreadIndexRemove st2.scThreadIndex scId tid) }
-    .ok (st2.updateTcb tid fun tcb' => { tcb' with schedContextBinding := .unbound })
-  | _ => .error .illegalState
+-- `v0.35.164`: `cancelBoundDonationOnCore` is defined in
+-- `Lifecycle/Operations/Cleanup.lean` now, beside the destroy path that runs it
+-- (WS-SM SM6.E.3's docstring travelled with it; its four basic frames are in
+-- `CleanupPreservation.lean`).  The single-core bridge below stays here, where
+-- both spellings are visible.
 
 /-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` at the boot core is exactly the
 single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -/
@@ -497,33 +485,9 @@ single-core `cancelBoundDonation` — the SM5.A backward-compatibility bridge. -
 -- migration's frame is stated once for the whole tree.
 
 
-/-- WS-SM SM6.E.3 (donated arm across cores): cancel a donated SchedContext
-binding **and migrate its pending replenishments home**.
-
-The R5.A `cancelDonatedDonation` return (`cleanupDonatedSchedContext` →
-`returnDonatedSchedContext`, object writes only) followed by the
-replenishment migration from the **victim's** home core (where per-core ticks
-enqueued them while the server ran on the donated budget) to the **original
-owner's** home core — the SC's post-return bound thread, whose home core the
-SM5.H affinity invariant names as the entries' required residence.  The
-victim's home is pre-resolved from the pre-state (the return never touches
-`cpuAffinity`); the owner's home is read post-return.  Self-migration —
-shared home core, and in particular every single-core configuration — is a
-definitional no-op (`migrateSchedContextReplenishment_noop`), recovering
-the single-core arm exactly (`cancelDonatedDonationOnCore_eq_of_sharedHome`).
-
-Returns `.error .illegalState` on a non-`.donated` binding, exactly like the
-single-core arm. -/
-def cancelDonatedDonationOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Except KernelError SystemState :=
-  match tcb.schedContextBinding with
-  | .donated scId originalOwner =>
-      match cleanupDonatedSchedContext st tid with
-      | .error e => .error e
-      | .ok st' =>
-          .ok (migrateSchedContextReplenishment st' scId
-                (determineTargetCore st tid) (determineTargetCore st' originalOwner))
-  | _ => .error .illegalState
+-- `v0.35.164`: `cancelDonatedDonationOnCore` is defined in
+-- `Lifecycle/Operations/Cleanup.lean` now, for the same reason as the bound arm
+-- (the docstring travelled with it).  The single-core bridge below stays here.
 
 /-- WS-SM SM6.E.3: when the victim and the original owner share a home core —
 in particular in every single-core configuration — the per-core donated arm
@@ -544,46 +508,10 @@ theorem cancelDonatedDonationOnCore_eq_of_sharedHome (st : SystemState)
       simp only []
       rw [hHome st' hC, migrateSchedContextReplenishment_noop]
 
-/-- WS-SM SM6.E.3: the per-core donated arm preserves `objects.invExt` — the
-return preserves it and the migration never touches `objects`. -/
-theorem cancelDonatedDonationOnCore_preserves_objects_invExt
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
-    (hInv : st.objects.invExt)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    st'.objects.invExt := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · -- `.donated` arm.
-    split at h
-    · cases h
-    · injection h with h
-      subst h
-      rw [migrateSchedContextReplenishment_objects]
-      exact cleanupDonatedSchedContext_preserves_objects_invExt _ _ _ hInv (by assumption)
-  · cases h
-
-/-- WS-SM SM6.E.3: the per-core donated arm never disturbs any core's run
-queue or current slot (return: object writes only; migration: replenish
-slots only). -/
-theorem cancelDonatedDonationOnCore_runQueue_current_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (c : CoreId)
-    (h : cancelDonatedDonationOnCore st tid tcb = .ok st') :
-    st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-    ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
-  unfold cancelDonatedDonationOnCore at h
-  split at h
-  · split at h
-    · cases h
-    · injection h with h
-      subst h
-      rename_i st1 hClean
-      have hS := cleanupDonatedSchedContext_scheduler_eq st st1 tid hClean
-      obtain ⟨hRQ, hCur⟩ := migrateSchedContextReplenishment_runQueue_current_eq
-        st1 _ (determineTargetCore st tid) _ c
-      constructor
-      · rw [hRQ, hS]
-      · rw [hCur, hS]
-  · cases h
+-- `v0.35.164`: `cancelDonatedDonationOnCore_preserves_objects_invExt` and
+-- `cancelDonatedDonationOnCore_runQueue_current_eq` moved to
+-- `Lifecycle/Operations/CleanupPreservation.lean` with the definition they are
+-- about; the destroy path's proofs read them there.
 
 /-- WS-SM SM6.E.3 (plan §3.1): donation cancellation across cores — the R5.A
 dispatcher, per-core.
@@ -599,19 +527,21 @@ Returns the post-state paired with the `Except` outcome; on an error the
 **pre-state** is returned so a `withLockSet` bracket still releases cleanly
 (the SM6.A/B/C error convention).  No SGI is ever surfaced — donation
 cancellation wakes no thread and never disturbs another core's current
-slot (`cancelDonationOnCore_runQueue_current_eq`). -/
+slot (`cancelDonationOnCore_runQueue_current_eq`).
+
+**`v0.35.164`**: this is the arm in the `withLockSet` bracket convention and
+nothing more — its body is one `match` over `cancelDonationArmOnCore`, the
+`Except`-shaped dispatcher the destroy path runs.  Two spellings, defined one
+through the other, for the reason the arm's docstring gives. -/
 def cancelDonationOnCore (tid : SeLe4n.ThreadId) (tcb : TCB)
     (st : SystemState) : SystemState × Except KernelError Unit :=
-  match tcb.schedContextBinding with
-  | .unbound => (st, .ok ())
-  | .bound _ =>
-      match cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid) with
-      | .ok st' => (st', .ok ())
-      | .error e => (st, .error e)
-  | .donated _ _ =>
-      match cancelDonatedDonationOnCore st tid tcb with
-      | .ok st' => (st', .ok ())
-      | .error e => (st, .error e)
+  -- `v0.35.164`: defined THROUGH the `Except`-shaped arm
+  -- (`cancelDonationArmOnCore`, `Lifecycle/Operations/Cleanup.lean`) rather than
+  -- beside it, so a step added to the arm — which the destroy path now runs —
+  -- reaches this bracket-shaped spelling by construction.
+  match cancelDonationArmOnCore st tid tcb with
+  | .ok st' => (st', .ok ())
+  | .error e => (st, .error e)
 
 -- ============================================================================
 -- §3  Path/shape reduction lemmas
@@ -3155,22 +3085,8 @@ theorem cancelIpcBlockingOnCore_preserves_objects_invExt
   rw [cancelIpcBlockingOnCore_objects_eq]
   exact cancelIpcBlocking_preserves_objects_invExt st victim tcb hInv
 
-/-- WS-SM SM6.E.3: `cancelBoundDonationOnCore` preserves `objects.invExt` —
-the per-core replenish-queue purge does not touch `objects`; the object
-writes are the same SchedContext deactivation and TCB unbind inserts as the
-single-core arm. -/
-theorem cancelBoundDonationOnCore_preserves_objects_invExt
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
-    (hInv : st.objects.invExt)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.objects.invExt := by
-  unfold cancelBoundDonationOnCore at h
-  split at h
-  · injection h with h
-    subst h
-    exact SystemState.updateTcb_preserves_objects_invExt _ _ _
-      (SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hInv)
-  · cases h
+-- `v0.35.164`: `cancelBoundDonationOnCore_preserves_objects_invExt` moved to
+-- `Lifecycle/Operations/CleanupPreservation.lean` with the definition.
 
 /-- WS-SM SM6.E.3: the per-core donation-cancellation dispatcher preserves
 `objects.invExt` on every arm and every outcome (the error paths return the
@@ -3179,7 +3095,7 @@ theorem cancelDonationOnCore_preserves_objects_invExt
     (tid : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
     (hInv : st.objects.invExt) :
     (cancelDonationOnCore tid tcb st).1.objects.invExt := by
-  unfold cancelDonationOnCore
+  unfold cancelDonationOnCore cancelDonationArmOnCore
   cases hB : tcb.schedContextBinding with
   | unbound => exact hInv
   | bound scId =>
@@ -3281,7 +3197,7 @@ theorem cancelDonationOnCore_preserves_ipcInvariant
     (tid : SeLe4n.ThreadId) (tcb : TCB) (st : SystemState)
     (hInv : st.objects.invExt) (hIpc : ipcInvariant st) :
     ipcInvariant (cancelDonationOnCore tid tcb st).1 := by
-  unfold cancelDonationOnCore
+  unfold cancelDonationOnCore cancelDonationArmOnCore
   cases hB : tcb.schedContextBinding with
   | unbound => exact hIpc
   | bound scId =>
@@ -3307,58 +3223,10 @@ theorem cancelDonatedDonation_scheduler_eq
   · exact cleanupDonatedSchedContext_scheduler_eq st st' tid h
   · cases h
 
-/-- WS-SM SM6.E.3: the bound arm's per-core purge edits **only** core
-`rqCore`'s replenish-queue slot — every core's run queue and current slot are
-exactly the pre-state's (the donation cancellation wakes and deschedules
-nothing). -/
-theorem cancelBoundDonationOnCore_runQueue_current_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
-    (c : CoreId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
-    ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c := by
-  simp only [cancelBoundDonationOnCore] at h
-  split at h
-  · injection h with h
-    subst h
-    constructor <;>
-      (rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler];
-       first | rfl | simp)
-  · cases h
-
-/-- WS-SM SM6.E.3 (the per-core purge, positively): on the `.bound scId` arm
-the SchedContext's pending replenishments are removed from core `rqCore`'s
-replenish queue — the cross-core generalisation of the single-core arm's
-bootCore-pinned purge. -/
-theorem cancelBoundDonationOnCore_replenishQueue_purged
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
-    (scId : SeLe4n.SchedContextId)
-    (hBind : tcb.schedContextBinding = .bound scId)
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.scheduler.replenishQueueOnCore rqCore
-      = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore rqCore) scId := by
-  simp only [cancelBoundDonationOnCore, hBind] at h
-  injection h with h
-  subst h
-  rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
-  simp
-
-/-- WS-SM SM6.E.3 (per-core locality of the purge): every **other** core's
-replenish queue is exactly the pre-state's. -/
-theorem cancelBoundDonationOnCore_replenishQueue_ne
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) (rqCore : CoreId)
-    (c' : CoreId) (hOther : rqCore ≠ c')
-    (h : cancelBoundDonationOnCore st tid tcb rqCore = .ok st') :
-    st'.scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  simp only [cancelBoundDonationOnCore] at h
-  split at h
-  · injection h with h
-    subst h
-    rw [SystemState.updateTcb_scheduler, SystemState.updateSchedContext_scheduler]
-    simp [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hOther]
-  · cases h
-
+-- `v0.35.164`: `cancelBoundDonationOnCore_runQueue_current_eq`,
+-- `cancelBoundDonationOnCore_replenishQueue_purged` and
+-- `cancelBoundDonationOnCore_replenishQueue_ne` moved to
+-- `Lifecycle/Operations/CleanupPreservation.lean` with the definition.
 /-- WS-SM SM6.E.3: the per-core donation-cancellation dispatcher never
 disturbs any core's run queue or current slot, on any arm and any outcome —
 donation cancellation wakes no thread and never needs an SGI. -/
@@ -3368,7 +3236,7 @@ theorem cancelDonationOnCore_runQueue_current_eq
         = st.scheduler.runQueueOnCore c
     ∧ (cancelDonationOnCore tid tcb st).1.scheduler.currentOnCore c
         = st.scheduler.currentOnCore c := by
-  unfold cancelDonationOnCore
+  unfold cancelDonationOnCore cancelDonationArmOnCore
   cases hB : tcb.schedContextBinding with
   | unbound => exact ⟨rfl, rfl⟩
   | bound scId =>
@@ -3861,7 +3729,21 @@ proof that splits on G3's match, so they are **pinned** instead, which is what
 this project prescribes when a second implementation must exist.
 
 `rfl`: a step added to either side fails to elaborate this, on the day it is
-written. -/
+written.
+
+**`v0.35.164`**: the three-way match has a name now — `cancelDonationArmOnCore`
+(`Lifecycle/Operations/Cleanup.lean`), the arm the destroy path runs — and
+`suspendDonationArm_eq_cancelDonationArmOnCore` is the direct pin; this one
+survives as the bracket-shaped corollary, since `cancelDonationOnCore` is
+defined through the arm. -/
+theorem suspendDonationArm_eq_cancelDonationArmOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) :
+    (match tcb.schedContextBinding with
+     | .unbound => (Except.ok st : Except KernelError SystemState)
+     | .bound _ => cancelBoundDonationOnCore st tid tcb (determineTargetCore st tid)
+     | .donated _ _ => cancelDonatedDonationOnCore st tid tcb)
+      = cancelDonationArmOnCore st tid tcb := rfl
+
 theorem suspendDonationArm_eq_cancelDonationOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) :
     (match tcb.schedContextBinding with
@@ -3871,7 +3753,7 @@ theorem suspendDonationArm_eq_cancelDonationOnCore (st : SystemState)
       = (match (cancelDonationOnCore tid tcb st).2 with
          | .ok () => .ok (cancelDonationOnCore tid tcb st).1
          | .error e => .error e) := by
-  unfold cancelDonationOnCore
+  unfold cancelDonationOnCore cancelDonationArmOnCore
   cases tcb.schedContextBinding with
   | unbound => rfl
   | bound scId =>
@@ -4768,14 +4650,14 @@ theorem cancelDonationOnCore_bootHome_ok
     simp only [cancelDonation, hB] at hOk
     injection hOk with hOk
     subst hOk
-    simp only [cancelDonationOnCore, hB]
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB]
   | bound scId =>
     simp only [cancelDonation, hB] at hOk
-    simp only [cancelDonationOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
       hOk]
   | donated scId owner =>
     simp only [cancelDonation, hB] at hOk
-    simp only [cancelDonationOnCore, hB,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB,
       cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
         (hOwnerHome scId owner hB)]
     simp only [hOk]
@@ -4796,11 +4678,11 @@ theorem cancelDonationOnCore_bootHome_error
     cases hErr
   | bound scId =>
     simp only [cancelDonation, hB] at hErr
-    simp only [cancelDonationOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB, hHome, cancelBoundDonationOnCore_bootCoreId,
       hErr]
   | donated scId owner =>
     simp only [cancelDonation, hB] at hErr
-    simp only [cancelDonationOnCore, hB,
+    simp only [cancelDonationOnCore, cancelDonationArmOnCore, hB,
       cancelDonatedDonationOnCore_eq_of_sharedHome st tid tcb scId owner hB
         (hOwnerHome scId owner hB)]
     simp only [hErr]

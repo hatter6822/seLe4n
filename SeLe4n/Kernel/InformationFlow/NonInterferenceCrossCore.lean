@@ -2356,6 +2356,20 @@ theorem threadOccupiedCores_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
   unfold threadOccupiedCores threadOccupiesCore
   rw [h]
 
+/-- `v0.35.164`: the occupancy set reads only the run queues and current slots, so
+a step that keeps every one of those — the destroy path's reservation arm, which
+may write a replenish queue — keeps the set, with no whole-scheduler equality. -/
+theorem threadOccupiedCores_congr_of_runQueue_current {st st' : SystemState}
+    (tid : SeLe4n.ThreadId)
+    (h : ∀ c, st'.scheduler.runQueueOnCore c = st.scheduler.runQueueOnCore c
+      ∧ st'.scheduler.currentOnCore c = st.scheduler.currentOnCore c) :
+    threadOccupiedCores st' tid = threadOccupiedCores st tid := by
+  unfold threadOccupiedCores
+  apply List.filter_congr
+  intro c _
+  unfold threadOccupiesCore
+  rw [(h c).1, (h c).2]
+
 /-- SM8.B.2: **the TCB reference scrub's bound** — the destroy sweep, plus two
 object-store sweeps that write no scheduler slot at all. -/
 theorem cleanupTcbReferences_confinedToCores (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -2526,6 +2540,16 @@ theorem suspendDonationArms_confinedToCores (s sD : SystemState) (tid : SeLe4n.T
   · rw [Except.ok.injEq] at h; subst h; exact observableSlotsConfinedToCores_refl _ _
   · exact cancelBoundDonationOnCore_confinedToCores s sD tid tcb' home h
   · exact cancelDonatedDonationOnCore_confinedToCores s sD tid tcb' h
+
+/-- `v0.35.164`: the destroy path's reservation arm is per-core silent — it is the
+suspend's G3 match, named (`cancelDonationArmOnCore`), so this is
+`suspendDonationArms_confinedToCores` at the thread's home core. -/
+theorem cancelDonationArmOnCore_confinedToCores (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : cancelDonationArmOnCore st tid tcb = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  unfold cancelDonationArmOnCore at h
+  exact suspendDonationArms_confinedToCores st st' tid tcb (determineTargetCore st tid) h
 
 /-- SM8.B.2 (**the live `.tcbSuspend` bound**): `suspendThreadOnCore` — the
 function `API.dispatchCapabilityOnly`'s `.tcbSuspend` arm routes through —
@@ -4208,30 +4232,22 @@ def lifecycleRetypeWriteSet (st : SystemState) (target : SeLe4n.ObjId) : List Co
   | some obj => lifecycleRetypeWriteSetOf st obj
   | none => []
 
-/-- SM8.B.2: the TCB cleanup arm, with its scheduler- and machine-silent prefix
-abstracted.
-
-Stated separately because the arm runs at one of two mid-states (the
-`scThreadIndex` removal fires only for a `.bound` binding) and the two differ in
-nothing the observer reads. -/
-private theorem tcbCleanupArm_confinedToCores (st stMid : SystemState)
-    (tid : SeLe4n.ThreadId)
-    (hSched : stMid.scheduler = st.scheduler) (hMach : stMid.machine = st.machine) :
-    observableSlotsConfinedToCores st (cleanupTcbReferences stMid tid)
-      (threadOccupiedCores st tid) := by
-  refine observableSlotsConfinedToCores_of_framed_prefix hSched hMach ?_
-  rw [← threadOccupiedCores_congr (st' := stMid) tid hSched]
-  exact cleanupTcbReferences_confinedToCores stMid tid
+-- `v0.35.164`: `tcbCleanupArm_confinedToCores` is gone with the two mid-states it
+-- abstracted over; the pipeline's first step is the reservation arm, composed
+-- below through `cancelDonationArmOnCore_confinedToCores`.
 
 /-- SM8.B.2 (**the cleanup pipeline's bound**): the pre-retype cleanup writes no
 core outside the destroyed object's write set.
 
 The case split is the definition's own: the TCB arm carries the sweep, the CNode
 and endpoint arms are frames, and the remaining kinds return the state
-unchanged. The TCB arm's three prefix steps — the donated-SC return, the
-`scThreadIndex` removal, and (on the error path) the reply-link rejection — are
-all scheduler- and machine-preserving, which is also why the write set may be
-read at the pipeline's entry state rather than at the sweep's. -/
+unchanged. The TCB arm's prefix — the reservation arm
+(`cancelDonationArmOnCore`, `v0.35.164`: an unbind with a replenish purge, or a
+return with a replenish migration) and, on the error path, the reply-link
+rejection — is per-core silent and keeps every run queue and current slot
+(`cancelDonationArmOnCore_runQueue_current_eq`), which is why the write set may
+be read at the pipeline's entry state rather than at the sweep's: the occupancy
+set is the same on both. -/
 theorem lifecyclePreRetypeCleanup_confinedToCores
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hOk : lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean) :
@@ -4244,14 +4260,10 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       intro hRun
       rw [if_pos hRun] at hOk
       exact absurd hOk (by simp))] at hOk
-    cases hDon : cleanupDonatedSchedContext st tcb.tid with
-    | error e => rw [hDon] at hOk; contradiction
-    | ok stDon =>
-      rw [hDon] at hOk
-      have hDonSched : stDon.scheduler = st.scheduler :=
-        cleanupDonatedSchedContext_scheduler_eq st stDon tcb.tid hDon
-      have hDonMach : stDon.machine = st.machine :=
-        cleanupDonatedSchedContext_machine_eq st stDon tcb.tid hDon
+    cases hArm : cancelDonationArmOnCore st tcb.tid tcb with
+    | error e => rw [hArm] at hOk; contradiction
+    | ok stArm =>
+      rw [hArm] at hOk
       simp only [] at hOk
       have hRO : tcb.replyObject.isSome = false := by
         cases hr : tcb.replyObject.isSome with
@@ -4260,16 +4272,17 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
       rw [if_neg (by simp [hRO])] at hOk
       injection hOk with hOk; subst hOk
       simp only [lifecycleRetypeWriteSetOf]
-      -- the `scThreadIndex` removal fires only for a `.bound` binding, and is
-      -- scheduler- and machine-silent when it does
-      cases tcb.schedContextBinding with
-      | bound scId =>
-        exact tcbCleanupArm_confinedToCores st
-          { stDon with
-            scThreadIndex := scThreadIndexRemove stDon.scThreadIndex scId tcb.tid }
-          tcb.tid hDonSched hDonMach
-      | unbound => exact tcbCleanupArm_confinedToCores st stDon tcb.tid hDonSched hDonMach
-      | donated _ _ => exact tcbCleanupArm_confinedToCores st stDon tcb.tid hDonSched hDonMach
+      -- The arm writes no observable slot; the sweep's write set at the arm's
+      -- post-state is the entry state's, because the arm keeps every run queue
+      -- and current slot.
+      have hOcc : threadOccupiedCores stArm tcb.tid = threadOccupiedCores st tcb.tid :=
+        threadOccupiedCores_congr_of_runQueue_current tcb.tid
+          (fun c => cancelDonationArmOnCore_runQueue_current_eq st stArm tcb.tid tcb c hArm)
+      have hTrans := observableSlotsConfinedToCores_trans
+        (cancelDonationArmOnCore_confinedToCores st stArm tcb.tid tcb hArm)
+        (cleanupTcbReferences_confinedToCores stArm tcb.tid)
+      rw [List.nil_append, hOcc] at hTrans
+      exact hTrans
   | cnode cn =>
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     have hDetach : observableSlotsConfinedToCores st (detachCNodeSlots st target cn) [] :=

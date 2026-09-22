@@ -2293,7 +2293,7 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     (hTid : (witnessTid.toObjId == target) = false) :
     retypeTargetDetached witnessSt3 target := by
   have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro sc; rw [hTargetEmpty]; simp
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
@@ -2302,8 +2302,10 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  -- `v0.35.164`: `tcbNotBound`, vacuous on the empty slot like its neighbours.
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   -- **WS-HP HP10.5**: the target holds nothing in this witness, so the origin
-  -- clause is vacuous exactly as its seven neighbours above are.
+  -- clause is vacuous exactly as its eight neighbours above are.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro tid tcb hLk

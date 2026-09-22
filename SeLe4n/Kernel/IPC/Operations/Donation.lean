@@ -294,7 +294,8 @@ theorem endpointReplyRecvWithDonation_unfold
 -- SC's CBS replenish queue migrates per SM5.H.4"); until WS-RR RR2 no donation
 -- path did it.  `applyCallDonationOnCore` is that path, built exactly like the
 -- cancellation arm that already migrates
--- (`cancelDonatedDonationOnCore`, `IPC/CrossCore/Cancellation.lean`): the
+-- (`cancelDonatedDonationOnCore`, `Lifecycle/Operations/Cleanup.lean` since
+-- `v0.35.164`, where the destroy path can reach it): the
 -- unchanged single-core donation, then `migrateSchedContextReplenishment` from
 -- the donor's home core to the donee's.
 

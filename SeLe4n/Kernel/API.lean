@@ -1360,7 +1360,17 @@ asking who runs `returnDonatedSchedContext` rather than who is listed here, and 
 sixth caller of that pop is a sixth constructor — or, as the cancellation reclaim
 has (`cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp`,
 stated over the teardown composite rather than here), its own migration theorem,
-named where a reader of this relation will find it. -/
+named where a reader of this relation will find it.
+
+**`v0.35.164`**: the suspend pipeline's G3 donated arm is the other one of that
+shape — `cancelDonatedDonationOnCore` (`Lifecycle/Operations/Cleanup.lean`), a
+return then a migration, run by the destroy path too since this version — and
+it had been migrating since WS-SM SM6.E.3 with neither a constructor here nor a
+theorem anywhere.  Its theorem is beside the arm
+(`cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp`,
+`Lifecycle/Operations/CleanupPreservation.lean`), composed from the general
+`migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` as
+`preReceiveReturn`'s is. -/
 inductive PerCoreDonationStep (st st' : SystemState) : Prop
   /-- The call rendezvous donates the caller's SchedContext to the receiver. -/
   | call (callerVtid receiverVtid : SeLe4n.ValidThreadId)

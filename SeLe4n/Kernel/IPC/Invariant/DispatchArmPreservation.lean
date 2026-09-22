@@ -2723,6 +2723,18 @@ structure retypeTargetDetached (st : SystemState) (target : SeLe4n.ObjId) : Prop
     passiveServerIdleAllowed t.ipcState
   tcbNotDonated : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ scId owner, t.schedContextBinding ≠ .donated scId owner
+  /-- **`v0.35.164`**: nor `.bound`.  The destroy path's reservation arm
+      (`cancelDonationArmOnCore`) unbinds a bound target's context — seL4's
+      `unbindFromSc` in `finaliseCap` — writing the SchedContext's `boundThread`,
+      the TCB's binding and the home core's replenish queue, so under this pack
+      the arm is the identity and the retype write is the pipeline's only object
+      write; the runtime arm is what makes a violation safe, exactly as it is for
+      `tcbNotDonated`.  Until this version a `.bound` target was admitted and the
+      pipeline removed only its `scThreadIndex` entry, which left the
+      SchedContext bound to a destroyed thread (`docs/REGISTERED_DEBT.md`, the
+      row this version records). -/
+  tcbNotBound : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
+    ∀ scId, t.schedContextBinding ≠ .bound scId
   tcbNotWaiter : ∀ t : TCB, st.objects[target]? = some (.tcb t) →
     ∀ (oid : SeLe4n.ObjId) (n : Notification), st.objects[oid]? = some (.notification n) →
     t.tid ∉ n.waitingThreads.val
@@ -3621,21 +3633,10 @@ private theorem clearDonationOriginReferences_id_of_no_origin
       | tcb _ | endpoint _ | cnode _ | vspaceRoot _ | untyped _
       | notification _ | reply _ => rfl)
 
-/-- An unbound-or-bound (never donated) thread returns no SchedContext at
-cleanup — the donation return is the identity success. -/
-private theorem cleanupDonatedSchedContext_ok_of_not_donated
-    (st : SystemState) (tid : SeLe4n.ThreadId)
-    (hNotDonated : ∀ tcbX : TCB, lookupTcb st tid = some tcbX →
-      ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner) :
-    cleanupDonatedSchedContext st tid = .ok st := by
-  unfold cleanupDonatedSchedContext
-  cases hLk : lookupTcb st tid with
-  | none => rfl
-  | some tcbX =>
-      cases hB : tcbX.schedContextBinding with
-      | donated scId owner => exact absurd hB (hNotDonated tcbX hLk scId owner)
-      | unbound => simp only [hB]
-      | bound scId => simp only [hB]
+-- `v0.35.164`: `cleanupDonatedSchedContext_ok_of_not_donated` is gone — the
+-- pipeline's first step is `cancelDonationArmOnCore`, which dispatches on the
+-- target's own binding, so the pack's two clauses reduce it to the identity
+-- directly (`cancelDonationArmOnCore_of_unbound`).
 
 /-- Under the detachment pack the whole TCB reference sweep is the literal
 identity, on any state sharing the pre-state's objects and scheduler. -/
@@ -3684,9 +3685,9 @@ private theorem cleanupTcbReferences_id_of_detached
       exact hDet.tcbNotDonationOrigin tcb hObj oid sc hS)
 
 /-- Under the detachment pack a successful pre-retype cleanup changes neither
-the object store nor the scheduler — the sweeps are identities, the donation
-return is trivial, and the CDT/serviceRegistry/scThreadIndex writes are outside
-the bundle's read set. -/
+the object store nor the scheduler — the sweeps are identities, the reservation
+arm is the identity (the pack refuses a bound or donated target, `v0.35.164`),
+and the CDT/serviceRegistry writes are outside the bundle's read set. -/
 private theorem lifecyclePreRetypeCleanup_detached_frame
     (st stClean : SystemState) (target : SeLe4n.ObjId) (currentObj newObj : KernelObject)
     (hObjInv : st.objects.invExt)
@@ -3702,37 +3703,21 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
         simp only [List.any_eq_false, beq_iff_eq]
         intro c _
         exact (hDet.tcbDescheduled tcb hObj c).2
-      have hND : ∀ tcbX : TCB, lookupTcb st tcb.tid = some tcbX →
-          ∀ scId owner, tcbX.schedContextBinding ≠ .donated scId owner := by
-        intro tcbX hLk scId owner
-        unfold lookupTcb SystemState.getTcb? at hLk
-        split at hLk
-        · cases hLk
-        · rw [hDet.tcbSelfId tcb hObj, hObj] at hLk
-          simp only [Option.some.injEq] at hLk
-          rw [← hLk]
-          exact hDet.tcbNotDonated tcb hObj scId owner
+      -- `v0.35.164`: the pack puts the target on the identity arm of the destroy
+      -- path's reservation dispatcher — neither `.donated` nor `.bound`.
+      have hB : tcb.schedContextBinding = .unbound := by
+        cases hB' : tcb.schedContextBinding with
+        | unbound => rfl
+        | bound scId => exact absurd hB' (hDet.tcbNotBound tcb hObj scId)
+        | donated scId owner => exact absurd hB' (hDet.tcbNotDonated tcb hObj scId owner)
       simp only [hCur, Bool.false_eq_true, if_false,
-        cleanupDonatedSchedContext_ok_of_not_donated st tcb.tid hND] at hStep
-      cases hB : tcb.schedContextBinding with
-      | donated scId owner => exact absurd hB (hDet.tcbNotDonated tcb hObj scId owner)
-      | unbound =>
-          simp only [hB] at hStep
-          rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
-            st rfl rfl] at hStep
-          split at hStep
-          · contradiction
-          · cases hStep
-            exact ⟨rfl, rfl⟩
-      | bound scId =>
-          simp only [hB] at hStep
-          rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
-            { st with scThreadIndex := scThreadIndexRemove st.scThreadIndex scId tcb.tid }
-            rfl rfl] at hStep
-          split at hStep
-          · contradiction
-          · cases hStep
-            exact ⟨rfl, rfl⟩
+        cancelDonationArmOnCore_of_unbound st tcb.tid tcb hB] at hStep
+      rw [cleanupTcbReferences_id_of_detached st target tcb hObjInv hObj hDet
+        st rfl rfl] at hStep
+      split at hStep
+      · contradiction
+      · cases hStep
+        exact ⟨rfl, rfl⟩
   | endpoint ep =>
       simp only [] at hStep
       cases hStep
@@ -3783,6 +3768,7 @@ private theorem retypeTargetDetached_of_objects_scheduler_eq
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbSelfId t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbAllowedState t hT
   · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotDonated t hT
+  · intro t hT; rw [hObjs] at hT; exact hDet.tcbNotBound t hT
   · intro t hT oid n hN; rw [hObjs] at hT hN; exact hDet.tcbNotWaiter t hT oid n hN
   -- **WS-HP HP10.5**: the origin clause travels on `objects` alone, like its
   -- neighbours above.

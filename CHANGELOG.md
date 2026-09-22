@@ -1,3 +1,130 @@
+## v0.35.164 — the retype's TCB cleanup ends the thread's reservation the way the suspend's G3 does
+
+WS-RR RR8.12, the fix cut between C3a and C3b: register row 62 is found and closed
+in one cut, and row 63 is what the same sweep found beside it.  Surveying Cut
+C3b's `.lifecycleRetype` write set meant reading what the destroy path does to a
+thread's reservation, and it did two wrong things.  On a `.donated` holder,
+`lifecyclePreRetypeCleanup`'s TCB arm ran the bare `cleanupDonatedSchedContext` —
+a return that migrates no replenishment, register row 57's class on the destroy
+path — and on a `.bound` thread it removed only the thread's `scThreadIndex`
+entry (S-05/PERF-O1), leaving the SchedContext bound to a destroyed thread with
+its replenishment queued on that thread's home core.  After a successful retype
+`schedContextBindingConsistent` and `replenishQueueAffinityConsistent_smp` were
+both false, and no theorem claimed either across the operation, which is how the
+gap was silent rather than wrong.  seL4's `finaliseCap` runs `unbindFromSc` on a
+TCB; this kernel's suspend pipeline already did the equivalent at its G3, and the
+destroy path did not.
+
+### The fix: one arm, reachable from the destroy path
+
+* **`cancelDonationArmOnCore`** (`Lifecycle/Operations/Cleanup.lean`) is the
+  suspend pipeline's G3 three-way binding match, named: `.unbound` is the
+  identity, `.bound` is the in-place unbind with the replenish purge on the
+  thread's home core, `.donated` is the return **and** the replenishment
+  migration to the owner's home.  `lifecyclePreRetypeCleanup`'s TCB arm runs it
+  on the current-nowhere branch; the index-only `.bound` removal is deleted,
+  since the unbind removes the entry as part of what it does.
+* **The two per-core arms moved beside the cleanup they complete.**
+  `cancelBoundDonationOnCore` and `cancelDonatedDonationOnCore` were declared in
+  `IPC/CrossCore/Cancellation.lean`, which the destroy path's module cannot
+  import — *when a question has one owner and an asker that cannot see it, the
+  owner is in the wrong layer* (`v0.35.59`).  Definitions only, namespace kept, so
+  nothing is renamed; their `ipcInvariant` theorems, the single-core bridges and
+  the suspend footprint stay where they were, with a tombstone at each old home.
+* **One owner, two spellings, one defined through the other.**
+  `cancelDonationOnCore` — the `withLockSet` bracket convention, the post-state
+  paired with the outcome and the pre-state on an error — is one `match` over the
+  arm, so a step added to the arm reaches it by construction.  The suspend's G3 is
+  pinned to the arm by `rfl` (`suspendDonationArm_eq_cancelDonationArmOnCore`)
+  rather than defined through it: its `home` is read on the **pre**-G2 state, and
+  calling the arm there would owe an affinity frame across G2 at the eight proof
+  sites that open the pipeline — RR8.12's recorded reason for the pin stands, and
+  the older bracket-shaped pin survives as its corollary.
+* **`retypeTargetDetached` has `tcbNotBound`**: revoke, suspend, cancel *and
+  unbind* before retype.  The dispatch payoff's retype arm is stated where the arm
+  is the identity, which is the contract seL4 documents; the runtime arm is what
+  makes a violation of it safe rather than what the pack rules out.
+
+### The proof surface
+
+* The relocated frames (`cancelBoundDonationOnCore_{preserves_objects_invExt,
+  runQueue_current_eq,replenishQueue_purged,replenishQueue_ne}`,
+  `cancelDonatedDonationOnCore_{preserves_objects_invExt,runQueue_current_eq}`)
+  sit in `CleanupPreservation.lean` with the new ones the destroy path's
+  pipeline theorems read — `_machine_eq` and `_tlbShootdown_eq` for both arms and
+  for the dispatcher, `cancelDonationArmOnCore_{preserves_objects_invExt,
+  runQueue_current_eq}`, `migrateSchedContextReplenishment_tlbShootdown`,
+  `cancelDonationArmOnCore_confinedToCores` and
+  `threadOccupiedCores_congr_of_runQueue_current` on the SM8.B side — and
+  `lifecyclePreRetypeCleanup_{flat_subset,tlbShootdown_eq,detached_frame,
+  confinedToCores}` and the retype wrapper's runnable-removal theorem are
+  restated over the arm.
+* **The arm has the affinity theorem neither caller had.**
+  `cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp`
+  composes `cancelBoundDonationOnCore_preserves_…` — with **no hypothesis on the
+  purge core**, because the unbound context's obligations are vacuous wherever
+  its entries survive and every other entry is framed, which is
+  `schedContextUnbind_preserves_replenishQueueAffinityConsistent_smp`'s own
+  argument restated for the arm's shape — and
+  `cancelDonatedDonationOnCore_preserves_…`, through the general
+  `migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp` that
+  `v0.35.161`'s pre-receive return composes, so the migration's destination
+  obligation keeps one owner.  The measurement behind the sentence: the suspend
+  pipeline had run both arms since WS-SM SM6.E.3 with the invariant stated of
+  its G2 teardown (`cancelIpcBlockingMigrated_establishes_…`) and of nothing
+  after it.  `PerCoreDonationStep`'s docstring names the arm beside the reclaim
+  as the other shape a migrating hand-off takes.
+
+### The witness
+
+`tests/SmpIpcSuite.lean` §3.31 drives the live wrapper the `.lifecycleRetype` arm
+reaches (`lifecycleRetypeDirectWithCleanup`) on both binding shapes, with the
+retired cleanup spelled as a `private def` in the suite and nowhere else so every
+assertion is known to discriminate.  (a) A server holding the client's context on
+loan, homed on core 1 with the replenishment there: the retired reading binds the
+context back to the client and leaves the replenishment on core 1 — the affinity
+invariant **falsified** — while the live retype migrates it to core 0 and both
+invariants hold, and the post-state's replenish queues are the arm's-then-sweep's
+on every core, which is the pipeline's first step measured as such.  (b) A client
+owning its context on core 1: the retired reading leaves the context bound to the
+destroyed thread — both invariants falsified, the destroyed thread homing on the
+boot core — while the live retype unbinds, purges and holds both.  (c) An unbound
+target, where the two readings agree on every replenish queue.  The golden 4-core
+trace is byte-identical.
+
+### What the sweep found and did not close
+
+Register row 63.  The `.schedContext` arm of the same cleanup refuses only a stack
+head (`sc.scReply.isSome`): a context **bound** to a thread passes, and the retype
+then leaves that thread `.bound` naming a destroyed object, its index entry in
+place and its replenish entries queued under an id the slot's next occupant
+inherits — seL4's `finaliseCap` runs `schedContext_unbindAllTCBs` on a
+scheduling-context capability.  The caller holds authority over the reservation,
+so the consequence is a self-inflicted strand plus stale refills for the slot's
+next occupant, not an escalation.  And the retype *composite*'s own preservation
+of either invariant is measured by §3.31 rather than proved; the lift needs the
+reference sweep's `boundThread` and `cpuAffinity` frames and the replacement
+store's.  Both are the fix cut after this one, before Cut C3b, whose
+`.lifecycleRetype` footprint must name the arm's purge core.
+
+### Gates and documents
+
+Twenty-nine Tier 3 anchors and four negatives — the arm's match with the bound
+route and the purge core pinned, the destroy path calling it, the two retired
+readings refused inside the cleanup, the arms' single home with a copy in the
+cancellation module refused, the bracket dispatcher defined through the arm and
+the G3 pin, the pack's field, every relocated and new frame, the three affinity
+theorems (with the bound arm's refused a purge-core hypothesis and the donated
+arm's pinned to the one general migration lemma), and the witness's negatives,
+payoffs and control — plus two positives repointed to the arms' new home.  The register's table A gains rows 62 and 63,
+which shifts every later row by two; its two internal numeric row citations, both
+already stale by two from earlier insertions, are repointed by title.  The plan's
+RR8.12 row, the spec's donation-chain section, the SM5.H standing constraint
+(which had counted the suspend's own G3 arm in no list), the retype pack's
+sentence and a new standing constraint in `CLAUDE.md` / `AGENTS.md`, the GitBook
+module map, and `IPC/Operations/Donation.lean`'s comment naming the arm's old
+home are updated.  `maxLockSetSize` is unmoved.
+
 ## v0.35.163 — the `.call` and `.reply` arms declare their scheduler-domain footprints
 
 WS-RR RR8.12 Cut C3a (8b-iii).  `schedLockSet_endpointCallOnCore`

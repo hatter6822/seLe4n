@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -3878,7 +3878,8 @@ run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvarian
 # the 2PL atomicity theorems, invExt preservation, and the flagship.
 run_check "INVARIANT" rg -n '^def descheduleThread' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# `v0.35.164`: the arm lives beside the cleanup it completes -- see the block below.
+run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n '^def cancelDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^def lockSet_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
@@ -3899,7 +3900,7 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockS
 run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
@@ -10299,6 +10300,70 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalOnCore_cont
 run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_contains_executing_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_no_other_runQueue$' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore_contains_bound_runQueue_write$' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+# ---------------------------------------------------------------------------
+# `v0.35.164` (register row 62): the retype's TCB cleanup ends the thread's
+# reservation the way the suspend's G3 does.  The three-way binding arm has a
+# name now, beside the cleanup it completes -- so the destroy path can reach it,
+# which is why the two per-core arms moved down with it (`v0.35.59`'s rule).
+run_check "INVARIANT" rg -n '^def cancelDonationArmOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def cancelDonatedDonationOnCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_unbound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_bound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_donated \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# RELATION: the arm is ONE match over the binding, each constructor to its
+# operation.  Mutation: keep every name and route `.bound` to the bare
+# `cleanupDonatedSchedContext`, or drop the purge core.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonationArmOnCore[^\n]*(\n([ \t][^\n]*)?)*match tcb\.schedContextBinding with\n *\| \.unbound => \.ok st\n *\| \.bound _ => cancelBoundDonationOnCore st tid tcb \(determineTargetCore st tid\)\n *\| \.donated _ _ => cancelDonatedDonationOnCore st tid tcb" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# The destroy path RUNS the arm: the retype's TCB cleanup calls it on the
+# current-nowhere branch, after the `else` (the comment between them is blank in
+# the code view).  Declaration-bounded gap (a column-0 line ends it).
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*else[^\n]*(\n([ \t][^\n]*)?)*cancelDonationArmOnCore st tcb\.tid tcb" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# NEGATIVE: the retired readings must not come back inside the cleanup -- the
+# bare return that migrates nothing, and the index-only removal of a `.bound`
+# thread's entry.  Both declaration-bounded, because both names are live
+# elsewhere (the return is the arm's own first half; the index primitive is
+# the unbind's).  Mutation: restore either spelling inside the definition.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*cleanupDonatedSchedContext st tcb\.tid" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*scThreadIndexRemove" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# NEGATIVE: the two per-core arms have ONE home; a copy back in the
+# cancellation module is the two-spellings hazard this cut closes.
+run_negative_check "INVARIANT" rg -n '^def (cancelBoundDonationOnCore|cancelDonatedDonationOnCore|cancelDonationArmOnCore)\b' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+# The bracket-shaped dispatcher is DEFINED through the arm (one owner), and the
+# suspend's G3 is pinned to the arm directly, by `rfl`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelDonationOnCore[^\n]*(\n([ \t][^\n]*)?)*match cancelDonationArmOnCore st tid tcb with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendDonationArm_eq_cancelDonationArmOnCore[^\n]*(\n([ \t][^\n]*)?)*= cancelDonationArmOnCore st tid tcb := rfl" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+# The pack's new field: a retype target holds no reservation of its own either
+# (seL4's revoke, suspend and unbind before the object is finalised).
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure retypeTargetDetached[^\n]*(\n([ \t][^\n]*)?)*tcbNotBound : ∀ t : TCB, st\.objects\[target\]\? = some \(\.tcb t\) →\n *∀ scId, t\.schedContextBinding ≠ \.bound scId" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+# The frames the arm carries, stated once at the arm and relocated with the
+# operations they are about.
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_objects_invExt$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_runQueue_current_eq$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_machine_eq$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_tlbShootdown_eq$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_objects_invExt$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_runQueue_current_eq$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_machine_eq$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem migrateSchedContextReplenishment_tlbShootdown \(' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_confinedToCores \(' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The affinity theorem neither caller had: the bound arm's with NO hypothesis on the
+# purge core, the donated arm's through the general `_to_home` migration lemma, and
+# the dispatcher's over both.
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# RELATION: the donated arm's theorem composes the ONE general migration lemma rather
+# than a second confinement argument; the bound arm's names no core in its statement.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp st st1" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelBoundDonationOnCore_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*determineTargetCore st tid = rqCore" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The witness computes the retired cleanup beside the live retype on both
+# binding shapes, with the unbound control on which the two agree.
+run_check "INVARIANT" rg -n '\(a\) NEGATIVE \(the defect\): the retired retype FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) PAYOFF: the retype migrated the replenishment to the client.s home \(core 0\)' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(a\) the live retype.s replenish queues are the arm.s, then the sweep.s, on every core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype FALSIFIES the binding invariant' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(c\) CONTROL: on an unbound target the two readings agree on every replenish queue' tests/SmpIpcSuite.lean
 
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean

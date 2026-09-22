@@ -4740,6 +4740,213 @@ private def runCallReplyFootprintChecks : IO Unit := do
         (allCores.all (fun c =>
           replenishCountFor stOutE c fpClient2Sc == replenishCountFor stL c fpClient2Sc))
 
+-- ============================================================================
+-- §3.31 the retype's TCB cleanup ends the thread's reservation the way the
+--        suspend's G3 does (register row 62, `v0.35.164`)
+-- ============================================================================
+
+/-! `lifecyclePreRetypeCleanup`'s TCB arm — the destroy path every `.lifecycleRetype`
+runs — used to run the bare `cleanupDonatedSchedContext` on a `.donated` holder
+(a return that migrates no replenishment: register row 57's class, on the destroy
+path) and, on a `.bound` thread, to remove only the `scThreadIndex` entry, leaving
+the SchedContext bound to a destroyed thread with its replenishment queued on that
+thread's home core.  After a successful retype `replenishQueueAffinityConsistent_smp`
+was false in the first case and both it and `schedContextBindingConsistent` in the
+second — and no theorem claimed either across the retype, which is how both were
+silent rather than wrong.  Since `v0.35.164` the arm is `cancelDonationArmOnCore`,
+the suspend pipeline's G3 match named: seL4's `finaliseCap` → `unbindFromSc`.
+
+Both halves compute the RETIRED reading beside the live retype on the same state
+(`retiredRetypeTcbCleanup`: the bare pop, the index-only removal, then the same
+sweep and the same store), so every assertion is known to discriminate; the
+CONTROL is an `.unbound` target, where the arm is the identity and the two readings
+agree.  The live half drives `lifecycleRetypeDirectWithCleanup` — the wrapper the
+`.lifecycleRetype` arm reaches — with a `.retype` capability on the target, so the
+post-states are the kernel's own. -/
+
+/-- The decidable reading of `schedContextBindingConsistent`, both directions,
+over the object index: every `.bound scId` TCB has a SchedContext naming it back,
+and every SchedContext's `boundThread` resolves to a TCB bound to or holding it. -/
+private def schedContextBindingConsistentB (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.getObject? oid with
+    | some (.tcb t) =>
+        match t.schedContextBinding with
+        | .bound scId =>
+            match st.getSchedContext? scId with
+            | some sc => sc.boundThread == some t.tid
+            | none => false
+        | _ => true
+    | some (.schedContext sc) =>
+        match sc.boundThread with
+        | some tid =>
+            match st.getTcb? tid with
+            | some t =>
+                match t.schedContextBinding with
+                | .bound scId' => scId' == SchedContextId.ofObjId oid
+                | .donated scId' _ => scId' == SchedContextId.ofObjId oid
+                | .unbound => false
+            | none => false
+        | none => true
+    | _ => true
+
+/-- `st` with the lifecycle object-type metadata the retype guard reads
+(`lifecycleRetypeDirect` refuses a target whose recorded type disagrees with the
+store), which the fixture builder does not record. -/
+private def withRetypeTypes (st : SystemState)
+    (typed : List (SeLe4n.ObjId × KernelObjectType)) : SystemState :=
+  { st with lifecycle := { objectTypes := RobinHood.RHTable.ofList typed } }
+
+/-- The object types of the donation fixture's five objects. -/
+private def donFixtureTypes : List (SeLe4n.ObjId × KernelObjectType) :=
+  [(donServer.toObjId, .tcb), (donClient.toObjId, .tcb), (scClient.toObjId, .schedContext),
+   (donEp, .endpoint), (donReply.toObjId, .reply)]
+
+/-- The authority a `.lifecycleRetype` presents: a capability on the target with
+the `.retype` right (`lifecycleRetypeAuthority`). -/
+private def retypeCapOn (target : SeLe4n.ObjId) : Capability :=
+  { target := .object target, rights := AccessRightSet.ofList [.retype], badge := none }
+
+/-- The replacement object: an empty endpoint, well-formed in any store. -/
+private def retypeReplacement : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+
+/-- The RETIRED reading of the pipeline's TCB arm, followed by the same sweep and
+the same store the live pipeline performs: the bare donated-context return, the
+index-only removal for a `.bound` thread, the reference sweep, the replacement
+stored.  Spelled here and nowhere else, so the assertions can show the live
+pipeline changed something. -/
+private def retiredRetypeTcbCleanup (st : SystemState) (tcb : TCB) : Option SystemState :=
+  match cleanupDonatedSchedContext st tcb.tid with
+  | .error _ => none
+  | .ok st1 =>
+      let st2 : SystemState := match tcb.schedContextBinding with
+        | .bound scId =>
+            { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tcb.tid }
+        | _ => st1
+      some ((cleanupTcbReferences st2 tcb.tid).withObjectStored tcb.tid.toObjId retypeReplacement)
+
+/-- The LIVE retype of a TCB through the wrapper the `.lifecycleRetype` arm reaches. -/
+private def liveRetypeTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn tid.toObjId) tid.toObjId
+    retypeReplacement st)).map Prod.snd
+
+private def boundThreadOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option SeLe4n.ThreadId :=
+  match st.getSchedContext? scId with
+  | some sc => sc.boundThread
+  | none => none
+
+private def runRetypeReservationChecks : IO Unit := do
+  IO.println "--- §3.31 register row 62: the retype's TCB cleanup ends the thread's reservation ---"
+  -- (a) DONATED: the server holds the client's context on loan, homed on core 1
+  --     with the replenishment there (§3.28's three-operation prefix).
+  match preReturnHandoffState stPreReturnBase with
+  | none => assertBool "row 62 setup: call, rendezvous and hand-off succeed" false
+  | some stDon0 =>
+    let stDon := withRetypeTypes stDon0 donFixtureTypes
+    match stDon.getTcb? donServer with
+    | none => assertBool "row 62 setup: the server resolves" false
+    | some serverTcb =>
+      assertBool "(a) setup: the server holds the client's context on loan"
+        (serverTcb.schedContextBinding == .donated scClient donClient)
+      assertBool "(a) setup: the server is current nowhere and holds no reply object"
+        (!threadCurrentOnSomeCore stDon donServer && serverTcb.replyObject.isNone)
+      assertBool "(a) setup: the replenishment sits on the server's home (core 1)"
+        (replenishCountFor stDon c1 scClient == 1 && replenishCountFor stDon c0 scClient == 0)
+      -- NEGATIVE: the retired arm returns the context and moves nothing.
+      match retiredRetypeTcbCleanup stDon serverTcb with
+      | none => assertBool "(a) NEGATIVE setup: the retired cleanup succeeds" false
+      | some stOld =>
+        assertBool "(a) NEGATIVE: the retired retype binds the context back to the client..."
+          (boundThreadOf stOld scClient == some donClient)
+        assertBool "(a) NEGATIVE: ...whose home is core 0, and leaves the replenishment on core 1"
+          (decide (determineTargetCore stOld donClient = c0)
+            && replenishCountFor stOld c1 scClient == 1 && replenishCountFor stOld c0 scClient == 0)
+        assertBool "(a) NEGATIVE (the defect): the retired retype FALSIFIES the affinity invariant"
+          (!replenishAffinityConsistentB stOld)
+      -- PAYOFF: the live retype migrates with the return.
+      match liveRetypeTcb stDon donServer with
+      | none => assertBool "(a) the live retype of the donated holder succeeds" false
+      | some stNew =>
+        assertBool "(a) PAYOFF: the destroyed slot holds the replacement"
+          (match stNew.getObject? donServer.toObjId with
+           | some (.endpoint _) => true | _ => false)
+        assertBool "(a) PAYOFF: the context is bound back to the client"
+          (boundThreadOf stNew scClient == some donClient
+            && (match stNew.getTcb? donClient with
+                | some t => t.schedContextBinding == .bound scClient | none => false))
+        assertBool "(a) PAYOFF: the retype migrated the replenishment to the client's home (core 0)"
+          (replenishCountFor stNew c0 scClient == 1 && replenishCountFor stNew c1 scClient == 0)
+        assertBool "(a) PAYOFF: the affinity invariant holds after the retype"
+          (replenishAffinityConsistentB stNew)
+        assertBool "(a) PAYOFF: the binding invariant holds after the retype"
+          (schedContextBindingConsistentB stNew)
+        -- The pipeline's first step IS the suspend's G3 arm: the live post-state's
+        -- replenish queues are the arm-then-sweep reading's, core for core.
+        match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with
+        | none => assertBool "(a) the reservation arm succeeds on the holder" false
+        | some stArm =>
+          let stArmSwept := cleanupTcbReferences stArm donServer
+          assertBool "(a) the live retype's replenish queues are the arm's, then the sweep's, on every core"
+            (allCores.all (fun c =>
+              replenishEntriesOn stNew c == replenishEntriesOn stArmSwept c))
+  -- (b) BOUND: the client owns its context, pinned to core 1 with its replenishment
+  --     there (`stPreReturnSameCore`), and is retyped.
+  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  match stBound.getTcb? donClient with
+  | none => assertBool "(b) setup: the client resolves" false
+  | some clientTcb =>
+    assertBool "(b) setup: the client owns its context, homed on core 1, replenishment on core 1"
+      (clientTcb.schedContextBinding == .bound scClient
+        && decide (determineTargetCore stBound donClient = c1)
+        && replenishCountFor stBound c1 scClient == 1
+        && !threadCurrentOnSomeCore stBound donClient && clientTcb.replyObject.isNone)
+    assertBool "(b) setup: both invariants hold before the retype"
+      (schedContextBindingConsistentB stBound && replenishAffinityConsistentB stBound)
+    -- NEGATIVE: the index-only removal leaves the context bound to a destroyed thread.
+    match retiredRetypeTcbCleanup stBound clientTcb with
+    | none => assertBool "(b) NEGATIVE setup: the retired cleanup succeeds" false
+    | some stOld =>
+      assertBool "(b) NEGATIVE: the retired retype leaves the context bound to the destroyed thread..."
+        (boundThreadOf stOld scClient == some donClient
+          && (match stOld.getObject? donClient.toObjId with
+              | some (.endpoint _) => true | _ => false))
+      assertBool "(b) NEGATIVE: ...with its replenishment still queued on core 1"
+        (replenishCountFor stOld c1 scClient == 1)
+      assertBool "(b) NEGATIVE (the defect): the retired retype FALSIFIES the binding invariant"
+        (!schedContextBindingConsistentB stOld)
+      assertBool "(b) NEGATIVE (the defect): ...and the affinity invariant, a destroyed thread homing on the boot core"
+        (!replenishAffinityConsistentB stOld)
+    -- PAYOFF: the live retype unbinds — seL4's `unbindFromSc` in `finaliseCap`.
+    match liveRetypeTcb stBound donClient with
+    | none => assertBool "(b) the live retype of the bound thread succeeds" false
+    | some stNew =>
+      assertBool "(b) PAYOFF: the context is unbound and inactive after the retype"
+        (match stNew.getSchedContext? scClient with
+         | some sc => sc.boundThread.isNone && !sc.isActive && sc.donationOrigin.isNone
+         | none => false)
+      assertBool "(b) PAYOFF: the replenishment was purged from the destroyed thread's home"
+        (allCores.all (fun c => replenishCountFor stNew c scClient == 0))
+      assertBool "(b) PAYOFF: the binding invariant holds after the retype"
+        (schedContextBindingConsistentB stNew)
+      assertBool "(b) PAYOFF: the affinity invariant holds after the retype"
+        (replenishAffinityConsistentB stNew)
+  -- (c) CONTROL: an `.unbound` target — the arm is the identity, so the live retype
+  --     and the retired reading agree on every replenish queue and both invariants hold.
+  let stCtl := withRetypeTypes stDonBase donFixtureTypes
+  match stCtl.getTcb? donServer with
+  | none => assertBool "(c) setup: the server resolves" false
+  | some serverTcb =>
+    assertBool "(c) setup: the server holds no reservation"
+      (serverTcb.schedContextBinding == SchedContextBinding.unbound)
+    match retiredRetypeTcbCleanup stCtl serverTcb, liveRetypeTcb stCtl donServer with
+    | some stOld, some stNew =>
+      assertBool "(c) CONTROL: on an unbound target the two readings agree on every replenish queue"
+        (allCores.all (fun c => replenishEntriesOn stNew c == replenishEntriesOn stOld c))
+      assertBool "(c) CONTROL: ...and both invariants hold after the retype"
+        (schedContextBindingConsistentB stNew && replenishAffinityConsistentB stNew)
+    | _, _ => assertBool "(c) CONTROL: both retypes of an unbound target succeed" false
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4775,6 +4982,7 @@ def runSmpIpcChecks : IO Unit := do
   runPreReceiveReturnMigrationChecks
   runReplyRecvFootprintChecks
   runCallReplyFootprintChecks
+  runRetypeReservationChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

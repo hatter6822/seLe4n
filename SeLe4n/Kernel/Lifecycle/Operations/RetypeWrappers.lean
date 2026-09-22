@@ -125,10 +125,13 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
         intro hRun
         rw [if_pos hRun] at hClean
         exact absurd hClean (by simp))] at hClean
-      cases hDon : cleanupDonatedSchedContext st tcb.tid with
-      | error e => rw [hDon] at hClean; simp at hClean
-      | ok stDon =>
-        rw [hDon] at hClean; simp only [] at hClean
+      -- `v0.35.164`: the pipeline's first step is the reservation arm; the sweep
+      -- that follows removes the thread from the boot queue whatever that arm
+      -- left, which is all this theorem reads.
+      cases hArm : cancelDonationArmOnCore st tcb.tid tcb with
+      | error e => rw [hArm] at hClean; simp at hClean
+      | ok stArm =>
+        rw [hArm] at hClean; simp only [] at hClean
         -- PR #822 review: the final `.tcb` arm rejects a TCB still holding a reply
         -- link (`.error`, vacuous on `.ok`); reduce the reject-`if` on the `.ok` path.
         have hRO : tcb.replyObject.isSome = false := by
@@ -137,8 +140,8 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
           | true => rw [if_pos hr] at hClean; exact absurd hClean (by simp)
         rw [if_neg (by simp [hRO])] at hClean
         injection hClean with hClean; subst hClean
-        -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
-        -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state
+        -- `cleanupTcbReferences_removes_from_runnable` is polymorphic in the input
+        -- state; `_` lets Lean unify it with the arm's post-state.
         exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
 
 -- ============================================================================
