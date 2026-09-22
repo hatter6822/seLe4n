@@ -257,6 +257,39 @@ theorem schedLockSet_suspendThreadOnCore_coversWrites (st st' : SystemState)
       hd hStep)
 
 -- ============================================================================
+-- §10  The IPC arms
+-- ============================================================================
+
+/-- **WS-RR RR8.12 Cut C6c**: `.call`'s footprint covers its writes.
+
+Stated of the **unchecked** dispatch, which is what the write set and the
+confinement result are stated at and what the checked arm equals wherever its
+flow gate admits; a denied flow commits nothing, so the covered set is the same
+one either way.
+
+The replenish segment's branch structure and the dispatch's are the *same*
+structure by construction (Cut C3a), which is what makes the exactness frame one
+case split rather than a second reading of the transition. -/
+theorem schedLockSet_endpointCallOnCore_coversWrites (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (S : SchedLockSet) (hObjInv : st.objects.invExt)
+    (hS : SchedLockSet.ofList? (schedLockSet_endpointCallOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st) = some S) :
+    schedFootprintCoversWrites S st
+      (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1 :=
+  schedFootprintCoversWrites_of_confined S
+    (endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase
+      executingCore st)
+    (endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase
+      executingCore st) st _ (SchedLockSet.ofList?_pairs hS)
+    (endpointCallCrossCoreDispatch_confinedToCores endpointId caller msg endpointRights
+      receiverSlotBase executingCore st hObjInv)
+    (fun d hd => endpointCallCrossCoreDispatch_replenishQueueOnCore_ne endpointId caller msg
+      endpointRights receiverSlotBase executingCore st d hd)
+
+-- ============================================================================
 -- §7  What the obligation refuses
 -- ============================================================================
 --

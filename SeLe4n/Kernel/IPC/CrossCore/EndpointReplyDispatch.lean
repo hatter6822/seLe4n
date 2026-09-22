@@ -489,6 +489,28 @@ theorem applyReplyDonationOnCore_replenishQueueOnCore_of_no_head (st st'' : Syst
   · rw [hEq]
   · exact absurd (hNone.symm.trans hHead) (by simp)
 
+/-- **WS-RR RR8.12 Cut C6c: the reply donation's exactness frame.**
+
+`…_of_no_head` above says the pop moves nothing where the answered frame heads
+no context; this says *where* it moves when it does, which is what the
+footprint's replenish clause needs.  Three of the four steps the decomposition
+names frame every replenish queue — the return writes the object store and the
+bindings, the deschedule writes a run queue and a current slot — so the whole
+claim rests on the SM5.H migration's own `_other` frame, at exactly the pair
+`replyDonationReturnReplenishCores` declares. -/
+theorem applyReplyDonationOnCore_replenishQueueOnCore_ne (st st'' : SystemState)
+    (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId) (holderHome ownerHome c : CoreId)
+    (hFrom : c ≠ holderHome) (hTo : c ≠ ownerHome)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with
+    ⟨_, hEq⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
+  · rw [hEq]
+  · rw [hEq, descheduleAtPlacement_replenishQueueOnCore,
+      migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId holderHome ownerHome
+        c (Ne.symm hFrom) (Ne.symm hTo),
+      returnDonatedSchedContext_scheduler_eq st st' holderVtid.val scId _ newOwner? hRet]
+
 /-- WS-RR RR2.9 (frame): the cross-core donation return never advances the
 machine timer — the return writes objects, the migration writes replenish-queue
 slots, and the deschedule writes run-queue slots.
@@ -1416,5 +1438,73 @@ theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head
               applyReplyDonationOnCore_replenishQueueOnCore_of_no_head st1 st2 rid targetV _ _
                 (hNoHead rid hRid) hRet c]
             exact hLeg
+
+/-- **WS-RR RR8.12 Cut C6c: the `.reply` dispatch's exactness frame.**
+
+Keyed on the footprint's own replenish segment.  The dispatch's branch structure
+and `endpointReplyDispatchReplenishCores`' are the same structure by construction
+(Cut C3a), so one case split visits both: every arm short of a resolving donation
+return leaves the segment empty and the reply leg's own frame applies, and the
+resolving arm is the pop's `_ne` frame at exactly the pair the segment names. -/
+theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId)
+    (hne : c ∉ endpointReplyDispatchReplenishCores replier target msg executingCore st) :
+    (endpointReplyCrossCoreDispatch replier target msg executingCore
+          st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointReplyCrossCoreDispatch endpointReplyDispatchReplenishCores at *
+  cases hLeg : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res =>
+    rw [hLeg] at hne
+    have hFrame : st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+      have h0 := endpointReplyOnCore_replenishQueueOnCore replier target msg executingCore st c
+      rw [hLeg] at h0
+      exact h0
+    cases res with
+    | error e => rfl
+    | ok replySgi? =>
+      simp only at hne ⊢
+      split
+      · rename_i expected hExp
+        rw [hExp] at hne
+        simp only at hne
+        split
+        · rename_i expectedV hEv
+          rw [hEv] at hne
+          simp only at hne
+          split
+          · simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+            exact hFrame
+          · rename_i rid hRid
+            rw [hRid] at hne
+            simp only at hne
+            split
+            · rfl
+            · rename_i targetV hTv
+              rw [hTv] at hne
+              simp only at hne
+              split
+              · rfl
+              · rename_i st2 hDon
+                rw [hDon] at hne
+                simp only at hne
+                simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+                unfold replyDonationReturnReplenishCores at hne
+                cases hHead : replyFrameHeadHolder? st1 rid with
+                | none =>
+                    rw [applyReplyDonationOnCore_replenishQueueOnCore_of_no_head st1 st2 rid
+                      targetV (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) hHead hDon c]
+                    exact hFrame
+                | some pair =>
+                    rw [hHead] at hne
+                    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+                    rw [applyReplyDonationOnCore_replenishQueueOnCore_ne st1 st2 rid targetV
+                      (replyDonationHolderHome st1 rid target)
+                      (replyDonationRecipientHome st1 rid target) c hne.1 hne.2 hDon]
+                    exact hFrame
+        · rfl
+      · rfl
 
 end SeLe4n.Kernel

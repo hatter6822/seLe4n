@@ -1,3 +1,64 @@
+## v0.35.176 — the IPC spines' exactness frames, and the `.call` arm covered
+
+WS-RR RR8.12 Cut C6c: six new replenish-queue exactness frames across the call
+and reply spines, and the first IPC arm's `schedFootprintCoversWrites` proof.
+
+### Why these frames are the hard ones
+
+The IPC arms' replenish segments are **computed by running the transition** —
+`endpointCallDispatchReplenishCores` runs the WithCaps leg and asks the donation
+resolver on its post-state, `endpointReplyDispatchReplenishCores` runs the reply
+leg and asks the pop's trigger on its.  So this is the one place a footprint and
+its operation could describe different migrations, and the frame is what says
+they do not.
+
+Each is one case split rather than a second reading of the transition, because
+Cut C3a made the segment's branch structure and the transition's the *same*
+structure: every arm short of a resolving donation leaves the segment empty and
+the step's own frame applies, and the resolving arm is the SM5.H migration's
+`_other` frame at exactly the pair the segment names.
+
+### The six
+
+`applyCallDonationOnCore_replenishQueueOnCore_ne` and
+`applyReplyDonationOnCore_replenishQueueOnCore_ne` sit beside the existing
+`_of_no_donation` / `_of_no_head` frames: those say the hand-off moves *nothing*
+when the resolver declines, these say *where* it moves when it answers.  Neither
+implies the other and the replenish clause needs the second.
+
+`endpointCallCrossCoreDispatch_replenishQueueOnCore_ne` and
+`endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne` lift them to the
+dispatches, over the dispatches' own segments.
+
+`faultReplyOnCore_replenishQueueOnCore_ne` and
+`replyTransferOnCore_replenishQueueOnCore_ne` lift the reply one to the live
+`.reply` arm.  The arm's frame **cannot** be the existing
+`…_of_dispatch`: that form asks for the dispatch's frame at *every* message, and
+the segment is message-dependent — the fault branch composes the dispatch at
+`IpcMessage.empty` and the ordinary branch at `msg`.  So it is stated per branch,
+with `faultReplyApplyOnCore` framing every replenish queue on both its outcomes.
+
+### The `.call` arm's coverage
+
+Stated of the **unchecked** dispatch, which is what its write set and its
+confinement result are stated at and what the checked arm equals wherever its
+flow gate admits; a denied flow commits nothing, so the covered set is the same
+either way.
+
+`.reply`'s coverage waits on a confinement theorem at `replyTransferWriteSet`
+that does not exist yet — Cut C6d's first row rather than an omission here.
+
+### Gates
+
+Seven anchor mutations, all decisive.  One of them first read MISSED, and the
+cause was the harness rather than the anchor: the row filter matched a
+*different* anchor, so the mutation was run against an anchor that could not see
+it.  That is *run the mutations before believing the cases* applied one level up
+— to the harness's own row selection rather than to the fixtures.
+
+No production behaviour changed; the golden trace is byte-identical;
+`maxLockSetSize` is unmoved.
+
 ## v0.35.175 — the first three core-naming replenish segments are covered
 
 WS-RR RR8.12 Cut C6b: `.schedContextConfigure`, `.schedContextUnbind` and

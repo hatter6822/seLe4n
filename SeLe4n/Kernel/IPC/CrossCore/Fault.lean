@@ -991,4 +991,83 @@ theorem replyTransferOnCore_replenishQueueOnCore_of_dispatch (replier callerTid 
         rw [hOut, Architecture.stageDeliveredMessage_scheduler_eq]
         exact hDisp msg st' sgi hD
 
+/-- **WS-RR RR8.12 Cut C6c: the fault reply's exactness frame.**
+
+The fault branch composes the ordinary reply dispatch at `IpcMessage.empty` and
+then `faultReplyApplyOnCore`, which frames every replenish queue on both its
+outcomes — a restart writes a register context and an abandon deschedules — so
+the whole claim is the dispatch's own `_ne` frame at the empty message. -/
+theorem faultReplyOnCore_replenishQueueOnCore_ne (replier faulted : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId)
+    (hne : c ∉ endpointReplyDispatchReplenishCores replier faulted IpcMessage.empty
+      executingCore st) :
+    (faultReplyOnCore replier faulted mi regs executingCore
+        st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold faultReplyOnCore
+  split
+  · rfl
+  · rename_i tcb hTcb
+    split
+    · rfl
+    · rename_i tf hTf
+      simp only
+      cases hDisp : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty executingCore
+          st with
+      | mk stDisp res =>
+        cases res with
+        | error e => simp only [hDisp]
+        | ok sgi? =>
+          simp only [hDisp, faultReplyApplyOnCore_replenishQueueOnCore]
+          have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier faulted
+            IpcMessage.empty executingCore st c hne
+          rw [hDisp] at h0
+          exact h0
+
+/-- **WS-RR RR8.12 Cut C6c: the `.reply` ARM's exactness frame.**
+
+Keyed on the footprint's own replenish segment; `…_of_dispatch` above is the
+hypothesis-parameterised form, which cannot serve here because the segment is
+message-dependent and that form asks for the dispatch's frame at *every* message.
+
+Both branches reduce to the same dispatch at the message the segment names — the
+fault branch through `faultReplyOnCore` at `IpcMessage.empty`, the ordinary
+branch at `msg`, with the delivered-message staging writing registers only. -/
+theorem replyTransferOnCore_replenishQueueOnCore_ne (replier callerTid : SeLe4n.ThreadId)
+    (mi : MessageInfo) (regs : Array SeLe4n.RegValue) (msg : IpcMessage)
+    (executingCore : CoreId) (st stOut : SystemState) (c : CoreId)
+    (hne : c ∉ replyTransferReplenishCores replier callerTid msg executingCore st)
+    (hStep : replyTransferOnCore replier callerTid mi regs msg executingCore st
+      = .ok ((), stOut)) :
+    stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold replyTransferOnCore replyTransferReplenishCores at *
+  by_cases hF : threadHasPendingFault st callerTid
+  · rw [if_pos hF] at hne hStep
+    cases hFR : faultReplyOnCore replier callerTid mi regs executingCore st with
+    | mk stF resF =>
+      rw [hFR] at hStep
+      cases resF with
+      | error e => exact absurd hStep (by simp)
+      | ok _ =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        have h0 := faultReplyOnCore_replenishQueueOnCore_ne replier callerTid mi regs
+          executingCore st c hne
+        rw [hFR] at h0
+        rw [← hStep.2]
+        exact h0
+  · rw [if_neg hF] at hne hStep
+    cases hDisp : endpointReplyCrossCoreDispatch replier callerTid msg executingCore st with
+    | mk stDisp res =>
+      rw [hDisp] at hStep
+      cases res with
+      | error e => exact absurd hStep (by simp)
+      | ok sgi? =>
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        rw [← hStep.2, Architecture.stageDeliveredMessage_scheduler_eq]
+        have h0 := endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne replier callerTid msg
+          executingCore st c hne
+        rw [hDisp] at h0
+        exact h0
+
 end SeLe4n.Kernel

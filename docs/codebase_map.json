@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "427e4d25c5ce19a9fc0c77ca60295601dbef8b74",
-      "tree_sha": "ca48f3fbef5b90f182ba8c5a6498c4cb2243dcfb",
-      "committed_at_utc": "2026-09-22T20:26:35+00:00"
+      "commit_sha": "61801f97dc6e8a2431c60d8c285c6f5e1239aae0",
+      "tree_sha": "5c77b374952b9457c7968be7f9183f2306ed2fd2",
+      "committed_at_utc": "2026-09-22T20:47:38+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "fa1dc85d84c3d95b82aa48ebfdba842f7c50737722256de7eec1d85e079a02b7"
+    "source_digest": "9c399a3ca109030a02b0fd5bf1dc2f536453cf62e6cf49362b5dca19352a6263"
   },
   "summary": {
     "module_count": 408,
-    "declaration_count": 22553
+    "declaration_count": 22560
   },
   "readme_sync": {
-    "version": "0.35.175",
+    "version": "0.35.176",
     "lean_toolchain": "v4.28.0",
     "production_files": 338,
-    "production_loc": 406166,
+    "production_loc": 406451,
     "test_files": 70,
     "test_loc": 83005,
-    "proved_theorem_lemma_decls": 13448,
+    "proved_theorem_lemma_decls": 13455,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -74346,7 +74346,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean",
-      "declaration_count": 27,
+      "declaration_count": 28,
       "declarations": [
         {
           "kind": "namespace",
@@ -74929,7 +74929,6 @@
             "CapTransferSummary",
             "CoreId",
             "IpcMessage",
-            "Kernel",
             "KernelError",
             "ObjId",
             "SgiKind",
@@ -74953,6 +74952,35 @@
             "replenishQueueOnCore",
             "st",
             "toValid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatch_replenishQueueOnCore_ne",
+          "line": 769,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "applyCallDonationOnCore_replenishQueueOnCore_ne",
+            "applyCallDonationOnCore_replenishQueueOnCore_of_no_donation",
+            "callDonationSchedContext",
+            "determineTargetCore",
+            "endpointCallCrossCoreDispatch",
+            "endpointCallDispatchReplenishCores",
+            "endpointCallWithCapsOnCore",
+            "endpointCallWithCapsOnCore_replenishQueueOnCore",
+            "endpointId",
+            "none",
+            "propagatePipChainCrossCore_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "scId",
+            "st"
           ]
         }
       ]
@@ -81138,7 +81166,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean",
-      "declaration_count": 40,
+      "declaration_count": 42,
       "declarations": [
         {
           "kind": "namespace",
@@ -81445,8 +81473,28 @@
         },
         {
           "kind": "theorem",
+          "name": "applyReplyDonationOnCore_replenishQueueOnCore_ne",
+          "line": 501,
+          "called": [
+            "CoreId",
+            "ReplyId",
+            "SystemState",
+            "ValidThreadId",
+            "applyReplyDonationOnCore",
+            "applyReplyDonationOnCore_ok_decompose",
+            "descheduleAtPlacement_replenishQueueOnCore",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "replenishQueueOnCore",
+            "returnDonatedSchedContext_scheduler_eq",
+            "scId",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "applyReplyDonationOnCore_machine_eq",
-          "line": 500,
+          "line": 522,
           "called": [
             "CoreId",
             "ReplyId",
@@ -81466,7 +81514,7 @@
         {
           "kind": "theorem",
           "name": "applyReplyDonationOnCore_objects_eq",
-          "line": 521,
+          "line": 543,
           "called": [
             "CoreId",
             "ReplyId",
@@ -81489,7 +81537,7 @@
         {
           "kind": "theorem",
           "name": "returnDonatedSchedContext_migrate_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 558,
+          "line": 580,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -81518,7 +81566,7 @@
         {
           "kind": "theorem",
           "name": "applyReplyDonationOnCore_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 657,
+          "line": 679,
           "called": [
             "CoreId",
             "ReplyId",
@@ -81542,7 +81590,7 @@
         {
           "kind": "theorem",
           "name": "lockSet_endpointReply_donation_extension",
-          "line": 720,
+          "line": 742,
           "called": [
             "ObjId",
             "SchedContextId",
@@ -81560,7 +81608,7 @@
         {
           "kind": "def",
           "name": "endpointReplyCrossCoreDispatch",
-          "line": 765,
+          "line": 787,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81584,7 +81632,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_independent_of_replier",
-          "line": 878,
+          "line": 900,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81597,7 +81645,7 @@
         {
           "kind": "def",
           "name": "endpointReplyCrossCoreDispatchChecked",
-          "line": 891,
+          "line": 913,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81614,7 +81662,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchChecked_flow_denied",
-          "line": 902,
+          "line": 924,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81629,7 +81677,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchChecked_flow_allowed",
-          "line": 912,
+          "line": 934,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81645,7 +81693,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatchChecked_eq_unchecked_of_flow",
-          "line": 935,
+          "line": 957,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81662,7 +81710,7 @@
         {
           "kind": "theorem",
           "name": "endpointReply_donation_chain_length_bounded",
-          "line": 956,
+          "line": 978,
           "called": [
             "CoreId",
             "SystemState",
@@ -81681,7 +81729,7 @@
         {
           "kind": "def",
           "name": "endpointReplyDispatchWriteSet",
-          "line": 1012,
+          "line": 1034,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81705,7 +81753,7 @@
         {
           "kind": "def",
           "name": "endpointReplyDispatchReplenishCores",
-          "line": 1077,
+          "line": 1099,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81726,7 +81774,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyDispatchReplenishCores_eq_of_return",
-          "line": 1102,
+          "line": 1124,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81750,7 +81798,7 @@
         {
           "kind": "theorem",
           "name": "endpointReplyDispatchReplenishCores_of_no_head",
-          "line": 1122,
+          "line": 1144,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81774,7 +81822,7 @@
         {
           "kind": "def",
           "name": "schedLockSet_endpointReplyOnCore",
-          "line": 1182,
+          "line": 1204,
           "called": [
             "AccessMode",
             "CoreId",
@@ -81791,7 +81839,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyOnCore_contains_target_runQueue_write",
-          "line": 1195,
+          "line": 1217,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81818,7 +81866,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyOnCore_covers_deschedule",
-          "line": 1242,
+          "line": 1264,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81844,7 +81892,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyOnCore_covers_migration",
-          "line": 1269,
+          "line": 1291,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81874,7 +81922,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyOnCore_covers_donation",
-          "line": 1305,
+          "line": 1327,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81906,7 +81954,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_endpointReplyOnCore_no_replenishQueue_of_no_head",
-          "line": 1343,
+          "line": 1365,
           "called": [
             "CoreId",
             "IpcMessage",
@@ -81926,11 +81974,10 @@
         {
           "kind": "theorem",
           "name": "endpointReplyCrossCoreDispatch_replenishQueueOnCore_of_no_head",
-          "line": 1364,
+          "line": 1386,
           "called": [
             "CoreId",
             "IpcMessage",
-            "Kernel",
             "KernelError",
             "SgiKind",
             "SystemState",
@@ -81950,6 +81997,33 @@
             "replyFrameHeadHolder",
             "st",
             "toValid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne",
+          "line": 1449,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "SystemState",
+            "ThreadId",
+            "applyReplyDonationOnCore_replenishQueueOnCore_ne",
+            "applyReplyDonationOnCore_replenishQueueOnCore_of_no_head",
+            "endpointReplyCrossCoreDispatch",
+            "endpointReplyDispatchReplenishCores",
+            "endpointReplyOnCore",
+            "endpointReplyOnCore_replenishQueueOnCore",
+            "none",
+            "propagatePipChainCrossCore_replenishQueueOnCore",
+            "replenishQueueOnCore",
+            "replyDonationHolderHome",
+            "replyDonationRecipientHome",
+            "replyDonationReturnReplenishCores",
+            "replyFrameHeadHolder",
+            "replySgi",
+            "st"
           ]
         }
       ]
@@ -84140,7 +84214,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.Fault",
       "path": "SeLe4n/Kernel/IPC/CrossCore/Fault.lean",
-      "declaration_count": 53,
+      "declaration_count": 55,
       "declarations": [
         {
           "kind": "namespace",
@@ -85142,7 +85216,6 @@
           "called": [
             "CoreId",
             "IpcMessage",
-            "Kernel",
             "MessageInfo",
             "RegValue",
             "SgiKind",
@@ -85164,6 +85237,53 @@
             "stageDeliveredMessage",
             "stageDeliveredMessage_scheduler_eq",
             "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "faultReplyOnCore_replenishQueueOnCore_ne",
+          "line": 1000,
+          "called": [
+            "CoreId",
+            "MessageInfo",
+            "RegValue",
+            "SystemState",
+            "ThreadId",
+            "empty",
+            "endpointReplyCrossCoreDispatch",
+            "endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne",
+            "endpointReplyDispatchReplenishCores",
+            "faultReplyApplyOnCore_replenishQueueOnCore",
+            "faultReplyOnCore",
+            "regs",
+            "replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "replyTransferOnCore_replenishQueueOnCore_ne",
+          "line": 1037,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "MessageInfo",
+            "RegValue",
+            "SystemState",
+            "ThreadId",
+            "callerTid",
+            "endpointReplyCrossCoreDispatch",
+            "endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne",
+            "faultReplyOnCore",
+            "faultReplyOnCore_replenishQueueOnCore_ne",
+            "regs",
+            "replenishQueueOnCore",
+            "replyTransferOnCore",
+            "replyTransferReplenishCores",
+            "st",
+            "stageDeliveredMessage_scheduler_eq",
+            "threadHasPendingFault"
           ]
         }
       ]
@@ -136200,7 +136320,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Operations.Donation",
       "path": "SeLe4n/Kernel/IPC/Operations/Donation.lean",
-      "declaration_count": 55,
+      "declaration_count": 56,
       "declarations": [
         {
           "kind": "namespace",
@@ -136829,8 +136949,26 @@
         },
         {
           "kind": "theorem",
+          "name": "applyCallDonationOnCore_replenishQueueOnCore_ne",
+          "line": 1138,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ValidThreadId",
+            "applyCallDonationOnCore",
+            "applyCallDonationOnCore_ok_decompose",
+            "applyCallDonation_scheduler_eq",
+            "migrateSchedContextReplenishment_replenishQueueOnCore_other",
+            "replenishQueueOnCore",
+            "scId",
+            "st",
+            "symm"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "applyRendezvousCallDonation_ok_migrates",
-          "line": 1134,
+          "line": 1156,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -136849,7 +136987,7 @@
         {
           "kind": "theorem",
           "name": "applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation",
-          "line": 1153,
+          "line": 1175,
           "called": [
             "CoreId",
             "SystemState",
@@ -136868,7 +137006,7 @@
         {
           "kind": "theorem",
           "name": "applyRendezvousCallDonation_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 1170,
+          "line": 1192,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136883,7 +137021,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 1182,
+          "line": 1204,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136898,7 +137036,7 @@
         {
           "kind": "theorem",
           "name": "rendezvousDequeuedCall_blockedOnReply",
-          "line": 1208,
+          "line": 1230,
           "called": [
             "SystemState",
             "ThreadId",
@@ -136914,7 +137052,7 @@
         {
           "kind": "def",
           "name": "applyReceiverPipHandoff",
-          "line": 1258,
+          "line": 1280,
           "called": [
             "CoreId",
             "SystemState",
@@ -136926,7 +137064,7 @@
         {
           "kind": "def",
           "name": "applyReceiveRendezvousHandoff",
-          "line": 1276,
+          "line": 1298,
           "called": [
             "CoreId",
             "KernelError",
@@ -136941,7 +137079,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_of_no_call",
-          "line": 1288,
+          "line": 1310,
           "called": [
             "CoreId",
             "SystemState",
@@ -136955,7 +137093,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_of_call",
-          "line": 1298,
+          "line": 1320,
           "called": [
             "CoreId",
             "SystemState",
@@ -136971,7 +137109,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_ok_decompose",
-          "line": 1315,
+          "line": 1337,
           "called": [
             "CoreId",
             "SystemState",
@@ -136987,7 +137125,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 1337,
+          "line": 1359,
           "called": [
             "CoreId",
             "SystemState",
@@ -137005,7 +137143,7 @@
         {
           "kind": "def",
           "name": "applyReceiveLegPipHandoff",
-          "line": 1378,
+          "line": 1400,
           "called": [
             "CoreId",
             "SystemState",
@@ -137018,7 +137156,7 @@
         {
           "kind": "def",
           "name": "receiveLegPipHandoffWriteSet",
-          "line": 1394,
+          "line": 1416,
           "called": [
             "CoreId",
             "SystemState",
@@ -137032,7 +137170,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveLegPipHandoff_of_not_delegated",
-          "line": 1405,
+          "line": 1427,
           "called": [
             "CoreId",
             "SystemState",
@@ -137044,7 +137182,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveLegPipHandoff_of_no_call",
-          "line": 1413,
+          "line": 1435,
           "called": [
             "CoreId",
             "SystemState",
@@ -137057,7 +137195,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveLegPipHandoff_cases",
-          "line": 1424,
+          "line": 1446,
           "called": [
             "CoreId",
             "SystemState",
@@ -137070,7 +137208,7 @@
         {
           "kind": "theorem",
           "name": "applyReceiveLegPipHandoff_preserves_replenishQueueAffinityConsistent_smp",
-          "line": 1438,
+          "line": 1460,
           "called": [
             "CoreId",
             "Kernel",
@@ -243783,7 +243921,7 @@
     {
       "module": "SeLe4n.Kernel.SyscallSchedContainment",
       "path": "SeLe4n/Kernel/SyscallSchedContainment.lean",
-      "declaration_count": 15,
+      "declaration_count": 16,
       "declarations": [
         {
           "kind": "namespace",
@@ -243990,8 +244128,35 @@
         },
         {
           "kind": "theorem",
+          "name": "schedLockSet_endpointCallOnCore_coversWrites",
+          "line": 273,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "ObjId",
+            "SchedLockSet",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointCallCrossCoreDispatch",
+            "endpointCallCrossCoreDispatch_confinedToCores",
+            "endpointCallCrossCoreDispatch_replenishQueueOnCore_ne",
+            "endpointCallDispatchReplenishCores",
+            "endpointCallDispatchWriteSet",
+            "endpointId",
+            "invExt",
+            "ofList",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_endpointCallOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "not_schedFootprintCoversWrites_of_runQueue_moved",
-          "line": 275,
+          "line": 308,
           "called": [
             "CoreId",
             "SchedLockSet",
@@ -244004,7 +244169,7 @@
         {
           "kind": "theorem",
           "name": "not_schedFootprintCoversWrites_of_replenish_moved",
-          "line": 288,
+          "line": 321,
           "called": [
             "CoreId",
             "SchedLockSet",
@@ -244017,7 +244182,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_schedContextConfigureOnCore_coversWrites",
-          "line": 312,
+          "line": 345,
           "called": [
             "SchedLockSet",
             "SystemState",
@@ -244038,7 +244203,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_schedContextUnbindOnCore_coversWrites",
-          "line": 334,
+          "line": 367,
           "called": [
             "CoreId",
             "SchedLockSet",
@@ -244060,7 +244225,7 @@
         {
           "kind": "theorem",
           "name": "schedLockSet_setThreadCpuAffinityOnCore_coversWrites",
-          "line": 359,
+          "line": 392,
           "called": [
             "CoreId",
             "Kernel",

@@ -19698,4 +19698,26 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_c
 run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6c (`v0.35.176`): the `.call` arm's coverage, and the
+# reply path's exactness frames.
+# ============================================================================
+#
+# The IPC arms' replenish segments are computed by running the transition, so
+# their exactness frames are the one place a footprint and its operation could
+# describe different migrations.  Each is keyed on the FOOTPRINT's own segment,
+# as Cut C6b established, and each mirrors the branch structure Cut C3a made the
+# segment share with the dispatch -- which is what makes the proof one case split
+# rather than a second reading of the transition.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonationOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hFrom : c ≠ donorHome" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointCallDispatchReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReplyDonationOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hFrom : c ≠ holderHome" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointReplyDispatchReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointReplyDispatchReplenishCores replier faulted IpcMessage\.empty" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyTransferOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ replyTransferReplenishCores" SeLe4n/Kernel/IPC/CrossCore/Fault.lean'
+# The first IPC arm's coverage.  Stated of the UNCHECKED dispatch, which is what
+# the write set and the confinement result are stated at and what the checked arm
+# equals wherever its flow gate admits; a denied flow commits nothing.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+
 finalize_report

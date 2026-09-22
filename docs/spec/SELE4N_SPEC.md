@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.175` (`lakefile.toml`) |
+| **Package version** | `0.35.176` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 406,166 across 338 Lean files |
+| **Production LoC** | 406,451 across 338 Lean files |
 | **Test LoC** | 83,005 across 70 Lean test suites |
-| **Proved declarations** | 13,448 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,455 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4874,6 +4874,22 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   unresolved segment is a **refusal** rather than a gap, since both SchedContext
   arms' transitions fail there; and `allCores` is a legitimate segment, on which
   the clause is vacuous because there is no core outside it.
+
+  **And the two IPC spines get their exactness frames, with `.call` covered**
+  (WS-RR RR8.12 Cut C6c, `v0.35.176`).  The IPC arms' replenish segments are
+  computed by running the transition, so their frames are the one place a
+  footprint and its operation could describe different migrations; each is one
+  case split because the segment's branch structure and the transition's are the
+  same structure by construction (Cut C3a).  Each donation step gained an `_ne`
+  beside its `_of_no_donation` — the existing frames say the hand-off moves
+  nothing when the resolver declines, the new ones say where it moves when it
+  answers — and the `.reply` arm's frame is stated per branch rather than through
+  the hypothesis-parameterised form, because the segment is message-dependent (the
+  fault branch composes the dispatch at `IpcMessage.empty`, the ordinary branch at
+  `msg`).  `.call`'s coverage is stated of the unchecked dispatch, which is what
+  its write set and confinement result are stated at and what the checked arm
+  equals wherever its flow gate admits; `.reply`'s waits on a confinement theorem
+  at `replyTransferWriteSet` that does not exist yet.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

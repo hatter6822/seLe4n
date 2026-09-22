@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.175.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.176.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78741 lines)
+- `CHANGELOG.md` (~78802 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6955 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6971 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
@@ -344,13 +344,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1526 lines)
 - `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1510 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1473 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1420 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
@@ -391,6 +391,7 @@ To find files that need pagination today, run:
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1073 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -400,7 +401,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~994 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~984 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
@@ -437,6 +437,7 @@ To find files that need pagination today, run:
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~822 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (~821 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
@@ -9563,6 +9564,38 @@ code may assume:
   left to read, so the unbind sweeps every core's replenishment and the footprint
   declares every core's lock; there is no core outside it, which is the honest
   reading rather than a hole.
+- **...and the two IPC spines get their exactness frames, with `.call` covered**
+  (WS-RR RR8.12 Cut C6c, `v0.35.176`).  The IPC arms' replenish segments are
+  *computed by running the transition*, so their exactness frames are the one
+  place a footprint and its operation could describe different migrations.  Four
+  things new code must respect.
+
+  (1) **The segment's branch structure and the transition's are the same
+  structure, by construction** (Cut C3a), so each frame is one case split that
+  visits both at once rather than a second reading of the transition.  Every arm
+  short of a resolving donation leaves the segment empty and the step's own frame
+  applies; the resolving arm is the SM5.H migration's `_other` frame at exactly
+  the pair the segment names.
+
+  (2) **Each donation step gets its own `_ne` beside its `_of_no_donation`.**  The
+  existing frames say the hand-off moves *nothing* when the resolver declines;
+  the new ones say *where* it moves when it answers, which is what the replenish
+  clause needs.  Both directions matter and neither implies the other.
+
+  (3) **The `.reply` arm's frame cannot be the hypothesis-parameterised one.**
+  `replyTransferOnCore_replenishQueueOnCore_of_dispatch` asks for the dispatch's
+  frame at *every* message, and the segment is message-dependent — the fault
+  branch composes the dispatch at `IpcMessage.empty` and the ordinary branch at
+  `msg`.  So the footprint-keyed frame is stated per branch, through
+  `faultReplyOnCore_replenishQueueOnCore_ne`, and `faultReplyApplyOnCore` frames
+  every replenish queue on both its outcomes.
+
+  (4) **`.call`'s coverage is stated of the UNCHECKED dispatch** — what the write
+  set and the confinement result are stated at, and what the checked arm equals
+  wherever its flow gate admits; a denied flow commits nothing, so the covered set
+  is the same either way.  `.reply`'s coverage waits on a confinement theorem at
+  `replyTransferWriteSet` that does not exist yet, which is Cut C6d's first row
+  rather than an omission here.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

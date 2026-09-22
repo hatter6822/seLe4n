@@ -757,4 +757,65 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
         receiverV _ _ hNone hDon c]
     exact hWithRep
 
+/-- **WS-RR RR8.12 Cut C6c: the `.call` arm's exactness frame.**
+
+Keyed on the footprint's own replenish segment, which is what the coverage proof
+consumes — the two `_of_*` frames above are the branch-shaped forms it is built
+from.  The dispatch's branch structure and `endpointCallDispatchReplenishCores`'
+are the *same* structure, deliberately (Cut C3a), so the proof is one case split
+that visits both at once: every arm short of a resolving donation leaves the
+segment empty and the step's own frame applies, and the resolving arm is the
+migration's `_other` frame at exactly the pair the segment names. -/
+theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hne : c ∉ endpointCallDispatchReplenishCores endpointId caller msg endpointRights
+      receiverSlotBase executingCore st) :
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointCallCrossCoreDispatch endpointCallDispatchReplenishCores at *
+  cases hW : endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+      executingCore st with
+  | mk stW res =>
+    rw [hW] at hne
+    have hFrame : stW.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+      have h0 := endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller msg
+        endpointRights receiverSlotBase executingCore st c
+      rw [hW] at h0
+      exact h0
+    simp only at hne ⊢
+    cases res with
+    | error e => exact hFrame
+    | ok pair =>
+      obtain ⟨summary, sgi⟩ := pair
+      simp only at hne ⊢
+      split
+      · rename_i receiverTid hRecv
+        rw [hRecv] at hne
+        simp only [] at hne
+        split
+        · rename_i callerV receiverV hCv hRv
+          rw [hCv, hRv] at hne
+          simp only [] at hne
+          split
+          · exact hFrame
+          · rename_i st'' hDon
+            simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+            cases hSc : callDonationSchedContext? stW callerV.val receiverV.val with
+            | none =>
+                rw [applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stW st''
+                  callerV receiverV (determineTargetCore st caller)
+                  (determineTargetCore st receiverTid) hSc hDon c]
+                exact hFrame
+            | some scId =>
+                rw [hSc] at hne
+                simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+                rw [applyCallDonationOnCore_replenishQueueOnCore_ne stW st'' callerV receiverV
+                  (determineTargetCore st caller) (determineTargetCore st receiverTid) c
+                  hne.1 hne.2 hDon]
+                exact hFrame
+        · exact hFrame
+      · exact hFrame
+
 end SeLe4n.Kernel

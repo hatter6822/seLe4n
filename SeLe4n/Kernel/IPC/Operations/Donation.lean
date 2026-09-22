@@ -1127,6 +1127,28 @@ theorem applyCallDonationOnCore_replenishQueueOnCore_of_no_donation
   · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
   · exact absurd (hNone.symm.trans hSome) (by simp)
 
+/-- **WS-RR RR8.12 Cut C6c: the call donation's exactness frame.**
+
+`…_of_no_donation` above says the hand-off moves nothing when the resolver
+declines; this says *where* it moves when the resolver answers, which is what a
+footprint's replenish clause needs: unchanged at every core outside the
+migration's two endpoints.  The SM5.H migration is the only step that touches a
+replenishment here — `applyCallDonation` writes bindings and the object store —
+so the two arms are its `_other` frame and the donation's own scheduler frame. -/
+theorem applyCallDonationOnCore_replenishQueueOnCore_ne
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome c : CoreId)
+    (hFrom : c ≠ donorHome) (hTo : c ≠ doneeHome)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨st', hDon, harm⟩ :=
+    applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId donorHome
+      doneeHome c (Ne.symm hFrom) (Ne.symm hTo),
+      applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+
 /-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
 answers `some` **is** the single-core donation followed by the SM5.H migration between
 exactly the two cores `rendezvousCallDonationReplenishCores` names — so a footprint
