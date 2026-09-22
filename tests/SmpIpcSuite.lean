@@ -4120,6 +4120,174 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
       assertBool "CONTROL: ...and the bystander is untouched, as it is on the divergent shape"
         (threadPlacedOnSomeCore stOut orphanS1)
 
+-- ============================================================================
+-- §3.28 the pre-receive donation return migrates its replenishments
+--        (register row 57, `v0.35.161`)
+-- ============================================================================
+
+/-! The block arm of the cross-core receive leg returns a `.donated` receiver's
+context to its owner before the receiver parks, and until `v0.35.161` it ran the
+pop bare: `boundThread` moved to the owner and the reservation's replenishments
+stayed on the receiver's home core, so `replenishQueueAffinityConsistent_smp` was
+false on a state three ordinary operations reach.  What the theorems now say
+(`cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp`,
+`endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp`) is that
+the migrated return preserves the invariant; what no theorem states is that the
+invariant is *falsifiable* by the bare pop on a reachable state — which is the
+whole content of the defect, and this section's subject.
+
+The retired reading is not a private copy here, because the bare pop is still a
+live definition (`cleanupPreReceiveDonationChecked`, the migrated return's own first
+half): it is computed beside the migrated one on the same state, so the assertions
+are known to discriminate.  Two controls bound the claim: a receiver holding no
+loan, where the migrated return is the identity, and an owner homed on the
+receiver's own core, where the migration is. -/
+
+/-- The decidable reading of `replenishQueueAffinityConsistent_smp`, clause for
+clause: every entry of every core's replenish queue names a context that is either
+unresolvable, unbound, or bound to a thread homed on that core. -/
+private def replenishAffinityConsistentB (st : SystemState) : Bool :=
+  Concurrency.allCores.all fun c =>
+    (replenishEntriesOn st c).all fun e =>
+      match st.getSchedContext? e.1 with
+      | some sc =>
+          match sc.boundThread with
+          | some t => decide (determineTargetCore st t = c)
+          | none => true
+      | none => true
+
+/-- `stDonBase` with one replenishment for the client's context on the client's
+home core — the shape the invariant is about, since a queue holding no entry for the
+context satisfies it vacuously and could witness no migration. -/
+private def stPreReturnBase : SystemState :=
+  { stDonBase with scheduler :=
+      stDonBase.scheduler.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100) }
+
+/-- The same-core CONTROL: the client pinned to the server's own core, its
+replenishment there too, so the return's migration is the identity. -/
+private def stPreReturnSameCore : SystemState :=
+  { stDonBase with
+      objects := stDonBase.objects.insert donClient.toObjId
+        (.tcb { mkTcb 841 60 (some c1) with schedContextBinding := .bound scClient }),
+      scheduler :=
+        stDonBase.scheduler.setReplenishQueueOnCore c1 (ReplenishQueue.empty.insert scClient 100) }
+
+/-- The three-operation prefix the defect needs: the client `Call`s with nobody
+waiting and parks; the passive server takes it with a `Recv`, whose hand-off donates
+the client's context and migrates its replenishment to the server's home; the state
+returned is the one the server then abandons the call from. -/
+private def preReturnHandoffState (base : SystemState) : Option SystemState := do
+  let (stCall, _) ← okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 base)
+  let (stRecv, (dequeued, _)) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall)
+  okExcept (applyReceiveRendezvousHandoff stRecv donServer dequeued c1)
+
+private def runPreReceiveReturnMigrationChecks : IO Unit := do
+  IO.println "--- §3.28 register row 57: the pre-receive donation return migrates its replenishments ---"
+  match preReturnHandoffState stPreReturnBase with
+  | none => assertBool "row 57 setup: call, rendezvous and hand-off succeed" false
+  | some stDon =>
+    -- (i) the hand-off left the shape the defect needs: the server holds the loan,
+    --     the context is bound to it, and the replenishment sits on ITS home core.
+    assertBool "setup: the server holds the client's context on loan"
+      (match stDon.getTcb? donServer with
+       | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+    assertBool "setup: the context is bound to the server"
+      (match stDon.getSchedContext? scClient with
+       | some sc => sc.boundThread == some donServer | none => false)
+    assertBool "setup: the hand-off migrated the replenishment to the server's home (core 1)"
+      (replenishCountFor stDon c1 scClient == 1 && replenishCountFor stDon c0 scClient == 0)
+    assertBool "setup: the invariant holds at the hand-off's post-state (the hand-off migrates)"
+      (replenishAffinityConsistentB stDon)
+    assertBool "setup: the pop's own guard resolves the loan and its owner"
+      (decide (preReceiveDonation? stDon donServer = some (scClient, donClient)))
+    -- (ii) NEGATIVE (the defect): the bare pop rebinds the context to the client,
+    --      homed on core 0, and leaves the replenishment on core 1.
+    match okExcept (cleanupPreReceiveDonationChecked stDon donServer) with
+    | none => assertBool "row 57: the bare pop succeeds" false
+    | some stBare =>
+      assertBool "NEGATIVE: the bare pop binds the context back to the client..."
+        (match stBare.getSchedContext? scClient with
+         | some sc => sc.boundThread == some donClient | none => false)
+      assertBool "NEGATIVE: ...whose home is core 0..."
+        (decide (determineTargetCore stBare donClient = c0))
+      assertBool "NEGATIVE: ...while the replenishment stays on core 1"
+        (replenishCountFor stBare c1 scClient == 1 && replenishCountFor stBare c0 scClient == 0)
+      assertBool "NEGATIVE (the defect): the bare pop FALSIFIES the affinity invariant"
+        (!replenishAffinityConsistentB stBare)
+      -- The destination the migrated return reads off the post-pop state IS the
+      -- owner's home (`preReceiveReturnMigration_destination`, measured).
+      assertBool "the post-pop home of the context is the client's home"
+        (decide (replenishHomeOfSchedContext stBare scClient (determineTargetCore stDon donServer)
+                   = determineTargetCore stDon donClient))
+    -- (iii) PAYOFF: the migrated return moves the replenishment with the binding.
+    match okExcept (cleanupPreReceiveDonationMigrated stDon donServer) with
+    | none => assertBool "row 57: the migrated return succeeds" false
+    | some stMig =>
+      assertBool "PAYOFF: the migrated return binds the context back to the client too"
+        (match stMig.getSchedContext? scClient with
+         | some sc => sc.boundThread == some donClient | none => false)
+      assertBool "PAYOFF: ...and the replenishment now sits on the client's home (core 0)"
+        (replenishCountFor stMig c0 scClient == 1 && replenishCountFor stMig c1 scClient == 0)
+      assertBool "PAYOFF: the affinity invariant holds after the migrated return"
+        (replenishAffinityConsistentB stMig)
+      assertBool "the two returns agree on every object: the migration is scheduler-only"
+        (match stMig.getTcb? donServer, stMig.getTcb? donClient with
+         | some s, some c =>
+             s.schedContextBinding == SchedContextBinding.unbound
+               && c.schedContextBinding == .bound scClient
+         | _, _ => false)
+    -- (iv) ...and the LIVE leg runs the migrated one: the server's plain `Recv` on
+    --      the empty endpoint blocks it, and the state it parks in is affinity-consistent.
+    match okPair (endpointReceiveDualOnCore donEp donServer none c1 stDon) with
+    | none => assertBool "row 57: the abandoning receive blocks" false
+    | some (stBlock, (who, _)) =>
+      assertBool "the receive parks the server itself" (who == donServer)
+      assertBool "...`.blockedOnReceive`, holding no context"
+        (ipcStateIs stBlock donServer (.blockedOnReceive donEp)
+          && (match stBlock.getTcb? donServer with
+              | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+      assertBool "PAYOFF: the live leg leaves the replenishment on the client's home"
+        (replenishCountFor stBlock c0 scClient == 1 && replenishCountFor stBlock c1 scClient == 0)
+      assertBool "PAYOFF: the live leg's post-state is affinity-consistent"
+        (replenishAffinityConsistentB stBlock)
+    -- (v) the footprint the object domain and the scheduler domain both read: on this
+    --     block the segment names the receiver's home and the owner's, in that order.
+    assertBool "the block path's replenish segment names the receiver's home and the owner's"
+      (decide (endpointReceiveHandoffReplenishCores stDon donEp donServer
+                 = [determineTargetCore stDon donServer, determineTargetCore stDon donClient]))
+    assertBool "...which are two different cores"
+      (decide (determineTargetCore stDon donServer ≠ determineTargetCore stDon donClient))
+  -- (vi) CONTROL: a receiver holding no loan — the migrated return is the identity
+  --      and the segment is empty, so the payoff above is attributable to the loan.
+  assertBool "CONTROL: the passive server of `stDonBase` holds no loan"
+    (decide (preReceiveDonation? stDonBase donServer = none))
+  assertBool "CONTROL: ...so the migrated return is the identity on it"
+    (match okExcept (cleanupPreReceiveDonationMigrated stDonBase donServer) with
+     | some stOut =>
+         Concurrency.allCores.all fun c =>
+           replenishEntriesOn stOut c == replenishEntriesOn stDonBase c
+     | none => false)
+  assertBool "CONTROL: ...and a block there declares no replenish-queue lock"
+    (decide (endpointReceiveHandoffReplenishCores stDonBase donEp donServer = []))
+  -- (vii) CONTROL: an owner homed on the receiver's own core — the migration is
+  --       the identity, so the fix is keyed on the two homes and not on the pop.
+  match preReturnHandoffState stPreReturnSameCore with
+  | none => assertBool "row 57 same-core setup: call, rendezvous and hand-off succeed" false
+  | some stSame =>
+    assertBool "CONTROL: both homes are core 1"
+      (decide (determineTargetCore stSame donServer = c1
+               ∧ determineTargetCore stSame donClient = c1))
+    match okExcept (cleanupPreReceiveDonationMigrated stSame donServer),
+        okExcept (cleanupPreReceiveDonationChecked stSame donServer) with
+    | some stMigSame, some stBareSame =>
+      assertBool "CONTROL: the migrated and the bare return leave the same replenish queues"
+        (Concurrency.allCores.all fun c =>
+          replenishEntriesOn stMigSame c == replenishEntriesOn stBareSame c)
+      assertBool "CONTROL: ...both on core 1, and both affinity-consistent"
+        (replenishCountFor stMigSame c1 scClient == 1 && replenishAffinityConsistentB stMigSame
+          && replenishAffinityConsistentB stBareSame)
+    | _, _ => assertBool "row 57 same-core: both returns succeed" false
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4152,6 +4320,7 @@ def runSmpIpcChecks : IO Unit := do
   runReceivePriorityHandoffChecks
   runReceiveReplenishSegmentChecks
   runReplyRecvHolderDescheduleChecks
+  runPreReceiveReturnMigrationChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

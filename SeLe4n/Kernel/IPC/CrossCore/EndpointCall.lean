@@ -1387,6 +1387,368 @@ theorem ipcUnwrapCaps_determineTargetCore_eq (msg : IpcMessage)
   exact determineTargetCore_congr st st' x (by rw [hEq])
 
 -- ============================================================================
+-- §11b  `v0.35.161` (register row 57) — the SchedContext-resolution frames of
+--       the receive leg's steps
+-- ============================================================================
+--
+-- The `_determineTargetCore_eq` family above says the receive leg moves no
+-- thread's home core.  `replenishQueueAffinityConsistentOnCore` reads one more
+-- thing — `getSchedContext?`, the object a replenish entry is about — and the
+-- leg framed it nowhere, which is why no theorem could say the leg preserves the
+-- SM5.H affinity invariant at all (register row 57: the surface was silent, not
+-- wrong).  These are the siblings, one per step, each an instance of one
+-- store-level fact: every store the leg performs is at a key its own lookup
+-- showed to hold a TCB, an endpoint or a Reply, and writes the same kind back,
+-- so at that key both sides resolve no SchedContext and at every other key the
+-- store is invisible.  *Keep the tables symmetric*: a family with a
+-- `_determineTargetCore_eq` row and no `_getSchedContext?_eq` row is how a cell
+-- stays uncovered until someone needs it.
+
+/-- `v0.35.161`: a `storeObject` at a key holding no SchedContext, of a value that is
+no SchedContext, frames every SchedContext resolution — the one store-level fact
+behind the rows below. -/
+theorem storeObject_getSchedContext?_eq_of_nonSchedContext
+    (st st' : SystemState) (id : SeLe4n.ObjId) (obj : KernelObject)
+    (hOld : ∀ sc, st.objects[id]? ≠ some (.schedContext sc))
+    (hNew : ∀ sc, obj ≠ .schedContext sc)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject id obj st = .ok ((), st'))
+    (scId : SeLe4n.SchedContextId) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?
+  by_cases hEq : scId.toObjId = id
+  · rw [hEq, storeObject_objects_eq st st' id obj hObjInv hStore]
+    cases hPre : st.objects[id]? with
+    | none => cases obj <;> first | rfl | exact absurd rfl (hNew _)
+    | some o =>
+      cases o <;> cases obj <;>
+        first | rfl | exact absurd rfl (hNew _) | exact absurd hPre (hOld _)
+  · rw [storeObject_objects_ne st st' id scId.toObjId obj hEq hObjInv hStore]
+
+/-- `v0.35.161`: storing a TCB over a TCB frames every SchedContext resolution. -/
+theorem storeObject_tcb_getSchedContext?_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb newTcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hPre : st.getTcb? tid = some tcb)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject tid.toObjId (.tcb newTcb) st = .ok ((), st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId :=
+  storeObject_getSchedContext?_eq_of_nonSchedContext st st' tid.toObjId (.tcb newTcb)
+    (fun _ h => by
+      rw [(SystemState.getTcb?_eq_some_iff st tid tcb).mp hPre] at h
+      exact KernelObject.noConfusion (Option.some.inj h))
+    (fun _ h => KernelObject.noConfusion h) hObjInv hStore scId
+
+/-- `v0.35.161`: storing an endpoint over an endpoint frames every SchedContext
+resolution. -/
+theorem storeObject_endpoint_getSchedContext?_eq (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep ep' : Endpoint) (scId : SeLe4n.SchedContextId)
+    (hPre : st.objects[endpointId]? = some (.endpoint ep))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject endpointId (.endpoint ep') st = .ok ((), st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId :=
+  storeObject_getSchedContext?_eq_of_nonSchedContext st st' endpointId (.endpoint ep')
+    (fun _ h => by rw [hPre] at h; exact KernelObject.noConfusion (Option.some.inj h))
+    (fun _ h => KernelObject.noConfusion h) hObjInv hStore scId
+
+/-- `v0.35.161`: storing a Reply over a Reply frames every SchedContext resolution. -/
+theorem storeObject_reply_getSchedContext?_eq (st st' : SystemState)
+    (replyObjId : SeLe4n.ObjId) (r r' : SeLe4n.Kernel.Reply) (scId : SeLe4n.SchedContextId)
+    (hPre : st.objects[replyObjId]? = some (.reply r))
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject replyObjId (.reply r') st = .ok ((), st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId :=
+  storeObject_getSchedContext?_eq_of_nonSchedContext st st' replyObjId (.reply r')
+    (fun _ h => by rw [hPre] at h; exact KernelObject.noConfusion (Option.some.inj h))
+    (fun _ h => KernelObject.noConfusion h) hObjInv hStore scId
+
+/-- `v0.35.161`: `storeTcbQueueLinks` rewrites one TCB's three link fields; the slot
+is a TCB before and after. -/
+theorem storeTcbQueueLinks_getSchedContext?_eq (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold storeTcbQueueLinks at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · next tcb hLk =>
+    split at hStep
+    · exact absurd hStep (by simp)
+    · next st1 hStore =>
+      simp only [Except.ok.injEq] at hStep
+      subst hStep
+      exact storeObject_tcb_getSchedContext?_eq st st1 tid tcb
+        (tcbWithQueueLinks tcb prev pprev next) scId
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hLk)) hObjInv hStore
+
+/-- `v0.35.161`: `endpointQueuePopHead` rewrites the endpoint's queue and two threads'
+link fields, and no SchedContext — the sibling of
+`endpointQueuePopHead_determineTargetCore_eq`, walked the same way. -/
+theorem endpointQueuePopHead_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (st st' : SystemState) (rTid : SeLe4n.ThreadId) (rTcb : TCB)
+    (scId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (rTid, rTcb, st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+    | reply _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp
+      | some headTid =>
+        simp only []
+        cases hLookup : lookupTcb st headTid with
+        | none => simp
+        | some headTcb =>
+          simp only []
+          split
+          · simp
+          cases hStore : storeObject endpointId
+              (.endpoint (if isReceiveQ
+                then { ep with receiveQ := _ } else { ep with sendQ := _ })) st with
+          | error e => simp
+          | ok pair =>
+            have hInv1 : pair.2.objects.invExt :=
+              storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+            have hT1 : pair.2.getSchedContext? scId = st.getSchedContext? scId :=
+              storeObject_endpoint_getSchedContext?_eq st pair.2 endpointId ep _ scId hObj
+                hObjInv (by rw [hStore])
+            simp only []
+            cases hNext : headTcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks pair.2 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, hEq⟩; subst hEq
+                rw [storeTcbQueueLinks_getSchedContext?_eq pair.2 st3 headTid none none none
+                      scId hInv1 hFinal, hT1]
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb pair.2 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks pair.2 nextTid none
+                    (some QueuePPrev.endpointHead) nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  have hInv2 : st2.objects.invExt :=
+                    storeTcbQueueLinks_preserves_objects_invExt pair.2 st2 nextTid none
+                      (some QueuePPrev.endpointHead) nextTcb.queueNext hInv1 hLink
+                  have hT2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                    rw [storeTcbQueueLinks_getSchedContext?_eq pair.2 st2 nextTid none
+                          (some QueuePPrev.endpointHead) nextTcb.queueNext scId hInv1 hLink,
+                      hT1]
+                  simp only []
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, hEq⟩; subst hEq
+                    rw [storeTcbQueueLinks_getSchedContext?_eq st2 st3 headTid none none
+                          none scId hInv2 hFinal, hT2]
+
+/-- `v0.35.161`: `endpointQueueEnqueue` rewrites the endpoint's queue boundary and one
+or two threads' link fields, and no SchedContext — the sibling of
+`endpointQueueEnqueue_determineTargetCore_eq`, for the receive leg's block path. -/
+theorem endpointQueueEnqueue_getSchedContext?_eq (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId) (st st' : SystemState)
+    (scId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+    | reply _ => simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep; revert hStep
+      cases hLk : lookupTcb st tid with
+      | none => simp
+      | some tcb =>
+        simp only []
+        split
+        · simp
+        · split
+          · simp
+          · cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+                simp only
+                cases hStore : storeObject endpointId
+                    (.endpoint (if isReceiveQ
+                      then { ep with receiveQ := { head := some tid, tail := some tid } }
+                      else { ep with sendQ := { head := some tid, tail := some tid } })) st with
+                | error e => simp
+                | ok pair =>
+                  simp only
+                  have hInv1 : pair.2.objects.invExt :=
+                    storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                  have hT1 : pair.2.getSchedContext? scId = st.getSchedContext? scId :=
+                    storeObject_endpoint_getSchedContext?_eq st pair.2 endpointId ep _ scId hObj
+                      hObjInv (by rw [hStore])
+                  cases hLinks : storeTcbQueueLinks pair.2 tid none (some .endpointHead) none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq]
+                    intro hEq; subst hEq
+                    rw [storeTcbQueueLinks_getSchedContext?_eq pair.2 st3 tid none
+                          (some .endpointHead) none scId hInv1 hLinks, hT1]
+            | some tailTid =>
+                simp only
+                cases hLkT : lookupTcb st tailTid with
+                | none => simp
+                | some tailTcb =>
+                  simp only
+                  cases hStore : storeObject endpointId
+                      (.endpoint (if isReceiveQ
+                        then { ep with receiveQ :=
+                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                            tail := some tid } }
+                        else { ep with sendQ :=
+                          { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                            tail := some tid } })) st with
+                  | error e => simp
+                  | ok pair =>
+                    simp only
+                    have hInv1 : pair.2.objects.invExt :=
+                      storeObject_preserves_objects_invExt' st endpointId _ pair hObjInv hStore
+                    have hT1 : pair.2.getSchedContext? scId = st.getSchedContext? scId :=
+                      storeObject_endpoint_getSchedContext?_eq st pair.2 endpointId ep _ scId
+                        hObj hObjInv (by rw [hStore])
+                    cases hLink1 : storeTcbQueueLinks pair.2 tailTid tailTcb.queuePrev
+                        tailTcb.queuePPrev (some tid) with
+                    | error e => simp
+                    | ok st2 =>
+                      simp only
+                      have hInv2 : st2.objects.invExt :=
+                        storeTcbQueueLinks_preserves_objects_invExt pair.2 st2 tailTid _ _ _
+                          hInv1 hLink1
+                      have hT2 : st2.getSchedContext? scId = st.getSchedContext? scId := by
+                        rw [storeTcbQueueLinks_getSchedContext?_eq pair.2 st2 tailTid
+                          tailTcb.queuePrev tailTcb.queuePPrev (some tid) scId hInv1 hLink1, hT1]
+                      cases hLink2 : storeTcbQueueLinks st2 tid (some tailTid)
+                          (some (.tcbNext tailTid)) none with
+                      | error e => simp
+                      | ok st3 =>
+                        simp only [Except.ok.injEq]
+                        intro hEq; subst hEq
+                        rw [storeTcbQueueLinks_getSchedContext?_eq st2 st3 tid (some tailTid)
+                          (some (.tcbNext tailTid)) none scId hInv2 hLink2, hT2]
+
+/-- `v0.35.161`: `storeTcbIpcStateAndMessage` writes one TCB's `ipcState` and
+`pendingMessage`, and no SchedContext. -/
+theorem storeTcbIpcStateAndMessage_getSchedContext?_eq
+    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
+    (msg : Option IpcMessage) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold storeTcbIpcStateAndMessage at hStep
+  cases hLk : lookupTcb st tid with
+  | none => simp [hLk] at hStep
+  | some tcb =>
+    simp only [hLk] at hStep
+    cases hSO : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
+    | error e => simp [hSO] at hStep
+    | ok pair =>
+      simp only [hSO] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_tcb_getSchedContext?_eq st pair.2 tid tcb
+        { tcb with ipcState := ipc, pendingMessage := msg } scId
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mpr
+          (lookupTcb_some_objects st tid tcb hLk)) hObjInv (by rw [hSO])
+
+/-- `v0.35.161`: linking a dequeued caller to its reply object stores a Reply and a
+TCB, and no SchedContext — the sibling of `linkCallerReply_determineTargetCore_eq`. -/
+theorem linkCallerReply_getSchedContext?_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hStep : SystemState.linkCallerReply caller rid st = .ok ((), st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.linkCallerReply at hStep
+  cases hLink : SystemState.linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hFrame1 : st1.getSchedContext? scId = st.getSchedContext? scId := by
+      unfold SystemState.linkReply at hLink
+      cases hGetR : st.getReply? rid with
+      | none => rw [hGetR] at hLink; simp at hLink
+      | some r =>
+        simp only [hGetR] at hLink
+        split at hLink
+        · exact storeObject_reply_getSchedContext?_eq st st1 rid.toObjId r
+            { r with caller := some caller } scId
+            ((SystemState.getReply?_eq_some_iff st rid r).mp hGetR) hObjInv hLink
+        · simp at hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · have hInv1 :=
+          SystemState.linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+        rw [storeObject_tcb_getSchedContext?_eq st1 st' caller tcb
+          { tcb with replyObject := some rid } scId hT hInv1 hStep, hFrame1]
+      · simp at hStep
+
+/-- `v0.35.161`: installing the capabilities a parked send was carrying writes CNodes
+and the CDT, and no SchedContext.  At the receiver's root a SchedContext already there
+is carried forward (`ipcUnwrapCaps_preserves_schedContext_objects`) and anything else
+either survives or becomes a CNode (`ipcUnwrapCaps_objects_at_root_orig_or_cnode`);
+every other key is untouched. -/
+theorem ipcUnwrapCaps_getSchedContext?_eq (msg : IpcMessage)
+    (receiverRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (grantRight : Bool)
+    (st st' : SystemState) (summary : CapTransferSummary) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
+    st'.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?
+  by_cases hRoot : scId.toObjId = receiverRoot
+  · cases hPre : st.objects[scId.toObjId]? with
+    | some obj =>
+      cases obj with
+      | schedContext sc =>
+        rw [ipcUnwrapCaps_preserves_schedContext_objects msg receiverRoot slotBase grantRight
+          st st' summary scId.toObjId sc hPre hObjInv hStep]
+      | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | reply _ | endpoint _ =>
+        rw [hRoot] at hPre ⊢
+        rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase grantRight
+          st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
+        · rw [hOrig, hPre]
+        · rw [hCn]
+    | none =>
+      rw [hRoot] at hPre ⊢
+      rcases ipcUnwrapCaps_objects_at_root_orig_or_cnode msg receiverRoot slotBase grantRight
+        st st' summary hObjInv hStep with hOrig | ⟨cn', hCn⟩
+      · rw [hOrig, hPre]
+      · rw [hCn]
+  · rw [ipcUnwrapCaps_preserves_objects_ne msg receiverRoot slotBase grantRight st st' summary
+      scId.toObjId hRoot hObjInv hStep]
+
+/-- `v0.35.161`: waking an already-`.ready` thread is object-invisible, so it frames
+every SchedContext resolution — the shape the receive leg's plain-`Send` wake has,
+the sender having just been stored `.ready`. -/
+theorem wakeThread_getSchedContext?_eq_of_ready (st : SystemState)
+    (tid : SeLe4n.ThreadId) (ec : CoreId) (tcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hTcb : st.getTcb? tid = some tcb) (hReady : tcb.ipcState = .ready)
+    (hInv : st.objects.invExt) :
+    (wakeThread st tid ec).1.getSchedContext? scId = st.getSchedContext? scId := by
+  unfold SystemState.getSchedContext?
+  rw [wakeThread_objects_getElem_eq_of_ready st tid ec tcb hTcb hReady hInv]
+
+-- ============================================================================
 -- §12 SM6.A.4 — Per-core caller blocking (plan §3.2 steps 5–6)
 -- ============================================================================
 

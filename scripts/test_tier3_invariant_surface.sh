@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -10052,12 +10052,86 @@ run_negative_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserv
 # The obligation the replenish segment owes in the OTHER direction: every core in
 # it comes from the donation, and NONE from the receive leg -- so "the receive leg
 # writes no replenish queue" is a theorem rather than a reading of the body.  The
-# `Checked` cleanup frame is the one lemma that was missing, and it is a corollary
-# through `cleanupPreReceiveDonationChecked_ok_eq_cleanup` rather than a second
-# case analysis over the checked body.
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# `Checked` cleanup's scheduler frame is a corollary through
+# `cleanupPreReceiveDonationChecked_ok_eq_cleanup` rather than a second case
+# analysis over the checked body; since `v0.35.161` it frames the POP alone, the
+# migrated return that follows it being exactly the write the leg owes.
 run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_scheduler_eq$' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# **`v0.35.161`** (register row 57): the whole-leg frame `endpointReceiveDualOnCore_replenishQueueOnCore`
+# is RETIRED.  It proved the receive leg writes no replenish queue on EITHER path,
+# which was true of the transition only because the transition omitted the write:
+# the block arm's pre-receive donation return rebinds `boundThread` across cores and
+# migrated nothing.  The leg's replenish-queue facts are per path now -- a rendezvous
+# writes none, a block that returns no loan writes none, and a block that returns one
+# writes exactly what the migrated return writes -- and the retired name must not
+# come back on either surface.
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_blocked \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_replenishQueueOnCore_of_no_donation \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_no_donation$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n 'endpointReceiveDualOnCore_replenishQueueOnCore \(|endpointReceiveDualWithCapsOnCore_replenishQueueOnCore \(|endpointReceiveDualOnCore_replenishQueueOnCore$|endpointReceiveDualWithCapsOnCore_replenishQueueOnCore$' SeLe4n/ tests/
+# The fix itself: the cross-core block arm runs the return MIGRATED.
+# `cleanupPreReceiveDonationMigrated` is the checked cleanup then
+# `preReceiveReturnMigration`, in that order -- the migration reads the post-pop
+# binding for its destination -- and the bare checked cleanup must not come back in
+# the arm.  Mutation: repoint the arm's match at `cleanupPreReceiveDonationChecked`,
+# keeping every other token.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCore[^\n]*(\n([ \t][^\n]*)?)*match cleanupPreReceiveDonationMigrated st receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveDualOnCore[^\n]*(\n([ \t][^\n]*)?)*match cleanupPreReceiveDonationChecked st receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupPreReceiveDonationMigrated[^\n]*(\n([ \t][^\n]*)?)*\| \.ok stClean => \.ok \(preReceiveReturnMigration st stClean receiver\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The migration is keyed on the pop's OWN guard (`preReceiveDonation?`, resolved
+# through `lookupTcb` exactly as the pop resolves it), never on the footprint's
+# `getTcb?` resolver, so the step and its guard cannot disagree about a reserved id;
+# and its destination is read off the POST-POP state (WS-RR RR8.11's rule --
+# `replenishHomeOfSchedContext`), never off the pre-state's owner, so a refused pop
+# self-migrates to the identity.  Mutations: resolve through the other resolver, or
+# aim the migration at `determineTargetCore st owner`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def preReceiveReturnMigration[^\n]*(\n([ \t][^\n]*)?)*match preReceiveDonation\? st receiver with" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def preReceiveReturnMigration[^\n]*(\n([ \t][^\n]*)?)*endpointReplyDonation\?" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def preReceiveReturnMigration[^\n]*(\n([ \t][^\n]*)?)*\(replenishHomeOfSchedContext stClean scId fromCore\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def preReceiveReturnMigration[^\n]*(\n([ \t][^\n]*)?)*determineTargetCore st (owner|originalOwner)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def preReceiveDonation\?[^\n]*(\n([ \t][^\n]*)?)*match lookupTcb st receiver with" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_of_donation$' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_of_no_donation$' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem preReceiveDonation\?_eq_endpointReplyDonation\?_of_lookup \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The affinity theorems the leg never had -- the surface was SILENT about this
+# hand-off rather than wrong, which is how it survived SM5.H, RR2 and RR8.11 -- and
+# the destination fact, measured rather than described.
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem preReceiveReturnMigration_destination \(st stClean : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# The catalogue of hand-offs gains its fifth constructor, and the aggregate theorem
+# discharges it -- an enumeration standing in for a derivation, one hand-off further
+# than the SM5.H constraint's own warning.
+run_check "INVARIANT" bash -lc 'rg -U -n "^inductive PerCoreDonationStep[^\n]*(\n([ \t][^\n]*)?)*\| preReceiveReturn \(receiver : SeLe4n\.ThreadId\)\n *\(hStep : cleanupPreReceiveDonationMigrated st receiver = \.ok st.\)" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donation_perCore_consistent[^\n]*(\n([ \t][^\n]*)?)*\| preReceiveReturn receiver h =>\n *exact cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/API.lean'
+# The footprint side: the block arm's replenish segment reads the return through
+# `receivePreReturn?` -- the resolver the object domain already reads it through, so
+# the two domains cannot name different owners -- and names the receiver's home and
+# the owner's; the empty block segment is CONDITIONAL on no loan now.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match receivePreReturn\? st endpointId receiver with\n *\| some \(_, owner\) => \[determineTargetCore st receiver, determineTargetCore st owner\]" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveHandoffReplenishCores_of_blocked \([^\n]*(\n([ \t][^\n]*)?)*\(hNoDon : endpointReplyDonation\? st receiver = none\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_covers_preReturnMigration$' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# What carries the block path across the point where the single-core and cross-core
+# spines now part: the two step congruences the dichotomy lacked, the migration's
+# own, and the per-core frame and confinement over it.
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_offSchedulerAgrees \{' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_offSchedulerAgrees \{' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_offSchedulerAgrees \(' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem preReceiveReturnMigration_offSchedulerAgrees \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem preReceiveReturnMigration_passiveServerIdleFrameOnCore \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationMigrated_confinedToCores \(' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The witness computes the bare pop beside the migrated return on the same reachable
+# state and asserts the bare one FALSIFIES the invariant, so the assertions are known
+# to discriminate; two controls (no loan; same-core owner) bound the claim.
+run_check "INVARIANT" rg -n 'NEGATIVE \(the defect\): the bare pop FALSIFIES the affinity invariant' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'CONTROL: the migrated and the bare return leave the same replenish queues' tests/SmpIpcSuite.lean
 # ...and what makes the declaration TRUE rather than plausible: the footprint
 # covers WS-OD OD3.6's donation footprint member for member, hence the SM5.H
 # migration's two replenish-queue write locks -- at the cores the donation ACTUALLY

@@ -327,6 +327,21 @@ theorem storeTcbReceiveComplete_confinedToCores (st st' : SystemState)
     (storeTcbReceiveComplete_scheduler_eq st st' tid msg hStep)
     (storeTcbReceiveComplete_machine_eq st st' tid msg hStep)
 
+/-- SM8.B.2: a replenishment migration is per-core silent — it moves a
+SchedContext's replenishments between two cores' **replenishment** queues, and
+SM8.A's `onCore_perCore_independence` puts that queue outside the observer's
+read set entirely. -/
+theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
+    observableSlotsConfinedToCores st
+      (migrateSchedContextReplenishment st scId fromCore toCore) [] := by
+  refine ⟨fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
+            toCore c).1,
+          fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
+            toCore c).2, ?_, ?_, ?_, ?_⟩
+  all_goals intro c _
+  all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
+
 theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
     (receiver : SeLe4n.ThreadId)
     (hStep : cleanupPreReceiveDonationChecked st receiver = .ok st') :
@@ -336,6 +351,29 @@ theorem cleanupPreReceiveDonationChecked_confinedToCores (st st' : SystemState)
   exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq
     (hEq ▸ cleanupPreReceiveDonation_scheduler_eq st receiver)
     (hEq ▸ cleanupPreReceiveDonation_machine_eq st receiver)
+
+/-- **`v0.35.161`**: the pre-receive return's own migration is that silence at the
+receive leg — the reservation's replenishments move from the receiver's home core
+to the owner's, and no observable slot moves with them. -/
+theorem preReceiveReturnMigration_confinedToCores (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) :
+    observableSlotsConfinedToCores stClean (preReceiveReturnMigration st stClean receiver) [] := by
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_confinedToCores _ _ _ _
+  · exact observableSlotsConfinedToCores_refl _ _
+
+/-- **`v0.35.161`**: and so the migrated return — the pop, then the migration — is
+as silent as the bare pop was, which is what keeps `endpointReceiveDualWriteSet`'s
+block-path entry at the executing core alone. -/
+theorem cleanupPreReceiveDonationMigrated_confinedToCores (st st' : SystemState)
+    (receiver : SeLe4n.ThreadId)
+    (hStep : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
+    observableSlotsConfinedToCores st st' [] := by
+  obtain ⟨stClean, hC, rfl⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hStep
+  exact observableSlotsConfinedToCores_trans
+    (cleanupPreReceiveDonationChecked_confinedToCores st stClean receiver hC)
+    (preReceiveReturnMigration_confinedToCores st stClean receiver)
 
 theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCores (st st' : SystemState)
     (tid : SeLe4n.ThreadId) (tcb : TCB) (ipc : ThreadIpcState) (msg : Option IpcMessage)
@@ -759,9 +797,11 @@ Three shapes, all covered:
 * **`blockedOnCall` rendezvous** — the caller becomes `.blockedOnReply` and is
   deliberately *not* woken (the Call contract), so this path writes no core at
   all and is covered by the declared set through the append.
-* **Block path** — return any donated SchedContext, enqueue on the receive
-  queue, stash the server's reply object, then deschedule the receiver on **its
-  own** core: `[executingCore]`.
+* **Block path** — return any donated SchedContext (and, since `v0.35.161`,
+  migrate its replenishments home — a replenish-queue write, which is outside
+  the observer's read set), enqueue on the receive queue, stash the server's
+  reply object, then deschedule the receiver on **its own** core:
+  `[executingCore]`.
 
 Every fail-closed arm returns the pre-state. -/
 theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
@@ -789,7 +829,7 @@ theorem endpointReceiveDualOnCore_confinedToCores (endpointId : SeLe4n.ObjId)
         · exact observableSlotsConfinedToCores_of_eq _ rfl
         · next st1 hEnq =>
           have hPre := observableSlotsConfinedToCores_trans
-            (cleanupPreReceiveDonationChecked_confinedToCores st stClean receiver hClean)
+            (cleanupPreReceiveDonationMigrated_confinedToCores st stClean receiver hClean)
             (endpointQueueEnqueue_confinedToCores endpointId true receiver stClean st1 hEnq)
           split
           · exact observableSlotsConfinedToCores_of_eq _ rfl
@@ -1027,21 +1067,6 @@ theorem propagatePipChainCrossCore_confinedToCores (executingCore : CoreId) :
           (pipBoostWithWake_confinedToCores st startTid executingCore)
           (propagatePipChainCrossCore_confinedToCores executingCore fuel
             (pipBoostWithWake st startTid executingCore).1 nextServer)
-
-/-- SM8.B.2: a replenishment migration is per-core silent — it moves a
-SchedContext's replenishments between two cores' **replenishment** queues, and
-SM8.A's `onCore_perCore_independence` puts that queue outside the observer's
-read set entirely. -/
-theorem migrateSchedContextReplenishment_confinedToCores (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
-    observableSlotsConfinedToCores st
-      (migrateSchedContextReplenishment st scId fromCore toCore) [] := by
-  refine ⟨fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
-            toCore c).1,
-          fun c _ => (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore
-            toCore c).2, ?_, ?_, ?_, ?_⟩
-  all_goals intro c _
-  all_goals (unfold migrateSchedContextReplenishment; split <;> simp)
 
 
 /-- **WS-RR RR7.22 (residual, remediation)**: the migrated teardown writes no

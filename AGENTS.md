@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.160.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.161.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,34 +222,34 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~76946 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23662 lines)
+- `CHANGELOG.md` (~77408 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8143 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8002 lines)
-- `SeLe4n/Kernel/API.lean` (~7839 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6585 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8190 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
+- `SeLe4n/Kernel/API.lean` (~7865 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6597 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5792 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5817 lines)
 - `SeLe4n/Model/State.lean` (~5675 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5417 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5127 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~4984 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `tests/NegativeStateSuite.lean` (~4545 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
+- `tests/SmpIpcSuite.lean` (~4331 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `tests/SmpIpcSuite.lean` (~4076 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3842 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~3725 lines)
 - `SeLe4n/Platform/FFI.lean` (~3595 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
 - `SeLe4n/Testing/MainTraceHarness.lean` (~3454 lines)
@@ -264,8 +264,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3129 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3119 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3054 lines)
 - `tests/FrozenOpsSuite.lean` (~3050 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3038 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2800 lines)
@@ -299,6 +299,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2077 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2072 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2038 lines)
@@ -320,17 +321,16 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/SyscallDispatchSuite.lean` (~1847 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1840 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1833 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1765 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~1710 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
@@ -339,6 +339,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1611 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
+- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
 - `tests/PriorityManagementSuite.lean` (~1547 lines)
 - `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
@@ -346,7 +347,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
-- `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1436 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1421 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
@@ -358,13 +358,13 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1352 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1256 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1255 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
@@ -436,10 +436,10 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
+- `docs/REGISTERED_DEBT.md` (~813 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~811 lines)
-- `docs/REGISTERED_DEBT.md` (~811 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
 - `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
@@ -7472,13 +7472,25 @@ code may assume:
   `applyCallDonationOnCoreSchedLockSet` member for member, hence — through
   `applyCallDonationOnCoreSchedLockSet_covers_migration` — the SM5.H migration's
   two slots; and in the other direction
-  `endpointReceiveDualOnCore_replenishQueueOnCore` and its WithCaps sibling say
-  the receive **leg** writes no replenish queue, so every core in that segment
-  comes from the donation and none from the leg.  On the block path the segment is
-  `[]` and `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked` says
-  so: a receive that parks itself donates nothing, and over-declaring is not free —
-  lock contention is an observable channel (SM8.D's CC-5), which is why OD3.5
-  *narrowed* a footprint for the same reason.  (3) **The chain walk is declared
+  `endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous` and its WithCaps
+  sibling say the receive **leg** writes no replenish queue on a rendezvous, so
+  every core in that segment comes from the donation and none from the leg.  On
+  the block path the segment is `[]` for a receiver holding no loan
+  (`schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked`, conditioned
+  on `endpointReplyDonation?` answering `none` since `v0.35.161`): a receive that
+  parks itself donates nothing, and over-declaring is not free — lock contention
+  is an observable channel (SM8.D's CC-5), which is why OD3.5 *narrowed* a
+  footprint for the same reason.  A receiver that parks holding a **loan** is the
+  other case, and until `v0.35.161` it was wrong on both sides: the block arm's
+  pre-receive return rebound the context to its owner across cores and migrated
+  nothing, and the whole-leg frame that pinned *the leg writes no replenish queue
+  on either path* was true only because the transition omitted the write.  The arm
+  runs `cleanupPreReceiveDonationMigrated` now, the segment names the receiver's
+  home and the owner's through `receivePreReturn?`
+  (`endpointReceiveHandoffReplenishCores_of_blocked_returning`, with
+  `…_eq_migration` the licence that the pre-state pair **is** the migration's),
+  and the whole-leg frame is retired for per-path ones — see the standing
+  constraint on the pre-receive return below.  (3) **The chain walk is declared
   dynamically, not statically.**  The arm also runs `applyReceiverPipHandoff`,
   whose cores are state-discovered; `PriorityInheritance.pipChainSchedFootprint`
   declares them per walked member and `pipChainStart_endpointReceive` is the SM3.C
@@ -8721,13 +8733,21 @@ code may assume:
   thread's* home core (`replenishQueueAffinityConsistentOnCore`), so any transition
   that rebinds `boundThread` across cores must call
   `migrateSchedContextReplenishment` or the invariant is false from the instant it
-  commits.  Three live paths do (`applyCallDonationOnCore`,
-  `applyReplyDonationOnCore`, and `.replyRecv`'s pop — `replyRecvPopDonation` since
-  WS-RM split the fused `replyRecvReturnDonation`; the paths landed at v0.34.42),
-  each with a `replenishQueueAffinityConsistent_smp` preservation theorem.  The
-  pre-SM10 audit found only two of the three, because it enumerated the donation
-  *primitives* and `.replyRecv` composes them from the API layer — the
-  enumeration-versus-derivation shape the key-conventions section above warns about.
+  commits.  Four live paths do (`applyCallDonationOnCore`,
+  `applyReplyDonationOnCore`, `.replyRecv`'s pop — `replyRecvPopDonation` since
+  WS-RM split the fused `replyRecvReturnDonation`; the paths landed at v0.34.42 —
+  and, since `v0.35.161`, the pre-receive donation return
+  `cleanupPreReceiveDonationMigrated`), each with a
+  `replenishQueueAffinityConsistent_smp` preservation theorem, and
+  `PerCoreDonationStep` (`API.lean`) is the relation that names them all.  The
+  pre-SM10 audit found only two of the first three, because it enumerated the
+  donation *primitives* and `.replyRecv` composes them from the API layer — the
+  enumeration-versus-derivation shape the key-conventions section above warns
+  about — and this sentence then said **three** from v0.34.42 until `v0.35.160`,
+  while the fourth rebound a context across cores and migrated nothing (register
+  row 57, found by reading the arm for RR8.12 Cut C2 and closed one cut later).
+  Twice is the measurement that a hand-kept list of hand-offs is not a derivation;
+  the bullet after this one says what pins the fourth.
   A same-core hand-off is a definitional no-op
   (`migrateSchedContextReplenishment_noop`), so the migration costs nothing where it
   is not needed and there is no reason to omit it.
@@ -8757,6 +8777,60 @@ code may assume:
   no thread locates no entries a migration could move.  (3) **The footprint does not
   grow**: both cores the destination can name were already declared, and
   `maxLockSetSize` is unmoved.
+- **...and the pre-receive donation return migrates too, on the cross-core leg,
+  keyed on the pop's own guard** (`v0.35.161`, register row 57).  The block arm
+  of `endpointReceiveDualOnCore` — so `.receive`, and `.replyRecv`'s receive leg —
+  returns a `.donated` receiver's context to its owner before the receiver parks,
+  and it ran that pop bare until this cut: `boundThread` moved to the owner, the
+  reservation's replenishments stayed on the receiver's home core, and
+  `replenishQueueAffinityConsistent_smp` was false on a state three ordinary
+  operations reach (a client `Call`s a passive server homed elsewhere, the
+  server's `Recv` takes it and the hand-off migrates, the server abandons the call
+  with a plain `Recv`).  No theorem claimed the leg preserved the invariant, so the
+  surface was silent rather than wrong.  Five things new code must respect.  (1)
+  **The arm runs `cleanupPreReceiveDonationMigrated`** — the checked pop, then
+  `preReceiveReturnMigration` — and never the bare
+  `cleanupPreReceiveDonationChecked`; a Tier 3 negative refuses the bare match
+  inside the definition.  The order is the content: the migration reads the
+  *post-pop* binding for its destination (`replenishHomeOfSchedContext`, RR8.11's
+  rule above), so a refused pop self-migrates to the identity; and its guard is
+  the pop's own — `preReceiveDonation?`, resolved through `lookupTcb` exactly as
+  the pop resolves it — never the footprint's `getTcb?` resolver
+  `endpointReplyDonation?`, which differs from it only on a reserved id, where the
+  footprint over-declares and the transition is inert
+  (`preReceiveDonation?_eq_endpointReplyDonation?_of_lookup`).  (2) **The
+  single-core `endpointReceiveDual` keeps the bare pop**, because on one core the
+  migration is the identity; what that costs is the agreement dichotomy
+  `endpointReceiveDualOnCore_post_agrees`, whose block path now runs the two
+  spines on two states that agree off the scheduler rather than on one, carried
+  by three step congruences the dichotomy lacked
+  (`endpointQueueEnqueue_offSchedulerAgrees`,
+  `storeTcbQueueLinks_offSchedulerAgrees`,
+  `migrateSchedContextReplenishment_offSchedulerAgrees`) — a new object-level step
+  in that leg needs its congruence on the day it is written.  (3) **The leg has
+  its affinity theorems** (`cleanupPreReceiveDonationMigrated_preserves_…`,
+  `endpointReceiveDualOnCore_preserves_…`, `…WithCapsOnCore_preserves_…`), stated
+  over every path, and `PerCoreDonationStep.preReceiveReturn` is the catalogue's
+  fifth constructor; the whole-leg frame
+  `endpointReceiveDualOnCore_replenishQueueOnCore` is retired for per-path ones
+  (`_of_rendezvous`, `_of_blocked`, `_of_no_donation`) and refused tree-wide,
+  because it was true of the transition only because the transition omitted the
+  write.  (4) **The `.receive` footprint's block-path replenish segment is the
+  pair `[receiver's home, owner's home]`**, read through `receivePreReturn?` — the
+  resolver the object domain already reads this return through, so the two
+  domains cannot name different owners — with
+  `endpointReceiveHandoffReplenishCores_of_blocked_returning_eq_migration` the
+  licence that the pre-state pair **is** the migration's and
+  `schedLockSet_endpointReceiveOnCore_covers_preReturnMigration` the coverage;
+  `endpointReceiveHandoffReplenishCores_of_blocked` and
+  `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked` are
+  conditioned on no loan now, and the `.replyRecv` footprint inherits the pair
+  when Cut C2 declares it over the same leg.  (5) **The witness computes the bare
+  pop beside the migrated return** on the same reachable state
+  (`tests/SmpIpcSuite.lean` §3.28) and asserts the bare one *falsifies* the
+  invariant — the bare pop is still a live definition, the migrated return's own
+  first half, so the retired reading needs no private copy — with a no-loan
+  control and a same-core control, where the two returns agree.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

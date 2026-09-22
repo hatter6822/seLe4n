@@ -1,3 +1,125 @@
+## v0.35.161 — the pre-receive donation return migrates its replenishments
+
+WS-RR RR8.12, the fix cut between C1 and C2: register row 57 is closed.  The block
+arm of the cross-core receive leg (`endpointReceiveDualOnCore`, so `.receive` and
+`.replyRecv`'s receive leg) returns a `.donated` receiver's context to its owner
+before the receiver parks, and it ran that pop bare: `boundThread` moved to the
+owner, the reservation's CBS replenishments stayed on the receiver's home core, and
+`replenishQueueAffinityConsistent_smp` was false on a state three ordinary
+operations reach — a client on the boot core `Call`s a passive server homed on core
+1, the server's `Recv` takes it (donation and migration `0 → 1`), the server
+abandons the call with a plain `Recv`.  The SM5.H constraint enumerated three
+hand-offs that migrate; this was the fourth, and no theorem claimed the leg
+preserved the invariant, which is how it was silent rather than wrong.
+
+### The fix: the pop, then the migration it owes
+
+`cleanupPreReceiveDonationMigrated` (`IPC/CrossCore/EndpointReply.lean`) is the
+checked pop followed by `preReceiveReturnMigration`, and the arm runs it in place of
+the bare `cleanupPreReceiveDonationChecked`.  Three decisions, each pinned.
+
+* **The guard is the pop's own.**  `preReceiveDonation?`
+  (`IPC/Operations/Endpoint.lean`, beside the pop) is the pop's `match`, named:
+  the receiver resolved through `lookupTcb` and its `.donated scId owner` binding.
+  `cleanupPreReceiveDonationChecked_of_donation` / `_of_no_donation` are the pop
+  characterised by it, so the migration and the step it follows cannot disagree
+  about whether a loan was returned.  The footprint's resolver
+  `endpointReplyDonation?` asks the same question of the store raw (`getTcb?`),
+  and the two differ only on a reserved id — where the footprint over-declares and
+  the transition is inert (`preReceiveDonation?_eq_endpointReplyDonation?_of_lookup`,
+  `endpointReplyDonation?_of_preReceiveDonation?`); the resolver moved up the
+  file so both are declared where the migration can read them.
+* **The destination is read off the post-pop state** —
+  `replenishHomeOfSchedContext stClean scId fromCore`, WS-RR RR8.11's rule, from
+  the receiver's home — so a refused pop self-migrates to the identity, and
+  `preReceiveReturnMigration_destination` is the measurement that on a successful
+  pop it is the owner's home.  A Tier 3 negative refuses `determineTargetCore st
+  owner` in that position.
+* **The single-core `endpointReceiveDual` keeps the bare pop**, because on one core
+  the migration is the identity.  What that costs is the agreement dichotomy
+  `endpointReceiveDualOnCore_post_agrees`, whose block path now runs the two spines
+  on two states that agree off the scheduler rather than on one — carried by the
+  step congruences the dichotomy lacked (`endpointQueueEnqueue_offSchedulerAgrees`,
+  `storeTcbQueueLinks_offSchedulerAgrees`, and
+  `migrateSchedContextReplenishment_offSchedulerAgrees`, all in
+  `LookupCongruence.lean` §4), with `preReceiveReturnMigration_offSchedulerAgrees`
+  and `preReceiveReturnMigration_passiveServerIdleFrameOnCore` the two frames the
+  per-core invariant proofs consume.
+
+### The proof surface
+
+* **The leg has its affinity theorems**:
+  `cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp`
+  (through `migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp`
+  and the pop's `getSchedContext?` / `cpuAffinity` frames),
+  `endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp` and its
+  WithCaps sibling — stated over every path, since on a rendezvous the leg writes no
+  replenish queue and no SchedContext.  That needed a `getSchedContext?` frame per
+  primitive the leg composes (`storeObject_tcb_getSchedContext?_eq`,
+  `_endpoint_`, `_reply_`, `storeTcbQueueLinks_`, `endpointQueuePopHead_`,
+  `endpointQueueEnqueue_`, `storeTcbIpcStateAndMessage_`, `linkCallerReply_`,
+  `ipcUnwrapCaps_`, `wakeThread_…_of_ready`; `EndpointCall.lean` §11b), the
+  symmetric family the `_determineTargetCore_eq` frames already had.
+* **`PerCoreDonationStep.preReceiveReturn`** is the catalogue's fifth constructor,
+  and `donation_perCore_consistent` discharges it.  The relation's docstring said
+  *a constructor per live hand-off, so a further path cannot be introduced without
+  extending it* — an enumeration standing in for a derivation, and it now says so
+  and names the cancellation reclaim's own theorem as the other shape a hand-off
+  may take.
+* **The whole-leg frame `endpointReceiveDualOnCore_replenishQueueOnCore` is
+  retired**, with its WithCaps sibling: it proved the leg writes no replenish
+  queue on *either* path, which was true of the transition only because the
+  transition omitted the write.  Its successors are per path —
+  `…_of_rendezvous`, `…_of_blocked` (a block writes exactly what the migrated
+  return writes), `…_of_no_donation` — and the retired names are refused
+  tree-wide.
+* **The `.receive` footprint's block-path replenish segment is the pair
+  `[receiver's home, owner's home]`**, read through `receivePreReturn?`, the
+  resolver the object domain already reads this return through, so the two
+  domains cannot name different owners.  `endpointReceiveHandoffReplenishCores_of_blocked_returning`
+  states it, `…_eq_migration` is the licence that the pre-state pair **is** the
+  migration's (the pop rebinds through `returnDonatedSchedContext`, which writes
+  no `cpuAffinity`), `schedLockSet_endpointReceiveOnCore_contains_preReturn_replenish_writes`
+  and `…_covers_preReturnMigration` are the membership and the coverage; the
+  empty block segment (`endpointReceiveHandoffReplenishCores_of_blocked`,
+  `schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked`) is
+  conditioned on no loan.  The two `v0.35.112` theorems over a rendezvous gained
+  the sender fact their new `none` arm needs and nothing else.  `.replyRecv`
+  inherits the pair when Cut C2 declares its footprint over the same leg.
+* `cleanupPreReceiveDonationMigrated_confinedToCores` keeps the block path's SM8.B
+  write set at the executing core alone — a replenish queue is outside the
+  observer's read set — and the migration's confinement lemma moved above its
+  first use.
+
+### The witness
+
+`tests/SmpIpcSuite.lean` §3.28 replays the registered probe through the live
+operations from `stDonBase` with one replenishment for the client's context on its
+home core (a queue holding no entry satisfies the invariant vacuously and could
+witness no migration).  The bare pop is computed beside the migrated return on the
+same state — it is still a live definition, the migrated return's own first half, so
+the retired reading needs no private copy — and the bare one is asserted to
+**falsify** the invariant while the migrated one, and the live leg, preserve it and
+leave the replenishment on the client's home.  Two controls bound the claim: a
+receiver holding no loan, where the migrated return is the identity and the block
+segment is empty, and an owner homed on the receiver's own core, where the two
+returns leave the same queues.  Twenty-six assertions, all green; the golden 4-core
+trace is byte-identical.
+
+### Gates and documents
+
+Thirty-eight Tier 3 anchors (two retired positives repointed): the migrated match
+inside the arm with the bare one refused, the migration's guard and destination
+with the wrong resolver and the pre-state owner refused, the per-path frames with
+the whole-leg names refused, the affinity theorems, the fifth constructor and its
+case, the footprint's block arm and its licence, the congruences and frames, and
+the witness's negative and same-core control; the suite's contiguous-run anchor
+grew by the new runner.  `CLAUDE.md` / `AGENTS.md`: the SM5.H constraint names four
+paths and records that it said three from v0.34.42 until `v0.35.160`, and a
+standing constraint beneath it says what new code must respect; Cut 8a-ii's item
+(2) cites the per-path frames.  `SELE4N_SPEC.md` §8.12.7 likewise.
+`docs/REGISTERED_DEBT.md` row 57 is closed.
+
 ## v0.35.160 — the `.receive` replenish segment follows the donation's own resolver, and the binding frame lives where the resolver can see it
 
 WS-RR RR8.12 Cut C1: register row 55 is closed.  `v0.35.112` narrowed the

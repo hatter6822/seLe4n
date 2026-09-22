@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.160` (`lakefile.toml`) |
+| **Package version** | `0.35.161` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 397,589 across 334 Lean files |
-| **Test LoC** | 81,318 across 70 Lean test suites |
-| **Proved declarations** | 13,152 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 399,198 across 334 Lean files |
+| **Test LoC** | 81,487 across 70 Lean test suites |
+| **Proved declarations** | 13,210 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4508,8 +4508,12 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `schedLockSet_endpointReceiveOnCore_covers_donation` covers the donation's own
   footprint member for member — at the donation's own resolver on its own state,
   since Cut C1 — hence the SM5.H migration's two slots, while
-  `endpointReceiveDualOnCore_replenishQueueOnCore` and its WithCaps sibling say the
-  receive **leg** writes no replenish queue at all.  The arm's PIP chain walk stays
+  `endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous` and its WithCaps
+  sibling say the receive **leg** writes no replenish queue on a rendezvous —
+  and, since `v0.35.161`, `…_of_blocked` says a block writes exactly what the
+  migrated pre-receive return writes, the whole-leg frame that claimed *none on
+  either path* having been true only because the transition omitted the write
+  (register row 57).  The arm's PIP chain walk stays
   declared *dynamically* through `pipChainSchedFootprint` and the
   `pipChainStart_endpointReceive` obligation, since a walked chain is unbounded and
   no static footprint can enumerate it.  `.replyRecv` remains undeclared;

@@ -1246,7 +1246,21 @@ in, and the reason they compose.
 
 **WS-RM (`v0.35.6`)**: `.replyRecv`'s resolution is two constructors rather than
 one, because the kernel now runs its two halves on either side of the receive
-leg (seL4-MCS's own order — see `replyRecvPopDonation`). -/
+leg (seL4-MCS's own order — see `replyRecvPopDonation`).
+
+**`v0.35.161`**: and "a constructor per live hand-off" was itself a recognised
+set standing in for a derived one.  The pre-receive donation return —
+`cleanupPreReceiveDonationChecked`, run by the cross-core receive leg's block
+path on a `.donated` receiver — rebinds `boundThread` exactly as the four
+constructors' pops do, and it was in none of them, so the catalogue said every
+hand-off migrates while one live hand-off migrated nothing
+(`docs/REGISTERED_DEBT.md` row 57).  The fifth constructor is
+`preReceiveReturn`.  The set is still written by hand; what found the fifth was
+asking who runs `returnDonatedSchedContext` rather than who is listed here, and a
+sixth caller of that pop is a sixth constructor — or, as the cancellation reclaim
+has (`cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp`,
+stated over the teardown composite rather than here), its own migration theorem,
+named where a reader of this relation will find it. -/
 inductive PerCoreDonationStep (st st' : SystemState) : Prop
   /-- The call rendezvous donates the caller's SchedContext to the receiver. -/
   | call (callerVtid receiverVtid : SeLe4n.ValidThreadId)
@@ -1286,6 +1300,15 @@ inductive PerCoreDonationStep (st st' : SystemState) : Prop
       (serverCore : Concurrency.CoreId) (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (u : Unit)
       (hStep : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
           = .ok (u, st'))
+  /-- **`v0.35.161`**: the cross-core receive leg's block path returns the
+  receiver's own donated context to its owner before it parks
+  (`cleanupPreReceiveDonationMigrated`) — a hand-off like the four above, since
+  the pop rebinds `boundThread`, and one that migrated nothing until this cut.
+  It carries no home hypotheses because the migration's destination is read off
+  the post-pop state (`replenishHomeOfSchedContext`, WS-RR RR8.11's rule), so a
+  refused pop self-migrates to the identity. -/
+  | preReceiveReturn (receiver : SeLe4n.ThreadId)
+      (hStep : cleanupPreReceiveDonationMigrated st receiver = .ok st')
 
 /-- **WS-RR RR7.34** (`SMP_CROSS_CORE_IPC_PLAN` §10's SM5 catalogue entry,
 authored): **every SchedContext hand-off leaves the replenish queues where the
@@ -1321,6 +1344,9 @@ theorem donation_perCore_consistent (st st' : SystemState)
   | replyRecvPostReceive tid recordedServer nextThread serverCore returned? u h =>
       exact replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_smp
         tid recordedServer nextThread serverCore returned? st st' u hObjInv hCons h
+  | preReceiveReturn receiver h =>
+      exact cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp
+        st st' receiver hObjInv hCons h
 
 /-- **WS-RM RM5.2**: the pop preserves the IPC invariant bundle.
 

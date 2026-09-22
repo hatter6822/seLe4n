@@ -6221,6 +6221,66 @@ def cleanupActiveDonation
     returnDonatedSchedContextValid st serverVtid scId originalOwnerVtid newOwner? =
       returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val newOwner? := rfl
 
+/-- **`v0.35.161` (register row 57): the context a pre-receive return POPS, with the
+owner it settles back on — `cleanupPreReceiveDonationChecked`'s own guard, named.**
+
+The two cleanups below decide whether to run `returnDonatedSchedContextResolved` by
+reading the receiver through `lookupTcb` and matching its binding for
+`.donated scId originalOwner`; this is that reading, so the pre-receive replenishment
+migration (`preReceiveReturnMigration`, at the cross-core layer) fires on exactly the
+states the pop fires on rather than on a proxy for them — *a proxy is not the fact*.
+`endpointReplyDonation?` asks the same question of the store raw (`getTcb?`), which
+is what a footprint resolver must do; the two agree on every receiver `lookupTcb`
+resolves (`preReceiveDonation?_eq_endpointReplyDonation?_of_lookup`) and differ only
+on a reserved id, where this one answers `none` — the pop's own answer, since
+`lookupTcb` refuses a reserved id — and the footprint over-declares two members for a
+migration that never runs.
+
+The cleanups are **not** restated over it: their bodies are pinned by some forty
+proofs that case on `lookupTcb` and the binding directly, and by a Tier 3 anchor on
+the `Checked` variant's own match.  `cleanupPreReceiveDonationChecked_of_no_donation`
+and `_of_donation` are the two characterisations that hold this reading and the
+cleanups' to one answer. -/
+def preReceiveDonation? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match lookupTcb st receiver with
+  | some recvTcb =>
+      match recvTcb.schedContextBinding with
+      | .donated scId originalOwner => some (scId, originalOwner)
+      | _ => none
+  | none => none
+
+/-- `v0.35.161`: the resolver at a receiver the store resolves as holding a loan. -/
+theorem preReceiveDonation?_of_donated (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hLk : lookupTcb st receiver = some recvTcb)
+    (hB : recvTcb.schedContextBinding = .donated scId originalOwner) :
+    preReceiveDonation? st receiver = some (scId, originalOwner) := by
+  unfold preReceiveDonation?
+  rw [hLk]
+  simp only [hB]
+
+/-- `v0.35.161`: and a `some` answer names a stored, `lookupTcb`-resolved TCB whose
+binding is that loan — the direction the migration's own proofs consume. -/
+theorem preReceiveDonation?_some_lookup (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = some (scId, originalOwner)) :
+    ∃ recvTcb, lookupTcb st receiver = some recvTcb ∧
+      recvTcb.schedContextBinding = .donated scId originalOwner := by
+  unfold preReceiveDonation? at h
+  cases hLk : lookupTcb st receiver with
+  | none => rw [hLk] at h; cases h
+  | some recvTcb =>
+    simp only [hLk] at h
+    cases hB : recvTcb.schedContextBinding with
+    | donated scId' owner' =>
+        rw [hB] at h
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨recvTcb, rfl, hB⟩
+    | unbound => rw [hB] at h; cases h
+    | bound _ => rw [hB] at h; cases h
+
 /-- AI4-A (M-01): Clean up stale donation before a server blocks on receive.
 
 If the receiver has a `.donated` binding from a previous call that was never
@@ -6327,6 +6387,40 @@ theorem cleanupPreReceiveDonation_eq_cleanupChecked_ok
     (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
     st' = cleanupPreReceiveDonation st receiver :=
   (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h).symm
+
+/-- **`v0.35.161`**: with no loan to return (`preReceiveDonation?` answers `none`),
+the checked cleanup is the identity — one of the two characterisations that hold
+the cleanup's own guard and its named reading to one answer. -/
+theorem cleanupPreReceiveDonationChecked_of_no_donation
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = none) :
+    cleanupPreReceiveDonationChecked st receiver = .ok st := by
+  unfold preReceiveDonation? at h
+  unfold cleanupPreReceiveDonationChecked
+  cases hLk : lookupTcb st receiver with
+  | none => rfl
+  | some recvTcb =>
+    simp only [hLk] at h
+    simp only []
+    cases hB : recvTcb.schedContextBinding with
+    | donated scId owner => rw [hB] at h; cases h
+    | unbound => rfl
+    | bound _ => rfl
+
+/-- **`v0.35.161`**: and with one, the checked cleanup **is** the resolved return of
+that context to that owner — the other characterisation, and the one the
+pre-receive replenishment migration's affinity proof crosses to reach the pop's
+own frame lemmas. -/
+theorem cleanupPreReceiveDonationChecked_of_donation
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = some (scId, originalOwner)) :
+    cleanupPreReceiveDonationChecked st receiver
+      = returnDonatedSchedContextResolved st receiver scId originalOwner := by
+  obtain ⟨recvTcb, hLk, hB⟩ := preReceiveDonation?_some_lookup st receiver scId originalOwner h
+  unfold cleanupPreReceiveDonationChecked
+  rw [hLk]
+  simp only [hB]
 
 /-- AN3-E.5 (IPC-M09): compile-time guard — if `cleanupPreReceiveDonation`
 or `cleanupPreReceiveDonationChecked` is relocated out of this file, this

@@ -402,6 +402,31 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
 -- §7  SM6.D: per-core passive-server frame for the cross-core receive leg
 -- ============================================================================
 
+/-- **`v0.35.161`**: the pre-receive return's replenishment migration frames every
+core's `passiveServerIdle` slice — it reads and writes no object, no run queue and
+no current slot (`preReceiveReturnMigration_getTcb?`, `_runQueueOnCore`,
+`_currentOnCore`), so every pullback is the identity. -/
+theorem preReceiveReturnMigration_passiveServerIdleFrameOnCore (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) {c : CoreId} :
+    passiveServerIdleFrameOnCore stClean (preReceiveReturnMigration st stClean receiver) c :=
+  ⟨fun tid tcb' h hU hQ hC _ =>
+    ⟨tcb', by rwa [preReceiveReturnMigration_getTcb?] at h, hU,
+      by rwa [preReceiveReturnMigration_runQueueOnCore] at hQ,
+      by rwa [preReceiveReturnMigration_currentOnCore] at hC, rfl⟩⟩
+
+/-- **`v0.35.161`**: and it agrees with its input off the scheduler — the migration
+is a scheduler-only update (`migrateSchedContextReplenishment` rewrites two
+replenish queues and nothing else), or the identity.  This is what lets the
+single-core/cross-core agreement dichotomy carry the block path across the point
+where the two spines part. -/
+theorem preReceiveReturnMigration_offSchedulerAgrees (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) :
+    OffSchedulerAgrees stClean (preReceiveReturnMigration st stClean receiver) := by
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_offSchedulerAgrees _ _ _ _
+  · exact OffSchedulerAgrees.refl _
+
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `endpointReceiveDualOnCore` frames every core's
 `passiveServerIdle` slice, unconditionally over success/failure.  Rendezvous:
@@ -500,26 +525,35 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
                   senderTcb.pendingMessage (Or.inl (Or.inl rfl)) hInvWake hStore2)
     | none =>
       simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
       | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok stClean =>
+      | ok stClean' =>
         simp only
+        -- **`v0.35.161`**: the cross-core return is the pop followed by the
+        -- replenishment migration it owes.  The pop frames the slice exactly as
+        -- before; the migration reads and writes no object, run queue or current
+        -- slot, so it frames it trivially.
+        obtain ⟨stClean, hChecked, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hClean
         have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
-          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hClean).symm
+          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
         subst hBridge
-        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-        have hFClean := cleanupPreReceiveDonation_passiveServerIdleFrameOnCore (c := c) st receiver
-          hObjInv (fun tcb h => Or.inl (hReceiverReady tcb h))
-        cases hEnq : endpointQueueEnqueue endpointId true receiver
-            (cleanupPreReceiveDonation st receiver) with
+        have hObjInvClean : stClean'.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
+            hObjInv hClean
+        have hFClean : passiveServerIdleFrameOnCore st stClean' c := by
+          rw [hMig]
+          exact (cleanupPreReceiveDonation_passiveServerIdleFrameOnCore (c := c) st receiver
+            hObjInv (fun tcb h => Or.inl (hReceiverReady tcb h))).trans
+            (preReceiveReturnMigration_passiveServerIdleFrameOnCore st _ receiver)
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
         | ok st1 =>
           simp only
           have hObjInvEnq : st1.objects.invExt :=
             endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
-              (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+              stClean' st1 hObjInvClean hEnq
           have hF1 := hFClean.trans (endpointQueueEnqueue_passiveServerIdleFrameOnCore endpointId
-            true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
+            true receiver stClean' st1 hObjInvClean hEnq)
           cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
           | ok st2 =>
@@ -668,41 +702,82 @@ theorem endpointReceiveDualOnCore_post_agrees
                   hStore1, hStore2SC]
     | none =>
       simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
       | error e => left; rfl
-      | ok stClean =>
+      | ok stClean' =>
         simp only
-        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
+        -- **`v0.35.161`**: the two spines part here.  The single-core spine runs
+        -- the bare checked cleanup and lands on `stClean`; the cross-core spine
+        -- runs the migrated one and lands on `stClean'`, which agrees with it off
+        -- the scheduler.  From here on both run the same object-level steps on
+        -- two states rather than one, and each step's congruence carries the
+        -- relation (`endpointQueueEnqueue_offSchedulerAgrees`,
+        -- `storeTcbIpcStateAndMessage_offSchedulerAgrees`,
+        -- `storeObject_offSchedulerAgrees`); the stash guard reads the *input*
+        -- state `st`, so it needs no congruence at all.
+        obtain ⟨stClean, hChecked, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hClean
+        have hRelC : OffSchedulerAgrees stClean stClean' := by
+          rw [hMig]; exact preReceiveReturnMigration_offSchedulerAgrees st stClean receiver
+        have hInvC : stClean.objects.invExt := by
+          rw [← cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked]
+          exact cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvC' : stClean'.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
+            hObjInv hClean
+        cases hEnq' : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => left; rfl
-        | ok st1 =>
+        | ok st1' =>
           simp only
-          cases hStore1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
+          obtain ⟨st1, hEnq, hRel1⟩ := endpointQueueEnqueue_offSchedulerAgrees endpointId true
+            receiver hRelC hInvC hInvC' hEnq'
+          have hInv1 : st1.objects.invExt :=
+            endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver stClean st1
+              hInvC hEnq
+          have hInv1' : st1'.objects.invExt :=
+            endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver stClean' st1'
+              hInvC' hEnq'
+          cases hStore1' : storeTcbIpcStateAndMessage st1' receiver (.blockedOnReceive endpointId)
+              none with
           | error e => left; rfl
-          | ok st2 =>
+          | ok st2' =>
             simp only
-            cases hGetR : st2.getTcb? receiver with
+            obtain ⟨st2, hStore1, hRel2⟩ := storeTcbIpcStateAndMessage_offSchedulerAgrees receiver
+              (.blockedOnReceive endpointId) none hRel1 hInv1 hInv1' hStore1'
+            have hInv2 : st2.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hInv1 hStore1
+            have hInv2' : st2'.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1' st2' receiver _ _ hInv1'
+                hStore1'
+            have hGetEq : st2.getTcb? receiver = st2'.getTcb? receiver :=
+              (getTcb?_congr_getElem hRel2.objects receiver).symm
+            cases hGetR' : st2'.getTcb? receiver with
             | none =>
               right
               refine ⟨receiver, removeRunnable st2 receiver, ?_, ?_⟩
               · unfold endpointReceiveDual SystemState.getObject?
-                simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR]
+                simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR']
               · exact (removeRunnable_offSchedulerAgrees st2 receiver).symm.trans
-                  (removeRunnableOnCore_offSchedulerAgrees st2 receiver executingCore)
+                  (hRel2.trans (removeRunnableOnCore_offSchedulerAgrees st2' receiver executingCore))
             | some rTcb =>
               simp only
               split
               · next hValid =>
-                cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                cases hStash' : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2' with
                 | error e => left; rfl
-                | ok pStash =>
-                  obtain ⟨⟨⟩, stStashed⟩ := pStash
+                | ok pStash' =>
+                  obtain ⟨⟨⟩, stStashed'⟩ := pStash'
                   right
+                  obtain ⟨stStashed, hStash⟩ := storeObject_isOk st2 receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId })
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
                   · unfold endpointReceiveDual SystemState.getObject?
-                    simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR, if_pos hValid, hStash]
+                    simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR',
+                      if_pos hValid, hStash]
                   · exact (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
-                      (removeRunnableOnCore_offSchedulerAgrees stStashed receiver executingCore)
+                      ((storeObject_offSchedulerAgrees _ _ hRel2 hInv2 hInv2' hStash hStash').trans
+                        (removeRunnableOnCore_offSchedulerAgrees stStashed' receiver
+                          executingCore))
               · left; rfl
 
 -- ============================================================================
