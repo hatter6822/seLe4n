@@ -1879,14 +1879,15 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
     rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
     diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
-  -- **The resolver DECLINES here, and that is the point.**  The answered caller is
-  -- `.blockedOnReply` at the state the resolver reads — it is waiting on this very
-  -- reply — so `donationOriginRebindable` refuses it and the recipient comes from
-  -- the FALLBACK rather than from the origin field.  The outcome is the same
-  -- thread by a different route, which is exactly what makes this half
+  -- **The resolver DECLINES here, and that is the point.**  The answered caller's
+  -- own frame HEADS the context at the state the resolver reads — it is waiting on
+  -- this very reply — so its frame is on a live stack and `donationOriginRebindable`
+  -- (the bind's own admissibility since `v0.35.157`) refuses it; the recipient
+  -- comes from the FALLBACK rather than from the origin field.  The outcome is the
+  -- same thread by a different route, which is exactly what makes this half
   -- discriminating: a selector that fired unconditionally would answer
   -- `some diffA`, pass every outcome assertion, and fail this one.
-  expect "FO-044 half two: the resolver DECLINES a reply-blocked origin"
+  expect "FO-044 half two: the resolver DECLINES an origin whose frame heads the context"
     (frozenDonationOriginRecipient? (freeze sameOrigin) diffScId == none
       && SeLe4n.Kernel.donationOriginRecipient? sameOrigin.state diffScId == none)
   expect "FO-044 half two: ...so the recipient is the answered caller by FALLBACK, on both surfaces"

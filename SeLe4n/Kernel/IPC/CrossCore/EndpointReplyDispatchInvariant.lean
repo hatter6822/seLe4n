@@ -204,6 +204,9 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation -- see the
+    -- single-core `applyReplyDonation_preserves_ipcInvariantFull`.
+    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
   rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome h with ⟨_, hEq⟩ | ⟨scId, holderVtid, n, st', hHead, hRes, hR, hEq⟩
@@ -246,9 +249,9 @@ theorem applyReplyDonationOnCore_preserves_ipcInvariantFull
             st st' holderVtid scId targetVtid.val o hObjInv
             (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
             (donationOriginRebindable_no_owner
-              (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val
-                hInv.donationOwnerValid)
-              hSame (donationOriginRecipient?_rebindable st hOrigin))
+              (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
+              (donationOriginRecipient?_resolves st hOrigin)
+              (donationOriginRecipient?_rebindable st hOrigin))
             hIdle n
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
@@ -308,6 +311,8 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
     -- stack, so at depth ≥ 2 it mints a `.donated` binding at the outer caller.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    -- **`v0.35.157`**: see `applyReplyDonationOnCore_preserves_ipcInvariantFull`.
+    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
     ipcInvariantFull st'' := by
   by_cases hAny : ∃ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
@@ -361,7 +366,9 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
           · rw [hRecipEq] at hR
             exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
               st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
-              (donationOriginRebindable_no_owner hInv.donationOwnerValidExcept hSame
+              (donationOriginRebindable_no_owner
+                (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
+                (donationOriginRecipient?_resolves st hOrigin)
                 (donationOriginRecipient?_rebindable st hOrigin))
               hIdle n
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
@@ -391,7 +398,7 @@ theorem applyReplyDonationOnCore_establishes_ipcInvariantFull_of_except
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hHolderDonation hHolderIdleAllowed hStackValid h
+      hHolderDonation hHolderIdleAllowed hStackValid hOriginCoherent h
 
 -- ============================================================================
 -- §5  RR2.11 — the cross-core `.reply` chain
@@ -472,7 +479,12 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
     -- de-threading discipline is respected.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid (endpointReplyOnCore replier target msg executingCore st).1
-          scId serverTid originalOwner) :
+          scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, at the same
+    -- state and quantified over the answered frame like the trigger's own fields.
+    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
+      redirectedOriginFrameCoherent (endpointReplyOnCore replier target msg executingCore st).1
+        rid target) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
   have hReplyExc : ipcInvariantFullExceptDonationOwner
       (endpointReplyOnCore replier target msg executingCore st).1 target :=
@@ -483,7 +495,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
   unfold endpointReplyCrossCoreDispatch
   cases hRep : endpointReplyOnCore replier target msg executingCore st with
   | mk st1 res =>
-    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hHolderIdleAllowed
+    rw [hRep] at hReplyExc hReplyInv hStackValid hDonationReturned hHolderDonation hHolderIdleAllowed hOriginCoherent
     cases res with
     | error e => exact hInv
     | ok replySgi =>
@@ -530,7 +542,7 @@ theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
                       exact (Option.some.inj hRid0) ▸ hHead0)
                     (by rw [hTEq]; exact hHolderDonation rid hRid)
                     (fun scId holder hHead => hHolderIdleAllowed rid scId holder hRid hHead)
-                    hStackValid hDon
+                    hStackValid (by rw [hTEq]; exact hOriginCoherent rid hRid) hDon
                 have hDonInv : st2.objects.invExt :=
                   applyReplyDonationOnCore_preserves_objects_invExt st1 st2 rid targetV _ _
                     hReplyInv hDon
@@ -591,6 +603,7 @@ theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull
     hAllBudgetsNone
     (fun rid scId holder hRid hHead _ _ => by rw [hNoHead rid hRid] at hHead; cases hHead)
     hStackValid
+    (fun rid hRid scId holder origin hHead _ _ => by rw [hNoHead rid hRid] at hHead; cases hHead)
 
 -- ============================================================================
 -- §6  WS-RM (`v0.35.6`) — the composite payoff: the chain across the dispatch

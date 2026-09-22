@@ -1,3 +1,152 @@
+## v0.35.157 — the depth-2 accounting guard is the bind's own admissibility, not a proxy for it
+
+The first of the two open halves PR #897 left registered is closed.  `v0.35.141`
+found that `donationOriginRebindable` — the second guard on the reply pop's origin
+redirect (WS-HP HP10.7) — refused an origin that is `.blockedOnReply`, as a
+stand-in for "some live `.donated _ origin` binding names it".  A client answered
+out of order is woken `.ready` and `.unbound`, and its next ordinary Call donates
+nothing (`callDonationSchedContext?` reads `SchedContextBinding.scId?`, `none` at
+`.unbound`) while putting it `.blockedOnReply` again — so no binding named it, the
+proxy refused it anyway, and the pop fell back to the answered caller, which at
+depth 2 is the intermediate caller of the chain: the reservation was bound there,
+the client left holding nothing, and `donationOrigin` erased with it.  A callee
+that delegates its caller's reply capability to a confederate could arrange it.
+
+### The guard is the bind's question, asked of the origin
+
+The redirect *is* a bind of the reservation to its recorded owner, and
+`schedContextBind` already asks the exact question: is this thread's reply frame
+on a **live** stack (`replyFrameOnLiveStack`, one-step reciprocity — a `.frame
+above` counts only when `above.prev` names this frame, a `.head sc` only when
+`sc.scReply` does).  `donationOriginRebindable` now asks it too, on both
+surfaces (`frozenDonationOriginRebindable` reads `frozenReplyFrameOnLiveStack`),
+so the redirect's guard and the bind's cannot be two answers.  What that admits
+and refuses is measured rather than argued:
+
+* it **admits** the re-called client, whose fresh frame is on no stack — the
+  shape the proxy refused;
+* it **refuses** an origin whose frame *heads* a context, which is a live owner
+  (a `.donated _ origin` binding names it, and binding it `.bound` would
+  falsify that binding's owner clause);
+* and it **refuses** an origin whose frame sits *inside* a live stack — a shape
+  the proxy could not tell apart from the re-called client either — because a
+  binding made there would make the pop that later reaches that frame refuse
+  (`donationRecipientAcceptable`).
+
+`replyFrameOnLiveStack` moved from `SchedContext/Operations.lean` to
+`IPC/Operations/Endpoint.lean`, beside `replyFrameHeadContext?`, whose
+reciprocity check is its `.head` arm: the endpoint operations cannot import the
+SchedContext module, and *a shared answer must be reachable from every asker*
+(`v0.35.59`).  A tombstone marks the old home; `schedContextBind` reads it under
+its unqualified name and is byte-for-byte unchanged in behaviour
+(`schedContextBind_preserves_ipcInvariantFull` and
+`schedContextBind_confinedToCores` needed only the qualifier dropped).  Two
+readings of the verdict are stated where the guard is —
+`donationOriginRebindable_not_onLiveStack` and `donationOriginRebindable_of_no_reply`
+— with `replyFrameOnLiveStack_of_head` (a frame that heads a context is live)
+and `replyFrameOnLiveStack_of_no_reply` (a thread holding no reply object is on
+no stack) beside them.
+
+### Soundness is the coherence fact the tree already stated, relocated upstream
+
+`donationOriginRebindable_no_owner` — the theorem that says what the guard buys,
+"no live binding names this thread as its owner" — used to read that off the
+proxy through `donationOwnerValid` (an owner *is* reply-blocked).  It now derives
+it from the frame under **`donatedContextIsOwnerFrameHead`**, the binding → head
+coherence fact WS-HP HP5.3 stated for the cancellation reclaim: every live
+`.donated scId owner` binding has `owner`'s own reply frame heading `scId`, so a
+frame on no live stack is named by no binding.  The register's mechanism (1) had
+priced that fact as a new clause of `donationOwnerValid` — 397 mention sites
+across 35 files — and that cost was **not** paid: the fact was already in the
+tree as a stated hypothesis, one layer too low.  It is relocated from
+`Lifecycle/Invariant/CancellationReplyShape.lean` to `IPC/Invariant/Defs.lean`,
+restated over the reply path's own `answeredFrameHeadContext?`, with its three
+builders (`_of_no_owner`, `_of_no_donation`, `_of_donationOwnerValid`) and the
+cancellation form as a corollary through HP5.1's bridge
+(`donatedContextIsOwnerFrameHead_cancelledCallerDonation?`, over
+`cancelledCallerDonation?_eq_answeredFrameHeadContext?`) — so the cancellation
+path's three application sites in `returnDonationToCancelledCaller_no_donation_to_victim`
+consume the corollary and the tree keeps one definition of the fact.  Register
+row 147 records it as the third stated coherence fact of that family and names
+its second consumer.
+
+The reply path carries it **gated**: `redirectedOriginFrameCoherent st rid target`
+demands the fact only where the trigger fires (`replyFrameHeadHolder? st rid`
+answers), the resolver redirects (`donationOriginRecipient? st scId = some origin`)
+and the origin is not the answered caller — the one thread the fact is genuinely
+false at in the pop's own state, its frame consumed while the holder's binding
+still names it.  So a reply that redirects nothing owes nothing
+(`redirectedOriginFrameCoherent_of_no_head`, `_of_no_origin`).  It is a new
+hypothesis of `applyReplyDonation_preserves_ipcInvariantFull` and its
+`_establishes_…_of_except` form, of both `applyReplyDonationOnCore` bundle
+theorems, of `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`
+(quantified over the answered reply object, at the post-leg state, with
+`_preserves_ipcInvariantFull` discharging it from `hNoHead`), of
+`replyRecvPopDonation_preserves_ipcInvariantFull` in `API.lean`, of
+`replyRecvBody_preserves_ipcInvariantFull`, and a conjunct of both reply stages
+of `syscallDispatchQuiescence` (`replyStage`, `replyRecvStage`), each stated at
+the state its own pop runs on.
+
+### The depth-2 theorem derives its rebindability
+
+`donationAccountingPreserved_atCallDepthTwo` hypothesised both guards, because
+the proxy was **false** at the pre-state (the owner is `.blockedOnReply` on
+exactly the reply being answered), true after the wake, and false again the
+moment the woken owner re-Called — a window no statement about the removal could
+cover.  The structural guard is derivable through it: the removal has just taken
+the owner's frame off the stack and cleared its `replyObject`
+(`removeCallerReplyFrame_replyObject_none`), and a thread holding no reply object
+is on no live stack (`donationOriginRebindable_of_no_reply`).  So `hRebindable`
+is a `have` in the proof now, and the recipient guard is the theorem's one
+guard hypothesis — a fact about the owner's own TCB that nothing about the
+removal supplies.  Tier 3 pins the derivation and refuses the hypothesis
+coming back; the docstring says which window the proxy could not cover.
+
+### The witness measures the payoff, with the proxy computed beside the guard
+
+`tests/SmpIpcSuite.lean` §3.25's COST group is its PAYOFF group.  The fixture is
+the depth-2 out-of-order shape *after* the client has re-Called: `.unbound`,
+`.blockedOnReply` on its next call, its frame (`pushOuterReply`, re-linked fresh)
+on no stack, homed on a core nothing else in the chain is.  The retired
+`.blockedOnReply` reading lives in the suite as `private def
+retiredProxyRebindable`, computed beside the live guard so the assertions are
+known to discriminate: the proxy REFUSES the re-called client, the live guard
+ADMITS it, the resolver answers the origin, and the live pop — driven through
+`replyDonationRecipient` rather than a supplied recipient — binds the
+reservation to the origin on its own core, leaving the intermediate caller and
+the server holding nothing.  Two NEGATIVE groups plant the two shapes the proxy
+could not distinguish from that client — the live owner, with the second context
+and the binding that names it, and the interior frame, reciprocating with the
+frame above — each refused by the guard, each with the CONTROL that the
+recipient guard alone admits the thread, and each falling back to the answered
+caller rather than refusing.  The `v0.35.61` stale-origin group is unchanged.
+FO-044's second half now says why the frozen resolver declines the answered
+caller at depth 1 — its frame heads the context — and the deadlock suite's
+HP10.8 note says the same of the footprint's pre-state resolution.
+
+### What moved in the documentation
+
+`CLAUDE.md` / `AGENTS.md` (the WS-HP heading, the closure paragraph, HP10.7
+item (3), HP10.8 item (4), HP10.9 item (1), the register paragraph), the spec's
+§8.12.15, `docs/CLAIM_EVIDENCE_INDEX.md` row 66, GitBook 12, register row 140
+(struck through, with the closure and its two corrections to the row's own
+mechanism) and row 147, and the plan's HP10.7 / HP10.9 / HP10.10 rows.  Tier 3's
+`v0.35.141` block is inverted into the closure block, the HP10.9 block pins the
+derived rebindability, the HP5.2 block follows the relocated fact, and the
+HP10.7 block pins the new guard body on both surfaces with a negative on the
+retired reading inside each.  The claim lifts: **v1.0.0 may claim that
+completing a call chain returns a client's reservation at every reply-stack
+depth** — the depth-≥ 3 half by HP6's chain-preserving removal, the depth-2
+half by the recorded origin under a guard that is the fact.
+
+### Measured
+
+The golden trace is byte-identical (239/239).  The IPC, frozen-ops,
+deadlock-freedom, cross-core call, cancellation, priority-management and
+lock-set suites pass, and the changed-file anchor sweep runs 988 anchors green.
+Register row 141 — the reclaimed holder that runs unbudgeted — is the other
+open half and is untouched here; it is the next cut.
+
 ## v0.35.156 — the post-merge audit of PR #897: a warning is a finding, and a hypothesis nobody needs is a claim nobody made
 
 A deep read of everything PR #897 merged (`v0.35.106` → `v0.35.155`, fifty cuts),

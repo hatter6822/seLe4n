@@ -894,10 +894,16 @@ example (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (ec : CoreId)
     -- vacuous.
     (hStackValid : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore replier target msg ec st).fst
-        scId serverTid originalOwner) :
+        scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, gated on the
+    -- trigger and the resolver, so a reply that redirects nothing owes nothing.
+    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st target = some rid →
+      redirectedOriginFrameCoherent (endpointReplyOnCore replier target msg ec st).fst
+        rid target) :
     ipcInvariantFull (endpointReplyCrossCoreDispatch replier target msg ec st).1 :=
   endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier target msg ec st hInv
     hObjInv hDonationReturned hHolderDonation hAllBudgetsNone hHolderIdleAllowed hStackValid
+    hOriginCoherent
 
 /-- WS-RR RR3.12: the donation return **upgrades** the relaxed invariant back to the
 full one — the other half of the reply chain's honest statement, and the reason the

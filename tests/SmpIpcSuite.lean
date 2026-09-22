@@ -3460,8 +3460,27 @@ store does not hold.  Reachable only through a stale field, which
 the resolver's *contract* -- a candidate resolves -- not the field's reachability. -/
 private def staleOrigin : SeLe4n.ThreadId := ⟨89⟩
 
-/-- **WS-HP HP10.7: the redirect computes a DIFFERENT recipient, and both guards
-decline.**
+/-- The re-called client's fresh frame, the surviving bottom frame, and the shapes
+the `v0.35.157` guard refuses -- ids outside `pushStoreShaped`'s 91..97. -/
+private def redirectHeadReply : SeLe4n.ReplyId := ⟨98⟩
+private def redirectSc2 : SeLe4n.SchedContextId := ⟨99⟩
+private def redirectSc2Holder : SeLe4n.ThreadId := ⟨100⟩
+private def redirectFrameAbove : SeLe4n.ReplyId := ⟨101⟩
+
+/-- The retired reading of `donationOriginRebindable` (`v0.35.51` .. `v0.35.156`):
+refuse an origin that is `.blockedOnReply`.  Computed beside the live guard so the
+assertions below are known to DISCRIMINATE -- a re-called client is reply-blocked
+and on no stack, which is the one input on which the two readings differ. -/
+private def retiredProxyRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? origin with
+  | none => true
+  | some tcb =>
+    match tcb.ipcState with
+    | .blockedOnReply _ _ => false
+    | _ => true
+
+/-- **WS-HP HP10.7 / `v0.35.157`: the redirect computes a DIFFERENT recipient, and
+the guard is the bind's own admissibility.**
 
 The measurement this phase owes.  Every state the tree reached before HP10.7
 either records no origin or records one that *is* the answered caller, so on all
@@ -3472,143 +3491,185 @@ out-of-order removal of plan §3.2: a client answered by a delegate is woken
 *intermediate* caller — so reachability says one thread and the recorded origin
 says another.
 
-Four assertions, and the last two are why the guard is a conjunction.  A thread
-that is still `.blockedOnReply` is a thread whose own reservation *may* be
-travelling, and rebinding such a thread would falsify the owner clause of whatever
-binding is waiting on it (`donationOriginRebindable`); a thread that already holds
-a binding is the case `donationRecipientAcceptable` has always covered.  Both
-decline to the reachability answer rather than refusing the pop.
+**The PAYOFF group drives the re-called client** (PR #897's review, `v0.35.141`;
+closed `v0.35.157`).  Until `v0.35.157` the rebindability guard read the origin's
+`ipcState` — a PROXY for "some live binding names it" — so a client that was
+answered out of order and simply issued its next Call was refused: it is
+`.unbound`, so that Call donated nothing and pushed no frame, and no binding names
+it, yet it is `.blockedOnReply` again.  The pop then fell back and *transferred*
+the reservation to the answered caller, erasing the origin with it.  The guard now
+asks `schedContextBind`'s question — is the origin's reply frame on a **live**
+stack — which admits that client: its new frame is on no stack.  The retired
+reading is computed beside the live one (`retiredProxyRebindable`) so the group is
+known to decide the guard rather than the fixture.
 
-**And the COST group is what that decline costs** (PR #897's review, `v0.35.141`).
-`.blockedOnReply` is a PROXY for ownership: a client answered out of order and
-re-called is reply-blocked while `.unbound`, so its Call donated nothing and no
-binding names it, and the guard refuses it anyway.  Driving the live pop on a
-three-thread chain shows what the fallback then does — it binds the reservation to
-the *answered caller*, leaves the client holding nothing, and erases the record of
-whose reservation it was.  The CONTROL beside it is the same pop on the same
-fixture with the client awake, which is the one input on which the two outcomes
-differ; without it the COST assertions would read as properties of the fixture. -/
+**The NEGATIVE groups are the two shapes the proxy could not tell apart from it**,
+and each carries the CONTROL that the recipient guard alone admits the thread, so
+the decline is attributable to rebindability: an origin whose frame **heads** a
+context — a live owner, and the fixture plants the binding that names it — and an
+origin whose frame sits **inside** a live stack, owed a pop that a binding made here
+would make refuse.  Both decline to the reachability answer rather than refusing
+the pop.  The three remaining negatives are unchanged from HP10.7: a bound origin
+(the recipient guard's own case), no origin recorded, and a stale origin. -/
 private def runDonationOriginRedirectChecks : IO Unit := do
   IO.println "--- §3.25 WS-HP HP10.7: the reply pop's recipient is the recorded origin ---"
-  -- The context sits at the BOTTOM of its stack (`pushOuterReply.prev = none`),
-  -- held by `pushServer`, and records `pushOuter` as the reservation's origin.
-  let withOrigin (outerTcb : TCB) : SystemState :=
+  -- **The depth-2 out-of-order shape, coherently.**  The chain was
+  -- `pushOuter → pushServer → pushDonor` (client, intermediate caller, holder).  A
+  -- delegate answered `pushOuter` out of order: its frame left the stack, so the
+  -- surviving frame (`redirectHeadReply`, the intermediate caller's) is both the
+  -- head and the BOTTOM of `pushSc`'s stack, `pushDonor` holds the reservation
+  -- `.donated` from `pushServer`, and the context records `pushOuter` as the
+  -- origin.  `outerTcb` is the client's TCB, varied by the groups below.
+  let redirectStore (outerTcb : TCB) : SystemState :=
     { pushStore with
-        objects := (pushStore.objects.insert pushSc.toObjId
+        objects := (((pushStore.objects.insert pushSc.toObjId
           (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some pushServer,
-                             scReply := some pushOuterReply,
+                             boundThread := some pushDonor,
+                             scReply := some redirectHeadReply,
                              donationOrigin := some pushOuter })).insert
-            pushOuter.toObjId (.tcb outerTcb) }
-  -- **The depth-2 shape**: the origin was answered out of order, so it is awake,
-  -- holds nothing, and is on no stack.  Homed on core 1, where `pushServer` is not.
-  let stRedirect : SystemState := withOrigin (mkTcb 93 50 (some c1))
+            redirectHeadReply.toObjId
+            (.reply { replyId := redirectHeadReply, caller := some pushServer,
+                      next := some (.head pushSc) })).insert
+            pushServer.toObjId
+            (.tcb { mkTcb 92 30 none with
+                      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+                      replyObject := some redirectHeadReply })).insert
+            pushDonor.toObjId
+            (.tcb { mkTcb 91 40 none with
+                      schedContextBinding := .donated pushSc pushServer,
+                      replyObject := some pushDonorReply })
+          |>.insert pushOuter.toObjId (.tcb outerTcb) }
+  -- The re-called client: `.unbound`, reply-blocked on its NEXT call, whose frame
+  -- is `pushOuterReply` re-linked fresh -- the removal cleared its links and the
+  -- re-Call donated nothing, so it pushed none.  Homed on core 1, where nothing
+  -- else in the chain is.
+  let recalledClient : TCB :=
+    { mkTcb 93 50 (some c1) with
+        ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+        replyObject := some pushOuterReply }
+  let withFreshFrame (st : SystemState) : SystemState :=
+    { st with
+        objects := st.objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter }) }
+  let stRedirect : SystemState := withFreshFrame (redirectStore recalledClient)
+  let poppedFrom (st : SystemState) : Option SystemState :=
+    (returnDonatedSchedContextResolved st pushDonor pushSc
+      (replyDonationRecipient st pushSc pushServer)).toOption
   assertBool "pre: the pop is at the BOTTOM of the stack (nothing further out)"
     (match replyStackOuterCaller? stRedirect pushSc with
      | .ok none => true
      | _ => false)
   assertBool "pre: ...and the context records `pushOuter` as the origin"
     ((stRedirect.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
-  -- **PAYOFF**: reachability names `pushServer`; the origin names `pushOuter`, and
-  -- the redirect follows the origin.  This is the assertion a revert of the flip
-  -- fails.
+  assertBool "pre: the reservation is held by a THIRD thread, the server"
+    ((stRedirect.getSchedContext? pushSc).bind (·.boundThread) == some pushDonor)
+  assertBool "pre: ...whose binding records it as owed to the intermediate caller"
+    (pushBindingOf stRedirect pushDonor == some (.donated pushSc pushServer))
+  assertBool "pre: the origin is reply-blocked on its NEXT call, `.unbound`"
+    ((stRedirect.getTcb? pushOuter).map (fun t =>
+      t.schedContextBinding == .unbound
+        && (match t.ipcState with | .blockedOnReply _ _ => true | _ => false)) == some true)
+  assertBool "pre: ...and its frame is on NO stack -- that Call donated nothing"
+    ((stRedirect.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack stRedirect t)
+      == some false)
+  -- **PAYOFF**: the retired proxy refused this client and the live guard admits it
+  -- -- the one input on which the two readings differ.
+  assertBool "PAYOFF: the retired `.blockedOnReply` proxy REFUSES the re-called client"
+    (retiredProxyRebindable stRedirect pushOuter == false)
+  assertBool "PAYOFF: ...and the live guard, the bind's own admissibility, ADMITS it"
+    (donationOriginRebindable stRedirect pushOuter == true)
   assertBool "PAYOFF: the resolver answers the recorded origin"
     (donationOriginRecipient? stRedirect pushSc == some pushOuter)
   assertBool "PAYOFF: ...and the pop's recipient is that origin, NOT the answered caller"
     (replyDonationRecipient stRedirect pushSc pushServer == pushOuter)
   assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
     (!(pushOuter == pushServer))
+  -- **PAYOFF, driven through the live pop**: the reservation goes HOME.  This is
+  -- the assertion the retired proxy failed -- under it the same pop bound the
+  -- reservation to `pushServer` and erased the origin.
+  assertBool "PAYOFF: the pop succeeds"
+    (poppedFrom stRedirect).isSome
+  assertBool "PAYOFF: ...and binds the reservation to the ORIGIN, the client that owned it"
+    ((poppedFrom stRedirect).bind
+      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushOuter)
+  assertBool "PAYOFF: ...which now holds it outright, as its own"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushOuter)
+      == some (.bound pushSc))
+  assertBool "PAYOFF: ...while the intermediate caller ends holding nothing"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushServer)
+      == some .unbound)
+  assertBool "PAYOFF: ...and so does the server that held it"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushDonor)
+      == some .unbound)
   -- **PAYOFF**: and the replenishment migration's DESTINATION follows it too.  A
   -- redirect that moved the reservation without moving the queue would leave
   -- `replenishQueueAffinityConsistentOnCore` false from the instant it committed.
   assertBool "PAYOFF: the migration's destination home is the ORIGIN's core"
-    (replyDonationRecipientHome stRedirect pushOuterReply pushServer
+    (replyDonationRecipientHome stRedirect redirectHeadReply pushServer
       == determineTargetCore stRedirect pushOuter)
   assertBool "PAYOFF: ...and that is core 1, not the answered caller's"
-    (replyDonationRecipientHome stRedirect pushOuterReply pushServer == c1)
-  -- NEGATIVE: a still-reply-blocked origin is one whose own reservation is still
-  -- owed, and some other binding may name it as owner; the redirect declines.
-  let stBlockedOrigin : SystemState := withOrigin pushOuterBlockedTcb
-  assertBool "NEGATIVE: a reply-blocked origin fails the rebindability guard"
-    (donationOriginRebindable stBlockedOrigin pushOuter == false)
-  -- CONTROL: the *recipient* guard admits it, so the decline above is attributable
-  -- to rebindability alone.  Without this the negative would pass under a resolver
-  -- that declined for the other reason, and the guard would read as load-bearing
-  -- while asserting nothing.
-  assertBool "CONTROL: ...while the recipient guard ALONE admits it"
-    (donationRecipientAcceptable stBlockedOrigin pushOuter == true)
-  assertBool "NEGATIVE: ...so the resolver declines it"
-    (donationOriginRecipient? stBlockedOrigin pushSc == none)
-  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
-    (replyDonationRecipient stBlockedOrigin pushSc pushServer == pushServer)
-  -- **THE COST OF THAT FALLBACK, DRIVEN THROUGH THE LIVE POP** (PR #897's review,
-  -- `v0.35.141`).  The decline is sound and it is **not** conservative: the
-  -- reservation neither stays where it was nor goes home — it is *transferred* to
-  -- the thread the reply answers, which at depth 2 is the intermediate caller and
-  -- owns nothing.  Reading the resolver cannot show that; only the pop can.
-  --
-  -- A THREE-thread shape is what the measurement needs, and the fixture above is
-  -- not one: there the reservation is held by `pushServer` and `pushServer` is also
-  -- the thread the fallback names, so the pop's step 4 overwrites its own step 3 and
-  -- the transfer is invisible.  `heldBy pushDonor` separates the holder from the
-  -- answered caller, giving the chain `pushOuter → pushServer → pushDonor` — the
-  -- client, the intermediate caller, and the server that holds the reservation.
-  let heldBy (holder : SeLe4n.ThreadId) (outerTcb : TCB) : SystemState :=
-    { pushStore with
-        objects := (pushStore.objects.insert pushSc.toObjId
-          (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some holder,
-                             scReply := some pushOuterReply,
-                             donationOrigin := some pushOuter })).insert
-            pushOuter.toObjId (.tcb outerTcb) }
-  let poppedFrom (st : SystemState) : Option SystemState :=
-    (returnDonatedSchedContextResolved st pushDonor pushSc
-      (replyDonationRecipient st pushSc pushServer)).toOption
-  -- The client was answered out of order and has simply issued its next Call: it is
-  -- `.unbound`, so that Call donated nothing and no binding names it as an owner --
-  -- but it is `.blockedOnReply` again, which is all the guard reads.
-  let stCapture : SystemState := heldBy pushDonor pushOuterBlockedTcb
-  let stCaptureControl : SystemState := heldBy pushDonor (mkTcb 93 50 (some c1))
-  assertBool "pre: the reservation is held by a THIRD thread, the server"
-    ((stCapture.getSchedContext? pushSc).bind (·.boundThread) == some pushDonor)
-  assertBool "pre: ...whose binding records it as owed to the intermediate caller"
-    (pushBindingOf stCapture pushDonor == some (.donated pushSc pushOuter))
-  assertBool "COST: the pop succeeds"
-    (poppedFrom stCapture).isSome
-  assertBool "COST: ...and binds the reservation to the ANSWERED CALLER"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushServer)
-  assertBool "COST: ...which now holds it outright, as its own"
-    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushServer)
-      == some (.bound pushSc))
-  assertBool "COST: ...while the client that owns it is left holding nothing"
-    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushOuter) == some .unbound)
-  assertBool "COST: ...and the record of whose reservation it was is ERASED"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).map (·.donationOrigin)) == some none)
-  -- ...and this is what makes the loss unrecoverable BY THE KERNEL, which is the
-  -- precise claim rather than "permanent": the context heads no stack afterwards,
-  -- so there is no later pop to deliver it, and the origin that would have named
-  -- the recipient is gone with it.  What remains is an out-of-band repair by a
-  -- holder of the *SchedContext* capability -- `schedContextUnbind` then
-  -- `schedContextBind` -- which its guards permit (the captor holds `.bound`, not
-  -- `.donated`, so the unbind is not refused) and which requires noticing first.
-  assertBool "COST: ...so no later pop can deliver it -- the context heads no stack"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).map (·.scReply)) == some none)
-  -- CONTROL: the same pop, the same fixture, the client AWAKE.  Without it the four
-  -- assertions above would read as properties of the fixture rather than of the
-  -- guard's refusal -- this is the one input on which the two outcomes differ.
-  assertBool "CONTROL: ...where an awake client receives the reservation instead"
-    ((poppedFrom stCaptureControl).bind
-      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushOuter)
-  assertBool "CONTROL: ...and the intermediate caller ends holding nothing"
-    ((poppedFrom stCaptureControl).bind (fun st' => pushBindingOf st' pushServer)
-      == some .unbound)
+    (replyDonationRecipientHome stRedirect redirectHeadReply pushServer == c1)
+  -- **NEGATIVE: a live OWNER.**  The origin was bound a second reservation and
+  -- Called with it: its frame now HEADS `redirectSc2`, whose holder's binding
+  -- names it as owner.  Binding `pushSc` to it would falsify that binding's owner
+  -- clause, so the guard refuses -- and this is the shape the proxy refused too,
+  -- for the wrong reason (its `ipcState`) rather than the right one (its frame).
+  let liveOwnerStore : SystemState :=
+    { redirectStore recalledClient with
+        objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+                    next := some (.head redirectSc2) })).insert
+            redirectSc2.toObjId
+            (.schedContext { SchedContext.empty redirectSc2 with
+                               boundThread := some redirectSc2Holder,
+                               scReply := some pushOuterReply })
+          |>.insert redirectSc2Holder.toObjId
+            (.tcb { mkTcb 100 20 none with
+                      schedContextBinding := .donated redirectSc2 pushOuter }) }
+  assertBool "NEGATIVE (live owner): a binding NAMES the origin as owner"
+    (pushBindingOf liveOwnerStore redirectSc2Holder == some (.donated redirectSc2 pushOuter))
+  assertBool "NEGATIVE (live owner): ...its frame heads that context, so it is on a live stack"
+    ((liveOwnerStore.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack liveOwnerStore t)
+      == some true)
+  assertBool "NEGATIVE (live owner): ...and the guard refuses it"
+    (donationOriginRebindable liveOwnerStore pushOuter == false)
+  -- CONTROL: the *recipient* guard admits it, so the decline is attributable to
+  -- rebindability alone.  Without this the negative would pass under a resolver
+  -- that declined for the other reason.
+  assertBool "CONTROL (live owner): ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable liveOwnerStore pushOuter == true)
+  assertBool "NEGATIVE (live owner): ...so the resolver declines it"
+    (donationOriginRecipient? liveOwnerStore pushSc == none)
+  assertBool "NEGATIVE (live owner): ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient liveOwnerStore pushSc pushServer == pushServer)
+  -- **NEGATIVE: an INTERIOR frame.**  The origin's frame sits below another on a
+  -- live stack (`redirectFrameAbove` reciprocates its upward link), so the origin
+  -- is owed a context by the pop that reaches its frame -- binding one here would
+  -- make that pop refuse.  The proxy could not tell this shape from the re-called
+  -- client's: both are `.blockedOnReply`.
+  let interiorStore : SystemState :=
+    { redirectStore recalledClient with
+        objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+                    next := some (.frame redirectFrameAbove) })).insert
+            redirectFrameAbove.toObjId
+            (.reply { replyId := redirectFrameAbove, caller := some pushServer,
+                      prev := some pushOuterReply, next := some (.head redirectSc2) }) }
+  assertBool "NEGATIVE (interior frame): the origin's frame is inside a live stack"
+    ((interiorStore.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack interiorStore t)
+      == some true)
+  assertBool "NEGATIVE (interior frame): ...and the guard refuses it"
+    (donationOriginRebindable interiorStore pushOuter == false)
+  assertBool "CONTROL (interior frame): ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable interiorStore pushOuter == true)
+  assertBool "NEGATIVE (interior frame): ...so the resolver declines it"
+    (donationOriginRecipient? interiorStore pushSc == none)
+  assertBool "NEGATIVE (interior frame): ...and the pop FALLS BACK to the answered caller"
+    (replyDonationRecipient interiorStore pushSc pushServer == pushServer)
   -- NEGATIVE: an origin that already holds a reservation of its own is the case
   -- `donationRecipientAcceptable` has always covered.
   let stBoundOrigin : SystemState :=
-    withOrigin { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
+    redirectStore { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
   assertBool "NEGATIVE: a bound origin fails the recipient guard"
     (donationRecipientAcceptable stBoundOrigin pushOuter == false)
   -- CONTROL: and rebindability admits *it*, so the two guards are known to be

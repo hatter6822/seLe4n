@@ -1781,61 +1781,112 @@ def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.T
     (serverTid originalOwner : SeLe4n.ThreadId) :
     outerCallerAcceptable st serverTid originalOwner none = true := rfl
 
-/-- **WS-HP HP10.7: the origin may be rebound without invalidating a live
-donation.**
+/-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
+live reply stack — one whose upward link is **answered** by what it names?  Such
+a thread is owed a scheduling context by the pop that reaches its frame.
+
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  A stale upward
+link is reachable: the splice's below side *degenerates* to the sever when the
+frame below does not reciprocate (`spliceFrameBelow?` answers `none`), and the
+sever leaves the frame below the cut with an upward link nothing answers — under
+`severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
+cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
+`B` is then on no live stack and is owed nothing, so refusing its bind refuses an
+operation `schedContextBind` documents as supported (binding a *blocked* thread).
+Presence of the link is not the property; the property is that the frame or
+context above answers this frame.
+
+That is the same question `donationChainWalk` validates on the way down — a link
+is validated by the target's own upward link, never by its `caller`, because a
+re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
+checks before it writes.  Asking it one step is **exact** rather than
+approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
+`headTerminates` make a reciprocated link a link to a frame that is itself on the
+stack, so no walk is needed and the guard stays `O(1)`.  A frame that really is
+live still answers `true`, so the fail-closed direction is unchanged.
+
+**Relocated here at `v0.35.157`** from `SchedContext/Operations.lean`, where
+`schedContextBind` had it, because the reply pop's origin redirect asks the same
+question of the reservation's recorded origin (`donationOriginRebindable`) and
+the endpoint operations cannot import the SchedContext module.  Its `.head` arm
+is `replyFrameHeadContext?`'s own reciprocity test (defined further down, where the
+reply-stack resolvers live; `replyFrameOnLiveStack_of_head` beside it is the tie),
+and its `.frame` arm is the reciprocity `spliceFrameBelow?` checks before it writes.
+It sits here, ahead of `donationOriginRebindable`, because that guard reads it. -/
+def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
+  match tcb.replyObject with
+  | none => false
+  | some rid =>
+    match st.getReply? rid with
+    | none => false
+    | some r =>
+      match r.next with
+      | none => false
+      | some (.frame above) =>
+        match st.getReply? above with
+        | none => false
+        | some a => a.prev == some rid
+      | some (.head scId) =>
+        match st.getSchedContext? scId with
+        | none => false
+        | some sc => sc.scReply == some rid
+
+/-- A thread holding no reply object is on no live stack. -/
+@[simp] theorem replyFrameOnLiveStack_of_no_reply (st : SystemState) (tcb : TCB)
+    (h : tcb.replyObject = none) : replyFrameOnLiveStack st tcb = false := by
+  unfold replyFrameOnLiveStack; rw [h]
+
+/-- **WS-HP HP10.7 / `v0.35.157`: the origin may be rebound without invalidating a
+live donation — the bind's own admissibility, asked of the reservation's origin.**
 
 `donationRecipientAcceptable` asks that the recipient hold no binding of its own,
 which is what the pop is about to overwrite.  That is sufficient for the
 *reachability* recipient and **not** for the redirected one, and the gap is a
-soundness hole rather than a tightening:
+soundness hole rather than a tightening: `donationOwnerValid` requires the `owner`
+of every live `.donated scId' owner` binding to be `.unbound`, and a thread can be
+`.unbound` while named as such an owner — that is exactly what a donor awaiting its
+reservation back looks like.  The redirect would then write `.bound scId` there, and
+that binding's owner clause becomes false: `donationOwnerValid` broken by a
+successful reply.  Reachable with ordinary syscalls: a client whose frame was
+answered out of order is woken `.ready` and `.unbound`; nothing stops it binding a
+*second* reservation, Calling with it, and so becoming the owner of a fresh
+`.donated` binding — all while the first reservation is still parked on a server
+whose stack records it as the origin.
 
-`donationOwnerValid` requires the `owner` of every live `.donated scId' owner`
-binding to be `.unbound` **and** `.blockedOnReply`.  A thread can be both
-`.unbound` and named as such an owner — that is exactly what a donor awaiting its
-reservation back looks like — so a recorded origin can pass
-`donationRecipientAcceptable` while some other thread's binding names it.  The
-redirect would then write `.bound scId` there, and that binding's owner clause
-becomes false: `donationOwnerValid` broken by a successful reply.
+**The question is `schedContextBind`'s, and this is its answer** (`v0.35.157`,
+closing the finding PR #897's review registered at `v0.35.141`): may this thread be
+handed a scheduling context now?  The bind refuses a thread whose reply frame is on
+a **live** stack (`replyFrameOnLiveStack` — one-step reciprocity, exact under
+`donationChainWellFormed`), because such a thread is owed a context by the pop that
+reaches its frame, and a second context bound to it in the meantime would be refused
+by that pop's own recipient guard or orphaned by its write.  The redirect *is* a
+bind of the reservation to its origin, so it asks the same test of the origin,
+through the same definition.
 
-It is reachable with ordinary syscalls, not a representability artefact.  A
-client whose frame was answered out of order is woken `.ready` and `.unbound`;
-nothing stops it binding a *second* reservation, Calling with it, and so becoming
-the owner of a fresh `.donated` binding — all while the first reservation is
-still parked on a server whose stack records it as the origin.  The server's
-reply then fires the redirect at a thread another binding is counting on.
+Two things that test decides and the retired proxy did not.  Until `v0.35.157` this
+guard read the origin's `ipcState` and refused a `.blockedOnReply` thread, standing
+in for "some live `.donated _ origin` binding names it" — a fact being reply-blocked
+is *implied by* and does not *imply*.  It therefore **refused the re-called
+client**: a client answered out of order and re-Called is `.unbound`, so its Call
+donated nothing and pushed no frame — its new reply object is on no stack — and no
+binding names it as owner; the pop then fell back to the answered caller and
+*transferred* the reservation to the intermediate caller of the chain, erasing the
+origin with it (`v0.35.141`, measured at `tests/SmpIpcSuite.lean` §3.25 — the
+decline was sound and not conservative).  The structural test **admits** that client,
+and it **refuses** two shapes the proxy could not tell apart from it: an origin
+whose frame *heads* a context — a live owner, named by that context's holder — and
+an origin whose frame sits *inside* a live stack, which is owed a pop that a
+binding made here would make refuse.
 
-**The contrapositive is the guard, and it is O(1).**  Any live binding naming a
-thread as owner forces that thread `.blockedOnReply`; so a thread that is *not*
-reply-blocked is named by none, and rebinding it can falsify nothing
-(`donationOriginRebindable_no_owner`).  A recorded origin that *is* still
-reply-blocked is declined, and that decline is **sound but not conservative** —
-which corrects what this docstring said until `v0.35.141`.
-
-**`.blockedOnReply` is a PROXY for ownership, and the fallback it declines to is a
-TRANSFER** (PR #897's review, measured at `tests/SmpIpcSuite.lean` §3.25's COST
-group).  Being reply-blocked is *implied* by owning a live donation and does not
-*imply* it: a client answered out of order is woken `.ready` and `.unbound`, and
-its next ordinary Call donates nothing — `callDonationSchedContext?` reads
-`SchedContextBinding.scId?`, which is `none` at `.unbound` — while still putting it
-`.blockedOnReply`.  No binding names it, and this guard refuses it anyway.  The pop
-then falls back to the *answered caller*, which at depth 2 is the intermediate
-caller of the chain: the reservation is bound to a thread that owns nothing,
-`donationOrigin` is cleared, and the kernel can never return it — the context heads
-no stack afterwards, so no later pop can deliver it, and the origin that would have
-named the recipient is gone with it; only an out-of-band `schedContextUnbind` +
-`schedContextBind` by a holder of the *SchedContext* capability can repair it.  So
-the
-decline is not "the pop behaves as it did before HP10.7" — before HP10.7 that same
-transfer is what happened, and HP10.7 exists to stop it.
-
-Closing it needs the **fact** the proxy stands in for, which no invariant in this
-tree carries: `donationOwnerValid` relates a donation's owner to no reply frame, so
-"a live `.donated _ origin` binding implies `origin`'s own frame heads that
-context" — true on every reachable state by construction, since
-`donateSchedContext` mints the binding and pushes the frame in one step, and
-already *stated* for the cancellation path as `donatedContextIsOwnerFrameHead` —
-is not derivable here.  Registered in `docs/REGISTERED_DEBT.md` table C with the
-two candidate mechanisms and their measured costs.
+**Soundness is the coherence fact, not the `ipcState`.**
+`donationOriginRebindable_no_owner` derives "no live `.donated _ origin` binding
+names it" from this guard under `donatedContextIsOwnerFrameHead` — a live
+binding's owner has its own frame heading that context, which is exactly
+`replyFrameOnLiveStack`'s `.head` arm — so the fact the proxy stood in for is what
+licenses the pop's write, stated once (WS-HP HP5.2's fact, which the cancellation
+reclaim already carried) and consumed by the reply path as
+`redirectedOriginFrameCoherent`.  It is not derivable from `donationOwnerValid`,
+which relates a donation's owner to no reply frame.
 
 A thread that does not resolve passes, as the sibling guards' `_of_none` arms do
 -- and since `v0.35.61` the resolver never consults this guard on one:
@@ -1844,16 +1895,13 @@ declines a candidate that does not resolve, so a stale origin falls back to the
 reachability recipient instead of reaching the pop's own lookup as a refusal.
 This guard reads `st.getTcb?` where its siblings read `lookupTcb`; on a thread the
 resolver has already resolved the two readers agree (`getTcb?_of_lookupTcb`), and
-the frozen mirror (`frozenDonationOriginRebindable`) reads `frozenLookupTcb`, which
-agrees with this one on every thread `frozenDonationOriginRecipient?` hands it,
-since that resolver resolves first too. -/
+the frozen mirror (`frozenDonationOriginRebindable`) reads `frozenLookupTcb` and
+`frozenReplyFrameOnLiveStack`, which agree with these on every thread
+`frozenDonationOriginRecipient?` hands it, since that resolver resolves first too. -/
 def donationOriginRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? origin with
   | none => true
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ _ => false
-    | _ => true
+  | some tcb => !replyFrameOnLiveStack st tcb
 
 /-- An origin that does not resolve is rebindable; the pop refuses it later. -/
 @[simp] theorem donationOriginRebindable_of_none (st : SystemState)
@@ -1861,19 +1909,29 @@ def donationOriginRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Boo
     donationOriginRebindable st origin = true := by
   unfold donationOriginRebindable; rw [h]
 
-/-- WS-HP HP10.7: **a rebindable origin is reply-blocked nowhere**, which is the
-half `donationOwnerValid` reads. -/
-theorem donationOriginRebindable_not_blockedOnReply (st : SystemState)
+/-- **`v0.35.157`: a rebindable origin's reply frame is on no live stack** — the
+whole of what the guard reads, and the half `donatedContextIsOwnerFrameHead` turns
+into "named by no live donation" (`donationOriginRebindable_no_owner`). -/
+theorem donationOriginRebindable_not_onLiveStack (st : SystemState)
     {origin : SeLe4n.ThreadId} {tcb : TCB}
     (hTcb : st.getTcb? origin = some tcb)
     (h : donationOriginRebindable st origin = true) :
-    ∀ epId replyTarget, tcb.ipcState ≠ .blockedOnReply epId replyTarget := by
-  intro epId replyTarget hEq
+    replyFrameOnLiveStack st tcb = false := by
   unfold donationOriginRebindable at h
   rw [hTcb] at h
-  dsimp only at h
-  rw [hEq] at h
-  exact absurd h (by simp)
+  simpa using h
+
+/-- **`v0.35.157`: a thread holding no reply object is rebindable** -- the shape a
+frame's removal leaves its owner in (`removeCallerReplyFrame_replyObject_none`), and
+what makes the depth-2 payoff's rebindability a *derived* fact rather than a stated
+one (`donationAccountingPreserved_atCallDepthTwo`). -/
+theorem donationOriginRebindable_of_no_reply (st : SystemState)
+    {origin : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.getTcb? origin = some tcb) (h : tcb.replyObject = none) :
+    donationOriginRebindable st origin = true := by
+  unfold donationOriginRebindable
+  rw [hTcb]
+  simp [replyFrameOnLiveStack_of_no_reply st tcb h]
 
 
 /-- **WS-HP HP4.6: the thread the pop hands the context TO holds none of its
@@ -4418,6 +4476,16 @@ theorem replyFrameHeadContext?_eq_some {st : SystemState} {rid : SeLe4n.ReplyId}
             have hEq : sc0 = scId := Option.some.inj h
             subst hEq
             exact ⟨r, sc, rfl, hN, hSc, by simpa using hRec⟩
+
+/-- ...and a thread whose frame heads a context is on one: the `.head` arm of the
+test is `replyFrameHeadContext?`'s own question, so a reciprocating head answers
+`true` here by that resolver's characterisation. -/
+theorem replyFrameOnLiveStack_of_head (st : SystemState) (tcb : TCB)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+    (hRO : tcb.replyObject = some rid) (hHead : replyFrameHeadContext? st rid = some scId) :
+    replyFrameOnLiveStack st tcb = true := by
+  obtain ⟨r, sc, hR, hN, hSc, hRec⟩ := replyFrameHeadContext?_eq_some hHead
+  simp only [replyFrameOnLiveStack, hRO, hR, hN, hSc, hRec, beq_self_eq_true]
 
 @[simp] theorem replyFrameHeadContext?_of_none (st : SystemState) (rid : SeLe4n.ReplyId)
     (h : st.getReply? rid = none) : replyFrameHeadContext? st rid = none := by

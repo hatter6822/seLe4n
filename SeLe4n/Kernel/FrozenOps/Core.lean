@@ -1141,16 +1141,21 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
                   frozenWithObjectStored st3 serverTid.toObjId
                     (.tcb { serverTcb with schedContextBinding := .unbound })
 
-/-- **WS-HP HP10.7/HP10.8, frozen mirror**: the origin may be rebound without
-invalidating a live donation.
+/-- **WS-HP HP10.7/HP10.8, frozen mirror (`v0.35.157`)**: the origin may be rebound
+without invalidating a live donation -- the bind's own admissibility, asked of the
+reservation's recorded origin.
 
-`donationOriginRebindable`'s counterpart, and it is here for the same reason it
-is live: `frozenDonationRecipientAcceptable` asks that the recipient hold no
-binding of its *own*, which a thread another binding names as its owner can
-satisfy — and `donationOwnerValid` requires such an owner to be `.unbound` **and**
-`.blockedOnReply`, so rebinding a reply-blocked thread falsifies the clause that
-binding depends on.  A thread that is not reply-blocked is named by none, which is
-the contrapositive this decides in O(1).
+`donationOriginRebindable`'s counterpart, and it is here for the same reason it is
+live: `frozenDonationRecipientAcceptable` asks that the recipient hold no binding
+of its *own*, which a thread another binding names as its owner can satisfy -- and
+`donationOwnerValid` requires such an owner to be `.unbound`, so rebinding it
+falsifies the clause that binding depends on.  Until `v0.35.157` both surfaces
+read the origin's `ipcState` and refused a `.blockedOnReply` thread, a PROXY for
+"some live binding names it" that also refused a re-called client whose Call
+donated nothing (PR #897's review, `v0.35.141`); both now ask the question
+`schedContextBind` asks -- is this thread's reply frame on a **live** stack
+(`frozenReplyFrameOnLiveStack`, one-step reciprocity) -- which a live binding's
+owner always is, its frame heading the context, and a re-called client never is.
 
 One reader differs from the live guard's, and it is immaterial: this reads
 `frozenLookupTcb` (this surface's one spelling of "is this id usable") where the
@@ -1162,10 +1167,7 @@ def frozenDonationOriginRebindable (st : FrozenSystemState)
     (origin : SeLe4n.ThreadId) : Bool :=
   match frozenLookupTcb st origin with
   | none => true
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ _ => false
-    | _ => true
+  | some tcb => !frozenReplyFrameOnLiveStack st tcb
 
 /-- **WS-HP HP10.8, frozen mirror**: the reservation's recorded origin, where the
 pop is at the bottom of its stack and that thread passes both guards.

@@ -182,6 +182,11 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     (hStackValid1 : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller msg ec st).1
         scId serverTid originalOwner)
+    -- **`v0.35.157`**: the pop's origin redirect is guarded by the bind's own
+    -- admissibility, and this is the coherence fact that makes the guard sound,
+    -- at the state the pop runs on.
+    (hOriginCoherent1 : redirectedOriginFrameCoherent
+      (endpointReplyOnCore tid prevCaller msg ec st).1 rid prevCaller)
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg and the donation pop
@@ -246,7 +251,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     ipcInvariantFull_of_exceptDonationOwner_of_no_edge _ prevCaller hExc1 hNoEdge1
   cases hReply : endpointReplyOnCore tid prevCaller msg ec st with
   | mk st1 res1 =>
-      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
+      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hOriginCoherent1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
       cases res1 with
       | error e => simp only [] at hStep; cases hStep
       | ok u =>
@@ -263,7 +268,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
             have hInv1p : ipcInvariantFull st1p :=
               replyRecvPopDonation_preserves_ipcInvariantFull
                 rid prevCaller st1 st1p returnedSc?
-                hObjInv1 hInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hPop
+                hObjInv1 hInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hOriginCoherent1 hPop
             have hObjInv1p : st1p.objects.invExt :=
               replyRecvPopDonation_preserves_objects_invExt
                 rid prevCaller st1 st1p returnedSc?
@@ -452,6 +457,14 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
         scId serverTid originalOwner) ∧
+    -- **`v0.35.157`**: the origin redirect's coherence obligation -- the
+    -- binding → head fact at the resolved origin, gated on the trigger, the
+    -- resolver and the distinctness, at the state the pop runs on.
+    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
+      redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
+        hid callerTid) ∧
     (∀ st1 res, endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           caps := #[], badge := cap.badge } (determineExecutingCore st tid) st
@@ -500,6 +513,13 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
         (determineExecutingCore st tid) st).1 scId serverTid originalOwner) ∧
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
+    -- `replyStage`, at the state the pop between the legs runs on.
+    redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
+        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
+            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+          caps := #[], badge := replyBadge }
+        (determineExecutingCore st tid) st).1 rid prevCaller ∧
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg **and the donation
@@ -877,7 +897,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               | some callerTid =>
                   simp only [replyAnsweredCaller?_of_getReply st rid reply hR, hCaller]
                     at hStep
-                  obtain ⟨hDon, hHolderDon, hHolderIdle, hReplyStack, hReplyInvExt⟩ :=
+                  obtain ⟨hDon, hHolderDon, hHolderIdle, hReplyStack, hOriginCoh, hReplyInvExt⟩ :=
                     hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
                   -- WS-RR RR4.14: the seam's ordinary branch, under the pack's
                   -- stated confinement.  On an unfaulted caller it is the
@@ -890,7 +910,7 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     tid callerTid
                     { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
                     (determineExecutingCore st tid) st hInv hObjInv
-                    hDon hHolderDon hBudgets hHolderIdle hReplyStack
+                    hDon hHolderDon hBudgets hHolderIdle hReplyStack hOriginCoh
                   cases hReply : endpointReplyCrossCoreDispatch tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
                       (determineExecutingCore st tid) st with
@@ -1064,8 +1084,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | ok triple =>
               obtain ⟨rid, prevCaller, replyBadge⟩ := triple
               simp only [hRR] at hStep
-              obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hCleanupStack1,
-                  hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
+              obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hOriginCoh1,
+                  hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : replyRecvBody epId tid rid prevCaller
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
@@ -1079,7 +1099,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
                     (determineExecutingCore st tid) st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hHolderIdle1 hStackValid1
-                    hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage hBody
+                    hOriginCoh1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage
+                    hBody
                   rw [← hStep]
                   exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                     hObjInvB hInvB

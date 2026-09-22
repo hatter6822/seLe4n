@@ -308,8 +308,9 @@ upstream facts this workstream rests on — the non-head branch's write, the pop
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
 which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
-and the register row was closed at `v0.35.54` on both halves being earned — and is
-**re-opened at `v0.35.141`** on the depth-2 half, see the correction below.
+and the register row was closed at `v0.35.54` on both halves being earned — was
+**re-opened at `v0.35.141`** on the depth-2 half, and is **closed again at
+`v0.35.157`**, see the correction below.
 
 **HP10.9 (`v0.35.53`) addressed depth 2**, which the splice provably could not reach:
 the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits
@@ -320,24 +321,27 @@ origin recorded on the `SchedContext` and read in place of stack reachability, a
 delegate answering the client out of order no longer costs that client its
 reservation.  Upstream has the same loss at this depth (`reply_pop` donates to the
 answered frame's own `replyTCB`), so this is an improvement on seL4-MCS too.  The
-theorem **derives** the reachability answer from the removal and **hypothesises**
-the two guards, one of which cannot be derived at all: the owner is
-`.blockedOnReply` on exactly the reply being answered until the reply leg's wake.
+theorem **derives** the reachability answer from the removal and, since `v0.35.157`,
+the owner's rebindability too (the removal cleared its `replyObject`), and
+**hypothesises** the recipient guard.
 
-**And that guard is a PROXY, so the depth-2 claim is retracted** (PR #897's review,
-`v0.35.141`).  `donationOriginRebindable` reads the origin's `ipcState` alone,
-standing in for "some live `.donated _ origin` binding names it".  A client woken
-by the out-of-order reply is an ordinary runnable thread: its next Call is
-`.unbound`, so it donates nothing and no binding names it, while putting it
-`.blockedOnReply` again — and the guard refuses it.  The pop then falls back to the
-answered caller and **transfers** the reservation to the intermediate caller,
-clearing `donationOrigin`, so the kernel can never return it — the context heads no
-stack afterwards and no later pop can deliver it; only an out-of-band
-`schedContextUnbind` + `schedContextBind` by a holder of the *SchedContext*
-capability can repair it.  Measured on the live pop
-at `tests/SmpIpcSuite.lean` §3.25's COST group with an awake-client CONTROL.  The
-theorem stands as stated; what does not stand is reading it as "the accounting
-holds at every reply-stack depth".
+**And that guard was a PROXY, so the depth-2 claim was retracted — and restored**
+(PR #897's review, `v0.35.141`; closed `v0.35.157`).  Until `v0.35.157`
+`donationOriginRebindable` read the origin's `ipcState` alone, standing in for
+"some live `.donated _ origin` binding names it".  A client woken by the
+out-of-order reply is an ordinary runnable thread: its next Call is `.unbound`, so
+it donates nothing and no binding names it, while putting it `.blockedOnReply`
+again — and the proxy refused it.  The pop then fell back to the answered caller
+and **transferred** the reservation to the intermediate caller, clearing
+`donationOrigin`.  The guard is now `schedContextBind`'s own admissibility, asked
+of the origin — its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
+on both surfaces) — which admits the re-called client and refuses a frame that
+heads a context or sits inside a live stack; its soundness is the binding → head
+fact `donatedContextIsOwnerFrameHead`, relocated upstream and carried by the reply
+path as `redirectedOriginFrameCoherent`.  Measured on the live pop at
+`tests/SmpIpcSuite.lean` §3.25's PAYOFF group, with the retired proxy computed
+beside the live guard so the assertions discriminate.  The accounting holds at
+every reply-stack depth.
 §3.20's accounting halves inverted from COST to PAYOFF and now drive the live
 `.reply` spine rather than `returnDonatedSchedContextResolved`, which was an
 accurate proxy for the pop while nothing redirected and omits the redirect since

@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.156` (`lakefile.toml`) |
+| **Package version** | `0.35.157` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,708 across 334 Lean files |
-| **Test LoC** | 81,018 across 70 Lean test suites |
-| **Proved declarations** | 13,131 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 396,888 across 334 Lean files |
+| **Test LoC** | 81,087 across 70 Lean test suites |
+| **Proved declarations** | 13,137 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -5374,13 +5374,17 @@ seL4-MCS rather than parity with it.
 **What the theorem derives and what it must hypothesise.**
 `replyStackOuterCaller? st' scId = .ok none` — the reachability answer that names
 the *wrong* thread — is a **conclusion**, read off the removal, so no hypothesis
-hands the payoff over.  The two guards are **hypotheses**, and one of them cannot
-be anything else: `donationOriginRebindable` is *false* at the pre-state, the owner
-being `.blockedOnReply` on exactly the reply being answered, and becomes true at the
-wake `endpointReplyOnCore` performs before the removal.  A statement about the
-removal alone therefore cannot supply it.  Tier 3 negatives refuse hypothesising
-either derived fact, because either turns the payoff into a theorem whose conclusion
-is one of its own premises.
+hands the payoff over.  So is the owner's rebindability since `v0.35.157`: the
+guard asks whether the owner's reply frame is on a live stack, and the removal that
+fires the redirect has just taken that frame off the stack and cleared the owner's
+`replyObject` (`removeCallerReplyFrame_replyObject_none`,
+`donationOriginRebindable_of_no_reply`).  What stays a **hypothesis** is the
+recipient guard — the owner holds no reservation of its own — which nothing about
+the removal supplies.  (Until `v0.35.157` the rebindability was hypothesised too,
+and had to be: the guard read the owner's `ipcState`, which is `.blockedOnReply` at
+the pre-state and again the moment the owner re-Calls.)  Tier 3 negatives refuse
+hypothesising any derived fact, because each turns the payoff into a theorem whose
+conclusion is one of its own premises.
 
 **And the resolver decides its own contract** (`v0.35.61`, the post-landing
 audit).  `donationOriginRecipient?` resolves the recorded origin through
@@ -5427,17 +5431,31 @@ It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm,
 `replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
 theorem.
 
-**And the payoff holds only under its two guard hypotheses, one of which is false
-on a reachable state** (PR #897's review, `v0.35.141`).
-`donationOriginRebindable` refuses an origin that is `.blockedOnReply`, as a proxy
+**And the payoff held only under a guard that was a PROXY — closed at
+`v0.35.157`** (PR #897's review, `v0.35.141`).  Until `v0.35.157`
+`donationOriginRebindable` refused an origin that is `.blockedOnReply`, as a proxy
 for "some live `.donated _ origin` binding names it" — and a client answered out of
 order and re-called is reply-blocked while owning nothing, because its Call is
-`.unbound` and so donates nothing.  The pop then falls back to the answered caller
-and **transfers** the reservation to the intermediate caller, clearing
-`donationOrigin` with it (`tests/SmpIpcSuite.lean` §3.25, COST group).  So v1.0.0
-**must not** claim that completing a call chain returns a client's reservation at
-every depth; the depth-≥ 3 half stands.  Re-opened in `docs/REGISTERED_DEBT.md`
-table C.
+`.unbound` and so donates nothing.  The pop then fell back to the answered caller
+and **transferred** the reservation to the intermediate caller, clearing
+`donationOrigin` with it.  The guard is now `schedContextBind`'s own admissibility,
+asked of the origin: its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
+one-step reciprocity, on both surfaces).  That admits the re-called client, whose
+fresh frame is on no stack, and refuses the two shapes the proxy could not
+distinguish from it — a frame that *heads* a context (a live owner) and a frame
+*inside* a live stack (owed a pop that a binding made now would make refuse).  Its
+soundness is the binding → head coherence fact `donatedContextIsOwnerFrameHead`,
+relocated upstream to `IPC/Invariant/Defs.lean` and carried by the reply path as
+`redirectedOriginFrameCoherent` (gated on the trigger, the resolver and the
+distinctness from the answered caller); `donationOriginRebindable_no_owner` derives
+"named by no live binding" from the guard under it.  `tests/SmpIpcSuite.lean` §3.25
+drives the live pop on the re-called client with the retired proxy computed beside
+the live guard, and plants the two refused shapes with the control that the
+recipient guard alone admits them.  So the donation accounting holds at every
+reply-stack depth: v1.0.0 **may** claim that completing a call chain returns a
+client's reservation at every depth — the depth-≥ 3 half by the splice, the depth-2
+half by the recorded origin under a guard that is the fact.  Closed in
+`docs/REGISTERED_DEBT.md` table C.
 
 #### 8.12.16 The teardown's bundle statement is honest about its own state — WS-RR RR8.7 (`v0.35.80`)
 

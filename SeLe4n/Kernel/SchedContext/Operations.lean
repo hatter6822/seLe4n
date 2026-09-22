@@ -447,46 +447,14 @@ def schedContextConfigure (vScId : ValidObjId) (budget period priority deadline 
 -- Z5-G1/G2/G3: schedContextBind
 -- ============================================================================
 
-/-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
-live reply stack — one whose upward link is **answered** by what it names?  Such
-a thread is owed a scheduling context by the pop that reaches its frame.
-
-**The test is reciprocity, not `next.isSome`** (PR #894 review).  A stale upward
-link is reachable: the splice's below side *degenerates* to the sever when the
-frame below does not reciprocate (`spliceFrameBelow?` answers `none`), and the
-sever leaves the frame below the cut with an upward link nothing answers — under
-`severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
-cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
-`B` is then on no live stack and is owed nothing, so refusing its bind refuses an
-operation `schedContextBind` documents as supported (binding a *blocked* thread).
-Presence of the link is not the property; the property is that the frame or
-context above answers this frame.
-
-That is the same question `donationChainWalk` validates on the way down — a link
-is validated by the target's own upward link, never by its `caller`, because a
-re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
-checks before it writes.  Asking it one step is **exact** rather than
-approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
-`headTerminates` make a reciprocated link a link to a frame that is itself on the
-stack, so no walk is needed and the guard stays `O(1)`.  A frame that really is
-live still answers `true`, so the fail-closed direction is unchanged. -/
-def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
-  match tcb.replyObject with
-  | none => false
-  | some rid =>
-    match st.getReply? rid with
-    | none => false
-    | some r =>
-      match r.next with
-      | none => false
-      | some (.frame above) =>
-        match st.getReply? above with
-        | none => false
-        | some a => a.prev == some rid
-      | some (.head scId) =>
-        match st.getSchedContext? scId with
-        | none => false
-        | some sc => sc.scReply == some rid
+-- **Tombstone (`v0.35.157`)**: `replyFrameOnLiveStack` — the bind guard's
+-- "is this thread's reply frame on a live stack" test — lives in
+-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` beside `replyFrameHeadContext?`,
+-- whose reciprocity check is its `.head` arm.  It moved when the reply pop's
+-- origin redirect started asking the same question (`donationOriginRebindable`
+-- is `¬ replyFrameOnLiveStack` at the origin): one question, one answer, and
+-- the endpoint operations cannot import this module.  `schedContextBind` below
+-- reads it under its unqualified name through `open SeLe4n.Kernel`.
 
 /-- Z5-G1/G2/G3: Bind a thread to a SchedContext.
 1. Precondition: SchedContext has no bound thread, TCB is unbound

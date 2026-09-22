@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.156.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.157.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -5914,7 +5914,7 @@ a licence to delete the reclaim — deleting it reaches a state
 Plan: [`docs/planning/REPLY_FRAME_REMOVAL_PLAN.md`](docs/planning/REPLY_FRAME_REMOVAL_PLAN.md).
 
 
-### WS-HP The head-driven donation pop — PHASES COMPLETE, depth-2 accounting RE-OPENED at v0.35.141 (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61 → v0.35.62)
+### WS-HP The head-driven donation pop — COMPLETE; the depth-2 accounting re-opened at v0.35.141 and CLOSED at v0.35.157 (registered v0.35.16; HP1 v0.35.35, HP2 v0.35.36, HP3 v0.35.37, HP4 v0.35.38, HP5 v0.35.39, HP6 v0.35.41 → v0.35.45, HP7 v0.35.46, HP8 v0.35.47, HP9 v0.35.48, HP10 v0.35.49 → v0.35.54; post-landing audit v0.35.61 → v0.35.62)
 
 The reply path decided whether to pop a donated scheduling context from the
 **recorded server's binding** (`endpointReplyServerDonation?`), not from whether
@@ -5947,26 +5947,56 @@ own open register row, and `CancelledMiddleCallerPolicy.severAtCut` is **kept** 
 a constructor, because it names the behaviour upstream still has and an
 improvement is only statable against something.
 
-**And the depth-2 half is NOT closed — the guard is a proxy, and its decline is a
-TRANSFER** (PR #897's review, `v0.35.141`).  `donationOriginRebindable` refuses an
-origin that is `.blockedOnReply`, as a stand-in for "some live `.donated _ origin`
-binding names it".  The two are not the same: a client answered out of order is
-woken `.ready` and `.unbound`, and its next **ordinary Call donates nothing** —
+**And the depth-2 half was NOT closed at HP10 — the guard was a proxy, and its
+decline was a TRANSFER** (PR #897's review, `v0.35.141`; **closed at `v0.35.157`**).
+Until `v0.35.157` `donationOriginRebindable` refused an origin that is
+`.blockedOnReply`, as a stand-in for "some live `.donated _ origin` binding names
+it".  The two are not the same: a client answered out of order is woken `.ready`
+and `.unbound`, and its next **ordinary Call donates nothing** —
 `callDonationSchedContext?` reads `SchedContextBinding.scId?`, which is `none` at
 `.unbound` — while putting it `.blockedOnReply` again.  No binding names it; the
-guard refuses it anyway; the pop falls back to the *answered caller*, which at
-depth 2 is the intermediate caller of the chain.  Measured on the live pop
-(`tests/SmpIpcSuite.lean` §3.25, COST group): the reservation is bound to that
-caller, the client is left `.unbound`, and `donationOrigin` is erased — so the
-kernel can never return it — the context heads no stack afterwards, so no later
-pop can deliver it, and the origin that would have named the recipient is gone with
-it.  Only an out-of-band `schedContextUnbind` + `schedContextBind` by a holder of
-the *SchedContext* capability can repair it, and only if someone notices.  A callee
-that delegates its caller's reply capability to a confederate can arrange it.  **v1.0.0 must not claim that completing a call
-chain returns a client's reservation at every reply-stack depth**; the depth-≥ 3
-half (HP6's chain-preserving removal) stands.  The accounting row in
-`docs/REGISTERED_DEBT.md` table C is **re-opened** on the depth-2 half, with the
-two candidate mechanisms and their measured costs.
+proxy refused it anyway; the pop fell back to the *answered caller*, which at
+depth 2 is the intermediate caller of the chain — the reservation bound to that
+caller, the client left `.unbound`, `donationOrigin` erased, so the kernel could
+never return it, and a callee delegating its caller's reply capability to a
+confederate could arrange it.
+
+**What closed it is the bind's own admissibility, asked of the origin.**  The
+redirect *is* a bind of the reservation to its recorded owner, so
+`donationOriginRebindable` now asks `schedContextBind`'s question — is the origin's
+reply frame on a **live** stack (`replyFrameOnLiveStack`, one-step reciprocity,
+relocated to `IPC/Operations/Endpoint.lean` because both askers read it) — on both
+surfaces.  That admits the re-called client (its new frame is on no stack) and
+refuses the two shapes the proxy could not tell apart from it: an origin whose
+frame *heads* a context, which is a live owner, and one whose frame sits *inside*
+a live stack, which is owed a pop that a binding made now would make refuse.
+Four things new code must respect.  (1) **Soundness is the coherence fact, not
+the `ipcState`**: `donationOriginRebindable_no_owner` derives "no live binding
+names it" from the guard under `donatedContextIsOwnerFrameHead` — WS-HP HP5.2's
+binding → head fact, relocated upstream to `IPC/Invariant/Defs.lean` and restated
+over the reply path's own `answeredFrameHeadContext?`, with the cancellation form
+its corollary (`donatedContextIsOwnerFrameHead_cancelledCallerDonation?`).  The
+reply path carries it as `redirectedOriginFrameCoherent`, gated on the trigger,
+the resolver and the distinctness from the answered caller — the one thread the
+fact is genuinely false at in the pop's own state, its frame consumed while the
+holder's binding still names it — so a reply that redirects nothing owes nothing,
+and the dispatch packs' two reply stages each gained the conjunct.  (2) **The
+depth-2 payoff derives its rebindability**: `donationAccountingPreserved_atCallDepthTwo`
+takes `donationRecipientAcceptable` and the origin's resolution as hypotheses and
+nothing else, because the removal that fires the redirect has just taken the
+owner's frame off the stack (`removeCallerReplyFrame_replyObject_none`,
+`donationOriginRebindable_of_no_reply`) — where the proxy was false again the
+moment the owner re-Called, the structural guard stays derivable through that
+window.  (3) **The witness computes the retired reading beside the live one**:
+`tests/SmpIpcSuite.lean` §3.25's PAYOFF group drives the live pop on the re-called
+client, with the `.blockedOnReply` proxy spelled as a `private def` in the suite
+and nowhere else, and its two NEGATIVE groups plant the live owner (with the binding
+that names it) and the interior frame, each with the CONTROL that the recipient
+guard alone admits the thread.  (4) **The claim is lifted**: v1.0.0 **may** claim
+that completing a call chain returns a client's reservation at every reply-stack
+depth — the depth-≥ 3 half by HP6's chain-preserving removal, the depth-2 half by
+the recorded origin under a guard that is the fact rather than a proxy for it.  The
+accounting row in `docs/REGISTERED_DEBT.md` table C is **closed**.
 
 **The splice is an improvement on seL4-MCS, not an adoption of it** (`v0.35.40`,
 re-verified against upstream source at five revisions).  `reply_remove`'s non-head
@@ -6648,16 +6678,20 @@ cut that declares first.
 (3) **The guard is a CONJUNCTION, and the second half is soundness rather than
 depth.**  `donationRecipientAcceptable` asks that the recipient hold no binding of
 its own; `donationOriginRebindable` asks that no *other* thread's binding name it
-as owner.  `donationOwnerValid` requires that owner to be `.unbound` **and**
-`.blockedOnReply`, so a thread can pass the first while a live binding is counting
-on it — and `.bound scId` there falsifies that binding's clause.  Reachable with
-ordinary syscalls: a client answered out of order is woken `.ready` and `.unbound`,
-and may bind a second reservation and Call with it while the first is still parked
-on a server whose stack records it as the origin.  The contrapositive is O(1) and
-is `donationOriginRebindable_no_owner`.  A still-reply-blocked origin **falls
-back** to the reachability recipient rather than refusing the pop, which is the
-difference between a recovery and a regression and the reason HP10.6 applied the
-guard to the candidate.
+as owner.  `donationOwnerValid` requires that owner to be `.unbound`, so a thread
+can pass the first while a live binding is counting on it — and `.bound scId`
+there falsifies that binding's clause.  Reachable with ordinary syscalls: a client
+answered out of order is woken `.ready` and `.unbound`, and may bind a second
+reservation and Call with it while the first is still parked on a server whose
+stack records it as the origin.  **Since `v0.35.157` the second half is the
+bind's own admissibility** — the origin's reply frame is on no live stack
+(`replyFrameOnLiveStack`) — and `donationOriginRebindable_no_owner` derives "named
+by no live binding" from it under `donatedContextIsOwnerFrameHead`; until then it
+read the origin's `ipcState`, a proxy that refused the re-called client and
+transferred its reservation (PR #897's review, `v0.35.141`).  An origin the guard
+declines **falls back** to the reachability recipient rather than refusing the
+pop, which is the difference between a recovery and a regression and the reason
+HP10.6 applied the guard to the candidate.
 
 (4) **The bundle splits the recipient from the binding's recorded owner.**  One
 thread used to play three roles — the operation's argument, the binding's owner,
@@ -6722,11 +6756,13 @@ unbound — and `frozenRunAgrees` still failed, on the `donationOrigin` field no
 per-object assertion mentioned.  A scenario that asserts only what it set out to
 measure would have reported the flip as clean.
 
-(4) **The answered caller is `.blockedOnReply` at the state the resolver reads, so
-the redirect DECLINES it and the recipient comes from the fallback.**  Same
-thread, different route — and it is what makes FO-044's second half
-discriminating, since a selector that fired unconditionally passes every outcome
-assertion and fails the resolver one.  It also retires HP10.6's claim that this
+(4) **The answered caller's own frame HEADS the context at the state the resolver
+reads, so the redirect DECLINES it and the recipient comes from the fallback.**
+(Until `v0.35.157` the decline read its `.blockedOnReply` instead; the frame is
+what the guard reads now, and the verdict there is the same.)  Same thread,
+different route — and it is what makes FO-044's second half discriminating, since
+a selector that fired unconditionally passes every outcome assertion and fails the
+resolver one.  It also retires HP10.6's claim that this
 member is live at depth 1: see the correction in that block, and the registered
 asymmetry between the state the **footprint** resolves at and the state the
 **transition** resolves at.
@@ -6744,20 +6780,24 @@ stated and measured, so the donation accounting holds at **every** reply-stack
 depth.  Six things.
 
 (1) **`donationAccountingPreserved_atCallDepthTwo` derives the reachability answer
-and hypothesises the guards, and the split is not stylistic.**
-`replyStackOuterCaller? st' scId = .ok none` — the very answer that names the wrong
-thread — is a **conclusion**, read off the removal through
+and the rebindability, and hypothesises the recipient guard, and the split is not
+stylistic.**  `replyStackOuterCaller? st' scId = .ok none` — the very answer that
+names the wrong thread — is a **conclusion**, read off the removal through
 `removeCallerReplyFrame_clears_prev_of_bottom_frame`, so no hypothesis hands the
-payoff over.  The two guards are **hypotheses** because one of them *cannot* be
-derived: `donationOriginRebindable` is **false** at the pre-state, the owner being
-`.blockedOnReply` on exactly the reply being answered, and becomes true at the wake
-`endpointReplyOnCore` performs before the removal.  The origin's *existence* at
-that state is a third hypothesis since `v0.35.61`, for the same reason: the
-removal's success says nothing about the thread the field names
-(`consumeCallerReply` is total on an absent caller), and the resolver now names
-only a thread it can resolve.  A cut that "simplifies" the
-statement by hypothesising the resolver's answer or the reachability answer has
-gutted it; Tier 3 negatives refuse both.
+payoff over.  `donationOriginRebindable st' origin` is a **conclusion too since
+`v0.35.157`**: the removal took the owner's frame off the stack and cleared its
+`replyObject` (`removeCallerReplyFrame_replyObject_none`), and a thread holding no
+reply object is on no live stack (`donationOriginRebindable_of_no_reply`) — where
+the retired `.blockedOnReply` proxy was false at the pre-state, true after the
+wake, and false again the moment the owner re-Called.  `donationRecipientAcceptable`
+stays a **hypothesis**, because nothing about the removal says the owner holds no
+reservation of its own.  The origin's *existence* at that state is the other
+hypothesis since `v0.35.61`, for the same reason: the removal's success says
+nothing about the thread the field names (`consumeCallerReply` is total on an
+absent caller), and the resolver now names only a thread it can resolve.  A cut
+that "simplifies" the statement by hypothesising the resolver's answer, the
+reachability answer or the rebindability has gutted it; Tier 3 negatives refuse
+all three.
 
 (2) **The sever-direction sibling is where the depth-two shape lives.**
 `removeCallerReplyFrame_clears_prev_of_bottom_frame` is
@@ -6870,14 +6910,15 @@ what it changed.
 
 Registered in
 [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C, closed there at
-`v0.35.54` and **re-opened at `v0.35.141` on the depth-2 half** — see the
-paragraph above for what PR #897's review measured.  So v1.0.0 may claim the
-depth-≥ 3 half (a middle removal leaves the reservation owed outward, HP6's
-chain-preserving removal) and **must not** claim that a completed call chain
-returns a client's reservation at every reply-stack depth.  What it must also not
-claim is *parity* with seL4-MCS on reply-stack removal at depth ≥ 3: upstream
-severs and this kernel splices, so the honest claim there is an improvement on
-upstream rather than a match for it.
+`v0.35.54`, **re-opened at `v0.35.141` on the depth-2 half** — see the paragraph
+above for what PR #897's review measured — and **closed again at `v0.35.157`**,
+when the redirect's guard became the bind's own admissibility rather than a proxy
+for it.  So v1.0.0 may claim both halves: a middle removal leaves the reservation
+owed outward (HP6's chain-preserving removal), and a completed call chain returns
+a client's reservation at every reply-stack depth (the recorded origin, under a
+guard that is the fact).  What it must still not claim is *parity* with seL4-MCS
+on reply-stack removal at depth ≥ 3: upstream severs and this kernel splices, so
+the honest claim there is an improvement on upstream rather than a match for it.
 
 **The post-landing audit (`v0.35.61`) — what reading the code against its prose
 found.**  The whole of WS-HP, RR8.1–RR8.4 and the `v0.35.59`/`v0.35.60` cuts were

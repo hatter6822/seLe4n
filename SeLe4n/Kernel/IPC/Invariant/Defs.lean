@@ -5124,33 +5124,183 @@ theorem donationOwnerValidExcept_of_donationOwnerValid
   obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hReply⟩ := h tid tcb scId owner hTcb hBind
   exact ⟨hSc, ownerTcb, hOwner, hUnbound, Or.inr hReply⟩
 
-/-- **WS-HP HP10.7: a rebindable origin is named as owner by no live donation.**
+/-- **WS-HP HP5.2 / `v0.35.157`: the donation a thread owns is the one its own reply
+frame heads** — binding → head, the local coherence fact both the cancellation
+reclaim and the reply pop's origin redirect consume.
+
+Stated over the reply path's own resolver (`answeredFrameHeadContext?`: the thread's
+`replyObject`, then `replyFrameHeadHolder?` of that frame), because it lives here
+upstream of both askers.  The cancellation form — the reclaim's trigger
+`Lifecycle.Suspend.cancelledCallerDonation?` answering the same pair — is the
+corollary `donatedContextIsOwnerFrameHead_cancelledCallerDonation?` in
+`Lifecycle/Invariant/CancellationReplyShape.lean`, where the fact was first stated at
+WS-HP HP5.2 (`v0.35.39`) and where HP5.1's bridge ties the two resolvers together.
+It moved here at `v0.35.157` because the reply path became its second asker and
+could not see it: *when a question has one owner and an asker that cannot see it,
+the owner is in the wrong layer.*
+
+**Why it is stated and not derived.**  `donationOwnerValid` relates a donation's
+owner to no reply object and `donationChainWellFormed` carries no binding clause
+(see its docstring's *what is deliberately absent*), so nothing in the bundle says
+the owner's frame heads the context.  It is true on the seL4-MCS path because
+`donateSchedContext` mints the `.donated` binding and pushes the donor's own
+`replyObject` as that context's stack head in **one** step, and every later writer
+of either — the pop, the splice, the cancellation reclaim — keeps them together.
+The one window in which it fails is the reply leg's, at the thread the reply just
+woke (its frame consumed while the holder's binding still names it), which is why
+the reply path states it gated away from that thread
+(`redirectedOriginFrameCoherent`).  Registered in `docs/REGISTERED_DEBT.md`
+table C beside `replyFrameHeadHolderDonation`, its head → binding sibling.
+
+**What it buys since `v0.35.157`.**  The pop's origin redirect is guarded by the
+bind's own admissibility, `¬ replyFrameOnLiveStack` at the origin, and this fact
+is what makes that guard *sound*: a live binding's owner has its frame heading the
+context (this fact), a frame heading a context is on a live stack
+(`replyFrameOnLiveStack_of_head`), so a thread the guard admits is named by no
+live binding (`donationOriginRebindable_no_owner`) and the pop's write cannot
+falsify `donationOwnerValid`'s owner clause. -/
+def donatedContextIsOwnerFrameHead (st : SystemState) (owner : SeLe4n.ThreadId) : Prop :=
+  ∀ ownerTcb, lookupTcb st owner = some ownerTcb →
+    ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding = .donated scId owner →
+        answeredFrameHeadContext? st owner = some (scId, holder) ∧
+        lookupTcb st holder = some holderTcb
+
+/-- **WS-HP HP5.2**: vacuous on a state that cannot resolve the owner -- the
+discharge a cancellation of a reserved or absent thread takes. -/
+theorem donatedContextIsOwnerFrameHead_of_no_owner (st : SystemState)
+    (owner : SeLe4n.ThreadId) (h : lookupTcb st owner = none) :
+    donatedContextIsOwnerFrameHead st owner := by
+  intro _ hLk
+  rw [h] at hLk
+  cases hLk
+
+/-- **WS-HP HP5.2**: and vacuous wherever nothing is donated by the owner -- every
+state outside the passive-server pattern, which is the discharge every
+cancellation with no donation to reclaim takes. -/
+theorem donatedContextIsOwnerFrameHead_of_no_donation (st : SystemState)
+    (owner : SeLe4n.ThreadId)
+    (hNone : ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding ≠ .donated scId owner) :
+    donatedContextIsOwnerFrameHead st owner :=
+  fun _ _ holder holderTcb scId hAt hBind => absurd hBind (hNone holder holderTcb scId hAt)
+
+/-- **WS-HP HP5.2: the builder, and the measurement of what the fact costs.**
+
+Everything but two clauses comes out of `donationOwnerValid`: that the donated
+context exists and is bound to the holder, and that the owner is a stored thread.
+What is left over -- and therefore what this coherence fact is actually *about* --
+is that the owner's own reply object **heads** that context, and that the holder is
+a promotable thread id.  Neither is entailed by any invariant in this tree, which is
+why the fact is stated rather than derived, and stating the builder this way is what
+keeps that boundary visible instead of buried in a `Prop`. -/
+theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid (st : SystemState)
+    (owner : SeLe4n.ThreadId)
+    (hOwnerValid : donationOwnerValid st)
+    (hHeads : ∀ (ownerTcb : TCB) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+        (scId : SeLe4n.SchedContextId),
+      lookupTcb st owner = some ownerTcb →
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding = .donated scId owner →
+        (∃ rid, ownerTcb.replyObject = some rid ∧
+          replyFrameHeadContext? st rid = some scId) ∧ ¬ holder.isReserved) :
+    donatedContextIsOwnerFrameHead st owner := by
+  intro ownerTcb hLkOwner holder holderTcb scId hAt hBind
+  obtain ⟨⟨rid, hRO, hHead⟩, hNR⟩ := hHeads ownerTcb holder holderTcb scId hLkOwner hAt hBind
+  obtain ⟨⟨sc, hScObj, hScBound⟩, _⟩ := hOwnerValid holder holderTcb scId owner hAt hBind
+  refine ⟨?_, lookupTcb_of_objects_of_not_reserved st holder holderTcb hAt hNR⟩
+  refine answeredFrameHeadContext?_of_head st owner rid scId holder ?_ hHead ?_
+  · unfold answeredReplyObject?
+    rw [getTcb?_of_lookupTcb st owner ownerTcb hLkOwner]
+    simpa using hRO
+  · rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj]
+    simpa using hScBound
+
+/-- **WS-HP HP10.7 / `v0.35.157`: a rebindable origin is named as owner by no live
+donation.**
 
 The fact the reply path's redirect rests on, and the reason
 `donationOriginRebindable` exists beside `donationRecipientAcceptable` rather than
 being folded into it.  The recipient guard asks that the origin hold no binding of
-its **own**; this asks that no *other* thread's binding be counting on it — two
+its **own**; this asks that no *other* thread's binding be counting on it -- two
 different questions, and the redirect would falsify `donationOwnerValid` without
 the second (see `donationOriginRebindable` for the reachable sequence).
 
-Stated against the **relaxed** invariant because that is what the reply path has:
-`donationOwnerValidExcept st relaxed` drops the reply-blocked clause at one thread,
-so an origin distinct from that thread still gets the full reading — and where the
-two coincide the redirect is the identity, so nothing is owed. -/
+**Derived from the coherence fact, not from the bundle** (`v0.35.157`).  Until then
+this read `donationOwnerValidExcept` and the guard's `.blockedOnReply` proxy: a
+live binding's owner is reply-blocked, the proxy refused reply-blocked threads, so
+an admitted thread was named by none -- sound, and refusing every re-called client
+with it (PR #897's review, `v0.35.141`).  The structural guard admits a thread whose
+frame is on no live stack, and what makes *that* sound is
+`donatedContextIsOwnerFrameHead`: a live binding's owner has its own frame heading
+the context, a frame heading a context is on a live stack
+(`replyFrameOnLiveStack_of_head`), and the guard says the origin's is not.  The
+origin must resolve, which every caller has from
+`donationOriginRecipient?_resolves`. -/
 theorem donationOriginRebindable_no_owner
-    {st : SystemState} {origin relaxed : SeLe4n.ThreadId}
-    (hDOV : donationOwnerValidExcept st relaxed)
-    (hNe : origin ≠ relaxed)
+    {st : SystemState} {origin : SeLe4n.ThreadId}
+    (hCoh : donatedContextIsOwnerFrameHead st origin)
+    (hRes : ∃ tcb, lookupTcb st origin = some tcb)
     (h : donationOriginRebindable st origin = true) :
     ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.schedContextBinding ≠ .donated scId' origin := by
   intro tid tcb scId' hObj hBind
-  obtain ⟨_, ownerTcb, hOwnerObj, _, hCase⟩ := hDOV tid tcb scId' origin hObj hBind
-  rcases hCase with hEq | ⟨epId, replyTarget, hIpc⟩
-  · exact hNe hEq
-  · exact donationOriginRebindable_not_blockedOnReply st
-      ((SystemState.getTcb?_eq_some_iff st origin ownerTcb).mpr hOwnerObj) h epId replyTarget hIpc
+  obtain ⟨originTcb, hLk⟩ := hRes
+  have hGet : st.getTcb? origin = some originTcb := getTcb?_of_lookupTcb st origin originTcb hLk
+  obtain ⟨hHead, _⟩ := hCoh originTcb hLk tid tcb scId' hObj hBind
+  obtain ⟨rid, hRid, hHeadCtx, _⟩ := answeredFrameHeadContext?_eq_some hHead
+  have hRO : originTcb.replyObject = some rid := by
+    unfold answeredReplyObject? at hRid
+    rw [hGet] at hRid
+    simpa using hRid
+  have hLive := replyFrameOnLiveStack_of_head st originTcb rid scId' hRO hHeadCtx
+  rw [donationOriginRebindable_not_onLiveStack st hGet h] at hLive
+  cases hLive
+
+/-- **`v0.35.157`: the reply path's coherence obligation for the origin redirect.**
+
+Whenever the answered frame `rid` heads a context and the redirect resolves that
+context's recorded origin to a thread other than the answered caller, the
+binding → head fact holds at that origin.  Gated on the trigger, on the resolver
+and on the distinctness, so it is vacuous on every reply that pops nothing, on
+every pop whose stack still names an outer caller, on every context recording no
+origin, and at depth 1 (where the origin *is* the answered caller and the
+redirect is the identity) — and it says nothing about the answered caller itself,
+whose frame the reply leg has just consumed while the holder's binding still names
+it: that is the one thread the fact is genuinely false at in the pop's own state,
+which is why the gated shape is the honest one and an unconditional
+`∀ owner, donatedContextIsOwnerFrameHead st owner` would be vacuous.
+
+The reply-path sibling of the cancellation pack's `holder` field
+(`cancelReplyArmPremises.holder`), stated at the state the pop runs on and consumed
+through `donationOriginRebindable_no_owner`. -/
+def redirectedOriginFrameCoherent (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : Prop :=
+  ∀ (scId : SeLe4n.SchedContextId) (holder origin : SeLe4n.ThreadId),
+    replyFrameHeadHolder? st rid = some (scId, holder) →
+    donationOriginRecipient? st scId = some origin →
+    origin ≠ target →
+    donatedContextIsOwnerFrameHead st origin
+
+/-- Vacuous where the answered frame heads nothing -- every reply that pops nothing. -/
+theorem redirectedOriginFrameCoherent_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (h : replyFrameHeadHolder? st rid = none) :
+    redirectedOriginFrameCoherent st rid target := by
+  intro scId holder origin hHead
+  rw [h] at hHead; cases hHead
+
+/-- ...and where the redirect resolves nothing -- no origin recorded, or a stack that
+still names an outer caller. -/
+theorem redirectedOriginFrameCoherent_of_no_origin (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
+    (h : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+      donationOriginRecipient? st scId = none) :
+    redirectedOriginFrameCoherent st rid target := by
+  intro scId holder origin hHead hOrigin
+  rw [h scId holder hHead] at hOrigin; cases hOrigin
 
 /-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
 the relaxed thread — the state the donation return leaves behind, and the state a

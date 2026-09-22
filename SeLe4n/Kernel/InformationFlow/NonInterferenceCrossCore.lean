@@ -3293,8 +3293,8 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
       split at hStep
       · next tcb hTcb =>
         -- `v0.35.4`: and a thread whose reply frame is on a live stack is refused.
-        have hNoLive : SchedContextOps.replyFrameOnLiveStack st tcb = false := by
-          cases hL : SchedContextOps.replyFrameOnLiveStack st tcb with
+        have hNoLive : replyFrameOnLiveStack st tcb = false := by
+          cases hL : replyFrameOnLiveStack st tcb with
           | false => rfl
           | true => rw [hL] at hStep; split at hStep <;> simp at hStep
         simp only [hNoLive, Bool.false_eq_true, if_false] at hStep

@@ -1817,6 +1817,11 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
     -- This is the half of that obligation no O(1) guard can decide.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's guard is the bind's own admissibility,
+    -- and what makes it sound is the binding → head coherence fact at the resolved
+    -- origin -- gated on the trigger, the resolver and the distinctness, so it
+    -- costs every reply that redirects nothing exactly nothing.
+    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
     ipcInvariantFull st'' := by
   rcases applyReplyDonation_ok_decompose st st'' rid targetVtid h with
@@ -1867,9 +1872,9 @@ theorem applyReplyDonation_preserves_ipcInvariantFull
             st st' holderVtid scId targetVtid.val o hObjInv
             (ipcInvariantFullExceptDonationOwner_of_full targetVtid.val hInv) hRet
             (donationOriginRebindable_no_owner
-              (donationOwnerValidExcept_of_donationOwnerValid targetVtid.val
-                hInv.donationOwnerValid)
-              hSame (donationOriginRecipient?_rebindable st hOrigin))
+              (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
+              (donationOriginRecipient?_resolves st hOrigin)
+              (donationOriginRecipient?_rebindable st hOrigin))
             hIdle newOwner?
             (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
     obtain ⟨_, ⟨pTcb0, hPPre0, hPPost⟩, _⟩ :=
@@ -1941,6 +1946,8 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
     -- **WS-OD OD4.4**: see `applyReplyDonation_preserves_ipcInvariantFull`.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    -- **`v0.35.157`**: see `applyReplyDonation_preserves_ipcInvariantFull`.
+    (hOriginCoherent : redirectedOriginFrameCoherent st rid targetVtid.val)
     (h : applyReplyDonation st rid targetVtid = .ok st'') :
     ipcInvariantFull st'' := by
   by_cases hAny : ∃ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
@@ -1998,7 +2005,9 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
           · rw [hRecipEq] at hR
             exact returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected
               st st' holderVtid scId targetVtid.val o hObjInv hInv hRet
-              (donationOriginRebindable_no_owner hInv.donationOwnerValidExcept hSame
+              (donationOriginRebindable_no_owner
+                (hOriginCoherent scId holderVtid.val o hHead hOrigin hSame)
+                (donationOriginRecipient?_resolves st hOrigin)
                 (donationOriginRecipient?_rebindable st hOrigin))
               hIdle newOwner?
               (donationReturnOuterValid_of_stackValid (hStackValid scId holderVtid.val o) hRes) hR
@@ -2019,7 +2028,7 @@ theorem applyReplyDonation_establishes_ipcInvariantFull_of_except
       (ipcInvariantFull_of_exceptDonationOwner hInv
         (donationOwnerValid_of_except_of_no_donation_owned_by hInv.donationOwnerValidExcept
           (fun tid tcb sc hTcb hBind => hAny ⟨tid, tcb, sc, hTcb, hBind⟩)))
-      hHolderDonation hHolderIdleAllowed hStackValid h
+      hHolderDonation hHolderIdleAllowed hStackValid hOriginCoherent h
 
 /-- WS-RR RR2.6: `applyReplyDonation` preserves the object store's extended
 invariant — the return through `returnDonatedSchedContext`, the deschedule
@@ -3733,27 +3742,27 @@ removal rather than from a hypothesis; the context survives it
 removal is the one the push recorded before it; and `origin` is the removal's own
 `caller` argument, so the frame leaving the stack is the owner's.
 
-**What is genuinely hypothesised, and why it must be.**  The two guards are facts
-about the owner's TCB at `st'`: it holds no reservation of its own
-(`donationRecipientAcceptable`) and is no longer waiting on a reply
-(`donationOriginRebindable`).  The second is *false* before the reply leg runs —
-the owner is `.blockedOnReply` on exactly the reply being answered — and becomes
-true at the wake `endpointReplyOnCore` performs before the removal, so no
-statement about the removal alone can supply it.
+**What is genuinely hypothesised, and why it must be.**  One guard is a fact about
+the owner's TCB at `st'` that nothing about the removal supplies: it holds no
+reservation of its own (`donationRecipientAcceptable`).  The other guard is
+**derived** (`v0.35.157`): `donationOriginRebindable` asks whether the owner's
+reply frame is on a live stack — `schedContextBind`'s own admissibility — and the
+removal has just taken that frame off the stack and cleared the owner's
+`replyObject` (`removeCallerReplyFrame_replyObject_none`), so the owner is
+rebindable by construction (`donationOriginRebindable_of_no_reply`).
 
-**And it can become false again before the in-order reply arrives** (PR #897's
-review, `v0.35.141`), which is why this theorem's scope must be read as its
-hypotheses and not as a property of the depth-2 shape.  The woken owner is an
-ordinary runnable thread: issuing its next Call puts it `.blockedOnReply` while it
-is still `.unbound`, so that Call donates nothing and no binding names it — and
-`donationOriginRebindable`, which reads the `ipcState` alone, refuses it anyway.
-The pop then falls back to the answered caller and **transfers** the reservation to
-the intermediate caller of the chain, clearing `donationOrigin` with it.  So the
-guards' declining is not "a recovery rather than a regression"; it is the depth-2
-loss this theorem exists to close, reachable through a window the theorem does not
-cover.  Measured at `tests/SmpIpcSuite.lean` §3.25's COST group and registered in
-`docs/REGISTERED_DEBT.md` table C, whose closure is what would let this theorem's
-hypotheses be discharged rather than assumed. -/
+**And it stays derivable across the window the proxy could not cover** (PR #897's
+review, `v0.35.141`, closed at `v0.35.157`).  Until then the guard read the owner's
+`ipcState` and refused a `.blockedOnReply` thread, so it was false before the reply
+leg's wake, true after it, and false *again* the moment the woken owner issued its
+next Call — a Call that, the owner being `.unbound`, donated nothing and pushed no
+frame, so that no binding named it and the guard refused it anyway; the pop then
+fell back to the answered caller and **transferred** the reservation to the
+intermediate caller of the chain, clearing `donationOrigin` with it.  The structural
+guard reads the frame, and a re-called client's new frame is on no stack, so the
+theorem's hypotheses are exactly the two facts the depth-2 shape has — measured at
+`tests/SmpIpcSuite.lean` §3.25, whose PAYOFF group drives the live pop on the
+re-called client. -/
 theorem donationAccountingPreserved_atCallDepthTwo
     (st st' st'' : SystemState)
     (rid top : SeLe4n.ReplyId) (r t : Reply)
@@ -3772,14 +3781,14 @@ theorem donationAccountingPreserved_atCallDepthTwo
     (hOrigin : sc.donationOrigin = some origin)
     -- The out-of-order removal: the OWNER's own frame leaves the stack.
     (hRemove : removeCallerReplyFrame origin rid st = .ok ((), st'))
-    -- The owner is awake, holds no reservation of its own, and exists at that
-    -- state -- the third is a hypothesis for the same reason as the other two:
-    -- the removal's success says nothing about the thread the field names
-    -- (`consumeCallerReply` is total on an absent caller), and since `v0.35.61`
-    -- the resolver names only a thread it can resolve, so a payoff stated for
-    -- an origin with no TCB would be stating the fallback.
+    -- The owner holds no reservation of its own, and exists at that state -- the
+    -- second is a hypothesis for the same reason as the first: the removal's
+    -- success says nothing about the thread the field names (`consumeCallerReply`
+    -- is total on an absent caller), and since `v0.35.61` the resolver names only
+    -- a thread it can resolve, so a payoff stated for an origin with no TCB would
+    -- be stating the fallback.  Its rebindability is DERIVED below (`v0.35.157`):
+    -- the removal took its frame off the stack.
     (hAcceptable : donationRecipientAcceptable st' origin = true)
-    (hRebindable : donationOriginRebindable st' origin = true)
     (originTcb : TCB) (hOriginTcb : lookupTcb st' origin = some originTcb)
     -- The pop the in-order reply that follows performs, through the reply path's
     -- own recipient resolution.
@@ -3807,6 +3816,14 @@ theorem donationAccountingPreserved_atCallDepthTwo
   have hOuter' : replyStackOuterCaller? st' scId = .ok none :=
     replyStackOuterCaller?_of_bottom_head st' scId sc top { t with prev := none }
       hSc' hHead' rfl
+  -- The owner's own frame has left the stack, so the bind's admissibility admits
+  -- it: its `replyObject` is cleared by the removal, and a thread holding no reply
+  -- object is on no live stack.
+  have hGetO : st'.getTcb? origin = some originTcb :=
+    getTcb?_of_lookupTcb st' origin originTcb hOriginTcb
+  have hRebindable : donationOriginRebindable st' origin = true :=
+    donationOriginRebindable_of_no_reply st' hGetO
+      (removeCallerReplyFrame_replyObject_none st origin rid hObjInv st' originTcb hRemove hGetO)
   -- ...so the resolver answers the recorded origin.
   have hResolver : donationOriginRecipient? st' scId = some origin :=
     (donationOriginRecipient?_eq_some_iff st' scId origin).mpr

@@ -1365,6 +1365,9 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
     -- stack; this is the obligation that resolution carries.
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid st scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation -- see
+    -- `applyReplyDonation_preserves_ipcInvariantFull`.
+    (hOriginCoherent : redirectedOriginFrameCoherent st rid target)
     (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
     ipcInvariantFull st' := by
   unfold replyRecvPopDonation at h
@@ -1436,9 +1439,9 @@ theorem replyRecvPopDonation_preserves_ipcInvariantFull
                     st st1' holderV oldScId target o hObjInv
                     (ipcInvariantFullExceptDonationOwner_of_full target hInv) hRetWV
                     (donationOriginRebindable_no_owner
-                      (donationOwnerValidExcept_of_donationOwnerValid target
-                        hInv.donationOwnerValid)
-                      hSame (donationOriginRecipient?_rebindable st hOrigin))
+                      (hOriginCoherent oldScId holder o hHead hOrigin hSame)
+                      (donationOriginRecipient?_resolves st hOrigin)
+                      (donationOriginRecipient?_rebindable st hOrigin))
                     hIdleV n
                     (donationReturnOuterValid_of_stackValid
                       (hStackValid oldScId holderV.val o) hResN) hRetV
