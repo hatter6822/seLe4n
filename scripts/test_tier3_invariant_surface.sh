@@ -19634,4 +19634,44 @@ run_check "INVARIANT" rg -F -n 'consumed.contains ``SeLe4n.Kernel.notificationSi
 # Building the module IS the check, so Tier 1 must build it.
 run_check "INVARIANT" rg -F -n 'run_check "BUILD" lake build SeLe4n.Testing.SchedFootprintCensus' scripts/test_tier1_build.sh
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6a (`v0.35.174`): the non-donating arms' footprints are not
+# false.
+# ============================================================================
+#
+# A footprint that omits a slot the transition writes is FALSE, and the 2PL
+# serialisation results, `boundedWait_under_2pl` and the CC-5 bound are then
+# SILENT about that slot rather than conservative.  Cut C4 gave every declared
+# arm a footprint and C4b wired the seam to the resolver; this is the coverage,
+# which the numbering rule's semantic half puts before the bracket rather than
+# after it.
+run_check "INVARIANT" rg -n '^theorem schedFootprintCoversWrites_of_cores \(S : SchedLockSet\)' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintCoversWrites_of_confined \(S : SchedLockSet\)' SeLe4n/Kernel/SyscallSchedContainment.lean
+# One application per arm.  The bridge discharges the object clause structurally
+# -- a canonical footprint always names the object-store table write lock -- and
+# reduces the other two to the arm's own SM8.B confinement result and its own
+# replenish frame, neither of which is re-derived here.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setPriorityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setMCPriorityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+# Eight proved theorems cannot be wrong; what they could be is VACUOUS, if the
+# obligation held of any footprint whatever.  These two say it does not, one
+# clause each -- and the replenish one is the clause SM8.B's confinement cannot
+# supply, the replenish queue not being one of its six per-core slots.
+run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_runQueue_moved' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_replenish_moved' SeLe4n/Kernel/SyscallSchedContainment.lean
+# ...and no arm's coverage may be discharged by the no-op lemma, which holds of
+# EVERY footprint: that is the token-preserving weakening this family admits, and
+# it would turn eight measurements into eight tautologies.
+run_negative_check "INVARIANT" rg -F -n 'schedFootprintCoversWrites_refl' SeLe4n/Kernel/SyscallSchedContainment.lean
+# Staged, and built by CI on every PR through the staged anchor: a proof links
+# into no image, and every proof here consumes a confinement theorem from the
+# staged `NonInterferenceCrossCore`.
+run_check "INVARIANT" rg -F -n 'import SeLe4n.Kernel.SyscallSchedContainment' SeLe4n/Platform/Staged.lean
+
 finalize_report

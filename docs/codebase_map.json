@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "af6e7fd8d8c7f5630341126a66bf37d2c7e9834b",
-      "tree_sha": "6dbe684e439850371a7d7a3be381ec76005268fe",
-      "committed_at_utc": "2026-09-22T19:18:50+00:00"
+      "commit_sha": "5deb3b550c5ec9ac9b47e99e041301078212930b",
+      "tree_sha": "6e9d58275a6aed10c47df7d115203f385cf418aa",
+      "committed_at_utc": "2026-09-22T20:06:08+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "12a90c9f46da91a4055d58ad45e53d4d8295492d3225cf872c418c159dc7b530"
+    "source_digest": "18937d55b60c223eb26873bb9a6a2120f2c0fffbc38593969b54d1044eb0b418"
   },
   "summary": {
-    "module_count": 407,
-    "declaration_count": 22534
+    "module_count": 408,
+    "declaration_count": 22547
   },
   "readme_sync": {
-    "version": "0.35.173",
+    "version": "0.35.174",
     "lean_toolchain": "v4.28.0",
-    "production_files": 337,
-    "production_loc": 405604,
+    "production_files": 338,
+    "production_loc": 405953,
     "test_files": 70,
     "test_loc": 83005,
-    "proved_theorem_lemma_decls": 13430,
+    "proved_theorem_lemma_decls": 13442,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -202451,7 +202451,7 @@
     {
       "module": "SeLe4n.Kernel.SchedLockBracket",
       "path": "SeLe4n/Kernel/SchedLockBracket.lean",
-      "declaration_count": 21,
+      "declaration_count": 22,
       "declarations": [
         {
           "kind": "namespace",
@@ -202683,8 +202683,28 @@
         },
         {
           "kind": "theorem",
+          "name": "schedFootprintCoversWrites_of_cores",
+          "line": 314,
+          "called": [
+            "CoreId",
+            "SchedLockSet",
+            "SystemState",
+            "activeDomainOnCore",
+            "currentOnCore",
+            "mem_schedFootprintOfCores_replenishQueue_iff",
+            "mem_schedFootprintOfCores_runQueue_iff",
+            "replenishQueueOnCore",
+            "runQueueOnCore",
+            "schedFootprintCoversWrites",
+            "schedFootprintOfCores",
+            "schedFootprintOfCores_contains_objStore_write",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "mem_handleRescheduleSgiOnCoreLockSet_runQueue_iff",
-          "line": 300,
+          "line": 347,
           "called": [
             "CoreId",
             "handleRescheduleSgiOnCoreLockSet",
@@ -202694,7 +202714,7 @@
         {
           "kind": "theorem",
           "name": "not_mem_handleRescheduleSgiOnCoreLockSet_replenishQueue",
-          "line": 313,
+          "line": 360,
           "called": [
             "CoreId",
             "handleRescheduleSgiOnCoreLockSet",
@@ -202704,7 +202724,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_id_or_switch",
-          "line": 328,
+          "line": 375,
           "called": [
             "SystemState",
             "candidateOutranksCurrentOnCore",
@@ -202721,7 +202741,7 @@
         {
           "kind": "theorem",
           "name": "perCoreRescheduleStep_coversWrites",
-          "line": 359,
+          "line": 406,
           "called": [
             "Kernel",
             "SystemState",
@@ -243761,6 +243781,243 @@
       ]
     },
     {
+      "module": "SeLe4n.Kernel.SyscallSchedContainment",
+      "path": "SeLe4n/Kernel/SyscallSchedContainment.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "schedFootprintCoversWrites_of_confined",
+          "line": 77,
+          "called": [
+            "CoreId",
+            "SchedLockSet",
+            "SystemState",
+            "observableSlotsConfinedToCores",
+            "replenishQueueOnCore",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_cores",
+            "schedFootprintOfCores",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_notificationWaitOnCore_coversWrites",
+          "line": 97,
+          "called": [
+            "CoreId",
+            "ObjId",
+            "SchedLockSet",
+            "SystemState",
+            "ThreadId",
+            "notificationId",
+            "notificationWaitOnCore",
+            "notificationWaitOnCore_confinedToCores",
+            "notificationWaitOnCore_replenishQueueOnCore",
+            "ofList",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_notificationWaitOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_notificationSignalBoundOnCore_coversWrites",
+          "line": 115,
+          "called": [
+            "Badge",
+            "CoreId",
+            "ObjId",
+            "SchedLockSet",
+            "SystemState",
+            "badge",
+            "invExt",
+            "notificationId",
+            "notificationSignalBoundOnCore",
+            "notificationSignalBoundOnCore_confinedToCores",
+            "notificationSignalBoundOnCore_replenishQueueOnCore",
+            "notificationSignalBoundWriteSet",
+            "ofList",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_notificationSignalBoundOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_endpointSendOnCore_coversWrites",
+          "line": 137,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "SchedLockSet",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointSendCrossCoreDispatchChecked",
+            "endpointSendCrossCoreDispatchChecked_confinedToCores",
+            "endpointSendCrossCoreDispatchChecked_replenishQueueOnCore",
+            "endpointSendWriteSet",
+            "invExt",
+            "ofList",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_endpointSendOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_resumeThreadOnCore_coversWrites",
+          "line": 159,
+          "called": [
+            "CoreId",
+            "SchedLockSet",
+            "SgiKind",
+            "SystemState",
+            "ValidThreadId",
+            "ofList",
+            "resumeThreadOnCore",
+            "resumeThreadOnCoreWriteSet",
+            "resumeThreadOnCore_confinedToCores",
+            "resumeThreadOnCore_replenishQueueOnCore",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_resumeThreadOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_setPriorityOnCore_coversWrites",
+          "line": 176,
+          "called": [
+            "CoreId",
+            "Priority",
+            "SchedLockSet",
+            "SgiKind",
+            "SystemState",
+            "ValidThreadId",
+            "ofList",
+            "priorityControlWriteSet",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_priorityControlOnCore",
+            "setPriorityOnCore",
+            "setPriorityOnCore_confinedToCores",
+            "setPriorityOnCore_replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_setMCPriorityOnCore_coversWrites",
+          "line": 194,
+          "called": [
+            "CoreId",
+            "Priority",
+            "SchedLockSet",
+            "SgiKind",
+            "SystemState",
+            "ValidThreadId",
+            "invExt",
+            "ofList",
+            "priorityControlWriteSet",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_priorityControlOnCore",
+            "setMCPriorityOnCore",
+            "setMCPriorityOnCore_confinedToCores",
+            "setMCPriorityOnCore_replenishQueueOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_schedContextBindOnCore_coversWrites",
+          "line": 222,
+          "called": [
+            "SchedLockSet",
+            "SystemState",
+            "ValidObjId",
+            "ValidThreadId",
+            "invExt",
+            "ofList",
+            "schedContextBind",
+            "schedContextBindWriteSet",
+            "schedContextBind_confinedToCores",
+            "schedContextBind_replenishQueueOnCore",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_schedContextBindOnCore",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "schedLockSet_suspendThreadOnCore_coversWrites",
+          "line": 245,
+          "called": [
+            "CoreId",
+            "SchedLockSet",
+            "SgiKind",
+            "SystemState",
+            "ValidThreadId",
+            "ofList",
+            "schedFootprintCoversWrites",
+            "schedFootprintCoversWrites_of_confined",
+            "schedLockSet_suspendThreadOnCore",
+            "st",
+            "suspendThreadOnCore",
+            "suspendThreadOnCoreWriteSet",
+            "suspendThreadOnCore_confinedToCores",
+            "suspendThreadOnCore_replenishQueueOnCore_ne",
+            "suspendThreadReplenishCores"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "not_schedFootprintCoversWrites_of_runQueue_moved",
+          "line": 275,
+          "called": [
+            "CoreId",
+            "SchedLockSet",
+            "SystemState",
+            "runQueueOnCore",
+            "schedFootprintCoversWrites",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "not_schedFootprintCoversWrites_of_replenish_moved",
+          "line": 288,
+          "called": [
+            "CoreId",
+            "Kernel",
+            "SchedLockSet",
+            "SystemState",
+            "replenishQueueOnCore",
+            "schedFootprintCoversWrites",
+            "st"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Kernel.SyscallSchedFootprint",
       "path": "SeLe4n/Kernel/SyscallSchedFootprint.lean",
       "declaration_count": 110,
@@ -273493,13 +273750,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Platform.Staged",
-          "line": 676,
+          "line": 683,
           "called": []
         },
         {
           "kind": "def",
           "name": "stagedBuildAnchor",
-          "line": 682,
+          "line": 689,
           "called": []
         }
       ]

@@ -430,6 +430,13 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreCbsInventory
 -- placement-gated input).  The SM5.I per-core run loop is the runtime exerciser.
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.SchedLockTimerContainment
+-- WS-RR RR8.12 Cut C6a: the syscall arms' scheduler-domain write-set
+-- containment -- the proof that each arm's declared footprint is not a FALSE
+-- one, so the bracket at the syscall seam (Cut C6c) acquires an exclusion the
+-- runtime establishes rather than one nobody proved.  Staged because every
+-- proof consumes an SM8.B confinement theorem and those live in
+-- `InformationFlow/NonInterferenceCrossCore`, which is staged.
+import SeLe4n.Kernel.SyscallSchedContainment
 -- WS-SM SM5.I (affinity discharge): the live per-core timer tick preserves
 -- replenish-queue affinity-consistency.  Strengthens the perCoreCbsInvariant
 -- aggregate (timerTickOnCore_preserves_perCoreCbsInvariant_discharged) — the carried

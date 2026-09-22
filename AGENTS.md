@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.173.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.174.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9484,6 +9484,56 @@ code may assume:
   `schedFootprintOfCores` as head has it fully applied by type-correctness: the
   condition could only ever be true, and *a condition no input can decide is
   indistinguishable from a wrong one*.  A Tier 3 negative refuses it coming back.
+- **...and the first eight arms' footprints are proved not to be false** (WS-RR
+  RR8.12 Cut C6a, `v0.35.174`).  A footprint that omits a slot the transition
+  writes is **false**, and the 2PL serialisation results,
+  `boundedWait_under_2pl` and the CC-5 contention bound are then *silent* about
+  that slot rather than conservative —
+  `UncoveredLockDomain.syscallSeamSchedulerDomain` is the register entry saying
+  the scheduler domain has not met that standard at the syscall seam.  Cut C4
+  gave every declared arm a footprint and C4b wired the seam's resolver to it;
+  **the coverage lands before the bracket**, which is the numbering rule's
+  semantic half: a bracket acquiring a footprint nobody proved covers the writes
+  hands out exclusion the runtime never established.
+  `SeLe4n/Kernel/SyscallSchedContainment.lean` is staged, for the reason
+  `SchedLockTimerContainment` is — every proof consumes an SM8.B confinement
+  theorem, and those are staged.  Four things new code must respect.
+
+  (1) **One bridge, and the three clauses are discharged three different ways.**
+  `schedFootprintCoversWrites_of_cores` (production, beside the obligation) makes
+  the **object** clause structural — `schedFootprintOfCores` always names the
+  object-store table write lock, a scheduler footprint being a footprint of an
+  operation that stores — and reduces the rest to two hypotheses;
+  `schedFootprintCoversWrites_of_confined` (staged) supplies the **run-queue**
+  clause from the arm's own `observableSlotsConfinedToCores`.  The **replenish**
+  clause has no such bridge and cannot: confinement covers six per-core slots and
+  the replenish queue is not one of them, which is exactly why every donating arm
+  carries a frame of its own.  A new arm's coverage is one application, not a new
+  argument.
+
+  (2) **The split between this cut and the next is semantic, not convenient.**
+  Where an arm's replenish segment is `[]` the clause is a **whole-state frame**
+  (the transition writes no core's replenishment at all); where the segment names
+  cores it is an **exactness** claim (unchanged outside exactly those).  Those are
+  different propositions with different frames, so the empty-segment arms —
+  `.notificationWait`, `.notificationSignal`, `.send`, `.tcbResume`,
+  `.tcbSetPriority`, `.tcbSetMCPriority`, `.schedContextBind` — are here, and
+  `.tcbSuspend` joins them because RR8.12's fourth cut already built its `_ne`
+  frame.  The remaining eight are Cut C6b's, with the frames they need.
+
+  (3) **Eight proved theorems cannot be wrong; they can be VACUOUS**, so the
+  module carries the refutations that say the obligation is not held by every
+  footprint — one per clause, and the replenish one is the sharper because it is
+  the clause no confinement result can reach.  A Tier 3 negative refuses
+  `schedFootprintCoversWrites_refl` anywhere in the module: discharging an arm
+  with the no-op lemma is the token-preserving weakening this family admits, and
+  it would turn eight measurements into eight tautologies.
+
+  (4) **A coverage claim names the arm the live dispatch reaches.**
+  `.notificationSignal`'s is stated of the **bound** arm, which is what the
+  resolver names and what `API.dispatchWithCap{,Checked}` routes to; the bare
+  signal's footprint is registered as superseded in `SchedFootprintCensus`, and a
+  coverage theorem for it would be a claim about a transition no syscall reaches.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

@@ -1,3 +1,77 @@
+## v0.35.174 — the first eight arms' footprints are proved not to be false
+
+WS-RR RR8.12 Cut C6a: `SeLe4n/Kernel/SyscallSchedContainment.lean` (staged)
+proves that eight declared syscall arms' scheduler-domain footprints cover every
+scheduler slot their transitions write.
+
+### Why the coverage lands before the bracket
+
+A footprint that omits a slot the transition writes is **false**, and everything
+built on it — the 2PL serialisation results, `boundedWait_under_2pl`, the CC-5
+contention bound — is then *silent* about that slot rather than conservative.
+`UncoveredLockDomain.syscallSeamSchedulerDomain` is the register entry saying the
+scheduler domain has not met that standard at the syscall seam.
+
+Cut C4 gave every declared arm a footprint and C4b wired the ABI seam's resolver
+to it.  Neither proved the footprints cover, and the numbering rule's semantic
+half says the proofs come first: a bracket that acquires a footprint nobody
+proved covers the writes hands out exclusion the runtime never established.
+
+### One bridge, three clauses, three different discharges
+
+`schedFootprintCoversWrites_of_cores` (production, beside the obligation in
+`SchedLockBracket.lean`) makes the **object** clause structural —
+`schedFootprintOfCores` always names the object-store table write lock, a
+scheduler-domain footprint being a footprint of an operation that stores — and
+reduces the rest to two hypotheses.  `schedFootprintCoversWrites_of_confined`
+(staged) supplies the **run-queue** clause from the arm's own
+`observableSlotsConfinedToCores`, which carries three of the six slots it names.
+
+The **replenish** clause has no such bridge and cannot have one: confinement
+covers six per-core slots and the replenish queue is not among them, which is
+exactly why every donating arm carries a replenish frame of its own.  Each arm's
+coverage is therefore one application of the bridge plus two of that arm's own
+theorems; nothing is re-derived.
+
+### The split from Cut C6b is semantic
+
+Where an arm's replenish segment is `[]` — it moves no scheduling context — the
+clause is a **whole-state frame**: the transition writes no core's replenishment
+at all.  Where the segment names cores it is an **exactness** claim: unchanged
+outside exactly those.  Two different propositions needing two different frames.
+
+So this cut holds the seven empty-segment arms — `.notificationWait`,
+`.notificationSignal`, `.send`, `.tcbResume`, `.tcbSetPriority`,
+`.tcbSetMCPriority`, `.schedContextBind` — plus `.tcbSuspend`, which has a
+core-naming segment and is here anyway because RR8.12's fourth cut already built
+its exactness frame (`suspendThreadOnCore_replenishQueueOnCore_ne`, over the
+seven stages of the pipeline).  The remaining eight arms are Cut C6b's, together
+with the `_ne` frames they need.
+
+### What the obligation refuses
+
+Eight proved theorems cannot be wrong.  What they could be is **vacuous**, if
+`schedFootprintCoversWrites` held of any footprint whatever — so the module
+carries a refutation per clause: an under-declared run segment is refuted by a
+step that moved that core's run queue, and an under-declared replenish segment
+likewise.  The second is the sharper, being the clause no confinement result can
+reach.
+
+A Tier 3 negative refuses `schedFootprintCoversWrites_refl` anywhere in the
+module: discharging an arm with the no-op lemma, which holds of every footprint,
+is the token-preserving weakening this family admits, and it would turn eight
+measurements into eight tautologies.
+
+### Notes
+
+`.notificationSignal`'s coverage is stated of the **bound** arm — the one the
+resolver names and the one `API.dispatchWithCap{,Checked}` routes to.  The bare
+signal's footprint is registered as superseded in `SchedFootprintCensus`, and a
+coverage theorem for it would be a claim about a transition no syscall reaches.
+
+Eight anchor mutations, all decisive.  No production behaviour changed; the
+golden trace is byte-identical; `maxLockSetSize` is unmoved.
+
 ## v0.35.173 — the scheduler domain's footprint census
 
 WS-RR RR8.12 Cut C5: `SeLe4n/Testing/SchedFootprintCensus.lean` (Tier 1) is
