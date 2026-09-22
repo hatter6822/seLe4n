@@ -19467,4 +19467,53 @@ run_check "INVARIANT" rg -n '^  runReclaimMigrationFootprintChecks$' tests/SmpCa
 run_check "INVARIANT" rg -F -n 'NEGATIVE: the RETIRED suspend footprint omits the migration'"'"'s SOURCE core' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL: core 3'"'"'s replenish queue is in NEITHER footprint' tests/SmpCancellationSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C4 (`v0.35.171`): the syscall-level scheduler resolver.
+# ============================================================================
+#
+# `schedLockSetForSyscall` is the scheduler domain's `lockSetForSyscall`, and
+# the two are deliberately the same shape: a `match` over `SyscallId`, a boolean
+# inventory of which arms declare, and a negative over that inventory.  The
+# negative is the load-bearing direction -- a caller reading `some S` treats `S`
+# as the complete set of CORES the transition writes -- so adding a declared arm
+# must change the inventory, and forgetting to stops the negative elaborating.
+run_check "INVARIANT" rg -n '^def schedLockSetForSyscall \(sid : SyscallId\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def declaredSchedFootprintSyscall : SyscallId → Bool' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_undeclared_none \(sid : SyscallId\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The two arms whose resolver is NOT the obvious one, each pinned as a relation
+# between the `match` arm and the footprint it dispatches to.  `.notificationSignal`
+# takes the BOUND arm, which is the one the live dispatch routes to (Cut 7);
+# `.reply` takes the ARM's footprint rather than the dispatch's, because
+# `v0.35.163` proved the abandon's home-core member is one the dispatch never
+# writes.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.notificationSignal =>[^\n]*(\n([ \t][^\n]*)?)*schedLockSet_notificationSignalBoundOnCore st nId" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>[^\n]*(\n([ \t][^\n]*)?)*schedLockSet_replyTransferOnCore ops\.caller answered mi regs msg" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.notificationSignal =>[^\n]*(\n([ \t][^\n]*)?)*schedLockSet_notificationSignalOnCore" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply =>[^\n]*(\n([ \t][^\n]*)?)*schedLockSet_endpointReplyOnCore" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# The operand record is ONE record for one syscall's operands: the scheduler
+# domain's five fields sit beside the object domain's, defaulted absent, so
+# `lockSetForSyscall` is untouched and an arm that needs one absent answers
+# `none`.  `affinity` is doubly optional and must stay so: collapsing the layers
+# would make an unsupplied operand read as an unpin request.
+run_check "INVARIANT" rg -F -n 'affinity : Option (Option CoreId) := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  affinity : Option CoreId := none" SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean'
+run_check "INVARIANT" rg -F -n 'endpointRights : Option AccessRightSet := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -F -n 'replyRegisters : Option (Array SeLe4n.RegValue) := none' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The per-arm characterisations close the inventory's other drift direction: an
+# arm listed as declared that had become unconditionally `none` could not
+# satisfy its own `iff`.
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_call_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_reply_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_replyRecv_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_tcbSetAffinity_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_lifecycle_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem schedLockSetForSyscall_notificationWait_isSome' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The witness: a declared arm's answer IS its own footprint, two arms do not
+# answer the same set, and the operand each arm needs is the one it refuses
+# without.
+run_check "INVARIANT" rg -n 'private def runSyscallSchedResolverScenarios' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -n '^  runSyscallSchedResolverScenarios$' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -F -n 'NEGATIVE: the priority arm and the unbind arm declare DIFFERENT sets' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -F -n 'CONTROL: .tcbSetAffinity refuses on the thread operand ALONE' tests/SmpCbsSuite.lean
+
 finalize_report

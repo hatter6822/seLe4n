@@ -1195,6 +1195,94 @@ private def runSchedContextFootprintScenarios : IO Unit := do
           (stBd.scheduler.replenishQueueOnCore c).entries
             == (stLifecycle.scheduler.replenishQueueOnCore c).entries))
 
+/-- §4.7 **WS-RR RR8.12 Cut C4 — the syscall-level scheduler resolver.**
+
+`schedLockSetForSyscall` is the scheduler domain's `lockSetForSyscall`, and this
+group measures the two things no theorem in the tree states of a *state*: that a
+declared arm's answer IS that arm's own footprint (not a set the test supplied,
+and not a neighbouring arm's), and that the operand each arm needs is the one it
+refuses without.
+
+The negative half — every undeclared arm answers `none` whatever the operands —
+is `schedLockSetForSyscall_undeclared_none`, quantified over all nineteen, so
+what is exercised here is the **declared** side and the per-arm operand
+conditions the theorem cannot reach.
+
+The control matters as much as the cases: `.tcbSetAffinity` is asserted to
+refuse when only its *thread* operand is supplied, which is the one arm whose
+missing operand is itself an `Option` — collapsing the two layers would make an
+unsupplied operand read as an unpin request. -/
+private def runSyscallSchedResolverScenarios : IO Unit := do
+  IO.println "--- §4.7 Cut C4: the syscall-level scheduler footprint resolver ---"
+  let st := stAffinityFp
+  let opsThread : Concurrency.SyscallLockOperands :=
+    { caller := tid0, targetThread := some tid0 }
+  let opsObject : Concurrency.SyscallLockOperands :=
+    { caller := tid0, targetObject := some scId0.toObjId }
+  -- (i) A declared arm's answer IS its own resolved footprint, at the operands
+  -- the caller supplied — the relation, not a presence check.
+  assertBool "the .tcbSetPriority arm answers the priority-control footprint"
+    (match schedLockSetForSyscall .tcbSetPriority opsThread bootCoreId st with
+     | some fp => decide (fp.pairs = schedLockSet_priorityControlOnCore st tid0 bootCoreId)
+     | none => false)
+  assertBool "...and .schedContextUnbind answers the unbind's, at its own operand"
+    (match schedLockSetForSyscall .schedContextUnbind opsObject bootCoreId st with
+     | some fp =>
+         decide (fp.pairs
+           = schedLockSet_schedContextUnbindOnCore st scId0.toObjId bootCoreId)
+     | none => false)
+  assertBool "...and .notificationWait answers the executing core's alone"
+    (match schedLockSetForSyscall .notificationWait opsThread bootCoreId st with
+     | some fp => decide (fp.pairs = schedLockSet_notificationWaitOnCore bootCoreId)
+     | none => false)
+  -- (ii) Two arms do not answer the same set: a resolver that dispatched to one
+  -- footprint for every arm would pass (i) three times over.
+  assertBool "NEGATIVE: the priority arm and the unbind arm declare DIFFERENT sets"
+    (match schedLockSetForSyscall .tcbSetPriority opsThread bootCoreId st,
+           schedLockSetForSyscall .schedContextUnbind opsObject bootCoreId st with
+     | some a, some b => decide (a.pairs ≠ b.pairs)
+     | _, _ => false)
+  -- (iii) The operand each arm needs is the one it refuses without.
+  assertBool "NEGATIVE: a thread-directed arm with no thread operand declares nothing"
+    (decide (schedLockSetForSyscall .tcbSetPriority { caller := tid0 } bootCoreId st = none))
+  assertBool "NEGATIVE: an object-directed arm with no object operand declares nothing"
+    (decide (schedLockSetForSyscall .schedContextUnbind { caller := tid0 } bootCoreId st
+      = none))
+  -- The destination core is a second operand, and its own `none` is an unpin
+  -- request — so an unsupplied operand must not read as one.
+  assertBool "CONTROL: .tcbSetAffinity refuses on the thread operand ALONE"
+    (decide (schedLockSetForSyscall .tcbSetAffinity opsThread bootCoreId st = none) &&
+     (schedLockSetForSyscall .tcbSetAffinity
+        { caller := tid0, targetThread := some tid0, affinity := some (some core2) }
+        bootCoreId st).isSome &&
+     (schedLockSetForSyscall .tcbSetAffinity
+        { caller := tid0, targetThread := some tid0, affinity := some none }
+        bootCoreId st).isSome)
+  -- (iv) The undeclared arms, on a state and operands that would satisfy a
+  -- declared one — so the `none` is the inventory's answer rather than a
+  -- missing operand's.
+  assertBool "NEGATIVE: nineteen arms declare nothing on fully-supplied operands"
+    ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete, .mintReplyCap,
+      .vspaceMap, .vspaceUnmap, .vspaceUnifyInstruction,
+      .serviceRegister, .serviceRevoke, .serviceQuery,
+      .tcbSetIPCBuffer, .tcbSetFaultHandler,
+      .tcbBindNotification, .tcbUnbindNotification,
+      .declassify, .declassifySignal, .auditRead, .auditDrain].all fun sid =>
+        decide (declaredSchedFootprintSyscall sid = false) &&
+        decide (schedLockSetForSyscall sid
+          { caller := tid0, targetThread := some tid0, targetObject := some scId0.toObjId,
+            affinity := some (some core2) } bootCoreId st = none))
+  -- (v) ...and the sixteen the inventory names are exactly the ones the `match`
+  -- can answer: a declared arm listed here that had become unconditionally
+  -- `none` is what the per-arm `_isSome_iff` family refuses, and this is the
+  -- runtime reading of the same fact for the arms this fixture can supply.
+  assertBool "the inventory names sixteen arms"
+    (decide (([SyscallId.tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
+      .tcbSetAffinity, .schedContextConfigure, .schedContextBind, .schedContextUnbind,
+      .lifecycleRetype, .notificationSignal, .notificationWait,
+      .send, .receive, .call, .reply, .replyRecv].filter
+        (fun sid => declaredSchedFootprintSyscall sid)).length = 16))
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -1211,6 +1299,7 @@ def main : IO Unit := do
   runBindingLifecycleScenarios
   runAffinityFootprintScenarios
   runSchedContextFootprintScenarios
+  runSyscallSchedResolverScenarios
   IO.println "=== SM5.H suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpCbs

@@ -10,6 +10,8 @@
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
+import SeLe4n.Kernel.Scheduler.Operations.SchedLockSet
 
 /-!
 # `v0.35.167` (WS-RR RR8.12 Cut C3b-i) — the syscall arms whose own modules cannot name a `SchedLockId`
@@ -1776,5 +1778,326 @@ theorem suspendThreadOnCore_replenishQueueOnCore_ne (st st' : SystemState)
           SystemState.updateTcb_scheduler, Lifecycle.Suspend.clearPendingStateValid_eq,
           Lifecycle.Suspend.clearPendingState_scheduler_eq, descheduleAt_replenishQueueOnCore,
           hG3, hG2b, hG2]
+
+-- ============================================================================
+-- §13  The syscall-level resolver — one footprint per arm, from the operands
+-- ============================================================================
+--
+-- WS-RR RR8.12 Cut C4.  `lockSetForSyscall` is the object domain's; this is the
+-- scheduler domain's, and the two are deliberately the same shape: a `match`
+-- over `SyscallId` dispatching to the arm's own resolved footprint, a boolean
+-- inventory of which arms declare, and a negative over that inventory saying
+-- every other arm declares nothing whatever the operands and whatever the state.
+--
+-- It is here rather than beside `lockSetForSyscall` for the reason this module
+-- exists at all (see the header): `SchedLockId` is declared above every module
+-- that holds a lifecycle, priority, affinity, SchedContext or retype
+-- transition, so the arms' own footprints could not live beside them and this
+-- resolver cannot live beside its object-domain twin.
+
+open SeLe4n.Kernel.Concurrency (SyscallLockOperands)
+
+/-- **WS-RR RR8.12 Cut C4: the scheduler-domain footprint the live syscall seam
+declares**, at the decoded arm and the operands that arm's capability names.
+
+Sixteen arms declare; the other nineteen answer `none`.  Each declared arm is
+`SchedLockSet.ofList?` of its own resolved footprint, and that constructor's
+`Nodup` obligation is `schedFootprintOfCores_keys_nodup` — so it provably never
+refuses a footprint this kernel declares, which the per-arm `_isSome_iff`
+characterisations below state.
+
+**Every arm reads the operands the transition reads, and nothing else.**  Where
+an operand is absent the arm answers `none`, which is the fail-closed direction
+`SyscallLockOperands` has had since WS-RR RR7.10 and the one this file's object
+domain twin already takes for a `.send` with no message: defaulting would
+declare a footprint for a *different* transition.  `.call` needs the invoked
+capability's rights and the receiver's slot base because its write set re-runs
+the dispatch; `.reply` needs the `MessageInfo` and the register payload because
+`decodeFaultReply` reads them to tell a restart from an abandon, and the abandon
+is the one core the dispatch-level footprint never names; `.tcbSetAffinity`
+needs the destination core, whose own `Option` is the unpin request and so must
+not be collapsed with "not supplied".
+
+**`.notificationSignal` routes to the BOUND arm**, which is the one the live
+dispatch takes — Cut 7's own note, and the reason
+`schedLockSet_notificationSignalBoundOnCore` exists beside the unbound one.
+
+**`.reply` routes to the ARM's footprint, not the dispatch's**
+(`schedLockSet_replyTransferOnCore`): `v0.35.163` proved the abandon's home-core
+member is one the dispatch never writes, so a resolver that named the dispatch's
+would be short by it.
+
+**Not yet reachable from the ABI seam, and that is a scheduled gap rather than a
+silence.**  `abiEntryLockOperands` (`SyscallLockBracket.lean`) builds its
+operands for the object domain and supplies none of the five fields above, so
+wiring this resolver to it today would make `.call`, `.reply`, `.replyRecv` and
+`.tcbSetAffinity` answer `none` — an *undeclared* arm, which the bracket treats
+as "no exclusion established" and is therefore sound, but which would silently
+drop four arms out of the very coverage this workstream is building.  Extending
+that builder and adding the scheduler domain's own entry resolver is the next
+cut; nothing consumes this one until then. -/
+def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
+    (executingCore : CoreId) (st : SystemState) : Option SchedLockSet :=
+  match sid with
+  | .tcbSuspend =>
+      ops.targetThread.bind fun victim =>
+        victim.toValid?.bind fun vtid =>
+          SchedLockSet.ofList? (schedLockSet_suspendThreadOnCore st vtid executingCore)
+  | .tcbResume =>
+      ops.targetThread.bind fun target =>
+        target.toValid?.bind fun vtid =>
+          SchedLockSet.ofList? (schedLockSet_resumeThreadOnCore st vtid executingCore)
+  | .tcbSetPriority | .tcbSetMCPriority =>
+      ops.targetThread.bind fun target =>
+        SchedLockSet.ofList? (schedLockSet_priorityControlOnCore st target executingCore)
+  | .tcbSetAffinity =>
+      ops.targetThread.bind fun target =>
+        ops.affinity.bind fun newCore =>
+          SchedLockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st target newCore)
+  | .schedContextConfigure =>
+      ops.targetObject.bind fun scObjId =>
+        SchedLockSet.ofList? (schedLockSet_schedContextConfigureOnCore st scObjId)
+  | .schedContextBind =>
+      ops.targetThread.bind fun target =>
+        SchedLockSet.ofList? (schedLockSet_schedContextBindOnCore st target)
+  | .schedContextUnbind =>
+      ops.targetObject.bind fun scObjId =>
+        SchedLockSet.ofList? (schedLockSet_schedContextUnbindOnCore st scObjId executingCore)
+  | .lifecycleRetype =>
+      ops.targetObject.bind fun target =>
+        SchedLockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target)
+  | .notificationSignal =>
+      ops.targetObject.bind fun nId =>
+        SchedLockSet.ofList? (schedLockSet_notificationSignalBoundOnCore st nId)
+  | .notificationWait =>
+      SchedLockSet.ofList? (schedLockSet_notificationWaitOnCore executingCore)
+  | .send =>
+      ops.targetObject.bind fun epId =>
+        SchedLockSet.ofList? (schedLockSet_endpointSendOnCore st epId executingCore)
+  | .receive =>
+      ops.targetObject.bind fun epId =>
+        SchedLockSet.ofList? (schedLockSet_endpointReceiveOnCore st epId ops.caller executingCore)
+  | .call =>
+      ops.targetObject.bind fun epId =>
+        ops.message.bind fun msg =>
+          ops.endpointRights.bind fun rights =>
+            ops.receiverSlotBase.bind fun slotBase =>
+              SchedLockSet.ofList?
+                (schedLockSet_endpointCallOnCore epId ops.caller msg rights slotBase
+                  executingCore st)
+  | .reply =>
+      ops.targetReply.bind fun rid =>
+        (replyAnsweredCaller? st rid).bind fun answered =>
+          ops.message.bind fun msg =>
+            ops.replyMessageInfo.bind fun mi =>
+              ops.replyRegisters.bind fun regs =>
+                SchedLockSet.ofList?
+                  (schedLockSet_replyTransferOnCore ops.caller answered mi regs msg
+                    executingCore st)
+  | .replyRecv =>
+      ops.targetObject.bind fun epId =>
+        ops.targetReply.bind fun rid =>
+          (replyAnsweredCaller? st rid).bind fun prevCaller =>
+            (st.getTcb? ops.caller).bind fun receiver =>
+              ops.message.bind fun msg =>
+                ops.receiverSlotBase.bind fun slotBase =>
+                  SchedLockSet.ofList?
+                    (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
+                      receiver.cspaceRoot slotBase executingCore st)
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .mintReplyCap
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .serviceRegister | .serviceRevoke | .serviceQuery
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbBindNotification | .tcbUnbindNotification
+  | .declassify | .declassifySignal
+  | .auditRead | .auditDrain => none
+
+/-- **Cut C4**: the arms `schedLockSetForSyscall` declares a footprint for.
+
+A second enumeration beside that `match`, and here for the same reason
+`declaredFootprintSyscall` is: the negative below has to name a set.  What
+matters is which way it can drift, and both are closed.  Converting an arm to a
+footprint without listing it here breaks
+`schedLockSetForSyscall_undeclared_none` at elaboration; listing an arm that
+still answers `none` is refused by that arm's own `_isSome_iff`, which states
+the exact operands under which it declares.
+
+There are `SyscallId.count = 35` arms; **sixteen** declare and nineteen answer
+`none`.  *Which* of those nineteen write a scheduler slot at all is this
+enumeration's own open question — the arms above are the ones WS-RR RR8.12's
+sequence identified, and a nineteenth found to write one is a footprint to
+declare rather than a row to move. -/
+def declaredSchedFootprintSyscall : SyscallId → Bool
+  | .tcbSuspend | .tcbResume
+  | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .lifecycleRetype
+  | .notificationSignal | .notificationWait
+  | .send | .receive | .call | .reply | .replyRecv => true
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .mintReplyCap
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .serviceRegister | .serviceRevoke | .serviceQuery
+  | .tcbSetIPCBuffer | .tcbSetFaultHandler
+  | .tcbBindNotification | .tcbUnbindNotification
+  | .declassify | .declassifySignal
+  | .auditRead | .auditDrain => false
+
+/-- **Cut C4**: every arm this module has not declared is undeclared, whatever
+the operands and whatever the state.
+
+The load-bearing direction, and the object domain's own reason: a caller reading
+`some S` treats `S` as the complete set of **cores** the transition writes, so
+an arm that returned a footprint before its coverage proof existed would hand
+out exclusion the runtime never established.  Adding the next declared arm must
+change `declaredSchedFootprintSyscall`, and forgetting to stops this
+elaborating. -/
+theorem schedLockSetForSyscall_undeclared_none (sid : SyscallId)
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (h : declaredSchedFootprintSyscall sid = false) :
+    schedLockSetForSyscall sid ops executingCore st = none := by
+  cases sid <;> first | rfl | exact absurd h (by simp [declaredSchedFootprintSyscall])
+
+/-! ### The per-arm characterisations
+
+Each says exactly which operands its arm needs, which is what closes the other
+direction of `declaredSchedFootprintSyscall`'s drift: an arm listed there that
+had quietly become unconditionally `none` could not satisfy its own `iff`.
+
+Two things they establish besides.  **`SchedLockSet.ofList?` never refuses a
+footprint this kernel declares** — every one of them is
+`schedFootprintOfCores`, whose keys are `Nodup` by
+`schedFootprintOfCores_keys_nodup` — so no arm's condition mentions the
+constructor, and the fail-closed path exists for a footprint spelled some other
+way.  And **the scheduler domain needs the caller's TCB on one arm only**,
+`.replyRecv`, where the receiver's CSpace root enters the write set through the
+capability transfer; the object domain needs it on all eight of its arms,
+because there every footprint names the caller's CNode. -/
+
+/-- `.notificationWait` declares unconditionally: its footprint is the executing
+core's run-queue lock and nothing the state or the operands can withhold. -/
+@[simp] theorem schedLockSetForSyscall_notificationWait_isSome
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .notificationWait ops executingCore st).isSome := by
+  simp [schedLockSetForSyscall, SchedLockSet.ofList?, schedLockSet_notificationWaitOnCore,
+    schedFootprintOfCores_keys_nodup]
+
+/-- The four object-directed arms declare exactly when the operand naming the
+object is supplied. -/
+theorem schedLockSetForSyscall_objectDirected_isSome_iff
+    (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (h : sid = .schedContextConfigure ∨ sid = .schedContextUnbind ∨
+         sid = .lifecycleRetype ∨ sid = .notificationSignal ∨ sid = .send) :
+    (schedLockSetForSyscall sid ops executingCore st).isSome ↔ ops.targetObject.isSome := by
+  rcases h with rfl | rfl | rfl | rfl | rfl <;>
+    (unfold schedLockSetForSyscall
+     cases ops.targetObject <;>
+       simp [SchedLockSet.ofList?, schedLockSet_schedContextConfigureOnCore,
+         schedLockSet_schedContextUnbindOnCore, schedLockSet_lifecycleRetypeOnCore,
+         schedLockSet_notificationSignalBoundOnCore, schedLockSet_endpointSendOnCore,
+         schedFootprintOfCores_keys_nodup])
+
+/-- `.receive` is object-directed too, and its footprint additionally reads the
+receiving thread — which is the caller, so no operand beyond the endpoint. -/
+theorem schedLockSetForSyscall_receive_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .receive ops executingCore st).isSome
+      ↔ ops.targetObject.isSome := by
+  unfold schedLockSetForSyscall
+  cases ops.targetObject <;>
+    simp [SchedLockSet.ofList?, schedLockSet_endpointReceiveOnCore,
+      schedFootprintOfCores_keys_nodup]
+
+/-- The two thread-directed priority arms declare on the target alone. -/
+theorem schedLockSetForSyscall_priority_isSome_iff
+    (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (h : sid = .tcbSetPriority ∨ sid = .tcbSetMCPriority ∨ sid = .schedContextBind) :
+    (schedLockSetForSyscall sid ops executingCore st).isSome ↔ ops.targetThread.isSome := by
+  rcases h with rfl | rfl | rfl <;>
+    (unfold schedLockSetForSyscall
+     cases ops.targetThread <;>
+       simp [SchedLockSet.ofList?, schedLockSet_priorityControlOnCore,
+         schedLockSet_schedContextBindOnCore, schedFootprintOfCores_keys_nodup])
+
+/-- `.tcbSetAffinity` needs the destination core as well, and its outer `Option`
+is the one that says whether the caller supplied it at all. -/
+theorem schedLockSetForSyscall_tcbSetAffinity_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .tcbSetAffinity ops executingCore st).isSome
+      ↔ ops.targetThread.isSome ∧ ops.affinity.isSome := by
+  unfold schedLockSetForSyscall
+  cases ops.targetThread <;> cases ops.affinity <;>
+    simp [SchedLockSet.ofList?, schedLockSet_setThreadCpuAffinityOnCore,
+      schedFootprintOfCores_keys_nodup]
+
+/-- The two thread-directed lifecycle arms need a target that is not the
+reserved sentinel — the same promotion the transitions themselves perform, so
+the footprint is declared exactly where the step can run. -/
+theorem schedLockSetForSyscall_lifecycle_isSome_iff
+    (sid : SyscallId) (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (h : sid = .tcbSuspend ∨ sid = .tcbResume) :
+    (schedLockSetForSyscall sid ops executingCore st).isSome
+      ↔ ∃ t, ops.targetThread = some t ∧ t.toValid?.isSome := by
+  rcases h with rfl | rfl <;>
+    (unfold schedLockSetForSyscall
+     cases hT : ops.targetThread with
+     | none => simp
+     | some t =>
+        cases hV : t.toValid? <;>
+          simp [hV, SchedLockSet.ofList?, schedLockSet_suspendThreadOnCore,
+            schedLockSet_resumeThreadOnCore, schedFootprintOfCores_keys_nodup])
+
+/-- `.call` needs the endpoint, the message, the invoked capability's rights and
+the receiver's slot base — its write set re-runs the dispatch, which reads all
+four. -/
+theorem schedLockSetForSyscall_call_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .call ops executingCore st).isSome
+      ↔ ops.targetObject.isSome ∧ ops.message.isSome ∧ ops.endpointRights.isSome ∧
+        ops.receiverSlotBase.isSome := by
+  unfold schedLockSetForSyscall
+  cases ops.targetObject <;> cases ops.message <;> cases ops.endpointRights <;>
+    cases ops.receiverSlotBase <;>
+      simp [SchedLockSet.ofList?, schedLockSet_endpointCallOnCore,
+        schedFootprintOfCores_keys_nodup]
+
+/-- `.reply` needs the Reply object to resolve to an answered caller, and the
+message, `MessageInfo` and register payload `decodeFaultReply` reads. -/
+theorem schedLockSetForSyscall_reply_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .reply ops executingCore st).isSome
+      ↔ (∃ rid, ops.targetReply = some rid ∧ (replyAnsweredCaller? st rid).isSome) ∧
+        ops.message.isSome ∧ ops.replyMessageInfo.isSome ∧ ops.replyRegisters.isSome := by
+  unfold schedLockSetForSyscall
+  cases hR : ops.targetReply with
+  | none => simp
+  | some rid =>
+      cases hA : replyAnsweredCaller? st rid <;>
+        cases ops.message <;> cases ops.replyMessageInfo <;> cases ops.replyRegisters <;>
+          simp [hA, SchedLockSet.ofList?, schedLockSet_replyTransferOnCore,
+            schedFootprintOfCores_keys_nodup]
+
+/-- `.replyRecv` needs both targets, the answered caller, the caller's own TCB
+(its CSpace root is what the capability transfer writes through), the message
+and the receiver's slot base. -/
+theorem schedLockSetForSyscall_replyRecv_isSome_iff
+    (ops : SyscallLockOperands) (executingCore : CoreId) (st : SystemState) :
+    (schedLockSetForSyscall .replyRecv ops executingCore st).isSome
+      ↔ ops.targetObject.isSome ∧
+        (∃ rid, ops.targetReply = some rid ∧ (replyAnsweredCaller? st rid).isSome) ∧
+        (st.getTcb? ops.caller).isSome ∧ ops.message.isSome ∧ ops.receiverSlotBase.isSome := by
+  unfold schedLockSetForSyscall
+  cases ops.targetObject with
+  | none => simp
+  | some _ =>
+      cases hR : ops.targetReply with
+      | none => simp
+      | some rid =>
+          cases hA : replyAnsweredCaller? st rid <;>
+            cases st.getTcb? ops.caller <;> cases ops.message <;>
+              cases ops.receiverSlotBase <;>
+                simp [hA, SchedLockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
+                  schedFootprintOfCores_keys_nodup]
 
 end SeLe4n.Kernel

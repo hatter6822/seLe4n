@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.170` (`lakefile.toml`) |
+| **Package version** | `0.35.171` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 404,629 across 336 Lean files |
-| **Test LoC** | 82,811 across 70 Lean test suites |
-| **Proved declarations** | 13,414 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 404,987 across 336 Lean files |
+| **Test LoC** | 82,900 across 70 Lean test suites |
+| **Proved declarations** | 13,424 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4767,6 +4767,24 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   run-queue half alone, `tests/SmpCancellationSuite.lean` §3.27 is the witness —
   computing both retired readings beside the live ones, with core 3 as the control
   — and `maxLockSetSize` is unmoved.
+
+  **And the sixteen declared arms have one resolver** (WS-RR RR8.12 Cut C4,
+  `v0.35.171`).  `schedLockSetForSyscall` is the scheduler domain's
+  `lockSetForSyscall`: a `match` over `SyscallId` dispatching to the arm's own
+  resolved footprint, `declaredSchedFootprintSyscall` as the inventory of which
+  arms declare, and `schedLockSetForSyscall_undeclared_none` over that inventory
+  — the load-bearing direction, since a caller reading `some S` treats `S` as the
+  complete set of cores the transition writes.  The other drift direction is
+  closed by the per-arm `_isSome_iff` family.  `SyscallLockOperands` gains the
+  scheduler domain's five fields rather than acquiring a record of its own,
+  because the two domains ask different questions of one syscall's operands; the
+  affinity operand is doubly optional, the inner `Option` being the unpin request.
+  `.notificationSignal` routes to the bound arm's footprint and `.reply` to the
+  arm's rather than the dispatch's, both pinned as relations with the wrong
+  resolver refused.  The ABI seam does not reach it yet — `abiEntryLockOperands`
+  supplies none of the five new fields — which is stated at the resolver rather
+  than left to be discovered by wiring it up.  `tests/SmpCbsSuite.lean` §4.7 is
+  the witness; nothing consumes the resolver until the bracket cut.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

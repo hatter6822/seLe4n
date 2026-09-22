@@ -1,3 +1,81 @@
+## v0.35.171 — the syscall-level scheduler resolver
+
+WS-RR RR8.12 Cut C4: `schedLockSetForSyscall` is the scheduler domain's
+`lockSetForSyscall` — one footprint per arm, resolved from the decoded syscall's
+own operands.  Sixteen arms declare, nineteen answer `none`, and nothing
+consumes it yet: the bracket is Cut 9's.
+
+### The same shape as the object domain's, deliberately
+
+A `match` over `SyscallId` dispatching to the arm's own resolved footprint;
+`declaredSchedFootprintSyscall`, a boolean inventory of which arms declare; and
+`schedLockSetForSyscall_undeclared_none` over that inventory, saying every other
+arm declares nothing whatever the operands and whatever the state.  That negative
+is the load-bearing direction, and for the object domain's own reason: a caller
+reading `some S` treats `S` as the complete set of **cores** the transition
+writes, so an arm that returned a footprint before its coverage proof existed
+would hand out exclusion the runtime never established.  Adding the next declared
+arm must change the inventory, and forgetting to stops the negative elaborating.
+
+The other drift direction — an arm listed as declared that has quietly become
+unconditionally `none` — is closed by the per-arm `_isSome_iff` family, each
+stating the exact operands its arm needs.
+
+It lives in `SeLe4n/Kernel/SyscallSchedFootprint.lean` rather than beside its
+object-domain twin for the reason that module exists at all: `SchedLockId` is
+declared above every module holding a lifecycle, priority, affinity, SchedContext
+or retype transition.
+
+### One operand record, because they are one syscall's operands
+
+`SyscallLockOperands` gains five optional fields — the invoked capability's
+rights, the receiver's slot base, a `.reply`'s `MessageInfo` and register
+payload, and `.tcbSetAffinity`'s destination core.  They are the scheduler
+domain's, and they are *here* rather than in a record of its own because the two
+domains ask different questions of the same arm: an object-domain footprint names
+the objects a transition writes, resolved from the capability it was invoked
+through, while a scheduler-domain footprint names the **cores** it writes,
+resolved by re-running the transition's own control flow — which needs the
+transition's own arguments.  Every field defaults to absent, so
+`lockSetForSyscall` is untouched and an arm that needs one absent answers `none`,
+which is the fail-closed direction this record has had since WS-RR RR7.10.
+
+`affinity` is **doubly** optional and must stay so: the inner `Option` is the
+unpin request, the outer says whether the caller supplied the operand at all.
+Collapsing them would make an unsupplied operand read as an unpin, which is a
+footprint for a different transition.
+
+### Two arms whose resolver is not the obvious one
+
+`.notificationSignal` routes to the **bound** arm's footprint, which is the one
+the live dispatch takes (Cut 7's own note).  `.reply` routes to the **arm's**
+footprint rather than the dispatch's, because `v0.35.163` proved the abandon's
+home-core member is one the dispatch never writes — a resolver naming the
+dispatch's would be short by it.  Both are pinned as relations between the
+`match` arm and the footprint it dispatches to, with the wrong resolver refused.
+
+### Not yet reachable from the ABI seam, and that is scheduled rather than silent
+
+`abiEntryLockOperands` builds its operands for the object domain and supplies
+none of the five new fields, so wiring this resolver to it today would make
+`.call`, `.reply`, `.replyRecv` and `.tcbSetAffinity` answer `none` — sound (an
+undeclared arm establishes no exclusion) but it would silently drop four arms out
+of the coverage this workstream is building.  Extending that builder and adding
+the scheduler domain's entry resolver is the next cut, and the resolver's own
+docstring says so.
+
+### The witness
+
+`tests/SmpCbsSuite.lean` §4.7 measures what no theorem states of a *state*: that
+a declared arm's answer IS that arm's own footprint (not a set the test supplied,
+and not a neighbouring arm's — two arms are asserted to declare different sets,
+which a resolver dispatching to one footprint for every arm would fail), and that
+the operand each arm needs is the one it refuses without.  Its control is
+`.tcbSetAffinity` on the thread operand alone.
+
+Seven anchor mutations, all decisive.  `maxLockSetSize` is unmoved and the golden
+trace is byte-identical.
+
 ## v0.35.170 — the last arm declares its scheduler footprint, and the two it replaces were false
 
 WS-RR RR8.12 Cut C3b-iv: the live `.tcbSuspend` arm declares

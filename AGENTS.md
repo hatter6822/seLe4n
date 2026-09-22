@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.170.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.171.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,19 +222,19 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78351 lines)
+- `CHANGELOG.md` (~78435 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6845 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6866 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5592 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5397 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5401 lines)
 - `tests/SmpIpcSuite.lean` (~5165 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
@@ -298,6 +298,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2103 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
@@ -328,7 +329,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~1761 lines)
 - `SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean` (~1748 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
@@ -361,9 +361,10 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1351 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1316 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
+- `tests/SmpCbsSuite.lean` (~1307 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
@@ -373,7 +374,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Bridge.lean` (~1251 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
-- `tests/SmpCbsSuite.lean` (~1218 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1173 lines)
@@ -440,7 +440,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
-- `docs/REGISTERED_DEBT.md` (~815 lines)
+- `docs/REGISTERED_DEBT.md` (~816 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
@@ -9328,6 +9328,46 @@ code may assume:
   footprint and written by neither transition, so the membership assertions are
   about the migration rather than about width.  `maxLockSetSize` is unmoved and
   the golden trace is byte-identical.
+- **...and the sixteen declared arms have ONE resolver, whose undeclared
+  direction is the load-bearing one** (WS-RR RR8.12 Cut C4, `v0.35.171`).
+  `schedLockSetForSyscall` is the scheduler domain's `lockSetForSyscall`, in the
+  same module as the arms it dispatches to and for the same layering reason, and
+  **inert** until the bracket cut.  Four things new code must respect.
+
+  (1) **Adding a declared arm changes `declaredSchedFootprintSyscall`**, or
+  `schedLockSetForSyscall_undeclared_none` stops elaborating.  That negative is
+  what the object domain's own is: a caller reading `some S` treats `S` as the
+  complete set of **cores** the transition writes, so an arm that returned a
+  footprint before its coverage proof existed would hand out exclusion the
+  runtime never established.  The other drift direction — an arm listed as
+  declared that became unconditionally `none` — is closed by the per-arm
+  `_isSome_iff` family, each stating the exact operands its arm needs.
+
+  (2) **One operand record, because they are one syscall's operands.**
+  `SyscallLockOperands` carries the scheduler domain's five extra fields beside
+  the object domain's, defaulted absent, because the two domains ask *different
+  questions of the same arm*: an object footprint names the objects a transition
+  writes, resolved from the capability it was invoked through, while a scheduler
+  footprint names the cores it writes, resolved by re-running the transition's
+  own control flow — which needs the transition's own arguments.  `affinity` is
+  **doubly** optional and must stay so: the inner `Option` is the unpin request,
+  the outer says whether the operand was supplied, and collapsing them makes an
+  unsupplied operand read as an unpin.
+
+  (3) **Two arms route to a footprint that is not the obvious one.**
+  `.notificationSignal` takes the **bound** arm's, which is the one the live
+  dispatch reaches; `.reply` takes the **arm's** rather than the dispatch's,
+  because `v0.35.163` proved the abandon's home-core member is one the dispatch
+  never writes.  Both are pinned as relations, with the wrong resolver refused.
+
+  (4) **The ABI seam does not reach it yet, and that is scheduled rather than
+  silent.**  `abiEntryLockOperands` supplies none of the five new fields, so
+  wiring this resolver to it today would make `.call`, `.reply`, `.replyRecv`
+  and `.tcbSetAffinity` answer `none` — sound, since an undeclared arm
+  establishes no exclusion, and it would silently drop four arms out of the
+  coverage this workstream is building.  Extending that builder is the next cut,
+  and the resolver's own docstring says so rather than leaving a reader to
+  discover it by wiring it up.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

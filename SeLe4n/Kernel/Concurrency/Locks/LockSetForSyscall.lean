@@ -153,6 +153,41 @@ structure SyscallLockOperands where
   on it — a caps-carrying rendezvous declares the receiver's CSpace root and
   the state-level lock its CDT write needs, and a capless one must not. -/
   message : Option IpcMessage := none
+  /-- **WS-RR RR8.12 Cut C4**: the rights the invoked endpoint capability
+  carries, which `.call`'s SCHEDULER-domain footprint reads.
+
+  The five fields below are the scheduler domain's, and they are here rather
+  than in a record of their own because they are *this syscall's operands* —
+  one syscall, one operand record.  The two domains need different subsets of
+  them because they ask different questions of the same arm: an object-domain
+  footprint names the objects a transition writes, resolved from the capability
+  it was invoked through, while a scheduler-domain footprint names the **cores**
+  it writes, resolved by re-running the transition's own control flow — which
+  needs the transition's own arguments.
+
+  Every one is optional and defaults to absent, so `lockSetForSyscall` is
+  untouched by their addition and an arm that needs one absent answers `none`,
+  which is the fail-closed direction this record has had since RR7.10. -/
+  endpointRights : Option AccessRightSet := none
+  /-- **Cut C4**: the receiving thread's capability-transfer slot base, which
+  `.call`'s and `.replyRecv`'s scheduler footprints read. -/
+  receiverSlotBase : Option SeLe4n.Slot := none
+  /-- **Cut C4**: the `MessageInfo` a `.reply` carries.  The arm's footprint
+  branches on whether the answered caller has a pending fault, and on that
+  branch `decodeFaultReply` reads this and the registers below to tell a
+  *restart* from an *abandon* — which is the one core the dispatch-level
+  footprint never names (`v0.35.163`). -/
+  replyMessageInfo : Option MessageInfo := none
+  /-- **Cut C4**: the register payload a `.reply` carries, read by
+  `decodeFaultReply` beside `replyMessageInfo`. -/
+  replyRegisters : Option (Array SeLe4n.RegValue) := none
+  /-- **Cut C4**: the core `.tcbSetAffinity` pins its target to, which is itself
+  an `Option` — `none` unpins — so this field is doubly optional and the two
+  layers mean different things: the outer says whether the caller supplied the
+  operand at all, the inner what it was.  Collapsing them would make an
+  unsupplied operand read as an unpin request, which is a footprint for a
+  different transition. -/
+  affinity : Option (Option CoreId) := none
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :
