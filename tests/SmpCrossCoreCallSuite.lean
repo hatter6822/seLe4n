@@ -8,6 +8,7 @@
 -/
 
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
+import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallNI
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
@@ -1401,6 +1402,109 @@ private def runDeclaredFootprintBracketChecks : IO Unit := do
      decide ((undeclaredRun bracketState).1.1.tagWord
                = (undeclaredBare bracketState).1.1.tagWord))
 
+/-- **WS-RR RR8.12 Cut C4b: the scheduler domain's footprint at the same ABI
+entry.**
+
+`bracketDecl` is the object domain's answer at these words; this is the
+scheduler domain's, resolved from the *same* `abiEntryPlan` and the same
+`abiEntryLockOperands`.  That sharing is what
+`declaredSchedLockSetForAbiEntry_shares_decode` states and what this group
+measures on a state: the syscall id, the caller and the operands the two
+footprints are functions of are one decode, so neither domain can bracket one
+syscall's locks around another's transition. -/
+private def bracketSchedDecl (st : SystemState) : Option SchedLockSet :=
+  declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- The same entry's scheduler-domain footprint at an **undeclared** arm. -/
+private def undeclaredSchedDecl (st : SystemState) : Option SchedLockSet :=
+  declaredSchedLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- The same state with the victim **active**, so the suspend arm's footprint is
+its full one rather than the `.Inactive` refusal's.  One field apart from
+`bracketState`, which is what makes the pair a statement about the resolver
+reading the state. -/
+private def bracketActiveVictimState : SystemState :=
+  { bracketState with
+    objects := bracketState.objects.insert bracketVictim.toObjId
+      (.tcb { mkTcb 431 30 none with threadState := .Ready }) }
+
+private def runAbiSchedFootprintChecks : IO Unit := do
+  IO.println "--- WS-RR RR8.12 Cut C4b: the scheduler footprint at the live ABI seam ---"
+  -- The seam declares a scheduler footprint for this entry at all.
+  assertBool "the ABI seam declares a SCHEDULER footprint for a `.tcbSuspend` decode"
+    (bracketSchedDecl bracketState).isSome
+  -- ...and it is the resolver's own answer at the operands the entry resolved,
+  -- not a set the test supplied — the relation, not a presence check.
+  assertBool "it is `schedLockSetForSyscall`'s answer at the entry's own decode"
+    (match bracketPlan bracketState with
+     | some (tid, decoded, stFilled) =>
+       decide (decoded.syscallId = .tcbSuspend) &&
+       (match abiEntryLockOperands decoded tid stFilled with
+        | some ops =>
+          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stFilled
+                    = bracketSchedDecl bracketState) &&
+          decide (ops.caller = tid)
+        | none => false)
+     | none => false)
+  -- **One decode, two domains.** Both footprints are functions of the same
+  -- `(tid, decoded, stFilled)` and the same operands — which is what stops one
+  -- domain's footprint being acquired around the other domain's transition.
+  assertBool "both domains resolve ONE decode and ONE operand record"
+    (match bracketPlan bracketState with
+     | some (tid, decoded, stFilled) =>
+       (match abiEntryLockOperands decoded tid stFilled with
+        | some ops =>
+          decide (Concurrency.lockSetForSyscall decoded.syscallId ops stFilled
+                    = bracketDecl bracketState) &&
+          decide (schedLockSetForSyscall decoded.syscallId ops bootCoreId stFilled
+                    = bracketSchedDecl bracketState)
+        | none => false)
+     | none => false)
+  -- The five scheduler operands are invisible to the object domain, which is what
+  -- makes ONE record for two domains safe: `lockSetForSyscall_ignores_sched_operands`
+  -- states it for every arm, and this measures it at the entry's own operands.
+  assertBool "the five scheduler operands do not move the OBJECT domain's answer"
+    (match bracketPlan bracketState with
+     | some (tid, decoded, stFilled) =>
+       (match abiEntryLockOperands decoded tid stFilled with
+        | some ops =>
+          decide (Concurrency.lockSetForSyscall decoded.syscallId
+                    { ops with endpointRights := none, receiverSlotBase := none,
+                               replyMessageInfo := none, replyRegisters := none,
+                               affinity := none } stFilled
+                    = Concurrency.lockSetForSyscall decoded.syscallId ops stFilled)
+        | none => false)
+     | none => false)
+  -- **The footprint is read off the STATE, not emitted as a fixed set.**  The
+  -- fixture's victim is `.Inactive`, which the suspend arm refuses — so its
+  -- footprint is the object-store write lock and nothing else
+  -- (`schedLockSet_suspendThreadOnCore_of_inactive`).  Flip that one field and
+  -- the executing core's run-queue lock appears, which is what a resolver that
+  -- ignored the state could not do.
+  assertBool "an INACTIVE victim declares the object-store write lock alone"
+    (match bracketSchedDecl bracketState with
+     | some fp =>
+         decide (fp.pairs = [(SchedLockId.object schedObjStoreLockId,
+                              Concurrency.AccessMode.write)])
+     | none => false)
+  assertBool "...and an ACTIVE one additionally declares the executing core's run queue"
+    (match bracketSchedDecl bracketActiveVictimState with
+     | some fp =>
+         decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write) ∈ fp.pairs)
+     | none => false)
+  -- NEGATIVE: an undeclared arm declares nothing in the scheduler domain either,
+  -- so the seam keeps the coarse serialisation rather than acquiring a footprint
+  -- nobody proved covers it.
+  assertBool "NEGATIVE: an undeclared arm declares no scheduler footprint"
+    (decide (undeclaredSchedDecl bracketState = none) &&
+     decide (undeclaredDecl bracketState = none))
+  -- CONTROL: and the object domain still declares for the same entry, so the
+  -- `none` above is the arm's and not the fixture's.
+  assertBool "CONTROL: the object domain declares for this entry too"
+    ((bracketDecl bracketState).isSome && (bracketSchedDecl bracketState).isSome)
+
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"
   IO.println "===================================="
@@ -1412,6 +1516,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runPerCoreBundleChecks
   runDeclaredFootprintBracketChecks
   runDelegatedReplyRecvFootprintChecks
+  runAbiSchedFootprintChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 

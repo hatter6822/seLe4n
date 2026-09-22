@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.171` (`lakefile.toml`) |
+| **Package version** | `0.35.172` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 404,987 across 336 Lean files |
-| **Test LoC** | 82,900 across 70 Lean test suites |
-| **Proved declarations** | 13,424 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 405,258 across 336 Lean files |
+| **Test LoC** | 83,005 across 70 Lean test suites |
+| **Proved declarations** | 13,430 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4781,10 +4781,37 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   affinity operand is doubly optional, the inner `Option` being the unpin request.
   `.notificationSignal` routes to the bound arm's footprint and `.reply` to the
   arm's rather than the dispatch's, both pinned as relations with the wrong
-  resolver refused.  The ABI seam does not reach it yet — `abiEntryLockOperands`
-  supplies none of the five new fields — which is stated at the resolver rather
-  than left to be discovered by wiring it up.  `tests/SmpCbsSuite.lean` §4.7 is
-  the witness; nothing consumes the resolver until the bracket cut.
+  resolver refused.  `tests/SmpCbsSuite.lean` §4.7 is the witness; nothing
+  consumes the resolver until the bracket cut.
+
+  **And the ABI seam resolves one decode for both domains** (WS-RR RR8.12 Cut
+  C4b, `v0.35.172`).  `declaredSchedLockSetForAbiEntry` is
+  `declaredLockSetForAbiEntry`'s twin — `abiEntryPlan`, then
+  `abiEntryLockOperands` on that plan's answer, then the domain's own resolver —
+  and Cut C4 could not have it, because that builder supplied none of the five
+  scheduler operands, so `.call`, `.reply`, `.replyRecv` and `.tcbSetAffinity`
+  would each have answered `none`: sound, an undeclared arm establishing no
+  exclusion, and four arms silently outside the coverage this workstream is
+  building.  C4b extends **that** builder rather than adding a second, because a
+  second is what lets one domain's footprint be acquired around the other
+  domain's transition; `declaredSchedLockSetForAbiEntry_shares_decode` states
+  that both footprints are functions of one `(tid, decoded, stFilled)` and one
+  operand record, and a negative refuses the resolver re-deriving the gate or the
+  capability lookup.  What one record costs is a congruence the object domain
+  must satisfy, and `lockSetForSyscall_ignores_sched_operands` is it — stated
+  over all five fields at once, so a sixth added without extending it is a field
+  nothing has checked.  Four arms grew the operands their scheduler footprint
+  refuses without, each naming what its own live dispatch arm names (the
+  `.replyRecv` payload is MR0-stripped and badged with the **reply** capability's
+  badge, SM6.D's own distinction, refused in the wrong spelling by a negative);
+  eight more are there because the scheduler domain declares for them, with
+  `.schedContextBind` naming the decoded `threadId` argument rather than the
+  capability's object.  `abiEntryGate_cspaceRoot` and
+  `abiEntrySchedReceiverCspaceRoot` make the `.replyRecv` footprint's CSpace root
+  and the gate's one lookup.  `tests/SmpCrossCoreCallSuite.lean` is the witness,
+  state-dependent by construction: an `.Inactive` victim declares the
+  object-store lock alone and an active one, one field apart, additionally
+  declares the executing core's run queue.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

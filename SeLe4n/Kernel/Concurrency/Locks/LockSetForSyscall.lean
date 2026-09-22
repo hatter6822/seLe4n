@@ -1193,6 +1193,31 @@ theorem lockSetForSyscall_ofThreadTarget_undeclared
       | exact absurd rfl h
       | simp [lockSetForSyscall, SyscallLockOperands.ofThreadTarget]
 
+/-- **WS-RR RR8.12 Cut C4b**: the object domain ignores the scheduler domain's
+five operands.
+
+`SyscallLockOperands` is ONE record for one syscall's operands, read by
+`lockSetForSyscall` here and by `schedLockSetForSyscall`
+(`SyscallSchedFootprint.lean`) there — which is what lets the ABI seam resolve
+one decode for both domains rather than two, and what
+`declaredSchedLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
+one record is that a field added for one domain could silently move the other's
+answer; this says it cannot, so `abiEntryLockOperands` supplying the five below
+left every object-domain footprint exactly where Cut C4 found it.
+
+Stated as a congruence over all five at once, so a sixth field added without
+extending it is a field nothing has checked. -/
+theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
+    (ops : SyscallLockOperands) (st : SystemState)
+    (rights : Option AccessRightSet) (slotBase : Option SeLe4n.Slot)
+    (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
+    (aff : Option (Option CoreId)) :
+    lockSetForSyscall sid
+        { ops with endpointRights := rights, receiverSlotBase := slotBase,
+                   replyMessageInfo := mi, replyRegisters := regs, affinity := aff } st
+      = lockSetForSyscall sid ops st := by
+  cases sid <;> rfl
+
 /-- **WS-SM SM3.C.9 / WS-RR RR7.11**: every arm this module has not declared is
 undeclared, whatever the operands and whatever the state.
 

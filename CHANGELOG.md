@@ -1,3 +1,92 @@
+## v0.35.172 — one decode, two domains: the ABI seam's scheduler footprint
+
+WS-RR RR8.12 Cut C4b: `declaredSchedLockSetForAbiEntry` is
+`declaredLockSetForAbiEntry`'s twin — `abiEntryPlan`, then
+`abiEntryLockOperands` on that plan's answer, then the domain's own resolver.
+Cut C4 shipped `schedLockSetForSyscall` with nothing calling it; this is what
+calls it.  Still inert until the bracket cut.
+
+### Why Cut C4 could not have it
+
+`abiEntryLockOperands` built its operands for the object domain alone and
+supplied none of the five fields the scheduler footprints read, so wiring the
+resolver to it that day would have made `.call`, `.reply`, `.replyRecv` and
+`.tcbSetAffinity` each answer `none` — an *undeclared* arm, which the bracket
+treats as "no exclusion established" and which is therefore sound, and which
+would have silently dropped four arms out of the very coverage this workstream
+is building.  The resolver's own docstring said so rather than leaving a reader
+to discover it by wiring it up; this cut closes it and rewrites that paragraph.
+
+### One builder, not two
+
+The obvious shape is a second operand builder for the scheduler domain.  It is
+also the shape that lets one domain's footprint be acquired around the other
+domain's transition: two builders may resolve a capability differently, decode a
+different argument, or read a different state.  So C4b extends the one builder,
+and `declaredSchedLockSetForAbiEntry_shares_decode` states the alternative as a
+fact — both footprints are functions of the *same* `(tid, decoded, stFilled)`
+and the *same* operand record.  A Tier 3 negative, scoped to the declaration,
+refuses the resolver re-deriving the gate or the capability lookup.
+
+### What one record costs, and the theorem that pays it
+
+One record for two domains means a field added for one domain could silently
+move the other's answer.  `lockSetForSyscall_ignores_sched_operands` says it
+cannot — stated as a congruence over all five fields at once, so a sixth added
+without extending it is a field nothing has checked, and measured at the seam's
+own operands in the witness.  That is what makes "the object domain's answer is
+byte-identical to Cut C4's" a theorem rather than a reading of two definitions.
+
+### The four arms that grew, and the eight that arrived
+
+Each names what its own live dispatch arm names.  `.call` carries the invoked
+capability's rights and the receiver's slot base, because
+`endpointCallDispatchWriteSet` re-runs the dispatch.  `.reply` carries the
+`MessageInfo` and the register payload `decodeFaultReply` reads to tell a
+restart from an abandon — the branch whose home-core member the dispatch-level
+footprint never names (`v0.35.163`).  `.replyRecv` carries the reply *payload*:
+MR0 stripped and badged with the **reply** capability's badge rather than the
+endpoint receive cap's, which is SM6.D's own distinction and is refused in the
+wrong spelling by a negative.  `.tcbSetAffinity` carries the destination core
+through both decoders, since its inner `Option` is the unpin request.
+
+Eight arms the object domain declares nothing for are here because the scheduler
+domain declares for them — the five TCB-directed ones, the three SchedContext
+ones and the retype.  `.schedContextBind` names the decoded `threadId` argument
+rather than the capability's object, because that is the thread its own live arm
+binds and the raw operand is validated at its own lift.  `lockSetForSyscall`
+answers `none` at every one of them whatever these fields hold.
+
+### The `.replyRecv` CSpace root is the gate's own
+
+The live arm hands `replyRecvBody` the gate's `cspaceRoot`; the scheduler
+resolver has no gate, so it reads the caller's TCB at the same state.
+`abiEntryGate_cspaceRoot` (the gate's root is the caller's, and the TCB it
+returns is the one the state holds) and `abiEntrySchedReceiverCspaceRoot` make
+those one lookup rather than two readings of one question — the shape that would
+let a footprint name a root the transition does not walk.
+
+### Witness
+
+`tests/SmpCrossCoreCallSuite.lean`'s new group drives the live ABI entry: the
+seam declares a scheduler footprint, it *is* `schedLockSetForSyscall`'s answer at
+the entry's own decode, both domains resolve one decode and one operand record,
+the five scheduler operands leave the object domain's answer where it was, an
+undeclared arm declares nothing in either domain, and the object domain still
+declares for the same entry as the control.
+
+It is **state-dependent by construction**: `bracketState`'s victim is
+`.Inactive`, which the suspend arm refuses, so its footprint is the object-store
+write lock alone; `bracketActiveVictimState` is that state one field apart, and
+there the executing core's run-queue lock appears — which a resolver ignoring the
+state could not produce.
+
+### Gates
+
+Sixteen anchor mutations, all decisive, including both new negatives in
+isolation.  `maxLockSetSize` unmoved; the golden trace byte-identical; no
+production behaviour changed, since nothing consumes either resolver yet.
+
 ## v0.35.171 — the syscall-level scheduler resolver
 
 WS-RR RR8.12 Cut C4: `schedLockSetForSyscall` is the scheduler domain's

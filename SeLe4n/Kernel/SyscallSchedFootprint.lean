@@ -12,6 +12,7 @@ import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
 import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.Scheduler.Operations.SchedLockSet
+import SeLe4n.Kernel.SyscallLockBracket
 
 /-!
 # `v0.35.167` (WS-RR RR8.12 Cut C3b-i) — the syscall arms whose own modules cannot name a `SchedLockId`
@@ -1827,15 +1828,21 @@ dispatch takes — Cut 7's own note, and the reason
 member is one the dispatch never writes, so a resolver that named the dispatch's
 would be short by it.
 
-**Not yet reachable from the ABI seam, and that is a scheduled gap rather than a
-silence.**  `abiEntryLockOperands` (`SyscallLockBracket.lean`) builds its
-operands for the object domain and supplies none of the five fields above, so
-wiring this resolver to it today would make `.call`, `.reply`, `.replyRecv` and
-`.tcbSetAffinity` answer `none` — an *undeclared* arm, which the bracket treats
-as "no exclusion established" and is therefore sound, but which would silently
-drop four arms out of the very coverage this workstream is building.  Extending
-that builder and adding the scheduler domain's own entry resolver is the next
-cut; nothing consumes this one until then. -/
+**Reachable from the ABI seam since Cut C4b** (§14's
+`declaredSchedLockSetForAbiEntry`), which is what makes the paragraph above a
+statement about the live entry rather than about a resolver nobody calls.  Cut
+C4 shipped this with `abiEntryLockOperands` (`SyscallLockBracket.lean`) building
+its operands for the object domain alone: it supplied none of the five fields
+named above, so `.call`, `.reply`, `.replyRecv` and `.tcbSetAffinity` would each
+have answered `none` — an *undeclared* arm, which the bracket treats as "no
+exclusion established" and which is therefore sound, and which would have
+silently dropped four arms out of the very coverage this workstream is building.
+C4b extended that one builder rather than adding a second: **the two domains
+share `abiEntryPlan` and `abiEntryLockOperands`**
+(`declaredSchedLockSetForAbiEntry_shares_decode`), so the syscall id, the caller
+and the operands each domain's footprint is a function of are one decode.  A
+second builder is the shape that lets one domain's footprint be acquired around
+the other domain's transition. -/
 def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
     (executingCore : CoreId) (st : SystemState) : Option SchedLockSet :=
   match sid with
@@ -2099,5 +2106,122 @@ theorem schedLockSetForSyscall_replyRecv_isSome_iff
               cases ops.receiverSlotBase <;>
                 simp [hA, SchedLockSet.ofList?, schedLockSet_endpointReplyRecvOnCore,
                   schedFootprintOfCores_keys_nodup]
+
+-- ============================================================================
+-- §14  The ABI entry's scheduler-domain footprint
+-- ============================================================================
+
+open SeLe4n.Kernel.Concurrency (LockSet lockSetForSyscall)
+
+/-- **WS-RR RR8.12 Cut C4b: the scheduler-domain footprint the live ABI seam
+declares** — `declaredLockSetForAbiEntry`'s twin, clause for clause.
+
+`schedLockSetForSyscall` at the **decoded** syscall id, the caller the executing
+core is running, and the operands that caller's capability names, every input
+derived from the entry's own resolution rather than supplied alongside it.  A
+caller cannot bracket one syscall's scheduler footprint around another's.
+
+**It shares `abiEntryPlan` and `abiEntryLockOperands` with the object domain**
+rather than re-deriving either, which is what makes "the two domains bracket the
+same syscall" a fact rather than a hope: a decode that resolves differently for
+the two would put one domain's footprint around the other domain's transition.
+Cut C4b is what made that sharing possible — the builder now supplies the five
+operands the scheduler footprints read and the eight arms the object domain
+declares nothing for, so the two resolvers see one decode and disagree only
+about which *locks* it implies. -/
+def declaredSchedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
+    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    Option SchedLockSet :=
+  match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  | none => none
+  | some (tid, decoded, stFilled) =>
+    (abiEntryLockOperands decoded tid stFilled).bind
+      (fun ops => schedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
+
+/-- **Cut C4b**: an entry whose plan does not resolve declares nothing — the
+fail-closed direction the object domain's resolver takes for the same reason,
+and the one a bracket reads as "no exclusion established". -/
+@[simp] theorem declaredSchedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState)
+    (h : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none := by
+  unfold declaredSchedLockSetForAbiEntry
+  rw [h]
+
+/-- **Cut C4b**: and an entry whose decoded arm is undeclared declares nothing,
+whatever its operands resolve to.
+
+The seam-level reading of `schedLockSetForSyscall_undeclared_none`, and the
+statement a bracket needs: the nineteen arms this workstream has not given a
+scheduler footprint fall back to the coarse serialisation rather than acquiring
+a footprint nobody proved covers them. -/
+theorem declaredSchedLockSetForAbiEntry_undeclared_none (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (stFilled : SystemState)
+    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = some (tid, decoded, stFilled))
+    (h : declaredSchedFootprintSyscall decoded.syscallId = false) :
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none := by
+  unfold declaredSchedLockSetForAbiEntry
+  rw [hPlan]
+  simp only
+  cases hOps : abiEntryLockOperands decoded tid stFilled with
+  | none => rfl
+  | some ops =>
+      simp only [Option.bind_some]
+      exact schedLockSetForSyscall_undeclared_none decoded.syscallId ops executingCore stFilled h
+
+/-- **Cut C4b**: the two domains resolve ONE decode.
+
+Stated rather than left to be read off two definitions: both resolvers run
+`abiEntryPlan` and then `abiEntryLockOperands` on its answer, so the syscall id,
+the caller and the operands each domain's footprint is a function of are the same
+three values.  A decode resolved twice is the shape that lets one domain's
+footprint be acquired around the other domain's transition. -/
+theorem declaredSchedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (stFilled : SystemState) (ops : SyscallLockOperands)
+    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = some (tid, decoded, stFilled))
+    (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
+    declaredLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+        = lockSetForSyscall decoded.syscallId ops stFilled ∧
+    declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+        = schedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
+  refine ⟨?_, ?_⟩
+  · unfold declaredLockSetForAbiEntry
+    rw [hPlan]
+    simp only
+    rw [hOps]
+    rfl
+  · unfold declaredSchedLockSetForAbiEntry
+    rw [hPlan]
+    simp only
+    rw [hOps]
+    rfl
+
+/-- **Cut C4b**: the receiver CSpace root the `.replyRecv` footprint resolves IS
+the root the live arm installs through.
+
+The live arm hands `replyRecvBody` the **gate's** `cspaceRoot`; the scheduler
+resolver has no gate to read, so it takes the caller's TCB at the same state.
+`abiEntryLockOperands_caller` says that caller is the entry's own `tid`, and
+`abiEntryGate_cspaceRoot` says the gate's root is that thread's — so the two are
+one lookup rather than two readings of one question, which is the shape that
+would let a footprint name a root the transition does not walk. -/
+theorem abiEntrySchedReceiverCspaceRoot (decoded : SyscallDecodeResult)
+    (tid : SeLe4n.ThreadId) (s : SystemState) (ops : Concurrency.SyscallLockOperands)
+    (tcb : TCB) (gate : SyscallGate)
+    (hOps : abiEntryLockOperands decoded tid s = some ops)
+    (hGate : abiEntryGate decoded tid s = some (tcb, gate)) :
+    s.getTcb? ops.caller = some tcb ∧ gate.cspaceRoot = tcb.cspaceRoot := by
+  obtain ⟨hLookup, hRoot, _⟩ := abiEntryGate_cspaceRoot decoded tid s tcb gate hGate
+  rw [abiEntryLockOperands_caller decoded tid s ops hOps]
+  exact ⟨hLookup, hRoot⟩
 
 end SeLe4n.Kernel

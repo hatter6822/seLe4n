@@ -19516,4 +19516,70 @@ run_check "INVARIANT" rg -n '^  runSyscallSchedResolverScenarios$' tests/SmpCbsS
 run_check "INVARIANT" rg -F -n 'NEGATIVE: the priority arm and the unbind arm declare DIFFERENT sets' tests/SmpCbsSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL: .tcbSetAffinity refuses on the thread operand ALONE' tests/SmpCbsSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C4b (`v0.35.172`): the ABI entry's scheduler-domain resolver.
+# ============================================================================
+#
+# Cut C4 shipped `schedLockSetForSyscall` with nothing calling it: the entry's
+# operand builder served the object domain alone.  C4b wires it to the live seam
+# by extending that ONE builder rather than adding a second, which is what makes
+# "the two domains bracket the same syscall" a fact -- a decode resolved twice is
+# the shape that lets one domain's footprint be acquired around the other
+# domain's transition.
+run_check "INVARIANT" rg -n '^def declaredSchedLockSetForAbiEntry \(ctx : LabelingContext\) \(executingCore : CoreId\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredSchedLockSetForAbiEntry_shares_decode \(ctx : LabelingContext\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredSchedLockSetForAbiEntry_undeclared_none \(ctx : LabelingContext\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem declaredSchedLockSetForAbiEntry_of_no_plan \(ctx : LabelingContext\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The sharing is a RELATION and not a resemblance: the resolver's own body runs
+# `abiEntryPlan` and then binds `abiEntryLockOperands` on that plan's answer, and
+# re-derives neither the gate nor the capability lookup.  The negative is scoped
+# to this declaration because the file legitimately names both elsewhere (the
+# `.replyRecv` CSpace-root agreement is stated over them).
+run_check "INVARIANT" bash -lc 'rg -U -n "match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with(\n {2,}[^\n]*)*\n {4,}\(abiEntryLockOperands decoded tid stFilled\)\.bind" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def declaredSchedLockSetForAbiEntry[^\n]*(\n([ \t][^\n]*)?)*(abiEntryGate|syscallLookupCap)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# One record, two domains: the object resolver must be blind to the five fields
+# the scheduler footprints read, or a field added for one domain silently moves
+# the other's answer.  Stated over all five at once, so a sixth added without
+# extending it is a field nothing has checked.
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_ignores_sched_operands \(sid : SyscallId\)' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+# The `.replyRecv` footprint reads a receiver's CSpace root off the STATE where
+# the live arm reads the gate's; these are the two theorems that make those one
+# lookup rather than two readings of one question.
+run_check "INVARIANT" rg -n '^theorem abiEntryGate_cspaceRoot \(decoded : SyscallDecodeResult\)' SeLe4n/Kernel/SyscallLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem abiEntrySchedReceiverCspaceRoot \(decoded : SyscallDecodeResult\)' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The four arms whose operands GREW, each pinned as a relation between the arm
+# and the operand its own scheduler footprint refuses without.  The gap is
+# bounded to the arm's own continuation lines (>= 8 spaces), so it cannot reach a
+# sibling arm at 6.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.call, \.object epId =>(\n {8,}[^\n]*)*\n {8,}endpointRights := some cap\.rights" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.call, \.object epId =>(\n {8,}[^\n]*)*\n {8,}receiverSlotBase := some decoded\.capRecvSlot" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply, \.replyCap rid =>(\n {8,}[^\n]*)*\n {8,}replyMessageInfo := some decoded\.msgInfo" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.reply, \.replyCap rid =>(\n {8,}[^\n]*)*\n {8,}replyRegisters := some decoded\.msgRegs" SeLe4n/Kernel/SyscallLockBracket.lean'
+# `.replyRecv` badges the reply payload with the REPLY capability's badge and
+# strips MR0, exactly as the live arm does -- the endpoint receive cap's badge is
+# a different value and would make the footprint a function of a message the
+# transition never builds.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId =>(\n {8,}[^\n]*)*\n {8,}\{ registers := full\.extract 1 full\.size" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId =>(\n {8,}[^\n]*)*\n {8,}badge := replyBadge" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId =>(\n {8,}[^\n]*)*\n {8,}badge := cap\.badge" SeLe4n/Kernel/SyscallLockBracket.lean'
+# Three of the eight arms the OBJECT domain declares nothing for, each naming its
+# target the way its own live dispatch arm names it: the affinity through both
+# decoders (its `Option` layer is the unpin request), the bind through the
+# decoded `threadId` argument rather than the capability's object, the retype
+# through the decoded `targetObj`.
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>(\n {8,}[^\n]*)*\n {8,}some \(\.ofThreadTarget tid \(SeLe4n\.ThreadId\.ofNat args\.threadId\)\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.lifecycleRetype, \.object _ =>(\n {8,}[^\n]*)*\n {8,}\| \.ok args => some \(\.ofObjectTarget tid args\.targetObj\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+# The witness: both domains at ONE entry, the object domain's answer measured to
+# be unmoved by the five new operands, and the scheduler footprint read off the
+# STATE -- an inactive victim declares the object-store lock alone and an active
+# one additionally declares the executing core's run queue, which is what a
+# state-ignoring resolver could not do.
+run_check "INVARIANT" rg -n 'private def runAbiSchedFootprintChecks' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n '^  runAbiSchedFootprintChecks$' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -F -n 'both domains resolve ONE decode and ONE operand record' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -F -n 'the five scheduler operands do not move the OBJECT domain' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -F -n 'and an ACTIVE one additionally declares the executing core' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -F -n 'NEGATIVE: an undeclared arm declares no scheduler footprint' tests/SmpCrossCoreCallSuite.lean
+
 finalize_report

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.171.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.172.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9360,14 +9360,65 @@ code may assume:
   because `v0.35.163` proved the abandon's home-core member is one the dispatch
   never writes.  Both are pinned as relations, with the wrong resolver refused.
 
-  (4) **The ABI seam does not reach it yet, and that is scheduled rather than
-  silent.**  `abiEntryLockOperands` supplies none of the five new fields, so
-  wiring this resolver to it today would make `.call`, `.reply`, `.replyRecv`
-  and `.tcbSetAffinity` answer `none` — sound, since an undeclared arm
-  establishes no exclusion, and it would silently drop four arms out of the
-  coverage this workstream is building.  Extending that builder is the next cut,
-  and the resolver's own docstring says so rather than leaving a reader to
-  discover it by wiring it up.
+  (4) **The ABI seam reaches it since Cut C4b** (`v0.35.172`, the bullet below).
+  Cut C4 shipped the resolver with nothing calling it, because
+  `abiEntryLockOperands` supplied none of the five new fields — so wiring it that
+  day would have made `.call`, `.reply`, `.replyRecv` and `.tcbSetAffinity`
+  answer `none`: sound, since an undeclared arm establishes no exclusion, and it
+  would have silently dropped four arms out of the coverage this workstream is
+  building.  The resolver's docstring said so rather than leaving a reader to
+  discover it by wiring it up, and C4b closed it by extending that one builder.
+- **...and the ABI seam resolves ONE decode for BOTH domains** (WS-RR RR8.12
+  Cut C4b, `v0.35.172`).  `declaredSchedLockSetForAbiEntry` is
+  `declaredLockSetForAbiEntry`'s twin clause for clause — `abiEntryPlan`, then
+  `abiEntryLockOperands` on that plan's answer, then the domain's own resolver —
+  and it is still **inert** until the bracket cut.  Five things new code must
+  respect.
+
+  (1) **One builder, not two, and that is the whole of the cut.**  The obvious
+  shape is a second operand builder for the scheduler domain; it is the shape
+  that lets one domain's footprint be acquired around the other domain's
+  transition, because two builders may resolve a capability differently, decode
+  a different argument, or read a different state.
+  `declaredSchedLockSetForAbiEntry_shares_decode` states the alternative as a
+  fact: both footprints are functions of the *same* `(tid, decoded, stFilled)`
+  and the *same* `ops`.  A Tier 3 negative refuses the resolver re-deriving the
+  gate or the capability lookup.
+
+  (2) **What that costs is a congruence the object domain must satisfy.**  One
+  record for two domains means a field added for one could move the other's
+  answer, so `lockSetForSyscall_ignores_sched_operands` says it cannot — stated
+  over all five fields at once, so a sixth added without extending it is a field
+  nothing has checked, and measured at the seam's own operands in the witness.
+  That is what makes "the object domain is byte-identical to Cut C4's" a theorem
+  rather than a reading of two definitions.
+
+  (3) **Four arms grew the operands their scheduler footprint refuses without,
+  and each names what its own live dispatch arm names.**  `.call` the invoked
+  capability's rights and the receiver's slot base; `.reply` the `MessageInfo`
+  and register payload `decodeFaultReply` reads to tell a restart from an
+  abandon; `.replyRecv` the reply *payload* — MR0 stripped, badged with the
+  **reply** capability's badge rather than the endpoint receive cap's, which is
+  SM6.D's own distinction and is refused in the wrong spelling by a negative;
+  `.tcbSetAffinity` the destination core through both decoders, since its inner
+  `Option` is the unpin request.
+
+  (4) **Eight arms are here because the SCHEDULER domain declares for them** —
+  the five TCB-directed ones, the three SchedContext ones and the retype — and
+  `lockSetForSyscall` answers `none` at every one of them whatever these fields
+  hold.  `.schedContextBind` names the **decoded `threadId` argument** rather
+  than the capability's object, because that is the thread its own live arm
+  binds, and its raw operand is validated at its own lift.
+
+  (5) **The `.replyRecv` footprint's CSpace root is the gate's own.**  The live
+  arm passes `gate.cspaceRoot`; the scheduler resolver has no gate, so it reads
+  the caller's TCB at the same state.  `abiEntryGate_cspaceRoot` and
+  `abiEntrySchedReceiverCspaceRoot` are what make those one lookup rather than
+  two readings of one question — the shape that would let a footprint name a
+  root the transition does not walk.  The witness is state-dependent by
+  construction: an `.Inactive` victim declares the object-store lock alone and an
+  **active** one, one field apart, additionally declares the executing core's run
+  queue, which a resolver ignoring the state could not do.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with
