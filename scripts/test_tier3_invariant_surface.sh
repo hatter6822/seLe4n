@@ -10675,7 +10675,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureReplenishCor
 # The exactness halves -- what each arm writes, against what it declares.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbind_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # ...and the declarations' own halves, the sweep arm's among them.
@@ -19673,5 +19673,29 @@ run_negative_check "INVARIANT" rg -F -n 'schedFootprintCoversWrites_refl' SeLe4n
 # into no image, and every proof here consumes a confinement theorem from the
 # staged `NonInterferenceCrossCore`.
 run_check "INVARIANT" rg -F -n 'import SeLe4n.Kernel.SyscallSchedContainment' SeLe4n/Platform/Staged.lean
+
+# ============================================================================
+# WS-RR RR8.12 Cut C6b (`v0.35.175`): the three arms whose replenish segment
+# resolves through a SchedContext or a thread's affinity.
+# ============================================================================
+#
+# The first arms whose segment NAMES cores, so the clause is an exactness claim
+# rather than a whole-state frame.  Each coverage proof is one application of
+# the bridge, because each arm's `_ne` frame is keyed on the FOOTPRINT's own
+# segment: a resolution-keyed frame answers a different question that every
+# consumer would then have to case-split to reach.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextConfigureReplenishCores st vScId\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextUnbindOnCore_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ schedContextUnbindReplenishCores st vScId\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ setThreadCpuAffinityReplenishCores st tid affinity" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# ...and the resolution-keyed form keeps its own name, so the plain `_ne` cannot
+# silently become the narrower claim.  The rename is the point: every consumer
+# wants the footprint-keyed one, and a family where `_ne` means two things at two
+# arms is the shape a coverage proof gets wrong without noticing.
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ≠ SchedContextOps\.schedContextReplenishHome" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# The three coverage theorems.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
 
 finalize_report

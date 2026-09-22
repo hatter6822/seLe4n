@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.174.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.175.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78435 lines)
+- `CHANGELOG.md` (~78741 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6866 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6955 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
@@ -285,6 +285,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2360 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
@@ -298,7 +299,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2103 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
@@ -342,6 +342,7 @@ To find files that need pagination today, run:
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1526 lines)
 - `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
@@ -349,7 +350,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1451 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1421 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1420 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
@@ -358,10 +358,10 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
+- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1376 lines)
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
-- `SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean` (~1351 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `tests/SmpCbsSuite.lean` (~1307 lines)
@@ -9534,6 +9534,35 @@ code may assume:
   resolver names and what `API.dispatchWithCap{,Checked}` routes to; the bare
   signal's footprint is registered as superseded in `SchedFootprintCensus`, and a
   coverage theorem for it would be a claim about a transition no syscall reaches.
+- **...and the first three core-naming segments are covered, with the `_ne`
+  frames keyed on the FOOTPRINT rather than on a resolution** (WS-RR RR8.12 Cut
+  C6b, `v0.35.175`).  `.schedContextConfigure`, `.schedContextUnbind` and
+  `.tcbSetAffinity` are the first arms whose replenish segment names cores, so
+  their clause is an **exactness** claim rather than a whole-state frame.  Three
+  things new code must respect.
+
+  (1) **An arm's `_ne` frame is keyed on its own replenish segment.**
+  `schedFootprintCoversWrites`'s clause asks *unchanged at every core the
+  footprint does not name*; a frame keyed on a resolution — "`c` is not this
+  SchedContext's replenish home", "`c` is not this thread's target core" —
+  answers a different question that every consumer must then case-split to reach,
+  which is the duplication this family exists to avoid.  So the footprint-keyed
+  form carries the plain `_ne` name and the resolution-keyed one is `_ne_of_sc` /
+  `_ne_of_tcb`; a Tier 3 negative refuses the plain name re-acquiring the narrower
+  hypothesis, because a family where `_ne` means two things at two arms is exactly
+  what a coverage proof gets wrong without noticing.
+
+  (2) **An unresolved segment is a refusal, not a gap.**  A
+  `.schedContextConfigure` whose SchedContext does not resolve, and a
+  `.schedContextUnbind` whose SchedContext has no bound thread, both make the
+  *transition* fail — so the empty segment costs the claim nothing, and the proof
+  says so by deriving the contradiction rather than by assuming resolution.
+
+  (3) **`allCores` is a segment, and the clause is then vacuous — correctly.**  A
+  SchedContext bound to a thread the store no longer holds has no `cpuAffinity`
+  left to read, so the unbind sweeps every core's replenishment and the footprint
+  declares every core's lock; there is no core outside it, which is the honest
+  reading rather than a hole.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

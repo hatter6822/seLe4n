@@ -292,4 +292,84 @@ theorem not_schedFootprintCoversWrites_of_replenish_moved (S : SchedLockSet)
     ¬ schedFootprintCoversWrites S st st' :=
   fun h => hMoved (h.2.2 d hAbsent)
 
+-- ============================================================================
+-- §8  The SchedContext arms
+-- ============================================================================
+--
+-- The first arms whose replenish segment names a core, so the clause is an
+-- **exactness** claim rather than a whole-state frame.  Each is one application
+-- of the bridge, because RR8.12's own `_ne` frames are keyed on the footprint's
+-- segment: a resolution-keyed frame answers a different question that every
+-- consumer would then have to case-split to reach, which is the duplication this
+-- family exists to avoid.
+
+/-- **WS-RR RR8.12 Cut C6b**: `.schedContextConfigure`'s footprint covers its
+writes.
+
+A reconfiguration rewrites the reservation and re-queues its replenishment on the
+bound thread's home, and nothing else — and the unresolved arm is not a gap but a
+refusal, since the transition's own branch errors there. -/
+theorem schedLockSet_schedContextConfigureOnCore_coversWrites (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
+    (S : SchedLockSet) (hObjInv : st.objects.invExt)
+    (hStep : SchedContextOps.schedContextConfigure vScId budget period priority deadline
+      domain st = .ok ((), st'))
+    (hS : SchedLockSet.ofList? (schedLockSet_schedContextConfigureOnCore st vScId.val)
+      = some S) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S (schedContextWriteSet st vScId.val)
+    (schedContextConfigureReplenishCores st vScId.val) st st'
+    (SchedLockSet.ofList?_pairs hS)
+    (schedContextConfigure_confinedToCores vScId budget period priority deadline domain st st'
+      hObjInv hStep)
+    (fun d hd => schedContextConfigure_replenishQueueOnCore_ne st st' vScId budget period
+      priority deadline domain d hd hStep)
+
+/-- **Cut C6b**: `.schedContextUnbind`'s footprint covers its writes.
+
+Three resolutions, and the third is why the segment can be `allCores`: a
+SchedContext bound to a thread the store no longer holds has no `cpuAffinity`
+left to read, so the unbind sweeps every core's replenishment and the footprint
+declares every core's lock. -/
+theorem schedLockSet_schedContextUnbindOnCore_coversWrites (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : SchedLockSet)
+    (hStep : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi))
+    (hS : SchedLockSet.ofList?
+      (schedLockSet_schedContextUnbindOnCore st vScId.val executingCore) = some S) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S
+    (schedContextUnbindOnCoreWriteSet st vScId.val executingCore)
+    (schedContextUnbindReplenishCores st vScId.val) st st'
+    (SchedLockSet.ofList?_pairs hS)
+    (schedContextUnbindOnCore_confinedToCores vScId executingCore st st' sgi hStep)
+    (fun d hd => schedContextUnbindOnCore_replenishQueueOnCore_ne st st' vScId executingCore
+      sgi d hd hStep)
+
+-- ============================================================================
+-- §9  The affinity arm
+-- ============================================================================
+
+/-- **Cut C6b**: `.tcbSetAffinity`'s footprint covers its writes.
+
+Two cores in the segment when the thread holds a reservation — the home it leaves
+and the one it is pinned to — and none when it holds none.  The unpin request is
+`affinity = none`, whose destination is the boot core, so the segment names that
+core rather than reading "no core" as "no move". -/
+theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (S : SchedLockSet)
+    (hObjInv : st.objects.invExt)
+    (hStep : setThreadCpuAffinityWithMigration st tid affinity executingCore = .ok (st', sgi))
+    (hS : SchedLockSet.ofList? (schedLockSet_setThreadCpuAffinityOnCore st tid affinity)
+      = some S) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S (setThreadCpuAffinityWriteSet st tid affinity)
+    (setThreadCpuAffinityReplenishCores st tid affinity) st st'
+    (SchedLockSet.ofList?_pairs hS)
+    (setThreadCpuAffinityWithMigration_confinedToCores st st' tid affinity executingCore sgi
+      hObjInv hStep)
+    (fun d hd => setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne st st' tid affinity
+      executingCore sgi d hObjInv hd hStep)
+
 end SeLe4n.Kernel

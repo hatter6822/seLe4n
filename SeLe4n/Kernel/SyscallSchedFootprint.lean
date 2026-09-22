@@ -423,6 +423,57 @@ theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context
             setThreadCpuAffinity_scheduler_eq st stSet tid affinity hSet]
   · exact absurd h (by simp)
 
+/-- **WS-RR RR8.12 Cut C6b: the `.tcbSetAffinity` arm's exactness frame.**
+
+Keyed on the footprint's own replenish segment rather than on a resolution, which
+is what a coverage proof consumes: `schedFootprintCoversWrites`'s replenish clause
+asks "unchanged at every core the footprint does not name", and a
+resolution-conditional frame answers a different question that the consumer then
+has to case-split to reach.  The `none` arm is
+`…_replenishQueueOnCore_of_no_context`'s claim with the segment empty; the `some`
+arm is the migration's own `_other` frame, at the pair the segment declares —
+`setThreadCpuAffinity_determineTargetCore_eq` is what makes the declared
+destination the migration's destination rather than a second reading of it. -/
+theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne (st st' : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId) (hInv : st.objects.invExt)
+    (hne : c ∉ setThreadCpuAffinityReplenishCores st tid affinity)
+    (h : setThreadCpuAffinityWithMigration st tid affinity executingCore = .ok (st', sgi)) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold setThreadCpuAffinityReplenishCores at hne
+  cases hBind : (st.getTcb? tid).bind (fun tcb => tcb.schedContextBinding.scId?) with
+  | none =>
+      exact setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context st st' tid
+        affinity executingCore sgi c hBind h
+  | some scId =>
+      rw [hBind] at hne
+      simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+      unfold setThreadCpuAffinityWithMigration at h
+      split at h
+      · rename_i tcb hTcb
+        split at h
+        · exact absurd h (by simp)
+        · split at h
+          · exact absurd h (by simp)
+          · cases hSet : setThreadCpuAffinity st tid affinity with
+            | error e => rw [hSet] at h; exact absurd h (by simp)
+            | ok stSet =>
+              rw [hSet] at h
+              dsimp only at h
+              have hScId : tcb.schedContextBinding.scId? = some scId := by
+                rw [hTcb] at hBind; simpa using hBind
+              rw [hScId] at h
+              dsimp only at h
+              rw [Except.ok.injEq, Prod.mk.injEq] at h
+              have hNew := setThreadCpuAffinity_determineTargetCore_eq st stSet tid affinity
+                hInv hSet
+              rw [← h.1, migrateRunQueueOnAffinityChange_replenishQueueOnCore, hNew,
+                migrateSchedContextReplenishment_replenishQueueOnCore_other stSet scId
+                  (determineTargetCore st tid) (affinity.getD Concurrency.bootCoreId) c
+                  (fun hEq => hne.1 hEq.symm) (fun hEq => hne.2 hEq.symm),
+                setThreadCpuAffinity_scheduler_eq st stSet tid affinity hSet]
+      · exact absurd h (by simp)
+
 /-- **`v0.35.167`: the live `.tcbSetAffinity` arm's scheduler-domain footprint.** -/
 def schedLockSet_setThreadCpuAffinityOnCore (st : SystemState) (tid : SeLe4n.ThreadId)
     (affinity : Option CoreId) : List (SchedLockId × Concurrency.AccessMode) :=
@@ -877,7 +928,7 @@ Its two halves are a priority rewrite with an optional run-queue re-bucket and a
 domain rewrite; a `rewriteObject` frames the scheduler outright and a
 `setRunQueueOnCore` frames every replenish queue.  What the arm *does* write is
 the purge one step earlier, which is what
-`schedContextConfigure_replenishQueueOnCore_ne` below is stated over. -/
+`schedContextConfigure_replenishQueueOnCore_ne_of_sc` below is stated over. -/
 theorem schedContextConfigureBoundPropagate_replenishQueueOnCore (stStored : SystemState)
     (scId : SeLe4n.SchedContextId) (boundTid : SeLe4n.ThreadId) (boundTcb : TCB)
     (hBound : stStored.getTcb? boundTid = some boundTcb) (priority domain : Nat)
@@ -898,7 +949,7 @@ queue** — the SC's own home core's, where its purge lands.
 The exactness half of `schedLockSet_schedContextConfigureOnCore`'s one-core
 segment: every other core's queue is untouched, so the footprint is neither
 false nor wider than the operation. -/
-theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
+theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat)
     (sc : SchedContext) (c : CoreId)
     (hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) = some sc)
@@ -929,6 +980,32 @@ theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
             rw [← h.2, hSched]
             exact SchedContextOps.purgeReplenishmentOnCore_replenishQueueOnCore_ne _ _ _ _ hne.symm
     · exact absurd h (by simp)
+
+/-- **WS-RR RR8.12 Cut C6b: the `.schedContextConfigure` arm's exactness frame.**
+
+Keyed on the footprint's own replenish segment, which is what a coverage proof
+consumes; `…_ne_of_sc` above is the resolution-keyed form it is built from.  The
+unresolved arm is not a gap but a refusal — the transition's own second branch
+errors there — so the segment being empty costs the claim nothing. -/
+theorem schedContextConfigure_replenishQueueOnCore_ne (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (budget period priority deadline domain : Nat) (c : CoreId)
+    (hne : c ∉ schedContextConfigureReplenishCores st vScId.val)
+    (h : SchedContextOps.schedContextConfigure vScId budget period priority deadline domain st
+      = .ok ((), st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold schedContextConfigureReplenishCores at hne
+  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none =>
+      exfalso
+      unfold SchedContextOps.schedContextConfigure at h
+      split at h
+      · exact absurd h (by simp)
+      · rw [hSc] at h
+        exact absurd h (by simp)
+  | some sc =>
+      rw [hSc] at hne
+      exact schedContextConfigure_replenishQueueOnCore_ne_of_sc st st' vScId budget period
+        priority deadline domain sc c hSc (by simpa using hne) h
 
 /-- **`v0.35.168`: a `.schedContextUnbind` whose bound TCB resolves writes
 exactly one replenish queue** — that thread's home core's, where its purge
@@ -1001,6 +1078,62 @@ theorem schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb (st st' : System
 -- for a SchedContext target every earlier step of the cleanup is the identity,
 -- and for a TCB target the arm IS the first step -- so this whole footprint is
 -- pre-state computable with no mid-state bridge.
+
+/-- **WS-RR RR8.12 Cut C6b: the `.schedContextUnbind` arm's exactness frame.**
+
+Keyed on the footprint's own replenish segment; `…_ne_of_tcb` above is the
+resolution-keyed form it is built from.  Three resolutions and only one of them
+names a core: a SchedContext that resolves to no bound thread makes the
+transition *fail*, and one bound to a thread the store no longer holds has no
+`cpuAffinity` left to read, so the unbind sweeps every core and the segment is
+`allCores` — where the claim is vacuous, correctly, because there is no core
+outside it. -/
+theorem schedContextUnbindOnCore_replenishQueueOnCore_ne (st st' : SystemState)
+    (vScId : SeLe4n.ValidObjId) (executingCore : CoreId)
+    (sgi : Option (CoreId × Concurrency.SgiKind)) (c : CoreId)
+    (hne : c ∉ schedContextUnbindReplenishCores st vScId.val)
+    (h : SchedContextOps.schedContextUnbindOnCore vScId executingCore st = .ok (st', sgi)) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold schedContextUnbindReplenishCores at hne
+  cases hSc : st.getSchedContext? (SeLe4n.SchedContextId.ofObjId vScId.val) with
+  | none =>
+      exfalso
+      unfold SchedContextOps.schedContextUnbindOnCore at h
+      dsimp only at h
+      cases hU : SchedContextOps.schedContextUnbind vScId st with
+      | error e => rw [hU] at h; exact absurd h (by simp)
+      | ok r =>
+          unfold SchedContextOps.schedContextUnbind at hU
+          rw [SystemState.getSchedContextWitnessed?_eq_none hSc] at hU
+          exact absurd hU (by simp)
+  | some sc =>
+      have hBT : SchedContextOps.schedContextBoundThread? st vScId.val = sc.boundThread := by
+        unfold SchedContextOps.schedContextBoundThread?
+        rw [hSc]
+      rw [hBT] at hne
+      cases hBound : sc.boundThread with
+      | none =>
+          exfalso
+          unfold SchedContextOps.schedContextUnbindOnCore at h
+          dsimp only at h
+          cases hU : SchedContextOps.schedContextUnbind vScId st with
+          | error e => rw [hU] at h; exact absurd h (by simp)
+          | ok r =>
+              unfold SchedContextOps.schedContextUnbind at hU
+              rw [SystemState.getSchedContextWitnessed?_eq_some hSc] at hU
+              dsimp only at hU
+              rw [hBound] at hU
+              exact absurd hU (by simp)
+      | some tid =>
+          rw [hBound] at hne
+          cases hTcb : st.getTcb? tid with
+          | none =>
+              simp only [hTcb] at hne
+              exact absurd (Concurrency.mem_allCores c) hne
+          | some tcb =>
+              simp only [hTcb] at hne
+              exact schedContextUnbindOnCore_replenishQueueOnCore_ne_of_tcb st st' vScId
+                executingCore sgi sc tid tcb c hSc hBound hTcb (by simpa using hne) h
 
 /-- **The cores a destroy sweep actually touches** — those the thread occupies in
 the pre-state.

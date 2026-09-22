@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.174` (`lakefile.toml`) |
+| **Package version** | `0.35.175` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 405,953 across 338 Lean files |
+| **Production LoC** | 406,166 across 338 Lean files |
 | **Test LoC** | 83,005 across 70 Lean test suites |
-| **Proved declarations** | 13,442 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,448 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4860,6 +4860,20 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   module carries a refutation per clause, and a Tier 3 negative refuses
   `schedFootprintCoversWrites_refl` inside it: discharging an arm with the no-op
   lemma is the token-preserving weakening this family admits.
+
+  **And the first three core-naming segments are covered** (WS-RR RR8.12 Cut C6b,
+  `v0.35.175`).  `.schedContextConfigure`, `.schedContextUnbind` and
+  `.tcbSetAffinity` are the first arms whose replenish segment names cores, so
+  their clause is an exactness claim; each coverage proof is one application of
+  the bridge because each arm's `_ne` frame is keyed on the **footprint's own**
+  segment rather than on a resolution — a resolution-keyed frame answers a
+  different question that every consumer would then case-split to reach, so the
+  footprint-keyed form carries the plain `_ne` name, the resolution-keyed one is
+  `_ne_of_sc` / `_ne_of_tcb`, and a Tier 3 negative refuses the plain name
+  re-acquiring the narrower hypothesis.  Two readings the proofs make explicit: an
+  unresolved segment is a **refusal** rather than a gap, since both SchedContext
+  arms' transitions fail there; and `allCores` is a legitimate segment, on which
+  the clause is vacuous because there is no core outside it.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

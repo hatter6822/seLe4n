@@ -1,3 +1,49 @@
+## v0.35.175 — the first three core-naming replenish segments are covered
+
+WS-RR RR8.12 Cut C6b: `.schedContextConfigure`, `.schedContextUnbind` and
+`.tcbSetAffinity` — the first arms whose replenish segment names cores, so their
+`schedFootprintCoversWrites` clause is an **exactness** claim rather than a
+whole-state frame.
+
+### The `_ne` frames are keyed on the footprint, not on a resolution
+
+The clause asks *unchanged at every core the footprint does not name*.  A frame
+keyed on a resolution — "`c` is not this SchedContext's replenish home", "`c` is
+not this thread's target core" — answers a different question, which every
+consumer would then have to case-split to reach: exactly the duplication this
+family exists to avoid.
+
+So each arm gained a footprint-keyed `_ne` frame in `SyscallSchedFootprint.lean`,
+built from the resolution-keyed one, and the naming follows the meaning: the
+footprint-keyed form carries the plain `_ne` name and the resolution-keyed one is
+`_ne_of_sc` / `_ne_of_tcb`.  `schedContextConfigure_replenishQueueOnCore_ne` was
+renamed to `…_ne_of_sc` for that reason, and a Tier 3 negative refuses the plain
+name re-acquiring the narrower hypothesis — a family where `_ne` means two things
+at two arms is what a coverage proof gets wrong without noticing.
+
+With the frames in that shape, each of the three coverage theorems is one
+application of `schedFootprintCoversWrites_of_confined` and nothing else.
+
+### Two readings the proofs make explicit
+
+An **unresolved segment is a refusal, not a gap**: a `.schedContextConfigure`
+whose SchedContext does not resolve, and a `.schedContextUnbind` whose
+SchedContext has no bound thread, both make the *transition* fail, so the empty
+segment costs the claim nothing — and the proof says so by deriving the
+contradiction rather than by assuming resolution.
+
+And **`allCores` is a legitimate segment**, on which the clause is vacuous —
+correctly.  A SchedContext bound to a thread the store no longer holds has no
+`cpuAffinity` left to read, so the unbind sweeps every core's replenishment and
+the footprint declares every core's lock; there is no core outside it.
+
+### Gates
+
+Seven anchor mutations, all decisive.  No production behaviour changed; the
+golden trace is byte-identical; `maxLockSetSize` is unmoved.  The four IPC arms
+and `.lifecycleRetype` — whose composite replenish frames do not exist yet — are
+Cut C6c's; the bracket and the constructor's deletion are Cut C6d's.
+
 ## v0.35.174 — the first eight arms' footprints are proved not to be false
 
 WS-RR RR8.12 Cut C6a: `SeLe4n/Kernel/SyscallSchedContainment.lean` (staged)
