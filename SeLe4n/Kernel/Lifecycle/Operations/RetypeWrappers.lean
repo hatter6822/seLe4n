@@ -276,6 +276,28 @@ def lifecycleRetypeDirect
         else
           .error .illegalState
 
+/-- **WS-RR RR8.12 Cut C6g**: the direct retype is scheduler- and machine-silent —
+it is a `storeObject` under two guards, and the guards commit nothing.
+
+Declared here, beside the step, rather than as the `private` copy that lived in the
+staged non-interference module: a production consumer (the retype footprint's
+replenish exactness frame) needs it, and a private theorem in a staged module is
+one no production asker can reach. -/
+theorem lifecycleRetypeDirect_scheduler_machine_eq
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · split at h
+      · exact ⟨storeObject_scheduler_eq st st' target newObj h,
+              storeObject_machine_eq st st' target newObj h⟩
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+
 -- ============================================================================
 -- U-H04: lifecycleRetypeDirectWithCleanup — pre-resolved authority + safe path
 -- ============================================================================
@@ -1086,6 +1108,27 @@ def retypeInitiatorDrain (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
   | _ :: _ =>
       Architecture.drainInitiatorPerCoreView st' executingCore
         (asids.map Architecture.encodeAsidInvalidation)
+
+/-- SM8.B.2: the initiator's own per-core TLB drain is scheduler- and
+machine-silent, on both arms.
+
+Relocated here at **WS-RR RR8.12 Cut C6g** from the staged non-interference
+module, beside the step it frames and beside its sibling
+`retypeAsidRoundFold_scheduler`, so a production consumer — the retype
+footprint's replenish exactness frame — can read it. -/
+@[simp] theorem retypeInitiatorDrain_scheduler
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).scheduler = st.scheduler := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
+
+@[simp] theorem retypeInitiatorDrain_machine
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).machine = st.machine := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
 
 /-- **WS-SM SM7.F.4(b)(iii)**: for a non-empty flush set the initiator drain is
 the per-core view retirement of every operand. -/

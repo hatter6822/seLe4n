@@ -519,4 +519,40 @@ theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites (st st' : SystemSta
     (fun d hd => setThreadCpuAffinityWithMigration_replenishQueueOnCore_ne st st' tid affinity
       executingCore sgi d hObjInv hd hStep)
 
+-- ============================================================================
+-- §11  The retype arm
+-- ============================================================================
+
+/-- **Cut C6g**: `.lifecycleRetype`'s footprint covers its writes.
+
+The last arm, and the one whose two segments are read at the **pre**-state for a
+reason no other arm has: the object the retype destroys is gone from the
+post-state, so a post-state reading of either segment would name the empty set on
+exactly the transition the segments exist for.  Both `lifecycleRetypeWriteSet`
+and `lifecycleRetypeReplenishCores` therefore take `st`, which is what the
+bracket needs anyway — it resolves a footprint before the transition runs.
+
+Stated of the arm the syscall dispatches, `lifecycleRetypeDirectWithCleanup\
+ShootdownPerCoreIcache`, rather than of the retype core: the two cached-structure
+layers over it (the `.aside1` shootdown round with the initiator's own TLB drain,
+and the domain-wide `IC IALLUIS`) each write kernel state, and a coverage claim
+taken at the core would be a claim about a program the arm does not run.  Both
+layers are scheduler-silent — `retypeInitiatorDrain_scheduler` and
+`Architecture.withIcacheBroadcast_frame`'s third conjunct — so the exactness
+frame descends through them without a case analysis of its own. -/
+theorem schedLockSet_lifecycleRetypeOnCore_coversWrites (executingCore : CoreId)
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState) (S : SchedLockSet)
+    (hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap
+      target newObj st = .ok ((), st'))
+    (hS : SchedLockSet.ofList? (schedLockSet_lifecycleRetypeOnCore st target) = some S) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S (lifecycleRetypeWriteSet st target)
+    (lifecycleRetypeReplenishCores st target) st st'
+    (SchedLockSet.ofList?_pairs hS)
+    (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores executingCore
+      authCap target newObj st st' hStep)
+    (fun d hd => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne
+      executingCore authCap target newObj st st' d hd hStep)
+
 end SeLe4n.Kernel

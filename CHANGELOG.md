@@ -1,3 +1,75 @@
+## v0.35.180 — WS-RR RR8.12 Cut C6g: the live `.lifecycleRetype` ARM covered, and the family closed
+
+The sixteenth and last declared arm, so every arm
+`schedLockSetForSyscall` answers a footprint for now carries a proof that the
+footprint **covers what the arm writes**.  The family is `schedLockSet_*_coversWrites`
+in `SeLe4n/Kernel/SyscallSchedContainment.lean`; nothing here restates its size,
+for the reason §7 of that file already gives.
+
+### The unit is the arm the syscall dispatches, not the retype core
+
+`schedLockSet_lifecycleRetypeOnCore_coversWrites` is stated of
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` — the retype with its
+cleanup, the `.aside1` shootdown round for the destroyed and rebound ASIDs, the
+initiator's own per-core TLB drain, and the domain-wide `IC IALLUIS`.  Those two
+cached-structure layers each write kernel state, so a coverage claim taken at
+`lifecycleRetypeDirectWithCleanup` would be a claim about a program the arm does
+not run; a Tier 3 negative refuses that spelling.  Both layers are
+scheduler-silent by theorem — `retypeInitiatorDrain_scheduler` and
+`Architecture.withIcacheBroadcast_frame`'s third conjunct — so the exactness frame
+descends through them by citation rather than by a second case analysis of the
+arm.
+
+### Both segments are read at the PRE-state, and have to be
+
+The object a retype destroys is gone from the post-state, so a post-state reading
+of either `lifecycleRetypeWriteSet` or `lifecycleRetypeReplenishCores` would name
+the empty set on exactly the transition the segments exist for.  Both take `st`,
+which is also what a bracket needs: it resolves a footprint *before* the
+transition runs.  So this arm has no instance of WS-HP HP10.8's
+footprint/transition resolution asymmetry.
+
+### Three relocations, one class
+
+`retypeInitiatorDrain_scheduler`, `retypeInitiatorDrain_machine` and a private
+`lifecycleRetypeDirect_framed` were declared in
+`InformationFlow/NonInterferenceCrossCore.lean`, which is **staged** — so the
+production replenish frame could not read the two frames it needs, and the third
+was a private duplicate of a fact the production wrapper module can state
+outright.  They live in `Lifecycle/Operations/RetypeWrappers.lean` now, beside
+the wrappers they frame, with `lifecycleRetypeDirect_scheduler_machine_eq` public
+in their place and tombstones where they were.  That is `v0.35.59`'s rule — *when
+a question has one owner and an asker that cannot see it, the owner is in the
+wrong layer* — and it is the fourth cut in this sequence to pay it (Cuts 5, 7,
+8a-ii and C3a were the others), which is the signal that the class is a layering
+convention rather than four accidents.
+
+### The witness is a differential inside the suite, because no mutation reaches it
+
+Every mutation of `schedLockSet_lifecycleRetypeOnCore` — dropping either segment,
+widening both to `allCores` — fails to **elaborate** rather than failing
+`tests/SmpIpcSuite.lean`, because that definition's own membership theorems
+unfold it.  That is §3.23's situation for the splice's store shape, and the
+answer is the same: §3.33 (d) takes the coverage measurement over the live
+footprint *and* over `runOnlyRetypeFootprint` — the retired reading with no
+replenish segment, spelled in the suite and nowhere else — and asserts the second
+**fails** it.  The assertions are then known to discriminate rather than merely
+to pass.  Measured on the arm rather than on the core: the block asserts the
+domain-wide instruction-cache layer really ran.
+
+### Files
+
+- `SeLe4n/Kernel/SyscallSchedContainment.lean` — §11, the retype arm's coverage.
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` — the four-stage replenish chain
+  from `lifecycleRetypeDirectWithCleanup` up through the icache broadcast.
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` — the two relocated
+  drain frames and `lifecycleRetypeDirect_scheduler_machine_eq`.
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` — two tombstones,
+  the private duplicate deleted, its one use repointed.
+- `tests/SmpIpcSuite.lean` — §3.33 (d), `liveRetypeArm`.
+- `scripts/test_tier3_invariant_surface.sh` — eleven anchors, three of them
+  mutation-tested against a token-preserving revert.
+
 ## v0.35.179 — WS-RR RR8.12 Cut C6f: the live `.receive` ARM covered
 
 The arm whose coverage claim is about a **sub-composition**, and deliberately so.

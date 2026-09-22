@@ -4356,21 +4356,11 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     · injection hOk with hOk; subst hOk
       exact releaseSchedContextBinding_confinedToCores _ _ _
 
-/-- SM8.B.2: the object-store replacement is scheduler- and machine-silent. -/
-private theorem lifecycleRetypeDirect_framed
-    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
-    (st st' : SystemState)
-    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
-    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
-  unfold lifecycleRetypeDirect SystemState.getObject? at h
-  split at h
-  · exact absurd h (by simp)
-  · split at h
-    · split at h
-      · exact ⟨storeObject_scheduler_eq st st' target newObj h,
-              storeObject_machine_eq st st' target newObj h⟩
-      · exact absurd h (by simp)
-    · exact absurd h (by simp)
+-- **WS-RR RR8.12 Cut C6g (`v0.35.180`)**: `lifecycleRetypeDirect_framed` is
+-- deleted.  It was a `private` copy of what is now the production
+-- `lifecycleRetypeDirect_scheduler_machine_eq` (`Lifecycle/Operations/RetypeWrappers.lean`,
+-- beside the step) — the same body, in a staged module, where no production asker
+-- could reach it.  Every use below reads the public one.
 
 /-- SM8.B.2: the base retype-with-cleanup writes no core outside the write set.
 
@@ -4391,7 +4381,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
     · -- absent target: the direct store errors or replaces, either way scheduler-silent
       next hNone =>
         rw [hNone]
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_framed authCap target newObj st st' h
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj st st' h
         exact observableSlotsConfinedToCores_nil_of_scheduler_machine_eq hs hm
     · next currentObj hSome =>
       rw [hSome]
@@ -4400,7 +4390,7 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
       · next stClean hClean =>
         have hCleanConf :=
           lifecyclePreRetypeCleanup_confinedToCores st stClean target currentObj newObj hClean
-        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_framed authCap target newObj _ st' h
+        obtain ⟨hs, hm⟩ := lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj _ st' h
         -- the scrub writes `machine.memory`, so the suffix frame here is the
         -- register-bank one rather than whole-machine equality
         refine observableSlotsConfinedToCores_of_framed_suffix_regs
@@ -4408,19 +4398,14 @@ theorem lifecycleRetypeDirectWithCleanup_confinedToCores
           (fun c => by
             rw [hm, scrubObjectMemory_regsOnCore]) hCleanConf
 
-/-- SM8.B.2: the initiator's own per-core TLB drain is scheduler- and
-machine-silent, on both arms. -/
-@[simp] theorem retypeInitiatorDrain_scheduler
-    (executingCore : CoreId) (asids : List SeLe4n.ASID) (st : SystemState) :
-    (retypeInitiatorDrain executingCore asids st).scheduler = st.scheduler := by
-  unfold retypeInitiatorDrain
-  cases asids <;> simp
-
-@[simp] theorem retypeInitiatorDrain_machine
-    (executingCore : CoreId) (asids : List SeLe4n.ASID) (st : SystemState) :
-    (retypeInitiatorDrain executingCore asids st).machine = st.machine := by
-  unfold retypeInitiatorDrain
-  cases asids <;> simp
+-- **WS-RR RR8.12 Cut C6g (`v0.35.180`)**: `retypeInitiatorDrain_scheduler` and
+-- `retypeInitiatorDrain_machine` moved to `Lifecycle/Operations/RetypeWrappers.lean`,
+-- beside the definition they frame.  They were declared here — in a STAGED module —
+-- while the step is production, so the production retype footprint's replenish frame
+-- could not read them: *when a question has one owner and an asker that cannot see
+-- it, the owner is in the wrong layer* (`v0.35.59`).  Their sibling
+-- `retypeAsidRoundFold_scheduler` had been in that production module all along, which
+-- is what made the split visible.
 
 /-- SM8.B.2: adding the ASID shootdown rounds does not widen the write set —
 TLB maintenance is not scheduling. -/

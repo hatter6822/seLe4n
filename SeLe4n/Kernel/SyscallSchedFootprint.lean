@@ -1545,6 +1545,117 @@ theorem lifecyclePreRetypeCleanup_replenishQueueOnCore_ne (st st' : SystemState)
 -- rewritten.  Neither is a proxy for a pre-state reading, so both are resolved
 -- the way `replyRecvBodyWriteSet` resolves its own: by re-running the spine.
 
+/-- **WS-RR RR8.12 Cut C6g (the exactness frame)**: the base retype-with-cleanup
+writes no replenish queue outside `lifecycleRetypeReplenishCores` — the
+FOOTPRINT's own segment.
+
+Mirrors `lifecycleRetypeDirectWithCleanup_confinedToCores` clause for clause: the
+well-formedness reject commits nothing, the absent-target arm is
+`lifecycleRetypeDirect` (a store, so scheduler-silent), and the present arm is the
+cleanup — the one step that moves a replenishment — then the scrub and the store,
+both scheduler-silent. -/
+theorem lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne (authCap : Capability)
+    (target : SeLe4n.ObjId) (newObj : KernelObject) (st st' : SystemState) (c : CoreId)
+    (hne : c ∉ lifecycleRetypeReplenishCores st target)
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold lifecycleRetypeDirectWithCleanup at h
+  unfold lifecycleRetypeReplenishCores at hne
+  split at h
+  · exact absurd h (by simp)
+  · cases hObj : SystemState.getObject? st target with
+    | none =>
+      rw [hObj] at h
+      simp only [] at h
+      rw [(lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj st st' h).1]
+    | some currentObj =>
+      rw [hObj] at h hne
+      simp only [] at h
+      cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+      | error e => rw [hClean] at h; simp only [] at h; exact absurd h (by simp)
+      | ok stClean =>
+        rw [hClean] at h
+        simp only [] at h
+        rw [(lifecycleRetypeDirect_scheduler_machine_eq authCap target newObj
+          (scrubObjectMemory stClean target currentObj.objectType) st' h).1,
+          scrubObjectMemory_scheduler_eq stClean target currentObj.objectType]
+        exact lifecyclePreRetypeCleanup_replenishQueueOnCore_ne st stClean target currentObj
+          newObj c hne hClean
+
+/-- **Cut C6g**: the ASID shootdown rounds move no replenishment — TLB maintenance
+is not scheduling. -/
+theorem lifecycleRetypeDirectWithCleanupShootdown_replenishQueueOnCore_ne
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState) (c : CoreId)
+    (hne : c ∉ lifecycleRetypeReplenishCores st target)
+    (h : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target newObj st
+      = .ok ((), st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold lifecycleRetypeDirectWithCleanupShootdown at h
+  cases hBase : lifecycleRetypeDirectWithCleanup authCap target newObj st with
+  | error e => rw [hBase] at h; simp only [] at h; exact absurd h (by simp)
+  | ok pair =>
+    obtain ⟨u, stBase⟩ := pair
+    cases u
+    rw [hBase] at h
+    simp only [] at h
+    rw [retypeShootdownAsids_eq] at h
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, he⟩ := h
+    subst he
+    rw [retypeAsidRoundFold_scheduler]
+    exact lifecycleRetypeDirectWithCleanup_replenishQueueOnCore_ne authCap target newObj st
+      stBase c hne hBase
+
+/-- **Cut C6g**: nor does the initiator's own per-core TLB view drain. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState) (c : CoreId)
+    (hne : c ∉ lifecycleRetypeReplenishCores st target)
+    (h : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target newObj st
+      = .ok ((), st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCore at h
+  cases hRound : lifecycleRetypeDirectWithCleanupShootdown executingCore authCap target newObj st
+    with
+  | error e => rw [hRound] at h; simp only [] at h; exact absurd h (by simp)
+  | ok pair =>
+    obtain ⟨u, stRound⟩ := pair
+    cases u
+    rw [hRound] at h
+    simp only [] at h
+    rw [Except.ok.injEq, Prod.mk.injEq] at h
+    obtain ⟨-, he⟩ := h
+    subst he
+    rw [retypeInitiatorDrain_scheduler]
+    exact lifecycleRetypeDirectWithCleanupShootdown_replenishQueueOnCore_ne executingCore authCap
+      target newObj st stRound c hne hRound
+
+/-- **Cut C6g (the live `.lifecycleRetype` arm's exactness frame)**: and neither
+does the domain-wide instruction-cache broadcast, so the arm the syscall runs
+writes no replenish queue outside the segment its footprint declares. -/
+theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne
+    (executingCore : CoreId) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) (st st' : SystemState) (c : CoreId)
+    (hne : c ∉ lifecycleRetypeReplenishCores st target)
+    (h : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache executingCore authCap target
+      newObj st = .ok ((), st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache at h
+  cases hBase : lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target
+      newObj st with
+  | error e =>
+    rw [(Architecture.withIcacheBroadcast_error_iff (retypeIcacheOperand target)
+      (lifecycleRetypeDirectWithCleanupShootdownPerCore executingCore authCap target newObj)
+      st e).mpr hBase] at h
+    exact absurd h (by simp)
+  | ok pair =>
+    obtain ⟨u, stB⟩ := pair
+    cases u
+    rw [(Architecture.withIcacheBroadcast_frame hBase h).2.2.1]
+    exact lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne
+      executingCore authCap target newObj st stB c hne hBase
+
 /-- `v0.35.169`: the placement deschedule writes no replenish queue. -/
 @[simp] theorem descheduleAt_replenishQueueOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (placed : Option CoreId) (c : CoreId) :

@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.179.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.180.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9672,6 +9672,50 @@ code may assume:
   ``the `.receive` segment`` by exactly one.  The sweep reported it as a failing
   command rather than as a silent pass, which is the direction that class must
   fail in.
+- **...and a claim's unit is the PROGRAM the arm runs, wrappers included** (WS-RR
+  RR8.12 Cut C6g, `v0.35.180`).  The sixteenth and last declared arm, and the one
+  whose transition is three wrappers deep: `.lifecycleRetype` dispatches
+  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` — the retype with its
+  cleanup, the `.aside1` shootdown round for the destroyed and rebound ASIDs, the
+  initiator's own per-core TLB drain, and the domain-wide `IC IALLUIS`.  Each of
+  those two cached-structure layers writes kernel state, so a coverage claim taken
+  at the retype core is a claim about a program the arm does not run, and a Tier 3
+  negative refuses that spelling.  They are both scheduler-silent *by theorem*
+  (`retypeInitiatorDrain_scheduler`, `Architecture.withIcacheBroadcast_frame`'s
+  third conjunct), which is what lets the exactness frame descend through them by
+  citation rather than by a second case analysis of the arm — the difference
+  between a claim that inherits its wrappers' frames and one that re-derives them.
+  Three things new code must respect.
+
+  (1) **A segment over a destroyed object is read at the PRE-state, and that is
+  not a convenience.**  The object a retype destroys is gone from the post-state,
+  so a post-state reading of `lifecycleRetypeWriteSet` or
+  `lifecycleRetypeReplenishCores` would name the empty set on exactly the
+  transition the segments exist for.  Both take `st`, which is also what a bracket
+  needs — it resolves a footprint *before* the transition runs — so this arm has
+  no instance of WS-HP HP10.8's footprint/transition resolution asymmetry.
+
+  (2) **The layering rule is a convention, not an accident, and this is its
+  fourth instance in one sequence.**  `retypeInitiatorDrain_scheduler`,
+  `retypeInitiatorDrain_machine` and a private `lifecycleRetypeDirect_framed` were
+  declared in the **staged** `InformationFlow/NonInterferenceCrossCore.lean`, so
+  the production replenish frame could not read the two frames it needs and the
+  third was a private duplicate of a fact the production wrapper module can state
+  outright.  They live beside the wrappers they frame now.  Cuts 5, 7, 8a-ii and
+  C3a each paid the same rule; when a sequence pays it four times, a new frame
+  over a production transition goes beside that transition on the day it is
+  written rather than in whichever module first needed it.
+
+  (3) **Where every mutation breaks ELABORATION, the witness is a differential
+  inside the suite.**  Dropping either of this footprint's segments, or widening
+  both to `allCores`, fails to elaborate — the definition's own membership
+  theorems unfold it — so a coverage assertion in `tests/SmpIpcSuite.lean` cannot
+  be shown decisive against the production code by mutation.  That is §3.23's
+  situation for the splice's store shape, and the answer is §3.20's: §3.33 (d)
+  takes the *same measurement* over `runOnlyRetypeFootprint` — the retired reading
+  with no replenish segment, spelled in the suite and nowhere else — and asserts
+  it **fails**.  A coverage assertion with no failing counterpart beside it is
+  indistinguishable from one the fixture satisfies by accident.
 - **...and a NEGATIVE anchor over prose is a prose check, which only a mutation
   tells you** (WS-RR RR8.12 Cut C6e, `v0.35.178`).  The cut retired a hand-kept
   figure — `SyscallSchedContainment.lean`'s §7 said *"Eight coverage theorems

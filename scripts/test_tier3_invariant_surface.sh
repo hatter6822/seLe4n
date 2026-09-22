@@ -19827,4 +19827,37 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReceiveRendezvousDonatio
 run_check "INVARIANT" rg -n 'C6f: EVERY core outside the .+ segment keeps its replenish queue' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C6f: ...and the segment is a strict subset here' tests/SmpIpcSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6g (`v0.35.180`): the live `.lifecycleRetype` ARM's coverage,
+# and with it the last of the sixteen declared arms.
+# ============================================================================
+#
+# The unit is the ICACHE-LAYERED arm the syscall dispatches, not the retype core:
+# the `.aside1` shootdown round with the initiator's own TLB drain, and the
+# domain-wide `IC IALLUIS`, each write kernel state, so a coverage claim taken at
+# the core would be a claim about a program the arm does not run.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" SeLe4n/Kernel/SyscallSchedContainment.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanup [^S]" SeLe4n/Kernel/SyscallSchedContainment.lean'
+# The arm's replenish frame, keyed on the footprint's own PRE-STATE segment — it
+# has to be the pre-state, since the object the retype destroys is gone from the
+# post-state and a post-state reading would name the empty set.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ lifecycleRetypeReplenishCores st target" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# ...descending through the two cached-structure layers by their own frames rather
+# than by a second case analysis of the arm.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*Architecture.withIcacheBroadcast_frame" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*retypeInitiatorDrain_scheduler" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# The two frames the drain half needs, in PRODUCTION beside the wrapper they frame
+# rather than private to the staged non-interference module that first needed them.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_scheduler' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirect_scheduler_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_framed' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The frame MEASURED over every core on the arm the syscall runs, with the retired
+# reading FAILING the same measurement — every mutation of the production footprint
+# here breaks elaboration rather than this suite, so the discrimination has to be a
+# differential inside it.
+run_check "INVARIANT" rg -n 'C6g: EVERY core outside the declared replenish segment keeps its replenish queue' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'C6g NEGATIVE: the retired reading FAILS the same replenish measurement' tests/SmpIpcSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "private def liveRetypeArm[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" tests/SmpIpcSuite.lean'
+
 finalize_report

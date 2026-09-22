@@ -5104,6 +5104,19 @@ private def runOnlyRetypeFootprint (st : SystemState) (target : SeLe4n.ObjId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   schedFootprintOfCores (lifecycleRetypeWriteSet st target) []
 
+/-- **WS-RR RR8.12 Cut C6g**: the arm the syscall dispatches, rather than the
+retype core the segment assertions above drive.
+
+The coverage claim's unit is this program — the retype with its cleanup, the
+`.aside1` shootdown round, the initiator's own TLB drain and the domain-wide
+`IC IALLUIS` — because those two cached-structure layers each write kernel state,
+and a claim taken at the core would be a claim about a program the arm does not
+run.  Both are scheduler-silent by theorem; this is that measured. -/
+private def liveRetypeArm (st : SystemState) (target : SeLe4n.ObjId) :
+    Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache c0
+    (retypeCapOn target) target retypeReplacement st)).map Prod.snd
+
 private def runRetypeFootprintChecks : IO Unit := do
   IO.println "--- §3.33 Cut C3b-iii: the .lifecycleRetype arm's scheduler footprint ---"
   -- (a) a BOUND TCB target: the arm purges on the thread's home core.
@@ -5146,6 +5159,39 @@ private def runRetypeFootprintChecks : IO Unit := do
     (decide (fpEp = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)]))
   assertBool "(c) CONTROL: ...which is exactly what the run-only reading gives too"
     (decide (fpEp = runOnlyRetypeFootprint stSc donEp))
+  -- (d) WS-RR RR8.12 Cut C6g: COVERAGE, on the arm the syscall dispatches.  The
+  --     segment assertions above say the footprint names the cores the arm moves;
+  --     this is the other direction, which they cannot see — that the arm moves
+  --     NOTHING outside them.  `schedLockSet_lifecycleRetypeOnCore_coversWrites`
+  --     is the theorem, over the icache-layered program rather than the retype
+  --     core, so the two cached-structure layers are inside the measurement.
+  --
+  --     Every mutation of the production footprint here fails to ELABORATE
+  --     rather than failing this suite — `schedLockSet_lifecycleRetypeOnCore`'s
+  --     own membership theorems unfold it — which is §3.23's situation for the
+  --     splice's store shape.  So what makes these assertions discriminate is a
+  --     differential WITHIN the suite: the same measurement is taken over
+  --     `runOnlyRetypeFootprint`, and it must FAIL there.
+  match liveRetypeArm stBound donClient.toObjId with
+  | none => assertBool "(d) C6g: the live `.lifecycleRetype` arm succeeds on a bound owner" false
+  | some stArm =>
+    let retired := runOnlyRetypeFootprint stBound donClient.toObjId
+    assertBool "(d) C6g: EVERY core outside the declared replenish segment keeps its replenish queue"
+      (allCores.all (fun d =>
+        hasReplenishWrite fpTcb d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
+    assertBool "(d) C6g: EVERY core outside the declared run segment keeps its run queue"
+      (allCores.all (fun d =>
+        hasRunQueueWrite fpTcb d ||
+          (stArm.scheduler.runQueueOnCore d).toList
+            == (stBound.scheduler.runQueueOnCore d).toList))
+    assertBool "(d) C6g NEGATIVE: the retired reading FAILS the same replenish measurement"
+      (!allCores.all (fun d =>
+        hasReplenishWrite retired d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
+    assertBool "(d) C6g: ...and both segments are strict subsets here, so neither claim is vacuous"
+      (allCores.any (fun d => !hasReplenishWrite fpTcb d)
+        && allCores.any (fun d => !hasRunQueueWrite fpTcb d))
+    assertBool "(d) C6g: ...and the domain-wide instruction-cache layer really did run"
+      (stArm.pendingIcacheMaintenance.length > stBound.pendingIcacheMaintenance.length)
 
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
