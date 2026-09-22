@@ -446,6 +446,24 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     migrateRunQueueBucket st tid newPriority
       = migrateRunQueueBucketOnCore st tid newPriority bootCoreId := rfl
 
+/-- **`v0.35.167` (WS-RR RR8.12 Cut C3b-i): the bucket migration moves no
+replenish entry.**
+
+It writes one run queue and nothing else, so a priority change's scheduler
+footprint declares **no** replenish-queue member — and a footprint that declares
+one it does not write is wider than its operation, which costs the arm the lock
+contention SM8.D's CC-5 measures.  The exactness half of that declaration: the
+`_replenishQueueOnCore` frames the `.call` / `.reply` / `.receive` arms carry for
+the same reason. -/
+@[simp] theorem migrateRunQueueBucketOnCore_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore c : Concurrency.CoreId) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
+  · rfl
+
 /-- D2-E: Set the scheduling priority of a target thread.
 
 Sequence:

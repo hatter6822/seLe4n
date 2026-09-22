@@ -50,17 +50,13 @@ open SeLe4n.Kernel.Concurrency (numCores CoreId SgiKind bootCoreId)
 -- §1  Replenish-queue frames for the SM5.D.4 replenishment machinery
 -- ============================================================================
 
-/-- WS-SM SM5.I: `enqueueRunnableOnCore` leaves every core's replenish-queue slot
-unchanged — it writes only objects (`ipcState := .ready`) and a run queue. -/
-theorem enqueueRunnableOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
-    (tid : SeLe4n.ThreadId) (c' : CoreId) :
-    (enqueueRunnableOnCore st c tid).scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  unfold enqueueRunnableOnCore; split
-  · split
-    · rfl
-    · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
-  · rfl
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): `enqueueRunnableOnCore_replenishQueueOnCore`
+-- moved to `Scheduler/Operations/Selection.lean`, beside the definition it frames.
+-- It was declared here, in a **staged** module, which production may not import —
+-- so the live `.tcbResume` arm's own scheduler-domain footprint could not state
+-- that the resume moves no replenish entry.  Same shape as `v0.35.166`'s five
+-- relocations: a frame about a production definition, sitting downstream of every
+-- asker that needs it.
 
 /-- WS-SM SM5.I: `processOneReplenishmentOnCore` leaves every core's replenish-queue
 slot unchanged — it refills a SchedContext (whole scheduler framed) and optionally

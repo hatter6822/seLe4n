@@ -1454,6 +1454,23 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
               ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
   | none => st
 
+/-- WS-SM SM5.I: `enqueueRunnableOnCore` leaves every core's replenish-queue slot
+unchanged — it writes only objects (`ipcState := .ready`) and a run queue.
+
+Declared in the **staged** `Scheduler/Operations/PerCoreTickCbsPreservation.lean`
+until `v0.35.167`, where production could not read it: the live `.tcbResume`
+arm's scheduler-domain footprint needs exactly this to declare an empty replenish
+segment.  Moved beside the definition it frames. -/
+theorem enqueueRunnableOnCore_replenishQueueOnCore (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (c' : CoreId) :
+    (enqueueRunnableOnCore st c tid).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  unfold enqueueRunnableOnCore; split
+  · split
+    · rfl
+    · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore]
+  · rfl
+
 /-- WS-SM SM5.C.2/.9 (plan §3.3): the core a thread is woken onto.
 
 A thread bound to `some c'` (`cpuAffinity = some c'`) wakes onto `c'`; an
@@ -2229,4 +2246,40 @@ def setThreadCpuAffinity (st : SystemState) (targetTid : SeLe4n.ThreadId)
       .ok (st.rewriteObject targetTid.toObjId (.tcb { tcb with cpuAffinity := affinity })
         (SystemState.rewriteAdmissible_tcb h _))
   | none => .error .invalidArgument
+
+/-- WS-SM SM8.B.2: after the affinity write the thread's home core **is** the
+requested affinity (boot when unbound) — the bridge that lets a write set or a
+scheduler footprint name the new core without mentioning the mid-state.
+
+Declared in the **staged** `InformationFlow/NonInterferenceCrossCore.lean` until
+`v0.35.167`, where production could not read it; moved beside the definition it
+is about, so the live `.tcbSetAffinity` arm's footprint can state that the
+replenish pair it declares is the migration's own. -/
+theorem setThreadCpuAffinity_determineTargetCore_eq (st stSet : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (hInv : st.objects.invExt)
+    (hSet : setThreadCpuAffinity st tid affinity = .ok stSet) :
+    determineTargetCore stSet tid = affinity.getD Concurrency.bootCoreId := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · next tcb hTcb _ =>
+    rw [Except.ok.injEq] at hSet
+    subst hSet
+    unfold determineTargetCore SystemState.getTcb?
+    simp only [RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
+    rw [RHTable_getElem?_insert st.objects tid.toObjId
+      (.tcb { tcb with cpuAffinity := affinity }) hInv tid.toObjId]
+    simp only [beq_self_eq_true, if_pos]
+    cases affinity <;> rfl
+  · exact absurd hSet (by simp)
+
+/-- WS-SM SM8.B.2: the affinity write is one typed object rewrite, so it touches
+no scheduler state at all. -/
+@[simp] theorem setThreadCpuAffinity_scheduler_eq (st stSet : SystemState)
+    (tid : SeLe4n.ThreadId) (affinity : Option CoreId)
+    (hSet : setThreadCpuAffinity st tid affinity = .ok stSet) :
+    stSet.scheduler = st.scheduler := by
+  unfold setThreadCpuAffinity at hSet
+  split at hSet
+  · rw [Except.ok.injEq] at hSet; subst hSet; rfl
+  · exact absurd hSet (by simp)
 

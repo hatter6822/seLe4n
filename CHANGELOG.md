@@ -1,3 +1,157 @@
+## v0.35.167 — the three arms whose own modules cannot name a `SchedLockId`
+
+WS-RR RR8.12 Cut C3b-i: the live `.tcbResume`, `.tcbSetPriority` /
+`.tcbSetMCPriority` and `.tcbSetAffinity` arms declare scheduler-domain
+footprints — **inert** until the bracket cut, as every footprint since Cut 7 has
+been.  What is left undeclared is read off the `schedLockSet_` inventory and
+`UncoveredLockDomain.syscallSeamSchedulerDomain`, never off a paragraph — the
+correction `v0.35.104` made to a sentence of exactly this kind.
+
+### Why they are not beside their transitions
+
+Every scheduler footprint declared so far sits beside the transition it is
+about.  These three cannot.  `SchedLockId` — the cross-domain lock identifier a
+scheduler footprint is a list of — is declared in
+`Scheduler/Operations/PerCoreChooseThread.lean`, which imports
+`Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`, so it sits **above**
+the modules holding the lifecycle, priority, affinity, SchedContext and retype
+transitions: measured, `Lifecycle/Suspend.lean`, `SchedContext/Operations.lean`,
+`SchedContext/PriorityManagementPerCore.lean`, `Scheduler/Operations/Core.lean`
+and `Lifecycle/Operations/RetypeWrappers.lean` are all outside
+`PerCoreChooseThread`'s reverse closure, and none of them can name a
+`SchedLockId` at all.
+
+Moving `SchedLockId` down was considered and rejected: it is declared with
+`RunQueueLockId`, `ReplenishQueueLockId` and the cross-domain order over them,
+and that order is what `schedCoreSegment` and `schedFootprintOfCores` are
+*about*.  So `SeLe4n/Kernel/SyscallSchedFootprint.lean` states the rule instead,
+and its header carries it:
+
+> A resolved scheduler footprint lives beside its transition where that module
+> can name a `SchedLockId`, and here where it cannot.
+
+The object domain reached the same shape at
+`Concurrency/Locks/LockSetTransitions.lean`, for the same reason.
+
+### What each arm declares
+
+* **`.tcbResume`** — `schedLockSet_resumeThreadOnCore`, the resumed thread's home
+  core's run-queue write lock and the executing core's, with an **empty**
+  replenish segment.  The fault retire the arm runs first
+  (`retirePendingFaultForResume`, WS-RR RR4.11) needs no member of its own: it
+  writes one TCB's `pendingFault` and no scheduler state.
+* **`.tcbSetPriority` / `.tcbSetMCPriority`** — `schedLockSet_priorityControlOnCore`,
+  the target's home core (the bucket migration) and the executing core (the
+  demotion's inline preemption point), empty replenish segment.  One footprint
+  for both arms, because SM8.B gives them one write set.
+* **`.tcbSetAffinity`** — `schedLockSet_setThreadCpuAffinityOnCore`, the old home
+  core and the new one, with a replenish segment that follows the thread's
+  **binding**: both cores when it runs on a reservation, none when it does not.
+
+Every empty segment is a **theorem**, not a reading of a body —
+`observableSlotsConfinedToCores` covers six per-core slots and the replenish
+queue is not one of them, so a write set says nothing about replenishments.
+`resumeThreadOnCoreLive_replenishQueueOnCore`,
+`setPriorityOnCore_replenishQueueOnCore`,
+`setMCPriorityOnCore_replenishQueueOnCore` and
+`setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context` are those
+statements; the declarations' own halves are the four `_no_replenishQueue*`
+theorems, so each narrowing is exact in both directions.
+
+### The narrowing, and what makes it measurable
+
+`setThreadCpuAffinityWithMigrationLockSet` — the parametric SM5.H.4 form, which
+takes two cores and no state — declares both replenish-queue write locks
+unconditionally.  The resolved form reads the binding and drops them on the
+`.unbound` path.  Over-declaring is sound and not free: lock contention is an
+observable channel (SM8.D's CC-5), which is why WS-OD OD3.5 *narrowed* a
+footprint for the same reason.
+
+`schedLockSet_setThreadCpuAffinityOnCore_covers_parametric` is the relation
+between the two on the reservation-bearing path, and stating it is what forced
+the parametric family out of a staged module — see below.
+
+Coverage against the **transition** is a second statement, and it has to be:
+`setThreadCpuAffinityWithMigration` resolves its destination as
+`determineTargetCore stSet tid` at the post-affinity-write state, where the
+footprint resolves it from the *argument*.  The two are one value only through
+`setThreadCpuAffinity_determineTargetCore_eq` — which is why this write set,
+unlike its two SchedContext siblings, needs no mid-state bridge — so
+`schedLockSet_setThreadCpuAffinityOnCore_covers_migration` states the membership
+at the cores the migration actually moves the reservation between.  A coverage
+claim read off `_contains_replenishQueue_writes` alone is about the argument.
+
+### Four relocations, one rule
+
+*When a question has one owner and an asker that cannot see it, the owner is in
+the wrong layer* (`v0.35.59`), four more times.
+
+* The three SM8.B write sets (`resumeThreadOnCoreWriteSet`,
+  `priorityControlWriteSet`, `setThreadCpuAffinityWriteSet`) were declared in the
+  **staged** `InformationFlow/NonInterferenceCrossCore.lean`, so a production
+  footprint could not read them — and Cut 7's rule is that a footprint **is** its
+  arm's write set rather than a second resolution of the same cores.  They move
+  to `SyscallSchedFootprint.lean`, byte-identical; the confinement theorems stay
+  staged.
+* `setThreadCpuAffinityWithMigrationLockSet` and
+  `migrateRunQueueOnAffinityChangeLockSet`, with their eight lemmas, move from the
+  staged `Scheduler/Operations/PerCoreCbs.lean` to the production
+  `Scheduler/Operations/PerCoreChooseThread.lean` — **beside the
+  `migrateSchedContextReplenishmentLockSet` family WS-RR RR2.4 had relocated out
+  of that same file, for that same reason, twenty lines short of its own
+  siblings.**  A fix applied at one site and not at its sibling, found by asking
+  the coverage relation rather than by a review.  Every consumer
+  (`PerCoreCbsInventory`, `tests/SmpCbsSuite.lean`) keeps working with no import
+  edit: `PerCoreCbs` imports `PerCoreChooseThread`.
+* Four frames the footprints' proofs compose —
+  `migrateRunQueueOnAffinityChange_replenishQueueOnCore` (→
+  `Scheduler/Operations/Core.lean`), `enqueueRunnableOnCore_replenishQueueOnCore`
+  and `setThreadCpuAffinity_determineTargetCore_eq` (→
+  `Scheduler/Operations/Selection.lean`),
+  `migrateRunQueueBucketOnCore_replenishQueueOnCore` (new, in
+  `SchedContext/PriorityManagement.lean`) — each beside the definition it frames.
+
+`SeLe4n.lean` imports the new module: a module outside every library root is
+outside every Tier 1 census's derived domain, which is the `v0.35.76` finding one
+file smaller.
+
+### Witnesses
+
+Placement follows the arm, as it did at Cut C3a.
+
+* `tests/SmpCbsSuite.lean` §4.5 is the decisive one.  One state holds a thread on
+  a reservation and a thread on none, both homed on core 1; the same migration,
+  core 1 → core 2, resolves the *same footprint's* replenish segment to opposite
+  answers.  The **parametric** footprint is computed beside the resolved one on
+  the unbound shape, so the assertions are known to discriminate rather than
+  merely to pass, and the live `setThreadCpuAffinityWithMigration` is driven on
+  both shapes: it moves the reservation on one and writes no replenish queue on
+  any core on the other.
+* `tests/SuspendResumeSuite.lean` SR-035 resumes a thread homed on core 1 from
+  core 0, so the footprint's two members are distinct — a footprint resolved at
+  the executing core alone would declare neither the queue the thread enters nor
+  a lock the enqueue needs.
+* `tests/PriorityManagementSuite.lean` PM-FP-01 is the same shape for the
+  priority pair, issuing the syscall from core 1 against a target homed on core 0.
+
+### Anchors
+
+Positives on the module, the three write sets, the three footprints, the four
+exactness theorems, the four declaration halves, the coverage relation, the two
+relocated parametric footprints, the four relocated frames, the root import and
+the three witnesses with their runner calls; three relation anchors (each
+footprint **is** `schedFootprintOfCores` of its own write set; the affinity
+replenish segment keys on the binding; the witness computes the parametric
+footprint beside the resolved one); five negatives refusing every relocated
+declaration's return to the staged module it left.  Each was mutation-tested by
+keeping every other token.
+
+A write set's **content** is deliberately not anchored: each footprint's
+`_contains_*_runQueue_write` theorem is `simp [<the write set>]`, so a mutation
+dropping a core fails to *elaborate* — measured at
+`schedLockSet_resumeThreadOnCore_contains_home_runQueue_write`.  Prefer making
+the property structural over checking it at all.
+
 ## v0.35.166 — the destroy path's cleanup gets its reservation theorem
 
 WS-RR RR8.12, the third fix cut before C3b: register row 63's **layering**

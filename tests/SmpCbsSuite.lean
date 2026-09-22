@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
+import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Testing.StateBuilder
 -- PR #889 review round 20: the declared-core scenario reads the RPi5 and
 -- single-core simulation bindings, so the platform contracts come in here.
@@ -994,6 +995,103 @@ private def runBindingLifecycleScenarios : IO Unit := do
          | some sc => sc.boundThread == (none : Option SeLe4n.ThreadId) && !sc.isActive
          | none => false)
 
+/-- §4.5 (WS-RR RR8.12 Cut C3b-i) an **unbound** thread, pinned to core 1, in the
+same store as `tcb0`.  It is what makes the affinity arm's replenish-segment
+narrowing measurable: `tcb0` runs on a reservation and `tcbUnbound` does not, so
+the two resolve the same footprint's replenish segment to opposite answers on one
+state.  A fixture holding only `tcb0` can exhibit the `some` arm and never the
+`none` one. -/
+private def tidUnbound : SeLe4n.ThreadId := ThreadId.ofNat 130
+
+private def tcbUnbound : TCB :=
+  { tid := tidUnbound, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
+    vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    schedContextBinding := .unbound, cpuAffinity := some core1 }
+
+private def stAffinityFp : SystemState :=
+  let base := (((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
+    tid0.toObjId (.tcb tcb0)).withObject tidUnbound.toObjId (.tcb tcbUnbound)).build
+  { base with
+    scheduler := base.scheduler.setReplenishQueueOnCore core1
+      (ReplenishQueue.empty.insert scId0 5000) }
+
+/-- Does a scheduler-domain footprint name this core's replenish-queue write lock? -/
+private def hasReplenishWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+/-- ...and this core's run-queue write lock? -/
+private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+/-- §4.5 **WS-RR RR8.12 Cut C3b-i — the live `.tcbSetAffinity` arm's resolved
+scheduler-domain footprint.**
+
+Three things this measures that no theorem in the tree states of a *state*.
+
+1. The resolved footprint's replenish segment follows the **binding**, not the
+   arm: the same migration, core 1 → core 2, declares both cores' replenish write
+   locks for a thread on a reservation and none at all for a thread on none.
+2. The `setThreadCpuAffinityWithMigrationLockSet` the SM5.H.4 form declares is
+   computed **beside** the resolved one on the unbound shape, so the narrowing is
+   known to discriminate rather than merely to pass — the parametric footprint
+   names both replenish locks there, because it takes two cores and no state.
+3. The narrowing is exact in the other direction too: the live transition writes
+   no replenish queue on the unbound shape, and does move the reservation on the
+   bound one. -/
+private def runAffinityFootprintScenarios : IO Unit := do
+  IO.println "--- §4.5 Cut C3b-i: the .tcbSetAffinity arm's resolved scheduler footprint ---"
+  let fpBound := schedLockSet_setThreadCpuAffinityOnCore stAffinityFp tid0 (some core2)
+  let fpUnbound := schedLockSet_setThreadCpuAffinityOnCore stAffinityFp tidUnbound (some core2)
+  let fpParametric := setThreadCpuAffinityWithMigrationLockSet core1 core2
+  -- pre: the fixture really does hold the two shapes the claim distinguishes.
+  assertBool "pre: tid0 runs on scId0 and is homed on core 1"
+    (determineTargetCore stAffinityFp tid0 == core1 &&
+      (match stAffinityFp.getTcb? tid0 with
+       | some t => t.schedContextBinding.scId? == some scId0
+       | none => false))
+  assertBool "pre: tidUnbound is homed on core 1 too and runs on no reservation"
+    (determineTargetCore stAffinityFp tidUnbound == core1 &&
+      (match stAffinityFp.getTcb? tidUnbound with
+       | some t => t.schedContextBinding.scId? == (none : Option SchedContextId)
+       | none => false))
+  -- (1) the run-queue segment is the arm's, and it is the same on both shapes:
+  -- the narrowing is about the replenish segment alone.
+  assertBool "C3b-i: both shapes declare the old home core's run-queue write lock"
+    (hasRunQueueWriteLock fpBound core1 && hasRunQueueWriteLock fpUnbound core1)
+  assertBool "C3b-i: ...and the new one's"
+    (hasRunQueueWriteLock fpBound core2 && hasRunQueueWriteLock fpUnbound core2)
+  -- (2) the replenish segment follows the binding.
+  assertBool "C3b-i: a thread on a reservation declares BOTH cores' replenish write locks"
+    (hasReplenishWriteLock fpBound core1 && hasReplenishWriteLock fpBound core2)
+  assertBool "C3b-i: a thread on NO reservation declares no replenish lock on any core"
+    (allCores.all (fun c => !hasReplenishWriteLock fpUnbound c))
+  -- (3) the parametric SM5.H.4 footprint, computed beside the resolved one, is
+  -- what makes (2) a narrowing rather than a restatement.
+  assertBool "C3b-i: the parametric footprint declares both replenish locks on the SAME migration"
+    (hasReplenishWriteLock fpParametric core1 && hasReplenishWriteLock fpParametric core2)
+  assertBool "C3b-i: so on the unbound shape the two footprints DISAGREE — the narrowing is live"
+    (hasReplenishWriteLock fpParametric core1 && !hasReplenishWriteLock fpUnbound core1)
+  assertBool "C3b-i: and on the bound shape every parametric member is a resolved member (coverage)"
+    (fpParametric.all (fun p => decide (p ∈ fpBound)))
+  -- (4) the live transition agrees with each declaration.
+  match setThreadCpuAffinityWithMigration stAffinityFp tidUnbound (some core2) bootCoreId with
+  | .error e =>
+      assertBool s!"the unbound affinity change must succeed (got {repr e})" false
+  | .ok (stU, _) =>
+      assertBool "C3b-i: ...and the live arm writes no replenish queue on any core there"
+        (allCores.all (fun c =>
+          (stU.scheduler.replenishQueueOnCore c).entries
+            == (stAffinityFp.scheduler.replenishQueueOnCore c).entries))
+  match setThreadCpuAffinityWithMigration stAffinityFp tid0 (some core2) bootCoreId with
+  | .error e =>
+      assertBool s!"the bound affinity change must succeed (got {repr e})" false
+  | .ok (stB, _) =>
+      assertBool "C3b-i: the bound shape's live arm DOES move the reservation, to the new home"
+        ((stB.scheduler.replenishQueueOnCore core2).entries.contains (scId0, 5000) &&
+          !(stB.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -1008,6 +1106,7 @@ def main : IO Unit := do
   runSm5iTickCbsChecks
   runInventoryChecks
   runBindingLifecycleScenarios
+  runAffinityFootprintScenarios
   IO.println "=== SM5.H suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpCbs

@@ -1474,6 +1474,62 @@ private def pm_basePrioritySurvivesBlockAndWake : IO Unit := do
     expect "...and the retired reading REVERTED the demotion on the wake"
       (bucketOf (blockAndWake stOld) == some ⟨50⟩)
 
+-- ============================================================================
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the priority arms' resolved
+-- scheduler-domain footprint
+-- ============================================================================
+--
+-- `schedLockSet_priorityControlOnCore` is `schedFootprintOfCores` of the two
+-- arms' shared SM8.B write set with an **empty** replenish segment.  Both halves
+-- are measurable on a state and neither is stated of one by any theorem: the
+-- write set names the target's *home* core beside the executing one -- so a
+-- demotion issued from another PE declares the queue whose bucket it actually
+-- migrates -- and a priority change moves no scheduling context, which is the
+-- empty segment's exact half.
+
+/-- PM-FP-01: the priority footprint names the target's home core and the
+executing core, and **no** replenish-queue lock; the live arm writes none either.
+The syscall is issued from core 1 against a target homed on core 0, so the two
+members are distinct -- a footprint resolved at the executing core alone would
+declare neither the queue the bucket migration writes nor a lock it needs. -/
+private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit := do
+  let callerTid : SeLe4n.ThreadId := ⟨1⟩
+  let targetTid : SeLe4n.ThreadId := ⟨2⟩
+  let scId : SeLe4n.SchedContextId := ⟨50⟩
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let st := boundInSyncState callerTid targetTid scId
+  let fp := schedLockSet_priorityControlOnCore st targetTid core1
+  expect "PM-FP-01 precondition: the target is homed on core 0 and the syscall runs on core 1"
+    (determineTargetCore st targetTid == bootCoreId && core1 != bootCoreId)
+  expect "PM-FP-01 the footprint names the target's home core's run-queue write lock"
+    (decide ((SchedLockId.runQueue ⟨bootCoreId⟩,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
+  expect "PM-FP-01 ...and the executing core's, which the demotion's preemption point writes"
+    (decide ((SchedLockId.runQueue ⟨core1⟩,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
+  expect "PM-FP-01 ...and no replenish-queue write lock on any core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      !decide ((SchedLockId.replenishQueue ⟨c⟩,
+        SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp)))
+  match setPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ core1 with
+  | .error e => throw <| IO.userError s!"PM-FP-01 setPriority should succeed, got {repr e}"
+  | .ok (st1, _) =>
+    expect "PM-FP-01 the live arm re-buckets on the target's own home core"
+      ((st1.scheduler.runQueueOnCore bootCoreId).threadPriority[targetTid]? == some ⟨10⟩)
+    expect "PM-FP-01 ...and writes no replenish queue on any core -- the empty segment's exact half"
+      (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+        (st1.scheduler.replenishQueueOnCore c).entries
+          == (st.scheduler.replenishQueueOnCore c).entries))
+  -- the ceiling arm shares the write set, so it shares the footprint.
+  match setMCPriorityOnCore st ⟨callerTid, by decide⟩ ⟨targetTid, by decide⟩ ⟨10⟩ core1 with
+  | .error e => throw <| IO.userError s!"PM-FP-01 setMCPriority should succeed, got {repr e}"
+  | .ok (st2, _) =>
+    expect "PM-FP-01 the ceiling arm writes no replenish queue either"
+      (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+        (st2.scheduler.replenishQueueOnCore c).entries
+          == (st.scheduler.replenishQueueOnCore c).entries))
+
+
 end SeLe4n.Testing.PriorityManagementSuite
 
 open SeLe4n.Testing.PriorityManagementSuite in
@@ -1544,4 +1600,6 @@ def main : IO Unit := do
   pm_frozenCeilingAgreesWithTheLiveWrite
   pm_frozenBasePriorityRebucketsLikeTheLiveWrite
   pm_frozenCeilingRebucketsLikeTheLiveWrite
-  IO.println "=== All D2 priority management tests passed (44 tests) ==="
+  IO.println "--- `v0.35.167`: the priority arms' resolved scheduler footprint ---"
+  pm_fp_01_priorityFootprintNamesHomeAndExecutingCores
+  IO.println "=== All D2 priority management tests passed (45 tests) ==="

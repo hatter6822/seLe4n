@@ -2617,6 +2617,26 @@ def migrateRunQueueOnAffinityChange (st : SystemState) (tid : SeLe4n.ThreadId)
         { st with scheduler := sched' }
       else st
 
+/-- WS-SM SM5.H.4: the run-queue migration frames every core's **replenish** queue
+(it writes only run-queue slots).
+
+Declared in the **staged** `Scheduler/Operations/PerCoreCbs.lean` until
+`v0.35.167`, where production could not read it; moved beside the definition it
+frames, so the live `.tcbSetAffinity` arm's footprint can state that a thread on
+no reservation moves no replenish entry. -/
+@[simp] theorem migrateRunQueueOnAffinityChange_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
+    (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  unfold migrateRunQueueOnAffinityChange
+  split
+  · rfl
+  · split
+    · rfl
+    · split
+      · simp
+      · rfl
+
 /-- WS-SM SM6.E (PR #831 review 4, P1): the core **actually running** `tid` —
 the first core whose current slot holds it (`none` when not current anywhere).
 `determineTargetCore` is the wake/queue *home* (affinity defaulting to boot),

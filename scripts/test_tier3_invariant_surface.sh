@@ -10516,6 +10516,104 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_pre
 # Mutation: add a `retypeTargetDetached` hypothesis to the composite.
 run_negative_check "INVARIANT" rg -n 'retypeTargetDetached' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved
+# scheduler-domain footprints.
+#
+# `SchedLockId` is declared in `Scheduler/Operations/PerCoreChooseThread.lean`,
+# which imports `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean` -- so
+# it sits ABOVE every module holding a lifecycle, priority or affinity
+# transition, and none of them can name a `SchedLockId` at all.  These three
+# footprints therefore cannot live beside their transitions the way the IPC
+# arms' do; `SeLe4n/Kernel/SyscallSchedFootprint.lean` is where they go and its
+# header states the rule.
+# ---------------------------------------------------------------------------
+# The module, and the root that imports it: a module outside every library root
+# is outside every Tier 1 census's derived domain (`v0.35.76`).
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.SyscallSchedFootprint$' SeLe4n.lean
+# The three write sets, moved out of the staged NI module so a PRODUCTION
+# footprint can read them (Cut 7's rule: a footprint IS its arm's write set).
+# Their CONTENT needs no anchor and must not get one: each footprint's
+# `_contains_*_runQueue_write` theorem is `simp [<the write set>]`, so a mutation
+# dropping a core from a write set fails to ELABORATE -- measured, at
+# `schedLockSet_resumeThreadOnCore_contains_home_runQueue_write`.  Prefer making
+# the property structural over checking it at all.
+run_check "INVARIANT" rg -n '^def resumeThreadOnCoreWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def priorityControlWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWriteSet \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# NEGATIVE: and none of them may come back in the staged module it left, where a
+# production footprint cannot see it.  Mutation: restore any one of the three
+# definitions there as code.
+run_negative_check "INVARIANT" rg -n '^def (resumeThreadOnCoreWriteSet|priorityControlWriteSet|setThreadCpuAffinityWriteSet) ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The three footprints.
+run_check "INVARIANT" rg -n '^def schedLockSet_resumeThreadOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_priorityControlOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedLockSet_setThreadCpuAffinityOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# RELATION: each footprint IS `schedFootprintOfCores` of its arm's OWN write set
+# -- never a second resolution of the same cores, which is what lets the
+# footprint and the confinement claim name different ones.  Mutation: keep every
+# token and inline the write set's body at the footprint.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_resumeThreadOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(resumeThreadOnCoreWriteSet st vtid executingCore\) \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_priorityControlOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(priorityControlWriteSet st tid executingCore\) \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedLockSet_setThreadCpuAffinityOnCore[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(setThreadCpuAffinityWriteSet st tid affinity\)(\n([ \t][^\n]*)?)*\(setThreadCpuAffinityReplenishCores st tid affinity\)" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# RELATION: the affinity arm's replenish segment keys on the thread's BINDING,
+# not on the arm -- a migration of a thread on no reservation moves no entry, and
+# over-declaring costs the arm lock contention it does not have (SM8.D's CC-5,
+# and WS-OD OD3.5's reason for narrowing a footprint).  Mutation: keep the
+# definition and answer the two cores unconditionally.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def setThreadCpuAffinityReplenishCores[^\n]*(\n([ \t][^\n]*)?)*match \(st\.getTcb\? tid\)\.bind \(fun tcb => tcb\.schedContextBinding\.scId\?\) with(\n([ \t][^\n]*)?)*\| none => \[\]" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# The two exact halves the empty segments rest on: the live arms write no
+# replenish queue at all.
+run_check "INVARIANT" rg -n '^theorem resumeThreadOnCoreLive_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setMCPriorityOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# ...and the declarations' own halves, in both directions.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_no_replenishQueue \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_priorityControlOnCore_no_replenishQueue \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_contains_replenishQueue_writes$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_no_replenishQueue_of_no_context$' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# Coverage, at the cores the MIGRATION resolves rather than at the argument the
+# footprint resolves from: the transition's destination is
+# `determineTargetCore stSet tid` at the post-affinity-write state, and the two
+# are one value only through `setThreadCpuAffinity_determineTargetCore_eq`.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# RELATION: and its second conjunct names the POST-write core.  Mutation: keep
+# the theorem and state both conjuncts at the pre-state core, which elaborates.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_migration[^\n]*(\n([ \t][^\n]*)?)*SchedLockId\.replenishQueue \u27e8determineTargetCore stSet tid\u27e9, Concurrency\.AccessMode\.write" SeLe4n/Kernel/SyscallSchedFootprint.lean'
+# The coverage relation the parametric footprint's relocation buys.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_covers_parametric \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The SM5.H.4 parametric family, production now, beside the
+# `migrateSchedContextReplenishmentLockSet` family WS-RR RR2.4 relocated out of
+# the SAME staged module twenty lines short of its own siblings.
+run_check "INVARIANT" rg -n '^def setThreadCpuAffinityWithMigrationLockSet \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def migrateRunQueueOnAffinityChangeLockSet \(' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+# NEGATIVE: neither may come back in the staged module.  Mutation: restore either
+# definition in `PerCoreCbs.lean` as code.
+run_negative_check "INVARIANT" rg -n '^def (setThreadCpuAffinityWithMigrationLockSet|migrateRunQueueOnAffinityChangeLockSet) ' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
+# The four frames the footprints' proofs compose, each relocated to production
+# beside the definition it frames -- `v0.35.59`'s rule, four more times.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem migrateRunQueueOnAffinityChange_replenishQueueOnCore \(' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinity_determineTargetCore_eq \(' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem migrateRunQueueBucketOnCore_replenishQueueOnCore \(' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+# NEGATIVE: and none of the four in the staged modules they left.  Mutation:
+# restore any one of them there as code.
+run_negative_check "INVARIANT" rg -n '^theorem (migrateRunQueueOnAffinityChange_replenishQueueOnCore|enqueueRunnableOnCore_replenishQueueOnCore) ' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean SeLe4n/Kernel/Scheduler/Operations/PerCoreTickCbsPreservation.lean
+run_negative_check "INVARIANT" rg -n '^theorem setThreadCpuAffinity_determineTargetCore_eq ' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+# The three witnesses, and the runner calls that make them run.
+run_check "INVARIANT" rg -n '^private def runAffinityFootprintScenarios : IO Unit' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -n '^  runAffinityFootprintScenarios$' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -n '^private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit' tests/SuspendResumeSuite.lean
+run_check "INVARIANT" rg -n '^  sr035_resumeFootprintNamesHomeAndExecutingCores$' tests/SuspendResumeSuite.lean
+run_check "INVARIANT" rg -n '^private def pm_fp_01_priorityFootprintNamesHomeAndExecutingCores : IO Unit' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -n '^  pm_fp_01_priorityFootprintNamesHomeAndExecutingCores$' tests/PriorityManagementSuite.lean
+# RELATION: the decisive witness computes the PARAMETRIC footprint beside the
+# resolved one on the unbound shape, so its assertions are known to discriminate
+# rather than merely to pass.  Mutation: delete the `fpParametric` binding and
+# the assertion that reads it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runAffinityFootprintScenarios[^\n]*(\n([ \t][^\n]*)?)*let fpParametric := setThreadCpuAffinityWithMigrationLockSet core1 core2(\n([ \t][^\n]*)?)*the two footprints DISAGREE" tests/SmpCbsSuite.lean'
+
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

@@ -120,6 +120,17 @@ import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
 -- It sits below the two `Cancellation*Shape` modules above (which is the only
 -- layer that sees every frame it composes) and above nothing.
 import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the three TCB-control arms' resolved
+-- scheduler-domain footprints.  A resolved footprint is `schedFootprintOfCores`
+-- of its arm's own SM8.B write set, and it names `SchedLockId`, which is declared
+-- in `Scheduler/Operations/PerCoreChooseThread.lean` — a module every one of
+-- these arms' transition modules sits *above*.  So the footprints cannot live
+-- beside their transitions the way the IPC arms' do, and a central production
+-- module is where they go; the object domain reached the same shape at
+-- `Concurrency/Locks/LockSetTransitions.lean`.  Nothing in this root imports it,
+-- so without this line it would be outside every Tier 1 census's environment —
+-- the `v0.35.76` finding one file smaller.
+import SeLe4n.Kernel.SyscallSchedFootprint
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

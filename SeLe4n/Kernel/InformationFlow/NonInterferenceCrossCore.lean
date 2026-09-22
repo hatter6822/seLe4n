@@ -24,6 +24,7 @@ import SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatch
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.PerCore
+import SeLe4n.Kernel.SyscallSchedFootprint
 
 /-!
 # WS-SM SM8.B — non-interference at the cross-core transitions
@@ -2661,14 +2662,14 @@ theorem suspendThreadOnCore_crossCoreNonInterference (ctx : LabelingContext)
 -- resumed onto the **boot** run queue, where its own core would never dispatch
 -- it. The arm is rerouted; this section is the audit the inventory was missing.
 
-/-- SM8.B.2: **the cores the live `.tcbResume` may write** — the resumed thread's
-home core, where it re-enters the run queue, and the executing core, which runs
-the reschedule inline when it *is* the home core. A remote resume writes only
-the home core and hands it an SGI, so the declared set over-approximates by one
-core on that path; over-approximating is the safe direction. -/
-def resumeThreadOnCoreWriteSet (st : SystemState) (vtid : SeLe4n.ValidThreadId)
-    (executingCore : CoreId) : List CoreId :=
-  [determineTargetCore st vtid.val, executingCore]
+-- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `resumeThreadOnCoreWriteSet` moved to the
+-- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, where the live
+-- `.tcbResume` arm's resolved scheduler-domain footprint
+-- (`schedLockSet_resumeThreadOnCore`) is `schedFootprintOfCores` of it.  A
+-- production footprint cannot read a write set declared in a staged module, and
+-- Cut 7's rule is that a footprint IS that write set rather than a second
+-- resolution of the same cores.  Same name, same namespace; the confinement
+-- theorems below stay here.
 
 /-- SM8.B.2: the per-core resume's ready-restore leg is per-core silent — it
 rewrites the victim's TCB (IPC fields, `threadState`, `pipBoost`) and touches
@@ -3307,17 +3308,10 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)
 
-/-- SM8.B.2: **where a `.tcbSetAffinity` writes.**
-
-The old home core and the new one. Unlike bind and configure, the second core
-needs no state at all: `setThreadCpuAffinity` inserts the TCB with
-`cpuAffinity := affinity` and `determineTargetCore` reads exactly that field, so
-the post-migration home is a function of the *argument*. That is what
-`setThreadCpuAffinity_determineTargetCore_eq` says, and it is why this write set
-avoids the mid-state bridge its two SchedContext siblings needed. -/
-def setThreadCpuAffinityWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
-    (affinity : Option CoreId) : List CoreId :=
-  [determineTargetCore st tid, affinity.getD Concurrency.bootCoreId]
+-- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `setThreadCpuAffinityWriteSet` moved to the
+-- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_setThreadCpuAffinityOnCore`, for the reason the `.tcbResume`
+-- tombstone above gives.  Same name, same namespace.
 
 /-- SM8.B.2: the affinity write touches the object store only. -/
 theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
@@ -3329,25 +3323,13 @@ theorem setThreadCpuAffinity_scheduler_machine_eq (st stSet : SystemState)
   · rw [Except.ok.injEq] at hSet; subst hSet; exact ⟨rfl, rfl⟩
   · exact absurd hSet (by simp)
 
-/-- SM8.B.2: after the affinity write the thread's home core IS the requested
-affinity (boot when unbound) — the bridge that lets the write set name the new
-core without mentioning the mid-state. -/
-theorem setThreadCpuAffinity_determineTargetCore_eq (st stSet : SystemState)
-    (tid : SeLe4n.ThreadId) (affinity : Option CoreId) (hInv : st.objects.invExt)
-    (hSet : setThreadCpuAffinity st tid affinity = .ok stSet) :
-    determineTargetCore stSet tid = affinity.getD Concurrency.bootCoreId := by
-  unfold setThreadCpuAffinity at hSet
-  split at hSet
-  · next tcb hTcb _ =>
-    rw [Except.ok.injEq] at hSet
-    subst hSet
-    unfold determineTargetCore SystemState.getTcb?
-    simp only [RHTable_getElem?_eq_get?, SystemState.rewriteObject_objects]
-    rw [RHTable_getElem?_insert st.objects tid.toObjId
-      (.tcb { tcb with cpuAffinity := affinity }) hInv tid.toObjId]
-    simp only [beq_self_eq_true, if_pos]
-    cases affinity <;> rfl
-  · exact absurd hSet (by simp)
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): `setThreadCpuAffinity_determineTargetCore_eq`
+-- moved to `Scheduler/Operations/Selection.lean`, beside the definition it is
+-- about.  It was declared here, in a **staged** module, and the live
+-- `.tcbSetAffinity` arm's production scheduler-domain footprint needs it to state
+-- that the replenish pair it declares IS the migration's — the same layering
+-- finding as `v0.35.166`'s five relocations and this cut's
+-- `enqueueRunnableOnCore_replenishQueueOnCore`.
 
 /-- SM8.B.2 (**the live `.tcbSetAffinity` bound**): a migration writes no core
 outside the pair it moves the thread between.
@@ -3765,13 +3747,10 @@ theorem applyPriorityChangeOnCore_confinedToCores (base st' : SystemState)
     (priorityUpdateAndMigrate_confinedToCores base tid tcb p (determineTargetCore base tid))
     (priorityRescheduleOnCoreLive_confinedToCores _ st' _ executingCore shouldPreempt sgi hStep)
 
-/-- SM8.B.2: **the cores the live `.tcbSetPriority` / `.tcbSetMCPriority` may
-write** — the target's home core, where its run-queue bucket migrates, and the
-executing core, which runs the demotion's preemption point inline. A remote
-preemption is posted as an SGI, so the set over-approximates by one core there. -/
-def priorityControlWriteSet (st : SystemState) (tid : SeLe4n.ThreadId)
-    (executingCore : CoreId) : List CoreId :=
-  [determineTargetCore st tid, executingCore]
+-- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `priorityControlWriteSet` moved to the
+-- production `SeLe4n/Kernel/SyscallSchedFootprint.lean`, beside
+-- `schedLockSet_priorityControlOnCore`, for the reason the `.tcbResume`
+-- tombstone above gives.  Same name, same namespace.
 
 /-- SM8.B.2 (**the live `.tcbSetPriority` bound**): setting a priority writes no
 core outside the target's home and the executing core.

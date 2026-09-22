@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.166` (`lakefile.toml`) |
+| **Package version** | `0.35.167` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 402,742 across 335 Lean files |
-| **Test LoC** | 82,280 across 70 Lean test suites |
-| **Proved declarations** | 13,344 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 403,351 across 336 Lean files |
+| **Test LoC** | 82,491 across 70 Lean test suites |
+| **Proved declarations** | 13,368 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4630,6 +4630,54 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   the tree — and the retype *composite*'s affinity theorem, whose `storeObject` at
   `target` preserves the invariant exactly when no surviving context is bound to the
   destroyed thread, which is a consequence of that reciprocity.
+
+  **And the three TCB-control arms declare theirs, in a module of their own**
+  (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,
+  `schedLockSet_priorityControlOnCore` and
+  `schedLockSet_setThreadCpuAffinityOnCore` sit in
+  `SeLe4n/Kernel/SyscallSchedFootprint.lean` rather than beside their
+  transitions, and that is a fact about the import graph rather than a convention
+  abandoned: `SchedLockId` is declared in
+  `Scheduler/Operations/PerCoreChooseThread.lean`, which imports
+  `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`, so the lifecycle,
+  priority, affinity, SchedContext and retype transition modules are all outside
+  its reverse closure and none can name a `SchedLockId` at all.  Moving the
+  identifier down was rejected — it is declared with `RunQueueLockId`,
+  `ReplenishQueueLockId` and the cross-domain order over them, which is what
+  `schedFootprintOfCores` is about — so the rule is stated once in that module's
+  header: *a resolved scheduler footprint lives beside its transition where that
+  module can name a `SchedLockId`, and here where it cannot*, the shape the
+  object domain reached at `Concurrency/Locks/LockSetTransitions.lean`.  Each is
+  `schedFootprintOfCores` of the arm's own SM8.B write set (Cut 7's rule), which
+  is what moved `resumeThreadOnCoreWriteSet`, `priorityControlWriteSet` and
+  `setThreadCpuAffinityWriteSet` out of the staged non-interference module; the
+  priority pair shares one footprint because SM8.B gives the two arms one write
+  set.  The affinity arm's replenish segment follows the thread's **binding** —
+  both cores on a reservation, none on the `.unbound` path — and every empty
+  segment is a theorem
+  (`resumeThreadOnCoreLive_replenishQueueOnCore`,
+  `setPriorityOnCore_replenishQueueOnCore`,
+  `setMCPriorityOnCore_replenishQueueOnCore`,
+  `setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context`) against
+  the declaration's own half, so each narrowing is exact in both directions.
+  Coverage against the transition is its own statement
+  (`schedLockSet_setThreadCpuAffinityOnCore_covers_migration`): the transition
+  resolves its destination at the post-affinity-write state and the footprint
+  from the argument, one value only through
+  `setThreadCpuAffinity_determineTargetCore_eq`.
+  Stating `schedLockSet_setThreadCpuAffinityOnCore_covers_parametric` is what
+  found the SM5.H.4 parametric family still in the staged `PerCoreCbs.lean`
+  twenty lines below the tombstone WS-RR RR2.4 left when it relocated
+  `migrateSchedContextReplenishmentLockSet` out of that same file for that same
+  reason; `setThreadCpuAffinityWithMigrationLockSet` and
+  `migrateRunQueueOnAffinityChangeLockSet` are production now, and four frames
+  moved beside the definitions they frame.  `tests/SmpCbsSuite.lean` §4.5 is the
+  decisive witness — one state, a thread on a reservation and a thread on none,
+  the same migration, opposite segments, with the parametric footprint computed
+  beside the resolved one so the assertions discriminate — and
+  `tests/SuspendResumeSuite.lean` SR-035 and
+  `tests/PriorityManagementSuite.lean` PM-FP-01 drive the other two arms.
+  `maxLockSetSize` is unmoved.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

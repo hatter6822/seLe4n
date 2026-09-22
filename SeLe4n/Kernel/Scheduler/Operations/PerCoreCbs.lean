@@ -498,20 +498,11 @@ theorem setThreadCpuAffinity_getSchedContext? (st : SystemState)
     · rfl
     · split <;> rfl
 
-/-- WS-SM SM5.H.4: the run-queue migration frames every core's **replenish** queue
-(it writes only run-queue slots). -/
-@[simp] theorem migrateRunQueueOnAffinityChange_replenishQueueOnCore (st : SystemState)
-    (tid : SeLe4n.ThreadId) (fromCore toCore c' : CoreId) :
-    (migrateRunQueueOnAffinityChange st tid fromCore toCore).scheduler.replenishQueueOnCore c'
-      = st.scheduler.replenishQueueOnCore c' := by
-  unfold migrateRunQueueOnAffinityChange
-  split
-  · rfl
-  · split
-    · rfl
-    · split
-      · simp
-      · rfl
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): `migrateRunQueueOnAffinityChange_replenishQueueOnCore`
+-- moved to `Scheduler/Operations/Core.lean`, beside the definition it frames.  It
+-- was declared here, in a **staged** module, so the live `.tcbSetAffinity` arm's
+-- production scheduler-domain footprint could not state that a thread on no
+-- reservation moves no replenish entry.
 
 /-- WS-SM SM5.H.4: the run-queue migration frames every SchedContext resolution. -/
 theorem migrateRunQueueOnAffinityChange_getSchedContext? (st : SystemState)
@@ -1002,121 +993,14 @@ theorem replenishOnCoreLockSet_size_le_maxLockSetSize (c : CoreId) :
 -- `.tcbSuspend` cancellation), so the footprint their `withLockSet` brackets
 -- must cover cannot live in a staged module.  Same names, same namespace.
 
-/-- WS-SM SM5.H.4 (lock-set): `migrateRunQueueOnAffinityChange fromCore toCore`
-writes both cores' run-queue slots. -/
-def migrateRunQueueOnAffinityChangeLockSet (fromCore toCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  [ (SchedLockId.runQueue ⟨fromCore⟩, .write)
-  , (SchedLockId.runQueue ⟨toCore⟩, .write) ]
-
-/-- SM5.H.4: the run-queue-migration footprint is the two run-queue write locks. -/
-@[simp] theorem migrateRunQueueOnAffinityChangeLockSet_length (fromCore toCore : CoreId) :
-    (migrateRunQueueOnAffinityChangeLockSet fromCore toCore).length = 2 := rfl
-
-/-- SM5.H.4: under the canonical core order the run-queue-migration footprint's keys
-are ascending. -/
-theorem migrateRunQueueOnAffinityChangeLockSet_pairwise_le_of_core_le (fromCore toCore : CoreId)
-    (h : fromCore.val ≤ toCore.val) :
-    ((migrateRunQueueOnAffinityChangeLockSet fromCore toCore).map (·.1)).Pairwise (· ≤ ·) := by
-  simp only [migrateRunQueueOnAffinityChangeLockSet, List.map_cons, List.map_nil]
-  refine List.Pairwise.cons (fun a ha => ?_) (List.pairwise_singleton _ _)
-  rw [List.mem_singleton] at ha; subst ha; exact h
-
-/-- WS-SM SM5.H.4 (lock-set): the **complete** footprint of the full
-affinity-change-with-migration composite — the object-store write lock (the
-affinity write, an SM3.A.10 table-level write), the two run-queue write locks
-(the run-queue migration), and the two replenish-queue write locks (the
-replenishment migration), in plan §4.4 ascending order (object < runQueue <
-replenishQueue, then by `core.val`).  This is the footprint a `withLockSet`
-caller (the SM5.I `tcbSetAffinity` runtime path) acquires. -/
-def setThreadCpuAffinityWithMigrationLockSet (oldCore newCore : CoreId) :
-    List (SchedLockId × Concurrency.AccessMode) :=
-  -- #5 (Codex P2 review): order the per-core run-queue / replenish-queue locks by
-  -- core (lower-numbered core first) regardless of the old→new migration direction,
-  -- so the footprint's keys are `SchedLockId`-ascending **unconditionally** (a valid
-  -- `withLockSet` acquisition sequence — a concurrent opposite-direction migration
-  -- acquires the same queue locks in the same order, so no reverse-direction
-  -- deadlock; see `setThreadCpuAffinityWithMigrationLockSet_pairwise_le`).
-  let loCore := if oldCore.val ≤ newCore.val then oldCore else newCore
-  let hiCore := if oldCore.val ≤ newCore.val then newCore else oldCore
-  [ (SchedLockId.object schedObjStoreLockId, .write)
-  , (SchedLockId.runQueue ⟨loCore⟩, .write)
-  , (SchedLockId.runQueue ⟨hiCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨loCore⟩, .write)
-  , (SchedLockId.replenishQueue ⟨hiCore⟩, .write) ]
-
-/-- SM5.H.4: the composite footprint has the five cross-domain write locks. -/
-@[simp] theorem setThreadCpuAffinityWithMigrationLockSet_length (oldCore newCore : CoreId) :
-    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length = 5 := rfl
-
-/-- SM5.H.4: the composite footprint is write-only. -/
-theorem setThreadCpuAffinityWithMigrationLockSet_write_only (oldCore newCore : CoreId) :
-    ∀ p ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore,
-      p.2 = Concurrency.AccessMode.write := by
-  intro p hp
-  simp only [setThreadCpuAffinityWithMigrationLockSet, List.mem_cons, List.not_mem_nil, or_false] at hp
-  rcases hp with h | h | h | h | h <;> subst h <;> rfl
-
-/-- SM5.H.4: the composite footprint contains the object-store write lock (the
-affinity write). -/
-theorem setThreadCpuAffinityWithMigrationLockSet_contains_objStore_write (oldCore newCore : CoreId) :
-    (SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)
-      ∈ setThreadCpuAffinityWithMigrationLockSet oldCore newCore := by
-  simp [setThreadCpuAffinityWithMigrationLockSet]
-
-/-- SM5.H.4 (#5, Codex P2 — plan §4.4 / SM3.D ladder): the composite footprint's keys
-form an ascending acquisition sequence **unconditionally** (object < runQueue <
-replenishQueue, then by core) — the lock-set lists the per-core queue locks
-lower-core-first regardless of the old→new migration direction, so a `withLockSet`
-caller acquires them in canonical order and cannot deadlock against a concurrent
-opposite-direction migration. -/
-theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le (oldCore newCore : CoreId) :
-    ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) := by
-  have hObjRq : ∀ (r : RunQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.runQueue r :=
-    fun r => (SchedLockId.object_lt_runQueue _ _).1
-  have hObjRpq : ∀ (r : ReplenishQueueLockId), SchedLockId.object schedObjStoreLockId ≤ SchedLockId.replenishQueue r :=
-    fun r => (SchedLockId.object_lt_replenishQueue _ _).1
-  have hRqRpq : ∀ (q : RunQueueLockId) (r : ReplenishQueueLockId),
-      SchedLockId.runQueue q ≤ SchedLockId.replenishQueue r := fun q r => (SchedLockId.runQueue_lt_replenishQueue _ _).1
-  have hLoHi : (if oldCore.val ≤ newCore.val then oldCore else newCore).val
-             ≤ (if oldCore.val ≤ newCore.val then newCore else oldCore).val := by
-    by_cases hc : oldCore.val ≤ newCore.val
-    · simp only [hc, if_true]
-    · simp only [hc, if_false]; omega
-  simp only [setThreadCpuAffinityWithMigrationLockSet, List.map_cons, List.map_nil]
-  refine List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
-    (List.Pairwise.cons (fun a ha => ?_) (List.Pairwise.cons (fun a ha => ?_)
-      (List.pairwise_singleton _ _))))
-  · rcases List.mem_cons.mp ha with rfl | ha
-    · exact hObjRq _
-    rcases List.mem_cons.mp ha with rfl | ha
-    · exact hObjRq _
-    rcases List.mem_cons.mp ha with rfl | ha
-    · exact hObjRpq _
-    rcases List.mem_singleton.mp ha with rfl; exact hObjRpq _
-  · rcases List.mem_cons.mp ha with rfl | ha
-    · exact hLoHi
-    rcases List.mem_cons.mp ha with rfl | ha
-    · exact hRqRpq _ _
-    rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
-  · rcases List.mem_cons.mp ha with rfl | ha
-    · exact hRqRpq _ _
-    rcases List.mem_singleton.mp ha with rfl; exact hRqRpq _ _
-  · rcases List.mem_singleton.mp ha with rfl; exact hLoHi
-
-/-- SM5.H.4 (retained): the conditional form, now immediate from the unconditional
-`setThreadCpuAffinityWithMigrationLockSet_pairwise_le`. -/
-theorem setThreadCpuAffinityWithMigrationLockSet_pairwise_le_of_core_le (oldCore newCore : CoreId)
-    (_h : oldCore.val ≤ newCore.val) :
-    ((setThreadCpuAffinityWithMigrationLockSet oldCore newCore).map (·.1)).Pairwise (· ≤ ·) :=
-  setThreadCpuAffinityWithMigrationLockSet_pairwise_le oldCore newCore
-
-/-- SM5.H.4 (WCRT): the composite footprint (5 locks) is within the SM3.D
-`maxLockSetSize` cap — so its worst-case lock-wait is bounded. -/
-theorem setThreadCpuAffinityWithMigrationLockSet_size_le_maxLockSetSize (oldCore newCore : CoreId) :
-    (setThreadCpuAffinityWithMigrationLockSet oldCore newCore).length
-      ≤ Concurrency.maxLockSetSize := by
-  rw [setThreadCpuAffinityWithMigrationLockSet_length]; decide
+-- WS-RR RR8.12 Cut C3b-i (`v0.35.167`): `migrateRunQueueOnAffinityChangeLockSet`,
+-- `setThreadCpuAffinityWithMigrationLockSet` and their eight lemmas moved to the
+-- production `Scheduler/Operations/PerCoreChooseThread.lean`, beside the
+-- `migrateSchedContextReplenishmentLockSet` family the RR2.4 tombstone above
+-- relocated for the same reason and in the same cut as this one should have been:
+-- the live `.tcbSetAffinity` arm's resolved scheduler-domain footprint
+-- (`schedLockSet_setThreadCpuAffinityOnCore`) is production, so it could not state
+-- that it covers a parametric footprint declared here.  Same names, same namespace.
 
 -- ============================================================================
 -- §11  SM5.H.4 — Scheduler-invariant (`runQueueOnCoreWellFormed`) preservation
