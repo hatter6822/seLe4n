@@ -410,6 +410,36 @@ theorem foldl_removeRunnableStepOnCore_domain_frame
     exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
            by rw [List.foldl_cons, h3, g3]⟩
 
+/-- **`v0.35.165`: the sweep leaves every core's REPLENISH queue alone.**
+
+The seventh scheduler slot, and the one the SM5.H affinity invariant reads.  The
+sweep's step writes a run queue and a current slot in its taken branch and
+nothing in its untaken one, so a destroy path that removes a thread from every
+core's run queue moves no scheduling context's eligibility entry — which is what
+lets `cleanupTcbReferences` carry `replenishQueueAffinityConsistent_smp`. -/
+theorem foldl_removeRunnableStepOnCore_replenishQueueOnCore
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
+    ∀ (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId),
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+  induction cs with
+  | nil => intro _ _; rfl
+  | cons d ds ih =>
+    intro st c
+    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
+        (removeRunnableStepOnCore tid s e).scheduler.replenishQueueOnCore c
+          = s.scheduler.replenishQueueOnCore c := by
+      intro s e
+      unfold removeRunnableStepOnCore
+      split <;> simp
+    rw [List.foldl_cons, ih (removeRunnableStepOnCore tid st d) c, hStep st d]
+
+@[simp] theorem removeRunnableFromAllCores_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  foldl_removeRunnableStepOnCore_replenishQueueOnCore _ tid st c
+
 @[simp] theorem removeRunnableFromAllCores_activeDomainOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (removeRunnableFromAllCores st tid).scheduler.activeDomainOnCore c

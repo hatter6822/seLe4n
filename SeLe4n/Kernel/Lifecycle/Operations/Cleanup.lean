@@ -15,6 +15,12 @@ import SeLe4n.Kernel.Service.Registry
 -- and the `.donated` arm's replenishment migration is the scheduler's
 -- (`migrateSchedContextReplenishment`, `determineTargetCore`).
 import SeLe4n.Kernel.SchedContext.ReplenishAffinity
+-- `v0.35.165`: the destroy path ends the reservation a retyped SchedContext
+-- still holds, and it does so with the unbind's own primitives
+-- (`purgeReplenishmentOnCore` / `purgeReplenishmentFromAllCores`) rather than
+-- a second spelling of the queue write.  Cycle-free: nothing in this module's
+-- closure is reachable from `SchedContext.Operations`.
+import SeLe4n.Kernel.SchedContext.Operations
 
 /-!
 AN4-G.5 (LIF-M05) child module extracted from
@@ -624,5 +630,193 @@ theorem cancelDonationArmOnCore_of_donated (st : SystemState) (tid : SeLe4n.Thre
     (h : tcb.schedContextBinding = .donated scId owner) :
     cancelDonationArmOnCore st tid tcb = cancelDonatedDonationOnCore st tid tcb := by
   simp only [cancelDonationArmOnCore, h]
+
+-- ============================================================================
+-- `v0.35.165`: the reservation a destroyed SchedContext still holds
+-- ============================================================================
+
+/-- **`v0.35.165`: release the binding a scheduling context still holds, so a
+retype does not leave a thread bound to a destroyed object.**
+
+`lifecyclePreRetypeCleanup`'s `.schedContext` arm refused a context that heads a
+reply stack (`scReply.isSome`) and nothing else, so a context **bound** to a
+thread passed: the retype then left that thread `.bound scId` (or `.donated scId
+owner`, which is the binding a donee holds) naming an object the slot no longer
+carries, its `scThreadIndex` entry in place, and `scId`'s replenish entries
+queued on that thread's home core under an id the slot's next occupant inherits.
+seL4's `finaliseCap` runs `schedContext_unbindAllTCBs` on a scheduling-context
+capability; this is that, per core.
+
+**The three writes are `schedContextUnbind`'s own, composed from the same
+primitives in the same order** (`SchedContext/Operations.lean` — this module
+imports it for exactly that reason): the bound thread's binding cleared through
+`updateTcb`, `scId`'s replenishments purged with `purgeReplenishmentOnCore` on
+that thread's home core, and the `scThreadIndex` entry removed.  What it does
+**not** do is rewrite the SchedContext record — the retype replaces the object
+outright — or touch the scheduler's run queues and current slots, which is what
+keeps the arm's write set empty and the destroy path's confinement result
+unchanged.
+
+The TCB-absent arm sweeps **every** core, for the unbind's own stated reason: a
+bound thread already gone from the store has no `cpuAffinity` left to read, so
+there is no home core to name and the only sound answer is all of them.
+
+The binding is cleared whatever it is — `.bound scId` on an owner and `.donated
+scId owner` on a donee are the two bindings a context's `boundThread` can name,
+and both lose the reservation when the object is destroyed.  A donee's context
+is **not** returned to its owner here: the owner is already `.unbound`
+(`donationOwnerValid`) and the object it would receive no longer exists. -/
+def releaseSchedContextBinding (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (sc : SeLe4n.Kernel.SchedContext) : SystemState :=
+  match sc.boundThread with
+  | none => st
+  | some tid =>
+    match st.getTcb? tid with
+    | some _ =>
+      let st1 := st.updateTcb tid fun t =>
+        { t with schedContextBinding := SchedContextBinding.unbound }
+      let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
+      { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }
+    | none =>
+      let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
+      { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }
+
+/-- `v0.35.165`: a context bound to nothing has no binding to release. -/
+@[simp] theorem releaseSchedContextBinding_of_unbound (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (h : sc.boundThread = none) :
+    releaseSchedContextBinding st scId sc = st := by
+  simp only [releaseSchedContextBinding, h]
+
+/-- `v0.35.165`: the release at a context bound to a thread the store holds. -/
+theorem releaseSchedContextBinding_of_bound (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = some tcb) :
+    releaseSchedContextBinding st scId sc =
+      (let st1 := st.updateTcb tid fun t =>
+        { t with schedContextBinding := SchedContextBinding.unbound }
+       let st2 := SchedContextOps.purgeReplenishmentOnCore st1 (determineTargetCore st tid) scId
+       { st2 with scThreadIndex := scThreadIndexRemove st2.scThreadIndex scId tid }) := by
+  simp only [releaseSchedContextBinding, hBound, hTcb]
+
+/-- `v0.35.165`: the release at a context whose bound thread the store has lost —
+the all-cores sweep, for the reason `schedContextUnbind`'s own `none` arm gives. -/
+theorem releaseSchedContextBinding_of_missing_tcb (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (tid : SeLe4n.ThreadId)
+    (hBound : sc.boundThread = some tid) (hTcb : st.getTcb? tid = none) :
+    releaseSchedContextBinding st scId sc =
+      (let st1 := SchedContextOps.purgeReplenishmentFromAllCores st scId
+       { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tid }) := by
+  simp only [releaseSchedContextBinding, hBound, hTcb]
+
+/-! ### Frames
+
+The release writes one TCB's `schedContextBinding`, one core's replenish queue
+(or every core's, on the TCB-absent arm) and the `scThreadIndex` — and nothing
+else.  A replenish queue is not one of the six `observableSlotsConfinedToCores`
+slots and neither is the index, so **every** per-core observable is the
+pre-state's, which is what keeps the destroy path's write set empty across this
+arm.  Stated as `@[simp]` frames on the release rather than left to unfold at
+each use site, for the reason the purges' own frames give. -/
+
+@[simp] theorem releaseSchedContextBinding_runQueueOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (releaseSchedContextBinding st scId sc).scheduler.runQueueOnCore c
+      = st.scheduler.runQueueOnCore c := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_scheduler]
+
+@[simp] theorem releaseSchedContextBinding_currentOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (releaseSchedContextBinding st scId sc).scheduler.currentOnCore c
+      = st.scheduler.currentOnCore c := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_scheduler]
+
+@[simp] theorem releaseSchedContextBinding_activeDomainOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (releaseSchedContextBinding st scId sc).scheduler.activeDomainOnCore c
+      = st.scheduler.activeDomainOnCore c := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_scheduler]
+
+@[simp] theorem releaseSchedContextBinding_domainTimeRemainingOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (releaseSchedContextBinding st scId sc).scheduler.domainTimeRemainingOnCore c
+      = st.scheduler.domainTimeRemainingOnCore c := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_scheduler]
+
+@[simp] theorem releaseSchedContextBinding_domainScheduleIndexOnCore (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (releaseSchedContextBinding st scId sc).scheduler.domainScheduleIndexOnCore c
+      = st.scheduler.domainScheduleIndexOnCore c := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_scheduler]
+
+@[simp] theorem releaseSchedContextBinding_machine (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
+    (releaseSchedContextBinding st scId sc).machine = st.machine := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_machine]
+
+@[simp] theorem releaseSchedContextBinding_tlbShootdown (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
+    (releaseSchedContextBinding st scId sc).tlbShootdown = st.tlbShootdown := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split
+    · simp only [SchedContextOps.purgeReplenishmentOnCore]
+      rw [SystemState.updateTcb_eq_objects_update]
+    · simp
+
+@[simp] theorem releaseSchedContextBinding_lifecycle (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
+    (releaseSchedContextBinding st scId sc).lifecycle = st.lifecycle := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_lifecycle]
+
+@[simp] theorem releaseSchedContextBinding_serviceRegistry (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
+    (releaseSchedContextBinding st scId sc).serviceRegistry = st.serviceRegistry := by
+  unfold releaseSchedContextBinding
+  split
+  · rfl
+  · split <;> simp [SystemState.updateTcb_serviceRegistry]
+
+/-- `v0.35.165`: the release keeps the object table's extension invariant — its
+one object write is the typed TCB rewrite. -/
+theorem releaseSchedContextBinding_preserves_objects_invExt (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt) :
+    (releaseSchedContextBinding st scId sc).objects.invExt := by
+  unfold releaseSchedContextBinding
+  split
+  · exact hInv
+  · split
+    · simpa using SystemState.updateTcb_preserves_objects_invExt _ _ _ hInv
+    · simpa using hInv
 
 end SeLe4n.Kernel

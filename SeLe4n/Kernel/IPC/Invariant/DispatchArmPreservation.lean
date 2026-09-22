@@ -3746,13 +3746,15 @@ private theorem lifecyclePreRetypeCleanup_detached_frame
       cases hStep
       exact ⟨rfl, rfl⟩
   | schedContext sc =>
-      -- WS-OD OD5.4: a context that heads a reply stack is refused, so the `.ok`
-      -- arm is the one that heads none.
-      simp only [] at hStep
-      split at hStep
-      · contradiction
-      · cases hStep
-        exact ⟨rfl, rfl⟩
+      -- `v0.35.165`: this arm is now UNREACHABLE under the pack, and that is the
+      -- honest discharge rather than an accident of the arm being the identity.
+      -- `notSc` says the target holds no scheduling context at all — the retype
+      -- payoff's contract is that the caller revoked, suspended, cancelled and
+      -- unbound first — while this arm fires exactly when it does.  Since
+      -- `v0.35.165` the arm also releases the binding a context still holds, so
+      -- it writes a TCB and a replenish queue and the old identity discharge
+      -- would be false.
+      exact absurd hObj (hDet.notSc sc)
 
 /-- The detachment pack transports across any objects- and scheduler-preserving
 step (the cleanup and scrub stages). -/

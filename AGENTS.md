@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.164.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.165.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,23 +222,23 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~77719 lines)
+- `CHANGELOG.md` (~77809 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12178 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8517 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8190 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6677 lines)
+- `docs/spec/SELE4N_SPEC.md` (~6692 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5710 lines)
 - `SeLe4n/Model/State.lean` (~5675 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5299 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5113 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
+- `tests/SmpIpcSuite.lean` (~5098 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5063 lines)
-- `tests/SmpIpcSuite.lean` (~4993 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `tests/NegativeStateSuite.lean` (~4545 lines)
@@ -263,10 +263,10 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3131 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3119 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~3098 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3054 lines)
 - `tests/FrozenOpsSuite.lean` (~3050 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~2936 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2800 lines)
@@ -420,6 +420,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~896 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~895 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
@@ -434,13 +435,13 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~822 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `docs/REGISTERED_DEBT.md` (~815 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `SeLe4n/Kernel/SchedContext/Operations.lean` (~811 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
 - `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
@@ -8885,9 +8886,43 @@ code may assume:
   violation safe.  (5) **What is measured and not yet proved**: `tests/SmpIpcSuite.lean`
   §3.31 drives the live wrapper on both binding shapes with the retired cleanup
   computed beside it and an unbound control; the retype *composite*'s own
-  preservation of either invariant, and the SchedContext-target arm — which
-  refuses only a stack head and leaves a bound thread naming a destroyed object —
-  are register row 63, owned by the fix cut after this one.
+  preservation of either invariant is register row 63, whose blocker is a layering
+  fact rather than an effort estimate — the `.tcb` arm's two sweeps have their
+  `getSchedContext?` and `cpuAffinity` frames `private` in a module downstream of
+  both the cleanup and the retype wrapper, so neither program's own module can
+  state the composite.
+
+- **...and a destroyed SCHEDULING CONTEXT releases the binding it holds**
+  (`v0.35.165`, register row 63's arm half).  `lifecyclePreRetypeCleanup`'s
+  `.schedContext` arm refused a context that heads a reply stack
+  (`sc.scReply.isSome`) and nothing else, so a context **bound** to a thread
+  passed: the retype left that thread `.bound scId` — or `.donated scId owner`,
+  the binding a donee holds — naming an object the slot no longer carries, its
+  `scThreadIndex` entry in place, and `scId`'s replenish entries queued on its
+  home core under an id the slot's next occupant inherits.  `releaseSchedContextBinding`
+  (`Lifecycle/Operations/Cleanup.lean`) is seL4's `schedContext_unbindAllTCBs`
+  per core.  Four things new code must respect.  (1) **Its three writes are
+  `schedContextUnbind`'s own**, composed from the same primitives in the same
+  order — the binding cleared through `updateTcb`, the replenishments purged with
+  `purgeReplenishmentOnCore` on the bound thread's home core, the index entry
+  removed — rather than a second spelling of the queue write; the TCB-absent arm
+  sweeps **every** core, for the unbind's own stated reason (a thread gone from
+  the store has no `cpuAffinity` left to read).  (2) **It does not rewrite the
+  SchedContext record**, because the retype replaces the object, and it writes no
+  run queue and no current slot — which is what keeps the destroy path's write
+  set empty and its confinement result unchanged
+  (`releaseSchedContextBinding_confinedToCores`, over the six slots a replenish
+  queue is deliberately not among).  (3) **A donee's context is not
+  returned to its owner**: the owner is already `.unbound` and the object it
+  would receive no longer exists.  (4) **Its affinity theorem is unconditional,
+  and not for the unbind's reason**: the release only ever *removes* replenish
+  entries and frames both readings the invariant makes, so an invariant
+  quantified over the entries that are present descends to a state with fewer of
+  them — where the unbind needs more precisely because it rewrites its context to
+  `boundThread := none`.  One consequence for proofs: the arm is **unreachable**
+  under `retypeTargetDetached`, whose `notSc` excludes SchedContext targets
+  outright, so `lifecyclePreRetypeCleanup_detached_frame` discharges it by
+  contradiction rather than by the arm being the identity.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write

@@ -4947,6 +4947,110 @@ private def runRetypeReservationChecks : IO Unit := do
         (schedContextBindingConsistentB stNew && replenishAffinityConsistentB stNew)
     | _, _ => assertBool "(c) CONTROL: both retypes of an unbound target succeed" false
 
+-- ============================================================================
+-- §3.32 the retype's SchedContext arm releases the binding the context holds
+--        (register row 63, `v0.35.165`)
+-- ============================================================================
+
+/-! `lifecyclePreRetypeCleanup`'s `.schedContext` arm refused a context that heads
+a reply stack and nothing else, so a context **bound** to a thread passed: the
+retype left that thread `.bound scId` naming an object the slot no longer carries,
+its `scThreadIndex` entry in place and `scId`'s replenish entries queued on its
+home core under an id the slot's next occupant inherits.  seL4's `finaliseCap`
+runs `schedContext_unbindAllTCBs` on a scheduling-context capability; since
+`v0.35.165` `releaseSchedContextBinding` is that, per core.
+
+The RETIRED reading is computed beside the live retype on the same state — the
+stack-head guard alone, then the same scrub and the same store — so every
+assertion is known to discriminate.  The CONTROL is a context bound to nothing,
+where the release is the identity and the two readings agree. -/
+
+/-- The LIVE retype of any object through the wrapper the `.lifecycleRetype` arm
+reaches. -/
+private def liveRetypeObj (st : SystemState) (target : SeLe4n.ObjId) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target
+    retypeReplacement st)).map Prod.snd
+
+/-- The RETIRED reading of the pipeline's SchedContext arm: the stack-head guard
+and nothing else — the cleanup handed the state back unchanged — then the same
+scrub and the same store the live pipeline performs.  Spelled here and nowhere
+else. -/
+private def retiredRetypeSchedContextCleanup (st : SystemState) (target : SeLe4n.ObjId) :
+    Option SystemState :=
+  match st.getObject? target with
+  | none => none
+  | some obj =>
+      some ((scrubObjectMemory st target obj.objectType).withObjectStored target
+        retypeReplacement)
+
+/-- The fixture's client context with its binding cleared — the CONTROL's state,
+where the release is the identity. -/
+private def withUnboundSchedContext (st : SystemState) : Option SystemState :=
+  match st.getSchedContext? scClient with
+  | none => none
+  | some sc =>
+      some (st.withObjectStored scClient.toObjId (.schedContext { sc with boundThread := none }))
+
+private def runRetypeSchedContextChecks : IO Unit := do
+  IO.println "--- §3.32 register row 63: the retype's SchedContext arm releases the binding ---"
+  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  match stSc.getSchedContext? scClient, stSc.getTcb? donClient with
+  | some sc, some clientTcb =>
+    assertBool "(a) setup: the context is bound to the client, which is bound to it"
+      (sc.boundThread == some donClient && clientTcb.schedContextBinding == .bound scClient)
+    assertBool "(a) setup: the context heads no reply stack, so the arm's guard admits it"
+      sc.scReply.isNone
+    assertBool "(a) setup: its replenishment sits on the client's home (core 1)"
+      (decide (determineTargetCore stSc donClient = c1)
+        && replenishCountFor stSc c1 scClient == 1)
+    assertBool "(a) setup: both invariants hold before the retype"
+      (schedContextBindingConsistentB stSc && replenishAffinityConsistentB stSc)
+    -- NEGATIVE: the retired arm stores the replacement over a context that is
+    -- still bound, and releases nothing.
+    match retiredRetypeSchedContextCleanup stSc scClient.toObjId with
+    | none => assertBool "(b) NEGATIVE setup: the retired cleanup succeeds" false
+    | some stOld =>
+      assertBool "(b) NEGATIVE: the retired retype leaves the client bound to the destroyed context..."
+        ((match stOld.getTcb? donClient with
+          | some t => t.schedContextBinding == .bound scClient | none => false)
+         && (stOld.getSchedContext? scClient).isNone)
+      assertBool "(b) NEGATIVE (the defect): ...so the binding invariant is FALSIFIED"
+        (!schedContextBindingConsistentB stOld)
+      assertBool "(b) NEGATIVE: ...and the replenishment stays queued under the destroyed id"
+        (replenishCountFor stOld c1 scClient == 1)
+    -- PAYOFF: the live retype releases the binding — seL4's `unbindFromSc`.
+    match liveRetypeObj stSc scClient.toObjId with
+    | none => assertBool "(c) the live retype of the bound context succeeds" false
+    | some stNew =>
+      assertBool "(c) PAYOFF: the destroyed slot holds the replacement"
+        (match stNew.getObject? scClient.toObjId with
+         | some (.endpoint _) => true | _ => false)
+      assertBool "(c) PAYOFF: the client is unbound after the retype"
+        (match stNew.getTcb? donClient with
+         | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
+      assertBool "(c) PAYOFF: the replenishment was purged from every core"
+        (allCores.all (fun c => replenishCountFor stNew c scClient == 0))
+      assertBool "(c) PAYOFF: the binding invariant holds after the retype"
+        (schedContextBindingConsistentB stNew)
+      assertBool "(c) PAYOFF: the affinity invariant holds after the retype"
+        (replenishAffinityConsistentB stNew)
+    -- CONTROL: a context bound to nothing — the release is the identity, so the
+    -- two readings agree on every replenish queue and on the client's binding.
+    match withUnboundSchedContext stSc with
+    | none => assertBool "(d) CONTROL setup: the context resolves" false
+    | some stCtl =>
+      match retiredRetypeSchedContextCleanup stCtl scClient.toObjId,
+            liveRetypeObj stCtl scClient.toObjId with
+      | some stOldCtl, some stNewCtl =>
+        assertBool "(d) CONTROL: on a context bound to nothing the two readings agree on every replenish queue"
+          (allCores.all (fun c => replenishEntriesOn stNewCtl c == replenishEntriesOn stOldCtl c))
+        assertBool "(d) CONTROL: ...and neither touches the client's own binding"
+          ((match stNewCtl.getTcb? donClient, stOldCtl.getTcb? donClient with
+            | some a, some b => a.schedContextBinding == b.schedContextBinding
+            | _, _ => false))
+      | _, _ => assertBool "(d) CONTROL: both retypes of an unbound context succeed" false
+  | _, _ => assertBool "(a) setup: the context and the client resolve" false
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4983,6 +5087,7 @@ def runSmpIpcChecks : IO Unit := do
   runReplyRecvFootprintChecks
   runCallReplyFootprintChecks
   runRetypeReservationChecks
+  runRetypeSchedContextChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

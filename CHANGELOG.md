@@ -1,3 +1,99 @@
+## v0.35.165 — the retype's SchedContext arm releases the binding the context holds
+
+WS-RR RR8.12, the second fix cut before C3b: register row 63's **arm** half is
+closed and its measurement sharpened.  `lifecyclePreRetypeCleanup`'s
+`.schedContext` arm refused a context that heads a reply stack
+(`sc.scReply.isSome`) and nothing else, so a context **bound** to a thread passed:
+the retype then left that thread `.bound scId` — or `.donated scId owner`, the
+binding a donee holds — naming an object the slot no longer carries, its
+`scThreadIndex` entry in place, and `scId`'s replenish entries queued on its home
+core under an id the slot's next occupant inherits.  `schedContextBindingConsistent`
+was false after a successful retype.  Reachable with a retype capability on the
+context alone; the caller holds authority over the reservation, so the consequence
+is a self-inflicted strand plus stale refills for the slot's next occupant, not an
+escalation.  seL4's `finaliseCap` runs `schedContext_unbindAllTCBs` on a
+scheduling-context capability.
+
+### The fix
+
+`releaseSchedContextBinding` (`Lifecycle/Operations/Cleanup.lean`) is that, per
+core, and the arm runs it on the admitted branch.  Four decisions.
+
+* **The three writes are `schedContextUnbind`'s own**, composed from the same
+  primitives in the same order — the bound thread's binding cleared through
+  `updateTcb`, `scId`'s replenishments purged with `purgeReplenishmentOnCore` on
+  that thread's home core, the index entry removed — rather than a second
+  spelling of the queue write.  The module imports `SchedContext.Operations` for
+  exactly that (cycle-free, measured).
+* **The TCB-absent arm sweeps every core**, for the unbind's own stated reason: a
+  bound thread already gone from the store has no `cpuAffinity` left to read, so
+  there is no home core to name.
+* **It does not rewrite the SchedContext record** — the retype replaces the object
+  — and it touches no run queue and no current slot, which is what keeps the
+  destroy path's write set empty and its confinement result unchanged.
+* **A donee's context is not returned to its owner**: the owner is already
+  `.unbound` and the object it would receive no longer exists.
+
+### The proof surface
+
+* **The arm's own affinity theorem is unconditional**, and the reason is not the
+  unbind's: `releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp`
+  holds because the release only ever **removes** replenish entries and frames both
+  readings the invariant makes, so an invariant quantified over the entries that
+  are *present* descends to a state with fewer of them — whatever the released
+  context's own record still says.  The unbind needs more precisely because it
+  rewrites its context to `boundThread := none`.
+* **The frames it needed, each stated where its subject lives**: the release's own
+  seven `@[simp]` component frames and its `invExt` preservation
+  (`Cleanup.lean`); `purgeReplenishmentOnCore`'s and the sweep's `tlbShootdown` /
+  `lifecycle` / `serviceRegistry` / `scThreadIndex` frames and the sweep's
+  **entries-subset** lemma (`SchedContext/Operations.lean`, beside the frames that
+  were already there); the run-queue sweep's replenish frame
+  (`removeRunnableFromAllCores_replenishQueueOnCore`, `IPC/Operations/Endpoint.lean`
+  — the seventh scheduler slot, and the one the SM5.H invariant reads); and the
+  origin scrub's **read** frame (`clearDonationOriginReferences_{preserves_objects_invExt,
+  getTcb?_eq,boundThread_eq}`, `CleanupPreservation.lean`) — the projection the
+  invariant reads rather than the record the scrub moves.
+* **Five consumers repaired, and two of them changed kind.**
+  `lifecyclePreRetypeCleanup_flat_subset` and `_tlbShootdown_eq` now read the
+  release's frames.  `lifecyclePreRetypeCleanup_detached_frame`'s SchedContext arm
+  is discharged by **contradiction** with the pack's `notSc` — the arm is
+  unreachable under `retypeTargetDetached`, which is the honest discharge rather
+  than an accident of the arm having been the identity.  And
+  `lifecyclePreRetypeCleanup_confinedToCores`' SchedContext arm was
+  `observableSlotsConfinedToCores_refl`, which is a statement about a state the arm
+  no longer returns; it reads `releaseSchedContextBinding_confinedToCores`, a
+  theorem that the release writes none of the six confined slots — the replenish
+  queue not being one of them — so the destroy path's confinement result is
+  unchanged **because it is proved** rather than because nothing happened.
+
+### The witness
+
+`tests/SmpIpcSuite.lean` §3.32 drives the live wrapper on a context bound to a
+thread and homed on core 1, with the retired reading (the stack-head guard alone,
+then the same scrub and the same store) computed beside it.  The retired retype
+leaves the client `.bound` on a destroyed context — the binding invariant
+**falsified** — with its replenishment still queued under the destroyed id; the
+live retype unbinds the client, purges every core and holds both invariants.  The
+CONTROL is a context bound to nothing, where the release is the identity and the
+two readings agree on every replenish queue and on the client's binding.  The
+golden 4-core trace is byte-identical.
+
+### What the row still carries, measured
+
+The **composite's** own preservation of `replenishQueueAffinityConsistent_smp` —
+`lifecyclePreRetypeCleanup` and `lifecycleRetypeDirectWithCleanup` — is not proved
+here, and the blocker is a layering fact rather than an effort estimate: the
+`.tcb` arm's sweeps need `removeFromAllEndpointQueues_getSchedContext?_eq` and the
+two `_affinity_frame`s, which are `private` in `IPC/Invariant/CancellationBundle.lean`
+and whose own ingredients (`removeFromAllEndpointQueues_nonEndpoint`,
+`removeFromAllNotificationWaitLists_nonNotification`) live in the two
+`Lifecycle/Invariant/Cancellation*Shape.lean` modules — **downstream** of the
+module the cleanup is defined in, and not imported by `RetypeWrappers`.  So the
+composite cannot be stated where either program lives, and closing it means giving
+those frames one public home below both askers.  Row 63 says so, with the
+measurement.
+
 ## v0.35.164 — the retype's TCB cleanup ends the thread's reservation the way the suspend's G3 does
 
 WS-RR RR8.12, the fix cut between C3a and C3b: register row 62 is found and closed

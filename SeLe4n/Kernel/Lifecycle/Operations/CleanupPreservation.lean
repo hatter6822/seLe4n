@@ -1422,6 +1422,151 @@ theorem cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp
   · exact cancelDonatedDonationOnCore_preserves_replenishQueueAffinityConsistent_smp
       _ _ _ _ hTcb hInv hCons h
 
+/-- **`v0.35.165`: the origin scrub's READ frame** — the three readings the
+replenish-affinity invariant makes.
+
+`clearDonationOriginReferences` rewrites one field of some scheduling contexts,
+so `getSchedContext?` genuinely moves and the whole-record frames above cannot
+carry the invariant.  What it does not move is the **projection** the invariant
+reads (`boundThread`), every TCB (so every thread's home core), and the table's
+extension invariant — which is what
+`replenishQueueAffinityConsistentOnCore_transfer` asks for, and why it asks for
+the projection rather than the record.
+
+One `fold_preserves` over the conjunction, because the step needs the
+accumulator's `invExt` to read the typed rewrite back at all. -/
+private theorem clearDonationOriginReferences_read_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (clearDonationOriginReferences st tid).objects.invExt
+    ∧ (∀ t, (clearDonationOriginReferences st tid).getTcb? t = st.getTcb? t)
+    ∧ (∀ scId, ((clearDonationOriginReferences st tid).getSchedContext? scId).map
+          (·.boundThread)
+        = (st.getSchedContext? scId).map (·.boundThread)) := by
+  unfold clearDonationOriginReferences
+  refine SeLe4n.Kernel.RobinHood.RHTable.fold_preserves st.objects st _
+    (fun acc => acc.objects.invExt
+      ∧ (∀ t, acc.getTcb? t = st.getTcb? t)
+      ∧ (∀ scId, (acc.getSchedContext? scId).map (·.boundThread)
+          = (st.getSchedContext? scId).map (·.boundThread)))
+    ⟨hInv, fun _ => rfl, fun _ => rfl⟩ ?_
+  intro acc oid obj hAcc
+  obtain ⟨hAccInv, hAccTcb, hAccSc⟩ := hAcc
+  split
+  · split
+    · refine ⟨SystemState.updateSchedContext_preserves_objects_invExt _ _ _ hAccInv, ?_, ?_⟩
+      · intro t
+        rw [SystemState.updateSchedContext_getTcb? acc _ _ hAccInv t]
+        exact hAccTcb t
+      · intro scId
+        by_cases hk : scId.toObjId = (SeLe4n.SchedContextId.ofObjId oid).toObjId
+        · have hEq : scId = SeLe4n.SchedContextId.ofObjId oid :=
+            SeLe4n.SchedContextId.toObjId_injective _ _ hk
+          rw [hEq, SystemState.updateSchedContext_getSchedContext?_self acc _ _ hAccInv,
+            ← hAccSc (SeLe4n.SchedContextId.ofObjId oid)]
+          cases acc.getSchedContext? (SeLe4n.SchedContextId.ofObjId oid) <;> rfl
+        · rw [SystemState.updateSchedContext_getSchedContext?_ne acc _ _ hAccInv scId
+            (fun hEq => hk hEq.symm)]
+          exact hAccSc scId
+    · exact ⟨hAccInv, hAccTcb, hAccSc⟩
+  · exact ⟨hAccInv, hAccTcb, hAccSc⟩
+
+/-- `v0.35.165`: the origin scrub keeps the object table's extension invariant. -/
+theorem clearDonationOriginReferences_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (clearDonationOriginReferences st tid).objects.invExt :=
+  (clearDonationOriginReferences_read_frame st tid hInv).1
+
+/-- `v0.35.165`: the origin scrub writes no TCB, so every thread's home core is
+the pre-state's. -/
+theorem clearDonationOriginReferences_getTcb?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (t : SeLe4n.ThreadId) :
+    (clearDonationOriginReferences st tid).getTcb? t = st.getTcb? t :=
+  (clearDonationOriginReferences_read_frame st tid hInv).2.1 t
+
+/-- `v0.35.165`: the origin scrub moves no scheduling context's `boundThread` —
+the projection the replenish-affinity invariant reads. -/
+theorem clearDonationOriginReferences_boundThread_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    ((clearDonationOriginReferences st tid).getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread) :=
+  (clearDonationOriginReferences_read_frame st tid hInv).2.2 scId
+
+/-- **`v0.35.165`: the binding release leaves the replenish queues where the
+bound threads are.**
+
+Unconditional, and the reason is worth stating because it is *not*
+`schedContextUnbind`'s argument: the release only ever **removes** replenish
+entries, and it frames both readings the invariant makes — its one object write
+is a TCB's `schedContextBinding`, which moves no scheduling context's record and
+no thread's `cpuAffinity`.  An invariant quantified over the entries that are
+*present* therefore descends to a state with fewer of them, whatever the
+released context's own record still says.  (The unbind needs more because it
+rewrites its context to `boundThread := none`, which is a change the invariant
+reads.) -/
+theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp
+    (st : SystemState) (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext)
+    (hInv : st.objects.invExt)
+    (hCons : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp (releaseSchedContextBinding st scId sc) := by
+  unfold releaseSchedContextBinding
+  split
+  · exact hCons
+  · rename_i tid _
+    split
+    · -- The bound thread resolves: `scId`'s entries are purged from its home core.
+      rename_i tcb _
+      intro c
+      refine replenishQueueAffinityConsistentOnCore_transfer st _ c ?_ ?_ ?_ (hCons c)
+      · -- Entries: the purge removes, and never adds.
+        intro e hMem
+        have hMem' : e ∈ ((SchedContextOps.purgeReplenishmentOnCore
+            (st.updateTcb tid fun t =>
+              { t with schedContextBinding := SchedContextBinding.unbound })
+            (determineTargetCore st tid) scId).scheduler.replenishQueueOnCore c).entries := hMem
+        simp only [SchedContextOps.purgeReplenishmentOnCore,
+          SystemState.updateTcb_scheduler] at hMem'
+        by_cases hc : determineTargetCore st tid = c
+        · rw [hc] at hMem'
+          simp only [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_self] at hMem'
+          exact (mem_remove_entries hMem').1
+        · rw [SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hc] at hMem'
+          exact hMem'
+      · -- `boundThread`: the one object write is a TCB's.
+        intro k
+        show ((st.updateTcb tid fun t =>
+          { t with schedContextBinding := SchedContextBinding.unbound }).getSchedContext? k).map _
+            = _
+        rw [SystemState.updateTcb_getSchedContext? st tid _ hInv k]
+      · -- Home cores: the TCB write moves no `cpuAffinity`.
+        intro x
+        refine determineTargetCore_congr _ _ x ?_
+        show ((st.updateTcb tid fun t =>
+          { t with schedContextBinding := SchedContextBinding.unbound }).getTcb? x).map
+            (·.cpuAffinity) = _
+        by_cases hx : tid.toObjId = x.toObjId
+        · have hEq : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hx
+          subst hEq
+          rw [SystemState.updateTcb_getTcb?_self st tid _ hInv]
+          cases st.getTcb? tid <;> rfl
+        · rw [SystemState.updateTcb_getTcb?_ne st tid _ hInv x hx]
+    · -- The bound thread is gone from the store: every core is swept, and the
+      -- sweep writes no object at all.
+      intro c
+      refine replenishQueueAffinityConsistentOnCore_transfer st _ c ?_ ?_ ?_ (hCons c)
+      · intro e hMem
+        exact SchedContextOps.purgeReplenishmentFromAllCores_entries_subset st scId c e hMem
+      · intro k
+        show ((SchedContextOps.purgeReplenishmentFromAllCores st scId).getSchedContext? k).map _
+            = _
+        unfold SystemState.getSchedContext?
+        rw [SchedContextOps.purgeReplenishmentFromAllCores_objects]
+      · intro x
+        refine determineTargetCore_congr _ _ x ?_
+        show ((SchedContextOps.purgeReplenishmentFromAllCores st scId).getTcb? x).map
+            (·.cpuAffinity) = _
+        unfold SystemState.getTcb?
+        rw [SchedContextOps.purgeReplenishmentFromAllCores_objects]
+
 /-- After cleanup, the cleaned thread is not in the run queue. -/
 theorem cleanupTcbReferences_removes_from_runnable
     (st : SystemState) (tid : SeLe4n.ThreadId) :
@@ -1631,7 +1776,18 @@ def lifecyclePreRetypeCleanup (st : SystemState) (target : SeLe4n.ObjId)
     -- carry its id.  The dual of the `.reply` guard above, and refused for the
     -- same reason: repairing would mean clearing every frame of a stack reachable
     -- only downward.
-    if sc.scReply.isSome then .error .revocationRequired else .ok st
+    -- **`v0.35.165`: and a context that is still BOUND loses its binding.**
+    -- The head guard above refuses a context frames still name; it says nothing
+    -- about the thread the context is bound to, so a retype used to leave that
+    -- thread `.bound scId` (or `.donated scId owner`, the binding a donee holds)
+    -- naming an object the slot no longer carries, with its `scThreadIndex`
+    -- entry in place and `scId`'s replenish entries queued on its home core
+    -- under an id the slot's next occupant inherits.  seL4's `finaliseCap` runs
+    -- `schedContext_unbindAllTCBs` on a scheduling-context capability;
+    -- `releaseSchedContextBinding` is that, per core, composed from
+    -- `schedContextUnbind`'s own primitives.
+    if sc.scReply.isSome then .error .revocationRequired
+    else .ok (releaseSchedContextBinding st (SeLe4n.SchedContextId.ofObjId target) sc)
   | _ => .ok st
 
 /-- **WS-OD OD5.4 / `v0.35.4`: a Reply that is a reply-stack frame cannot be
@@ -1883,12 +2039,16 @@ theorem lifecyclePreRetypeCleanup_flat_subset
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; exact h
   | schedContext _ =>
-    -- WS-OD OD5.4: a context that heads a reply stack errors (vacuous on `.ok`);
-    -- one that heads none is a scheduler-identity cleanup like the kinds above.
+    -- WS-OD OD5.4: a context that heads a reply stack errors (vacuous on `.ok`).
+    -- `v0.35.165`: one that heads none releases the binding it still holds, and
+    -- that step writes one TCB, one core's replenish queue and the index — no
+    -- run queue on any core (`releaseSchedContextBinding_runQueueOnCore`).
     simp only [lifecyclePreRetypeCleanup] at hOk
     split at hOk
     · cases hOk
-    · injection hOk with hOk; subst hOk; exact h
+    · injection hOk with hOk; subst hOk
+      rw [releaseSchedContextBinding_runQueueOnCore] at h
+      exact h
   | reply r =>
     -- WS-SM SM6.D (PR #822 review): an in-use reply errors (vacuous on `.ok`);
     -- a free reply is a scheduler-identity cleanup like the kinds above.
@@ -1948,11 +2108,13 @@ theorem lifecyclePreRetypeCleanup_tlbShootdown_eq
     simp only [lifecyclePreRetypeCleanup] at hOk
     injection hOk with hOk; subst hOk; rfl
   | schedContext _ =>
-    -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.
+    -- WS-OD OD5.4: the stack-head refusal is vacuous on `.ok`.  `v0.35.165`: the
+    -- binding release is shootdown-silent (`releaseSchedContextBinding_tlbShootdown`).
     simp only [lifecyclePreRetypeCleanup] at hOk
     split at hOk
     · cases hOk
-    · injection hOk with hOk; subst hOk; rfl
+    · injection hOk with hOk; subst hOk
+      exact releaseSchedContextBinding_tlbShootdown _ _ _
   | reply r =>
     simp only [lifecyclePreRetypeCleanup] at hOk
     split at hOk

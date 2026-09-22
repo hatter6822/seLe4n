@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -10365,6 +10365,92 @@ run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): the retired retype F
 run_check "INVARIANT" rg -n '\(b\) PAYOFF: the replenishment was purged from the destroyed thread.s home' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '\(c\) CONTROL: on an unbound target the two readings agree on every replenish queue' tests/SmpIpcSuite.lean
 
+# ---------------------------------------------------------------------------
+# `v0.35.165` (register row 63): the retype's SchedContext arm releases the
+# binding.  The head guard refuses a context frames still name and said nothing
+# about the thread the context is BOUND to, so a retype left that thread naming
+# an object the slot no longer carries.  seL4's `finaliseCap` runs
+# `schedContext_unbindAllTCBs` on a scheduling-context capability.
+run_check "INVARIANT" rg -n '^def releaseSchedContextBinding \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# RELATION: the release is THREE writes in one match -- the unbind, the purge at
+# the bound thread's OWN home, and the index removal -- with the missing-TCB arm
+# purging EVERY core, since no thread is left to name one.  Mutation: keep every
+# name and drop the purge (the record update then reads `st1`), or purge one core
+# on the arm that has no thread.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*match sc\.boundThread with\n *\| none => st\n *\| some tid =>\n *match st\.getTcb\? tid with\n *\| some _ =>\n *let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *let st2 := SchedContextOps\.purgeReplenishmentOnCore st1 \(determineTargetCore st tid\) scId\n *\{ st2 with scThreadIndex := scThreadIndexRemove st2\.scThreadIndex scId tid \}\n *\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentFromAllCores st scId" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# NEGATIVE: the unbind without the purge -- the index removal then reads the
+# unbound state rather than the purged one, which is the defect one field over
+# (`v0.35.164`'s S-05 index-only arm).  Mutation: delete the `st2` binding.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*let st1 := st\.updateTcb tid fun t =>\n *\{ t with schedContextBinding := SchedContextBinding\.unbound \}\n *\{ st1 with scThreadIndex" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# NEGATIVE: a single-core purge on the arm whose thread does not resolve -- there
+# is no home to read, so the entries can sit on any core.  Mutation: swap
+# `purgeReplenishmentFromAllCores` for the per-core purge at the boot core.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def releaseSchedContextBinding[^\n]*(\n([ \t][^\n]*)?)*\| none =>\n *let st1 := SchedContextOps\.purgeReplenishmentOnCore" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
+# The three shape theorems a consumer reads instead of re-running the match.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_of_unbound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_of_bound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_of_missing_tcb \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# The scheduler slots the release leaves alone: the six `observableSlotsConfinedToCores`
+# reads, plus the three non-scheduler tables.  A replenish queue is NOT among them,
+# which is the whole content of the affinity theorem below.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_runQueueOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_currentOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_activeDomainOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_machine \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_tlbShootdown \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem releaseSchedContextBinding_lifecycle \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+# The affinity theorem, and it takes NO hypothesis about the purged core: the
+# release reads the bound thread's own home, so there is nothing for a caller to
+# supply and nothing for it to get wrong (`v0.35.164`'s bound-arm rule, one
+# operation over).
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp\n[^\n]*\n *\(hInv : st\.objects\.invExt\)\n *\(hCons : replenishQueueAffinityConsistent_smp st\) :\n *replenishQueueAffinityConsistent_smp \(releaseSchedContextBinding st scId sc\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# RELATION: it goes through the ONE transfer lemma -- entries-subset, the
+# `boundThread` projection, the home cores -- rather than a second per-core
+# confinement argument over concrete states.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*refine replenishQueueAffinityConsistentOnCore_transfer st _ c \?_ \?_ \?_ \(hCons c\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The destroy path RUNS the release, behind the head guard: the arm refuses a
+# context a frame still names and releases one nothing does.  Declaration-bounded
+# (a column-0 line ends the gap); the comment between the two is blank in the
+# code view.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*\| \.schedContext sc =>(\n([ \t][^\n]*)?)*if sc\.scReply\.isSome then \.error \.revocationRequired\n *else \.ok \(releaseSchedContextBinding st \(SeLe4n\.SchedContextId\.ofObjId target\) sc\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# NEGATIVE: the retired arm, which guarded the head and then committed NOTHING.
+# It keeps every token of the guard and differs only in what follows the `else`.
+# Mutation: restore `else .ok st`.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "if sc\.scReply\.isSome then \.error \.revocationRequired\n *else \.ok st" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The sweep that follows the release reads the objects it rewrites, so it needs a
+# read frame: the origin scrub preserves `invExt`, every TCB lookup and every
+# SchedContext's `boundThread` -- derived once, through `RHTable.fold_preserves`
+# over the conjunction, rather than three folds.
+run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_getTcb\?_eq \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem clearDonationOriginReferences_boundThread_eq \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem clearDonationOriginReferences_read_frame[^\n]*(\n([ \t][^\n]*)?)*RHTable\.fold_preserves" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The two frames the transfer lemma's sub-goals consume, each stated at the
+# primitive it is about rather than at the caller that first needed it.
+run_check "INVARIANT" rg -n '^theorem purgeReplenishmentFromAllCores_entries_subset \(' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem purgeReplenishmentOnCore_replenishQueueOnCore_ne \(' SeLe4n/Kernel/SchedContext/Operations.lean
+# The seventh scheduler slot the run-queue sweep leaves alone -- the one the SM5.H
+# affinity invariant reads, and the frame the sweep had never carried.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem removeRunnableFromAllCores_replenishQueueOnCore \(' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+# RELATION: the detached pack DECIDES the SchedContext arm -- a retype target is
+# not a scheduling context under `retypeTargetDetached`, so the arm is
+# unreachable there and the frame discharges by `absurd` rather than by `rfl`
+# over the release's scheduler write.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private theorem lifecyclePreRetypeCleanup_detached_frame[^\n]*(\n([ \t][^\n]*)?)*exact absurd hObj \(hDet\.notSc sc\)" SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean'
+# The witness computes the retired cleanup beside the live retype on a BOUND
+# context, with the unbound control on which the two agree.
+run_check "INVARIANT" rg -n '\(b\) NEGATIVE \(the defect\): \.\.\.so the binding invariant is FALSIFIED' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(b\) NEGATIVE: \.\.\.and the replenishment stays queued under the destroyed id' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(c\) PAYOFF: the client is unbound after the retype' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(c\) PAYOFF: the replenishment was purged from every core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '\(d\) CONTROL: on a context bound to nothing the two readings agree on every replenish queue' tests/SmpIpcSuite.lean
+# The destroy path's confinement result is UNCHANGED, and that is now a theorem
+# rather than the arm having been the identity: the release writes none of the six
+# `observableSlotsConfinedToCores` slots, the replenish queue not being one.
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_confinedToCores \(' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "\| schedContext _ =>[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_confinedToCores _ _ _" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 

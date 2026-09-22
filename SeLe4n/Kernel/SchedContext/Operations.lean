@@ -185,6 +185,90 @@ private theorem purgeReplenishmentFromAllCores_frame
     (purgeReplenishmentFromAllCores st scId).objects = st.objects :=
   purgeReplenishmentFromAllCores_frame (·.objects) scId (fun _ _ => rfl) st
 
+-- `v0.35.165`: the three components the destroy path's own frames read.  The
+-- purges write one scheduler slot (or every core's), so a retype that ends a
+-- destroyed context's reservation leaves the shootdown state, the lifecycle
+-- metadata and the service registry exactly as it found them -- stated here,
+-- beside the frames above, rather than re-derived at the one asker.
+
+/-- `v0.35.165`: the per-core purge leaves every OTHER core's replenish queue
+alone — the locality the sweep's subset lemma folds over. -/
+@[simp] theorem purgeReplenishmentOnCore_replenishQueueOnCore_ne (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId)
+    (c' : SeLe4n.Kernel.Concurrency.CoreId) (hne : c ≠ c') :
+    (purgeReplenishmentOnCore st c scId).scheduler.replenishQueueOnCore c'
+      = st.scheduler.replenishQueueOnCore c' := by
+  simp [purgeReplenishmentOnCore,
+    SchedulerState.setReplenishQueueOnCore_replenishQueueOnCore_ne _ _ _ _ hne]
+
+@[simp] theorem purgeReplenishmentOnCore_tlbShootdown (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).tlbShootdown = st.tlbShootdown := rfl
+
+@[simp] theorem purgeReplenishmentOnCore_lifecycle (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).lifecycle = st.lifecycle := rfl
+
+@[simp] theorem purgeReplenishmentOnCore_serviceRegistry (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).serviceRegistry = st.serviceRegistry := rfl
+
+@[simp] theorem purgeReplenishmentOnCore_scThreadIndex (st : SystemState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (scId : SchedContextId) :
+    (purgeReplenishmentOnCore st c scId).scThreadIndex = st.scThreadIndex := rfl
+
+@[simp] theorem purgeReplenishmentFromAllCores_tlbShootdown (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).tlbShootdown = st.tlbShootdown :=
+  purgeReplenishmentFromAllCores_frame (·.tlbShootdown) scId (fun _ _ => rfl) st
+
+@[simp] theorem purgeReplenishmentFromAllCores_lifecycle (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).lifecycle = st.lifecycle :=
+  purgeReplenishmentFromAllCores_frame (·.lifecycle) scId (fun _ _ => rfl) st
+
+@[simp] theorem purgeReplenishmentFromAllCores_serviceRegistry (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).serviceRegistry = st.serviceRegistry :=
+  purgeReplenishmentFromAllCores_frame (·.serviceRegistry) scId (fun _ _ => rfl) st
+
+@[simp] theorem purgeReplenishmentFromAllCores_scThreadIndex (st : SystemState)
+    (scId : SchedContextId) :
+    (purgeReplenishmentFromAllCores st scId).scThreadIndex = st.scThreadIndex :=
+  purgeReplenishmentFromAllCores_frame (·.scThreadIndex) scId (fun _ _ => rfl) st
+
+/-- **`v0.35.165`: the sweep only ever REMOVES entries.**  What a consumer needs
+to carry an invariant quantified over the entries a queue *holds*: every entry
+the swept state has on core `c` was already there.  Stated as a subset rather
+than an equality because the sweep genuinely drops `scId`'s entries — which is
+the point of it. -/
+theorem purgeReplenishmentFromAllCores_entries_subset (st : SystemState)
+    (scId : SchedContextId) (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (e : SchedContextId × Nat)
+    (h : e ∈ ((purgeReplenishmentFromAllCores st scId).scheduler.replenishQueueOnCore c).entries) :
+    e ∈ (st.scheduler.replenishQueueOnCore c).entries := by
+  unfold purgeReplenishmentFromAllCores at h
+  revert h
+  generalize SeLe4n.Kernel.Concurrency.allCores = cores
+  induction cores generalizing st with
+  | nil => exact id
+  | cons hd tl ih =>
+    intro h
+    rw [List.foldl_cons] at h
+    have hStep := ih (st := purgeReplenishmentOnCore st hd scId) h
+    by_cases hc : hd = c
+    · subst hc
+      have : (purgeReplenishmentOnCore st hd scId).scheduler.replenishQueueOnCore hd
+          = ReplenishQueue.remove (st.scheduler.replenishQueueOnCore hd) scId := by
+        simp [purgeReplenishmentOnCore]
+      rw [this] at hStep
+      have h2 : e ∈ (st.scheduler.replenishQueueOnCore hd).entries ∧ ¬ e.fst = scId := by
+        simpa [ReplenishQueue.remove] using hStep
+      exact h2.1
+    · rwa [purgeReplenishmentOnCore_replenishQueueOnCore_ne st hd scId c
+        (fun h => hc h)] at hStep
+
+
 -- ============================================================================
 -- Z5-F1: Parameter validation
 -- ============================================================================

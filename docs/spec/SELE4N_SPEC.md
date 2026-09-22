@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.164` (`lakefile.toml`) |
+| **Package version** | `0.35.165` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 401,833 across 334 Lean files |
-| **Test LoC** | 82,175 across 70 Lean test suites |
-| **Proved declarations** | 13,302 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 402,324 across 334 Lean files |
+| **Test LoC** | 82,280 across 70 Lean test suites |
+| **Proved declarations** | 13,333 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4596,8 +4596,23 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `retypeTargetDetached` gained `tcbNotBound`, and the arm carries the affinity
   theorem neither caller had
   (`cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp`).
-  `tests/SmpIpcSuite.lean` §3.31 is the witness; the SchedContext-target arm and
-  the composite's own theorem are register row 63.
+  `tests/SmpIpcSuite.lean` §3.31 is the witness.
+
+  **And the SchedContext-target arm releases the binding the context holds**
+  (`v0.35.165`, register row 63's arm half).  That arm refused a context heading a
+  reply stack and nothing else, so a context **bound** to a thread passed and the
+  retype left the thread `.bound scId` naming a destroyed object, its
+  `scThreadIndex` entry in place and its replenish entries queued under an id the
+  slot's next occupant inherits.  `releaseSchedContextBinding` is seL4's
+  `schedContext_unbindAllTCBs` per core — the binding cleared, the replenishments
+  purged on the bound thread's home core (every core when the TCB is already gone,
+  for the unbind's own reason), the index entry removed — composed from
+  `schedContextUnbind`'s own primitives and leaving the SchedContext record alone,
+  since the retype replaces it.  Its affinity theorem is unconditional because the
+  release only ever *removes* entries and frames both readings the invariant makes.
+  `tests/SmpIpcSuite.lean` §3.32 is the witness; the composite's own theorem remains
+  register row 63, blocked by two sweeps' frames being private in a module
+  downstream of both the cleanup and the retype wrapper.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

@@ -2551,6 +2551,22 @@ theorem cancelDonationArmOnCore_confinedToCores (st st' : SystemState)
   unfold cancelDonationArmOnCore at h
   exact suspendDonationArms_confinedToCores st st' tid tcb (determineTargetCore st tid) h
 
+/-- `v0.35.165`: the destroy path's **SchedContext** release is per-core silent.
+
+`releaseSchedContextBinding` clears the bound thread's binding, purges `scId`'s
+replenishments and removes the index entry; none of those is one of the six
+`observableSlotsConfinedToCores` slots — the replenish queue is deliberately not
+among them (SM8.B.2), which is why this is `[]` rather than the purge core. -/
+theorem releaseSchedContextBinding_confinedToCores (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (sc : SeLe4n.Kernel.SchedContext) :
+    observableSlotsConfinedToCores st (releaseSchedContextBinding st scId sc) [] :=
+  ⟨fun c _ => releaseSchedContextBinding_runQueueOnCore st scId sc c,
+   fun c _ => releaseSchedContextBinding_currentOnCore st scId sc c,
+   fun c _ => releaseSchedContextBinding_activeDomainOnCore st scId sc c,
+   fun c _ => releaseSchedContextBinding_domainTimeRemainingOnCore st scId sc c,
+   fun c _ => releaseSchedContextBinding_domainScheduleIndexOnCore st scId sc c,
+   fun c _ => by rw [releaseSchedContextBinding_machine]⟩
+
 /-- SM8.B.2 (**the live `.tcbSuspend` bound**): `suspendThreadOnCore` — the
 function `API.dispatchCapabilityOnly`'s `.tcbSuspend` arm routes through —
 writes no core outside `suspendThreadOnCoreWriteSet`.
@@ -4310,10 +4326,13 @@ theorem lifecyclePreRetypeCleanup_confinedToCores
     injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
   | schedContext _ =>
     -- WS-OD OD5.4: a context heading a reply stack is refused (vacuous on `.ok`).
+    -- `v0.35.165`: past that guard the arm RELEASES the binding, which writes no
+    -- confined slot -- the replenish queue is not one of the six.
     simp only [lifecyclePreRetypeCleanup, lifecycleRetypeWriteSetOf] at hOk ⊢
     split at hOk
     · cases hOk
-    · injection hOk with hOk; subst hOk; exact observableSlotsConfinedToCores_refl _ _
+    · injection hOk with hOk; subst hOk
+      exact releaseSchedContextBinding_confinedToCores _ _ _
 
 /-- SM8.B.2: the object-store replacement is scheduler- and machine-silent. -/
 private theorem lifecycleRetypeDirect_framed
