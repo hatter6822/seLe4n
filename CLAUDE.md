@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.165.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.166.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8883,14 +8883,15 @@ code may assume:
   of nothing after it.  (4) **`retypeTargetDetached` has `tcbNotBound`**: revoke,
   suspend, cancel *and unbind* before retype, so the dispatch payoff's retype arm
   is stated where the arm is the identity, and the runtime arm is what makes a
-  violation safe.  (5) **What is measured and not yet proved**: `tests/SmpIpcSuite.lean`
+  violation safe.  (5) **What is measured, and what is proved**: `tests/SmpIpcSuite.lean`
   §3.31 drives the live wrapper on both binding shapes with the retired cleanup
-  computed beside it and an unbound control; the retype *composite*'s own
-  preservation of either invariant is register row 63, whose blocker is a layering
-  fact rather than an effort estimate — the `.tcb` arm's two sweeps have their
-  `getSchedContext?` and `cpuAffinity` frames `private` in a module downstream of
-  both the cleanup and the retype wrapper, so neither program's own module can
-  state the composite.
+  computed beside it and an unbound control; the **cleanup**'s own preservation of
+  `replenishQueueAffinityConsistent_smp` is proved at `v0.35.166`
+  (`lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp`,
+  `Lifecycle/Invariant/RetypeReservation.lean` — see the bullet below for where
+  the frames it composes went), and what register row 63 still carries is
+  `schedContextBindingConsistent` across either program, plus the retype
+  *composite*'s affinity theorem, which is gated on it.
 
 - **...and a destroyed SCHEDULING CONTEXT releases the binding it holds**
   (`v0.35.165`, register row 63's arm half).  `lifecyclePreRetypeCleanup`'s
@@ -8923,6 +8924,52 @@ code may assume:
   under `retypeTargetDetached`, whose `notSc` excludes SchedContext targets
   outright, so `lifecyclePreRetypeCleanup_detached_frame` discharges it by
   contradiction rather than by the arm being the identity.
+- **...and the CLEANUP has its reservation theorem, because a frame it composes
+  moved to the layer that can state it** (`v0.35.166`, register row 63's layering
+  half).  `v0.35.164` and `v0.35.165` each gave an *arm* of
+  `lifecyclePreRetypeCleanup` its own `replenishQueueAffinityConsistent_smp`
+  theorem and neither could state one about the **program** that runs them: the
+  `.tcb` arm's reference sweep runs two whole-store folds whose
+  `getSchedContext?` and `cpuAffinity` frames WS-RR RR8.11 wrote `private` in
+  `IPC/Invariant/CancellationBundle.lean`, which is downstream of both the
+  cleanup and the retype wrapper.  So the theorem was **unstateable** rather than
+  unproved — `v0.35.59`'s rule (*when a question has one owner and an asker that
+  cannot see it, the owner is in the wrong layer*) at the scale of a composite.
+  Six things new code must respect.  (1) **Each frame is beside the fact its
+  proof rests on, not in one convenience module**: the two generic accessor
+  bridges (`SystemState.getSchedContext?_eq_of_kind_iff`,
+  `SystemState.map_cpuAffinity_eq_of_refines`) in `Model/State.lean` beside
+  `getSchedContext?_eq_some_iff` / `getTcb?_eq_some_iff`; the splice's affinity
+  frame in `CleanupPreservation.lean`; each sweep's pair in its own
+  `Cancellation*Shape.lean` beside that sweep's `non…` biconditional.  A new
+  frame over one of those sweeps goes to the same place.  (2) **The composite
+  lives in `Lifecycle/Invariant/RetypeReservation.lean`**, which imports
+  `CancellationNotificationShape` — the only layer that sees every frame it
+  composes, and imported by nothing that would close a cycle — and which the
+  library root imports, since a module outside every root is outside every
+  census's derived domain.  (3) **The sweep frames `boundThread`, not
+  `getSchedContext?`**: its last step (`clearDonationOriginReferences`) genuinely
+  rewrites scheduling contexts, and the invariant reads only the field it leaves
+  alone, so `cleanupTcbReferences_boundThread_frame` is the projection and
+  `replenishQueueAffinityConsistentOnCore_transfer` is what consumes it.  (4)
+  **The composite takes no detachment pack**, so it covers exactly the states on
+  which the runtime arms do the work — under `retypeTargetDetached` the whole
+  cleanup is the identity (`lifecyclePreRetypeCleanup_detached_frame`), which is
+  the posture that pack's own clauses record and the reason a theorem stated
+  under it would exercise neither arm.  `hTcb` is the arm's own soundness
+  condition, stated where it binds.  (5) **`replenishQueueAffinityConsistent_smp_frame`
+  is the shape a step writing no object at all reaches for** — the per-core
+  `_frame` at every core, beside `_smp_congr` in `ReplenishAffinity.lean` — and
+  the CDT detach, the service-registry revoke and the memory scrub all take it.
+  (6) **What row 63 still carries is an effort fact, measured**: there is no
+  `preserves_schedContextBindingConsistent` theorem anywhere in the tree, so that
+  reciprocity has to be built for eight operations before either program can
+  claim it — and the retype *composite*'s affinity theorem is gated on the same
+  work rather than on a second layering fact, because its `storeObject` at
+  `target` rewrites `getSchedContext?` and `determineTargetCore` there and so
+  preserves the invariant exactly when no surviving context is bound to the
+  destroyed thread.  Stating *that* as a hypothesis would be a predicate no
+  transition establishes (`v0.35.126`).
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write

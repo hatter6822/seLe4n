@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.165` (`lakefile.toml`) |
+| **Package version** | `0.35.166` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 402,324 across 334 Lean files |
+| **Production LoC** | 402,742 across 335 Lean files |
 | **Test LoC** | 82,280 across 70 Lean test suites |
-| **Proved declarations** | 13,333 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,344 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4610,9 +4610,26 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `schedContextUnbind`'s own primitives and leaving the SchedContext record alone,
   since the retype replaces it.  Its affinity theorem is unconditional because the
   release only ever *removes* entries and frames both readings the invariant makes.
-  `tests/SmpIpcSuite.lean` §3.32 is the witness; the composite's own theorem remains
-  register row 63, blocked by two sweeps' frames being private in a module
-  downstream of both the cleanup and the retype wrapper.
+  `tests/SmpIpcSuite.lean` §3.32 is the witness.
+
+  **And the cleanup itself has its reservation theorem** (`v0.35.166`, register
+  row 63's layering half).  The blocker was that a reservation theorem about
+  `lifecyclePreRetypeCleanup` was *unstateable*: the `.tcb` arm's reference sweep
+  runs two whole-store folds whose `getSchedContext?` and `cpuAffinity` frames were
+  `private` in `IPC/Invariant/CancellationBundle.lean`, downstream of both the
+  cleanup and the retype wrapper.  Each frame now sits beside the fact its proof
+  rests on — the two generic accessor bridges in `Model/State.lean`, the splice's
+  in `CleanupPreservation.lean`, each sweep's in its own `Cancellation*Shape.lean`
+  — and `Lifecycle/Invariant/RetypeReservation.lean` (library root) proves
+  `cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp` and
+  `lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp` over
+  all six object kinds, with **no** detachment pack, so it covers exactly the
+  states on which the runtime arms do the work.  What register row 63 still carries
+  is `schedContextBindingConsistent` across either program — an effort fact,
+  measured: no `preserves_schedContextBindingConsistent` theorem exists anywhere in
+  the tree — and the retype *composite*'s affinity theorem, whose `storeObject` at
+  `target` preserves the invariant exactly when no surviving context is bound to the
+  destroyed thread, which is a consequence of that reciprocity.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

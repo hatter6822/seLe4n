@@ -990,6 +990,61 @@ theorem removeFromAllEndpointQueues_nonEndpoint (st : SystemState) (tid : SeLe4n
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
+/-- **`v0.35.166`: the endpoint sweep writes no scheduling context.**
+
+The fold above writes endpoints, and the splice it runs over writes TCBs, so a
+`getSchedContext?` reading crosses both unchanged.  Stated in the typed form the
+reservation invariants read, through the accessor's own kind bridge.
+
+Beside `removeFromAllEndpointQueues_nonEndpoint`, whose two instances are the
+whole of its proof.  WS-RR RR8.11 wrote it `private` in
+`IPC/Invariant/CancellationBundle.lean`, which is downstream of the destroy path
+*and* of the retype wrapper, so neither the cleanup's module nor the retype's
+could state a reservation theorem over this sweep; `v0.35.166` moved it here. -/
+theorem removeFromAllEndpointQueues_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (removeFromAllEndpointQueues st tid).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
+  refine Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
+      (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+      scId.toObjId (.schedContext sc) (fun e => fun hc => KernelObject.noConfusion hc)) ?_
+  exact spliceOutMidQueueNode_nonTcb st tid hInv scId.toObjId (.schedContext sc)
+    (fun t => fun hc => KernelObject.noConfusion hc)
+
+/-- **`v0.35.166`: the endpoint sweep frames every thread's home core.**
+
+The fold writes endpoints only, so every TCB reading the sweep leaves is the
+splice's — and the splice moves no thread
+(`spliceOutMidQueueNode_affinity_frame`).  The `Option`-level equality is proved
+first and the affinity frame applied to it, rather than refining twice: the two
+states' TCB readings are *equal* here, not merely affinity-agreeing.
+
+Beside `removeFromAllEndpointQueues_nonEndpoint`, and moved here at `v0.35.166`
+for the reason the `getSchedContext?` frame above was. -/
+theorem removeFromAllEndpointQueues_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromAllEndpointQueues st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  have hFold : ∀ t : TCB,
+      (removeFromAllEndpointQueues st tid).getTcb? x = some t
+        ↔ (spliceOutMidQueueNode st tid).getTcb? x = some t := fun t =>
+    Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
+      (Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
+          (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
+          x.toObjId (.tcb t) (fun e => fun hc => KernelObject.noConfusion hc))
+        (SystemState.getTcb?_eq_some_iff _ x t).symm)
+  have hEq : (removeFromAllEndpointQueues st tid).getTcb? x
+      = (spliceOutMidQueueNode st tid).getTcb? x := by
+    cases hA : (spliceOutMidQueueNode st tid).getTcb? x with
+    | none =>
+      cases hB : (removeFromAllEndpointQueues st tid).getTcb? x with
+      | none => rfl
+      | some t => exact absurd ((hFold t).mp hB) (by rw [hA]; simp)
+    | some t => exact (hFold t).mpr hA
+  rw [hEq]
+  exact spliceOutMidQueueNode_affinity_frame st tid hInv x
+
 /-- The composite leaves every object that is neither a TCB nor an endpoint
 exactly as it found it — which is what carries the notification, CNode, Reply and
 SchedContext conjuncts across without an argument of their own. -/

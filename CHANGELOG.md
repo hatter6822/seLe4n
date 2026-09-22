@@ -1,3 +1,113 @@
+## v0.35.166 — the destroy path's cleanup gets its reservation theorem
+
+WS-RR RR8.12, the third fix cut before C3b: register row 63's **layering**
+blocker is closed, and with it the theorem `v0.35.164` and `v0.35.165` each left
+owed.  Both of those cuts gave an *arm* of `lifecyclePreRetypeCleanup` its own
+`replenishQueueAffinityConsistent_smp` theorem — the donation teardown
+(`cancelDonationArmOnCore`, seL4's `finaliseCap` → `unbindFromSc`) and the
+binding release (`releaseSchedContextBinding`, seL4's
+`schedContext_unbindAllTCBs`) — and neither could state one about the **program**
+that runs them, because a frame the program needs was `private` in a module the
+program's own module cannot see.
+
+### The blocker, and why it was a layering fact
+
+`lifecyclePreRetypeCleanup` is declared in `Lifecycle/Operations/CleanupPreservation.lean`
+and `lifecycleRetypeDirectWithCleanup` in `Lifecycle/Operations/RetypeWrappers.lean`.
+The `.tcb` arm's reference sweep runs two whole-store folds —
+`removeFromAllEndpointQueues` and `removeFromAllNotificationWaitLists` — whose
+`getSchedContext?` and `cpuAffinity` frames WS-RR RR8.11 wrote `private` in
+`IPC/Invariant/CancellationBundle.lean`, which is **downstream of both**.  So a
+reservation theorem about either program was unstateable rather than merely
+unproved, which is *when a question has one owner and an asker that cannot see
+it, the owner is in the wrong layer* (`v0.35.59`) at the scale of a whole
+composite.
+
+### Where each frame went
+
+Not into one convenience module: each sits beside the fact its proof rests on.
+
+* `SystemState.getSchedContext?_eq_of_kind_iff` and
+  `SystemState.map_cpuAffinity_eq_of_refines` → **`Model/State.lean`**, beside
+  `getSchedContext?_eq_some_iff` / `getTcb?_eq_some_iff`, whose unfolding is the
+  whole of each proof.  Both are generic bridges between the kind biconditionals
+  the store's frames produce and the typed readings the invariants consume, so
+  their owner is the accessor and not a cancellation bundle.
+* `spliceOutMidQueueNode_affinity_frame` → **`CleanupPreservation.lean`**, beside
+  `spliceOutMidQueueNode_tcb_lookup` / `_tcb_backward`.
+* `removeFromAllEndpointQueues_getSchedContext?_eq` / `_affinity_frame` →
+  **`CancellationQueueShape.lean`**, beside `removeFromAllEndpointQueues_nonEndpoint`.
+* `removeFromAllNotificationWaitLists_getSchedContext?_eq` / `_affinity_frame`,
+  and the `Option`-level `_getTcb?_eq` the second is one consequence of →
+  **`CancellationNotificationShape.lean`**, beside `_nonNotification`.
+
+`CancellationBundle.lean`'s §4 carries the tombstone naming every destination;
+nothing in it changed but the names.
+
+### The theorems
+
+`SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` — a new module in the
+library root, importing `CancellationNotificationShape`, which is the **only**
+layer that sees every frame it composes and is imported by nothing that would
+close a cycle.
+
+* §1: `cleanupTcbReferences` preserves the object store's extension invariant,
+  moves no replenish entry, no scheduling context's `boundThread` and no
+  thread's home core — hence preserves the invariant.  The `boundThread`
+  *projection* rather than a `getSchedContext?` equality, because the sweep's
+  last step (`clearDonationOriginReferences`) genuinely rewrites scheduling
+  contexts and the invariant reads only the field it leaves alone.
+* `cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp`
+  — the `.tcb` arm's two steps as one lemma, so the composite's six arms are one
+  `exact` each and the suspend pipeline's G2/G3 pair has something to cite.
+* §2: `lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp`,
+  over all six object kinds and with **no** detachment pack — so it covers
+  exactly the states on which the runtime arms do the work, which is the posture
+  `retypeTargetDetached`'s own clauses record (the pack is the caller obligation;
+  the arm is what makes a violation safe).  `hTcb` is the arm's own soundness
+  condition, stated where it binds.
+
+`replenishQueueAffinityConsistent_smp_frame` joins `_smp_congr` in
+`SchedContext/ReplenishAffinity.lean`: the per-core `_frame` at every core, which
+is what the three arms that write **no object at all** (the CDT detach, the
+service-registry revoke, the memory scrub) reach for.
+
+### What remains, and why it is an effort fact now
+
+Register row 63 is re-measured rather than re-deferred.  There is no
+`preserves_schedContextBindingConsistent` theorem anywhere in the tree — not for
+a queue sweep, not for the two donation arms, not for `storeObject` — so that
+reciprocity has to be built for eight operations before either program can claim
+it.  The retype *composite*'s affinity theorem is gated on the same work and on
+no second layering fact: `lifecycleRetypeDirectWithCleanup` runs this cleanup,
+then `scrubObjectMemory` (which frames `objects` and `scheduler` outright), then
+a `storeObject` at `target` — and the store rewrites `getSchedContext?` and
+`determineTargetCore` there, so the invariant survives it exactly when no
+surviving context is bound to the destroyed thread, which is a consequence of the
+reciprocity.  Stating that as a hypothesis instead would be a predicate no
+transition establishes, which `v0.35.126` is this tree's own name for.
+
+The behaviour both halves are about is witnessed either way: `tests/SmpIpcSuite.lean`
+§3.31 and §3.32 assert the decidable readings of **both** invariants on every
+post-retype state they produce, with the retired cleanup computed beside the live
+one falsifying them.  What this cut adds is the machine-checked half of the first.
+
+### Anchors
+
+Positives on each relocated frame at its new home, on the new module's §1
+family, on the arm lemma and the composite, on the SMP frame, and on both
+imports — the library root's included, since a module outside every root is
+outside every census's derived domain.  Three of them are **relation** anchors:
+the composite's two citations, and the sweep frame's `boundThread`-projection
+shape.  Four negatives: the two
+retired helper names and the five retired `private` frames, scoped to
+`CancellationBundle.lean` because each is live at its new home; a tree-wide
+refusal of `cleanupTcbReferences_getSchedContext?_eq`, which would be a claim
+that is **false**; and a refusal of `retypeTargetDetached` in the new module, so
+the composite cannot acquire the pack that would make it exercise neither arm.
+Eight mutations, each keeping every other token, all decisive, with a clean-tree
+control.
+
 ## v0.35.165 — the retype's SchedContext arm releases the binding the context holds
 
 WS-RR RR8.12, the second fix cut before C3b: register row 63's **arm** half is

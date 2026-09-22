@@ -112,6 +112,14 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+-- `v0.35.166` (WS-RR RR8.12, register row 63): the destroy path's reservation
+-- theorems.  `lifecyclePreRetypeCleanup` preserves the SM5.H replenish-affinity
+-- invariant — the composite `v0.35.164` and `v0.35.165` each left owed, since
+-- each gave an *arm* its theorem and the frames the program over them needs were
+-- `private` in a module downstream of both the cleanup and the retype wrapper.
+-- It sits below the two `Cancellation*Shape` modules above (which is the only
+-- layer that sees every frame it composes) and above nothing.
+import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1

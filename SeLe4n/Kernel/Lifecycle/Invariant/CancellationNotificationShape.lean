@@ -97,6 +97,55 @@ theorem removeFromAllNotificationWaitLists_nonNotification (st : SystemState)
         · exact ⟨hE, hA⟩
       | _ => exact ⟨hE, hA⟩)).2
 
+/-- **`v0.35.166`: the notification purge writes no scheduling context.**
+
+One instance of the frame above at the SchedContext kind, crossed into the typed
+reading by the accessor's own kind bridge.
+
+Beside `removeFromAllNotificationWaitLists_nonNotification` for the reason the
+endpoint sweep's twin sits beside its own: WS-RR RR8.11 wrote both `private` in
+`IPC/Invariant/CancellationBundle.lean`, downstream of the destroy path and of
+the retype wrapper, so neither could state a reservation theorem over this
+sweep. -/
+theorem removeFromAllNotificationWaitLists_getSchedContext?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
+    (removeFromAllNotificationWaitLists st tid).getSchedContext? scId
+      = st.getSchedContext? scId := by
+  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
+  exact removeFromAllNotificationWaitLists_nonNotification st tid hInv
+    scId.toObjId (.schedContext sc) (fun n => fun hc => KernelObject.noConfusion hc)
+
+/-- **`v0.35.166`: the notification purge writes no TCB at any key.**
+
+The `Option`-level equality the affinity frame above is one consequence of, and
+the shape a consumer that needs more than the affinity reaches for. -/
+theorem removeFromAllNotificationWaitLists_getTcb?_eq (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    (removeFromAllNotificationWaitLists st tid).getTcb? x = st.getTcb? x := by
+  have hIff : ∀ t : TCB,
+      (removeFromAllNotificationWaitLists st tid).getTcb? x = some t ↔ st.getTcb? x = some t :=
+    fun t => Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
+      (Iff.trans (removeFromAllNotificationWaitLists_nonNotification st tid hInv
+          x.toObjId (.tcb t) (fun n => fun hc => KernelObject.noConfusion hc))
+        (SystemState.getTcb?_eq_some_iff st x t).symm)
+  cases hA : st.getTcb? x with
+  | none =>
+    cases hB : (removeFromAllNotificationWaitLists st tid).getTcb? x with
+    | none => rfl
+    | some t => exact absurd ((hIff t).mp hB) (by rw [hA]; simp)
+  | some t => exact (hIff t).mpr hA
+
+/-- **`v0.35.166`: the notification purge frames every thread's home core.**
+
+The purge writes notifications, so it writes no TCB at all — the `getTcb?`
+readings are *equal*, and the affinity map follows.  Unlike the endpoint sweep's
+twin there is no splice underneath to account for. -/
+theorem removeFromAllNotificationWaitLists_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((removeFromAllNotificationWaitLists st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  rw [removeFromAllNotificationWaitLists_getTcb?_eq st tid hInv x]
+
 /-- A notification reading after the purge came from one at the same key, with
 its `pendingBadge` untouched — the filter rewrites only the wait list and the
 state derived from it. -/

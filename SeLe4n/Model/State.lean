@@ -3136,6 +3136,74 @@ theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
 
+/-- **`v0.35.166`: the bridge from a *kind biconditional* to the typed reading.**
+
+Nearly every step frame in this tree is proved from a biconditional over
+`objects[·]?` at one kind — "this step holds a `.schedContext sc` at `k` iff the
+pre-state did" — because that is the shape the store's own frame lemmas produce.
+The predicate a consumer reads, though, is `getSchedContext?`, and `getSchedContext?`
+is *determined* by which `.schedContext` the store holds at the key.  So the two
+are one fact and this is the crossing.
+
+It lives here, beside `getSchedContext?_eq_some_iff` — the accessor's own
+unfolding lemma, which is the whole of its proof — rather than in whichever
+invariant module first needed it: it is a fact about the accessor, and the
+cancellation path, the destroy path and the reservation frames all ask it.
+(WS-RR RR8.11 wrote it `private` in `IPC/Invariant/CancellationBundle.lean`,
+which is downstream of the destroy path; `v0.35.166` moved it here so the
+retype's own reservation theorems could be stated at all.) -/
+theorem getSchedContext?_eq_of_kind_iff {sa sb : SystemState}
+    {scId : SeLe4n.SchedContextId}
+    (h : ∀ sc : SeLe4n.Kernel.SchedContext,
+      sb.objects[scId.toObjId]? = some (.schedContext sc) ↔
+      sa.objects[scId.toObjId]? = some (.schedContext sc)) :
+    sb.getSchedContext? scId = sa.getSchedContext? scId := by
+  cases hA : sa.getSchedContext? scId with
+  | none =>
+    cases hB : sb.getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      exact absurd
+        ((getSchedContext?_eq_some_iff sa scId sc).mpr
+          ((h sc).mp ((getSchedContext?_eq_some_iff sb scId sc).mp hB)))
+        (by rw [hA]; simp)
+  | some sc =>
+    rw [(getSchedContext?_eq_some_iff sb scId sc).mpr
+      ((h sc).mpr ((getSchedContext?_eq_some_iff sa scId sc).mp hA))]
+
+/-- **`v0.35.166`: the shape every `cpuAffinity` frame in this tree is proved in.**
+
+A step whose TCB readings refine forward with the affinity preserved, and whose
+post-state TCBs all have pre-state TCBs at the same key, frames
+`determineTargetCore` at that key — `determineTargetCore_congr` consumes exactly
+the `Option.map (·.cpuAffinity)` equality this produces.  The `none` case of the
+backward direction is the statement that the step *materialises* no thread where
+none was, which is why it is needed at all: a forward refinement alone leaves the
+post-state free to invent one.
+
+Beside `getTcb?_eq_some_iff` for the reason the bridge above is beside its own
+accessor's: it is a fact about `getTcb?` and one TCB field, and it has askers on
+the cancellation path, on the destroy path and in the reservation frames.
+(WS-RR RR8.11 wrote it `private` in `IPC/Invariant/CancellationBundle.lean`;
+moved here at `v0.35.166`.) -/
+theorem map_cpuAffinity_eq_of_refines {sa sb : SystemState} {x : SeLe4n.ThreadId}
+    (hFwd : ∀ t0, sa.getTcb? x = some t0 →
+      ∃ t', sb.getTcb? x = some t' ∧ t'.cpuAffinity = t0.cpuAffinity)
+    (hBwd : ∀ t', sb.getTcb? x = some t' → ∃ t0, sa.getTcb? x = some t0) :
+    (sb.getTcb? x).map (·.cpuAffinity) = (sa.getTcb? x).map (·.cpuAffinity) := by
+  cases hA : sa.getTcb? x with
+  | none =>
+    cases hB : sb.getTcb? x with
+    | none => rfl
+    | some t' =>
+      obtain ⟨t0, h0⟩ := hBwd t' hB
+      rw [hA] at h0
+      exact absurd h0 (by simp)
+  | some t0 =>
+    obtain ⟨t', hB, hAff⟩ := hFwd t0 hA
+    rw [hB]
+    simp [hAff]
+
 /-- WS-SM SM6.D: link a Reply object to the caller about to block on it
 (sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
 absent or already in use (`caller ≠ none`) — an in-use reply cannot be

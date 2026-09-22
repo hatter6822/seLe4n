@@ -2543,6 +2543,30 @@ theorem spliceOutMidQueueNode_nonTcb (st : SystemState) (tid : SeLe4n.ThreadId)
         (queueNeighbourPatch_invExt _ _ _ hInv) k o hNotTcb).trans
       (queueNeighbourPatch_nonTcb st.objects tcb.queuePrev _ hInv k o hNotTcb)
 
+/-- **`v0.35.166`: the mid-queue splice frames every thread's home core.**
+
+`determineTargetCore` reads one field — `cpuAffinity` — through `getTcb?`, and the
+splice patches intrusive queue links only, so it moves no thread.  Stated in the
+`Option.map` form `determineTargetCore_congr` consumes, which is what makes the
+`none` case load-bearing: the splice materialises no thread where none was, which
+`spliceOutMidQueueNode_tcb_backward` is exactly the statement of.
+
+It lives here, beside the two readings its proof composes, rather than in the
+cancellation bundle that first needed it (WS-RR RR8.11 wrote it `private` there,
+downstream of both the destroy path and the retype wrapper — so the retype's own
+reservation theorems could not be stated at all until `v0.35.166` moved it). -/
+theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) := by
+  refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  · obtain ⟨t', hL', hAff'⟩ := spliceOutMidQueueNode_tcb_lookup st tid x.toObjId t0 hInv
+      ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hAff'⟩
+  · obtain ⟨t0, hL0, _⟩ := spliceOutMidQueueNode_tcb_backward st tid x.toObjId t' hInv
+      ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
+    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
+
 -- The precise per-key readings of the two neighbour patches: what the splice
 -- installs at each key it touches, and what it leaves at every key it does not.
 -- These are what the queue-shape conjuncts read; the `tcbQueueLinkRewrite`

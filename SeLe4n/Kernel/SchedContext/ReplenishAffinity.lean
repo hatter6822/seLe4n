@@ -195,6 +195,21 @@ theorem replenishQueueAffinityConsistent_smp_congr {st st' : SystemState}
   ⟨fun h c => (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mp (h c),
    fun h c => (replenishQueueAffinityConsistentOnCore_congr (hRepl c) hSc hTgt).mpr (h c)⟩
 
+/-- **`v0.35.166`: the SMP form's whole-store frame** — the per-core `_frame` at
+every core.
+
+The shape a step that writes *no object at all* and no replenish entry reaches
+for: a CDT detach, a service-registry revoke, a memory scrub.  `_smp_congr` would
+make each of those re-derive the two object-store readings from the same
+`objects` equality, which is what `_frame` exists to do once. -/
+theorem replenishQueueAffinityConsistent_smp_frame {st st' : SystemState}
+    (hRepl : ∀ c, st'.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c)
+    (hObj : st'.objects = st.objects) :
+    replenishQueueAffinityConsistent_smp st' ↔ replenishQueueAffinityConsistent_smp st :=
+  ⟨fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mp (h c),
+   fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mpr (h c)⟩
+
 /-- **WS-RR RR8.11: the core a scheduling context's replenishments must sit on.**
 
 This is `replenishQueueAffinityConsistentOnCore`'s own reading, made a function:

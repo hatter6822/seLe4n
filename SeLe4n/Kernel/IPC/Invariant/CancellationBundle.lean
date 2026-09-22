@@ -469,30 +469,32 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
 -- §4  WS-RR RR8.11 — the composite establishes the SM5.H replenish-affinity
 --     invariant
 -- ============================================================================
-
-/-- WS-RR RR8.11: `getSchedContext?` is determined by which `.schedContext` the
-store holds at the context's key, so two states agreeing on that at one key agree
-on the reading there.  The bridge every step frame below crosses: the pieces the
-tree already has are *kind* biconditionals over `objects[·]?`, and this turns one
-into the typed reading. -/
-private theorem getSchedContext?_of_kind_iff {sa sb : SystemState}
-    {scId : SeLe4n.SchedContextId}
-    (h : ∀ sc : SeLe4n.Kernel.SchedContext,
-      sb.objects[scId.toObjId]? = some (.schedContext sc) ↔
-      sa.objects[scId.toObjId]? = some (.schedContext sc)) :
-    sb.getSchedContext? scId = sa.getSchedContext? scId := by
-  cases hA : sa.getSchedContext? scId with
-  | none =>
-    cases hB : sb.getSchedContext? scId with
-    | none => rfl
-    | some sc =>
-      exact absurd
-        ((SystemState.getSchedContext?_eq_some_iff sa scId sc).mpr
-          ((h sc).mp ((SystemState.getSchedContext?_eq_some_iff sb scId sc).mp hB)))
-        (by rw [hA]; simp)
-  | some sc =>
-    rw [(SystemState.getSchedContext?_eq_some_iff sb scId sc).mpr
-      ((h sc).mpr ((SystemState.getSchedContext?_eq_some_iff sa scId sc).mp hA))]
+--
+-- **`v0.35.166`: seven of this section's frames moved out, and the reason is a
+-- layering fact rather than tidiness.**  This module is downstream of the
+-- destroy path (`Lifecycle/Operations/CleanupPreservation.lean`) *and* of the
+-- retype wrapper, so a frame written `private` here is invisible to the retype's
+-- own reservation theorems — which is precisely why register row 63 could not be
+-- stated until now.  Each one is public and beside the fact its proof rests on:
+--
+--   * `SystemState.getSchedContext?_eq_of_kind_iff` and
+--     `SystemState.map_cpuAffinity_eq_of_refines` → `Model/State.lean`, beside
+--     `getSchedContext?_eq_some_iff` / `getTcb?_eq_some_iff`, whose unfolding is
+--     the whole of each proof.  Both are generic bridges between the kind
+--     biconditionals the store's frames produce and the typed readings the
+--     invariants read, so their owner is the accessor, not this bundle.
+--   * `spliceOutMidQueueNode_affinity_frame` → `CleanupPreservation.lean`,
+--     beside `spliceOutMidQueueNode_tcb_lookup` / `_tcb_backward`.
+--   * `removeFromAllEndpointQueues_getSchedContext?_eq` / `_affinity_frame` →
+--     `Lifecycle/Invariant/CancellationQueueShape.lean`, beside
+--     `removeFromAllEndpointQueues_nonEndpoint`.
+--   * `removeFromAllNotificationWaitLists_getSchedContext?_eq` /
+--     `_affinity_frame` (and the `Option`-level `_getTcb?_eq` the second is one
+--     consequence of) → `Lifecycle/Invariant/CancellationNotificationShape.lean`,
+--     beside `removeFromAllNotificationWaitLists_nonNotification`.
+--
+-- Nothing below changed but the names; the frames this section keeps are the
+-- ones whose subjects are cancellation-path steps and have no second asker.
 
 /-- WS-RR RR8.11: the restore writes one TCB, so it writes no scheduling
 context. -/
@@ -501,7 +503,7 @@ private theorem restoreToReadyStaging_getSchedContext?_eq (st : SystemState)
     (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     (Lifecycle.Suspend.restoreToReadyStaging st tid frame).getSchedContext? scId
       = st.getSchedContext? scId := by
-  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
   rw [restoreToReadyStaging_eq]
   cases hT : st.getTcb? tid with
   | none => exact Iff.rfl
@@ -547,28 +549,6 @@ private theorem consumeReplyLink_getSchedContext?_eq (st : SystemState)
     exact consumeCallerReply_getSchedContext?_eq st _ tid rid hInv
       (SystemState.consumeCallerReply_eq_link st tid rid) scId
 
-/-- WS-RR RR8.11: the endpoint sweep and the splice it composes write endpoints
-and TCBs only. -/
-private theorem removeFromAllEndpointQueues_getSchedContext?_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (removeFromAllEndpointQueues st tid).getSchedContext? scId
-      = st.getSchedContext? scId := by
-  refine getSchedContext?_of_kind_iff (fun sc => ?_)
-  refine Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
-      (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
-      scId.toObjId (.schedContext sc) (fun e => fun hc => KernelObject.noConfusion hc)) ?_
-  exact spliceOutMidQueueNode_nonTcb st tid hInv scId.toObjId (.schedContext sc)
-    (fun t => fun hc => KernelObject.noConfusion hc)
-
-/-- WS-RR RR8.11: the notification purge writes notifications only. -/
-private theorem removeFromAllNotificationWaitLists_getSchedContext?_eq (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
-    (removeFromAllNotificationWaitLists st tid).getSchedContext? scId
-      = st.getSchedContext? scId := by
-  refine getSchedContext?_of_kind_iff (fun sc => ?_)
-  exact removeFromAllNotificationWaitLists_nonNotification st tid hInv
-    scId.toObjId (.schedContext sc) (fun n => fun hc => KernelObject.noConfusion hc)
-
 /-- WS-RR RR8.11: the holder abort writes endpoints and TCBs, so it writes no
 scheduling context — the `unwritten_kind` pair WS-OD OD3.2 built for the chain
 frame, read at the SchedContext kind. -/
@@ -576,7 +556,7 @@ private theorem abortHolderPendingIpc_getSchedContext?_eq (st : SystemState)
     (holder : SeLe4n.ThreadId) (hInv : st.objects.invExt) (scId : SeLe4n.SchedContextId) :
     (Lifecycle.Suspend.abortHolderPendingIpc st holder).getSchedContext? scId
       = st.getSchedContext? scId := by
-  refine getSchedContext?_of_kind_iff (fun sc => ?_)
+  refine SystemState.getSchedContext?_eq_of_kind_iff (fun sc => ?_)
   exact ⟨fun h => Lifecycle.Suspend.abortHolderPendingIpc_unwritten_kind_backward st holder hInv
       (fun o => ∃ sc0 : SeLe4n.Kernel.SchedContext, o = .schedContext sc0)
       (fun _ hc => nomatch hc.choose_spec) (fun _ hc => nomatch hc.choose_spec)
@@ -699,87 +679,6 @@ theorem cancelIpcBlocking_getSchedContext?_eq_of_reclaim_inert (st : SystemState
       = st.getSchedContext? scId₀ :=
   cancelIpcBlocking_getSchedContext?_eq_of_reclaim_frame st v tcbV hInv scId₀ (by rw [hInert])
 
-/-- WS-RR RR8.11: the shape every affinity frame below is proved in.  A step whose
-TCB readings refine forward with the affinity preserved and whose post-state TCBs
-all have pre-state TCBs at the same key frames `determineTargetCore` at that key —
-the `Option.map` form, whose `none` case is the statement that the step
-materialises no thread. -/
-private theorem map_affinity_of_refines {sa sb : SystemState} {x : SeLe4n.ThreadId}
-    (hFwd : ∀ t0, sa.getTcb? x = some t0 →
-      ∃ t', sb.getTcb? x = some t' ∧ t'.cpuAffinity = t0.cpuAffinity)
-    (hBwd : ∀ t', sb.getTcb? x = some t' → ∃ t0, sa.getTcb? x = some t0) :
-    (sb.getTcb? x).map (·.cpuAffinity) = (sa.getTcb? x).map (·.cpuAffinity) := by
-  cases hA : sa.getTcb? x with
-  | none =>
-    cases hB : sb.getTcb? x with
-    | none => rfl
-    | some t' =>
-      obtain ⟨t0, h0⟩ := hBwd t' hB
-      rw [hA] at h0
-      exact absurd h0 (by simp)
-  | some t0 =>
-    obtain ⟨t', hB, hAff⟩ := hFwd t0 hA
-    rw [hB]
-    simp [hAff]
-
-/-- WS-RR RR8.11: the mid-queue splice patches queue links only. -/
-private theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
-  refine map_affinity_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
-  · obtain ⟨t', hL', hAff'⟩ := spliceOutMidQueueNode_tcb_lookup st tid x.toObjId t0 hInv
-      ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
-    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hAff'⟩
-  · obtain ⟨t0, hL0, _⟩ := spliceOutMidQueueNode_tcb_backward st tid x.toObjId t' hInv
-      ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
-    exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
-
-/-- WS-RR RR8.11: the endpoint sweep's fold writes endpoints only, so every TCB
-reading is the splice's; the splice is the affinity frame above. -/
-private theorem removeFromAllEndpointQueues_affinity_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromAllEndpointQueues st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
-  have hFold : ∀ t : TCB,
-      (removeFromAllEndpointQueues st tid).getTcb? x = some t
-        ↔ (spliceOutMidQueueNode st tid).getTcb? x = some t := fun t =>
-    Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
-      (Iff.trans (removeFromAllEndpointQueues_nonEndpoint st tid
-          (spliceOutMidQueueNode_preserves_objects_invExt st tid hInv)
-          x.toObjId (.tcb t) (fun e => fun hc => KernelObject.noConfusion hc))
-        (SystemState.getTcb?_eq_some_iff _ x t).symm)
-  have hEq : (removeFromAllEndpointQueues st tid).getTcb? x
-      = (spliceOutMidQueueNode st tid).getTcb? x := by
-    cases hA : (spliceOutMidQueueNode st tid).getTcb? x with
-    | none =>
-      cases hB : (removeFromAllEndpointQueues st tid).getTcb? x with
-      | none => rfl
-      | some t => exact absurd ((hFold t).mp hB) (by rw [hA]; simp)
-    | some t => exact (hFold t).mpr hA
-  rw [hEq]
-  exact spliceOutMidQueueNode_affinity_frame st tid hInv x
-
-/-- WS-RR RR8.11: the notification purge writes notifications only. -/
-private theorem removeFromAllNotificationWaitLists_affinity_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((removeFromAllNotificationWaitLists st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
-  have hIff : ∀ t : TCB,
-      (removeFromAllNotificationWaitLists st tid).getTcb? x = some t ↔ st.getTcb? x = some t :=
-    fun t => Iff.trans (SystemState.getTcb?_eq_some_iff _ x t)
-      (Iff.trans (removeFromAllNotificationWaitLists_nonNotification st tid hInv
-          x.toObjId (.tcb t) (fun n => fun hc => KernelObject.noConfusion hc))
-        (SystemState.getTcb?_eq_some_iff st x t).symm)
-  have hEq : (removeFromAllNotificationWaitLists st tid).getTcb? x = st.getTcb? x := by
-    cases hA : st.getTcb? x with
-    | none =>
-      cases hB : (removeFromAllNotificationWaitLists st tid).getTcb? x with
-      | none => rfl
-      | some t => exact absurd ((hIff t).mp hB) (by rw [hA]; simp)
-    | some t => exact (hIff t).mpr hA
-  rw [hEq]
-
 /-- WS-RR RR8.11: the restore rewrites the victim's own TCB and writes nothing
 where no TCB was. -/
 private theorem restoreToReadyStaging_affinity_frame (st : SystemState)
@@ -836,7 +735,7 @@ private theorem endpointQueueRemove_affinity_frame {endpointId : SeLe4n.ObjId}
     (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
     (st'.getTcb? x).map (·.cpuAffinity) = (st.getTcb? x).map (·.cpuAffinity) := by
-  refine map_affinity_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
   · obtain ⟨ot', hL', hAff'⟩ := endpointQueueRemove_getTcb_upToAffinity endpointId isReceiveQ
       tid st st' hInv h x.toObjId t0
       (by rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
@@ -962,7 +861,7 @@ private theorem consumeReplyLink_affinity_frame (st : SystemState) (tid : SeLe4n
   | none => rfl
   | some rid =>
     have hStep := SystemState.consumeCallerReply_eq_link st tid rid
-    refine map_affinity_of_refines (fun t0 hT0 => ?_)
+    refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_)
       (fun t' hT' => consumeCallerReply_getTcb?_backward hInv hStep x t' hT')
     by_cases hk : x.toObjId = tid.toObjId
     · refine ⟨{ t0 with replyObject := none }, ?_, rfl⟩

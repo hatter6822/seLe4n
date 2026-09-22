@@ -10451,6 +10451,71 @@ run_check "INVARIANT" rg -n '\(d\) CONTROL: on a context bound to nothing the tw
 # `observableSlotsConfinedToCores` slots, the replenish queue not being one.
 run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_confinedToCores \(' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "\| schedContext _ =>[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_confinedToCores _ _ _" SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean'
+
+# ---------------------------------------------------------------------------
+# `v0.35.166` (register row 63's LAYERING half): the destroy path's cleanup gets
+# its reservation theorem.  `v0.35.164` and `v0.35.165` each gave an ARM its
+# `replenishQueueAffinityConsistent_smp` theorem and neither could state one about
+# the PROGRAM that runs them: the `.tcb` arm's reference sweep runs two whole-store
+# folds whose `getSchedContext?` and `cpuAffinity` frames were `private` in
+# `IPC/Invariant/CancellationBundle.lean`, downstream of both the cleanup and the
+# retype wrapper.  Each frame is now beside the fact its proof rests on.
+# The two generic accessor bridges, beside the accessors' own unfolding lemmas.
+run_check "INVARIANT" rg -n '^theorem getSchedContext\?_eq_of_kind_iff \{' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem map_cpuAffinity_eq_of_refines \{' SeLe4n/Model/State.lean
+# The splice's affinity frame, beside the two readings its proof composes.
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+# Each sweep's pair, beside that sweep's own `non…` biconditional.
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_getSchedContext\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_getTcb\?_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+# NEGATIVE: none of the five may come back as a private copy in the bundle they
+# left.  Scoped to that file, because each is LIVE at its new home; the §4
+# tombstone names them in prose, which the code view strips.  Mutation: restore
+# any one of the deleted declarations there as code.
+run_negative_check "INVARIANT" rg -n 'getSchedContext\?_of_kind_iff|map_affinity_of_refines' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_negative_check "INVARIANT" rg -n '^private theorem (spliceOutMidQueueNode_affinity_frame|removeFromAllEndpointQueues_getSchedContext\?_eq|removeFromAllEndpointQueues_affinity_frame|removeFromAllNotificationWaitLists_getSchedContext\?_eq|removeFromAllNotificationWaitLists_affinity_frame) ' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+# The SMP whole-store frame, beside its per-core original and its congruence
+# sibling -- what a step writing NO object at all reaches for.
+run_check "INVARIANT" rg -n '^theorem replenishQueueAffinityConsistent_smp_frame \{' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+# The module the composite can finally be stated in, and the root that imports it
+# (a module outside every root is outside every census's derived domain).
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.RetypeReservation$' SeLe4n.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Lifecycle\.Invariant\.CancellationNotificationShape$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# §1: the reference sweep moves no replenish entry, no bound thread, no home core.
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_objects_invExt \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_replenishQueueOnCore \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_boundThread_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_determineTargetCore_eq \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# RELATION: the sweep frames the `boundThread` PROJECTION, not `getSchedContext?`
+# -- its last step (`clearDonationOriginReferences`) genuinely rewrites scheduling
+# contexts, and the invariant reads only the field it leaves alone.  Mutation:
+# state the conclusion as a `getSchedContext?` equality.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_boundThread_frame[^\n]*(\n([ \t][^\n]*)?)*\(\(cleanupTcbReferences st tid\)\.getSchedContext\? scId\)\.map \(·\.boundThread\)\n *= \(st\.getSchedContext\? scId\)\.map \(·\.boundThread\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+# NEGATIVE: and the equality itself must not be claimed anywhere -- it is FALSE,
+# for the reason above.  Mutation: add a `cleanupTcbReferences_getSchedContext?_eq`.
+run_negative_check "INVARIANT" rg -n 'cleanupTcbReferences_getSchedContext\?_eq' SeLe4n/
+# The `.tcb` arm's two steps as one lemma, so the composite's six arms are one
+# `exact` each and the suspend's G2/G3 pair has something to cite.
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# §2: the composite itself.
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# RELATION: the composite cites the two arms that MOVE a reservation -- the `.tcb`
+# arm's pair (`v0.35.164`) and the `.schedContext` arm's release (`v0.35.165`) --
+# and nothing else does.  Mutation: keep every name and drop either citation.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact cleanupTcbReferences_after_donationArm_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*exact releaseSchedContextBinding_preserves_replenishQueueAffinityConsistent_smp" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+# NEGATIVE: the composite takes NO detachment pack.  Under `retypeTargetDetached`
+# the whole cleanup is the identity (`lifecyclePreRetypeCleanup_detached_frame`),
+# so a theorem stated under it would exercise neither arm -- the pack is the
+# caller obligation and the runtime arm is what makes a violation safe.
+# Mutation: add a `retypeTargetDetached` hypothesis to the composite.
+run_negative_check "INVARIANT" rg -n 'retypeTargetDetached' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+
 run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
