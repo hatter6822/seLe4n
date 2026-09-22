@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.178.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.179.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9634,6 +9634,44 @@ code may assume:
   the moment either side moved, so the write set is still the arm's own; what
   changed is that the duplicate is now asserted, with the restart's *empty* append
   as its control — a write set naming every core satisfies neither.
+- **...and a coverage claim's UNIT is what the footprint bounds, which may be a
+  sub-composition** (WS-RR RR8.12 Cut C6f, `v0.35.179`).  `.receive` is the one
+  declared arm whose chain walk sits **outside** its run segment — the walk's
+  cores are state-discovered and are declared dynamically through
+  `pipChainSchedFootprint` — so `schedLockSet_endpointReceiveOnCore_coversWrites`
+  is stated at the leg composed with WS-OD OD3.6's donation, and a claim at the
+  whole hand-off would be *false* of that footprint.  A Tier 3 negative refuses
+  that spelling, because a coverage theorem naming the wrong unit reads exactly
+  like one naming the right one.  Three things new code must respect.
+
+  (1) **A footprint resolved BEFORE a transition and a resolver read AFTER it
+  must be shown to name the same thing.**  The arm hands the hand-off the thread
+  the *leg* reports; the segment is read off the *pre-state* send queue.
+  `endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head` and its block-path
+  sibling are what close that, and they did not exist: every other rendezvous
+  frame did, because until a coverage proof nothing had to relate the leg's
+  **output** to the resolver.  A new arm whose footprint and transition resolve at
+  different states owes the same lemma.
+
+  (2) **Look for the degenerate case before reaching for an invariant.**  The
+  block path hands the hand-off the *receiver's own id*, and
+  `callDonationSchedContext?_self` — a thread donates nothing to itself, because
+  the resolver reads an `.unbound` binding twice — is that path's whole donation
+  story.  No reasoning about the post-state `ipcState` is needed there at all.
+  `queueHeadBlockedConsistent` is then taken for exactly one corner and named at
+  the point of use rather than carried by the family.
+
+  (3) **Write the helper and let the build tell you it exists.**  Two confinement
+  theorems this cut needed were written, compiled, and rejected as *already
+  declared* — the tree has had both since WS-OD OD3.6.  That is a cheaper search
+  than grepping for a name you would have had to guess.
+
+  One mechanical note, the same hazard as Cut C6e's at a smaller unit: an anchor
+  pattern written against a witness label containing a **backtick** must count the
+  characters, because `.` matches one — `the .receive. segment` misses
+  ``the `.receive` segment`` by exactly one.  The sweep reported it as a failing
+  command rather than as a silent pass, which is the direction that class must
+  fail in.
 - **...and a NEGATIVE anchor over prose is a prose check, which only a mutation
   tells you** (WS-RR RR8.12 Cut C6e, `v0.35.178`).  The cut retired a hand-kept
   figure — `SyscallSchedContainment.lean`'s §7 said *"Eight coverage theorems

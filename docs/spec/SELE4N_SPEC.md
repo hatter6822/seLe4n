@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.178` (`lakefile.toml`) |
+| **Package version** | `0.35.179` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 407,096 across 338 Lean files |
-| **Test LoC** | 83,035 across 70 Lean test suites |
-| **Proved declarations** | 13,473 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 407,460 across 338 Lean files |
+| **Test LoC** | 83,049 across 70 Lean test suites |
+| **Proved declarations** | 13,481 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4924,6 +4924,21 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   measures the direction the segment assertions cannot see: the arm writes no
   replenish queue on a core the segment does not name, with the empty-segment shape
   as the decisive case.
+
+  **And `.receive`'s coverage names a sub-composition** (WS-RR RR8.12 Cut C6f,
+  `v0.35.179`).  It is the one declared arm whose priority-inheritance walk sits
+  outside its run segment — declared dynamically through `pipChainSchedFootprint`
+  — so `schedLockSet_endpointReceiveOnCore_coversWrites` is stated at the receive
+  leg composed with WS-OD OD3.6's donation, which is what that footprint bounds; a
+  claim at the whole hand-off would be false of it, and a Tier 3 negative refuses
+  that spelling.  What made it statable is
+  `endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head` and its block-path
+  sibling: the thread the leg reports is decided by the *pre-state* send queue, so
+  a footprint resolved before the transition and a donation resolved after it name
+  the same two threads.  The block path needs no post-state guard at all
+  (`callDonationSchedContext?_self`), and `queueHeadBlockedConsistent` is taken for
+  exactly one corner — a rendezvous whose sender is not a `Call` yet whose donation
+  resolver answers `some`.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

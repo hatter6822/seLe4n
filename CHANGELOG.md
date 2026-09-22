@@ -1,3 +1,77 @@
+## v0.35.179 — WS-RR RR8.12 Cut C6f: the live `.receive` ARM covered
+
+The arm whose coverage claim is about a **sub-composition**, and deliberately so.
+`schedLockSet_endpointReceiveOnCore`'s run segment is
+`endpointReceiveDualWriteSet` — the *leg's* — because `.receive` is the one
+declared arm whose priority-inheritance walk sits outside its run segment: the
+walk's cores are state-discovered and are declared dynamically through
+`pipChainSchedFootprint` under the `pipChainStart_endpointReceive` obligation.  So
+`schedLockSet_endpointReceiveOnCore_coversWrites` is stated at the leg composed
+with WS-OD OD3.6's donation, which is what that footprint bounds; a claim at the
+whole hand-off would be **false** of it, and a Tier 3 negative refuses that
+spelling.
+
+### What made it statable
+
+Two lemmas the tree did not have: `endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head`
+(on a rendezvous the thread the leg reports **is** the send queue's head) and its
+block-path sibling `…_ok_dequeued_eq_receiver_of_blocked` (it dequeued nobody, so
+it reports the receiver).  Together they say the thread handed to the hand-off is
+decided by the **pre-state** send queue and nothing else — which is what lets a
+footprint resolved before the transition and a donation resolved after it be
+about the same two threads.  Every other rendezvous frame existed
+(`_determineTargetCore_eq_of_rendezvous`, `_sameSchedContextBindings_of_rendezvous`,
+`_replenishQueueOnCore_of_rendezvous`) because until a coverage proof nothing had
+to relate the leg's *output* to the resolver.
+
+### The block path needed no guard lemma at all
+
+`callDonationSchedContext?_self`: a thread donates nothing to itself.  The
+resolver requires the *receiver* `.unbound` and then reads the **caller's**
+effective context, so with one thread in both roles the second read is of an
+`.unbound` binding.  The block path hands the hand-off the receiver's own id, so
+that one `simp` lemma is the whole of its donation story — no reasoning about the
+post-state `ipcState` is needed.
+
+### One corner needs one invariant, and it is named where it is used
+
+`endpointReceiveLegAndDonation_replenishQueueOnCore_ne` takes
+`queueHeadBlockedConsistent`, for exactly one shape: a rendezvous whose sender is
+*not* a `Call` yet whose `callDonationSchedContext?` answers `some`.  There the
+segment is empty and the donation must be shown inert, which is
+`endpointReceiveDualWithCapsOnCore_not_dequeuedCall_of_blockedOnSend` — stated at
+`.blockedOnSend` rather than at "not a `Call`" for the reason its own docstring
+gives (a pre-state sender already `.blockedOnReply` satisfies the weaker
+hypothesis and refutes the conclusion on a refusal), and that conjunct is what
+says `.blockedOnSend` is the reachable non-`Call` shape for a send queue's head.
+
+### And two theorems the cut did not need to write
+
+`applyCallDonationOnCore_confinedToCores` and
+`applyReceiveRendezvousDonation_confinedToCores` were written, compiled, and
+**rejected by the elaborator as already declared** — the tree has had both since
+WS-OD OD3.6.  *Before writing a helper, find the one this tree already has*, and
+the fastest way to find out is to write it and let the build say so.
+
+### Anchors, mutations and the witness
+
+Eleven Tier 3 anchors, nine token-preserving mutations all **DECISIVE**, and a
+changed-file sweep of 547 of 547 rows with **0 deferred**.  `tests/SmpIpcSuite.lean`
+§3.26 gains the direction its segment assertions cannot see — every core outside
+the segment keeps its replenish queue across leg **and** donation — with a second
+assertion that the segment is a strict subset on that state, so the first is not
+vacuous.
+
+One mechanical note, the same hazard as `v0.35.178`'s at a smaller unit: an anchor
+pattern written against a witness label containing a **backtick** must count the
+characters, because `.` matches one.  `the .receive. segment` misses
+`` the `.receive` segment`` by exactly one; the sweep reported it as a failing
+command rather than as a silent pass, which is the direction that class should
+fail in.
+
+Scope: the `.receive` arm.  `.lifecycleRetype` is the next cut, and the bracket
+(with `UncoveredLockDomain.syscallSeamSchedulerDomain`'s deletion) the one after.
+
 ## v0.35.178 — WS-RR RR8.12 Cut C6e: the live `.replyRecv` ARM covered
 
 The one declared arm whose footprint covers its **whole** body.

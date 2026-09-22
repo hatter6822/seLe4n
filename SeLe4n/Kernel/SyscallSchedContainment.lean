@@ -359,6 +359,48 @@ theorem schedLockSet_endpointReplyRecvOnCore_coversWrites (endpointId : SeLe4n.O
     (fun d hd => replyRecvBody_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
       receiverCspaceRoot receiverSlotBase executingCore st st' summary d hObjInv hd hStep)
 
+/-- **WS-RR RR8.12 Cut C6f**: `.receive`'s footprint covers its writes — the leg
+composed with WS-OD OD3.6's donation, which is what that footprint bounds.
+
+**Not the chain walk**, and that is the arm's own design rather than a gap here:
+`.receive` is the one declared arm whose walk sits outside its run segment
+(`endpointReceiveDualWriteSet` is the leg's), because the walk's cores are
+state-discovered and are declared dynamically through `pipChainSchedFootprint`
+under the `pipChainStart_endpointReceive` obligation.  A bracket acquires the two
+together; a coverage claim stated at the whole hand-off would be *false* of this
+footprint, which is why the unit here is the leg and the donation.
+
+The run half is free: the donation is per-core silent (it moves a budget, not a
+scheduling decision), so the composition is confined to the leg's own set.  The
+replenish half is the arm's three shapes under one keyed frame. -/
+theorem schedLockSet_endpointReceiveOnCore_coversWrites (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st1 stDon : SystemState) (dequeued : SeLe4n.ThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × Concurrency.SgiKind)) (S : SchedLockSet)
+    (hObjInv : st.objects.invExt) (hHeads : queueHeadBlockedConsistent st)
+    (hS : SchedLockSet.ofList? (schedLockSet_endpointReceiveOnCore st endpointId receiver
+      executingCore) = some S)
+    (hLeg : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+      receiverSlotBase executingCore st = (st1, .ok (dequeued, summary, sgi)))
+    (hDon : applyReceiveRendezvousDonation st1 receiver dequeued = .ok stDon) :
+    schedFootprintCoversWrites S st stDon :=
+  schedFootprintCoversWrites_of_confined S
+    (endpointReceiveDualWriteSet st endpointId executingCore)
+    (endpointReceiveHandoffReplenishCores st endpointId receiver) st stDon
+    (SchedLockSet.ofList?_pairs hS)
+    (observableSlotsConfinedToCores_mono (fun _ hm => by simpa using hm)
+      (observableSlotsConfinedToCores_trans
+        (by
+          have h := endpointReceiveDualWithCapsOnCore_confinedToCores endpointId receiver replyId
+            receiverCspaceRoot receiverSlotBase executingCore st hObjInv
+          rw [hLeg] at h
+          exact h)
+        (applyReceiveRendezvousDonation_confinedToCores st1 stDon receiver dequeued hDon)))
+    (fun d hd => endpointReceiveLegAndDonation_replenishQueueOnCore_ne endpointId receiver replyId
+      receiverCspaceRoot receiverSlotBase executingCore st st1 stDon dequeued summary sgi d
+      hObjInv hHeads hd hLeg hDon)
+
 -- ============================================================================
 -- §7  What the obligation refuses
 -- ============================================================================

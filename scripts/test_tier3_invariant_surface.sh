@@ -19796,4 +19796,35 @@ run_prose_negative_check "INVARIANT" rg -n 'Eight coverage theorems above' SeLe4
 run_check "INVARIANT" rg -n 'C6e: with an empty segment the arm leaves EVERY core' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6f (`v0.35.179`): the live `.receive` ARM's coverage.
+# ============================================================================
+#
+# The unit is the leg COMPOSED WITH THE DONATION, not the whole hand-off: `.receive`
+# is the one declared arm whose chain walk sits outside its run segment, declared
+# dynamically through `pipChainSchedFootprint` instead.  A coverage claim at the
+# whole hand-off would be FALSE of this footprint, which is why the theorem names
+# `applyReceiveRendezvousDonation` and not `applyReceiveRendezvousHandoff`.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hDon : applyReceiveRendezvousDonation st1 receiver dequeued" SeLe4n/Kernel/SyscallSchedContainment.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff" SeLe4n/Kernel/SyscallSchedContainment.lean'
+# The arm's replenish frame, keyed on the footprint's own segment rather than on
+# which of the arm's three shapes the state takes.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ endpointReceiveHandoffReplenishCores" SeLe4n/Kernel/API.lean'
+# ...and the one invariant it needs, for the one corner that needs it: a rendezvous
+# whose sender is not a `Call` yet whose donation resolver answers `some`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveLegAndDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hHeads : queueHeadBlockedConsistent st" SeLe4n/Kernel/API.lean'
+# The two lemmas that make the claim statable at all: the thread the leg hands the
+# hand-off is decided by the PRE-STATE send queue and nothing else.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head[^\n]*(\n([ \t][^\n]*)?)*dequeued = sender" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked[^\n]*(\n([ \t][^\n]*)?)*dequeued = receiver" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+# The block path's whole donation story: a thread donates nothing to itself, so the
+# post-state `ipcState` guard is not consulted there at all.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem callDonationSchedContext\?_self[^\n]*(\n([ \t][^\n]*)?)*callDonationSchedContext\? st tid tid = none" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ rendezvousCallDonationReplenishCores" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+# The frame MEASURED over every core, with the segment shown to be a strict subset
+# so the claim is not vacuous.
+run_check "INVARIANT" rg -n 'C6f: EVERY core outside the .+ segment keeps its replenish queue' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'C6f: ...and the segment is a strict subset here' tests/SmpIpcSuite.lean
+
 finalize_report

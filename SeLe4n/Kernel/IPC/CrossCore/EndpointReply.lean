@@ -3762,6 +3762,145 @@ theorem endpointReceiveDualOnCore_state_of_no_endpoint (endpointId : SeLe4n.ObjI
   simp only
   split <;> rfl
 
+/-- **WS-RR RR8.12 Cut C6f**: on a rendezvous the thread the leg reports dequeued
+**is** the send queue's head.
+
+The `.receive` arm hands that thread to WS-OD OD3.6's donation, and the arm's
+replenish segment is resolved from the head at the *pre*-state — so without this
+the two could name different threads and the footprint would be about a migration
+the transition does not perform.  The tree had every other rendezvous frame
+(`_determineTargetCore_eq_of_rendezvous`, `_sameSchedContextBindings_of_rendezvous`,
+`_replenishQueueOnCore_of_rendezvous`) and not this one, because until the coverage
+proof nothing had to relate the leg's *output* to the resolver. -/
+theorem endpointReceiveDualOnCore_ok_dequeued_eq_head (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st st' : SystemState) (dequeued : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
+    (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hStep : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      = (st', .ok (dequeued, sgi))) :
+    dequeued = sender := by
+  have hEpObj : st.objects[endpointId]? = some (.endpoint ep) :=
+    (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp
+  have hHeadQ : (if (false : Bool) then ep.receiveQ else ep.sendQ).head = some sender := by
+    simpa using hHead
+  unfold endpointReceiveDualOnCore at hStep
+  rw [hEp] at hStep
+  simp only [hHead] at hStep
+  cases hPop : endpointQueuePopHead endpointId false st with
+  | error e => rw [hPop] at hStep; simp only [] at hStep; exact absurd hStep (by simp)
+  | ok popTriple =>
+    obtain ⟨popTid, popTcb, stPop⟩ := popTriple
+    rw [hPop] at hStep
+    simp only [] at hStep
+    have hPopHead : popTid = sender :=
+      endpointQueuePopHead_popped_eq_head endpointId false st stPop ep popTid sender popTcb
+        hEpObj hHeadQ hPop
+    -- every `.ok` arm of the rendezvous branch reports the popped thread
+    have hDq : dequeued = popTid := by
+      repeat' split at hStep
+      all_goals
+        simp only [Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, and_false] at hStep
+      all_goals first
+        | exact hStep.2.1.symm
+        | exact absurd hStep (by simp)
+    exact hDq.trans hPopHead
+
+/-- **WS-RR RR8.12 Cut C6f**: and on the block path the leg reports the RECEIVER's
+own id — it dequeued nobody.  The sibling of `…_ok_dequeued_eq_head`, and the other
+half of what the `.receive` arm's coverage proof needs: together they say the thread
+handed to the hand-off is decided by the pre-state send queue and nothing else. -/
+theorem endpointReceiveDualOnCore_ok_dequeued_eq_receiver_of_blocked (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId) (executingCore : CoreId)
+    (st st' : SystemState) (dequeued : SeLe4n.ThreadId) (sgi : Option (CoreId × SgiKind))
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hStep : endpointReceiveDualOnCore endpointId receiver replyId executingCore st
+      = (st', .ok (dequeued, sgi))) :
+    dequeued = receiver := by
+  unfold endpointReceiveDualOnCore at hStep
+  cases hEp : st.getEndpoint? endpointId with
+  | none =>
+    rw [hEp] at hStep
+    simp only [] at hStep
+    split at hStep <;> exact absurd hStep (by simp)
+  | some ep =>
+    have hHead : ep.sendQ.head = none := by
+      unfold receiveRendezvousSender? at hNoSender
+      rw [hEp] at hNoSender
+      exact hNoSender
+    rw [hEp] at hStep
+    simp only [hHead] at hStep
+    repeat' split at hStep
+    all_goals
+      simp only [Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, and_false] at hStep
+    all_goals first
+      | exact hStep.2.1.symm
+      | exact absurd hStep (by simp)
+
+/-- ...and the caps-carrying form reports the receiver there too. -/
+theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_receiver_of_blocked
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (dequeued : SeLe4n.ThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st = (st', .ok (dequeued, summary, sgi))) :
+    dequeued = receiver := by
+  unfold endpointReceiveDualWithCapsOnCore at hStep
+  cases hLeg : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stLeg res =>
+    rw [hLeg] at hStep
+    cases res with
+    | error e => simp only [] at hStep; exact absurd hStep (by simp)
+    | ok pair =>
+      obtain ⟨legTid, legSgi⟩ := pair
+      simp only [] at hStep
+      have hLegTid : legTid = receiver :=
+        endpointReceiveDualOnCore_ok_dequeued_eq_receiver_of_blocked endpointId receiver replyId
+          executingCore st stLeg legTid legSgi hNoSender hLeg
+      have hDq : dequeued = legTid := by
+        repeat' split at hStep
+        all_goals
+          simp only [Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, and_false] at hStep
+        all_goals first
+          | exact hStep.2.1.symm
+          | exact absurd hStep (by simp)
+      exact hDq.trans hLegTid
+
+/-- ...and the caps-carrying form reports the same thread: the unwrap changes the
+summary, never the dequeued thread. -/
+theorem endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (dequeued : SeLe4n.ThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hStep : endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st = (st', .ok (dequeued, summary, sgi))) :
+    dequeued = sender := by
+  unfold endpointReceiveDualWithCapsOnCore at hStep
+  cases hLeg : endpointReceiveDualOnCore endpointId receiver replyId executingCore st with
+  | mk stLeg res =>
+    rw [hLeg] at hStep
+    cases res with
+    | error e => simp only [] at hStep; cases hStep
+    | ok pair =>
+      obtain ⟨legTid, legSgi⟩ := pair
+      simp only [] at hStep
+      have hLegTid : legTid = sender :=
+        endpointReceiveDualOnCore_ok_dequeued_eq_head endpointId receiver replyId executingCore
+          st stLeg legTid legSgi ep sender hEp hHead hLeg
+      have hDq : dequeued = legTid := by
+        repeat' split at hStep
+        all_goals
+          simp only [Prod.mk.injEq, Except.ok.injEq, reduceCtorEq, and_false] at hStep
+        all_goals first
+          | exact hStep.2.1.symm
+          | exact absurd hStep (by simp)
+      exact hDq.trans hLegTid
+
 /-- The receiver's own deschedule writes a run queue and a current slot, never a
 replenish queue or an object, so it carries the SM5.H affinity invariant. -/
 theorem removeRunnableOnCore_preserves_replenishQueueAffinityConsistent_smp

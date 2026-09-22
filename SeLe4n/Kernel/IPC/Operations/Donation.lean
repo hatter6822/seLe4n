@@ -1216,6 +1216,41 @@ theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemSta
     exact applyCallDonationOnCore_replenishQueueOnCore_ne st st'' donorV receiverV
       (determineTargetCore st donor) (determineTargetCore st receiver) c hFrom hTo hCore
 
+/-- **WS-RR RR8.12 Cut C6f**: a thread donates nothing to itself.
+
+The resolver requires the *receiver* `.unbound` and then reads the **caller's**
+effective context — so with one thread in both roles the second read is of an
+`.unbound` binding, whose `scId?` is `none`.  The `.receive` arm's block path hands
+the hand-off the receiver's own id (it dequeued nobody), which is what makes this
+the whole of that path's donation story: no guard on the post-state `ipcState` is
+needed, because the resolver refuses on the pre-state shape alone. -/
+@[simp] theorem callDonationSchedContext?_self (st : SystemState) (tid : SeLe4n.ThreadId) :
+    callDonationSchedContext? st tid tid = none := by
+  unfold callDonationSchedContext?
+  cases hT : lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    cases hB : tcb.schedContextBinding with
+    | unbound => simp only [hB, SchedContextBinding.scId?]
+    | bound scId => simp only [hB]
+    | donated scId owner => simp only [hB]
+
+/-- **WS-RR RR8.12 Cut C6f (the exactness frame)**: the receive rendezvous'
+donation writes no replenish queue outside `rendezvousCallDonationReplenishCores` —
+the FOOTPRINT's own segment.  The guarded form's `false` arm is the identity, so
+this is the unguarded frame plus one case. -/
+theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne (st st'' : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (c : CoreId)
+    (hne : c ∉ rendezvousCallDonationReplenishCores st receiver dequeued)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold applyReceiveRendezvousDonation at h
+  by_cases hCall : rendezvousDequeuedCall st dequeued
+  · rw [if_pos hCall] at h
+    exact applyRendezvousCallDonation_replenishQueueOnCore_ne st st'' receiver dequeued c hne h
+  · rw [if_neg hCall] at h
+    rw [(Except.ok.inj h).symm]
+
 /-- WS-OD OD3.6: the rendezvous hand-off keeps the SM5.H replenish-queue
 affinity, because the primitive it composes does and both home cores are read
 off the very state the donation runs on — the `rfl` instantiation of the

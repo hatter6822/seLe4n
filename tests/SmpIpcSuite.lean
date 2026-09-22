@@ -3891,6 +3891,20 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
               | some t => t.schedContextBinding == .donated scClient donClient
               | none => false)
          | .error _ => false)
+      -- WS-RR RR8.12 Cut C6f: the direction the segment assertions cannot see --
+      -- the leg AND the donation together write no replenish queue on a core the
+      -- segment does not name.  `endpointReceiveLegAndDonation_replenishQueueOnCore_ne`
+      -- is the theorem; this is it measured on the shape where the segment is
+      -- widest, so the cores outside it are the only place a stray write could hide.
+      match applyReceiveRendezvousDonation stRecv donServer donClient with
+      | .error e => assertBool s!"(C6f) the donation must succeed (got {reprStr e})" false
+      | .ok stDon =>
+        let recvSeg := endpointReceiveHandoffReplenishCores stCall donEp donServer
+        assertBool "C6f: EVERY core outside the `.receive` segment keeps its replenish queue across leg+donation"
+          (Concurrency.allCores.all (fun d =>
+            recvSeg.contains d || replenishEntriesOn stDon d == replenishEntriesOn stCall d))
+        assertBool "C6f: ...and the segment is a strict subset here, so the claim is not vacuous"
+          (decide (recvSeg = [c0, c1]) && !recvSeg.contains c2 && !recvSeg.contains c3)
   -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
   --     lock is declared.  This is the shape the sender-keyed segment over-declared.
   match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
