@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.177.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.178.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9634,6 +9634,29 @@ code may assume:
   the moment either side moved, so the write set is still the arm's own; what
   changed is that the duplicate is now asserted, with the restart's *empty* append
   as its control — a write set naming every core satisfies neither.
+- **...and a NEGATIVE anchor over prose is a prose check, which only a mutation
+  tells you** (WS-RR RR8.12 Cut C6e, `v0.35.178`).  The cut retired a hand-kept
+  figure — `SyscallSchedContainment.lean`'s §7 said *"Eight coverage theorems
+  above"* at fourteen — and wrote a `run_negative_check` refusing its return.  It
+  passed on the clean tree and **passed on the mutation that restored the
+  sentence**, because the sentence lives in a `--` comment and `run_negative_check`
+  reads the code view, which blanks it.  That is this file's own *gates read code,
+  prose reads prose* rule at the one case it exists for — the subject genuinely
+  **is** the text — and the anchor is `run_prose_negative_check` now.  What is worth
+  keeping is not the instance but how it surfaced: a negative that cannot match is
+  indistinguishable from a tree that is clean, so the only thing that separates them
+  is breaking the relation it forbids.  Ask of every new negative whether its
+  subject survives the view the helper routes through.
+
+  Two further things that cut recorded.  **The composite's frames are keyed on the
+  SUB-SEGMENT each stage appends**, not on which path the stage took: a four-stage
+  arm whose frame took four path hypotheses would be a claim a bracket cannot
+  discharge, since a bracket resolves the footprint before the transition runs.  And
+  **a sweep's own input can be malformed, which the row accounting catches**: the
+  first run reported *"accounted for 473 of 474 selected rows"* because
+  `select_changed_anchors.py` writes its `# derivation:` line to stderr and the
+  invocation had merged it in with `2>&1`.  The gate was right; read a shortfall as
+  a question about the selection before reading it as a question about the anchors.
 - **A thread's base priority has ONE home: `TCB.priority`** (`v0.35.133`).  It had
   **two** until this cut — the TCB field and, mirrored onto it by the AK2-B
   propagation convention, its reservation's `SchedContext.priority` — with

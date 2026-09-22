@@ -4479,6 +4479,13 @@ private def runReplyRecvFootprintChecks : IO Unit := do
                && a.schedContextBinding == .bound scClient
                && b.schedContextBinding == SchedContextBinding.unbound
          | _, _, _ => false)
+      -- WS-RR RR8.12 Cut C6e: the OTHER direction, which the segment assertions
+      -- above cannot see -- the arm writes no replenish queue on a core the segment
+      -- does not name.  `replyRecvBody_replenishQueueOnCore_ne` is the theorem; this
+      -- is it measured on the shape where the segment is at its widest, so the one
+      -- core outside it is the only place a stray write could hide.
+      assertBool "(a) C6e: core 3 is outside the segment, and the arm leaves its replenish queue alone"
+        (replenishEntriesOn stOut c3 == replenishEntriesOn stQ c3)
     -- CONTROL: on THIS shape the `.receive` arm's pre-state reading of the receive
     -- leg, taken at the pop's post-state, agrees with the re-donation pair -- so an
     -- implementation that read the `.receive` segment there would pass (a) and be
@@ -4515,6 +4522,15 @@ private def runReplyRecvFootprintChecks : IO Unit := do
     assertBool "(b) PAYOFF: the segment is EMPTY" (decide (seg = []))
     assertBool "(b) PAYOFF: the footprint names NO replenish-queue write lock"
       (replenishMemberCount fp == 0)
+    -- WS-RR RR8.12 Cut C6e: an empty segment is a claim about EVERY core, so this
+    -- is the exactness frame at its strongest -- and the shape that makes the
+    -- measurement decisive, since (a) leaves only one core outside.
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(b) C6e: with an empty segment the arm leaves EVERY core's replenish queue alone"
+        (Concurrency.allCores.all (fun d => replenishEntriesOn stOut d == replenishEntriesOn stQ d))
     assertBool "(b) ...while it still names the answered client's run queue"
       (hasRunQueueWrite fp c0)
     let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ

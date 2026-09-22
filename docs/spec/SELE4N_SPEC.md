@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.177` (`lakefile.toml`) |
+| **Package version** | `0.35.178` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 406,667 across 338 Lean files |
-| **Test LoC** | 83,019 across 70 Lean test suites |
-| **Proved declarations** | 13,463 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 407,096 across 338 Lean files |
+| **Test LoC** | 83,035 across 70 Lean test suites |
+| **Proved declarations** | 13,473 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4909,6 +4909,21 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `tests/FaultHandlingSuite.lean` §7c since Cut C3a, and asserted since this cut —
   so the arm's declaration is derived from the arm rather than tightened to that
   coincidence.
+
+  **And the live `.replyRecv` arm is covered whole** (WS-RR RR8.12 Cut C6e,
+  `v0.35.178`).  It is the one declared arm whose footprint bounds its **entire**
+  body: `replyRecvBodyWriteSet` carries both chain walks in its run segment, so
+  `schedLockSet_endpointReplyRecvOnCore_coversWrites` is a complete claim rather
+  than one about a prefix (`.receive` is the arm whose walk sits outside).  The
+  replenish half is five exactness frames, one per stage of the four-stage
+  composition — the pop's, the block-path return's over
+  `cleanupPreReceiveDonationMigrated_…_ne`, the re-donation's over
+  `applyRendezvousCallDonation_…_ne` — each keyed on the *sub-segment* the
+  definition appends at that stage and composed through
+  `replyRecvHandoffReplenishCores_eq_of_legs`.  `tests/SmpIpcSuite.lean` §3.29
+  measures the direction the segment assertions cannot see: the arm writes no
+  replenish queue on a core the segment does not name, with the empty-segment shape
+  as the decisive case.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)

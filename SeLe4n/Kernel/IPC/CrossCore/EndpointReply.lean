@@ -4423,6 +4423,40 @@ theorem receivePreReturnReplenishCores_eq_migration (st stClean : SystemState)
     hNoSender (endpointReplyDonation?_of_preReceiveDonation? st receiver scId owner hDon),
     preReceiveReturnMigration_destination st stClean receiver scId owner hObjInv hDon hClean]
 
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pre-receive donation return
+writes no replenish queue outside `receivePreReturnReplenishCores` — the FOOTPRINT's
+own segment, and the block-path half of what `schedFootprintCoversWrites` asks of
+both receiving arms.
+
+Both branches are the step's own: with no loan the migration is the identity and the
+checked cleanup writes objects only, so *every* core is framed; with one, the
+migration's two endpoints are exactly the pair the segment names, which is
+`receivePreReturnReplenishCores_eq_migration` — an equality, not an
+over-approximation, so the frame needs no slack. -/
+theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne (st st' : SystemState)
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt)
+    (hNoSender : receiveRendezvousSender? st endpointId = none)
+    (hne : c ∉ receivePreReturnReplenishCores st endpointId receiver)
+    (h : cleanupPreReceiveDonationMigrated st receiver = .ok st') :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨stClean, hClean, hEq⟩ := cleanupPreReceiveDonationMigrated_ok_decompose h
+  have hSched := cleanupPreReceiveDonationChecked_scheduler_eq st stClean receiver hClean
+  cases hDon : preReceiveDonation? st receiver with
+  | none =>
+    rw [hEq, preReceiveReturnMigration_of_no_donation st stClean receiver hDon, hSched]
+  | some pair =>
+    obtain ⟨scId, owner⟩ := pair
+    rw [receivePreReturnReplenishCores_eq_migration st stClean endpointId receiver scId owner
+      hObjInv hNoSender hDon hClean] at hne
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+    obtain ⟨hFrom, hTo⟩ := hne
+    rw [hEq, preReceiveReturnMigration_of_donation st stClean receiver scId owner hDon,
+      migrateSchedContextReplenishment_replenishQueueOnCore_other stClean scId
+        (determineTargetCore st receiver)
+        (replenishHomeOfSchedContext stClean scId (determineTargetCore st receiver)) c
+        (Ne.symm hFrom) (Ne.symm hTo), hSched]
+
 /-- **WS-RR RR8.12**: **the cores whose replenish queue a cross-core receive may
 write** — the dequeued donor's home and the receiver's, on a rendezvous whose
 donation the resolver would carry out, and none at all otherwise.
@@ -4506,6 +4540,46 @@ theorem receiveRendezvousSender?_of_blocked (st : SystemState) (endpointId : SeL
   unfold receiveRendezvousSender?
   rw [hEp]
   exact hHead
+
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: a successful caps-carrying
+receive leg writes no replenish queue outside `receivePreReturnReplenishCores` —
+the FOOTPRINT's own block-path segment, keyed on it rather than on a hypothesis
+about which path the leg took.
+
+Three branches, each the leg's own: an endpoint the store does not resolve commits
+nothing; a rendezvous writes no replenish queue at all (the arm's donation is a
+later step); and a block is the pre-receive return, whose exactness frame is stated
+at the same segment.  The composition is what lets `.receive`'s and `.replyRecv`'s
+coverage proofs cite one frame rather than re-run the leg's case analysis. -/
+theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne
+    (epId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : Option SeLe4n.ReplyId)
+    (cnRoot : SeLe4n.ObjId) (slotBase : SeLe4n.Slot) (ec : CoreId) (st st' : SystemState)
+    (senderId : SeLe4n.ThreadId) (summary : CapTransferSummary)
+    (sgi : Option (CoreId × SgiKind)) (c : CoreId) (hObjInv : st.objects.invExt)
+    (hne : c ∉ receivePreReturnReplenishCores st epId receiver)
+    (hStep : endpointReceiveDualWithCapsOnCore epId receiver replyId cnRoot slotBase ec st
+      = (st', .ok (senderId, summary, sgi))) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  cases hEp : st.getEndpoint? epId with
+  | none =>
+    have hSched := endpointReceiveDualWithCapsOnCore_scheduler_eq epId receiver replyId cnRoot
+      slotBase ec st
+    rw [hStep] at hSched
+    rw [hSched, endpointReceiveDualOnCore_state_of_no_endpoint epId receiver replyId ec st hEp]
+  | some ep =>
+    cases hHead : ep.sendQ.head with
+    | some sender =>
+      have hFrame := endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_rendezvous epId
+        receiver replyId cnRoot slotBase ec st ep sender hEp hHead c
+      rw [hStep] at hFrame
+      exact hFrame
+    | none =>
+      obtain ⟨stClean, hClean, hRepl⟩ :=
+        endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_of_blocked epId receiver replyId
+          cnRoot slotBase ec st st' senderId summary sgi ep hEp hHead hStep
+      rw [hRepl c]
+      exact cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne st stClean epId receiver c
+        hObjInv (receiveRendezvousSender?_of_blocked st epId ep hEp hHead) hne hClean
 
 /-- **WS-RR RR8.12**: on the block path with **no loan to return** the segment is
 empty — a receive that parks itself holding no donated context migrates nothing, so

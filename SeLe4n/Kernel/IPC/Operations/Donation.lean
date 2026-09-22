@@ -1185,6 +1185,37 @@ theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation
   · rw [hEq, applyCallDonation_scheduler_eq st donorV receiverV st' hDon]
   · exact absurd (hNone.symm.trans hSome) (by simp)
 
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: a successful rendezvous
+hand-off writes no replenish queue outside `rendezvousCallDonationReplenishCores`
+— the FOOTPRINT's own segment, not a pair of hypotheses about where the migration
+went.
+
+The `_of_no_donation` sibling above says the hand-off moves *nothing* when the
+resolver declines; this says *where* it moves when it answers, which is what the
+replenish clause of `schedFootprintCoversWrites` needs.  Neither implies the
+other, and both directions matter: the first keeps the empty segment exact, the
+second keeps the non-empty one true. -/
+theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemState)
+    (receiver donor : SeLe4n.ThreadId) (c : CoreId)
+    (hne : c ∉ rendezvousCallDonationReplenishCores st receiver donor)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  cases hDon : callDonationSchedContext? st donor receiver with
+  | none =>
+    exact applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation st st'' receiver donor
+      hDon h c
+  | some scId =>
+    have hCores : rendezvousCallDonationReplenishCores st receiver donor
+        = [determineTargetCore st donor, determineTargetCore st receiver] := by
+      unfold rendezvousCallDonationReplenishCores; rw [hDon]
+    rw [hCores] at hne
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+    obtain ⟨hFrom, hTo⟩ := hne
+    obtain ⟨donorV, receiverV, _, _, hCore⟩ :=
+      applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+    exact applyCallDonationOnCore_replenishQueueOnCore_ne st st'' donorV receiverV
+      (determineTargetCore st donor) (determineTargetCore st receiver) c hFrom hTo hCore
+
 /-- WS-OD OD3.6: the rendezvous hand-off keeps the SM5.H replenish-queue
 affinity, because the primitive it composes does and both home cores are read
 off the very state the donation runs on — the `rfl` instantiation of the

@@ -19754,4 +19754,46 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultAbandonOnCore_machine_eq
 # so the arm's declaration is derived rather than tightened to that coincidence.
 run_check "INVARIANT" rg -n 'C6d: the abandon.s appended core is already a member of the dispatch' tests/FaultHandlingSuite.lean
 
+# ============================================================================
+# WS-RR RR8.12 Cut C6e (`v0.35.178`): the live `.replyRecv` ARM's coverage.
+# ============================================================================
+#
+# The one declared arm whose footprint covers its WHOLE body -- `replyRecvBodyWriteSet`
+# carries both chain walks in its run segment, so this is a complete coverage claim
+# rather than a claim about a prefix.  The replenish half is the four-stage
+# composition, and each stage's own exactness frame is keyed on the SUB-SEGMENT the
+# definition appends at that stage.
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReplyRecvOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : replyRecvBody" SeLe4n/Kernel/SyscallSchedContainment.lean'
+# The composite frame, keyed on the footprint's own segment rather than on which
+# path any of the four stages took.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvBody_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ replyRecvHandoffReplenishCores" SeLe4n/Kernel/API.lean'
+# ...and each stage's, at the sub-segment it contributes.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPopDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ replyDonationReturnReplenishCores" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ receivePreReturnReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ replyRecvPostReceiveReplenishCores" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupPreReceiveDonationMigrated_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ receivePreReturnReplenishCores" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyRendezvousCallDonation_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*hne : c ∉ rendezvousCallDonationReplenishCores" SeLe4n/Kernel/IPC/Operations/Donation.lean'
+# The post-receive half's segment is read at the DESCHEDULED state, as the
+# definition reads it -- sound because the deschedule writes no replenish queue.
+run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem replyRecvHolderDeschedule_replenishQueueOnCore[^\n]*(\n([ \t][^\n]*)?)*descheduleAtPlacement_replenishQueueOnCore" SeLe4n/Kernel/API.lean'
+# The general invExt form the composite needs -- the tree had only the
+# `returned? = none` one, so nothing could carry integrity past a donating arm.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_preserves_objects_invExt[^\n]*(\n([ \t][^\n]*)?)*returned. : Option" SeLe4n/Kernel/API.lean'
+# The de-duplication: the descheduled state's integrity has ONE owner now, beside
+# the step, where it was spelled inline at three sites in `Kernel/API.lean`.
+run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_negative_check "INVARIANT" bash -lc 'rg -n "rw \[descheduleAtPlacement_preserves_objects\]; exact" SeLe4n/Kernel/API.lean'
+# And the retired hand-kept figure: the family's size is not restated in prose.
+# `run_prose_negative_check`, not `run_negative_check` -- the subject genuinely IS
+# the text, and it lives in a `--` comment, which the code view blanks; a code-view
+# negative over it can never fire, which the mutation run reported as MISSED.
+run_prose_negative_check "INVARIANT" rg -n 'Eight coverage theorems above' SeLe4n/Kernel/SyscallSchedContainment.lean
+# The frame MEASURED, in the direction the segment assertions structurally cannot
+# see: the arm writes no replenish queue on a core the segment does not name.  (b)
+# is the decisive shape -- an empty segment is a claim about every core, where (a)
+# leaves only one outside.
+run_check "INVARIANT" rg -n 'C6e: with an empty segment the arm leaves EVERY core' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSuite.lean
+
 finalize_report

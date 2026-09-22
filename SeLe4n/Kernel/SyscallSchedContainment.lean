@@ -327,14 +327,48 @@ theorem schedLockSet_replyTransferOnCore_coversWrites (replier callerTid : SeLe4
     (fun d hd => replyTransferOnCore_replenishQueueOnCore_ne replier callerTid mi regs msg
       executingCore st st' d hd hStep)
 
+/-- **WS-RR RR8.12 Cut C6e**: `.replyRecv`'s footprint covers its writes.
+
+The arm whose footprint covers its **whole** body: `replyRecvBodyWriteSet` re-runs
+the spine to the state each of the two chain walks starts from and appends
+`pipChainWriteSet` there (Cut C2), so the walked members' run queues are static
+members rather than a dynamically declared extension — which is what makes this a
+complete coverage claim and not a claim about a prefix.  `.receive` is the one
+declared arm whose walk sits outside its run segment.
+
+The replenish half is the four-stage composition: the pop's pair, the block path's
+pair, the re-donation's pair, each read at the state its own stage runs on, with
+the tail writing no replenish queue at all. -/
+theorem schedLockSet_endpointReplyRecvOnCore_coversWrites (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId) (prevCaller : SeLe4n.ThreadId)
+    (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st st' : SystemState) (summary : CapTransferSummary)
+    (S : SchedLockSet) (hObjInv : st.objects.invExt)
+    (hS : SchedLockSet.ofList? (schedLockSet_endpointReplyRecvOnCore endpointId receiver replyId
+      prevCaller msg receiverCspaceRoot receiverSlotBase executingCore st) = some S)
+    (hStep : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st = .ok (summary, st')) :
+    schedFootprintCoversWrites S st st' :=
+  schedFootprintCoversWrites_of_confined S
+    (replyRecvBodyWriteSet endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st)
+    (replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st) st st' (SchedLockSet.ofList?_pairs hS)
+    (replyRecvBody_confinedToCores endpointId receiver replyId prevCaller msg receiverCspaceRoot
+      receiverSlotBase executingCore st st' summary hObjInv hStep)
+    (fun d hd => replyRecvBody_replenishQueueOnCore_ne endpointId receiver replyId prevCaller msg
+      receiverCspaceRoot receiverSlotBase executingCore st st' summary d hObjInv hd hStep)
+
 -- ============================================================================
 -- §7  What the obligation refuses
 -- ============================================================================
 --
--- Eight coverage theorems above, and none of them could be *wrong* — they are
--- proved.  What they could be is **vacuous**, if `schedFootprintCoversWrites`
--- held of any footprint whatever.  These two say it does not, one clause each,
--- and they are what makes the eight claims measurements rather than notation.
+-- Every coverage theorem above is *proved*, so none of them can be wrong.  What
+-- they could all be is **vacuous**, if `schedFootprintCoversWrites` held of any
+-- footprint whatever.  These two say it does not, one clause each, and they are
+-- what makes the claims above measurements rather than notation.  (No count here:
+-- a hand-kept figure beside a growing family drifts on contact, and this one
+-- already had — it read `eight` at fourteen.)
 
 /-- **Cut C6a**: an under-declared run segment is REFUTED by a step that moved
 that core's run queue.

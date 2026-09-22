@@ -935,6 +935,19 @@ theorem replyRecvHolderDeschedule_eq_deschedule_of_ne (tid holder : SeLe4n.Threa
     replyRecvHolderDeschedule tid holder st = descheduleAtPlacement st holder := by
   unfold replyRecvHolderDeschedule; rw [if_neg h]
 
+/-- **WS-RR RR8.12 Cut C6e (frame)**: the deschedule writes run-queue and current
+slots, never a replenish queue — which is what lets the post-receive half's
+replenish segment be read at the *descheduled* state and still equal the one the
+donation migrates between. -/
+@[simp] theorem replyRecvHolderDeschedule_replenishQueueOnCore (tid holder : SeLe4n.ThreadId)
+    (st : SystemState) (c : Concurrency.CoreId) :
+    (replyRecvHolderDeschedule tid holder st).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold replyRecvHolderDeschedule
+  split
+  · rfl
+  · exact descheduleAtPlacement_replenishQueueOnCore st holder c
+
 /-- **PR #897 review: the thread the post-receive half deschedules is the one the
 pop unbound.**
 
@@ -1044,6 +1057,42 @@ theorem replyRecvPopDonation_ok_none_eq (rid : SeLe4n.ReplyId) (target : SeLe4n.
           rw [hRet] at h
           simp only [] at h
           exact absurd (Prod.mk.inj (Except.ok.inj h)).1 (by simp)
+
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the pop writes no replenish
+queue outside `replyDonationReturnReplenishCores` — the FOOTPRINT's own first
+segment, and the one the `.reply` spine's pop reads too (Cut C3a gave that pair one
+owner).
+
+Two branches, both the pop's own.  A frame that heads no context returns nothing,
+so the pop is the identity; one that does is the resolved return — a store chain,
+so scheduler-silent — followed by the SM5.H migration between exactly the two cores
+`replyDonationReturnReplenishCores_of_head` names. -/
+theorem replyRecvPopDonation_replenishQueueOnCore_ne (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (st st' : SystemState)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId)) (c : Concurrency.CoreId)
+    (hne : c ∉ replyDonationReturnReplenishCores st rid target)
+    (h : replyRecvPopDonation rid target st = .ok (returned?, st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  cases hRet : returned? with
+  | none =>
+    subst hRet
+    rw [replyRecvPopDonation_ok_none_eq rid target st st' h]
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    subst hRet
+    have hHead := replyRecvPopDonation_holder_eq_frameHead rid target st st' scId holder h
+    rw [replyDonationReturnReplenishCores_of_head st rid target scId holder hHead] at hne
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+    obtain ⟨hFrom, hTo⟩ := hne
+    obtain ⟨st1', hResolved, hEq⟩ :=
+      replyRecvPopDonation_ok_some_decompose rid target st st' scId holder h
+    obtain ⟨newOwner?, _, hPop⟩ := returnDonatedSchedContextResolved_ok_decompose hResolved
+    rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st1' scId
+      (determineTargetCore st holder)
+      (determineTargetCore st (replyDonationRecipient st scId target)) c
+      (Ne.symm hFrom) (Ne.symm hTo),
+      returnDonatedSchedContext_scheduler_eq st st1' holder scId
+        (replyDonationRecipient st scId target) newOwner? hPop]
 
 /-- **WS-RR RR8.12 Cut C3a**: and it hands nothing back exactly when the answered
 frame heads nothing — the `none` result is the trigger's own `none`, which is what
@@ -1277,8 +1326,8 @@ theorem replyRecvPostReceiveDonation_preserves_replenishQueueAffinityConsistent_
   -- HOLDER the pop returned, not `recordedServer`, so a helper fixed at the
   -- latter would not apply to the step either arm runs.
   have hDAInv : ∀ (s : SystemState) (t : SeLe4n.ThreadId), s.objects.invExt →
-      (descheduleAtPlacement s t).objects.invExt := by
-    intro s t hInv; rw [descheduleAtPlacement_preserves_objects]; exact hInv
+      (descheduleAtPlacement s t).objects.invExt :=
+    fun s t hInv => descheduleAtPlacement_preserves_objects_invExt s t hInv
   have hDA : ∀ (s : SystemState) (t : SeLe4n.ThreadId),
       replenishQueueAffinityConsistent_smp s →
       replenishQueueAffinityConsistent_smp (descheduleAtPlacement s t) :=
@@ -1728,8 +1777,8 @@ theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull
             exact hIdle tcb
               ((SystemState.getTcb?_eq_some_iff _ holder tcb).mpr hTcb)
           · exact hInv
-        have hDeschedInvExt : (descheduleAtPlacement st holder).objects.invExt := by
-          rw [descheduleAtPlacement_preserves_objects]; exact hObjInv
+        have hDeschedInvExt : (descheduleAtPlacement st holder).objects.invExt :=
+          descheduleAtPlacement_preserves_objects_invExt st holder hObjInv
         exact h.2 ▸ propagatePipChainCrossCore_preserves_ipcInvariantFull _ recordedServer
           serverCore _ hDeschedInvExt hDesched
     | true =>
@@ -2495,6 +2544,75 @@ theorem replyRecvPostReceiveDonation_replenishQueueOnCore_of_none
   exact (PriorityInheritance.propagatePipChainCrossCore_replenish_readings st recordedServer
     serverCore _ hObjInv).1 c
 
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the post-receive half writes no
+replenish queue outside `replyRecvPostReceiveReplenishCores` — the FOOTPRINT's own
+third segment, keyed on it rather than on which arm the half took.
+
+Three branches, each the definition's own.  The never-donated arm is the chain walk,
+which writes run queues and no replenish queue.  The donated-but-no-new-Call arm is
+the holder's deschedule and the walk, which write neither.  And the re-donation arm
+is the deschedule, then `applyRendezvousCallDonation` at exactly the cores the
+segment names — read at the *descheduled* state, as the segment reads them, which is
+sound because the deschedule writes no replenish queue
+(`replyRecvHolderDeschedule_replenishQueueOnCore`) — then the walk. -/
+theorem replyRecvPostReceiveDonation_replenishQueueOnCore_ne
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st st' : SystemState) (u : Unit) (c : Concurrency.CoreId) (hObjInv : st.objects.invExt)
+    (hne : c ∉ replyRecvPostReceiveReplenishCores tid nextThread returned? st)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+      = .ok (u, st')) :
+    st'.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  cases hRet : returned? with
+  | none =>
+    subst hRet
+    exact replyRecvPostReceiveDonation_replenishQueueOnCore_of_none tid recordedServer nextThread
+      serverCore st st' u hObjInv h c
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    subst hRet
+    have hDesch : ∀ d, (replyRecvHolderDeschedule tid holder st).scheduler.replenishQueueOnCore d
+        = st.scheduler.replenishQueueOnCore d := fun d =>
+      replyRecvHolderDeschedule_replenishQueueOnCore tid holder st d
+    unfold replyRecvPostReceiveDonation at h
+    simp only [] at h
+    by_cases hCall : rendezvousDequeuedCall st nextThread
+    · rw [if_pos hCall] at h
+      have hSeg : replyRecvPostReceiveReplenishCores tid nextThread (some (scId, holder)) st
+          = rendezvousCallDonationReplenishCores (replyRecvHolderDeschedule tid holder st) tid
+              nextThread := by
+        simp only [replyRecvPostReceiveReplenishCores, if_pos hCall]
+      rw [hSeg] at hne
+      cases hDon : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st) tid
+          nextThread with
+      | error e => rw [hDon] at h; simp only [] at h; cases h
+      | ok st2 =>
+        rw [hDon] at h
+        simp only [] at h
+        have hEq : (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
+            serverCore).1 = st' := ((Prod.mk.inj (Except.ok.inj h)).2)
+        rw [← hEq]
+        have hInv2 : st2.objects.invExt := by
+          have hI1 : (replyRecvHolderDeschedule tid holder st).objects.invExt := by
+            unfold replyRecvHolderDeschedule
+            split
+            · exact hObjInv
+            · exact descheduleAtPlacement_preserves_objects_invExt st holder hObjInv
+          exact applyRendezvousCallDonation_preserves_objects_invExt _ st2 tid nextThread hI1 hDon
+        rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st2 recordedServer
+          serverCore _ hInv2).1 c,
+          applyRendezvousCallDonation_replenishQueueOnCore_ne _ st2 tid nextThread c hne hDon,
+          hDesch c]
+    · rw [if_neg hCall] at h
+      have hEq : (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement st holder) recordedServer serverCore).1 = st' :=
+        ((Prod.mk.inj (Except.ok.inj h)).2)
+      rw [← hEq,
+        (PriorityInheritance.propagatePipChainCrossCore_replenish_readings _ recordedServer
+          serverCore _ (descheduleAtPlacement_preserves_objects_invExt st holder hObjInv)).1 c,
+        descheduleAtPlacement_replenishQueueOnCore]
+
+
 /-- ...and keeps object-store integrity, which the walk after it reads. -/
 theorem replyRecvPostReceiveDonation_preserves_objects_invExt_of_none
     (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
@@ -2505,6 +2623,57 @@ theorem replyRecvPostReceiveDonation_preserves_objects_invExt_of_none
   rw [replyRecvPostReceiveDonation_ok_none_eq tid recordedServer nextThread serverCore st st' u h]
   exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st recordedServer
     serverCore _ hObjInv
+
+/-- **WS-RR RR8.12 Cut C6e**: the post-receive half keeps object-store integrity on
+**every** arm, which is what the walk after it and the `.replyRecv` composite's own
+frames read.  The `_of_none` sibling below is this at `returned? = none`; it was the
+only form the tree had, so a composite that did not know which arm the half took
+could not carry `invExt` past it at all. -/
+theorem replyRecvPostReceiveDonation_preserves_objects_invExt
+    (tid recordedServer nextThread : SeLe4n.ThreadId) (serverCore : Concurrency.CoreId)
+    (returned? : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId))
+    (st st' : SystemState) (u : Unit) (hObjInv : st.objects.invExt)
+    (h : replyRecvPostReceiveDonation tid recordedServer nextThread serverCore returned? st
+      = .ok (u, st')) :
+    st'.objects.invExt := by
+  cases hRet : returned? with
+  | none =>
+    subst hRet
+    exact replyRecvPostReceiveDonation_preserves_objects_invExt_of_none tid recordedServer
+      nextThread serverCore st st' u hObjInv h
+  | some pair =>
+    obtain ⟨scId, holder⟩ := pair
+    subst hRet
+    have hDeschInv : (replyRecvHolderDeschedule tid holder st).objects.invExt := by
+      unfold replyRecvHolderDeschedule
+      split
+      · exact hObjInv
+      · exact descheduleAtPlacement_preserves_objects_invExt st holder hObjInv
+    unfold replyRecvPostReceiveDonation at h
+    simp only [] at h
+    by_cases hCall : rendezvousDequeuedCall st nextThread
+    · rw [if_pos hCall] at h
+      cases hDon : applyRendezvousCallDonation (replyRecvHolderDeschedule tid holder st) tid
+          nextThread with
+      | error e => rw [hDon] at h; simp only [] at h; cases h
+      | ok st2 =>
+        rw [hDon] at h
+        simp only [] at h
+        have hEq : (PriorityInheritance.propagatePipChainCrossCore st2 recordedServer
+            serverCore).1 = st' := ((Prod.mk.inj (Except.ok.inj h)).2)
+        rw [← hEq]
+        exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st2
+          recordedServer serverCore _
+          (applyRendezvousCallDonation_preserves_objects_invExt _ st2 tid nextThread hDeschInv hDon)
+    · rw [if_neg hCall] at h
+      have hEq : (PriorityInheritance.propagatePipChainCrossCore
+          (descheduleAtPlacement st holder) recordedServer serverCore).1 = st' :=
+        ((Prod.mk.inj (Except.ok.inj h)).2)
+      rw [← hEq]
+      exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt _
+        recordedServer serverCore _
+        (descheduleAtPlacement_preserves_objects_invExt st holder hObjInv)
+
 
 /-- **WS-RR RR8.12 Cut C2 (the exactness licence)**: where the segment is empty —
 the pop handed nothing back and the receive leg's block path returns no loan — the
@@ -2583,6 +2752,118 @@ theorem replyRecvBody_replenishQueueOnCore_of_no_donation
     unfold applyReceiverPipHandoff
     rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st3 receiver
       executingCore st3.objectIndex.length hInv3).1 c, hR3, hR2, hR1]
+
+
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: the live `.replyRecv` arm
+writes no replenish queue outside `replyRecvHandoffReplenishCores` — the
+FOOTPRINT's own segment, with no hypothesis about which path any of the four
+stages took.
+
+The `_of_no_donation` sibling above says the arm migrates *nothing* where all
+three hand-offs decline; this says *where* it migrates when they answer, which is
+what the replenish clause of `schedFootprintCoversWrites` needs.  Each stage's own
+`_ne` is stated at the very sub-segment the definition appends at that stage — the
+pop's pair, the block path's pair, the re-donation's pair — so this proof is the
+composition `replyRecvHandoffReplenishCores_eq_of_legs` already names rather than a
+second reading of the arm.  The tail (the priority hand-off and the two stagers)
+writes run queues and register contexts and no replenish queue at all. -/
+theorem replyRecvBody_replenishQueueOnCore_ne
+    (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) (replyId : SeLe4n.ReplyId)
+    (prevCaller : SeLe4n.ThreadId) (msg : IpcMessage) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : Concurrency.CoreId)
+    (st stOut : SystemState) (summary' : CapTransferSummary) (c : Concurrency.CoreId)
+    (hObjInv : st.objects.invExt)
+    (hne : c ∉ replyRecvHandoffReplenishCores endpointId receiver replyId prevCaller msg
+      receiverCspaceRoot receiverSlotBase executingCore st)
+    (hBody : replyRecvBody endpointId receiver replyId prevCaller msg receiverCspaceRoot
+        receiverSlotBase executingCore st = .ok (summary', stOut)) :
+    stOut.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold replyRecvBody at hBody
+  cases hReply : endpointReplyOnCore receiver prevCaller msg executingCore st with
+  | mk st1 res1 =>
+    rw [hReply] at hBody
+    cases res1 with
+    | error e => simp only [] at hBody; cases hBody
+    | ok replySgi =>
+      simp only [] at hBody
+      have hR1 : st1.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+        have h := endpointReplyOnCore_replenishQueueOnCore receiver prevCaller msg executingCore
+          st c
+        rw [hReply] at h; exact h
+      have hInv1 : st1.objects.invExt := by
+        have h := endpointReplyOnCore_preserves_objects_invExt receiver prevCaller msg
+          executingCore st hObjInv
+        rw [hReply] at h; exact h
+      cases hPop : replyRecvPopDonation replyId prevCaller st1 with
+      | error e => rw [hPop] at hBody; simp only [] at hBody; cases hBody
+      | ok popPair =>
+        obtain ⟨returned?, st1p⟩ := popPair
+        rw [hPop] at hBody
+        simp only [] at hBody
+        cases hRecv : endpointReceiveDualWithCapsOnCore endpointId receiver (some replyId)
+            receiverCspaceRoot receiverSlotBase executingCore st1p with
+        | mk st2 res2 =>
+          rw [hRecv] at hBody
+          cases res2 with
+          | error e => simp only [] at hBody; cases hBody
+          | ok triple =>
+            obtain ⟨nextThread, summary, sgi2⟩ := triple
+            simp only [] at hBody
+            -- The segment, decomposed at the two legs the definition reads it through.
+            rw [replyRecvHandoffReplenishCores_eq_of_legs endpointId receiver replyId prevCaller
+              msg receiverCspaceRoot receiverSlotBase executingCore st st1 st1p st2 replySgi sgi2
+              returned? nextThread summary hReply hPop hRecv] at hne
+            simp only [List.mem_append, not_or] at hne
+            obtain ⟨hnePop, hnePre, hnePost⟩ := hne
+            have hInv1p : st1p.objects.invExt :=
+              replyRecvPopDonation_preserves_objects_invExt replyId prevCaller st1 st1p returned?
+                hInv1 hPop
+            have hInv2 : st2.objects.invExt := by
+              have h := endpointReceiveDualWithCapsOnCore_preserves_objects_invExt endpointId
+                receiver (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1p
+                hInv1p
+              rw [hRecv] at h; exact h
+            have hR1p : st1p.scheduler.replenishQueueOnCore c
+                = st1.scheduler.replenishQueueOnCore c :=
+              replyRecvPopDonation_replenishQueueOnCore_ne replyId prevCaller st1 st1p returned? c
+                hnePop hPop
+            have hR2 : st2.scheduler.replenishQueueOnCore c
+                = st1p.scheduler.replenishQueueOnCore c :=
+              endpointReceiveDualWithCapsOnCore_replenishQueueOnCore_ne endpointId receiver
+                (some replyId) receiverCspaceRoot receiverSlotBase executingCore st1p st2
+                nextThread summary sgi2 c hInv1p hnePre hRecv
+            cases hPost : replyRecvPostReceiveDonation receiver
+                ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                (determineExecutingCore st ((recordedReplyServer? st prevCaller).getD receiver))
+                returned? st2 with
+            | error e => rw [hPost] at hBody; simp only [] at hBody; cases hBody
+            | ok p3 =>
+              obtain ⟨u, st3⟩ := p3
+              rw [hPost] at hBody
+              simp only [] at hBody
+              have hR3 : st3.scheduler.replenishQueueOnCore c
+                  = st2.scheduler.replenishQueueOnCore c :=
+                replyRecvPostReceiveDonation_replenishQueueOnCore_ne receiver
+                  ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                  (determineExecutingCore st
+                    ((recordedReplyServer? st prevCaller).getD receiver))
+                  returned? st2 st3 u c hInv2 hnePost hPost
+              have hInv3 : st3.objects.invExt :=
+                replyRecvPostReceiveDonation_preserves_objects_invExt receiver
+                  ((recordedReplyServer? st prevCaller).getD receiver) nextThread
+                  (determineExecutingCore st
+                    ((recordedReplyServer? st prevCaller).getD receiver))
+                  returned? st2 st3 u hInv2 hPost
+              have hOut := (Prod.mk.inj (Except.ok.inj hBody)).2
+              rw [← hOut, Architecture.stageWokenSendCompletion_scheduler_eq,
+                Architecture.stageDeliveredMessage_scheduler_eq]
+              rcases applyReceiveLegPipHandoff_cases st3 receiver nextThread
+                  ((recordedReplyServer? st prevCaller).getD receiver) executingCore with hH | hH
+              · rw [hH, hR3, hR2, hR1p, hR1]
+              · rw [hH]
+                unfold applyReceiverPipHandoff
+                rw [(PriorityInheritance.propagatePipChainCrossCore_replenish_readings st3 receiver
+                  executingCore st3.objectIndex.length hInv3).1 c, hR3, hR2, hR1p, hR1]
 
 -- ============================================================================
 -- Syscall soundness theorems

@@ -1651,6 +1651,15 @@ theorem removeRunnableOnCore_preserves_objects (st : SystemState)
   · exact removeRunnableOnCore_preserves_objects _ _ _
   · rfl
 
+/-- **WS-RR RR8.12 Cut C6e**: and so it keeps object-store integrity — the form
+every consumer that hands a descheduled state to a step reading `invExt` wants.
+Stated here rather than re-derived: it was spelled inline at three sites in
+`Kernel/API.lean`, which is the duplication this project retires. -/
+theorem descheduleAtPlacement_preserves_objects_invExt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    (descheduleAtPlacement st tid).objects.invExt := by
+  rw [descheduleAtPlacement_preserves_objects]; exact hInv
+
 /-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
 object frame it is derived from, because the SM5.H replenish-affinity invariant
 reads `determineTargetCore` at whichever thread a scheduling context is bound to

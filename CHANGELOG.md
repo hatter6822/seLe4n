@@ -1,3 +1,79 @@
+## v0.35.178 — WS-RR RR8.12 Cut C6e: the live `.replyRecv` ARM covered
+
+The one declared arm whose footprint covers its **whole** body.
+`replyRecvBodyWriteSet` re-runs the spine to the state each of the two chain walks
+starts from and appends `pipChainWriteSet` there (Cut C2), so the walked members'
+run queues are static members rather than a dynamically declared extension — which
+is what makes `schedLockSet_endpointReplyRecvOnCore_coversWrites` a complete
+coverage claim and not a claim about a prefix.  `.receive` is the one declared arm
+whose walk sits outside its run segment.
+
+### Five replenish exactness frames, one per stage
+
+The replenish half is a four-stage composition, and each stage's frame is keyed on
+the **sub-segment** the definition appends at that stage rather than on a
+hypothesis about which path the stage took:
+`replyRecvPopDonation_replenishQueueOnCore_ne` at
+`replyDonationReturnReplenishCores` (the pair Cut C3a gave one owner, shared with
+the `.reply` spine's pop), `endpointReceiveDualWithCapsOnCore_…_ne` at
+`receivePreReturnReplenishCores` over
+`cleanupPreReceiveDonationMigrated_…_ne`, and
+`replyRecvPostReceiveDonation_…_ne` at `replyRecvPostReceiveReplenishCores` over
+`applyRendezvousCallDonation_…_ne`.  `replyRecvBody_replenishQueueOnCore_ne`
+composes them through `replyRecvHandoffReplenishCores_eq_of_legs`, so the proof is
+the composition the definition already names rather than a second reading of the
+arm.  The `_of_no_donation` siblings that existed before say the arm migrates
+*nothing* where every hand-off declines; these say *where* it migrates when they
+answer, which is what the replenish clause of `schedFootprintCoversWrites` needs.
+
+### Two things the composite needed and the tree did not have
+
+`replyRecvPostReceiveDonation_preserves_objects_invExt` — the general form.  The
+tree carried only the `returned? = none` one, so a composite that did not know
+which arm the half took could not carry object-store integrity past it at all, and
+the walk after it reads exactly that.  And
+`descheduleAtPlacement_preserves_objects_invExt`, which was spelled inline at
+**three** sites in `Kernel/API.lean`; it lives beside the step now, with the two
+existing spellings repointed and a Tier 3 negative refusing the inline form's
+return.
+
+### A hand-kept count, and a negative that could never fire
+
+`SyscallSchedContainment.lean`'s §7 said *"Eight coverage theorems above"* at
+fourteen.  The figure is deleted rather than corrected: a hand-kept number beside
+a growing family drifts on contact, and this one already had.
+
+And the negative written to refuse its return **read PASS on the mutation that
+restored it** — because the sentence lives in a `--` comment, which the code view
+blanks, so a `run_negative_check` over it can never match.  That is this project's
+own *gates read code, prose reads prose* rule meeting the case where the subject
+genuinely **is** the text; it is a `run_prose_negative_check` now.  Worth recording
+not for the instance but for how it surfaced: the anchor was written, it passed on
+the clean tree, and only the mutation run said it decides nothing.  *A negative
+anchor over prose must be a prose check, and the only thing that tells you it is
+not is breaking the relation it forbids.*
+
+### Anchors, mutations and the witness
+
+Thirteen Tier 3 anchors; twelve token-preserving mutations, all **DECISIVE** after
+the prose-check fix.  The changed-file sweep is 576 of 576 rows accounted for with
+**0 deferred**.
+
+`tests/SmpIpcSuite.lean` §3.29 gains the direction its segment assertions
+structurally cannot see: the arm writes no replenish queue on a core the segment
+does not name.  Shape (b) is the decisive one — an empty segment is a claim about
+**every** core, where (a) leaves only one outside.
+
+One mechanical note, and it is the harness correcting the author again: the first
+sweep of this cut reported *"accounted for 473 of 474 selected rows"*, and the gate
+was right — `select_changed_anchors.py` writes its `# derivation:` line to
+**stderr**, and the invocation had merged it into the selection with `2>&1`.  A
+malformed selection is exactly what that row-accounting check exists to catch.
+
+Scope: the `.replyRecv` arm.  `.receive` and `.lifecycleRetype` are the next cut,
+and the bracket (with `UncoveredLockDomain.syscallSeamSchedulerDomain`'s deletion)
+the one after.
+
 ## v0.35.177 — WS-RR RR8.12 Cut C6d: the live `.reply` ARM's coverage
 
 `schedLockSet_replyTransferOnCore` (Cut C3a, `v0.35.163`) is the live `.reply`
