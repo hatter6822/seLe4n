@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.201.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.202.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -741,7 +741,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   **And a cardinality is not a set** (WS-OD OD3.5, prompted).  The same
   substitution one dimension down, and the one this file had not written
   because the gate wearing it *reported numbers*, which reads as measurement.
-  `scripts/ak7_cascade_check_monotonic.sh` held the residual raw
+  `scripts/check_store_reader_hygiene_monotonic.sh` held the residual raw
   `match st.objects[…]?` reads at a whole-tree floor per variant — nine
   endpoint reads, fifty-three TCB reads — and its own docstring says what the
   floor means: "a previously hygienized site re-introduced the raw pattern".
@@ -762,7 +762,18 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   `grep -c "getEndpoint?"`, so `getEndpoint?_eq_some_iff` and every theorem
   named `*_ok_getEndpoint?` counted as a read of the object store (29 of 210),
   and writing a lemma *about* a helper raised the floor for *using* it; it
-  counts whole symbols now.  And the per-variant scan carried awk state across
+  counts whole symbols now — and since `v0.35.202` it also excludes a line whose
+  leading token is a tactic that **unfolds** the accessor, because
+  `unfold SystemState.getCNode? at hStep` takes the accessor *out* of the goal to
+  reach the raw store, which is the opposite of the migration the metric is named
+  for.  That one was found by the metric *scoring an improvement as a regression*:
+  collapsing eight inline re-derivations onto one shared decomposition lowered
+  `GETCNODE_ADOPTION` from 147 to 129 and failed a should-grow floor, and 45 of
+  its 172 lines turned out to be tactic references to the definition.  **The
+  measurement is what makes the scope honest**: it is a floor over *recognised*
+  uses, since whether an occurrence reads *through* an accessor is a question
+  about elaboration; an unrecognised tactic spelling leaves the figure a little
+  high rather than inverting its direction.  And the per-variant scan carried awk state across
   the file list with no `FNR == 1` reset, so a trailing `match … .objects[` at
   the end of one file could pair with a `some (.tcb …)` at the start of the
   next and report a site existing in neither.
@@ -1482,7 +1493,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   failure — produced the same verdict as a clean one.  Read the status
   (`n=$(grep -c …) || rc=$?`), make `rc > 1` a named gate failure, and refuse an
   unreadable input rather than defaulting it.  The sweep off that one found
-  **three** more, all latent — `ak7_cascade_baseline.sh` twice and the commit
+  **three** more, all latent — `store_reader_hygiene_baseline.sh` twice and the commit
   hook once — and a Tier 3 negative refuses a fifth.  Two things this cut
   measured about its own method.  `shellcheck` passes every one of them, and the
   shell's error line sat *above* the gate's `PASS`, so only **running** the gate
@@ -2146,7 +2157,7 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   which is this file's `a scanner's default branch is a decision` rule meeting its
   domain rule, since a default that silently answers is a domain written as an
   omission.  A missing metric read as `0`, so **deleting a measurement satisfied
-  an enforced zero** (`ak7_cascade_check_monotonic.sh`: `SORRY_COUNT`,
+  an enforced zero** (`check_store_reader_hygiene_monotonic.sh`: `SORRY_COUNT`,
   `AXIOM_COUNT` and `STORE_READ_CODE` all rode on it); `structure`/`class` bodies
   were spec whole, so an executable field **default** filed as specification (the
   remedy carried an over-approximation — a default ran to the end of its

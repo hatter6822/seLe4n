@@ -38,8 +38,8 @@
 # block at the bottom (mirrors AN0-A baseline format).
 #
 # Usage:
-#   scripts/ak7_cascade_baseline.sh         # print baseline at HEAD
-#   scripts/ak7_cascade_check_monotonic.sh  # gate: enforce floors
+#   scripts/store_reader_hygiene_baseline.sh         # print baseline at HEAD
+#   scripts/check_store_reader_hygiene_monotonic.sh  # gate: enforce floors
 
 set -euo pipefail
 
@@ -137,6 +137,52 @@ RAW_MATCH_AWK='
 census_total() {
   local key="$1" rows="$2"
   printf '%s\n' "$rows" | awk -F'|' -v key="^${key}=" '$0 ~ key {s += $NF} END {print s + 0}'
+}
+
+# WS-RR RR8.16 (`v0.35.202`): **a tactic that unfolds an accessor is not adoption
+# of it.**  `unfold SystemState.getCNode? at hStep` takes the accessor OUT of the
+# goal to reach the raw store, which is the opposite of the migration this family
+# of metrics is named for -- so counting it as adoption makes the metric score an
+# improvement as a regression.  Found at `v0.35.201`, when collapsing eight inline
+# re-derivations onto one shared decomposition LOWERED `GETCNODE_ADOPTION` from
+# 147 to 129 and failed a should-GROW floor for a change that deleted eight
+# raw-store case analyses.  Measured then: 45 of 172 `getCNode?` lines and 318 of
+# 3145 `getTcb?` lines were tactic lines.  This is `v0.35.7`'s finding -- a lemma
+# ABOUT a helper counted as a USE of it -- one form down.
+#
+# SCOPE, stated because a scanner cannot decide the exact question (whether an
+# occurrence is a read THROUGH the accessor is a question about elaboration):
+# this is a floor over recognised **uses**.  A line whose leading token is one of
+# the recognised tactics is not counted.  A tactic spelling this list does not
+# know still counts, which leaves the figure a little high rather than inverting
+# its direction; a genuine read sharing a line with such a tactic is lost, which
+# is why the recognised set is the small one Lean style actually produces.  The
+# unit is the LINE, as it always has been, so two uses on one line count once.
+ADOPTION_TACTIC_PREFIX='^[[:space:]]*(·[[:space:]]*|\|[[:space:]]*|<;>[[:space:]]*)*(unfold|simp|dsimp|delta|rw|rewrite|attribute)\b'
+
+# Count adoption lines in the named files.  Split out from `count_adoption` so
+# the self-test can drive it against synthesized fixtures rather than the tree.
+#
+# `grep -c` prints its count on the failing path too and exits 1 for "no
+# matches", so the status is read explicitly and only `> 1` -- an I/O failure --
+# is a gate failure.  An unreadable file is this baseline failing to measure,
+# never a file with nothing in it (`v0.35.186`).
+count_adoption_in() {
+  local symbol="$1"; shift
+  local pattern="(?<![A-Za-z0-9_\\x27!?])${symbol}(?![A-Za-z0-9_\\x27!?])"
+  local lines rc kept filter_rc
+  lines="$(grep -hP "$pattern" "$@" 2>/dev/null)"; rc=$?
+  if [[ "$rc" -gt 1 ]]; then
+    echo "ak7-baseline: adoption scan failed (grep exit $rc) for '$symbol'" >&2
+    exit 1
+  fi
+  if [[ -z "$lines" ]]; then printf '0\n'; return; fi
+  kept="$(printf '%s\n' "$lines" | grep -cvP "$ADOPTION_TACTIC_PREFIX")"; filter_rc=$?
+  if [[ "$filter_rc" -gt 1 ]]; then
+    echo "ak7-baseline: adoption tactic filter failed (grep exit $filter_rc)" >&2
+    exit 1
+  fi
+  printf '%s\n' "$kept"
 }
 
 if [[ "${1:-}" == "--self-test" ]]; then
@@ -264,6 +310,58 @@ if [[ "${1:-}" == "--self-test" ]]; then
   st_total "the write code total is the sum of its own rows" STORE_WRITE_CODE_SITE 5
   st_total "the write spec total is the sum of its own rows" STORE_WRITE_SPEC_SITE 11
   st_total "a key with no rows totals zero" STORE_NONE_SITE 0
+  # WS-RR RR8.16 (`v0.35.202`): the adoption counter's tactic exclusion.  A line
+  # whose leading token unfolds or rewrites the accessor is a reference to its
+  # DEFINITION, not a read through it -- the defect that made collapsing eight
+  # inline re-derivations look like a regression.  Each case below is its own
+  # neighbour with one token changed, so the exclusion is known to discriminate.
+  printf '%s\n' \
+    'theorem t (st : SystemState) (h : True) : True := by' \
+    '  unfold cspaceInsertSlot SystemState.getCNode? at h' \
+    '  simp only [SystemState.getCNode?, foo]' \
+    '  · simp [SystemState.getCNode?]' \
+    '  <;> dsimp only [SystemState.getCNode?]' \
+    '  rw [SystemState.getCNode?]' \
+    '  attribute [simp] SystemState.getCNode?' \
+    '  trivial' \
+    > "$fx/TacticLines.lean"
+  printf '%s\n' \
+    'def u (st : SystemState) (id : ObjId) : Bool :=' \
+    '  (st.getCNode? id).isSome' \
+    'def v (st : SystemState) (a b : ObjId) : Bool :=' \
+    '  (st.getCNode? a).isSome && (st.getCNode? b).isSome' \
+    > "$fx/RealUses.lean"
+  printf '%s\n' \
+    'theorem w : True := by' \
+    '  exact (getCNode?_eq_some_iff st id cn).mp h' \
+    > "$fx/LemmaNameOnly.lean"
+  st_adoption() {
+    local name="$1" file="$2" want="$3" got
+    got="$(count_adoption_in "getCNode\\?" "$fx/$file")"
+    if [[ "$got" == "$want" ]]; then
+      echo "  OK   self-test: $name"
+      st_ok=$(( st_ok + 1 ))
+    else
+      echo "  SELF-TEST FAIL: $name: expected [$want], got [$got]" >&2
+      st_fail=1
+    fi
+  }
+  st_adoption "a tactic that unfolds the accessor is not adoption" TacticLines.lean 0
+  st_adoption "a read through the accessor is adoption" RealUses.lean 2
+  st_adoption "a lemma NAME is not adoption (whole-symbol guard)" LemmaNameOnly.lean 0
+  # ...and an unreadable input is this baseline failing to MEASURE, never a file
+  # with nothing in it.  `grep` exits 1 for "no matches" and >1 for an I/O
+  # failure, and the two must not answer the same (`v0.35.186`): without this
+  # case the status check is a condition no input reaches, which is
+  # indistinguishable from one that is wrong.
+  mkdir -p "$fx/Unreadable.lean"
+  if ( count_adoption_in "getCNode\\?" "$fx/Unreadable.lean" ) >/dev/null 2>&1; then
+    echo "  SELF-TEST FAIL: an unreadable adoption input was counted rather than refused" >&2
+    st_fail=1
+  else
+    echo "  OK   self-test: an unreadable adoption input fails the scan"
+    st_ok=$(( st_ok + 1 ))
+  fi
   if [[ "$st_fail" -ne 0 ]]; then
     echo "raw-match scanner self-test: FAILED" >&2
     exit 1
@@ -428,7 +526,7 @@ RAW_MATCH_TOTAL=$(printf '%s\n' "${RAW_MATCH_ROWS}" \
 # minus the classified sites above.  Printed as a diagnostic only -- a match that
 # binds the whole `KernelObject` without naming a constructor is not a
 # reader-hygiene site, so this figure is deliberately absent from the enforced
-# METRICS list in `ak7_cascade_check_monotonic.sh`; see the note there.
+# METRICS list in `check_store_reader_hygiene_monotonic.sh`; see the note there.
 #
 # **It is the remainder, not the whole** (PR #893 review).  It was
 # `grep -cE "match.*\.objects\["` verbatim -- every raw match, classified ones
@@ -471,16 +569,11 @@ STORE_WRITE_SPEC=$(census_total STORE_WRITE_SPEC_SITE "${STORE_READ_ROWS}")
 # `SystemState.getEndpoint?`) counts and a longer identifier that merely
 # contains the name does not.  `?` and `!` are identifier characters in Lean,
 # so both guards list them.
+# The whole tree, through `count_adoption_in` above -- which is where the
+# `\x27` apostrophe escape, the whole-symbol guards and the tactic-line
+# exclusion live, so the self-test drives the same code this does.
 count_adoption() {
-  local symbol="$1"
-  # `grep -cP` reports per-file counts; awk sums them. We swallow grep's
-  # non-zero exit (no matches in any file) via `|| true` because pipefail
-  # would otherwise terminate the script.
-  # `\x27` is the apostrophe (Lean's prime suffix); spelling it as an escape
-  # keeps the pattern inside one double-quoted shell string.
-  local pattern="(?<![A-Za-z0-9_\\x27!?])${symbol}(?![A-Za-z0-9_\\x27!?])"
-  (grep -cP "$pattern" "${ALL_FILES[@]}" "${TEST_FILES[@]}" 2>/dev/null || true) \
-    | awk -F: '{s += $2} END {print s + 0}'
+  count_adoption_in "$1" "${ALL_FILES[@]}" "${TEST_FILES[@]}"
 }
 
 # The witnessed lookups (`getTcbWitnessed?` / `getSchedContextWitnessed?`,

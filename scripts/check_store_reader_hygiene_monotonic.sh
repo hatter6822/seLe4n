@@ -3,7 +3,7 @@
 #
 # Re-introduced by WS-AN Phase AN10. Reads the floors from
 # `scripts/store_reader_hygiene_baseline.txt` (KEY=value format produced by
-# `scripts/ak7_cascade_baseline.sh`).
+# `scripts/store_reader_hygiene_baseline.sh`).
 #
 # **The binding floor is an inventory, not a count.**  Until WS-OD OD3.5 this
 # gate held a single whole-tree cardinality per variant, which answers "how
@@ -75,7 +75,7 @@
 #
 # To re-anchor the baseline (after AN10 close, or after each subsequent
 # WS-AN-style hygiene push):
-#   bash scripts/ak7_cascade_baseline.sh > scripts/store_reader_hygiene_baseline.txt
+#   bash scripts/store_reader_hygiene_baseline.sh > scripts/store_reader_hygiene_baseline.txt
 #
 # The baseline lives beside the gate that reads it.  It used to live under
 # `docs/dev_history/`, which this project reserves for material retained "only
@@ -83,7 +83,7 @@
 # Tier 0 floor is neither.
 #
 # Self-test:
-#   scripts/ak7_cascade_check_monotonic.sh --self-test
+#   scripts/check_store_reader_hygiene_monotonic.sh --self-test
 
 set -euo pipefail
 
@@ -464,7 +464,7 @@ fi
 
 if [[ ! -f "$BASELINE_FILE" ]]; then
   echo "[ak7-monotonicity] Baseline not found: $BASELINE_FILE" >&2
-  echo "[ak7-monotonicity] Run: bash scripts/ak7_cascade_baseline.sh > $BASELINE_FILE" >&2
+  echo "[ak7-monotonicity] Run: bash scripts/store_reader_hygiene_baseline.sh > $BASELINE_FILE" >&2
   exit 1
 fi
 
@@ -476,7 +476,7 @@ if [[ "${1:-}" == "--internal-compare" ]]; then
 else
   CURRENT_FILE=$(mktemp)
   trap 'rm -f "$CURRENT_FILE"' EXIT
-  bash scripts/ak7_cascade_baseline.sh > "$CURRENT_FILE"
+  bash scripts/store_reader_hygiene_baseline.sh > "$CURRENT_FILE"
 fi
 
 read_metric() {
@@ -499,7 +499,7 @@ read_metric() {
 # against a missing baseline (`current >= 0`), the total/inventory
 # reconciliation passes (both sides read `0`), and a ZERO_METRICS entry passes
 # outright -- so **deleting the measurement satisfies the prohibition**.  The
-# census invocation dropping out of `ak7_cascade_baseline.sh`, a renamed key,
+# census invocation dropping out of `store_reader_hygiene_baseline.sh`, a renamed key,
 # or a truncated capture all produce exactly that, and the gate prints
 # `OK   STORE_READ_CODE  0` while measuring nothing.  `SORRY_COUNT` and
 # `AXIOM_COUNT` -- this project's two headline zero claims -- rode on the same
@@ -532,7 +532,7 @@ require_metric() {
   if (( n == 0 )); then
     echo "  GATE DEFECT: ${label} capture emits no \`${key}=\` line" >&2
     echo "    A metric that is not measured is not zero.  Re-run" >&2
-    echo "    \`bash scripts/ak7_cascade_baseline.sh\` and check that the" >&2
+    echo "    \`bash scripts/store_reader_hygiene_baseline.sh\` and check that the" >&2
     echo "    census producing ${key} still runs; do not treat its absence" >&2
     echo "    as a passing value." >&2
   else
@@ -810,7 +810,7 @@ if (( failed != 0 )); then
   echo "[ak7-monotonicity] raw-read site inventory: either restore the value" >&2
   echo "[ak7-monotonicity] (preferred) or, after a documented refactor," >&2
   echo "[ak7-monotonicity] re-anchor the baseline:" >&2
-  echo "  bash scripts/ak7_cascade_baseline.sh > $BASELINE_FILE" >&2
+  echo "  bash scripts/store_reader_hygiene_baseline.sh > $BASELINE_FILE" >&2
   echo "[ak7-monotonicity] For a should-stay-zero metric -- SORRY_COUNT," >&2
   echo "[ak7-monotonicity] AXIOM_COUNT, STORE_READ_CODE, STORE_WRITE_CODE --" >&2
   echo "[ak7-monotonicity] re-anchoring does NOTHING: the floor is zero, not" >&2

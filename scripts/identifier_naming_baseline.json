@@ -30,7 +30,7 @@
  },
  "An10CascadeSuite": {
   "lakefile.toml": 1,
-  "scripts/ak7_cascade_baseline.sh": 2,
+  "scripts/store_reader_hygiene_baseline.sh": 2,
   "tests/An10CascadeSuite.lean": 1
  },
  "An9HardwareBindingSuite": {
@@ -210,13 +210,6 @@
  },
  "ak6Tests": {
   "tests/InformationFlowSuite.lean": 2
- },
- "ak7_cascade_baseline": {
-  "scripts/ak7_cascade_baseline.sh": 1,
-  "scripts/ak7_cascade_check_monotonic.sh": 1
- },
- "ak7_cascade_check_monotonic": {
-  "scripts/ak7_cascade_check_monotonic.sh": 1
  },
  "ak8Tests": {
   "tests/Ak8CoverageSuite.lean": 3

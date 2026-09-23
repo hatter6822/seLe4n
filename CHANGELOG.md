@@ -1,3 +1,64 @@
+## v0.35.202 — WS-RR RR8.16: a tactic that unfolds an accessor is not adoption of it (closes the `v0.35.201` metric row; renames the two AK7 cascade scripts)
+
+**The metric defect `v0.35.201` registered, closed.**  `unfold
+SystemState.getCNode? at hStep` takes the accessor **out** of the goal to reach
+the raw store — the opposite of the migration the `*_ADOPTION` family is named
+for — so counting it made the metric score an improvement as a regression: at
+`v0.35.201`, collapsing eight inline re-derivations onto one shared
+decomposition lowered `GETCNODE_ADOPTION` from 147 to 129 and failed a
+should-**grow** floor for a change that deleted eight raw-store case analyses.
+Measured then: **45 of 172** `getCNode?` lines and **318 of 3145** `getTcb?`
+lines were tactic lines.  This is `v0.35.7`'s finding — a lemma *about* a helper
+counted as a *use* of it — one form down.
+
+**One place asks the question.**  `ADOPTION_TACTIC_PREFIX` is the exclusion and
+`count_adoption_in` is where all eight metrics ask it, so a widening reaches
+every one by construction; `count_adoption` is its whole-tree instance, and a
+Tier 3 negative refuses it re-acquiring a pattern of its own.  Splitting it out
+is also what lets the self-test drive the counter against synthesized fixtures
+rather than against the tree.
+
+**The scope is stated rather than implied**, because the exact question —
+whether an occurrence reads *through* the accessor — is about elaboration and a
+line-level scanner cannot decide it.  This is a floor over **recognised uses**:
+an unrecognised tactic spelling leaves the figure a little high rather than
+inverting its direction, and a genuine read sharing a line with a recognised
+tactic is lost, which is why the recognised set is the small one Lean style
+actually produces.  The unit is the line, as it has always been.
+
+**Four self-test cases decide it**, each its neighbour with one token changed: a
+tactic line (`unfold`, `simp only`, a `·` bullet, `<;>`, `rw`, `attribute`), a
+real read, a lemma *name* (the `v0.35.7` whole-symbol guard, kept as a control),
+and an **unreadable input** — without which the I/O-status check is a condition
+no input reaches, and so is indistinguishable from one that is wrong.  Six
+mutations of the counter and six of its anchors, all CAUGHT.
+
+**The two scripts are renamed, because this is the cut that touches them.**
+`scripts/ak7_cascade_baseline.sh` is `scripts/store_reader_hygiene_baseline.sh`
+(the name of the baseline it emits) and `scripts/ak7_cascade_check_monotonic.sh`
+is `scripts/check_store_reader_hygiene_monotonic.sh`.  The internal-first naming
+rule says a grandfathered workstream ID stays *until touched by a workstream
+that can rename it in the same commit*, and the identifier gate is what forced
+the choice: a Tier 3 anchor must name the file it pins, so nine new anchor lines
+would otherwise have introduced nine fresh occurrences of a phase code into live
+code — grandfathering new code, which is the one thing that gate exists to
+prevent.  Live references are swept (Tier 0's own invocations, the Tier 3
+anchors, the error-matrix suite's docstrings, the claim index, the register and
+both agent files); historical prose — CHANGELOG entries, audit reports, landed
+plan rows — keeps the name it was written with, and the two grandfathered
+identifiers named after the old *files* are dropped rather than carried, having
+no subject any more.
+
+**What the correction costs is stated.**  All eight floors re-anchor downward
+onto the corrected scale — `GETCNODE_ADOPTION` 129 → 87, `GETTCB_ADOPTION`
+2747 → 2463, `GETSCHEDCTX_ADOPTION` 578 → 519, `GETENDPOINT_ADOPTION` 275 → 267,
+`GETNOTIFICATION_ADOPTION` 90 → 82, `GETUNTYPED_ADOPTION` 16 → 11,
+`GETVSPACEROOT_ADOPTION` 53 → 34, `STOREOBJECTCHECKED_ADOPTION` 17 → 16 — which
+is what fixing a metric's subject always costs, and is why the figures either
+side of this cut are not comparable.  `SORRY_COUNT`, `AXIOM_COUNT`,
+`STORE_READ_CODE` and `STORE_WRITE_CODE` are unmoved at zero, and no other
+metric moved.
+
 ## v0.35.201 — WS-RR RR8.16: a capability is installed only at a slot the target CNode can address (closes register row 111)
 
 **The High-severity defect `v0.35.200` found and registered, closed in the shape

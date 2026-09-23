@@ -10784,7 +10784,7 @@ run_negative_check "INVARIANT" rg -F -n 'excluded=$(wc -l < "$EXCLUDED_LOG" 2>/d
 # NEGATIVE, tree-wide: and no FOURTH asker of the idiom.  `grep -c` prints its
 # count on the failing path too, so ANY `|| <something that prints>` appends a
 # second line -- the sweep off the Tier 5 gate found three more sites
-# (`ak7_cascade_baseline.sh` twice, the commit hook once), all latent, and this
+# (`store_reader_hygiene_baseline.sh` twice, the commit hook once), all latent, and this
 # is what stops a fifth.  Scoped away from this file, whose own negatives above
 # quote the retired expressions in order to refuse them.  Mutation: restore the
 # idiom at any of the four sites.
@@ -17215,11 +17215,14 @@ run_check "INVARIANT" bash -lc 'rg -n "STORE_WRITE_SCOPE=recognised spellings on
 # `ZERO_METRICS` entry for it -- which this project may not re-anchor -- would
 # have had to be false on the day it landed.  The negative keeps every token of
 # the metric's name and refuses only its promotion into the zero set.  The gate is
-# named by a glob rather than by its path because that path carries a retired
-# workstream id, which new lines must not re-introduce; the glob resolves to
-# exactly one file, and a whole-directory form cannot be used because this anchor
-# file legitimately names the metric itself.
-run_negative_check "INVARIANT" bash -lc 'rg -n "STORE_INDIRECT_CODE" scripts/*cascade_check_monotonic.sh'
+# named by its path.  It was a glob, because the path carried a retired workstream
+# id that new lines must not re-introduce -- a workaround the `v0.35.202` rename
+# retires, and one worth recording: a glob turns a rename into an `rg` exit 2,
+# which the changed-file sweep correctly refuses to read as a clean no-match, so
+# a naming workaround is also a pin that fails on the day the name moves.  A
+# whole-directory form still cannot be used, because this anchor file
+# legitimately names the metric itself.
+run_negative_check "INVARIANT" bash -lc 'rg -n "STORE_INDIRECT_CODE" scripts/check_store_reader_hygiene_monotonic.sh'
 # THE SELF-TEST READS THE SAME VIEW THE GATE DOES.  A comment naming a binding is
 # not a binding, and this file's own docstrings quote both spellings in order to
 # explain them -- so a self-test over the raw tree would disagree with the gate
@@ -21048,5 +21051,30 @@ run_check "INVARIANT" rg -n '\+\+ cspaceSlotAddressableChecks objectIds st' SeLe
 run_check "INVARIANT" rg -n '^private def unguardedInsertSlot($|[ ({:\[\]])' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n 'SeLe4n\.Testing\.runWSRR8CSpaceSlotRangeChecks' tests/NegativeStateSuite.lean
 run_negative_check "INVARIANT" rg -n 'unguardedInsertSlot' SeLe4n/Kernel/ SeLe4n/Model/ SeLe4n/Testing/
+
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.202`) — a tactic that unfolds an accessor is not
+# adoption of it
+# ============================================================================
+#
+# `unfold SystemState.getCNode? at hStep` takes the accessor OUT of the goal to
+# reach the raw store, which is the opposite of the migration the `*_ADOPTION`
+# metrics are named for -- so counting it scored an improvement as a regression
+# (`v0.35.201`: collapsing eight inline re-derivations lowered GETCNODE_ADOPTION
+# from 147 to 129 and failed a should-GROW floor).
+run_check "INVARIANT" rg -n "^ADOPTION_TACTIC_PREFIX=" scripts/store_reader_hygiene_baseline.sh
+run_check "INVARIANT" rg -n '\(unfold\|simp\|dsimp\|delta\|rw\|rewrite\|attribute\)' scripts/store_reader_hygiene_baseline.sh
+# ...counted in ONE place, which the self-test drives against fixtures rather
+# than against the tree: `count_adoption` is the whole-tree instance of it.
+run_check "INVARIANT" rg -n '^count_adoption_in\(\) \{' scripts/store_reader_hygiene_baseline.sh
+run_check "INVARIANT" bash -lc "rg -n -U 'count_adoption\(\) \{[^\n]*(\n([ \t][^\n]*)?)*count_adoption_in' scripts/store_reader_hygiene_baseline.sh"
+run_negative_check "INVARIANT" bash -lc "rg -n -U 'count_adoption\(\) \{[^\n]*(\n([ \t][^\n]*)?)*grep -cP' scripts/store_reader_hygiene_baseline.sh"
+# Each case is its neighbour with one token changed, so the exclusion is known
+# to discriminate; the unreadable input is the case without which the I/O status
+# check is a condition no input reaches.
+run_check "INVARIANT" rg -n 'st_adoption "a tactic that unfolds the accessor is not adoption"' scripts/store_reader_hygiene_baseline.sh
+run_check "INVARIANT" rg -n 'st_adoption "a read through the accessor is adoption"' scripts/store_reader_hygiene_baseline.sh
+run_check "INVARIANT" rg -n 'st_adoption "a lemma NAME is not adoption \(whole-symbol guard\)"' scripts/store_reader_hygiene_baseline.sh
+run_check "INVARIANT" rg -n 'an unreadable adoption input fails the scan' scripts/store_reader_hygiene_baseline.sh
 
 finalize_report
