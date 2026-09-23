@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.195.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.196.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~80484 lines)
+- `CHANGELOG.md` (~80573 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12351 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~9013 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8416 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8272 lines)
-- `docs/spec/SELE4N_SPEC.md` (~7277 lines)
+- `docs/spec/SELE4N_SPEC.md` (~7313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Platform/Boot.lean` (~6000 lines)
 - `SeLe4n/Model/State.lean` (~5772 lines)
@@ -261,7 +261,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3249 lines)
 - `SeLe4n/Model/Object/Structures.lean` (~3207 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3191 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3199 lines)
 - `tests/FrozenOpsSuite.lean` (~3142 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
@@ -327,6 +327,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1834 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1815 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.21_WORKSTREAM_PLAN.md` (~1800 lines)
 - `docs/dev_history/audits/MASTER_PLAN_WS_Q_KERNEL_STATE_ARCHITECTURE.md` (~1776 lines)
@@ -337,7 +338,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1650 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1650 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1632 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1631 lines)
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
@@ -389,16 +389,17 @@ To find files that need pagination today, run:
 - `SeLe4n/Machine.lean` (~1128 lines)
 - `SeLe4n/Kernel/Architecture/VSpaceInvariant.lean` (~1126 lines)
 - `SeLe4n/Model/FrozenState.lean` (~1121 lines)
+- `SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean` (~1120 lines)
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1099 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~1097 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1082 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~1078 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~1059 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~1041 lines)
@@ -430,7 +431,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
-- `SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean` (~869 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/An10CascadeSuite.lean` (~866 lines)
@@ -8333,17 +8333,55 @@ code may assume:
   **The lift is a theorem about the CHECKED arm and is false of the unchecked one**:
   what discharges the blocking store's obligation is the gate the dispatch
   evaluates, so the unchecked composites take it as an argument and only the checked
-  ones discharge it.  And **the `.call` arm has no `donationOwnerFlowsToHolder`
-  counterpart, deliberately**: the send does
-  (`endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder`, over
-  the send's own `sameSchedContextBindings` frame, which the `.call` chain has had
-  since RR2 and the send did not), while the call **mints** a donation, so the fact
-  needs the *receiving* gate the server passed on its own `Recv` —
-  `donationFlowFromBlockedDonor`'s `hReceiveGate`, which no state records.  Closing
-  that needs a receiver-side predicate mirroring `blockedSenderFlowsToEndpoint`,
-  established at the same store from the receive arm's own gate, and it is a table C
-  row rather than a sentence here; a Tier 3 negative keeps a later cut from
-  asserting the `.call` counterpart without it.
+  ones discharge it.  And **both arms carry `donationOwnerFlowsToHolder` too, by
+  two different routes**: the send over its own `sameSchedContextBindings` frame
+  (`endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder`,
+  `v0.35.191`), which the `.call` chain has had since RR2 and the send did not,
+  and the call — the one transition that **mints** a donation, so no binding frame
+  can carry it — over the *receiving* gate, which `v0.35.196` made a state
+  predicate.  See the next bullet.
+- **...and the RECEIVING side of the endpoint gate is a state predicate too, so
+  the arm that mints a donation carries the flow fact** (WS-RR RR8.16,
+  `v0.35.196`, closing register row 183).  `blockedSenderFlowsToEndpoint` records
+  what the *sending* gate checked; nothing recorded what the *receiving* gate
+  checked, so `donationFlowFromBlockedDonor` had to take that half as an argument
+  (`hReceiveGate`) and no dispatch could discharge it.  Six things new code must
+  respect.  (1) **The direction IS the predicate.**
+  `blockedReceiverFlowsFromEndpoint` reads `endpoint ⊑ thread` where its sibling
+  reads `thread ⊑ endpoint`, so a spelling that swaps the two arguments is the
+  sibling's reading and the transitivity in `donationFlowToBlockedReceiver` stops
+  composing; a Tier 3 anchor pins the direction inside the declaration.  (2) **It
+  is established at the SAME write**, `storeTcbIpcStateAndMessage`, from the
+  receive arm's own `endpointFlowGate` — a second establishment site would be a
+  second answer to one question — and transported by a `blockedReceiverShrinks`
+  twin, which is weaker than `ipcStateFrame` for the reason its sibling is.  (3)
+  **The derivation reads the receive half OFF THE STATE**, which is the whole
+  content: `donationFlowToBlockedReceiver` takes
+  `blockedReceiverFlowsFromEndpoint` where `donationFlowFromBlockedDonor` takes a
+  gate, and a mutation that restores the argument shape keeps every token and
+  reopens the row.  (4) **The extra `ipcInvariantFull` conjunct is the RESOLUTION
+  of the receiver, not an extra assumption.**  The `.call` lift takes
+  `queueHeadBlockedConsistent` where the send's lift takes none, and that
+  difference is structural: the sending gate is evaluated on the *invoking*
+  thread, whose identity the transition holds, while the receiving gate is
+  evaluated on a thread the rendezvous **finds** on a queue — so the conjunct is
+  what says *which* thread the receiver is.  `rendezvousReceiverFlow` is where the
+  two meet.  (5) **The donation's own step is gated on its own resolver**:
+  `applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder` keys its flow
+  hypothesis on `callDonationSchedContext?` rather than on the two threads'
+  identities, so a widening of the donation guard cannot leave it behind.  (6)
+  **The labelled reachable pack is OPT-IN**: `ipcReachableUnder ctx` is
+  `ipcReachable` and the three flow facts, `ipcReachable` is unchanged and
+  `.reachable` projects out of it, so no existing consumer carries a `ctx` it does
+  not read, and `ipcReachableUnder_default` inhabits it for *every* labelling.
+  Neither pack is claimed preserved along a trace — that is `ipcReachable`'s own
+  shape as a pre-state pack the dispatch payoff consumes, so the labelled
+  extension is exactly as strong as the thing it extends.  The witness is
+  `tests/SmpInformationFlowSuite.lean` §15 and its decisive case is the one where
+  the caller's gate **passes** and the donation **is** minted while the
+  receiver-side fact is false; its fixture is built by the **live** receive,
+  because a hand-built blocked server carries no Reply object, `donationPushFrame?`
+  then refuses, and every outcome assertion passes vacuously.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

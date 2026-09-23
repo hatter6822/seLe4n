@@ -12223,6 +12223,161 @@ def runAbortPrefixProjectionChecks : IO Unit := do
      abortViewQueuePrev abortLabelingLowNeighbour abortPost abortNeighbourTid
         != abortViewQueuePrev abortLabelingLowNeighbour abortState abortNeighbourTid)
 
+-- ============================================================================
+-- §15  WS-RR RR8.16 (`v0.35.196`) — the RECEIVING side of the endpoint gate,
+--      and the `.call` arm that can now carry the donation flow fact
+-- ============================================================================
+
+/-! ### §15 — what the receiver's gate recorded, and why the `.call` arm needed it
+
+`blockedSenderFlowsToEndpoint` records what the **sending** gate checked.  Nothing
+recorded what the **receiving** gate checked, so `donationFlowFromBlockedDonor`
+had to take that half as an argument and
+`endpointCallCrossCoreDispatchChecked` — the one transition that *mints* a
+donation — could carry no `donationOwnerFlowsToHolder` at all (register row 183).
+
+`blockedReceiverFlowsFromEndpoint` is that record, and these checks are what makes
+it load-bearing rather than decorative: three labellings over **one** fixture, a
+passive server blocked at an endpoint's receive-queue head and a client holding a
+reservation, driven through the **live** checked dispatch.
+
+1. **ADMITTING** — both gates pass, the donation is minted, and the composed flow
+   `client ⊑ server` holds.  That is the lift's conclusion, computed.
+2. **SEND-DENIED** — the caller's own gate fails, so the dispatch commits nothing
+   and no donation exists.  The control that the first case is about the gate.
+3. **RECEIVER-FACT-FALSE** — the caller's gate passes and the donation *is*
+   minted, and the conclusion `client ⊑ server` is **FALSE**.  The state is one no
+   `.receive` gate would have produced, which is exactly what
+   `blockedReceiverFlowsFromEndpoint` excludes — so the hypothesis is doing work,
+   and dropping it from the lift would make the lift false rather than merely
+   weaker.
+-/
+
+private def flowEp : SeLe4n.ObjId := ⟨1210⟩
+private def flowClient : SeLe4n.ThreadId := ⟨1211⟩
+private def flowServer : SeLe4n.ThreadId := ⟨1212⟩
+private def flowSc : SeLe4n.SchedContextId := SchedContextId.ofNat 1213
+
+/-- The client's own reservation — what the rendezvous lends to the server. -/
+private def flowClientSc : SchedContext :=
+  { scId := flowSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some flowClient, isActive := true }
+
+private def flowClientTcb : TCB :=
+  { mkTcb 1211 40 none with schedContextBinding := .bound flowSc }
+
+/-- The passive server, before it receives: `.ready` and holding no reservation. -/
+private def flowServerTcb : TCB :=
+  { mkTcb 1212 20 none with schedContextBinding := .unbound }
+
+private def flowReply : SeLe4n.ReplyId := ⟨1214⟩
+
+private def flowBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject cnRoot (.cnode rootCNodeValue)
+    |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
+    |>.withObject flowEp (.endpoint {})
+    |>.withObject flowSc.toObjId (.schedContext flowClientSc)
+    |>.withObject flowReply.toObjId (.reply { replyId := flowReply })
+    |>.withObject flowClient.toObjId (.tcb flowClientTcb)
+    |>.withObject flowServer.toObjId (.tcb flowServerTcb)
+    |>.withRunnable [flowClient]
+    |>.build)
+
+/-- The state the checks run on, built by the **live** receive rather than by
+hand: the server blocks at `flowEp` with a reply object stashed, which is the
+shape `queueHeadBlockedConsistent` constrains and the premise
+`blockedReceiverFlowsFromEndpoint` is quantified over. -/
+private def flowState : SystemState :=
+  (endpointReceiveDualOnCore flowEp flowServer (some flowReply) bootCoreId flowBase).1
+
+/-- A labelling built from one assignment per principal, so the three cases below
+differ in the labels and in nothing else. -/
+private def flowLabeling (clientL epL serverL : SecurityLabel) : LabelingContext :=
+  { objectLabelOf := fun oid =>
+      if oid = flowEp then epL
+      else if oid = flowClient.toObjId then clientL
+      else if oid = flowServer.toObjId then serverL
+      else highLabel
+    threadLabelOf := fun t =>
+      if t = flowClient then clientL else if t = flowServer then serverL else highLabel
+    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel
+    serviceLabelOf := fun _ => highLabel }
+
+/-- Both gates pass: `client(low) ⊑ ep(low)` on the way in, `ep(low) ⊑ server(high)`
+when the server blocked. -/
+private def flowAdmitting : LabelingContext := flowLabeling lowLabel lowLabel highLabel
+
+/-- The caller's own gate fails: `client(high) ⊑ ep(low)` is refused. -/
+private def flowSendDenied : LabelingContext := flowLabeling highLabel lowLabel lowLabel
+
+/-- The caller's gate passes and the **receiver-side fact is false**:
+`ep(high) ⊑ server(low)` is refused, so no `.receive` gate could have produced this
+state — and the donation's conclusion `client(high) ⊑ server(low)` is false. -/
+private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLabel lowLabel
+
+/-- The live checked `.call` dispatch under a labelling. -/
+private def flowCall (ctx : LabelingContext) : SystemState :=
+  (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient IpcMessage.empty
+    (AccessRightSet.ofList [.read, .write, .grant]) (SeLe4n.Slot.ofNat 0) bootCoreId
+    flowState).1
+
+/-- Did the rendezvous lend the client's reservation to the server? -/
+private def flowDonated (st : SystemState) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  replyDonationReturn? st flowServer
+
+def runReceiverGateFlowChecks : IO Unit := do
+  IO.println "-- §15 WS-RR RR8.16: the receiving gate's record, and the .call donation flow --"
+  -- The fixture is the shape the two hypotheses are about.
+  assertBool "pre: the server is blocked receiving at the endpoint's receive-queue head"
+    (match flowState.objects[flowServer.toObjId]?, flowState.objects[flowEp]? with
+     | some (.tcb s), some (.endpoint ep) =>
+         decide (s.ipcState = ThreadIpcState.blockedOnReceive flowEp) &&
+         decide (ep.receiveQ.head = some flowServer)
+     | _, _ => false)
+  assertBool "pre: the client owns a reservation and the server owns none"
+    (match flowState.objects[flowClient.toObjId]?, flowState.objects[flowServer.toObjId]? with
+     | some (.tcb c), some (.tcb s) =>
+         decide (c.schedContextBinding = .bound flowSc) &&
+         decide (s.schedContextBinding = .unbound)
+     | _, _ => false)
+  assertBool "pre: no donation exists yet"
+    (flowDonated flowState == none)
+  -- (1) ADMITTING.  Both gates pass, so the composition is available and the
+  -- donation the dispatch mints satisfies it.
+  assertBool "ADMITTING: the caller's gate passes and the receiver-side fact holds"
+    (securityFlowsTo (flowAdmitting.threadLabelOf flowClient)
+        (flowAdmitting.endpointLabelOf flowEp) &&
+      securityFlowsTo (flowAdmitting.endpointLabelOf flowEp)
+        (flowAdmitting.threadLabelOf flowServer))
+  assertBool "ADMITTING: the live dispatch lends the reservation to the server"
+    (flowDonated (flowCall flowAdmitting) == some (flowSc, flowClient))
+  assertBool "ADMITTING: …and the minted donation satisfies `donationOwnerFlowsToHolder`"
+    (securityFlowsTo (flowAdmitting.threadLabelOf flowClient)
+      (flowAdmitting.threadLabelOf flowServer))
+  -- (2) SEND-DENIED.  The control: the first case is about the gate, not about
+  -- the fixture.
+  assertBool "SEND-DENIED: the caller's own gate is refused"
+    (!securityFlowsTo (flowSendDenied.threadLabelOf flowClient)
+      (flowSendDenied.endpointLabelOf flowEp))
+  assertBool "SEND-DENIED: the dispatch commits nothing, so no donation exists"
+    (flowDonated (flowCall flowSendDenied) == none)
+  -- (3) RECEIVER-FACT-FALSE.  The decisive case: the caller's gate passes, the
+  -- donation IS minted, and the conclusion is false — so the receiver-side
+  -- hypothesis is load-bearing rather than decorative.
+  assertBool "RECEIVER-FALSE: the caller's gate passes"
+    (securityFlowsTo (flowReceiverFalse.threadLabelOf flowClient)
+      (flowReceiverFalse.endpointLabelOf flowEp))
+  assertBool "RECEIVER-FALSE: but the receiver-side fact is FALSE at the server"
+    (!securityFlowsTo (flowReceiverFalse.endpointLabelOf flowEp)
+      (flowReceiverFalse.threadLabelOf flowServer))
+  assertBool "RECEIVER-FALSE: the donation is still minted…"
+    (flowDonated (flowCall flowReceiverFalse) == some (flowSc, flowClient))
+  assertBool "RECEIVER-FALSE: …and `donationOwnerFlowsToHolder` would be FALSE there"
+    (!securityFlowsTo (flowReceiverFalse.threadLabelOf flowClient)
+      (flowReceiverFalse.threadLabelOf flowServer))
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B / SM9.C / SM9.D / \
 SM9.E — per-core observable state, non-interference, declassification audit, fine-lock \
@@ -12338,6 +12493,7 @@ declassification, causal provenance and the acceptance scenarios"
   runDeclassificationReaderFixtureCheck
   runDeclassificationTaintFixtureCheck
   runAbortPrefixProjectionChecks
+  runReceiverGateFlowChecks
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++

@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.195-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.35.196-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -96,11 +96,11 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.35.195` |
+| **Версія** | `0.35.196` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовий код (Lean LoC)** | 413 406 рядків у 339 файлах |
-| **Тестовий код (Lean LoC)** | 84 248 рядків у 70 тест-сьютах |
-| **Доведені декларації** | 13 654 декларації theorem/lemma (нуль sorry/axiom) |
+| **Продуктовий код (Lean LoC)** | 413 957 рядків у 339 файлах |
+| **Тестовий код (Lean LoC)** | 84 404 рядки у 70 тест-сьютах |
+| **Доведені декларації** | 13 674 декларації theorem/lemma (нуль sorry/axiom) |
 | **Крейти Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) у 48 файлах вихідного коду |
 | **Цільове обладнання** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Прив'язка до обладнання** | **H3 ЗАВЕРШЕНО** (WS-AG AG1–AG10): HAL, GIC-400, таймер, таблиці сторінок ARMv8, FFI-міст, завантаження в QEMU |

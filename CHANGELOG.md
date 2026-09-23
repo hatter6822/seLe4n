@@ -1,3 +1,92 @@
+## v0.35.196 — WS-RR RR8.16: the receiving side of the endpoint gate (register row 183)
+
+`docs/REGISTERED_DEBT.md` row 183 was the successor `v0.35.191` opened rather
+than approximated, and it named its own remedy: `blockedSenderFlowsToEndpoint`
+records what the **sending** gate checked, nothing recorded what the **receiving**
+gate checked, and `donationFlowFromBlockedDonor` needs exactly that to make a
+donated context's two ends comparable — so `endpointCallCrossCoreDispatchChecked`,
+the one transition in the tree that **mints** a donation, could carry no
+`donationOwnerFlowsToHolder` while the send could.
+
+**The direction IS the predicate.**  `blockedReceiverFlowsFromEndpoint ctx st`
+says every thread `.blockedOnReceive ep` has `securityFlowsTo (endpointLabelOf ep)
+(threadLabelOf tid)`, where its sibling reads the two arguments the other way
+round.  A spelling that swaps them is the sender's reading, and the transitivity
+in `donationFlowToBlockedReceiver` — `label owner ⊑ label ep ⊑ label holder` —
+stops composing; a Tier 3 anchor pins the direction inside the declaration and the
+mutation that swaps it is caught.
+
+**It is established at the same write, transported by the same algebra.**
+`storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint` takes the
+receive arm's own `endpointFlowGate` as an argument and sits beside its sibling at
+the single production write of a blocking `ipcState` — a second establishment site
+would be a second answer to one question.  `blockedReceiverShrinks` with `.refl`,
+`.trans` and `blockedReceiverShrinks_of_ipcStateFrame` is the transport, weaker
+than an `ipcState` frame for the reason its sibling is; and
+`blockedReceiverFlowsFromEndpoint_of_none_blocked` is the base case.
+
+**The derivation reads the receive half OFF THE STATE**, which is the whole
+content: `donationFlowToBlockedReceiver` takes `blockedReceiverFlowsFromEndpoint`
+where `v0.35.126`'s `donationFlowFromBlockedDonor` takes a gate (`hReceiveGate`)
+that no state records — which is precisely why no dispatch could discharge that
+one.  A mutation that restores the argument shape keeps every token and reopens
+the row.
+
+**What closed it**: `endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder`
+and its checked twin (`SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean`,
+production, in the library root), over `applyCallDonationOnCore_preserves_…` for
+the minting step — whose flow hypothesis is keyed on `callDonationSchedContext?`,
+the donation's **own** resolver rather than the two threads' identities, so a
+widening of the donation guard cannot leave it behind — and
+`propagatePipChainCrossCore_sameSchedContextBindings` for the walk beside it.
+
+**The judgement the row asked for.**  It said the extra `ipcInvariantFull`
+conjunct made this a design step rather than a rider, and that whether the
+asymmetry is acceptable is a judgement about the pack.  The judgement is that it
+is **structural rather than incidental, and therefore not an asymmetry between two
+halves of one question**: the sending gate is evaluated on the *invoking* thread,
+whose identity the transition holds, while the receiving gate is evaluated on a
+thread the rendezvous **finds** on a queue — so `queueHeadBlockedConsistent` is
+not an extra assumption, it is the *resolution* of the receiver, and
+`rendezvousReceiverFlow` is where the two meet.
+
+**The labelled pack is opt-in.**  `ipcReachableUnder ctx` is `ipcReachable` and
+the three flow facts, with `.reachable` projecting the unlabelled pack out of it,
+so no existing consumer carries a `ctx` it does not read;
+`ipcReachableUnder_default` inhabits it for **every** labelling from the
+unlabelled base case plus the boot's own `…_flowGateFacts`.  Neither pack is
+claimed *preserved along a trace*, and that is `ipcReachable`'s own shape rather
+than a weakening — it has been a pre-state pack the dispatch payoff consumes since
+it was introduced — so the labelled extension is exactly as strong as the thing it
+extends.
+
+**One de-duplication rode along.**  `updatePipBoostOnCore_tcb_backward` and the two
+forms above it are stated at the **record** rather than at one field, so the
+`ipcState` reading (`blockedSenderShrinks`) and the `schedContextBinding` reading
+(`donationOwnerFlowsToHolder`) are two instances of one proof; `v0.35.195`'s
+`_ipcState_backward` family is the first instance and this cut's binding frame the
+second.
+
+**The retiring artefact is a NEGATIVE, not a definition.**  `v0.35.191`'s Tier 3
+anchor forbade asserting the `.call` counterpart without the receiver-side
+predicate row 183 named — so supplying the predicate is what retires it, and a
+negative kept past its own remedy would refuse the fix it was written to demand.
+It is replaced by the positive plus the relation anchors, and the superseded
+prose in `CLAUDE.md`, `AGENTS.md`, the plan's RR8.16 row and the send lift's own
+docstring is swept in the same cut.
+
+**Measured.**  `tests/SmpInformationFlowSuite.lean` §15 drives three labellings
+over **one** fixture through the live checked dispatch, and its decisive case is
+the one where the caller's gate **passes** and the donation **is** minted while
+the receiver-side fact is false — so the hypothesis the lift takes is load-bearing
+rather than decorative.  Its fixture is built by the **live** receive rather than
+by hand: a hand-built blocked server carries no Reply object, `donationPushFrame?`
+then refuses, and every outcome assertion passes vacuously.  Twenty-six Tier 3
+anchors, eleven mutations, all caught.  No behaviour changed and the golden trace
+is byte-identical.
+
+Refs: docs/REGISTERED_DEBT.md row 183 (WS-RR RR8.16)
+
 ## v0.35.195 — WS-RR RR8.16: the dispatch payoff's `.reply` arm covers a faulted caller (register row 81)
 
 `docs/REGISTERED_DEBT.md` row 81 named its own missing lemma exactly: the staged

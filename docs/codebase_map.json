@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "b064b2a4c46f69d832a67c64bae2a0a625fabd44",
-      "tree_sha": "70299bc262c483ef39b248ea61ddb4e1bda73f20",
-      "committed_at_utc": "2026-09-23T13:48:26+00:00"
+      "commit_sha": "e921b7dba8bb94a170bcd23a3af908176668b316",
+      "tree_sha": "547c3d5013490487efed9c76c8d2225be6b5266a",
+      "committed_at_utc": "2026-09-23T16:36:43+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d6a87cf4b7fe59b5db79c1397451bbfdac033f7e6835f77f64529541a567e451"
+    "source_digest": "5abf8da35555a526f4e0080ff40985348d1cdf5adc0244cc91287955097aed00"
   },
   "summary": {
     "module_count": 409,
-    "declaration_count": 22818
+    "declaration_count": 22859
   },
   "readme_sync": {
-    "version": "0.35.195",
+    "version": "0.35.196",
     "lean_toolchain": "v4.28.0",
     "production_files": 339,
-    "production_loc": 413406,
+    "production_loc": 413957,
     "test_files": 70,
-    "test_loc": 84248,
-    "proved_theorem_lemma_decls": 13654,
+    "test_loc": 84404,
+    "proved_theorem_lemma_decls": 13674,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -91113,7 +91113,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation",
       "path": "SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean",
-      "declaration_count": 26,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -91659,12 +91659,11 @@
         {
           "kind": "theorem",
           "name": "endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder",
-          "line": 849,
+          "line": 850,
           "called": [
             "AccessRightSet",
             "CoreId",
             "IpcMessage",
-            "Kernel",
             "LabelingContext",
             "ObjId",
             "Slot",
@@ -91676,6 +91675,138 @@
             "endpointSendCrossCoreDispatchChecked",
             "endpointSendDualWithCapsOnCore_sameSchedContextBindings",
             "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_sameSchedContextBindings",
+          "line": 880,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_tcb_backward",
+            "sameSchedContextBindings",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder",
+          "line": 910,
+          "called": [
+            "CoreId",
+            "LabelingContext",
+            "ObjId",
+            "SchedContextId",
+            "SystemState",
+            "ValidThreadId",
+            "applyCallDonationOnCore",
+            "applyCallDonationOnCore_ok_decompose",
+            "applyCallDonation_characterisation",
+            "applyCallDonation_donating_binding",
+            "callDonationSchedContext",
+            "donationOwnerFlowsToHolder",
+            "getTcb",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_congr_getElem",
+            "lookupTcb_some_not_reserved",
+            "migrateSchedContextReplenishment_objects",
+            "none",
+            "replyDonationReturn",
+            "scId",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "rendezvousReceiverFlow",
+          "line": 992,
+          "called": [
+            "Endpoint",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockedReceiverFlowsFromEndpoint",
+            "donationFlowToBlockedReceiver",
+            "endpointId",
+            "head",
+            "lookupTcb",
+            "lookupTcb_some_objects",
+            "queueHeadBlockedConsistent",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder",
+          "line": 1028,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder",
+            "applyCallDonationOnCore_preserves_objects_invExt",
+            "blockedReceiverFlowsFromEndpoint",
+            "callDonationSchedContext",
+            "donationOwnerFlowsToHolder",
+            "donationOwnerFlowsToHolder_of_sameSchedContextBindings",
+            "endpointCallCrossCoreDispatch",
+            "endpointCallWithCapsOnCore",
+            "endpointCallWithCapsOnCore_preserves_objects_invExt",
+            "endpointCallWithCapsOnCore_sameSchedContextBindings",
+            "endpointId",
+            "getEndpoint",
+            "invExt",
+            "lookupTcb",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "none",
+            "propagatePipChainCrossCore_sameSchedContextBindings",
+            "queueHeadBlockedConsistent",
+            "rendezvousReceiverFlow",
+            "scId",
+            "securityFlowsTo",
+            "st",
+            "toValid"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder",
+          "line": 1100,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "blockedReceiverFlowsFromEndpoint",
+            "donationOwnerFlowsToHolder",
+            "endpointCallCrossCoreDispatchChecked",
+            "endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder",
+            "endpointFlowGate_implies_securityFlowsTo",
+            "endpointId",
+            "invExt",
+            "queueHeadBlockedConsistent",
             "st"
           ]
         }
@@ -103298,6 +103429,7 @@
             "none",
             "notificationSignal",
             "passiveServerIdleAllowed",
+            "reachable",
             "recordedReplyServer",
             "redirectedOriginFrameCoherent",
             "replyFrameHeadHolder",
@@ -103323,7 +103455,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCap_preserves_ipcInvariantFull",
-          "line": 658,
+          "line": 666,
           "called": [
             "Capability",
             "RHTable_insert_preserves_invExt",
@@ -103394,6 +103526,7 @@
             "notificationWaiterConsistent",
             "objects_invExt",
             "queueHeadBlockedConsistent",
+            "reachable",
             "readyThread_endpointQueueFresh",
             "readyThread_notBlockedOnReceive",
             "readyThread_notBlockedOnReply",
@@ -103427,7 +103560,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscall_preserves_ipcInvariantFull",
-          "line": 1174,
+          "line": 1182,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -103456,7 +103589,7 @@
         {
           "kind": "structure",
           "name": "checkedSyscallDispatchQuiescence",
-          "line": 1249,
+          "line": 1257,
           "called": [
             "Capability",
             "SyscallDecodeResult",
@@ -103472,7 +103605,7 @@
         {
           "kind": "theorem",
           "name": "dispatchWithCapChecked_preserves_ipcInvariantFull",
-          "line": 1261,
+          "line": 1269,
           "called": [
             "Capability",
             "LabelingContext",
@@ -103560,7 +103693,7 @@
         {
           "kind": "theorem",
           "name": "dispatchSyscallChecked_preserves_ipcInvariantFull",
-          "line": 1678,
+          "line": 1686,
           "called": [
             "Capability",
             "LabelingContext",
@@ -103593,7 +103726,7 @@
         {
           "kind": "def",
           "name": "witnessTid",
-          "line": 1770,
+          "line": 1778,
           "called": [
             "ThreadId"
           ]
@@ -103601,7 +103734,7 @@
         {
           "kind": "def",
           "name": "witnessScId",
-          "line": 1771,
+          "line": 1779,
           "called": [
             "SchedContextId"
           ]
@@ -103609,7 +103742,7 @@
         {
           "kind": "def",
           "name": "witnessTcbFresh",
-          "line": 1773,
+          "line": 1781,
           "called": [
             "TCB",
             "ofNat",
@@ -103619,7 +103752,7 @@
         {
           "kind": "def",
           "name": "witnessTcbBound",
-          "line": 1777,
+          "line": 1785,
           "called": [
             "TCB",
             "witnessScId",
@@ -103629,7 +103762,7 @@
         {
           "kind": "def",
           "name": "witnessScFresh",
-          "line": 1780,
+          "line": 1788,
           "called": [
             "SchedContext",
             "scId",
@@ -103639,7 +103772,7 @@
         {
           "kind": "def",
           "name": "witnessScBound",
-          "line": 1784,
+          "line": 1792,
           "called": [
             "SchedContext",
             "witnessScFresh",
@@ -103649,7 +103782,7 @@
         {
           "kind": "def",
           "name": "witnessSt1",
-          "line": 1791,
+          "line": 1799,
           "called": [
             "SystemState",
             "default",
@@ -103661,7 +103794,7 @@
         {
           "kind": "def",
           "name": "witnessSt2",
-          "line": 1794,
+          "line": 1802,
           "called": [
             "SystemState",
             "toObjId",
@@ -103672,7 +103805,7 @@
         {
           "kind": "theorem",
           "name": "witnessKeysNe",
-          "line": 1797,
+          "line": 1805,
           "called": [
             "toObjId"
           ]
@@ -103680,7 +103813,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv0",
-          "line": 1800,
+          "line": 1808,
           "called": [
             "SystemState",
             "default",
@@ -103692,7 +103825,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv1",
-          "line": 1804,
+          "line": 1812,
           "called": [
             "invExt",
             "withObjectStored_preserves_objects_invExt",
@@ -103702,7 +103835,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv2",
-          "line": 1807,
+          "line": 1815,
           "called": [
             "invExt",
             "withObjectStored_preserves_objects_invExt",
@@ -103712,7 +103845,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt1_lookup",
-          "line": 1810,
+          "line": 1818,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -103728,7 +103861,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt2_lookup",
-          "line": 1820,
+          "line": 1828,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -103745,7 +103878,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt2_getTcb",
-          "line": 1838,
+          "line": 1846,
           "called": [
             "getTcb",
             "toObjId",
@@ -103757,7 +103890,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt2_getSchedContext",
-          "line": 1842,
+          "line": 1850,
           "called": [
             "getSchedContext",
             "witnessScFresh",
@@ -103768,7 +103901,7 @@
         {
           "kind": "def",
           "name": "witnessSt3",
-          "line": 1846,
+          "line": 1854,
           "called": [
             "SystemState",
             "rewriteAdmissible_schedContext",
@@ -103786,7 +103919,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv3",
-          "line": 1855,
+          "line": 1863,
           "called": [
             "RHTable_insert_preserves_invExt",
             "invExt",
@@ -103796,7 +103929,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_lookup",
-          "line": 1859,
+          "line": 1867,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -103813,7 +103946,7 @@
         {
           "kind": "theorem",
           "name": "retypeTargetDetached_default",
-          "line": 1880,
+          "line": 1888,
           "called": [
             "ObjId",
             "SystemState",
@@ -103825,7 +103958,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt1_detached",
-          "line": 1886,
+          "line": 1894,
           "called": [
             "retypeTargetDetached",
             "toObjId",
@@ -103837,7 +103970,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv1",
-          "line": 1895,
+          "line": 1903,
           "called": [
             "default",
             "default_ipcInvariantFull",
@@ -103858,7 +103991,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv2",
-          "line": 1907,
+          "line": 1915,
           "called": [
             "ipcInvariantFull",
             "retypeReplacementFresh",
@@ -103879,7 +104012,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv3",
-          "line": 1918,
+          "line": 1926,
           "called": [
             "ThreadId.toObjId_injective",
             "ipcInvariantFull",
@@ -103903,7 +104036,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb",
-          "line": 1963,
+          "line": 1971,
           "called": [
             "getTcb",
             "toObjId",
@@ -103915,7 +104048,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb_unique",
-          "line": 1972,
+          "line": 1980,
           "called": [
             "TCB",
             "ThreadId",
@@ -103929,7 +104062,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_reply",
-          "line": 1986,
+          "line": 1994,
           "called": [
             "Reply",
             "ReplyId",
@@ -103940,7 +104073,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_stack_head",
-          "line": 1997,
+          "line": 2005,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -103953,7 +104086,7 @@
         {
           "kind": "theorem",
           "name": "witnessReachable3",
-          "line": 2008,
+          "line": 2016,
           "called": [
             "donationChainWellFormed_of_no_donations",
             "ipcReachable",
@@ -103968,7 +104101,7 @@
         {
           "kind": "def",
           "name": "witnessDecoded",
-          "line": 2037,
+          "line": 2045,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -103978,7 +104111,7 @@
         {
           "kind": "def",
           "name": "witnessCap",
-          "line": 2040,
+          "line": 2048,
           "called": [
             "Capability",
             "default",
@@ -103988,7 +104121,7 @@
         {
           "kind": "def",
           "name": "witnessGate",
-          "line": 2043,
+          "line": 2051,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -103999,7 +104132,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_noStacks",
-          "line": 2050,
+          "line": 2058,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -104013,7 +104146,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnly",
-          "line": 2063,
+          "line": 2071,
           "called": [
             "ThreadId.toObjId_injective",
             "bind",
@@ -104036,7 +104169,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited",
-          "line": 2115,
+          "line": 2123,
           "called": [
             "callerTid",
             "epId",
@@ -104056,7 +104189,7 @@
         {
           "kind": "theorem",
           "name": "checkedSyscallDispatchQuiescence_inhabited",
-          "line": 2142,
+          "line": 2150,
           "called": [
             "checkedSyscallDispatchQuiescence",
             "syscallDispatchQuiescence_inhabited",
@@ -104070,7 +104203,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedSignal",
-          "line": 2195,
+          "line": 2203,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104081,7 +104214,7 @@
         {
           "kind": "def",
           "name": "witnessGateSignal",
-          "line": 2199,
+          "line": 2207,
           "called": [
             "SyscallGate",
             "notificationSignal",
@@ -104093,7 +104226,7 @@
         {
           "kind": "def",
           "name": "witnessCapTcbObject",
-          "line": 2207,
+          "line": 2215,
           "called": [
             "Capability",
             "default",
@@ -104103,7 +104236,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getNotification_tcbSlot",
-          "line": 2210,
+          "line": 2218,
           "called": [
             "getNotification",
             "none",
@@ -104114,7 +104247,7 @@
         {
           "kind": "theorem",
           "name": "witnessThreadQuiescent",
-          "line": 2218,
+          "line": 2226,
           "called": [
             "threadIpcFieldsQuiescent",
             "witnessSt3",
@@ -104127,7 +104260,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlySignal",
-          "line": 2230,
+          "line": 2238,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104149,7 +104282,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_signal",
-          "line": 2265,
+          "line": 2273,
           "called": [
             "boundDeliveryTarget",
             "callerTid",
@@ -104171,7 +104304,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedRetype",
-          "line": 2297,
+          "line": 2305,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104181,7 +104314,7 @@
         {
           "kind": "def",
           "name": "witnessGateRetype",
-          "line": 2301,
+          "line": 2309,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104192,7 +104325,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_tcb_lookup",
-          "line": 2308,
+          "line": 2316,
           "called": [
             "ObjId",
             "TCB",
@@ -104205,7 +104338,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_endpoint",
-          "line": 2318,
+          "line": 2326,
           "called": [
             "Endpoint",
             "ObjId",
@@ -104215,7 +104348,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_no_notification",
-          "line": 2327,
+          "line": 2335,
           "called": [
             "Notification",
             "ObjId",
@@ -104225,7 +104358,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_lookup_none",
-          "line": 2336,
+          "line": 2344,
           "called": [
             "ObjId",
             "none",
@@ -104236,7 +104369,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_detached_of",
-          "line": 2348,
+          "line": 2356,
           "called": [
             "ObjId",
             "epId",
@@ -104253,7 +104386,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyRetype",
-          "line": 2395,
+          "line": 2403,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104274,7 +104407,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_retype",
-          "line": 2420,
+          "line": 2428,
           "called": [
             "callerTid",
             "epId",
@@ -104294,7 +104427,7 @@
         {
           "kind": "def",
           "name": "witnessCapEndpoint",
-          "line": 2448,
+          "line": 2456,
           "called": [
             "Capability",
             "default",
@@ -104304,7 +104437,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_lookup_seven",
-          "line": 2451,
+          "line": 2459,
           "called": [
             "ObjId",
             "none",
@@ -104316,7 +104449,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getTcb_seven",
-          "line": 2457,
+          "line": 2465,
           "called": [
             "getTcb",
             "none",
@@ -104329,7 +104462,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyEndpointOf",
-          "line": 2468,
+          "line": 2476,
           "called": [
             "SyscallDecodeResult",
             "bind",
@@ -104352,7 +104485,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_send",
-          "line": 2505,
+          "line": 2513,
           "called": [
             "callerTid",
             "epId",
@@ -104374,7 +104507,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedRecv",
-          "line": 2537,
+          "line": 2545,
           "called": [
             "SyscallDecodeResult",
             "length",
@@ -104384,7 +104517,7 @@
         {
           "kind": "def",
           "name": "witnessGateRecv",
-          "line": 2542,
+          "line": 2550,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104395,7 +104528,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_receive",
-          "line": 2551,
+          "line": 2559,
           "called": [
             "callerTid",
             "cleanupDonationStackValid_of_no_stacks",
@@ -104423,7 +104556,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedCall",
-          "line": 2597,
+          "line": 2605,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104433,7 +104566,7 @@
         {
           "kind": "def",
           "name": "witnessGateCall",
-          "line": 2600,
+          "line": 2608,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104444,7 +104577,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt3_getEndpoint_seven",
-          "line": 2605,
+          "line": 2613,
           "called": [
             "getEndpoint",
             "none",
@@ -104455,7 +104588,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_call",
-          "line": 2613,
+          "line": 2621,
           "called": [
             "callerTid",
             "epId",
@@ -104478,7 +104611,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedMint",
-          "line": 2650,
+          "line": 2658,
           "called": [
             "SyscallDecodeResult",
             "cspaceMint",
@@ -104489,7 +104622,7 @@
         {
           "kind": "def",
           "name": "witnessGateMint",
-          "line": 2654,
+          "line": 2662,
           "called": [
             "SyscallGate",
             "cspaceMint",
@@ -104501,7 +104634,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyMint",
-          "line": 2659,
+          "line": 2667,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104520,7 +104653,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_mint",
-          "line": 2681,
+          "line": 2689,
           "called": [
             "bind",
             "callerTid",
@@ -104545,7 +104678,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedDeclassifySignal",
-          "line": 2714,
+          "line": 2722,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104555,7 +104688,7 @@
         {
           "kind": "def",
           "name": "witnessGateDeclassifySignal",
-          "line": 2718,
+          "line": 2726,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104566,7 +104699,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyDeclassifySignal",
-          "line": 2723,
+          "line": 2731,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104588,7 +104721,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_declassifySignal",
-          "line": 2754,
+          "line": 2762,
           "called": [
             "callerTid",
             "epId",
@@ -104608,7 +104741,7 @@
         {
           "kind": "theorem",
           "name": "checkedSyscallDispatchQuiescence_inhabited_declassifySignal",
-          "line": 2782,
+          "line": 2790,
           "called": [
             "boundDeliveryTarget",
             "checkedSyscallDispatchQuiescence",
@@ -104624,7 +104757,7 @@
         {
           "kind": "def",
           "name": "witnessReplyId",
-          "line": 2799,
+          "line": 2807,
           "called": [
             "ReplyId",
             "ofNat",
@@ -104634,7 +104767,7 @@
         {
           "kind": "def",
           "name": "witnessReplyFresh",
-          "line": 2802,
+          "line": 2810,
           "called": [
             "Reply",
             "replyId",
@@ -104644,7 +104777,7 @@
         {
           "kind": "def",
           "name": "witnessSt4",
-          "line": 2804,
+          "line": 2812,
           "called": [
             "SystemState",
             "ofNat",
@@ -104655,7 +104788,7 @@
         {
           "kind": "theorem",
           "name": "witnessObjInv4",
-          "line": 2807,
+          "line": 2815,
           "called": [
             "invExt",
             "withObjectStored_preserves_objects_invExt",
@@ -104665,7 +104798,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_lookup",
-          "line": 2810,
+          "line": 2818,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -104679,7 +104812,7 @@
         {
           "kind": "theorem",
           "name": "witnessInv4",
-          "line": 2822,
+          "line": 2830,
           "called": [
             "ipcInvariantFull",
             "ofNat",
@@ -104698,7 +104831,7 @@
         {
           "kind": "theorem",
           "name": "witnessReachable4",
-          "line": 2833,
+          "line": 2841,
           "called": [
             "allTimeoutBudgetsNone",
             "donationChainWellFormed_of_no_donations",
@@ -104717,7 +104850,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_getTcb",
-          "line": 2865,
+          "line": 2873,
           "called": [
             "ObjId",
             "getTcb",
@@ -104732,7 +104865,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_getReply",
-          "line": 2873,
+          "line": 2881,
           "called": [
             "getReply",
             "ofNat",
@@ -104745,7 +104878,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_no_pendingFault",
-          "line": 2885,
+          "line": 2893,
           "called": [
             "ThreadId",
             "getTcb",
@@ -104761,7 +104894,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedReply",
-          "line": 2901,
+          "line": 2909,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104771,7 +104904,7 @@
         {
           "kind": "def",
           "name": "witnessGateReply",
-          "line": 2904,
+          "line": 2912,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104782,7 +104915,7 @@
         {
           "kind": "def",
           "name": "witnessCapReply",
-          "line": 2909,
+          "line": 2917,
           "called": [
             "Capability",
             "default",
@@ -104792,7 +104925,7 @@
         {
           "kind": "theorem",
           "name": "witnessSt4_noStacks",
-          "line": 2914,
+          "line": 2922,
           "called": [
             "SchedContext",
             "SchedContextId",
@@ -104807,7 +104940,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyReply",
-          "line": 2924,
+          "line": 2932,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104830,7 +104963,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_reply",
-          "line": 2969,
+          "line": 2977,
           "called": [
             "callerTid",
             "epId",
@@ -104853,7 +104986,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedBind",
-          "line": 3005,
+          "line": 3013,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104864,7 +104997,7 @@
         {
           "kind": "def",
           "name": "witnessGateBind",
-          "line": 3009,
+          "line": 3017,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104876,7 +105009,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyBind",
-          "line": 3014,
+          "line": 3022,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104894,7 +105027,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_bind",
-          "line": 3038,
+          "line": 3046,
           "called": [
             "callerTid",
             "epId",
@@ -104914,7 +105047,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedUnbind",
-          "line": 3065,
+          "line": 3073,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104925,7 +105058,7 @@
         {
           "kind": "def",
           "name": "witnessGateUnbind",
-          "line": 3069,
+          "line": 3077,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104937,7 +105070,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlyUnbind",
-          "line": 3074,
+          "line": 3082,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -104957,7 +105090,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_unbind",
-          "line": 3103,
+          "line": 3111,
           "called": [
             "callerTid",
             "epId",
@@ -104977,7 +105110,7 @@
         {
           "kind": "def",
           "name": "witnessDecodedSuspend",
-          "line": 3131,
+          "line": 3139,
           "called": [
             "SyscallDecodeResult",
             "default",
@@ -104987,7 +105120,7 @@
         {
           "kind": "def",
           "name": "witnessGateSuspend",
-          "line": 3135,
+          "line": 3143,
           "called": [
             "SyscallGate",
             "ofNat",
@@ -104998,7 +105131,7 @@
         {
           "kind": "theorem",
           "name": "witnessCapOnlySuspend",
-          "line": 3140,
+          "line": 3148,
           "called": [
             "bind",
             "capabilityDispatchQuiescence",
@@ -105016,7 +105149,7 @@
         {
           "kind": "theorem",
           "name": "syscallDispatchQuiescence_inhabited_suspend",
-          "line": 3166,
+          "line": 3174,
           "called": [
             "Kernel",
             "callerTid",
@@ -119361,18 +119494,18 @@
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.Reachability",
       "path": "SeLe4n/Kernel/IPC/Invariant/Reachability.lean",
-      "declaration_count": 37,
+      "declaration_count": 44,
       "declarations": [
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 66,
+          "line": 67,
           "called": []
         },
         {
           "kind": "def",
           "name": "ipcReachable",
-          "line": 99,
+          "line": 100,
           "called": [
             "SystemState",
             "allTimeoutBudgetsNone",
@@ -119387,13 +119520,13 @@
         {
           "kind": "namespace",
           "name": "ipcReachable",
-          "line": 107,
+          "line": 108,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "ipcInvariantFull",
-          "line": 109,
+          "line": 110,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -119403,7 +119536,7 @@
         {
           "kind": "theorem",
           "name": "objects_invExt",
-          "line": 111,
+          "line": 112,
           "called": [
             "SystemState",
             "invExt",
@@ -119414,7 +119547,7 @@
         {
           "kind": "theorem",
           "name": "allTimeoutBudgetsNone",
-          "line": 113,
+          "line": 114,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -119424,7 +119557,7 @@
         {
           "kind": "theorem",
           "name": "pendingMessageCapBadgesWellFormed",
-          "line": 115,
+          "line": 116,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -119434,7 +119567,7 @@
         {
           "kind": "theorem",
           "name": "notificationWaiterConsistent",
-          "line": 117,
+          "line": 118,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -119444,7 +119577,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWellFormed",
-          "line": 120,
+          "line": 121,
           "called": [
             "SystemState",
             "ipcReachable",
@@ -119452,9 +119585,77 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "ipcReachableUnder",
+          "line": 151,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "blockedReceiverFlowsFromEndpoint",
+            "blockedSenderFlowsToEndpoint",
+            "donationOwnerFlowsToHolder",
+            "ipcReachable",
+            "st"
+          ]
+        },
+        {
+          "kind": "namespace",
+          "name": "ipcReachableUnder",
+          "line": 157,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "reachable",
+          "line": 161,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "ipcReachable",
+            "ipcReachableUnder",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedSenders",
+          "line": 164,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "blockedSenderFlowsToEndpoint",
+            "ipcReachableUnder",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceivers",
+          "line": 168,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "blockedReceiverFlowsFromEndpoint",
+            "ipcReachableUnder",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donationFlow",
+          "line": 172,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "donationOwnerFlowsToHolder",
+            "ipcReachableUnder",
+            "st"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "readyThread_endpointQueueFresh",
-          "line": 140,
+          "line": 193,
           "called": [
             "Endpoint",
             "ObjId",
@@ -119473,7 +119674,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReceive",
-          "line": 161,
+          "line": 214,
           "called": [
             "TCB"
           ]
@@ -119481,7 +119682,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_notBlockedOnReply",
-          "line": 168,
+          "line": 221,
           "called": [
             "TCB"
           ]
@@ -119489,7 +119690,7 @@
         {
           "kind": "theorem",
           "name": "readyThread_ownsNoDonation",
-          "line": 179,
+          "line": 232,
           "called": [
             "SchedContextId",
             "SystemState",
@@ -119504,7 +119705,7 @@
         {
           "kind": "theorem",
           "name": "sendTailCrossQueueFresh",
-          "line": 208,
+          "line": 261,
           "called": [
             "Endpoint",
             "ObjId",
@@ -119523,7 +119724,7 @@
         {
           "kind": "theorem",
           "name": "recvTailCrossQueueFresh",
-          "line": 247,
+          "line": 300,
           "called": [
             "Endpoint",
             "ObjId",
@@ -119542,7 +119743,7 @@
         {
           "kind": "theorem",
           "name": "ipcReachable_default",
-          "line": 293,
+          "line": 346,
           "called": [
             "SystemState",
             "default",
@@ -119557,9 +119758,30 @@
           ]
         },
         {
+          "kind": "theorem",
+          "name": "ipcReachableUnder_default",
+          "line": 377,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "blockedReceiverFlowsFromEndpoint_of_none_blocked",
+            "blockedSenderFlowsToEndpoint_of_none_blocked",
+            "default",
+            "default_objects_none",
+            "epId",
+            "getTcb",
+            "ipcReachableUnder",
+            "ipcReachable_default",
+            "lookupTcb",
+            "none",
+            "replyDonationReturn",
+            "scId"
+          ]
+        },
+        {
           "kind": "def",
           "name": "donationChainWitnessContext",
-          "line": 351,
+          "line": 440,
           "called": [
             "SchedContextId"
           ]
@@ -119567,7 +119789,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessInner",
-          "line": 354,
+          "line": 443,
           "called": [
             "ReplyId"
           ]
@@ -119575,7 +119797,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessOuter",
-          "line": 357,
+          "line": 446,
           "called": [
             "ReplyId"
           ]
@@ -119583,7 +119805,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessOuterCaller",
-          "line": 362,
+          "line": 451,
           "called": [
             "ThreadId"
           ]
@@ -119591,7 +119813,7 @@
         {
           "kind": "def",
           "name": "donationChainWitnessInnerCaller",
-          "line": 365,
+          "line": 454,
           "called": [
             "ThreadId"
           ]
@@ -119599,7 +119821,7 @@
         {
           "kind": "def",
           "name": "witnessChainSchedContext",
-          "line": 371,
+          "line": 460,
           "called": [
             "SchedContext",
             "donationChainWitnessContext",
@@ -119610,7 +119832,7 @@
         {
           "kind": "def",
           "name": "witnessChainInnerReply",
-          "line": 377,
+          "line": 466,
           "called": [
             "Reply",
             "donationChainWitnessContext",
@@ -119624,7 +119846,7 @@
         {
           "kind": "def",
           "name": "witnessChainOuterReply",
-          "line": 386,
+          "line": 475,
           "called": [
             "Reply",
             "donationChainWitnessInner",
@@ -119637,7 +119859,7 @@
         {
           "kind": "def",
           "name": "chainWitnessSt1",
-          "line": 394,
+          "line": 483,
           "called": [
             "SystemState",
             "default",
@@ -119649,7 +119871,7 @@
         {
           "kind": "def",
           "name": "chainWitnessSt2",
-          "line": 398,
+          "line": 487,
           "called": [
             "SystemState",
             "toObjId",
@@ -119660,7 +119882,7 @@
         {
           "kind": "def",
           "name": "donationChainWitness",
-          "line": 405,
+          "line": 494,
           "called": [
             "SystemState",
             "toObjId",
@@ -119671,7 +119893,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv0",
-          "line": 409,
+          "line": 498,
           "called": [
             "SystemState",
             "default",
@@ -119683,7 +119905,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv1",
-          "line": 413,
+          "line": 502,
           "called": [
             "chainWitnessObjInv0",
             "invExt",
@@ -119693,7 +119915,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessObjInv2",
-          "line": 416,
+          "line": 505,
           "called": [
             "chainWitnessObjInv1",
             "invExt",
@@ -119703,7 +119925,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessSt1_lookup",
-          "line": 419,
+          "line": 508,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -119719,7 +119941,7 @@
         {
           "kind": "theorem",
           "name": "chainWitnessSt2_lookup",
-          "line": 430,
+          "line": 519,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -119733,7 +119955,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_lookup",
-          "line": 442,
+          "line": 531,
           "called": [
             "ObjId",
             "RHTable_getElem",
@@ -119747,7 +119969,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_lookup_cases",
-          "line": 457,
+          "line": 546,
           "called": [
             "ObjId",
             "chainWitnessSt1_lookup",
@@ -119763,7 +119985,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_objects_invExt",
-          "line": 472,
+          "line": 561,
           "called": [
             "chainWitnessObjInv2",
             "invExt",
@@ -119773,7 +119995,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_chain",
-          "line": 478,
+          "line": 567,
           "called": [
             "donationChainFrom",
             "donationChainFrom_succ",
@@ -119798,7 +120020,7 @@
         {
           "kind": "theorem",
           "name": "donationChainWitness_wellFormed",
-          "line": 508,
+          "line": 597,
           "called": [
             "Kernel",
             "SchedContext",
@@ -162350,7 +162572,7 @@
     {
       "module": "SeLe4n.Kernel.InformationFlow.Invariant.Composition",
       "path": "SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean",
-      "declaration_count": 47,
+      "declaration_count": 56,
       "declarations": [
         {
           "kind": "namespace",
@@ -162947,9 +163169,150 @@
           ]
         },
         {
+          "kind": "def",
+          "name": "blockedReceiverFlowsFromEndpoint",
+          "line": 1223,
+          "called": [
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "epId",
+            "lookupTcb",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "blockedReceiverShrinks",
+          "line": 1238,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "epId",
+            "lookupTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceiverShrinks.refl",
+          "line": 1245,
+          "called": [
+            "SystemState",
+            "blockedReceiverShrinks",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceiverShrinks.trans",
+          "line": 1248,
+          "called": [
+            "SystemState",
+            "blockedReceiverShrinks",
+            "epId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceiverShrinks_of_ipcStateFrame",
+          "line": 1258,
+          "called": [
+            "SystemState",
+            "blockedReceiverShrinks",
+            "epId",
+            "ipcStateFrame",
+            "isReserved",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint",
+          "line": 1278,
+          "called": [
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "ThreadId.toObjId_injective",
+            "ThreadIpcState",
+            "blockedReceiverFlowsFromEndpoint",
+            "epId",
+            "invExt",
+            "isReserved",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "securityFlowsTo",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_objects_ne",
+            "storeTcbIpcStateAndMessage_tcb_backward_fields",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceiverFlowsFromEndpoint_of_shrinks",
+          "line": 1313,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "blockedReceiverFlowsFromEndpoint",
+            "blockedReceiverShrinks",
+            "epId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "blockedReceiverFlowsFromEndpoint_of_none_blocked",
+          "line": 1324,
+          "called": [
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockedReceiverFlowsFromEndpoint",
+            "epId",
+            "lookupTcb",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "donationFlowToBlockedReceiver",
+          "line": 1346,
+          "called": [
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "blockedReceiverFlowsFromEndpoint",
+            "epId",
+            "lookupTcb",
+            "securityFlowsTo",
+            "securityFlowsTo_trans",
+            "st"
+          ]
+        },
+        {
           "kind": "theorem",
           "name": "donationOwnerFlowsToHolder_of_sameSchedContextBindings",
-          "line": 1196,
+          "line": 1361,
           "called": [
             "LabelingContext",
             "SystemState",
@@ -162969,7 +163332,7 @@
         {
           "kind": "theorem",
           "name": "declassifyStore_NI",
-          "line": 1230,
+          "line": 1395,
           "called": [
             "DeclassificationPolicy",
             "GenericLabelingContext",
@@ -162991,7 +163354,7 @@
         {
           "kind": "def",
           "name": "preservesLowEquivalence",
-          "line": 1256,
+          "line": 1421,
           "called": [
             "IfObserver",
             "Kernel",
@@ -163003,7 +163366,7 @@
         {
           "kind": "theorem",
           "name": "compose_preservesLowEquivalence",
-          "line": 1266,
+          "line": 1431,
           "called": [
             "IfObserver",
             "Kernel",
@@ -163015,7 +163378,7 @@
         {
           "kind": "theorem",
           "name": "errorAction_preserves_lowEquiv",
-          "line": 1285,
+          "line": 1450,
           "called": [
             "IfObserver",
             "KernelError",
@@ -163026,7 +163389,7 @@
         {
           "kind": "theorem",
           "name": "syscallNI_coverage_witness",
-          "line": 1323,
+          "line": 1488,
           "called": [
             "IfObserver",
             "LabelingContext",
@@ -163044,7 +163407,7 @@
         {
           "kind": "inductive",
           "name": "KernelOperation",
-          "line": 1375,
+          "line": 1540,
           "called": [
             "chooseThread",
             "cspaceCopy",
@@ -163072,7 +163435,7 @@
         {
           "kind": "def",
           "name": "KernelOperation.all",
-          "line": 1428,
+          "line": 1593,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -163101,7 +163464,7 @@
         {
           "kind": "theorem",
           "name": "KernelOperation.mem_all",
-          "line": 1452,
+          "line": 1617,
           "called": [
             "KernelOperation",
             "KernelOperation.all"
@@ -163110,13 +163473,13 @@
         {
           "kind": "theorem",
           "name": "KernelOperation.all_nodup",
-          "line": 1457,
+          "line": 1622,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "kernelOperation_count",
-          "line": 1465,
+          "line": 1630,
           "called": [
             "length"
           ]
@@ -163124,7 +163487,7 @@
         {
           "kind": "theorem",
           "name": "niStepConstructorCoverage",
-          "line": 1496,
+          "line": 1661,
           "called": [
             "IfObserver",
             "KernelOperation",
@@ -163158,7 +163521,7 @@
         {
           "kind": "def",
           "name": "kernelOperationNiConstructor",
-          "line": 1544,
+          "line": 1709,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -163187,7 +163550,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_operational",
-          "line": 1584,
+          "line": 1749,
           "called": [
             "KernelOperation",
             "chooseThread",
@@ -163218,7 +163581,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_injective",
-          "line": 1603,
+          "line": 1768,
           "called": [
             "KernelOperation",
             "kernelOperationNiConstructor"
@@ -163227,7 +163590,7 @@
         {
           "kind": "theorem",
           "name": "niStepCoverage_count",
-          "line": 1612,
+          "line": 1777,
           "called": [
             "Kernel",
             "chooseThread",
@@ -242802,7 +243165,7 @@
     {
       "module": "SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate",
       "path": "SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean",
-      "declaration_count": 47,
+      "declaration_count": 50,
       "declarations": [
         {
           "kind": "namespace",
@@ -243300,8 +243663,8 @@
         },
         {
           "kind": "theorem",
-          "name": "updatePipBoostOnCore_tcb_ipcState_backward",
-          "line": 705,
+          "name": "updatePipBoostOnCore_tcb_backward",
+          "line": 709,
           "called": [
             "CoreId",
             "SystemState",
@@ -243321,8 +243684,41 @@
         },
         {
           "kind": "theorem",
+          "name": "updatePipBoostOnCore_tcb_ipcState_backward",
+          "line": 735,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "st",
+            "toObjId",
+            "updatePipBoostOnCore",
+            "updatePipBoostOnCore_tcb_backward"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pipBoostWithWake_tcb_backward",
+          "line": 744,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "determineTargetCore",
+            "invExt",
+            "pipBoostWithWake",
+            "st",
+            "toObjId",
+            "updatePipBoostOnCore_tcb_backward"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "pipBoostWithWake_tcb_ipcState_backward",
-          "line": 730,
+          "line": 753,
           "called": [
             "CoreId",
             "SystemState",
@@ -243338,8 +243734,8 @@
         },
         {
           "kind": "theorem",
-          "name": "propagatePipChainCrossCore_tcb_ipcState_backward",
-          "line": 741,
+          "name": "propagatePipChainCrossCore_tcb_backward",
+          "line": 764,
           "called": [
             "CoreId",
             "SystemState",
@@ -243349,20 +243745,35 @@
             "invExt",
             "none",
             "pipBoostWithWake_preserves_objects_invExt",
-            "pipBoostWithWake_tcb_ipcState_backward",
+            "pipBoostWithWake_tcb_backward",
             "propagatePipChainCrossCore",
             "propagatePipChainCrossCore_step",
             "propagatePipChainCrossCore_zero",
             "st",
             "toObjId",
-            "trans",
             "zero"
           ]
         },
         {
           "kind": "theorem",
+          "name": "propagatePipChainCrossCore_tcb_ipcState_backward",
+          "line": 792,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "invExt",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_tcb_backward",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
           "name": "updatePipBoostOnCore_replenishQueueOnCore",
-          "line": 771,
+          "line": 809,
           "called": [
             "CoreId",
             "SystemState",
@@ -243376,7 +243787,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_getSchedContext",
-          "line": 790,
+          "line": 828,
           "called": [
             "CoreId",
             "SchedContextId",
@@ -243398,7 +243809,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_determineTargetCore",
-          "line": 809,
+          "line": 847,
           "called": [
             "CoreId",
             "SystemState",
@@ -243420,7 +243831,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_replenish_readings",
-          "line": 830,
+          "line": 868,
           "called": [
             "CoreId",
             "SystemState",
@@ -243449,7 +243860,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_replenishQueueOnCore",
-          "line": 875,
+          "line": 913,
           "called": [
             "CoreId",
             "SystemState",
@@ -243472,7 +243883,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_mem_runQueueOnCore",
-          "line": 919,
+          "line": 957,
           "called": [
             "CoreId",
             "SystemState",
@@ -243487,7 +243898,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_mem_runQueueOnCore",
-          "line": 932,
+          "line": 970,
           "called": [
             "CoreId",
             "SystemState",
@@ -243506,7 +243917,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_currentOnCore",
-          "line": 952,
+          "line": 990,
           "called": [
             "CoreId",
             "SystemState",
@@ -243520,7 +243931,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_currentOnCore",
-          "line": 959,
+          "line": 997,
           "called": [
             "CoreId",
             "SystemState",
@@ -243539,7 +243950,7 @@
         {
           "kind": "theorem",
           "name": "updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed",
-          "line": 988,
+          "line": 1026,
           "called": [
             "CoreId",
             "SystemState",
@@ -243558,7 +243969,7 @@
         {
           "kind": "theorem",
           "name": "pipBoostWithWake_preserves_runQueueOnCore_wellFormed",
-          "line": 1010,
+          "line": 1048,
           "called": [
             "CoreId",
             "SystemState",
@@ -243574,7 +243985,7 @@
         {
           "kind": "theorem",
           "name": "propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed",
-          "line": 1018,
+          "line": 1056,
           "called": [
             "CoreId",
             "SystemState",
@@ -243594,13 +244005,13 @@
         {
           "kind": "namespace",
           "name": "SeLe4n.Kernel",
-          "line": 1038,
+          "line": 1076,
           "called": []
         },
         {
           "kind": "def",
           "name": "pipChainWriteSet",
-          "line": 1048,
+          "line": 1086,
           "called": [
             "CoreId",
             "Kernel",
@@ -283402,6 +283813,7 @@
             "kernelStateType",
             "of",
             "pure",
+            "reachable",
             "set",
             "state",
             "toList",
@@ -284152,7 +284564,8 @@
             "leaves",
             "none",
             "of",
-            "pinRelatesPrograms"
+            "pinRelatesPrograms",
+            "reachable"
           ]
         },
         {
@@ -284216,6 +284629,7 @@
             "pinCheckWitnesses",
             "pinRelatesPrograms",
             "pinViolations",
+            "reachable",
             "reconciliationViolations",
             "refusal",
             "set",
@@ -286283,6 +286697,7 @@
             "namedBy",
             "notificationSignalBoundWriteSet",
             "of",
+            "reachable",
             "resolverConsumed",
             "schedLockSetForSyscall",
             "schedLockSet_endpointCallOnCore",
@@ -323962,7 +324377,7 @@
     {
       "module": "tests.SmpInformationFlowSuite",
       "path": "tests/SmpInformationFlowSuite.lean",
-      "declaration_count": 533,
+      "declaration_count": 550,
       "declarations": [
         {
           "kind": "namespace",
@@ -334008,8 +334423,218 @@
         },
         {
           "kind": "def",
+          "name": "flowEp",
+          "line": 12256,
+          "called": [
+            "ObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowClient",
+          "line": 12257,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowServer",
+          "line": 12258,
+          "called": [
+            "ThreadId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowSc",
+          "line": 12259,
+          "called": [
+            "SchedContextId",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowClientSc",
+          "line": 12262,
+          "called": [
+            "SchedContext",
+            "flowClient",
+            "flowSc",
+            "scId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowClientTcb",
+          "line": 12267,
+          "called": [
+            "TCB",
+            "flowSc",
+            "mkTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowServerTcb",
+          "line": 12271,
+          "called": [
+            "TCB",
+            "mkTcb",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowReply",
+          "line": 12274,
+          "called": [
+            "ReplyId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowBase",
+          "line": 12276,
+          "called": [
+            "SystemState",
+            "build",
+            "cnRoot",
+            "empty",
+            "flowClient",
+            "flowClientSc",
+            "flowClientTcb",
+            "flowEp",
+            "flowReply",
+            "flowServerTcb",
+            "replyId",
+            "rootCNodeValue",
+            "rootVSpaceValue",
+            "toObjId",
+            "vsRoot",
+            "withObject",
+            "withRunnable"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowState",
+          "line": 12292,
+          "called": [
+            "SystemState",
+            "bootCoreId",
+            "endpointReceiveDualOnCore",
+            "flowBase",
+            "flowEp",
+            "flowReply",
+            "flowServer"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowLabeling",
+          "line": 12297,
+          "called": [
+            "LabelingContext",
+            "SecurityLabel",
+            "flowClient",
+            "flowEp",
+            "flowServer",
+            "highLabel",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowAdmitting",
+          "line": 12310,
+          "called": [
+            "LabelingContext",
+            "flowLabeling",
+            "highLabel",
+            "lowLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowSendDenied",
+          "line": 12313,
+          "called": [
+            "LabelingContext",
+            "flowLabeling",
+            "highLabel",
+            "lowLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowReceiverFalse",
+          "line": 12318,
+          "called": [
+            "LabelingContext",
+            "flowLabeling",
+            "highLabel",
+            "lowLabel"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowCall",
+          "line": 12321,
+          "called": [
+            "LabelingContext",
+            "SystemState",
+            "bootCoreId",
+            "empty",
+            "endpointCallCrossCoreDispatchChecked",
+            "flowClient",
+            "flowEp",
+            "flowState",
+            "ofList",
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "flowDonated",
+          "line": 12327,
+          "called": [
+            "SchedContextId",
+            "SystemState",
+            "ThreadId",
+            "flowServer",
+            "replyDonationReturn",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runReceiverGateFlowChecks",
+          "line": 12330,
+          "called": [
+            "assertBool",
+            "flowAdmitting",
+            "flowCall",
+            "flowClient",
+            "flowDonated",
+            "flowEp",
+            "flowReceiverFalse",
+            "flowSc",
+            "flowSendDenied",
+            "flowServer",
+            "flowState",
+            "head",
+            "none",
+            "securityFlowsTo",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpInformationFlowChecks",
-          "line": 12226,
+          "line": 12381,
           "called": [
             "lock",
             "refusal",
@@ -334098,6 +334723,7 @@
             "runPolicyAndReleaseBridgeChecks",
             "runPostDrainRecordingFreshnessChecks",
             "runReaderMultiplicityChecks",
+            "runReceiverGateFlowChecks",
             "runRefusalAcceptanceChecks",
             "runRefusalGateChecks",
             "runRefusalLedgerChecks",
@@ -334128,7 +334754,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 12350,
+          "line": 12506,
           "called": [
             "runSmpInformationFlowChecks"
           ]

@@ -19,6 +19,7 @@
 
 import SeLe4n.Kernel.IPC.Invariant.Structural
 import SeLe4n.Kernel.Architecture.Invariant
+import SeLe4n.Kernel.InformationFlow.Invariant.Composition
 
 /-!
 # WS-RR RR3.13 — discharging the IPC bundles' pre-state preconditions
@@ -121,6 +122,58 @@ theorem donationChainWellFormed {st : SystemState} (h : ipcReachable st) :
     _root_.SeLe4n.Kernel.donationChainWellFormed st := h.2.2.2.2.2
 
 end ipcReachable
+
+-- ============================================================================
+-- §1b  `v0.35.196` (register row 183, part 2) — the labelled pre-state pack
+-- ============================================================================
+
+/-- **WS-RR RR8.16 (`v0.35.196`): the reachable pack under a labelling.**
+
+`ipcReachable` collects the state-shaped preconditions of the IPC bundle family,
+and the three **flow** facts (`InformationFlow/Invariant/Composition.lean`) are
+state-shaped preconditions of exactly the same kind — what a gate checked at the
+transition and the store records no trace of.  They could not be conjuncts of it
+for one reason: they are parametrised by a `LabelingContext` and `ipcReachable` is
+not, so adding them would make every existing consumer carry a `ctx` it does not
+use.
+
+So this is an **opt-in extension** rather than a widening: a consumer that reasons
+about flows asks for `ipcReachableUnder ctx`, a consumer that does not keeps
+`ipcReachable`, and `.reachable` projects one to the other.  That is the shape
+register row 183's part (2) named as the decision, and taking it this way is what
+makes it a decision rather than a cost imposed on every caller.
+
+What it does **not** yet carry is preservation along a trace — no
+`ipcReachableUnder` preservation theorem exists, exactly as none exists for
+`ipcReachable` itself (the WS-DT trace-composition debt).  What the per-arm lifts
+in `IPC/Invariant/BlockedSenderPreservation.lean` give is each conjunct across one
+transition, which is what a consumer composes by hand until that debt closes. -/
+def ipcReachableUnder (ctx : LabelingContext) (st : SystemState) : Prop :=
+  ipcReachable st ∧
+  blockedSenderFlowsToEndpoint ctx st ∧
+  blockedReceiverFlowsFromEndpoint ctx st ∧
+  donationOwnerFlowsToHolder ctx st
+
+namespace ipcReachableUnder
+
+/-- Project the unlabelled pack: a consumer that reasons about no flow keeps the
+hypothesis it already had. -/
+theorem reachable {ctx : LabelingContext} {st : SystemState}
+    (h : ipcReachableUnder ctx st) : ipcReachable st := h.1
+
+theorem blockedSenders {ctx : LabelingContext} {st : SystemState}
+    (h : ipcReachableUnder ctx st) :
+    _root_.SeLe4n.Kernel.blockedSenderFlowsToEndpoint ctx st := h.2.1
+
+theorem blockedReceivers {ctx : LabelingContext} {st : SystemState}
+    (h : ipcReachableUnder ctx st) :
+    _root_.SeLe4n.Kernel.blockedReceiverFlowsFromEndpoint ctx st := h.2.2.1
+
+theorem donationFlow {ctx : LabelingContext} {st : SystemState}
+    (h : ipcReachableUnder ctx st) :
+    _root_.SeLe4n.Kernel.donationOwnerFlowsToHolder ctx st := h.2.2.2
+
+end ipcReachableUnder
 
 -- ============================================================================
 -- §2  The running caller is fresh — derived, not assumed
@@ -310,6 +363,42 @@ theorem ipcReachable_default : ipcReachable (default : SystemState) := by
     · intro scId sc hSc
       rw [Architecture.default_objects_none] at hSc
       cases hSc
+
+/-- **WS-RR RR8.16 (`v0.35.196`)**: and the labelled pack is inhabited too, under
+**every** labelling.
+
+The three flow facts are all quantified over a *blocked* or *donating* thread and
+the empty boot store holds none, so each is vacuous rather than cheap — which is
+what makes the pack a bundle rather than an unsatisfiable conjunction, for the
+reason `ipcReachable_default` gives one level down.  Stated for an arbitrary `ctx`
+because the boot state's emptiness is what discharges it, not anything about the
+labelling: a deployment's own context is admitted by the boot's witness check
+(`isInsecureDefaultContext`), which is a different question from this one. -/
+theorem ipcReachableUnder_default (ctx : LabelingContext) :
+    ipcReachableUnder ctx (default : SystemState) := by
+  refine ⟨ipcReachable_default, ?_, ?_, ?_⟩
+  · refine blockedSenderFlowsToEndpoint_of_none_blocked ?_
+    intro tid tcb epId hLook
+    rw [lookupTcb] at hLook
+    split at hLook
+    · cases hLook
+    · rw [SystemState.getTcb?, Architecture.default_objects_none] at hLook
+      cases hLook
+  · refine blockedReceiverFlowsFromEndpoint_of_none_blocked ?_
+    intro tid tcb epId hLook
+    rw [lookupTcb] at hLook
+    split at hLook
+    · cases hLook
+    · rw [SystemState.getTcb?, Architecture.default_objects_none] at hLook
+      cases hLook
+  · intro holder owner scId hRet
+    unfold replyDonationReturn? at hRet
+    rw [show lookupTcb (default : SystemState) holder = none from by
+          rw [lookupTcb]
+          split
+          · rfl
+          · rw [SystemState.getTcb?, Architecture.default_objects_none]] at hRet
+    exact absurd hRet (by simp)
 
 -- ============================================================================
 -- §5  WS-OD OD2.4 — the chain predicate decides rather than refuses

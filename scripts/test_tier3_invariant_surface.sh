@@ -18441,11 +18441,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonation_ipcStateFra
 # which the `.call` chain has had since RR2 and the send did not.
 run_check "INVARIANT" rg -F -n 'theorem endpointSendDualOnCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 run_check "INVARIANT" rg -F -n 'theorem endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
-# ...and the `.call` arm has NO such counterpart, deliberately: its dispatch mints
-# a donation, so the fact needs the RECEIVING gate, which no state records.  The
-# negative is what keeps a later cut from asserting it without the receiver-side
-# predicate register row 183 names.
-run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# ...and the `.call` arm had NO such counterpart at that cut: its dispatch mints
+# a donation, so the fact needs the RECEIVING gate, which no state recorded.  The
+# negative here forbade asserting it without the receiver-side predicate register
+# row 183 named -- and `v0.35.196` supplied that predicate, so the negative's
+# subject is gone and keeping it would refuse the fix it was written to demand.
+# It is REPLACED by the positive below plus the relation anchors in the
+# `v0.35.196` block: a negative kept past its own remedy is worse than none,
+# since it reads in the report exactly like a check that decides something.
+run_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 # (6) THE WITHCAPS INVEXT FRAME IS PRODUCTION, beside the transition it frames: it
 # composes two production lemmas and was staged by association.  Both directions.
 run_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
@@ -20658,5 +20662,77 @@ run_check "INVARIANT" rg -n 'the delivery lends the faulted thread.s reservation
 run_check "INVARIANT" rg -n 'control: with no reservation to lend' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n 'the live \.reply dispatch abandons a faulted caller that had donated' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "  runReplySeamChecks\n  runFaultDonationChecks\n  runProgressChecks" tests/FaultHandlingSuite.lean'
+
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.196`) — the RECEIVING side of the endpoint gate
+# ============================================================================
+#
+# Register row 183's two parts.  (1) `blockedSenderFlowsToEndpoint` records what
+# the SENDING gate checked; nothing recorded what the RECEIVING gate checked, so
+# the one transition that MINTS a donation could carry no flow fact.  (2)
+# `ipcReachable` is not parametrised by a `LabelingContext`, so neither fact
+# could be a field of it.
+#
+# DIRECTION is the whole content of the predicate: the sender's gate reads
+# `thread ⊑ endpoint` and the receiver's reads `endpoint ⊑ thread`, so a
+# mutation that swaps the two arguments gives the sibling's reading and the
+# transitivity in `donationFlowToBlockedReceiver` stops composing.  The gap is
+# bounded to the declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[^\n]*(\n([ \t][^\n]*)?)*securityFlowsTo \(ctx\.endpointLabelOf epId\) \(ctx\.threadLabelOf tid\)" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState\.blockedOnReceive epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# ESTABLISHED AT THE SAME WRITE as its sibling -- one production store of a
+# blocking `ipcState`, so a second establishment site is a second answer.
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverShrinks_of_ipcStateFrame' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_shrinks' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_none_blocked' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+# RELATION: the new derivation reads the receive half OFF THE STATE.  Its
+# `v0.35.126` sibling `donationFlowFromBlockedDonor` takes the same fact as an
+# ARGUMENT (`hReceiveGate`), which is exactly why no dispatch could discharge
+# it; a mutation that restores that shape here keeps every token and reopens
+# the row.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationFlowToBlockedReceiver[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationFlowToBlockedReceiver[^\n]*(\n([ \t][^\n]*)?)*hReceiveGate" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
+# The rendezvous resolution: the receiver is the endpoint's receive-queue head,
+# and `queueHeadBlockedConsistent` -- an `ipcInvariantFull` conjunct -- is what
+# says that thread is `.blockedOnReceive` on THAT endpoint.  That conjunct is
+# the premise the row predicted the lift would have to take.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem rendezvousReceiverFlow[^\n]*(\n([ \t][^\n]*)?)*hQueueHeads : queueHeadBlockedConsistent st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hBlockedReceivers : blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hQueueHeads : queueHeadBlockedConsistent st" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+# ...and the CHECKED arm supplies the caller's gate from its own branch
+# condition rather than taking it, which is the shape the send's lift already
+# has.  A mutation that adds the hypothesis back keeps every other token.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_securityFlowsTo ctx endpointId" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*hGate : securityFlowsTo" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+# The donation the `.call` mints is the ONE step whose binding frame cannot
+# carry the fact, so it is the one step with a gate-keyed hypothesis -- keyed on
+# the donation's OWN resolver, not on the two threads' identities.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*callDonationSchedContext\? st callerVtid\.val receiverVtid\.val = some scId" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# The chain walk's frame is stated at the RECORD, so the `ipcState` reading
+# (`blockedSenderShrinks`) and the `schedContextBinding` reading
+# (`donationOwnerFlowsToHolder`) are two instances of one proof.  A mutation
+# that narrows it back to one field keeps the name and breaks the second asker.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb. = \{ tcb with pipBoost := p \}" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+# (2) The labelled pack is OPT-IN: `ipcReachable` is unchanged and projects out
+# of it, so no existing consumer carries a `ctx` it does not read.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*ipcReachable st ." SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
+run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+# MEASURED: the decisive case keeps the caller's gate passing and the donation
+# minted, and makes the RECEIVER-side fact false -- so the hypothesis the lift
+# takes is load-bearing rather than decorative.  A witness whose three cases all
+# admitted would be satisfied by a lift that ignored it.
+run_check "INVARIANT" rg -n 'RECEIVER-FALSE: but the receiver-side fact is FALSE at the server' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'RECEIVER-FALSE: the donation is still minted' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n 'SEND-DENIED: the dispatch commits nothing, so no donation exists' tests/SmpInformationFlowSuite.lean
+# ...and the fixture is built by the LIVE receive, not by hand: a hand-built
+# blocked server carries no Reply object, so `donationPushFrame?` refuses and
+# the dispatch mints nothing -- which passes every outcome assertion vacuously.
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def flowState[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualOnCore flowEp flowServer \(some flowReply\)" tests/SmpInformationFlowSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runAbortPrefixProjectionChecks\n  runReceiverGateFlowChecks" tests/SmpInformationFlowSuite.lean'
 
 finalize_report

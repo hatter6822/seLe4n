@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.195` (`lakefile.toml`) |
+| **Package version** | `0.35.196` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 413,406 across 339 Lean files |
-| **Test LoC** | 84,248 across 70 Lean test suites |
-| **Proved declarations** | 13,654 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 413,957 across 339 Lean files |
+| **Test LoC** | 84,404 across 70 Lean test suites |
+| **Proved declarations** | 13,674 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -7172,6 +7172,33 @@ endpoint-keyed gates through `endpointFlowGate`, which **conjoins** the global
 lattice check with the endpoint's override rather than replacing it — so V6-G's
 `endpointPolicyRestricted` is structural (a misconfigured override cannot widen
 anything) and unconfigured deployments are unchanged.
+
+**What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
+`v0.35.191` and `v0.35.196`).**  `endpointFlowGate` is evaluated at a transition
+and the state records no trace of it, so a *later* transition cannot see that it
+passed.  Two predicates close that: `blockedSenderFlowsToEndpoint` says every
+thread blocked *sending* or *calling* on an endpoint has a label that flows **to**
+it, and `blockedReceiverFlowsFromEndpoint` says every thread blocked *receiving*
+on one has a label the endpoint's flows **to**.  The direction is the whole
+content of each — one reads `thread ⊑ endpoint` and the other `endpoint ⊑
+thread` — and their composition is what makes a *donated* scheduling context's two
+ends comparable: `label owner ⊑ label ep ⊑ label holder`.  Both are established at
+the single production write of a blocking `ipcState`
+(`storeTcbIpcStateAndMessage`), taking that arm's own gate as an argument;
+transported by `blockedSenderShrinks` / `blockedReceiverShrinks`, which are
+weaker than an `ipcState` frame on purpose, since a rendezvous writes the
+receiver `.ready` and a wake writes a runnable state — neither frames every
+`ipcState` while both leave the blocked set no larger; and inhabited by the
+production boot state for **every** labelling context, so neither is an
+assumption nothing exhibits.  With them the two checked endpoint dispatches carry
+both facts, including the one transition that **mints** a donation, where no
+binding frame can: the `.call` arm reads the receiver's half off the state at the
+rendezvous, and `queueHeadBlockedConsistent` — an `ipcInvariantFull` conjunct — is
+what says *which* thread the receiver is, the sending gate being evaluated on the
+invoking thread while the receiving gate is evaluated on a thread the rendezvous
+finds on a queue.  `ipcReachableUnder ctx` is the reachable-state pack under a
+labelling: `ipcReachable` and the three flow facts, opt-in, so a consumer that
+reasons about no flow keeps the unlabelled pack unchanged.
 
 **Information flow under fine locks (WS-SM SM8.D, v0.33.9).**
 The SM3 two-phase-locking bracket writes a per-object `RwLockState` on every
