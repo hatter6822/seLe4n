@@ -3354,25 +3354,42 @@ theorem schedContextBind_confinedToCores (vScId : SeLe4n.ValidObjId)
               exact determineTargetCore_congr st st1 vThreadId.val (by rw [hT1 vThreadId.val])
             refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro c hc <;>
               simp only [schedContextBindWriteSet, List.mem_singleton] at hc
+            -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: THREE arms since the bind
+            -- places a parked runnable thread — the re-bucket, the placement and
+            -- the identity.  The first two write `setRunQueueOnCore bindHome`,
+            -- the same core the write set names, so each clause is the same
+            -- lemma twice and then `rfl`; the write set does not move.
             · have hne : determineTargetCore st vThreadId.val ≠ c := fun h => hc h.symm
               split
               · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
-              · rfl
+              · split
+                · exact SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ c _ (hHome ▸ hne)
+                · rfl
             · split
               · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
-              · rfl
+              · split
+                · exact SchedulerState.setRunQueueOnCore_currentOnCore _ _ c _
+                · rfl
             · split
               · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
-              · rfl
+              · split
+                · exact SchedulerState.setRunQueueOnCore_activeDomainOnCore _ _ c _
+                · rfl
             · split
               · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
-              · rfl
+              · split
+                · exact SchedulerState.setRunQueueOnCore_domainTimeRemainingOnCore _ _ c _
+                · rfl
             · split
               · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
+              · split
+                · exact SchedulerState.setRunQueueOnCore_domainScheduleIndexOnCore _ _ c _
+                · rfl
+            · -- registers: untouched on all three arms, but the projection only
+              -- reduces once the run-queue `if`s are resolved.
+              split
               · rfl
-            · -- registers: untouched on both arms, but the projection only
-              -- reduces once the run-queue `if` is resolved.
-              split <;> rfl
+              · split <;> rfl
           · exact absurd hStep (by simp)
       · exact absurd hStep (by simp)
   · exact absurd hStep (by simp)

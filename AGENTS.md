@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.181.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.182.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,7 +222,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~79170 lines)
+- `CHANGELOG.md` (~79257 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12184 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -232,12 +232,12 @@ To find files that need pagination today, run:
 - `docs/spec/SELE4N_SPEC.md` (~7023 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5736 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5278 lines)
 - `tests/SmpIpcSuite.lean` (~5241 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5142 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -259,6 +259,7 @@ To find files that need pagination today, run:
 - `tests/OperationChainSuite.lean` (~3289 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3247 lines)
+- `tests/FrozenOpsSuite.lean` (~3142 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3131 lines)
@@ -266,13 +267,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/Object/Structures.lean` (~3119 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3054 lines)
-- `tests/FrozenOpsSuite.lean` (~3050 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
+- `tests/SmpCancellationSuite.lean` (~2904 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2820 lines)
-- `tests/SmpCancellationSuite.lean` (~2812 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2786 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2736 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2746 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
@@ -307,8 +307,8 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
+- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1989 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1981 lines)
-- `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1980 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
@@ -336,15 +336,15 @@ To find files that need pagination today, run:
 - `tests/FaultHandlingSuite.lean` (~1700 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1650 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1650 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1632 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1611 lines)
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
 - `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1539 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1534 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1511 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
@@ -392,6 +392,7 @@ To find files that need pagination today, run:
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1082 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~1078 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -422,7 +423,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~896 lines)
-- `SeLe4n/Kernel/SchedContext/Operations.lean` (~895 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
@@ -8517,28 +8517,41 @@ code may assume:
   costs is stated: a passive server whose client is suspended while it services
   the request is parked `.ready`, `.unbound` and unplaced until its own manager
   resumes it or a reservation is bound to it, which is the MCS-passive reading
-  and the one every other pop takes.  **Two instances of the same class remain,
-  measured by the post-merge audit (`v0.35.156`).**  (1) A plain-`Send`
-  rendezvous is decided by the two readings on two arms: `.replyRecv`'s
-  non-`Call` arm deschedules the holder the pop unbound -- the MCS-passive
-  reading, so a passive server handed a plain `Send` is parked `.ready`,
-  `.unbound` and unplaced -- while a `.receive` by an already-unbound running
-  thread leaves it current on a plain `Send`, the legacy reading.  (2) What is
-  parked stays parked, and that is a **divergence from upstream** rather than a
-  fact about the pattern: `schedContextBind` re-buckets only a thread already
-  queued on its home core, where seL4-MCS's `schedContext_bindTCB` (read at
-  `13.0.0`) ends in `if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb);
-  rescheduleRequired(); }`, so upstream's recovery for a passive thread left
-  runnable without a context -- bind it one -- is closed in this kernel, and the
-  reclaim's parking makes that recovery the one a manager reaches for.  Both are
-  the WS-CB row in `docs/REGISTERED_DEBT.md` table C; neither is a soundness gap,
-  and neither is fixed there, because a bind that places a thread is a
-  scheduler-domain write `.schedContextBind` declares nowhere yet (WS-RR RR8.12's
-  order: declare, then bracket, then widen), and the plain-`Send` decision is the
-  passive/legacy split that row names.  Until the bind half lands, **v1.0.0 must
-  not claim that a parked passive server can be recovered by binding it a
-  reservation**; it may claim, since `v0.35.158`, that no client suspension
-  hands a server the CPU on nobody's budget.
+  and the one every other pop takes.  **And since `v0.35.182` (Cut B2) the bind
+  is that manager's recovery**: `schedContextBind` places a parked runnable
+  thread on its home core, which is seL4-MCS's `schedContext_bindTCB` tail
+  (`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`, read
+  at `13.0.0`) and which this kernel did not do — it re-bucketed only a thread
+  already queued, so what the reclaim parked stayed parked.  Three things new
+  code must respect.  (a) **The guard is `bindPlacesParkedThread`**, three
+  conjuncts excluding a placed thread, a thread blocked in IPC and a suspended
+  one, and its third reads the **stored** `threadState` rather than
+  `inferThreadState` — which answers `.Inactive` for *any* unplaced, unblocked
+  thread, so the inferred reading would refuse exactly the parked shape the
+  guard exists to admit.  (b) **The declared footprint did not move**: its run
+  segment was already the bound thread's home core, which is the core the
+  placement inserts on — a declaration written for the *operation* rather than
+  for the branch it happened to take is what makes a behavioural widening free,
+  and both that footprint's docstring and its coverage theorem's, which
+  predicted a widening, are corrected rather than left standing.  (c) **The
+  frozen mirror is swept through a bind-specific writer**
+  (`frozenWriteTcbBoundPlaced`), never by widening `frozenWriteTcbRebucketed`:
+  that one's other callers are priority writes, and a priority write must not
+  make a parked thread schedulable — only a bind, which hands the thread a
+  reservation, may.
+
+  **One instance of the class remains**, measured by the post-merge audit
+  (`v0.35.156`): a plain-`Send` rendezvous is decided by the two readings on two
+  arms — `.replyRecv`'s non-`Call` arm deschedules the holder the pop unbound
+  (the MCS-passive reading, so a passive server handed a plain `Send` is parked
+  `.ready`, `.unbound` and unplaced), while a `.receive` by an already-unbound
+  running thread leaves it current on a plain `Send` (the legacy reading).  That
+  is the WS-CB row in `docs/REGISTERED_DEBT.md` table C; it is not a soundness
+  gap, and it is not fixed here because it is the passive/legacy split that row
+  names rather than a footprint or a placement.  **v1.0.0 may claim, since
+  `v0.35.158`, that no client suspension hands a server the CPU on nobody's
+  budget, and since `v0.35.182` that a parked passive server is recovered by
+  binding it a reservation.**
 - **A bare reply's post-state does not satisfy `donationOwnerValid`.**
   `endpointReply` wakes the answered caller `.ready` while the recorded server
   still holds `.donated _ caller`; the donated SchedContext comes back only at

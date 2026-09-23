@@ -717,10 +717,13 @@ def schedContextBindWriteSet (st : SystemState) (tid : SeLe4n.ThreadId) : List C
 /-- **`v0.35.168`: the live `.schedContextBind` arm's scheduler-domain
 footprint**, with an **empty** replenish segment: a bind moves no replenishment.
 
-seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE`; this kernel's bind
-re-buckets only an already-queued thread, which is the divergence
-`docs/REGISTERED_DEBT.md`'s WS-CB row carries.  Closing it widens the run
-segment, not this one — a placement is a run-queue write. -/
+seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE`, and since WS-RR
+RR8.12 Cut B2 (`v0.35.182`) so does this kernel's bind: a parked runnable thread
+is placed on its home core rather than left off every queue with a reservation
+it cannot spend.  This docstring said that closing the divergence "widens the run
+segment"; it did not, because the segment is the **home core** either way — the
+placement inserts on exactly the core the re-bucket already wrote.  The
+replenish segment stays empty on all three branches. -/
 def schedLockSet_schedContextBindOnCore (st : SystemState) (tid : SeLe4n.ThreadId) :
     List (SchedLockId × Concurrency.AccessMode) :=
   schedFootprintOfCores (schedContextBindWriteSet st tid) []
@@ -913,11 +916,18 @@ theorem schedContextBind_replenishQueueOnCore (st st' : SystemState)
               · dsimp only at h
                 rw [Except.ok.injEq, Prod.mk.injEq] at h
                 rw [← h.2]
+                -- Three arms since Cut B2 (`v0.35.182`): the re-bucket, the
+                -- placement of a parked runnable thread, and the identity.  All
+                -- three write a run queue or nothing, so none moves a replenish
+                -- queue — which is what keeps this arm's segment EMPTY.
                 split
                 · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
                     SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
-                · simp only [SystemState.updateTcb_scheduler,
-                    SystemState.rewriteObject_scheduler]
+                · split
+                  · simp only [SchedulerState.setRunQueueOnCore_replenishQueueOnCore,
+                      SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+                  · simp only [SystemState.updateTcb_scheduler,
+                      SystemState.rewriteObject_scheduler]
               · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)

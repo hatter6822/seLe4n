@@ -1848,17 +1848,44 @@ theorem schedContextBind_preserves_ipcInvariantFull
               · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
                   (fun h => hcc h)]
                 exact hy
-            · rename_i hMem
-              exact ipcInvariantFull_of_getElem_eq
-                (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
-                (fun oid => rfl)
-                (passiveServerIdle_of_frame
+            · -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: the two remaining arms — the
+              -- placement of a parked runnable thread, and the identity.  The
+              -- placement is the re-bucket arm's argument with the *remove*
+              -- dropped: membership still only grows, which is all
+              -- `passiveServerIdleFrame_of_backward_monotone` asks of a queue
+              -- write, so the bundle survives for the same reason.
+              split
+              · rename_i hPark
+                refine ipcInvariantFull_of_getElem_eq
+                  (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
+                  (fun oid => rfl) ?_ hInv2
+                refine passiveServerIdle_of_frame
                   (passiveServerIdleFrame_of_backward_monotone
                     (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
                     (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
-                    (fun y hy => hy) rfl)
-                  hInv2.passiveServerIdle)
-                hInv2
+                    (fun y hy => ?_) (by simp))
+                  hInv2.passiveServerIdle
+                by_cases hcc : determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val = Concurrency.bootCoreId
+                · rw [show (Concurrency.bootCoreId : CoreId) = determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val from hcc.symm]
+                  rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+                  rw [RunQueue.mem_insert]
+                  refine Or.inl ?_
+                  rw [show (determineTargetCore { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) } vThreadId.val : CoreId) = Concurrency.bootCoreId from hcc]
+                  exact hy
+                · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ _ _ _
+                    (fun h => hcc h)]
+                  exact hy
+              · rename_i hPark
+                exact ipcInvariantFull_of_getElem_eq
+                  (s1 := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
+                  (fun oid => rfl)
+                  (passiveServerIdle_of_frame
+                    (passiveServerIdleFrame_of_backward_monotone
+                      (st := { st with objects := (st.objects.insert vScId.val (.schedContext { sc with boundThread := some vThreadId.val, donationOrigin := none })).insert vThreadId.val.toObjId (.tcb { tcb with schedContextBinding := .bound ⟨vScId.val.toNat⟩, priority := sc.priority }) })
+                      (fun t tcb'' h => ⟨tcb'', h, rfl, rfl⟩)
+                      (fun y hy => hy) rfl)
+                    hInv2.passiveServerIdle)
+                  hInv2
           · contradiction
       · contradiction
   · contradiction

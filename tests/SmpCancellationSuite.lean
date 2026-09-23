@@ -2640,6 +2640,97 @@ entry names the deactivated reservation"
           (cancelIpcBlockingReplenishCores stQ victimTid tcbQ)))
 
 -- ----------------------------------------------------------------------------
+-- §3.26b (WS-RR RR8.12, Cut B2, `v0.35.182`): the parked holder is RECOVERABLE
+--        by binding it a reservation.
+-- ----------------------------------------------------------------------------
+
+/-! `v0.35.158` parks the holder a reclaim unbinds — `.ready`, `.unbound`, on no
+core — and names its recovery as *"a `schedContextBind` once that arm places a
+parked thread"*.  That arm did not: it re-bucketed only a thread already on a run
+queue, so the recovery it named was closed, which is the divergence from
+seL4-MCS's `schedContext_bindTCB` (`SCHED_ENQUEUE` tail, read at `13.0.0`) the
+register carries.  This group drives the whole sequence — reclaim, then bind —
+and computes the RETIRED queued-only reading beside the live one. -/
+
+/-- A reservation the parked holder's manager can hand it: unbound, in the
+holder's domain (`0`, `mkTcb`'s), and heading no reply stack. -/
+private def spareSc : SchedContext :=
+  { mkSc none true with scId := scIdOther, priority := ⟨50⟩ }
+
+/-- **The RETIRED bind, computed here and nowhere else**: the queued-only
+re-bucket — `if the thread is already on its home core's run queue then move it,
+else nothing`.  This is what `schedContextBind`'s Z5-G3 step was before Cut B2,
+with the object writes the live bind performs left in place, so the two readings
+differ in exactly the placement. -/
+private def retiredBindPlacement (st : SystemState) (tid : SeLe4n.ThreadId) : SystemState :=
+  let home := determineTargetCore st tid
+  if tid ∈ (st.scheduler.runQueueOnCore home) then
+    let rq := ((st.scheduler.runQueueOnCore home).remove tid).insert tid ⟨50⟩
+    { st with scheduler := st.scheduler.setRunQueueOnCore home rq }
+  else st
+
+private def runBindPlacesParkedChecks : IO Unit := do
+  IO.println "--- §3.26b WS-RR RR8.12 Cut B2: a bind places the parked holder ---"
+  let st := stStrandedHolderReclaim
+  let tcb := victimTcb st
+  -- The reclaim parks the holder, which is `v0.35.158`'s own measurement.
+  let parked := (cancelIpcBlockingReclaimed victimTid tcb st).withObjectStored
+    scIdOther.toObjId (.schedContext spareSc)
+  assertBool "setup: the reclaim leaves the holder `.ready`, `.unbound` and on NO core"
+    (decide ((parked.getTcb? serverTid).map (·.ipcState) = some .ready)
+      && decide ((parked.getTcb? serverTid).map (·.schedContextBinding)
+          = some SchedContextBinding.unbound)
+      && decide (placedCoreOf? parked serverTid = none))
+  assertBool "setup: a spare reservation is available, unbound and heading no stack"
+    (decide ((parked.getSchedContext? scIdOther).map (·.boundThread) = some none)
+      && decide ((parked.getSchedContext? scIdOther).map (·.scReply) = some none))
+  -- (a) the guard fires on exactly this thread.
+  match parked.getTcb? serverTid with
+  | none => assertBool "(a) the parked holder resolves" false
+  | some parkedTcb =>
+    assertBool "(a) the placement guard admits the parked holder"
+      (SchedContextOps.bindPlacesParkedThread parked serverTid parkedTcb)
+    -- ...and refuses each thing it is written to refuse, measured on this state.
+    assertBool "(a) NEGATIVE: it refuses a thread that is PLACED — the victim, which the reclaim bound and left queued"
+      (match parked.getTcb? victimTid with
+       | some vt => !SchedContextOps.bindPlacesParkedThread parked victimTid vt
+                      || decide (placedCoreOf? parked victimTid = none)
+       | none => false)
+    assertBool "(a) NEGATIVE: it refuses a BLOCKED thread"
+      (!SchedContextOps.bindPlacesParkedThread parked serverTid
+        { parkedTcb with ipcState := .blockedOnReceive epId })
+    assertBool "(a) NEGATIVE: it refuses a SUSPENDED thread"
+      (!SchedContextOps.bindPlacesParkedThread parked serverTid
+        { parkedTcb with threadState := .Inactive })
+  -- (b) the live bind places it; the retired reading leaves it parked.
+  match SeLe4n.ObjId.toValid? scIdOther.toObjId, SeLe4n.ThreadId.toValid? serverTid with
+  | some vSc, some vTid =>
+    match SchedContextOps.schedContextBind vSc vTid parked with
+    | .error e => assertBool s!"(b) the bind of a spare reservation succeeds (error: {reprStr e})" false
+    | .ok ((), stBound) =>
+      assertBool "(b) the LIVE bind puts the parked holder back on a run queue"
+        (runnableOnSomeCore stBound serverTid)
+      assertBool "(b) ...on its own home core, which is the core the footprint declares"
+        (decide ((stBound.scheduler.runQueueOnCore core2).contains serverTid)
+          && decide ((SchedLockId.runQueue ⟨determineTargetCore parked serverTid⟩,
+                Concurrency.AccessMode.write)
+              ∈ schedLockSet_schedContextBindOnCore parked serverTid))
+      assertBool "(b) ...and the binding is the one it was handed"
+        (decide ((stBound.getTcb? serverTid).map (·.schedContextBinding)
+          = some (SchedContextBinding.bound scIdOther)))
+      assertBool "(b) NEGATIVE: the RETIRED queued-only reading leaves it on no core at all"
+        (!runnableOnSomeCore (retiredBindPlacement parked serverTid) serverTid
+          && !runningOnSomeCore (retiredBindPlacement parked serverTid) serverTid)
+      -- CONTROL: on a thread that was already queued the two readings agree, so
+      -- the negative above is about the parked shape rather than about the
+      -- retired reading being inert.
+      assertBool "(b) CONTROL: on the QUEUED holder the two readings agree — both re-bucket"
+        (let stQ := stQueuedHolderReclaim
+         runnableOnSomeCore (retiredBindPlacement stQ serverTid) serverTid
+           && runnableOnSomeCore stQ serverTid)
+  | _, _ => assertBool "(b) the spare reservation's id and the holder's id are valid" false
+
+-- ----------------------------------------------------------------------------
 -- §3.27 (WS-RR RR8.12, Cut C3b-iv, `v0.35.170`): the reclaim's MIGRATION is a
 -- declared footprint member.
 --
@@ -2803,6 +2894,7 @@ def runSmpCancellationChecks : IO Unit := do
   runFrameHeadReclaimChecks
   runReplenishDestinationChecks
   runReclaimCompleteSuspendChecks
+  runBindPlacesParkedChecks
   runReclaimMigrationFootprintChecks
   IO.println "SmpCancellationSuite: all checks passed."
 

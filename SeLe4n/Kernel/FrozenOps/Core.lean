@@ -577,6 +577,45 @@ def frozenWriteTcbRebucketed (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
         .ok (frozenRebucketRunnable st' tid after.boostedPriority)
       else .ok st'
 
+/-- **WS-RR RR8.12 Cut B2 (`v0.35.182`): the frozen mirror of the bind's
+placement guard.**
+
+`SchedContextOps.bindPlacesParkedThread`'s counterpart, clause for clause, with
+the placement test in this surface's own vocabulary: a frozen state has no
+per-core run queues and no per-core current slot, so "on no scheduler slot" is
+`¬ frozenQueuedAnywhere`.  That covers the running case too, because frozen
+dispatch is `current := some tid` with the thread **left in its bucket**
+(`v0.35.134`) — a frozen current thread is queued, which is why this needs no
+`current` conjunct and why adding one would be a condition no state can witness.
+
+The other two conjuncts read the **live** `TCB` fields: `FrozenKernelObject.tcb`
+carries `SeLe4n.Model.TCB` and `Model.freeze` copies it verbatim, so "blocked in
+IPC" and "suspended" are the same questions on both surfaces. -/
+def frozenBindPlacesParkedThread (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Bool :=
+  !frozenQueuedAnywhere st tid && tcb.ipcState == .ready
+    && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
+
+/-- **Cut B2**: write a bound TCB, re-bucketing it if it was queued and
+**placing** it if it was parked and runnable.
+
+`frozenWriteTcbRebucketed`'s bind-specific sibling, and deliberately not a
+widening of it: the other two callers of that writer are priority writes
+(`updatePipBoostOnCore`'s and `migrateRunQueueBucketOnCore`'s mirrors), and a
+priority write must not make a parked thread schedulable — only a bind, which
+hands the thread a reservation, may.  Both arms call `frozenRebucketRunnable`,
+which drops `tid` from every bucket (a no-op when it is in none) and appends it
+to the one `newPrio` names, so the placement and the re-bucket are one write with
+two admissions rather than two writes. -/
+def frozenWriteTcbBoundPlaced (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (after : TCB) : Except KernelError FrozenSystemState :=
+  match frozenWithObjectStored st tid.toObjId (.tcb after) with
+  | .error e => .error e
+  | .ok st' =>
+      if frozenQueuedAnywhere st' tid || frozenBindPlacesParkedThread st' tid after then
+        .ok (frozenRebucketRunnable st' tid after.boostedPriority)
+      else .ok st'
+
 -- ============================================================================
 -- **Frozen priority inheritance** (PR #895 review round 15)
 -- ============================================================================

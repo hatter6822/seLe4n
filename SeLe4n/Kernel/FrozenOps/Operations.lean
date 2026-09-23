@@ -1495,7 +1495,16 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
               -- the live one's value, not a frozen-specific reading of it.
               -- Without it a bind could raise a queued thread's band and
               -- `frozenSchedule` would keep selecting it at the old one.
-              match frozenWriteTcbRebucketed st1 threadId updatedTcb with
+              --
+              -- **WS-RR RR8.12 Cut B2 (`v0.35.182`)**: and it **places** a parked
+              -- runnable thread, which is the live bind's own new arm and
+              -- seL4-MCS's `SCHED_ENQUEUE` tail.  `frozenWriteTcbBoundPlaced` is
+              -- the bind-specific writer rather than a widening of
+              -- `frozenWriteTcbRebucketed`: the other callers of that one are
+              -- priority writes, and a priority write must not make a parked
+              -- thread schedulable — only a bind, which hands it a reservation,
+              -- may.
+              match frozenWriteTcbBoundPlaced st1 threadId updatedTcb with
               | .ok st2 => .ok ((), st2)
               | .error e => .error e
             | .error e => .error e

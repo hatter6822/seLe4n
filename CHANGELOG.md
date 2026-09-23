@@ -1,3 +1,90 @@
+## v0.35.182 — WS-RR RR8.12 Cut B2: a bind places a parked runnable thread
+
+seL4-MCS's `schedContext_bindTCB` ends in
+`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }` (read at
+`13.0.0`); this kernel's `schedContextBind` re-bucketed only a thread **already
+on a run queue**, so a runnable thread on none kept a reservation it could never
+spend — `chooseThreadOnCore` selects exclusively from `runQueueOnCore` and never
+scans ready TCBs, which makes that permanent.
+
+That closes the recovery `v0.35.158` itself names.  Cut B1 parks the holder a
+donation reclaim unbinds — `.ready`, `.unbound`, on no core — precisely so it
+stops running on nobody's budget, and says its manager recovers it *"by a
+`.tcbSuspend` then a `.tcbResume` today, and by a bind once the bind half
+lands"*.  This is that half.
+
+### The guard, and why each conjunct is there
+
+`bindPlacesParkedThread` is three tests, each excluding a thread a bind must
+**not** place: `placedCoreOf? = none` (a queued thread is re-bucketed by the
+existing arm; a *current* one is running, and enqueuing it would put it in a run
+queue and on a processor at once), `ipcState = .ready` (a blocked thread is owed
+a wake by its rendezvous, and the bind explicitly supports binding a blocked
+thread), and `threadState ≠ .Inactive` (a suspended thread is `.tcbResume`'s).
+
+The third reads the **stored** flag and deliberately not `inferThreadState`,
+which answers `.Inactive` for *any* unplaced, unblocked thread — which a parked
+thread is by definition, so the inferred reading would refuse exactly the shape
+the guard exists to admit.  Measured rather than reasoned: the live parked holder
+carries `.Ready` (`tests/SmpCancellationSuite.lean` §3.26b).
+
+### The footprint does not move, and that is the declaration paying off
+
+`schedLockSet_schedContextBindOnCore`'s run segment is
+`[determineTargetCore st tid]` — the bound thread's home core, which is the core
+the placement inserts on and the core the re-bucket already wrote.  Its own
+docstring said closing this divergence *"widens the run segment"*; it did not,
+because the declaration was written for the **operation** rather than for the
+branch it happened to take.  Both that docstring and the coverage theorem's are
+corrected.
+
+### The frozen mirror is swept in the same cut
+
+`frozenWriteTcbBoundPlaced` is the bind-specific writer, and deliberately **not**
+a widening of `frozenWriteTcbRebucketed`: that one's other callers are priority
+writes, and a priority write must not make a parked thread schedulable — only a
+bind, which hands the thread a reservation, may.  `frozenBindPlacesParkedThread`
+is the guard's counterpart, with the placement test in the frozen surface's own
+vocabulary (`¬ frozenQueuedAnywhere`, which covers the running case because
+frozen dispatch leaves the thread in its bucket).
+
+### What is measured, and how it discriminates
+
+Every mutation of the production side fails to **elaborate** rather than failing
+a suite — the three `bindPlacesParkedThread_of_*` refusals and the payoff
+`schedContextBind_places_parked_thread` pin each conjunct, and
+`schedContextBind_confinedToCores` pins the core the placement writes.  So both
+witnesses are differentials: `SmpCancellationSuite` §3.26b and `FrozenOpsSuite`
+FO-050 each compute the **retired** queued-only reading beside the live one and
+assert it leaves the thread on nothing, with a control on an already-queued
+thread where the two agree.
+
+One mechanical note: the first mutation written against the placement changed the
+queue it **reads** rather than the core it **writes**, and was inert — a mutation
+must revert the defect, not merely edit the code.
+
+### What this does NOT close
+
+The passive/legacy split (`.unbound` meaning both "MCS-passive" and "legacy
+time-sliced") is still WS-CB's, and so is the `.replyRecv` never-donated arm.
+The register's WS-CB row keeps both.
+
+### Files
+
+- `SeLe4n/Kernel/SchedContext/Operations.lean` — the guard, its three refusals,
+  its congruence, the placement arm and the payoff.
+- `SeLe4n/Kernel/FrozenOps/{Core,Operations}.lean` — the frozen guard and writer.
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean`,
+  `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean`,
+  `SeLe4n/Kernel/SyscallSchedFootprint.lean` — the bundle, confinement and
+  replenish proofs extended to the third arm.
+- `tests/SmpCancellationSuite.lean` §3.26b, `tests/FrozenOpsSuite.lean` FO-050.
+- `scripts/test_tier3_invariant_surface.sh` — fourteen anchors.
+
+The golden trace is **byte-identical**: the placement fires on no scenario it
+drives, which is the measurement that the change is confined to the shape it is
+about.
+
 ## v0.35.181 — WS-RR RR8.12 Cut C6h: the syscall seam brackets on the scheduler domain
 
 `UncoveredLockDomain.syscallSeamSchedulerDomain` is **deleted**.  It recorded

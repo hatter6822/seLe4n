@@ -214,11 +214,17 @@ theorem schedLockSet_setMCPriorityOnCore_coversWrites (st st' : SystemState)
 
 /-- **Cut C6a**: `.schedContextBind`'s footprint covers its writes.
 
-The bind moves no replenishment, which is the divergence from seL4-MCS this
-tree's register keeps (`schedContext_bindTCB` ends in `SCHED_ENQUEUE`): it
-re-buckets only a thread already queued on its home core.  So the replenish
-clause is a whole-state frame today, and the row that closes that divergence is
-the one that will have to widen this footprint. -/
+The bind moves no replenishment — a reservation changes owner, and its
+replenishments were already on the home core the binding names — so the
+replenish clause is a whole-state frame, on all **three** of the arm's branches
+since WS-RR RR8.12 Cut B2 (`v0.35.182`) made it place a parked runnable thread.
+
+That cut is the one this docstring used to say *"will have to widen this
+footprint"*, and it did not: the run segment is
+`[determineTargetCore st tid]`, which is the core the placement inserts on and
+the core the re-bucket already wrote.  A declaration written for the operation
+rather than for the branch it happened to take is what makes a behavioural
+widening free here. -/
 theorem schedLockSet_schedContextBindOnCore_coversWrites (st st' : SystemState)
     (vScId : SeLe4n.ValidObjId) (vThreadId : SeLe4n.ValidThreadId) (S : SchedLockSet)
     (hObjInv : st.objects.invExt)

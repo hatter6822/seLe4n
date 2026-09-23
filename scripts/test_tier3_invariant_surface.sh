@@ -8533,7 +8533,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteBasePriority[^\n]*(\n([ \t][^\n]*)?)*none => frozenWriteTcbRebucketed st targetTid tcb." SeLe4n/Kernel/FrozenOps/Operations.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 threadId updatedTcb" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# The third asker reaches the same mechanics one hop further out since Cut B2
+# (`v0.35.182`): a bind may ALSO place a parked runnable thread, which a priority
+# write must not, so `frozenSchedContextBind` takes the bind-specific
+# `frozenWriteTcbBoundPlaced`.  Both hops of that chain -- the bind's call and
+# that writer's own composition of `frozenQueuedAnywhere` and
+# `frozenRebucketRunnable` -- are pinned in Cut B2's block below, beside the
+# negative refusing the retired direct call, so this claim still reaches its
+# third asker and the pair is not stated twice.
 # **Test a gate by breaking the relation, not by deleting the token** -- and a
 # negative that is not DECLARATION-BOUNDED is a presence check.  The first draft of
 # the two store negatives below was written file-wide and fired on the clean tree:
@@ -19901,5 +19908,40 @@ run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_sched
 run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_object' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # The inventory falls from two to one, measured rather than described.
 run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with an owner' tests/SmpInformationFlowSuite.lean
+
+# ============================================================================
+# WS-RR RR8.12 Cut B2 (`v0.35.182`): a bind PLACES a parked runnable thread.
+# ============================================================================
+#
+# seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE`; this kernel's bind
+# re-bucketed only a thread already queued, so `v0.35.158`'s parked holder — the
+# recovery that cut names — could never be recovered by binding it a reservation.
+run_check "INVARIANT" rg -n '^def bindPlacesParkedThread' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.ipcState == .ready" SeLe4n/Kernel/SchedContext/Operations.lean'
+# RELATION: the bind's own body reads that guard, on the state its writes reach.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb then" SeLe4n/Kernel/SchedContext/Operations.lean'
+# ...and the placement uses the SAME insert priority as the re-bucket arm, so the
+# two cannot disagree about which bucket a bound thread belongs in.
+run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The payoff, and the three refusals that keep the guard from admitting anything.
+run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_placed' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_blocked' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_inactive' SeLe4n/Kernel/SchedContext/Operations.lean
+# The FROZEN mirror carries it, through a BIND-SPECIFIC writer: widening
+# `frozenWriteTcbRebucketed` would let a priority write place a parked thread.
+run_check "INVARIANT" rg -n '^def frozenBindPlacesParkedThread' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenWriteTcbBoundPlaced' SeLe4n/Kernel/FrozenOps/Core.lean
+# RELATION, not presence: the bind-specific writer is the SHARED mechanics under a
+# widened admission, so `v0.35.101`'s "one re-bucket, three askers" still holds of
+# it -- a second fold spelled inline here would be that cut's own defect returning.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid .. frozenBindPlacesParkedThread st. tid after" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenRebucketRunnable st. tid after.boostedPriority" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbBoundPlaced st1 threadId updatedTcb" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 threadId" SeLe4n/Kernel/FrozenOps/Operations.lean'
+# Measured on both surfaces, each against the RETIRED queued-only reading.
+run_check "INVARIANT" rg -n 'B2: a bind places the parked holder' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'the RETIRED queued-only reading leaves it on no core at all' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'FO-050 NEGATIVE: the RETIRED frozen writer leaves it in none' tests/FrozenOpsSuite.lean
 
 finalize_report
