@@ -1,3 +1,76 @@
+## v0.35.194 — WS-RR RR8.16: the citation gate's two domains derived, where two recognised sets stood in for them
+
+**A recognised set is not a derived set, twice in one gate.**
+`check_claim_evidence_citations.py` holds the index's claim→evidence rows to the
+tree, and both of its domains were hand-drawn.  Its citation pattern required an
+**underscore**, with a stated reason — single words like `cell` collide with
+English and would make the gate noise — and Lean's convention is snake_case for
+`theorem`s and **lowerCamelCase for `def`s**, so every definition name in the
+tree sat outside the gate while every theorem name sat inside it.  Its file
+domain was one path by name, so a dead *theorem* name — squarely inside the old
+pattern — passed everywhere else.  Both directions are fail-**open**, and both
+had produced a live instance (`donationHeadPush` cited as evidence and declared
+nowhere, WS-HP HP7; three dead `lockSet_*` citations in `CLAUDE.md`, `v0.35.50`).
+
+**The column split is what makes the widening affordable**, and it is the
+derivation register row 141 specified rather than a pattern change.
+`EVIDENCE_COLUMNS` is read off each table's header row, so a name must resolve in
+*Artefact* or *Check it with* — where the row says what discharges the claim and
+how to check it — and a claim's own prose may name a retired symbol freely, since
+a retirement notice is a claim about absence.  With the split the pattern becomes
+the union of the two conventions this tree's declarations actually use, which
+brings **120** Lean definition names into the domain, and the single-word
+exclusion survives for exactly the reason it was written: inside an evidence cell
+that happens to be prose, `decide` and `False` are English.  Widening without the
+split would have needed eight hand exemptions for Lean tactics, hypothesis
+binders and English words — the enumeration this project retires.
+
+**The exemption table falls from 18 entries to 4, and is reconciled both ways.**
+Thirteen of the eighteen existed only because prose was in scope; an exemption no
+evidence column cites now **fails**, because an exemption nobody reconciles reads
+exactly like coverage.  What remains is one seL4 syscall name, one Lean tactic,
+one retired theorem a row names in order to say it is gone, and one hypothesis
+binder — each a shape that resolves to nothing by construction.
+
+**The file axis is derived too**: every tracked Markdown file holding a table
+that *declares* an evidence column, which is two today and checks the third on
+the day it lands.  `CHANGELOG.md` and `docs/dev_history/` are excluded as
+**records of past versions** — a record must be free to name what has since been
+retired, which is the same reasoning that keeps claim prose out — and the
+exclusions are reconciled, so one matching no tracked path fails rather than
+narrowing the scan silently.
+
+**Four further fail-closed conditions**, each because it reads exactly like a
+clean tree: an index that declares no evidence column at all (a renamed header
+would otherwise silence the whole scan), a row whose cell count does not match
+its header (the gate cannot say which column a name sits in, and the index really
+does carry an escaped pipe), an unreadable index, and a run that finds no
+citation anywhere.  The gate now prints its own scope — the citations and files
+it checked, and the **73** prose citations it deliberately does not — because
+"out of scope" reads as "none" when it is not said.
+
+**24 witness cases, nine of them mutation-verified**, each reverting one domain
+narrowing: the snake_case-only pattern, the whole-file column scan, the
+one-path file list, the missing exemption reconciliation, the skipped ragged
+row, the absent header check, the absent history reconciliation, the scanned
+history, and an escape-blind cell split.  The decisive pair is **one dead name in
+two columns** — the citation survives, only its column moves.  **Two fixtures had
+to be strengthened because a neighbouring assertion was rescuing them**: with the
+ragged row skipped and with the header check gone, the run still failed, as *no
+citations found at all* — the right verdict for the wrong reason, which reads as
+coverage.  Each now sits beside a well-formed row (or a second intact file) so
+only the assertion it is about can decide it.  The mutation run said so; reading
+the cases would not have.
+
+**And the closure phase read the register against the tree, which is what it is
+for.**  Register row 71 — the reclaim's holder wake — has recorded **CLOSED
+`v0.35.84`** in its body since that cut, and still carried an open
+`Closure target: RR8.9` and no strikethrough a hundred and nine versions later.
+A closed row wearing an open target is a status claim a later cut must sweep, and
+nothing but reading the table against itself finds one.  Swept.
+
+Register rows 141 and 71 closed; RR8.16's residue list goes from five to eight.
+
 ## v0.35.193 — WS-RR RR8.8: the single removal's projection lemma, and what a reduction to a predicate does not connect
 
 **A reduction to a predicate is not a connection to the operation.**  WS-OD

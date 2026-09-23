@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "1064e9e29ee9d081d18512eb846fcc11192032cc",
-      "tree_sha": "9dcb3e879c828cc7f813f606030a9dc360072127",
-      "committed_at_utc": "2026-09-23T12:37:32+00:00"
+      "commit_sha": "0b48cce5d8d3de23a797db837d475eecc3b6b56d",
+      "tree_sha": "e605d45c10a5eb1779dcea0526414908edaad324",
+      "committed_at_utc": "2026-09-23T13:26:07+00:00"
     }
   },
   "source_sync": {
@@ -24,7 +24,7 @@
     "declaration_count": 22804
   },
   "readme_sync": {
-    "version": "0.35.193",
+    "version": "0.35.194",
     "lean_toolchain": "v4.28.0",
     "production_files": 339,
     "production_loc": 413049,

@@ -15203,6 +15203,28 @@ run_check "INVARIANT" rg -n -U 'for name in RUST_DECL\.findall\(view\(rel\)\):' 
 # certify a citation.
 run_negative_check "INVARIANT" rg -n -U 'LEAN_DECL\.finditer\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
 run_negative_check "INVARIANT" rg -n -U 'RUST_DECL\.findall\(_read\(root, rel\)\)' scripts/check_claim_evidence_citations.py
+# WS-RR RR8.16 (`v0.35.194`): the gate's DOMAIN is derived on both axes, where
+# two recognised sets used to stand in for it -- a pattern that required an
+# underscore (so every lowerCamelCase Lean `def` was outside the gate) and a
+# file list of one.
+run_check "INVARIANT" rg -n -U 'EVIDENCE_COLUMNS = frozenset\(\{"artefact", "check it with"\}\)' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -n -U 'return bool\(_SNAKE_CASE\.match\(name\) or _LOWER_CAMEL\.match\(name\)\)' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -n -U 'for rel in evidence_files\(root\):' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -n -U 'HISTORY_PATHS: dict\[str, str\] = \{' scripts/check_claim_evidence_citations.py
+# ...and the exemption table is reconciled in the direction that catches a
+# stale entry, which is the one an exemption list silently fails in.
+run_check "INVARIANT" rg -n -U 'for name in sorted\(set\(exempt\) - used_exemptions\):' scripts/check_claim_evidence_citations.py
+# NEGATIVE: the superseded domains.  Each keeps the gate's shape and narrows
+# what it can see, which is why they are anchored rather than left to a reader.
+run_negative_check "INVARIANT" rg -n -U 'for rel in \[INDEX\]:' scripts/check_claim_evidence_citations.py
+run_negative_check "INVARIANT" rg -n -U 'columns = list\(range\(len\(header\)\)\)' scripts/check_claim_evidence_citations.py
+# The witness suite decides the column split in BOTH directions with one dead
+# name, and the widening against its own control.
+run_check "INVARIANT" rg -F -n 'a dead name in the CLAIM column is out of scope' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -F -n 'the SAME name in the Artefact column fails' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -F -n 'a renamed camelCase' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -F -n 'a record of past versions may name a retired symbol' scripts/check_claim_evidence_citations.py
+run_check "INVARIANT" rg -F -n 'an exemption no evidence column cites fails' scripts/check_claim_evidence_citations.py
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && cat > /tmp/mmio_identity_probe.lean <<EOF
 import SeLe4n.Platform.Boot
