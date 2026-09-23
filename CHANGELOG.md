@@ -1,3 +1,84 @@
+## v0.35.187 — a retyped object carries the slot's identity
+
+The improvement `v0.35.185` registered while measuring what its `hIdentity`
+hypothesis costs, implemented rather than documented.
+
+A TCB, a SchedContext and a Reply each carry their own id in a field —
+`TCB.tid`, `SchedContext.scId`, `Reply.replyId` — while the object store is keyed
+by `ObjId`, so the two can disagree.  `PlatformConfig.wellFormed`'s
+`embeddedIdentitiesMatchSlots` has refused that at **boot** since PR #889 review
+round 8, and that check's own docstring states the hazard in terms: *a
+SchedContext at slot 9 carrying `scId = 12` would have its budget replenished on
+whatever object 12 is*.
+
+**Nothing refused it at the runtime**, and `objectOfKernelType` — the one builder
+the live retype installs through — stamps the reserved **sentinel** into all
+three.  So a successful retype broke at the runtime exactly the agreement the
+boot enforces: three of the four artefacts agreed and the fourth was silent.
+
+### The two halves, and why a refusal alone would have been a wall
+
+`KernelObject.embeddedIdentityMatches obj key` is the question — *is this
+object's own embedded identity the key it is stored at* — with **no wildcard**,
+so a kernel object that starts carrying its own id must be classified rather
+than silently answering `true`.  `KernelObject.withIdentity obj key` is the
+answer a caller can give: it writes the identity field and nothing else, which
+`withIdentity_wellFormed`, `withIdentity_objectType` and
+`withIdentity_replacementFresh` state rather than leave to inspection — so the
+new guard costs the payoff pack, the `wellFormed` clauses and the kind-indexed
+facts nothing.
+
+Both retype wrappers read **one named predicate**,
+`retypeReplacementAdmissible` — T5-D's well-formedness *and* the identity
+agreement — rather than a second `if` beside the first.  A named condition
+beside unnamed ones is a subset, and this tree has paid for that shape before
+(`dualQueueRemovalEnabled`, `v0.35.59`); with one predicate a condition added to
+it reaches both wrappers by construction.  The live `.lifecycleRetype` dispatch
+stamps, at all three of the sites that name the replacement (the arm, the
+delegation theorem, and the `syscallDelegates` obligation the arm is pinned
+against), and the trace harness builds what the kernel builds.
+
+### The boot's check and the runtime's guard are one question
+
+`embeddedIdentitiesMatchSlots_iff` says so: the boot's three-way conjunction
+*is* the shared predicate applied per entry.  Stated rather than substituted
+into the definitions — the three per-kind checks have their own place in
+`wellFormedConjuncts`'s diagnostic, so collapsing them would rename a boot
+fault — because what matters is that the two artefacts cannot drift about what
+the question **is**, and a theorem says that where a shared spelling would only
+suggest it.
+
+### What it costs, measured
+
+Nothing on the live tree: the golden trace is byte-identical at 240/240, the
+whole library builds, and `ThreadId.ofObjId` — the third member of a family
+`SchedContextId` and `ReplyId` have always had, and whose absence is why the
+stamping had nothing to call — is new, with the three `toObjId_ofObjId` sections
+that make a stamped identity provably the key it was stamped from.
+
+`tests/SmpIpcSuite.lean` §3.35 is the witness, and its fixtures are the **live
+builder's own output** rather than hand-built objects: the unstamped SchedContext
+and Reply replacements it produces are refused with the guard's own
+`.illegalState`, the stamped ones are accepted with the stored object's own id
+*being* the slot, and an **endpoint** replacement — a kind that carries no
+identity — is accepted unstamped, which is the control that keeps the refusals
+about the identity field rather than about the retype.  Thirteen Tier 3 anchors,
+twelve mutations, all caught; three of them keep every token and stop asking one
+kind, collapse the classified arms into a wildcard, or revert one wrapper to
+well-formedness alone.
+
+### What is still owed, and it is a different claim
+
+`hIdentity` in the retype composites is about the object being **destroyed**, not
+the replacement, so this cut does not retire it.  What would is the store-level
+invariant *every stored object's embedded id is its key* — which the boot
+establishes, the idle enqueue establishes by construction, no transition
+falsifies (nothing writes those three fields) and the retype now establishes —
+proved inductively over every transition.  That is a cut of its own, and the
+register row says so rather than implying this one closed it.
+
+Refs: docs/REGISTERED_DEBT.md table C (the embedded-identity row)
+
 ## v0.35.186 — WS-RR RR8.15: the hand-off check, and the Tier 5 gate that did not decide
 
 RR8.15 is the last thing WS-RR does before recording its own closure, and it is

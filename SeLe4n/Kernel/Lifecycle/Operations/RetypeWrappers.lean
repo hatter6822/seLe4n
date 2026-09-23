@@ -44,6 +44,66 @@ open Internal
 -- WS-H2/S6-C: Safe lifecycle retype wrapper (cleanup + scrub + retype)
 -- ============================================================================
 
+/-- **`v0.35.187`: what a retype requires of its replacement, in ONE place.**
+
+Two conditions, and the second is why this predicate exists rather than a second
+`if` beside the first.
+
+* `wellFormed` — T5-D's defence in depth, with SM6.D's inert-`Reply` clause and
+  `v0.35.184`'s bound-nobody `SchedContext` clause.
+* **the replacement's own embedded identity is the slot it will occupy.**  A
+  TCB, a SchedContext and a Reply each carry their own id in a field while the
+  object store is keyed by `ObjId`, so the two can disagree —
+  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that
+  at **boot** since PR #889 review round 8, and its own docstring states the
+  hazard in terms: *a SchedContext at slot 9 carrying `scId = 12` would have its
+  budget replenished on whatever object 12 is*.  Nothing refused it at the
+  **runtime**, and `objectOfKernelType` — the one builder the live retype
+  installs through — stamps the reserved **sentinel** into all three, so a
+  successful retype broke at the runtime exactly the agreement the boot
+  enforces.
+
+A named predicate rather than two guards because the wrappers are the only
+askers and both must ask the same question: *a named condition beside unnamed
+ones is a subset*, and this tree has paid for that shape before
+(`dualQueueRemovalEnabled`, `v0.35.59`).  `KernelObject.withIdentity` is what
+makes it a discipline a caller can meet rather than a wall; the live dispatch
+stamps with it. -/
+def retypeReplacementAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  newObj.wellFormed objects ∧ newObj.embeddedIdentityMatches target = true
+
+instance (newObj : KernelObject) (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    Decidable (retypeReplacementAdmissible newObj target objects) := by
+  unfold retypeReplacementAdmissible; exact inferInstance
+
+/-- **`v0.35.187`**: a stamped replacement is admissible exactly when it is
+well-formed — so the identity half costs a caller that stamps nothing, which is
+what keeps the guard from refusing valid retypes. -/
+@[simp] theorem retypeReplacementAdmissible_withIdentity (newObj : KernelObject)
+    (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    retypeReplacementAdmissible (newObj.withIdentity target) target objects ↔
+      newObj.wellFormed objects := by
+  simp [retypeReplacementAdmissible]
+
+/-- **`v0.35.187`**: admissibility entails well-formedness, so every existing
+consumer of the T5-D guard reads it off this one. -/
+theorem retypeReplacementAdmissible.wellFormed' {newObj : KernelObject}
+    {target : SeLe4n.ObjId}
+    {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    (h : retypeReplacementAdmissible newObj target objects) :
+    newObj.wellFormed objects := h.1
+
+/-- **`v0.35.187`**: and the identity agreement, which is the half the boot
+check has always had and the runtime did not. -/
+theorem retypeReplacementAdmissible.identity {newObj : KernelObject}
+    {target : SeLe4n.ObjId}
+    {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    (h : retypeReplacementAdmissible newObj target objects) :
+    newObj.embeddedIdentityMatches target = true := h.2
+
 /-- WS-H2/S6-C: Safe lifecycle retype with reference cleanup and memory scrubbing.
     Composes three phases:
     1. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
@@ -71,8 +131,9 @@ def lifecycleRetypeWithCleanup
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate new object well-formedness before proceeding
-    if ¬ newObj.wellFormed st.objects then
+    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
       match st.getObject? target with
@@ -342,8 +403,9 @@ def lifecycleRetypeDirectWithCleanup
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate new object well-formedness before proceeding
-    if ¬ newObj.wellFormed st.objects then
+    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
       match st.getObject? target with
@@ -360,10 +422,10 @@ def lifecycleRetypeDirectWithCleanup
 did**, in one place.
 
 Three facts, and the composite's invariant theorems each need all three: the
-`wellFormed` guard passed (which is what makes `v0.35.184`'s `.schedContext`
-clause a *runtime refusal* rather than a caller obligation), the target held some
-object the cleanup ran on, and the whole of the commit is one `storeObject` on
-the scrubbed post-cleanup state.
+replacement was **admissible** (which is what makes `v0.35.184`'s `.schedContext`
+clause and `v0.35.187`'s identity clause *runtime refusals* rather than caller
+obligations), the target held some object the cleanup ran on, and the whole of
+the commit is one `storeObject` on the scrubbed post-cleanup state.
 
 The `none` arm of the wrapper's own `getObject?` match is unreachable on `.ok`,
 because `lifecycleRetypeDirect` re-asks the same question and answers
@@ -381,7 +443,7 @@ theorem lifecycleRetypeDirectWithCleanup_ok_decompose
     {st st' : SystemState} {authCap : Capability} {target : SeLe4n.ObjId}
     {newObj : KernelObject}
     (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
-    newObj.wellFormed st.objects ∧
+    retypeReplacementAdmissible newObj target st.objects ∧
       ∃ currentObj stClean,
         st.objects[target]? = some currentObj ∧
         lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean ∧

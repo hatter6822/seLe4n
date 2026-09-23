@@ -3713,7 +3713,16 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         fun st => match decodeLifecycleRetypeArgs decoded with
         | .error e => .error e
         | .ok args =>
-            let newObj := objectOfKernelType args.newType args.size
+            -- **`v0.35.187`**: stamp the target slot's identity into the
+            -- replacement.  `objectOfKernelType` builds a TCB, SchedContext
+            -- or Reply carrying the reserved SENTINEL in its own id field,
+            -- and the two retype wrappers now refuse a replacement whose
+            -- embedded identity is not its slot -- the runtime counterpart
+            -- of `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots`,
+            -- whose own docstring states the hazard: an object stored at one
+            -- key and carrying another is read back through the wrong one.
+            let newObj := (objectOfKernelType args.newType args.size).withIdentity
+              args.targetObj
             -- WS-SM SM7.B.11: retyping a live VSpaceRoot frees its whole
             -- address space — the wrapper posts the `.aside1` shootdown
             -- round from the caller's core; non-VSpaceRoot retypes are
@@ -4250,7 +4259,8 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
           simp only [hDec] at hStep
           exact lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_ipcInvariantFull
             st st' _ cap args.targetObj _ hObjInv
-            (objectOfKernelType_replacementFresh args.newType args.size)
+            (objectOfKernelType_withIdentity_replacementFresh args.newType args.size
+              args.targetObj)
             (hPack.retypeDetached args hSy hDec) hInv hStep
     all_goals try cases hStep
   case vspaceMap =>
@@ -6506,7 +6516,7 @@ theorem dispatchWithCap_lifecycleRetype_delegates
     dispatchWithCap decoded tid gate cap =
       fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
         (determineExecutingCore st tid) cap args.targetObj
-        (objectOfKernelType args.newType args.size) st := by
+        ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st := by
   simp [dispatchWithCap, dispatchCapabilityOnly, hSyscall, hTarget, hDecode]
 
 /-- WS-K-D/S6-A/T6-C/X2-E / WS-SM SM7.B.9 / WS-SM SM7.F.4(a)+(b)(ii): When
@@ -8726,7 +8736,7 @@ def syscallDelegates : SyscallId → Prop
         dispatchWithCap decoded tid gate cap =
           fun st => lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache
             (determineExecutingCore st tid) cap args.targetObj
-            (objectOfKernelType args.newType args.size) st
+            ((objectOfKernelType args.newType args.size).withIdentity args.targetObj) st
   | .vspaceMap =>
       ∀ (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (gate : SyscallGate)
         (cap : Capability) (objId : SeLe4n.ObjId)

@@ -1008,6 +1008,45 @@ def embeddedIdentitiesMatchSlots (config : PlatformConfig) : Bool :=
   tcbIdentitiesMatchSlots config && schedContextIdentitiesMatchSlots config &&
     replyIdentitiesMatchSlots config
 
+/-- **`v0.35.187`**: per entry, the three per-kind checks together are the shared
+question — each is that question restricted to one kind and vacuous on the
+others. -/
+private theorem entryIdentity_iff (entry : ObjectEntry) :
+    entry.obj.embeddedIdentityMatches entry.id = true ↔
+      (((match entry.obj with | .tcb t => t.tid.toObjId == entry.id | _ => true) = true) ∧
+       ((match entry.obj with
+         | .schedContext sc => sc.scId.toObjId == entry.id | _ => true) = true) ∧
+       ((match entry.obj with
+         | .reply r => r.replyId.toObjId == entry.id | _ => true) = true)) := by
+  cases entry.obj <;> simp [KernelObject.embeddedIdentityMatches]
+
+/-- **`v0.35.187`: the boot check and the retype guard ask ONE question.**
+
+`KernelObject.embeddedIdentityMatches` is that question — *is this object's own
+embedded identity the key it is stored at* — and it is what
+`retypeReplacementAdmissible` reads at the runtime.  This theorem says the
+boot's three-way conjunction above is the same predicate, applied per entry.
+
+Stated rather than substituted into the definitions: the three per-kind checks
+have their own consumers and their own place in `wellFormedConjuncts`'s
+diagnostic, so collapsing them would rename a boot fault.  What matters is that
+the two artefacts cannot drift about *what the question is*, and a theorem says
+that where a shared spelling would only suggest it. -/
+theorem embeddedIdentitiesMatchSlots_iff (config : PlatformConfig) :
+    embeddedIdentitiesMatchSlots config = true ↔
+      ∀ entry ∈ config.initialObjects,
+        entry.obj.embeddedIdentityMatches entry.id = true := by
+  simp only [embeddedIdentitiesMatchSlots, tcbIdentitiesMatchSlots,
+    schedContextIdentitiesMatchSlots, replyIdentitiesMatchSlots,
+    Bool.and_eq_true, List.all_eq_true]
+  constructor
+  · rintro ⟨⟨hT, hS⟩, hR⟩ entry hMem
+    exact (entryIdentity_iff entry).mpr ⟨hT entry hMem, hS entry hMem, hR entry hMem⟩
+  · intro h
+    exact ⟨⟨fun e hM => ((entryIdentity_iff e).mp (h e hM)).1,
+            fun e hM => ((entryIdentity_iff e).mp (h e hM)).2.1⟩,
+           fun e hM => ((entryIdentity_iff e).mp (h e hM)).2.2⟩
+
 /-- PR #889 review round 18: the fifth `wellFormed` conjunct — the config
     leaves room for everything a successful boot installs beyond it.
 

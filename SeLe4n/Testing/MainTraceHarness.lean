@@ -1677,7 +1677,12 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs retypeDecoded with
   | .error e => IO.println s!"[KSD-004] lifecycleRetype decode error: {reprStr e}"
   | .ok retypeArgs =>
-      let newObj := SeLe4n.Kernel.objectOfKernelType retypeArgs.newType retypeArgs.size
+      -- `v0.35.187`: the harness builds the replacement the live dispatch
+      -- builds, stamped identity included -- the wrappers refuse an
+      -- unstamped one, so an unstamped fixture would measure the refusal
+      -- rather than the retype.
+      let newObj := (SeLe4n.Kernel.objectOfKernelType retypeArgs.newType
+        retypeArgs.size).withIdentity retypeArgs.targetObj
       let retypeCap : SeLe4n.Model.Capability := {
         target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
         rights := AccessRightSet.ofList [.read, .write, .retype]

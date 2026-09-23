@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runRetypeFootprintChecks\n  runRetypeReplacementGuardChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runRetypeFootprintChecks\n  runRetypeReplacementGuardChecks\n  runRetypeIdentityStampChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -10653,11 +10653,15 @@ run_check "INVARIANT" bash -lc 'rg -F -n "| .reply r => r.caller = none" SeLe4n/
 run_negative_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext _ => True" SeLe4n/Model/Object/Structures.lean'
 # RELATION: EACH retype wrapper checks `wellFormed` and commits nothing when it
 # fails -- which is what makes the clause above a REFUSAL rather than a comment.
-# Scoped per wrapper, because a single tree-wide pattern is satisfied by whichever
-# of the two still carries the guard, which is a presence check.  Mutation: keep
-# the guard and disable it in either wrapper.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . newObj\.wellFormed st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . newObj\.wellFormed st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+#
+# `v0.35.187` RETIRED the spelling this pair pinned: both wrappers now read the
+# named `retypeReplacementAdmissible`, whose FIRST conjunct is `wellFormed` and
+# whose second is the identity agreement.  The claim is unchanged and is pinned
+# by three anchors in that cut's block below -- each wrapper reading the
+# predicate, scoped per wrapper for the reason this comment gives, plus the
+# predicate's own body -- whose composition IS this pair.  Repointing the pair
+# here would be the same relation asserted twice, so it is deleted rather than
+# rewritten, with this tombstone naming what carries it.
 # The §3.34 witness: the pristine replacement is accepted, the claiming one is
 # refused with the guard's own error, and the RETIRED guard stores it and
 # falsifies the invariant -- with a CONTROL on the pristine replacement, so the negative is
@@ -10670,6 +10674,52 @@ run_check "INVARIANT" rg -n 'CONTROL: \.\.\.and the two replacements differ in .
 # NEGATIVE: the retired guard is spelled in the suite that refutes it and nowhere
 # else.  Mutation: declare a `retiredWellFormedRetype` under `SeLe4n/`.
 run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
+
+# ---------------------------------------------------------------------------
+# Register row (`v0.35.187`): a retyped object carries the SLOT's identity.
+#
+# A TCB, a SchedContext and a Reply each carry their own id in a field while the
+# object store is keyed by `ObjId`, so the two can disagree.
+# `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that
+# at BOOT since PR #889 review round 8, and its own docstring states the hazard:
+# an object stored at one key and carrying another is read back through the
+# wrong one.  Nothing refused it at the RUNTIME, and `objectOfKernelType` -- the
+# one builder the live retype installs through -- stamps the reserved SENTINEL
+# into all three.
+# ---------------------------------------------------------------------------
+
+# One question, with NO wildcard: a kernel object that starts carrying its own
+# id must be classified rather than silently answering `true`.  Mutation: fold
+# the five identity-free kinds into a `_` arm and a new one inherits it.
+run_check "INVARIANT" rg -n '^def embeddedIdentityMatches \(obj : KernelObject\) \(key : SeLe4n\.ObjId\) : Bool :=$' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def embeddedIdentityMatches[^\n]*(\n([ \t][^\n]*)?)*\| \.tcb t => t\.tid\.toObjId == key\n *\| \.schedContext sc => sc\.scId\.toObjId == key\n *\| \.reply r => r\.replyId\.toObjId == key" SeLe4n/Model/Object/Structures.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def embeddedIdentityMatches[^\n]*(\n([ \t][^\n]*)?)*\| _ => true" SeLe4n/Model/Object/Structures.lean'
+# The stamping, and that it is the identity field ALONE -- what makes the guard
+# free of every property the payoff pack reads.
+run_check "INVARIANT" rg -n '^def withIdentity \(obj : KernelObject\) \(key : SeLe4n\.ObjId\) : KernelObject :=$' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem withIdentity_replacementFresh ' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# RELATION: EACH retype wrapper reads the named admissibility predicate, which is
+# the `wellFormed` guard AND the identity one.  Scoped per wrapper declaration,
+# because one tree-wide pattern is satisfied by whichever of the two still
+# carries it -- the lesson `v0.35.184` recorded on the same two wrappers.
+# Mutation: revert either wrapper to `newObj.wellFormed st.objects`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . retypeReplacementAdmissible newObj target st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . retypeReplacementAdmissible newObj target st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+# ...and the predicate IS the conjunction, not one half wearing the name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def retypeReplacementAdmissible[^\n]*(\n([ \t][^\n]*)?)*newObj\.wellFormed objects . newObj\.embeddedIdentityMatches target = true" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+# RELATION: the live dispatch STAMPS, so the refusal is a discipline a caller can
+# meet rather than a wall.  Mutation: drop `.withIdentity` at any of the three
+# sites and the negative below fires.
+run_check "INVARIANT" rg -F -n '(objectOfKernelType args.newType args.size).withIdentity' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -F -n 'objectOfKernelType args.newType args.size) st' SeLe4n/Kernel/API.lean
+# The boot's check and the runtime's guard are ONE question, said by a theorem
+# rather than suggested by a shared spelling.
+run_check "INVARIANT" rg -n '^theorem embeddedIdentitiesMatchSlots_iff ' SeLe4n/Platform/Boot.lean
+# The witness: the unstamped replacement the live builder produces is REFUSED,
+# the stamped one is accepted and its own id IS the slot, and an identity-free
+# kind is accepted either way -- so the refusal is about the field.
+run_check "INVARIANT" rg -n '^private def runRetypeIdentityStampChecks : IO Unit := do$' tests/SmpIpcSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeIdentityStampChecks[^\n]*(\n([ \t][^\n]*)?)*NEGATIVE: the unstamped SchedContext replacement is refused[^\n]*(\n([ \t][^\n]*)?)*PAYOFF: the slot holds a context whose own .scId. IS the slot[^\n]*(\n([ \t][^\n]*)?)*CONTROL: an unstamped endpoint replacement is accepted" tests/SmpIpcSuite.lean'
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.15 (`v0.35.186`): the Tier 5 gate's central comparison DECIDES.

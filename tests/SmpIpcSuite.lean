@@ -5292,6 +5292,102 @@ private def runRetypeReplacementGuardChecks : IO Unit := do
              && { a with boundThread := some donServer } == b
        | _, _ => false)
 
+/-! ### §3.35 (`v0.35.187`) — a retyped object carries the slot's identity
+
+A TCB, a SchedContext and a Reply each carry their own id in a field while the
+object store is keyed by `ObjId`, so the two can disagree.
+`PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that at
+**boot** since PR #889 review round 8; nothing refused it at the **runtime**, and
+`objectOfKernelType` — the one builder the live retype installs through — stamps
+the reserved **sentinel** into all three.  So a successful retype broke at the
+runtime exactly the agreement the boot enforces.
+
+The fixtures are the live builder's own output, unstamped and stamped, so the
+measurement is of the kernel's replacement rather than of a hand-built one. -/
+
+/-- The live builder's SchedContext replacement, **unstamped** — it carries
+`SchedContextId.sentinel`, which is not the slot the retype targets. -/
+private def unstampedScReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .schedContext 0
+
+/-- The same replacement with the slot's identity stamped in — the live dispatch's
+own `withIdentity`, so this is what the kernel now builds. -/
+private def stampedScReplacement : KernelObject :=
+  (SeLe4n.Kernel.objectOfKernelType .schedContext 0).withIdentity donEp
+
+/-- And the Reply pair, because the field differs and the guard must see both. -/
+private def unstampedReplyReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .reply 0
+
+private def stampedReplyReplacement : KernelObject :=
+  (SeLe4n.Kernel.objectOfKernelType .reply 0).withIdentity donEp
+
+/-- An endpoint carries no identity of its own, so it is admissible unstamped —
+the control that keeps the refusals below about the identity field rather than
+about the retype. -/
+private def endpointReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .endpoint 0
+
+private def runRetypeIdentityStampChecks : IO Unit := do
+  IO.println "--- §3.35 (`v0.35.187`): a retyped object carries the slot's identity ---"
+  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  -- (a) setup, MEASURED: the live builder stamps the reserved sentinel, and the
+  -- slot the retype targets is not it.
+  assertBool "(a) setup: the live builder's SchedContext carries the SENTINEL id"
+    (match unstampedScReplacement with
+     | .schedContext sc => sc.scId == SchedContextId.sentinel | _ => false)
+  assertBool "(a) setup: ...and the live builder's Reply does too"
+    (match unstampedReplyReplacement with
+     | .reply r => r.replyId == ReplyId.sentinel | _ => false)
+  assertBool "(a) setup: the target slot is not the sentinel"
+    (donEp != SeLe4n.ObjId.sentinel)
+  -- (b) NEGATIVE (the defect): the unstamped replacement is REFUSED, and with the
+  -- guard's own error, so nothing is committed.
+  assertBool "(b) NEGATIVE: the unstamped SchedContext replacement is refused"
+    (liveRetypeInto stEp donEp unstampedScReplacement).isNone
+  assertBool "(b) NEGATIVE: ...with `.illegalState`, the admissibility guard's own arm"
+    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp
+        unstampedScReplacement stEp with
+     | .error e => e == KernelError.illegalState | .ok _ => false)
+  assertBool "(b) NEGATIVE: ...and so is the unstamped Reply replacement"
+    (liveRetypeInto stEp donEp unstampedReplyReplacement).isNone
+  -- (c) PAYOFF: the stamped replacement is accepted, and the stored object's own
+  -- id IS the slot — the runtime counterpart of the boot's check.
+  match liveRetypeInto stEp donEp stampedScReplacement with
+  | none => assertBool "(c) PAYOFF: the stamped SchedContext replacement is accepted" false
+  | some stOk =>
+    assertBool "(c) PAYOFF: the slot holds a context whose own `scId` IS the slot"
+      (match stOk.getObject? donEp with
+       | some (.schedContext sc) => sc.scId.toObjId == donEp | _ => false)
+  match liveRetypeInto stEp donEp stampedReplyReplacement with
+  | none => assertBool "(c) PAYOFF: the stamped Reply replacement is accepted" false
+  | some stOk =>
+    assertBool "(c) PAYOFF: the slot holds a reply whose own `replyId` IS the slot"
+      (match stOk.getObject? donEp with
+       | some (.reply r) => r.replyId.toObjId == donEp | _ => false)
+  -- (d) CONTROL: a kind that carries no identity is accepted UNSTAMPED, so (b) is
+  -- about the identity field rather than about the retype refusing replacements.
+  assertBool "(d) CONTROL: an unstamped endpoint replacement is accepted"
+    (liveRetypeInto stEp donEp endpointReplacement).isSome
+  -- (e) CONTROL: the stamped and unstamped replacements differ in the identity
+  -- field ALONE, asserted rather than left to the reader.
+  assertBool "(e) CONTROL: the two SchedContext replacements differ in `scId` alone"
+    (match unstampedScReplacement, stampedScReplacement with
+     | .schedContext a, .schedContext b =>
+         a.scId == SchedContextId.sentinel && b.scId == SchedContextId.ofObjId donEp
+           && { a with scId := SchedContextId.ofObjId donEp } == b
+     | _, _ => false)
+  -- (f) the boot's question and the runtime's are ONE question: the shared
+  -- predicate answers `false` for the unstamped replacement at this slot and
+  -- `true` for the stamped one.
+  assertBool "(f) the shared predicate refuses the unstamped replacement at this slot"
+    (!unstampedScReplacement.embeddedIdentityMatches donEp)
+  assertBool "(f) ...and accepts the stamped one"
+    (stampedScReplacement.embeddedIdentityMatches donEp)
+  assertBool "(f) ...and is vacuously true for a kind that carries no identity"
+    (endpointReplacement.embeddedIdentityMatches donEp)
+
+
 
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
@@ -5332,6 +5428,7 @@ def runSmpIpcChecks : IO Unit := do
   runRetypeSchedContextChecks
   runRetypeFootprintChecks
   runRetypeReplacementGuardChecks
+  runRetypeIdentityStampChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

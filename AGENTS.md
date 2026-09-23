@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.186.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.187.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9143,7 +9143,9 @@ code may assume:
   `retypeReplacementFresh` pack the live dispatch already supplies.
 
   (4) **`hIdentity` — a TCB is stored under its own thread id — is a hypothesis,
-  and the reason it is one is a registered gap.**  The `.tcb` arm is handed `tcb`
+  and the reason it is one is a registered gap** (its runtime half closed at
+  `v0.35.187`, the item below; the store-level invariant that would retire the
+  hypothesis is open).  The `.tcb` arm is handed `tcb`
   and operates on `tcb.tid` while the store is at `target`, so without their
   agreement the cleanup can clear a binding at one key and leave the retype's own
   key paired.  Four measurements place it: `PlatformConfig.wellFormed`'s
@@ -9178,6 +9180,39 @@ code may assume:
   conjunction whose `.2` duplicated the public `_scheduler` two lines from the
   step it frames — half a second answer, half unreachable from every asker
   upstream.  Both are refused in their retired spellings by Tier 3 negatives.
+- **...and a retyped object carries the SLOT's identity, because the runtime now
+  refuses one that does not** (`v0.35.187`).  A TCB, a SchedContext and a Reply
+  each carry their own id in a field while the object store is keyed by `ObjId`,
+  so the two can disagree; `PlatformConfig.wellFormed`'s
+  `embeddedIdentitiesMatchSlots` has refused that at **boot** since PR #889
+  review round 8 and **nothing refused it at the runtime**, while
+  `objectOfKernelType` — the one builder the live retype installs through —
+  stamped the reserved **sentinel** into all three.  Four things new code must
+  respect.
+
+  (1) **`KernelObject.embeddedIdentityMatches` is the question, with no
+  wildcard**: a kernel object that starts carrying its own id must be classified
+  there rather than silently answering `true`, which is the closed-inductive rule
+  this file states for `ConstantInfo` applied to a kernel record.
+
+  (2) **A refusal needs an answer, and `KernelObject.withIdentity` is it** — it
+  writes the identity field and nothing else, so `withIdentity_wellFormed`,
+  `_objectType` and `withIdentity_replacementFresh` carry every property the
+  retype's other guards and the dispatch payoff's pack read.  A builder that
+  installs a TCB, SchedContext or Reply stamps.
+
+  (3) **Both retype wrappers read ONE named predicate**,
+  `retypeReplacementAdmissible`, rather than a second `if` beside the T5-D one:
+  *a named condition beside unnamed ones is a subset*, and a condition added to
+  the predicate reaches both wrappers by construction.
+
+  (4) **The boot's check and the runtime's guard are one question by theorem**
+  (`embeddedIdentitiesMatchSlots_iff`), not by a shared spelling.  What the cut
+  does **not** do is retire `hIdentity`, which is about the object being
+  *destroyed*: that needs the store-level invariant *every stored object's
+  embedded id is its key*, which the boot, the idle enqueue and now the retype
+  all establish and which no transition falsifies — a preservation theorem per
+  transition, registered rather than implied.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write

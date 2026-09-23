@@ -2730,6 +2730,28 @@ theorem objectOfKernelType_replacementFresh (k : KernelObjectType) (n : Nat) :
     simp [objectOfKernelType, retypeReplacementFresh, CNode.lookup,
       UniqueSlotMap.get?, RobinHood.RHTable.getElem?_empty, Reply.empty]
 
+/-- **`v0.35.187`**: and stamping the target's identity into it leaves it
+pristine — `KernelObject.withIdentity` writes the *identity* field and nothing
+else, which is what makes the runtime identity guard free of every property the
+payoff pack reads.
+
+Stated at the level of the pack rather than field by field, because the pack is
+what the live dispatch supplies and a per-field list beside it would be a second
+answer to *what does stamping preserve*. -/
+theorem withIdentity_replacementFresh {obj : KernelObject}
+    (h : retypeReplacementFresh obj) (key : SeLe4n.ObjId) :
+    retypeReplacementFresh (obj.withIdentity key) := by
+  cases obj <;> first
+    | exact h
+    | simpa [KernelObject.withIdentity, retypeReplacementFresh] using h
+
+/-- **`v0.35.187`**: the live dispatch's stamped builder, pristine — the
+composition the `.lifecycleRetype` arm's payoff cites. -/
+theorem objectOfKernelType_withIdentity_replacementFresh (k : KernelObjectType)
+    (n : Nat) (key : SeLe4n.ObjId) :
+    retypeReplacementFresh ((objectOfKernelType k n).withIdentity key) :=
+  withIdentity_replacementFresh (objectOfKernelType_replacementFresh k n) key
+
 /-- The retype target is detached from every structure the IPC bundle reads:
 nothing in the pre-state references `target` — no blocked thread names it as
 its endpoint, no queue link, queue boundary, reply link or stash points at it,

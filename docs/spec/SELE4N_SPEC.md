@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.186` (`lakefile.toml`) |
+| **Package version** | `0.35.187` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 410,148 across 338 Lean files |
-| **Test LoC** | 83,492 across 70 Lean test suites |
-| **Proved declarations** | 13,560 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 410,383 across 338 Lean files |
+| **Test LoC** | 83,589 across 70 Lean test suites |
+| **Proved declarations** | 13,573 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4686,13 +4686,31 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   remain and both are free at the live call site: `hNotSc`, from
   `retypeTargetDetached`'s `notSc`, and `hIdentity` — a TCB is stored under its
   own thread id — which holds of every reachable state by four measurements and
-  is stated by no invariant, so the model-level gap behind it carries a register
-  row of its own with the improvement as its remedy: `objectOfKernelType` stamps
-  the *sentinel* identity rather than the target slot's, which is exactly what
-  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` enforces at boot,
-  and the one thing standing between that and a reachable violation is the
-  H-06/WS-E3 reservation of id 0 — a **convention**, enforced at boot for the boot
-  VSpace root alone and by no store-level invariant.
+  is stated by no invariant, so the model-level gap behind it carried a register
+  row of its own — and **the improvement was taken** (`v0.35.187`, below) rather
+  than the claim weakened.
+
+  **And a retyped object carries the slot's identity** (`v0.35.187`).  A TCB, a
+  SchedContext and a Reply each carry their own id in a field while the object
+  store is keyed by `ObjId`, so the two can disagree;
+  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that
+  at **boot** since PR #889 review round 8, and **nothing refused it at the
+  runtime** while `objectOfKernelType` — the one builder the live retype
+  installs through — stamped the reserved *sentinel* into all three, so a
+  successful retype broke at the runtime exactly the agreement the boot
+  enforces.  `KernelObject.embeddedIdentityMatches` is the question (no
+  wildcard: a kernel object that starts carrying its own id must be classified),
+  `KernelObject.withIdentity` the answer a caller can give (the identity field
+  and nothing else, so the payoff pack and the `wellFormed` clauses are
+  untouched), and both retype wrappers read **one** named predicate,
+  `retypeReplacementAdmissible`, rather than a second guard beside the first.
+  `embeddedIdentitiesMatchSlots_iff` says the boot's check and the runtime's
+  guard are the same question, by theorem rather than by a shared spelling.
+  What is **not** closed is `hIdentity`, which is about the object being
+  *destroyed*: retiring it needs the store-level invariant *every stored
+  object's embedded id is its key*, which the boot, the idle enqueue and now the
+  retype all establish and which no transition falsifies, proved inductively —
+  registered rather than implied.
 
   **And the three TCB-control arms declare theirs, in a module of their own**
   (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,

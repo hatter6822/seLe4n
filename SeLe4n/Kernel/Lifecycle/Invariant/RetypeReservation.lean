@@ -937,7 +937,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_schedContextBindingConsistent
   -- (`v0.35.184`): the clause the store's re-establishment consumes.
   have hScFresh : ∀ sc : SeLe4n.Kernel.SchedContext, newObj = .schedContext sc →
       sc.boundThread = none := fun sc hEq => by
-    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF
+    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF.wellFormed'
   -- The three steps.
   have hCleanCons : schedContextBindingConsistent stClean :=
     lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent st stClean target
@@ -987,7 +987,7 @@ theorem lifecycleRetypeDirectWithCleanup_preserves_replenishQueueAffinityConsist
     lifecycleRetypeDirectWithCleanup_ok_decompose h
   have hScFresh : ∀ sc : SeLe4n.Kernel.SchedContext, newObj = .schedContext sc →
       sc.boundThread = none := fun sc hEq => by
-    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF
+    rw [hEq] at hWF; simpa [KernelObject.wellFormed] using hWF.wellFormed'
   have hCleanCons : schedContextBindingConsistent stClean :=
     lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent st stClean target
       currentObj newObj hInv hCons (fun tcb hEq => hTcb tcb currentObj hStored hEq)

@@ -3011,6 +3011,82 @@ def wellFormed (obj : KernelObject)
   -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
   | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
 
+/-- **`v0.35.187`: an object's own embedded identity IS the key it is stored at.**
+
+Three kernel objects carry their own id in a field — a TCB's `tid`, a
+SchedContext's `scId`, a Reply's `replyId` — and the object store is keyed by
+`ObjId`, so the two can disagree.  `PlatformConfig.wellFormed`'s
+`embeddedIdentitiesMatchSlots` has refused that at **boot** since PR #889 review
+round 8, and its own docstring states the hazard in terms: *a SchedContext at
+slot 9 carrying `scId = 12` would have its budget replenished on whatever object
+12 is*.
+
+Nothing enforced it at the **runtime**, and the one path that installs such an
+object — `objectOfKernelType` through the retype — stamps the reserved
+**sentinel** into all three.  So a successful retype broke at the runtime exactly
+the agreement the boot enforces; the two retype wrappers refuse it now
+(`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`), and the live
+dispatch stamps the target's identity with `withIdentity` below.
+
+The match has **no** wildcard: a kernel object that starts carrying its own id
+must be classified here, rather than silently answering `true`.  The five that
+carry none answer `true` because the question does not arise for them, which is
+a different fact from "not checked". -/
+def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
+  match obj with
+  | .tcb t => t.tid.toObjId == key
+  | .schedContext sc => sc.scId.toObjId == key
+  | .reply r => r.replyId.toObjId == key
+  | .endpoint _ => true
+  | .notification _ => true
+  | .cnode _ => true
+  | .vspaceRoot _ => true
+  | .untyped _ => true
+
+/-- **`v0.35.187`: stamp an object with the identity of the slot it is stored at.**
+
+The other half of the guard above: a refusal with no way to satisfy it would
+refuse every retype.  It writes **only** the identity field, so every property of
+the replacement that the retype's other guards and the dispatch payoff's
+`retypeReplacementFresh` pack read — a TCB's binding and roots, a SchedContext's
+`boundThread`, a Reply's `caller` and stack links — survives it unchanged, which
+is what `withIdentity_preserves_*` below state rather than leave to inspection.
+
+The five kinds that carry no identity are returned untouched, and `.tcb` /
+`.schedContext` / `.reply` are written out rather than matched with a wildcard,
+for the reason `embeddedIdentityMatches` gives. -/
+def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
+  match obj with
+  | .tcb t => .tcb { t with tid := SeLe4n.ThreadId.ofObjId key }
+  | .schedContext sc => .schedContext { sc with scId := SeLe4n.SchedContextId.ofObjId key }
+  | .reply r => .reply { r with replyId := SeLe4n.ReplyId.ofObjId key }
+  | .endpoint e => .endpoint e
+  | .notification n => .notification n
+  | .cnode c => .cnode c
+  | .vspaceRoot v => .vspaceRoot v
+  | .untyped u => .untyped u
+
+/-- **`v0.35.187`**: stamping satisfies the guard — so the refusal is one a
+caller can meet, which is what keeps it a discipline rather than a wall. -/
+@[simp] theorem withIdentity_embeddedIdentityMatches (obj : KernelObject)
+    (key : SeLe4n.ObjId) :
+    (obj.withIdentity key).embeddedIdentityMatches key = true := by
+  cases obj <;> simp [withIdentity, embeddedIdentityMatches]
+
+/-- **`v0.35.187`**: stamping preserves the *kind*, so every kind-indexed fact
+about a replacement survives it. -/
+@[simp] theorem withIdentity_objectType (obj : KernelObject) (key : SeLe4n.ObjId) :
+    (obj.withIdentity key).objectType = obj.objectType := by
+  cases obj <;> rfl
+
+/-- **`v0.35.187`**: stamping preserves well-formedness — the identity field is
+read by no clause of `wellFormed`, which is what makes the two guards
+independent rather than one constraining the other. -/
+@[simp] theorem withIdentity_wellFormed (obj : KernelObject) (key : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    (obj.withIdentity key).wellFormed objects ↔ obj.wellFormed objects := by
+  cases obj <;> simp [withIdentity, wellFormed]
+
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
