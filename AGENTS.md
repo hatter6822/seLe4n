@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.188.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.189.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7943,10 +7943,9 @@ code may assume:
   licence theorem is `endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous`
   now, with the pre-state `some` as a hypothesis, and `_of_call_rendezvous` is
   refused tree-wide for the reason `_of_rendezvous` was.  (f) **The object-domain
-  members were NOT narrowed, and that is registered**: `receiveRendezvousDonatedSc?`
-  and `endpointCallDonatedSc?` declare a SchedContext write lock for a donation the
-  resolver declines, at 55 call sites across nine files, and ride Cut C4's
-  restatement of every arm's members.
+  members were not narrowed in this cut and are since `v0.35.189`** — the bullet
+  below; until then `receiveRendezvousDonatedSc?` and `endpointCallDonatedSc?`
+  declared a SchedContext write lock for a donation the resolver declines.
 
   (6) **The claim is made about the step the ARM runs, not only about the donation.**
   `API.lean`'s `.receive` arm calls `applyReceiveRendezvousHandoff`, which is the
@@ -7970,6 +7969,85 @@ code may assume:
   rather than on state equality, because that is the proposition the footprint is
   about — `SystemState` has no `DecidableEq`, and reaching for one would have been
   a claim about the wrong thing.
+
+- **...and the OBJECT-domain donation members follow the same guard** (WS-RR
+  RR8.16, `v0.35.189`; register row 56).  Cut C1 narrowed the *replenish* segment
+  and recorded that the two object-domain members had the same gaps one lock
+  domain over: `endpointCallDonatedSc?` read the caller's own effective context
+  with no test that a receiver was waiting or that it was passive, and
+  `receiveRendezvousDonatedSc?` read the queued sender's through it — so a plain
+  `Send`, and a `Call` to a receiver that already holds a reservation, each
+  declared a SchedContext **write** lock (and a donation-old-head reply lock) for
+  a migration that provably does not happen.  Sound, and not free: lock
+  contention is an observable channel (SM8.D's CC-5), which is WS-OD OD3.5's own
+  reason for narrowing a footprint.  Five things new code must respect.
+
+  (1) **Each member resolves the OTHER party and asks the transition's own guard
+  of the pair**: `endpointCallDonatedSc? st endpointId caller` is
+  `(endpointCallReceiver? st endpointId).bind fun receiver =>
+  callDonationSchedContext? st caller receiver`, and
+  `receiveRendezvousDonatedSc? st endpointObjId receiver` is
+  `(receiveRendezvousCallSender? st endpointObjId).bind fun sender =>
+  callDonationSchedContext? st sender receiver`.  A member that inlines a binding
+  read is the defect returning, and a Tier 3 negative refuses one at each.
+
+  (2) **The owner moved DOWN, and the layering was measured rather than read off
+  module paths.**  `IPC/CrossCore/EndpointCall.lean` and
+  `IPC/Operations/Donation.lean` are **incomparable** — neither is in the other's
+  import closure — and both reach `IPC/Operations/Endpoint.lean`, so
+  `callDonationSchedContext?` and its four lemmas live at the join, with a
+  tombstone at the old home (`v0.35.59`: *when a question has one owner and an
+  asker that cannot see it, the owner is in the wrong layer*).  The same rule
+  moved three binding frames out of the **staged** `EndpointCallInvariant.lean`
+  into production — `endpointCallOnCore_preserves_objects_invExt`,
+  `wakeThread_sameSchedContextBindings_of_ready`,
+  `endpointCallOnCore_sameSchedContextBindings` — since the footprint and the
+  licence are production and could not read a frame declared in the staged
+  surface.  The first attempt wrote a *second* copy of the third and the build
+  refused it as already declared: *before writing a helper, find the one this tree
+  already has*, caught by the elaborator rather than by a review.
+
+  (3) **Soundness is a proved relation in ONE direction, and that is the
+  direction a footprint needs.**  A footprint that omits a written lock is false,
+  so a narrowing owes *the transition migrates ⟹ the footprint declares* — and
+  because the footprint resolves on the state the bracket acquires at while the
+  donation branches at the state its leg leaves, that is **post `some` ⟹ pre
+  `some`**: `endpointCallDonatedSc?_some_of_post` and
+  `receiveRendezvousDonatedSc?_some_of_post`, each through Cut C1's backward
+  binding frame (`callDonationSchedContext?_some_of_sameSchedContextBindings`)
+  over the arm's own leg, with `endpointCallWithCapsOnCore_sameSchedContextBindings`
+  the sending side's new whole-leg frame.  The forward direction is neither given
+  by a backward frame nor needed: a footprint that declares on a pre-state `some`
+  the transition then declines is *wider* than its operation, which is sound.
+
+  (4) **The two lock domains ask ONE question, and that is stated.**
+  `receiveRendezvousDonatedSc?_isSome_iff_donatingSender` says the object member
+  and Cut C1's scheduler segment declare on exactly the same rendezvous, both
+  composing `receiveRendezvousCallSender?` with `callDonationSchedContext?` at the
+  same two threads — a shared *spelling* is not that fact.  The object member
+  deliberately does **not** route through `receiveRendezvousDonatingSender?`,
+  which already asks the guard to decide its own answer, so composing through it
+  would ask the same question twice and leave two places for the answer to be
+  read.  The `.call` arm has no such equality **by design**: its scheduler segment
+  resolves at the WithCaps *post*-state and its object member on the pre-state,
+  which is exactly what the `_some_of_post` licence is for.
+
+  (5) **The narrowing is measured, not only proved, and it costs nothing.**
+  `tests/SmpIpcSuite.lean` §3.36 drives five shapes through the live operations —
+  a passive receiver (CONTROL), a bound receiver (the `.call` defect), a queued
+  `Call` from a bound client (CONTROL), a queued plain `Send` and a queued `Call`
+  to a bound receiver (the two receive-side defects) — with **both** retired
+  readings spelled as `private def`s in the suite and nowhere else and computed
+  beside the live resolver on every shape, each wrong on exactly one of them; a
+  tree-wide negative refuses either escaping the witness.  `maxLockSetSize` is
+  unmoved, both reachable `.replyRecv` bounds are unchanged (a narrowing can only
+  lower a bound) and the golden trace is byte-identical.  Two things the cut
+  records about its own register row, rather than quietly satisfying them: the
+  blast radius was **35 call sites across six files**, not the registered 55
+  across nine (that figure counted every occurrence of the two names, the
+  hypotheses of theorems *about* them included), and it did **not** ride Cut C4,
+  which restated each arm's members without touching these two — so it is a cut of
+  its own after Cut C4 rather than inside it.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every

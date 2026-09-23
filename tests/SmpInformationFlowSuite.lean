@@ -7858,9 +7858,18 @@ private def ipcReceiverTcb : TCB :=
   { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
 
 /-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
-condition, read from exactly this field. -/
+condition, read from exactly this field.
+
+**WS-RR RR8.16 (`v0.35.189`)**: it is `.blockedOnCall lowEndpoint`, which is what
+a thread sitting on an endpoint's *send* queue is; before the object-domain
+donation members followed the transition's own guard, the fixture could leave it
+`.ready` — a shape no reachable state produces — and the donation assertions below
+still fired.  Parking it properly is what makes each of them decided by the
+`schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
-  { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCapsMessage }
+  { mkTcb 1044 40 (some c0) with
+      pendingMessage := some ipcCapsMessage,
+      ipcState := .blockedOnCall lowEndpoint }
 
 private def ipcFootprintState : SystemState :=
   { niState with
@@ -7890,6 +7899,7 @@ conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
   { mkTcb 1044 40 (some c0) with
       pendingMessage := some ipcCaplessMessage,
+      ipcState := .blockedOnCall lowEndpoint,
       schedContextBinding := .bound ipcDonatedScId }
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
@@ -7903,12 +7913,16 @@ private def ipcDonatingCaplessFootprintState : SystemState :=
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId (.tcb ipcDonatingCaplessSenderTcb) }
 
-/-- ...and one that neither donates nor installs, for the negatives. -/
+/-- ...and one that neither donates nor installs, for the negatives.  The sender
+is parked on the send queue as a `Call` exactly as the donating ones are, so the
+negatives below are decided by its `.unbound` binding and by nothing else. -/
 private def ipcInertFootprintState : SystemState :=
   { ipcFootprintState with
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId
-          (.tcb { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCaplessMessage }) }
+          (.tcb { mkTcb 1044 40 (some c0) with
+                    pendingMessage := some ipcCaplessMessage,
+                    ipcState := .blockedOnCall lowEndpoint }) }
 
 /-- The operands a live `.send` supplies: the endpoint its capability names and
 the message it built. -/
@@ -7999,8 +8013,13 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- while `.replyRecv` did it.  The resolver reads the same send-queue head the
   -- `senderTid` member does, so these run against a fixture whose head is a
   -- `.bound` caller rather than asserting a shape no state produces.
+  --
+  -- **WS-RR RR8.16 (`v0.35.189`)**: and since the member follows the donation's
+  -- own guard, the head must be parked as a `Call` and the receiver must be
+  -- `.unbound` — both true of this fixture, the first only since that cut made
+  -- the sender `.blockedOnCall` rather than `.ready`.
   assertBool "the rendezvous resolver finds the donation on a `.bound` sender"
-    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint
+    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint lowCurrent
       = some ipcDonatedScId))
   assertBool "a donating `.receive` declares the donated SchedContext write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive

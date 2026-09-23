@@ -403,6 +403,72 @@ def endpointCallDispatchWriteSet
     ++ endpointCallDispatchChainWriteSet endpointId caller msg endpointRights
         receiverSlotBase executingCore st
 
+/-- **WS-RR RR8.16 (`v0.35.189`)**: and installing the call's capabilities writes
+no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole leg the
+live `.call` arm runs is a binding frame — the sending-side counterpart of
+`endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous`.
+
+This is the licence `endpointCallDonatedSc?_some_of_post` composes with the
+resolver's own bridge: the footprint resolves before the transition runs and
+`applyCallDonationOnCore` branches at the post-leg state, and a binding frame is
+what makes those one answer. -/
+theorem endpointCallWithCapsOnCore_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st
+      (endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1 := by
+  have hLeg := endpointCallOnCore_sameSchedContextBindings endpointId caller
+    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+  have hLegInv :
+      ((endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem .grant } executingCore st).1).objects.invExt :=
+    endpointCallOnCore_preserves_objects_invExt endpointId caller
+      { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+  | mk stCall res =>
+      rw [hCall] at hLeg hLegInv
+      have hLeg' : sameSchedContextBindings st stCall := by simpa using hLeg
+      cases res with
+      | error e => simpa using hLeg
+      | ok sgi =>
+          simp only []
+          repeat' split
+          all_goals first
+            | simpa using hLeg
+            | (rename_i hUnwrap
+               exact hLeg'.trans (ipcUnwrapCaps_sameSchedContextBindings _ _ receiverSlotBase
+                 _ stCall _ _ hLegInv hUnwrap))
+
+/-- **WS-RR RR8.16 (`v0.35.189`): the narrowed `.call` member omits no lock the
+transition takes.**
+
+The soundness half of the narrowing, and the reason it needed a frame rather than
+an argument.  `applyCallDonationOnCore` migrates exactly when
+`callDonationSchedContext?` answers `some` at the state the leg leaves, while
+`lockSet_endpointCallOnCore` resolves on the state the bracket acquires at — so
+"the transition donates ⟹ the footprint declares" is *post* `some` ⟹ *pre* `some`,
+which is the direction `callDonationSchedContext?_some_of_sameSchedContextBindings`
+gives and the only one a backward frame can. -/
+theorem endpointCallDonatedSc?_some_of_post
+    (endpointId : SeLe4n.ObjId) (caller receiver : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hPost : callDonationSchedContext?
+      (endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1 caller receiver = some scId) :
+    endpointCallDonatedSc? st endpointId caller = some scId := by
+  rw [endpointCallDonatedSc?_of_receiver st endpointId caller receiver hRecv]
+  exact callDonationSchedContext?_some_of_sameSchedContextBindings
+    (endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller msg endpointRights
+      receiverSlotBase executingCore st hObjInv)
+    caller receiver scId hPost
+
 /-- **WS-RR RR8.12 Cut C3a**: the replenish-queue cores the live `.call` dispatch's
 donation migrates between — the caller's home and the receiver's — recovered from
 the pre-state by mirroring `endpointCallCrossCoreDispatch`'s own control flow, as

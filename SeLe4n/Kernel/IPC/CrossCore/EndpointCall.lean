@@ -190,11 +190,10 @@ cut — a footprint narrower than its transition is *false*, and this one would
 have omitted the SchedContext the push rebinds at every call depth ≥ 2.  Both
 sides now read `SchedContextBinding.scId?`, so neither can widen without the
 other. -/
-def endpointCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
-    Option SeLe4n.SchedContextId :=
-  match st.getTcb? caller with
-  | some tcb => tcb.schedContextBinding.scId?
-  | none => none
+def endpointCallDonatedSc? (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+  (endpointCallReceiver? st endpointId).bind fun receiver =>
+    callDonationSchedContext? st caller receiver
 
 /-- WS-SM SM6.D (PR #822 review): the server-first stashed Reply object this call
 links, if any. On a **server-first** `Call` rendezvous the popped receiver is a
@@ -228,7 +227,7 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- pre-RR7.8 footprint.
     (msg : IpcMessage := { registers := #[] }) : LockSet :=
   lockSet_endpointCall caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
     (endpointCallServerFirstReply? st endpointId)
     -- **WS-RR RR7.8**: the capability-transfer destination, resolved from the
     -- same pre-state expression `endpointCallWithCaps` reads
@@ -243,7 +242,7 @@ def lockSet_endpointCallOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- frame the push rewrites below the one it adds -- read off the very
     -- context `endpointCallDonatedSc?` resolves, so the footprint and the push
     -- cannot disagree about which stack is extended.
-    ((endpointCallDonatedSc? st caller).bind (replyStackHead? st))
+    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
 
 /-- **WS-RR RR7.8**: the capless resolved call footprint is definitionally the
 pre-RR7.8 one, so every statement and fixture taken over the four-argument form
@@ -253,14 +252,14 @@ theorem lockSet_endpointCallOnCore_capless (st : SystemState)
     (cnodeRootObjId : SeLe4n.ObjId) :
     lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId
       = lockSet_endpointCall caller cnodeRootObjId endpointId
-          (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+          (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
           (endpointCallServerFirstReply? st endpointId) none
           -- **WS-OD OD3.11**: "capless" is about the *message*, not about the
           -- queue.  A call that carries no capabilities still pops or enqueues,
           -- so the neighbour member is resolved here rather than `none`.
           (sendSideQueueStructureNeighbor? st endpointId)
           -- **WS-OD (`v0.35.4`)**: and the old head, for the same reason.
-          ((endpointCallDonatedSc? st caller).bind (replyStackHead? st)) := rfl
+          ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st)) := rfl
 
 /-- **WS-RR RR7.8**: the concrete lock-set a cross-core caps-carrying `.send`
 acquires. The send side had no resolved footprint at all — its capless shape
@@ -629,11 +628,11 @@ theorem lockSet_endpointCallOnCore_correct
     ∀ p ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs,
       p.fst.kind ∈ permittedKinds .call :=
   lockSet_consistent_call caller cnodeRootObjId endpointId
-    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st caller)
+    (endpointCallReceiver? st endpointId) (endpointCallDonatedSc? st endpointId caller)
     (endpointCallServerFirstReply? st endpointId)
     (rendezvousCapsDestination? st endpointId msg)
     (sendSideQueueStructureNeighbor? st endpointId)
-    ((endpointCallDonatedSc? st caller).bind (replyStackHead? st))
+    ((endpointCallDonatedSc? st endpointId caller).bind (replyStackHead? st))
 
 /-- **WS-RR RR7.8**: the send footprint's kinds are permitted too, over every
 message — the send side's first resolved-footprint correctness statement. -/
@@ -761,7 +760,7 @@ theorem lockSet_endpointCallOnCore_covers_donationPush
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
     (scId : SeLe4n.SchedContextId) (rid : SeLe4n.ReplyId) (receiver : SeLe4n.ThreadId)
-    (hSc : endpointCallDonatedSc? st caller = some scId)
+    (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hRid : endpointCallServerFirstReply? st endpointId = some rid)
     (hRecv : endpointCallReceiver? st endpointId = some receiver) :
     (schedContextLock scId, AccessMode.write)
@@ -788,7 +787,7 @@ theorem lockSet_endpointCallOnCore_covers_donationOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (msg : IpcMessage)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
-    (hSc : endpointCallDonatedSc? st caller = some scId)
+    (hSc : endpointCallDonatedSc? st endpointId caller = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
         ∈ (lockSet_endpointCallOnCore st endpointId caller cnodeRootObjId msg).pairs := by
@@ -798,23 +797,64 @@ theorem lockSet_endpointCallOnCore_covers_donationOldHead
   rw [h2]
   exact lockSet_endpointCall_donationOldHead_write_mem _ _ _ _ _ _ _ _ _
 
-/-- **WS-OD OD4.7**: and the widened resolver names the *effective* context at
-every depth, so the member above is the one a depth-≥ 2 push writes.
+/-- **WS-RR RR8.16 (`v0.35.189`)**: the member is `none` on the arm that donates
+nothing because there is nobody to donate to.
 
-`endpointCallDonatedSc?` reads `SchedContextBinding.scId?`, which answers for a
-`.donated` caller exactly as it does for a `.bound` one.  Before OD4.2 it
-answered `none` there -- a footprint narrower than its transition, which is
-*false* -- so this is the statement that the two widened together. -/
-theorem endpointCallDonatedSc?_of_donated (st : SystemState) (caller : SeLe4n.ThreadId)
-    (tcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
-    (hT : st.getTcb? caller = some tcb)
-    (hB : tcb.schedContextBinding = .donated scId owner) :
-    endpointCallDonatedSc? st caller = some scId := by
+The blocking arm of a `.call` has no receiver at all, so the resolver answers
+`none` and the footprint declares no SchedContext write lock and no old-head
+Reply lock — where until `v0.35.189` it declared both from the caller's own
+binding, whatever the endpoint held. -/
+@[simp] theorem endpointCallDonatedSc?_of_no_receiver (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
+    (h : endpointCallReceiver? st endpointId = none) :
+    endpointCallDonatedSc? st endpointId caller = none := by
   unfold endpointCallDonatedSc?
-  rw [hT]
-  simp only []
-  rw [hB]
+  rw [h]
   rfl
+
+/-- **WS-RR RR8.16 (`v0.35.189`)**: and at a resolved receiver the member IS the
+donation's own guard — which is the whole content of the narrowing.
+
+`callDonationSchedContext?` is what `applyCallDonation` branches on, so the
+footprint and the transition now ask one question of one pair of threads; before
+this the member was the caller's `scId?` alone, with no test that the receiver is
+passive, and a `.call` to a *bound* receiver declared a SchedContext write lock
+for a donation the transition declines. -/
+@[simp] theorem endpointCallDonatedSc?_of_receiver (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller receiver : SeLe4n.ThreadId)
+    (h : endpointCallReceiver? st endpointId = some receiver) :
+    endpointCallDonatedSc? st endpointId caller
+      = callDonationSchedContext? st caller receiver := by
+  unfold endpointCallDonatedSc?
+  rw [h]
+  rfl
+
+/-- **WS-OD OD4.7**: and the resolver names the *effective* context at every
+depth, so the member above is the one a depth-≥ 2 push writes.
+
+The guard reads `SchedContextBinding.scId?`, which answers for a `.donated`
+caller exactly as it does for a `.bound` one.  Before OD4.2 it answered `none`
+there -- a footprint narrower than its transition, which is *false* -- so this is
+the statement that the two widened together.
+
+**WS-RR RR8.16 (`v0.35.189`)**: restated over the narrowed resolver, so it now
+carries the receiver premises too — the receiver must exist and be passive, which
+is what makes the declaration exact rather than merely wide.  It is
+`callDonationSchedContext?_of_donated_caller` at this arm's own receiver; the
+lookup moved from `getTcb?` to `lookupTcb`, which differs only on a reserved id,
+where the transition refuses. -/
+theorem endpointCallDonatedSc?_of_donated (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (caller receiver : SeLe4n.ThreadId)
+    (tcb rTcb : TCB) (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hR : lookupTcb st receiver = some rTcb)
+    (hRB : rTcb.schedContextBinding = .unbound)
+    (hT : lookupTcb st caller = some tcb)
+    (hB : tcb.schedContextBinding = .donated scId owner) :
+    endpointCallDonatedSc? st endpointId caller = some scId := by
+  rw [endpointCallDonatedSc?_of_receiver st endpointId caller receiver hRecv]
+  exact callDonationSchedContext?_of_donated_caller st caller receiver scId owner
+    tcb rTcb hR hRB hT hB
 
 /-- **WS-OD OD3.11**: and on the send arm -- the same two primitives, so the
 same neighbour and the same declaration. -/
@@ -1914,6 +1954,162 @@ theorem storeTcbIpcStateAndMessage_getTcb?_ipcState
           | some tcb => exact ⟨tcb, lookupTcb_some_objects st tid tcb hL⟩)
   exact ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hTcb',
          storeTcbIpcStateAndMessage_ipcState_eq st st' tid ipc msg hObjInv hStep tcb' hTcb'⟩
+
+/-- WS-SM SM6.A.1: the cross-core endpoint call preserves object-store
+integrity (`invExt`).  On every control path the post-state's object store is
+either `st`'s (an error / no-op leaf) or the result of the
+pop / store / wake / store / deschedule chain, each step of which preserves
+`invExt`.  Unconditional: an error leaf returns the pre-state unchanged. -/
+theorem endpointCallOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    (endpointCallOnCore endpointId caller msg executingCore st).1.objects.invExt := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact hObjInv
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact hObjInv
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact hObjInv
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact hObjInv
+      | ok st' =>
+        simp only
+        have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact hObjInv
+        | ok st'' =>
+          simp only
+          have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
+          show (removeRunnableOnCore st'' caller executingCore).objects.invExt
+          rw [removeRunnableOnCore_preserves_objects]; exact h2
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact hObjInv
+      | ok pair =>
+        simp only
+        have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact hObjInv
+        | ok st2 =>
+          simp only
+          have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ h1 hMsg
+          have hW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore h2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact hObjInv
+          | ok st4 =>
+            simp only
+            have h4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hW hCS
+            -- WS-SM SM6.D (#7.3b fold): thread the server-first reply link
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact hObjInv
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
+              show (removeRunnableOnCore st5 caller executingCore).objects.invExt
+              rw [removeRunnableOnCore_preserves_objects]; exact h5
+
+open SeLe4n.Model.SystemState in
+/-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
+effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
+pointwise-unchanged for a `.ready` target). -/
+theorem wakeThread_sameSchedContextBindings_of_ready
+    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
+    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
+    (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st (wakeThread st wtid ec).1 := by
+  intro y tcY hY
+  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
+  exact ⟨tcY, hY, rfl⟩
+
+/-! **WS-RR RR8.16 (`v0.35.189`)**: the D6 binding frame below was relocated here
+from the staged `EndpointCallInvariant.lean` rather than re-proved.  It is what
+makes the arm's donation member *pre-state computable*:
+`applyCallDonationOnCore` runs at the post-leg state and branches on
+`callDonationSchedContext?` there, while `lockSet_endpointCallOnCore` must resolve
+before the transition runs, and a binding frame is what makes those one answer
+(`endpointCallDonatedSc?_some_of_post`). -/
+
+open SeLe4n.Model.SystemState in
+/-- D6 (per-core): `endpointCallOnCore` preserves every TCB's `schedContextBinding` (the cross-core
+mirror of `endpointCall_sameSchedContextBindings`; `wakeThread`/`removeRunnableOnCore` are
+scheduler-only, the store/link ops never write a binding). -/
+theorem endpointCallOnCore_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact sameSchedContextBindings.refl st
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact sameSchedContextBindings.refl st
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact sameSchedContextBindings.refl st
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact sameSchedContextBindings.refl st
+      | ok st' =>
+        simp only
+        have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq
+        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact sameSchedContextBindings.refl st
+        | ok st'' =>
+          simp only
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
+          show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
+          exact hS2.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st'' caller executingCore))
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact sameSchedContextBindings.refl st
+      | ok pair =>
+        simp only
+        have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact sameSchedContextBindings.refl st
+        | ok st2 =>
+          simp only
+          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg)
+          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
+          obtain ⟨tr, hTrGet, hTrReady⟩ :=
+            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
+          have hS3 := hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
+          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact sameSchedContextBindings.refl st
+          | ok st4 =>
+            simp only
+            have hS4 := hS3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjW hCS)
+            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact sameSchedContextBindings.refl st
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
+              show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
+              exact hS5.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore))
 
 /-- Finding F-1: a `storeTcbReceiveComplete` that succeeds resolves the target TCB
 and sets its `ipcState` to `.ready`. Mirror of

@@ -452,6 +452,29 @@ and assembled twice, and the splice's store chain is one transport over any
 predicate a caller-preserving Reply store carries, rather than a copy per bundle.
 See `SELE4N_SPEC.md` §8.12.16.
 
+**And the object-domain donation members follow the donation's own guard**
+(WS-RR RR8.16, `v0.35.189`; register row 56).  WS-RR RR8.12 Cut C1 narrowed the
+`.receive` *replenish* segment onto `callDonationSchedContext?` and registered
+that the two **object**-domain members had its gaps one lock domain over:
+`endpointCallDonatedSc?` read the caller's own effective context with no test
+that a receiver was waiting or that it was passive, and
+`receiveRendezvousDonatedSc?` read the queued sender's through it — so a plain
+`Send`, and a `Call` to a receiver that already holds a reservation, each
+declared a SchedContext write lock for a migration that provably does not happen.
+Sound, and not free: lock contention is SM8.D's CC-5 channel.  Each member now
+resolves the *other* party and asks the transition's own guard of the pair, and
+the soundness half is proved in the one direction a footprint needs — *the
+transition migrates ⟹ the footprint declares*, which is post-state `some` ⟹
+pre-state `some` (`endpointCallDonatedSc?_some_of_post`,
+`receiveRendezvousDonatedSc?_some_of_post`, each through Cut C1's backward
+binding frame).  `receiveRendezvousDonatedSc?_isSome_iff_donatingSender` then says
+the object member and the scheduler segment declare on exactly the same
+rendezvous, because a shared spelling is not that fact.  Landing it moved
+`callDonationSchedContext?` down to the layer both askers reach and three binding
+frames out of the staged call-chain invariant surface into production.
+`maxLockSetSize` is unmoved and the golden trace is byte-identical.
+See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7.
+
 **And with the arm keystone, all three cancellation arms carry the bundle**
 (WS-RR RR8.7, `v0.35.82`): the blocked-on-endpoint arm since `v0.34.95`, the
 notification arm since `v0.34.96`, and the reply arm at `v0.35.82`

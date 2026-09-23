@@ -2416,11 +2416,20 @@ private def runDonationPushChecks : IO Unit := do
      | .error _ => false)
   assertBool "HP6.8: the policy this kernel implements is `spliceOutTheCut`"
     (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.spliceOutTheCut)
-  -- OD4.7: the `.call` footprint already declares every object the push writes.
-  assertBool "OD4.7: the resolved `.call` footprint declares the donated context"
-    (((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
+  -- OD4.7: the `.call` footprint declares every object the push writes -- and since
+  -- **WS-RR RR8.16 (`v0.35.189`)** it declares them exactly where the push HAPPENS.
+  -- This assertion used to be taken at `ObjId.ofNat 97`, an endpoint `pushStore`
+  -- does not contain, so it measured the footprint on a state where a `.call` can
+  -- rendezvous with nobody -- and the member was declared all the same, which is
+  -- precisely the over-declaration register row 56 recorded.  The positive moved to
+  -- §3.36 (a), where a passive receiver really is waiting and the donation really
+  -- fires; what stands here is the narrowing itself.
+  assertBool "RR8.16: with no receiver on that endpoint the `.call` footprint declares NO SchedContext lock"
+    (!((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
         (SeLe4n.ObjId.ofNat 0)).pairs.any
         (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
+  assertBool "RR8.16: ...because no receiver resolves there, so the donation cannot fire"
+    (decide (endpointCallDonatedSc? pushStore (SeLe4n.ObjId.ofNat 97) pushDonor = none))
 
 /-- **`v0.35.4`: the middle-caller removal, and the wedge it removes.**
 
@@ -4692,7 +4701,7 @@ private def runCallReplyFootprintChecks : IO Unit := do
   | none => assertBool "Cut C3a setup (b): the server's recv succeeds" false
   | some (stRecvL, _) =>
     assertBool "(b) setup: the client holds no context to hand on"
-      (endpointCallDonatedSc? stRecvL donClient == none)
+      (endpointCallDonatedSc? stRecvL donEp donClient == none)
     let segL := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
       AccessRightSet.empty slot0 c0 stRecvL
     let fpL := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
@@ -5389,6 +5398,117 @@ private def runRetypeIdentityStampChecks : IO Unit := do
 
 
 
+-- ============================================================================
+-- §3.36 the OBJECT-domain donation members follow the donation's own guard
+--        (WS-RR RR8.16, `v0.35.189`; register row 56 — the sweep Cut C1 owed)
+-- ============================================================================
+
+/-! Cut C1 (`v0.35.160`) keyed the `.receive` **replenish** segment on
+`callDonationSchedContext?` and recorded that the **object**-domain members had the
+same two gaps one lock domain over.  This section is that narrowing measured.
+
+The soundness half is proved (`endpointCallDonatedSc?_some_of_post`,
+`receiveRendezvousDonatedSc?_some_of_post`: the transition donates ⟹ the footprint
+declares); what no theorem states is that the narrowing is **not vacuous** — that
+every shape is reachable by the live operations and the declared member differs
+between them.  So the two retired readings live here, `private`, and nowhere else,
+computed beside the live resolver on every shape, and each is wrong on exactly one
+of them. -/
+
+/-- The superseded `.call` member (before `v0.35.189`): the caller's own effective
+context, with no test that a receiver is waiting or that it is passive. -/
+private def callerKeyedCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  match st.getTcb? caller with
+  | some tcb => tcb.schedContextBinding.scId?
+  | none => none
+
+/-- The superseded receive-side member (before `v0.35.189`): the queued sender's own
+effective context, through the retired `.call` reading — so a plain `Send` and a
+`Call` to a bound receiver both declared a SchedContext write lock. -/
+private def senderKeyedDonatedSc? (st : SystemState) (endpointObjId : SeLe4n.ObjId) :
+    Option SeLe4n.SchedContextId :=
+  (receiveRendezvousSender? st endpointObjId).bind (callerKeyedCallDonatedSc? st)
+
+private def runObjectDomainDonationMemberChecks : IO Unit := do
+  IO.println "--- §3.36 WS-RR RR8.16: the object-domain donation members follow the donation ---"
+  -- ---- the `.call` arm -------------------------------------------------------
+  -- (a) CONTROL: a receiver waiting and PASSIVE — the donation fires, so both the
+  --     live member and the retired one name the context.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stDonBase) with
+  | none => assertBool "RR8.16 setup (a): the passive server's Recv parks it" false
+  | some (stWaitPassive, _) =>
+    assertBool "(a) the endpoint now has a waiting receiver"
+      (decide (endpointCallReceiver? stWaitPassive donEp = some donServer))
+    assertBool "(a) ...which is passive, so the donation's own guard fires"
+      (decide (callDonationSchedContext? stWaitPassive donClient donServer = some scClient))
+    assertBool "(a) CONTROL: the live member names the context"
+      (decide (endpointCallDonatedSc? stWaitPassive donEp donClient = some scClient))
+    assertBool "(a) CONTROL: the retired caller-keyed reading agrees here"
+      (decide (callerKeyedCallDonatedSc? stWaitPassive donClient = some scClient))
+    assertBool "(a) ...and the resolved `.call` footprint declares the SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore stWaitPassive donEp donClient cnRoot).pairs))
+  -- (b) THE DEFECT: a receiver waiting and already BOUND — the donation declines,
+  --     and the retired reading declared a SchedContext write lock all the same.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (b): the active server's Recv parks it" false
+  | some (stWaitActive, _) =>
+    assertBool "(b) the endpoint has a waiting receiver"
+      (decide (endpointCallReceiver? stWaitActive donEp = some donServer))
+    assertBool "(b) ...which already holds a context, so the guard declines"
+      (decide (callDonationSchedContext? stWaitActive donClient donServer = none))
+    assertBool "(b) PAYOFF: the live member names nothing"
+      (decide (endpointCallDonatedSc? stWaitActive donEp donClient = none))
+    assertBool "(b) NEGATIVE (the defect): the retired caller-keyed reading named the context"
+      (decide (callerKeyedCallDonatedSc? stWaitActive donClient = some scClient))
+    assertBool "(b) PAYOFF: the resolved `.call` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointCallOnCore stWaitActive donEp donClient cnRoot).pairs))
+    assertBool "(b) ...and the caller's own TCB write lock is still declared, so the narrowing is local"
+      (decide ((Concurrency.tcbLock donClient, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore stWaitActive donEp donClient cnRoot).pairs))
+  -- ---- the `.receive` / `.replyRecv` arms ------------------------------------
+  -- (c) CONTROL: a queued `Call` from a bound client to a passive server.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
+  | none => assertBool "RR8.16 setup (c): the no-receiver call parks the caller" false
+  | some (stCallQ, _) =>
+    assertBool "(c) CONTROL: the live receive-side member names the context"
+      (decide (receiveRendezvousDonatedSc? stCallQ donEp donServer = some scClient))
+    assertBool "(c) CONTROL: the retired sender-keyed reading agrees here"
+      (decide (senderKeyedDonatedSc? stCallQ donEp = some scClient))
+    assertBool "(c) ...and the resolved `.receive` footprint declares the SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∈ (lockSet_endpointReceiveOnCore stCallQ donEp donServer cnRoot (some donReply)).pairs))
+  -- (d) THE FIRST DEFECT: a queued plain `Send` — no donation at any depth.
+  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (d): the no-receiver send parks the sender" false
+  | some (stSendQ, _) =>
+    assertBool "(d) PAYOFF: the live receive-side member names nothing"
+      (decide (receiveRendezvousDonatedSc? stSendQ donEp donServer = none))
+    assertBool "(d) NEGATIVE (the defect): the retired sender-keyed reading named the context"
+      (decide (senderKeyedDonatedSc? stSendQ donEp = some scClient))
+    assertBool "(d) PAYOFF: the resolved `.receive` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReceiveOnCore stSendQ donEp donServer cnRoot (some donReply)).pairs))
+  -- (e) THE SECOND DEFECT: a queued `Call` whose receiver already holds a context.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (e): the no-receiver call parks the caller" false
+  | some (stCallQActive, _) =>
+    assertBool "(e) the `Call`-narrowed sender resolver still names the caller"
+      (decide (receiveRendezvousCallSender? stCallQActive donEp = some donClient))
+    assertBool "(e) PAYOFF: the live receive-side member names nothing"
+      (decide (receiveRendezvousDonatedSc? stCallQActive donEp donServer = none))
+    assertBool "(e) NEGATIVE (the defect): the retired sender-keyed reading named the context"
+      (decide (senderKeyedDonatedSc? stCallQActive donEp = some scClient))
+    assertBool "(e) PAYOFF: the resolved `.replyRecv` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReplyRecvOnCore stCallQActive donServer cnRoot donClient
+             donEp).pairs))
+
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -5429,6 +5549,7 @@ def runSmpIpcChecks : IO Unit := do
   runRetypeFootprintChecks
   runRetypeReplacementGuardChecks
   runRetypeIdentityStampChecks
+  runObjectDomainDonationMemberChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."

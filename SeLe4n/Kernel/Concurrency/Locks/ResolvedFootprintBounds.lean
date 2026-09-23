@@ -171,7 +171,7 @@ supply:
 
 * the receive leg's **re-donation** members — the new sender, the context it
   re-donates and the frame its push rewrites — are live exactly when the
-  endpoint has a queued sender (`receiveRendezvousDonatedSc?_of_no_sender`);
+  endpoint has a queued sender (`receiveRendezvousDonatedSc?_of_no_queued_sender`);
 * the **invoking** receiver's own pre-receive return is live exactly when it
   does not (`receivePreReturn?_of_sender`).
 
@@ -211,7 +211,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
               _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
             (by decide : (18 : Nat) ≤ 20)
       | none =>
-          rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
           simp only [Option.bind_none]
           exact lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin
             _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -230,7 +230,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide : (18 : Nat) ≤ 20)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
               simp only [Option.bind_none]
               exact lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin
                 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -246,7 +246,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_twenty (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide : (17 : Nat) ≤ 20)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_belowHead
@@ -295,7 +295,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
           exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
             _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
       | none =>
-          rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+          rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
           simp only [Option.bind_none]
           exact Nat.le_trans
             (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin
@@ -320,7 +320,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
               exact lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin
                 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
               simp only [Option.bind_none]
               exact lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin
                 _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _
@@ -339,7 +339,7 @@ theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen (st : SystemState)
                   _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _ _)
                 (by decide : (17 : Nat) ≤ 18)
           | none =>
-              rw [receiveRendezvousDonatedSc?_of_no_sender st endpointObjId hS]
+              rw [receiveRendezvousDonatedSc?_of_no_queued_sender st endpointObjId replier hS]
               simp only [Option.bind_none]
               exact Nat.le_trans
                 (lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_frameAbove_of_no_belowHead

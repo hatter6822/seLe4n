@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.188` (`lakefile.toml`) |
+| **Package version** | `0.35.189` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 410,635 across 338 Lean files |
-| **Test LoC** | 83,589 across 70 Lean test suites |
-| **Proved declarations** | 13,584 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 410,884 across 338 Lean files |
+| **Test LoC** | 83,710 across 70 Lean test suites |
+| **Proved declarations** | 13,591 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4521,6 +4521,48 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   no static footprint can enumerate it.  `maxLockSetSize` is unmoved, a
   `SchedLockSet` carrying no cardinality bound.
 
+  **And the OBJECT-domain members follow the same guard** (WS-RR RR8.16,
+  `v0.35.189`; register row 56).  Cut C1 narrowed the *replenish* segment and
+  registered that the two object-domain members had its gaps one lock domain over:
+  `endpointCallDonatedSc?` read the caller's own effective context with no test
+  that a receiver was waiting or that it was passive, and
+  `receiveRendezvousDonatedSc?` read the queued sender's through it — so a plain
+  `Send`, and a `Call` to a receiver that already holds a reservation, each
+  declared a SchedContext **write** lock and a donation-old-head reply lock for a
+  migration that provably does not happen.  Both are now the *other* party
+  resolved and the transition's own guard asked of the pair:
+  `endpointCallDonatedSc? st endpointId caller` is
+  `(endpointCallReceiver? st endpointId).bind fun receiver =>
+  callDonationSchedContext? st caller receiver`, and
+  `receiveRendezvousDonatedSc? st endpointObjId receiver` is
+  `(receiveRendezvousCallSender? st endpointObjId).bind fun sender =>
+  callDonationSchedContext? st sender receiver`.
+
+  The soundness half — *the transition migrates ⟹ the footprint declares*, which
+  is **post `some` ⟹ pre `some`**, the footprint resolving on the state the
+  bracket acquires at and the donation branching at the state its leg leaves — is
+  `endpointCallDonatedSc?_some_of_post` and
+  `receiveRendezvousDonatedSc?_some_of_post`, each through Cut C1's backward
+  binding frame over the arm's own leg, with
+  `endpointCallWithCapsOnCore_sameSchedContextBindings` the sending side's new
+  whole-leg frame.  The two lock domains are then shown to ask **one** question:
+  `receiveRendezvousDonatedSc?_isSome_iff_donatingSender` says the object member
+  and the scheduler segment declare on exactly the same rendezvous, since both
+  compose `receiveRendezvousCallSender?` with `callDonationSchedContext?` at the
+  same two threads — a shared *spelling* is not that fact.  The `.call` arm has no
+  such equality by design, its scheduler segment resolving at the WithCaps
+  post-state and its object member on the pre-state, which is what the
+  `_some_of_post` licence is for.  Landing it moved `callDonationSchedContext?` and
+  its four lemmas down to `IPC/Operations/Endpoint.lean` — measured on the import
+  closure, `IPC/CrossCore/EndpointCall.lean` and `IPC/Operations/Donation.lean`
+  are *incomparable* and both reach it — and three binding frames out of the
+  **staged** `EndpointCallInvariant.lean` into production, since the footprint and
+  the licence are production and could not read a frame declared there.
+  `tests/SmpIpcSuite.lean` §3.36 measures five shapes against both retired
+  readings; `maxLockSetSize` is unmoved, both reachable `.replyRecv` bounds are
+  unchanged (a narrowing can only lower a bound) and the golden trace is
+  byte-identical.
+
   **And the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's SM8.B write set,
@@ -5209,12 +5251,14 @@ behaviour**.  Two edits make donation transitive, and they land in the same cut
 because each is false without the other.
 
 - **`applyCallDonation` reads the caller's *effective* context.**
-  `callDonationSchedContext?` and the footprint's `endpointCallDonatedSc?` both
-  answer `SchedContextBinding.scId?`, which is `some scId` for a `.bound` caller
-  and for a `.donated` one alike — seL4-MCS's `maybeDonateSchedContext`, which
-  reads `sender->tcbSchedContext` without asking how the sender came by it.  A
-  footprint narrower than its transition is *false*, so the resolver and the
-  guard widened in one cut and neither can move without the other.
+  `callDonationSchedContext?` answers `SchedContextBinding.scId?`, which is
+  `some scId` for a `.bound` caller and for a `.donated` one alike — seL4-MCS's
+  `maybeDonateSchedContext`, which reads `sender->tcbSchedContext` without asking
+  how the sender came by it.  A footprint narrower than its transition is *false*,
+  so the resolver and the guard widened in one cut and neither can move without
+  the other — and since `v0.35.189` there is nothing left to keep in step, the
+  footprint's `endpointCallDonatedSc?` **being** that resolver at the endpoint's
+  waiting receiver rather than a second reading beside it.
 - **`donateSchedContext` pushes a reply-stack frame.**  Five object writes since
   `v0.35.4`: the context's rebind **and** new stack head as one store
   (`boundThread := some serverTid`, `scReply := some pushRid`), the pushed

@@ -1,3 +1,98 @@
+## v0.35.189 — WS-RR RR8.16: the object-domain donation members follow the donation's own guard
+
+**Closes register row 56**, opened at `v0.35.160` by the sweep WS-RR RR8.12 Cut C1
+owed.  Cut C1 narrowed the `.receive` **replenish** segment onto
+`callDonationSchedContext?` and recorded that the two **object**-domain members had
+its two gaps one lock domain over.  `endpointCallDonatedSc?` read the caller's own
+effective context — `(st.getTcb? caller).bind (·.schedContextBinding.scId?)` — with
+no test that a receiver was waiting or that it was passive, and
+`receiveRendezvousDonatedSc?` read the queued sender's through it.  So a plain
+`Send`, a `Call` to a receiver that already holds a reservation, and a `Call` with
+no receiver at all each declared a SchedContext **write** lock and a
+donation-old-head reply lock for a migration that provably does not happen.  Sound
+— a footprint wider than its operation is — and not free: lock contention is an
+observable channel (SM8.D's CC-5), which is WS-OD OD3.5's own reason for narrowing
+a footprint.
+
+**Each member is now the OTHER party resolved and the transition's own guard asked
+of the pair.**  `endpointCallDonatedSc? st endpointId caller` is
+`(endpointCallReceiver? st endpointId).bind fun receiver => callDonationSchedContext? st caller receiver`,
+and `receiveRendezvousDonatedSc? st endpointObjId receiver` is
+`(receiveRendezvousCallSender? st endpointObjId).bind fun sender => callDonationSchedContext? st sender receiver`.
+A member that inlines a binding read is the defect returning, and a Tier 3 negative
+refuses one at each.
+
+**The owner moved DOWN, and the layering was measured rather than read off module
+paths.**  `IPC/CrossCore/EndpointCall.lean` and `IPC/Operations/Donation.lean` are
+**incomparable** — neither is in the other's import closure — and both reach
+`IPC/Operations/Endpoint.lean`, so `callDonationSchedContext?` and its four lemmas
+live at the join with a tombstone at the old home.  That is `v0.35.59`'s rule
+verbatim: *when a question has one owner and an asker that cannot see it, the owner
+is in the wrong layer*.  The same rule moved three binding frames out of the
+**staged** `EndpointCallInvariant.lean` into production —
+`endpointCallOnCore_preserves_objects_invExt`,
+`wakeThread_sameSchedContextBindings_of_ready` and
+`endpointCallOnCore_sameSchedContextBindings` — since the footprint and the licence
+below are production and could not read a frame declared in the staged surface.
+The first attempt wrote a **second copy** of the third and the build refused it as
+already declared: *before writing a helper, find the one this tree already has*,
+caught by the elaborator rather than by a review.
+
+**Soundness is a proved relation, in the one direction a footprint needs.**  A
+footprint that omits a written lock is false, so a narrowing owes *the transition
+migrates ⟹ the footprint declares* — and because the footprint resolves on the
+state the bracket acquires at while the donation branches at the state its leg
+leaves, that is **post `some` ⟹ pre `some`**.  `endpointCallDonatedSc?_some_of_post`
+and `receiveRendezvousDonatedSc?_some_of_post` are those licences, each composing
+Cut C1's backward binding frame
+(`callDonationSchedContext?_some_of_sameSchedContextBindings`) over the arm's own
+leg, with `endpointCallWithCapsOnCore_sameSchedContextBindings` the sending side's
+new whole-leg frame (the receive side's already existed).  The forward direction is
+neither given by a backward frame nor needed: a footprint that declares on a
+pre-state `some` the transition then declines is *wider* than its operation, which
+is sound.
+
+**The two lock domains ask ONE question, and that is stated rather than spelled.**
+`receiveRendezvousDonatedSc?_isSome_iff_donatingSender` says the object member and
+Cut C1's scheduler segment declare on exactly the same rendezvous, both composing
+`receiveRendezvousCallSender?` with `callDonationSchedContext?` at the same two
+threads — a shared *spelling* is not that fact.  The object member deliberately does
+**not** route through `receiveRendezvousDonatingSender?`, which already asks the
+guard to decide its own answer, so composing through it would ask the same question
+twice and leave two places for the answer to be read.  The `.call` arm has no such
+equality **by design**: its scheduler segment resolves at the WithCaps *post*-state
+and its object member on the pre-state, which is exactly what the `_some_of_post`
+licence is for.
+
+**Measured, not only proved.**  `tests/SmpIpcSuite.lean` §3.36 drives five shapes
+through the live operations — a passive receiver (CONTROL), a bound receiver (the
+`.call` defect), a queued `Call` from a bound client (CONTROL), a queued plain
+`Send` and a queued `Call` to a bound receiver (the two receive-side defects) — with
+**both** retired readings spelled as `private def`s in the suite and nowhere else
+and computed beside the live resolver on every shape, each wrong on exactly one of
+them; a tree-wide negative refuses either escaping the witness.  The soundness half
+is proved, so what the witness carries is that the narrowing is **not vacuous**:
+every shape is reachable by the live operations and the declared member differs
+between them.
+
+**Cost: none.**  `maxLockSetSize` is unmoved, both reachable `.replyRecv` bounds
+(`…_size_le_eighteen`, `…_size_le_twenty`) are unchanged — a narrowing can only
+lower a bound — and `main_trace_smoke.expected` is byte-identical.
+
+**Two things the cut records about its own register row rather than quietly
+satisfying them.**  The blast radius was **35 call sites across six files**, not the
+registered 55 across nine: that figure counted every occurrence of the two names,
+the hypotheses of theorems *about* them included.  And it did **not** ride Cut C4,
+which restated each arm's members without touching these two — so it is a cut of its
+own after Cut C4 rather than inside it.  *A premise that survives a cut it motivated
+will be cited by the next one.*
+
+Nineteen Tier 3 anchors, every one mutation-tested by keeping the token and
+breaking the relation: both narrowed bodies reverted to their retired readings (the
+positive misses and the negative fires on the same mutation), both licences restated
+forward, a binding frame moved back into the staged surface, a retired reading
+escaping the witness into the kernel tree, and a witness label.
+
 ## v0.35.188 — WS-RR RR8.16: the removal's bundle statement, and the unit it needed
 
 **Closes the register row WS-RR RR8.7 opened at `v0.35.80`.**  That cut deleted

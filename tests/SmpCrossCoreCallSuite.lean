@@ -320,8 +320,8 @@ private def runLockSetChecks : IO Unit := do
   -- `endpointCallDonatedSc?`. On the empty base state both resolve to `none`.
   assertBool "endpointCallReceiver? resolves none on an endpoint with no waiter"
     (decide (endpointCallReceiver? stBase epId = none))
-  assertBool "endpointCallDonatedSc? resolves none for an unbound caller"
-    (decide (endpointCallDonatedSc? stBase callerTid = none))
+  assertBool "endpointCallDonatedSc? resolves none with no receiver to donate to"
+    (decide (endpointCallDonatedSc? stBase epId callerTid = none))
   assertBool "state-resolved call lock-set kinds all permitted"
     (decide (∀ p ∈ (lockSet_endpointCallOnCore stBase epId callerTid cnRoot).pairs,
         p.fst.kind ∈ permittedKinds .call))

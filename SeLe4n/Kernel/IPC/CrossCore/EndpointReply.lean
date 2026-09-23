@@ -1155,6 +1155,126 @@ def lockSet_endpointReplyOnCore (st : SystemState) (replier : SeLe4n.ThreadId)
     (((answeredFrameHeadContext? st target).map (·.1)).bind
       (donationOriginRecipient? st))
 
+/-- **WS-RR RR8.12 (PR #897 Codex review): does this thread carry an outstanding
+`Call`?** -- the PRE-state sibling of `rendezvousDequeuedCall`, clause for clause.
+
+The two ask one question at two states and *must* be spelled separately, because a
+dequeued `Call` sender is `.blockedOnCall` before the receive leg runs and
+`.blockedOnReply` after it.  Asking for the post-state constructor at the pre-state
+would answer `false` for exactly the sender that *will* donate, so a footprint
+derived from it would **omit** a lock the transition writes -- and a footprint that
+omits a written lock is false, where one wider than its operation is merely
+expensive.
+
+Reads through `lookupTcb`, not `getTcb?`, for the reason `rendezvousDequeuedCall`
+does: `lookupTcb` refuses a reserved (idle) thread id, and it is the reader
+`endpointQueuePopHead` itself uses, so this is the leg's own branch condition
+rather than a second reading of it
+(`endpointQueuePopHead_popped_tcb_eq_lookup`). -/
+def rendezvousSenderIsCall (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
+  match lookupTcb st tid with
+  | some tcb =>
+      match tcb.ipcState with
+      | .blockedOnCall _ => true
+      | _                => false
+  | none => false
+
+/-- **WS-RR RR8.12**: true exactly of a thread the store resolves as
+`.blockedOnCall`. -/
+theorem rendezvousSenderIsCall_of_blockedOnCall (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (callEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hCall : tcb.ipcState = .blockedOnCall callEp) :
+    rendezvousSenderIsCall st tid = true := by
+  unfold rendezvousSenderIsCall
+  simp only [hTcb, hCall]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and false of one still parked
+`.blockedOnSend` -- the plain `Send` rendezvous this cut narrows the footprint on.
+
+`ipcStateQueueMembershipConsistent` admits exactly `.blockedOnSend` and
+`.blockedOnCall` for a thread on an endpoint's send queue, so this is *the*
+reachable non-`Call` shape there; the predicate is false for every other
+`ipcState` by construction. -/
+theorem rendezvousSenderIsCall_of_blockedOnSend (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hTcb : lookupTcb st tid = some tcb) (hSend : tcb.ipcState = .blockedOnSend sendEp) :
+    rendezvousSenderIsCall st tid = false := by
+  unfold rendezvousSenderIsCall
+  simp only [hTcb, hSend]
+
+/-- **WS-RR RR8.12 (PR #897 Codex review): the queued sender, WHEN IT CARRIES A
+`Call`.**
+
+Derived from `receiveRendezvousSender?` -- the resolver the arm's own sender member
+and `receiveRendezvousDonatedSc?` already come from -- so the three cannot disagree
+about which thread a rendezvous dequeues, and narrowed by `rendezvousSenderIsCall`,
+which is `rendezvousDequeuedCall`'s pre-state sibling.  A `Bool` guard rather than a
+nested match, so a consumer splits an `if` rather than reducing a matcher. -/
+def receiveRendezvousCallSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
+    Option SeLe4n.ThreadId :=
+  (receiveRendezvousSender? st endpointId).bind fun sender =>
+    if rendezvousSenderIsCall st sender then some sender else none
+
+/-- **WS-RR RR8.12**: it narrows `receiveRendezvousSender?` and never names another
+thread -- the two resolvers agree about *which* thread whenever this one answers. -/
+theorem receiveRendezvousCallSender?_eq_sender (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousCallSender? st endpointId = some sender) :
+    receiveRendezvousSender? st endpointId = some sender := by
+  unfold receiveRendezvousCallSender? at h
+  cases hS : receiveRendezvousSender? st endpointId with
+  | none => rw [hS] at h; exact absurd h (by simp)
+  | some s =>
+    -- `cases hS :` has already substituted the resolver's value in the GOAL, so
+    -- only `h` still mentions it.
+    simp only [hS, Option.bind_some] at h
+    split at h
+    · exact congrArg some (Option.some.inj h)
+    · exact absurd h (by simp)
+
+/-- **WS-RR RR8.12**: `none` when the endpoint has no queued sender at all -- the
+block path, where the arm donates nothing. -/
+theorem receiveRendezvousCallSender?_of_blocked (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
+    receiveRendezvousCallSender? st endpointId = none := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead]
+  rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `none` on a plain `Send`
+rendezvous -- the case this cut exists to close. -/
+theorem receiveRendezvousCallSender?_of_blockedOnSend (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
+    receiveRendezvousCallSender? st endpointId = none := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead,
+    rendezvousSenderIsCall_of_blockedOnSend st sender senderTcb sendEp hTcb hSend]
+  rfl
+
+/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `some sender` on a `Call`
+rendezvous -- the one shape on which the arm's donation can migrate a
+replenishment. -/
+theorem receiveRendezvousCallSender?_of_blockedOnCall (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
+    (senderTcb : TCB) (callEp : SeLe4n.ObjId)
+    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
+    (hTcb : lookupTcb st sender = some senderTcb)
+    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
+    receiveRendezvousCallSender? st endpointId = some sender := by
+  unfold receiveRendezvousCallSender? receiveRendezvousSender?
+  rw [hEp]
+  simp only [Option.bind_some, hHead,
+    rendezvousSenderIsCall_of_blockedOnCall st sender senderTcb callEp hTcb hCall]
+  rfl
+
+
 /-- **WS-OD OD3.5: the SchedContext the receive leg's rendezvous donates.**
 
 `replyRecvBody`'s post-receive stage is `replyRecvPostReceiveDonation`, and it
@@ -1179,25 +1299,46 @@ a declared-but-unwritten lock costs contention, never soundness.
 `.receive` asks it too.  Both receiving arms dequeue a `Call` the same way and
 must therefore hand its scheduling context over the same way; a name carrying
 `replyRecv` invited the second copy. -/
-def receiveRendezvousDonatedSc? (st : SystemState) (endpointObjId : SeLe4n.ObjId) :
-    Option SeLe4n.SchedContextId :=
-  (receiveRendezvousSender? st endpointObjId).bind (endpointCallDonatedSc? st)
+def receiveRendezvousDonatedSc? (st : SystemState) (endpointObjId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : Option SeLe4n.SchedContextId :=
+  (receiveRendezvousCallSender? st endpointObjId).bind fun sender =>
+    callDonationSchedContext? st sender receiver
 
-/-- WS-OD OD3.5: an endpoint with nothing queued to send donates nothing. -/
+/-- WS-OD OD3.5: an endpoint with nothing queued to send donates nothing.
+
+**WS-RR RR8.16 (`v0.35.189`)**: stated over `receiveRendezvousCallSender?`, which
+`receiveRendezvousSender?` bounds — so the weaker hypothesis still discharges it
+(`receiveRendezvousDonatedSc?_of_no_queued_sender` below), and the seven proofs in
+`ResolvedFootprintBounds.lean` that reach for it are unchanged. -/
 @[simp] theorem receiveRendezvousDonatedSc?_of_no_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId)
-    (h : receiveRendezvousSender? st endpointObjId = none) :
-    receiveRendezvousDonatedSc? st endpointObjId = none := by
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (h : receiveRendezvousCallSender? st endpointObjId = none) :
+    receiveRendezvousDonatedSc? st endpointObjId receiver = none := by
   unfold receiveRendezvousDonatedSc?
   rw [h]
   rfl
 
-/-- WS-OD OD3.5: and at a queued sender it is exactly what a `.call` from that
-thread would declare — the two arms ask one question. -/
+/-- **WS-RR RR8.16 (`v0.35.189`)**: and an endpoint with nothing queued to send at
+all donates nothing, which is the shape the resolved bounds consume. -/
+@[simp] theorem receiveRendezvousDonatedSc?_of_no_queued_sender (st : SystemState)
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
+    (h : receiveRendezvousSender? st endpointObjId = none) :
+    receiveRendezvousDonatedSc? st endpointObjId receiver = none :=
+  receiveRendezvousDonatedSc?_of_no_sender st endpointObjId receiver
+    (by unfold receiveRendezvousCallSender?; rw [h]; rfl)
+
+/-- WS-OD OD3.5: and at a queued `Call` sender it is exactly what a `.call` from
+that thread would declare — the two arms ask one question.
+
+**WS-RR RR8.16 (`v0.35.189`)**: the question is now the *donation's own guard*
+(`callDonationSchedContext?`) rather than the sender's `scId?` alone, so the
+member is `none` for a plain `Send` and for a `Call` to a receiver that already
+holds a context — exactly the two shapes the transition declines. -/
 @[simp] theorem receiveRendezvousDonatedSc?_of_sender (st : SystemState)
-    (endpointObjId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (h : receiveRendezvousSender? st endpointObjId = some sender) :
-    receiveRendezvousDonatedSc? st endpointObjId = endpointCallDonatedSc? st sender := by
+    (endpointObjId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+    (h : receiveRendezvousCallSender? st endpointObjId = some sender) :
+    receiveRendezvousDonatedSc? st endpointObjId receiver
+      = callDonationSchedContext? st sender receiver := by
   unfold receiveRendezvousDonatedSc?
   rw [h]
   rfl
@@ -1353,7 +1494,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     ((st.getTcb? target).bind (·.replyObject))
     (receiveInstallsCaps st endpointObjId)
     (recordedReplyServer? st target)
-    (receiveRendezvousDonatedSc? st endpointObjId)
+    (receiveRendezvousDonatedSc? st endpointObjId replier)
     belowHead.1 belowHead.2
     -- **WS-OD OD3.13**: and the receive leg's queue-structure neighbour, through
     -- the same resolver `.receive` uses -- it is the same transition.
@@ -1362,7 +1503,7 @@ def lockSet_endpointReplyRecvOnCore (st : SystemState) (replier : SeLe4n.ThreadI
     -- the receive leg's push rewrites -- and the head of the returned context's
     -- stack, which the reply leg's pop clears.  Both resolved by
     -- `replyStackHead?` on the contexts the members above already name.
-    ((receiveRendezvousDonatedSc? st endpointObjId).bind (replyStackHead? st))
+    ((receiveRendezvousDonatedSc? st endpointObjId replier).bind (replyStackHead? st))
     (((answeredFrameHeadContext? st target).map (·.1)).bind (replyStackHead? st))
     -- **PR #894 review — the INVOKING receiver's own pre-receive return.**  The
     -- receive leg is `.receive`'s transition, so with no sender queued it runs
@@ -1428,14 +1569,14 @@ def lockSet_endpointReceiveOnCore (st : SystemState) (endpointId : SeLe4n.ObjId)
     -- **WS-OD OD3.6**: the SchedContext the rendezvous donates, resolved from
     -- the same pre-state and through the same `receiveRendezvousSender?` the two
     -- members above read.
-    (receiveRendezvousDonatedSc? st endpointId)
+    (receiveRendezvousDonatedSc? st endpointId receiver)
     -- **WS-OD OD3.12**: and the queue-structure neighbour, through the same
     -- resolver again.
     (receiveSideQueueStructureNeighbor? st endpointId)
     -- **WS-OD (`v0.35.4`)**: the old head the rendezvous donation's push
     -- rewrites, and the five objects of the receiver's own pre-receive return
     -- -- each through the resolver it is derived from.
-    ((receiveRendezvousDonatedSc? st endpointId).bind (replyStackHead? st))
+    ((receiveRendezvousDonatedSc? st endpointId receiver).bind (replyStackHead? st))
     ((receivePreReturn? st endpointId receiver).map (·.1))
     ((receivePreReturn? st endpointId receiver).map (·.2))
     (receivePreReturnStack? st endpointId receiver).1
@@ -2108,7 +2249,7 @@ theorem lockSet_endpointReceiveOnCore_covers_cdt
   rw [hCaps]
   exact lockSet_endpointReceive_stateLevel_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
-    (receiveRendezvousDonatedSc? st endpointId)
+    (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _
 /-- **WS-RR RR7.11**: and the receiver's own CSpace root in **write** mode, the
@@ -2123,7 +2264,7 @@ theorem lockSet_endpointReceiveOnCore_covers_capsDestination
   rw [hCaps]
   exact lockSet_endpointReceive_capsInstall_write_mem receiver cnodeRootObjId endpointId
     (receiveRendezvousSender? st endpointId) replyId
-    (receiveRendezvousDonatedSc? st endpointId)
+    (receiveRendezvousDonatedSc? st endpointId receiver)
     (receiveSideQueueStructureNeighbor? st endpointId)
     _ _ _ _ _ _
 
@@ -2160,7 +2301,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donatedSc
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId = some scId) :
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId) :
     (schedContextLock scId, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
@@ -2177,7 +2318,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationIndex
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId = some scId) :
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId) :
     (stateLevelLock, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
   unfold lockSet_endpointReceiveOnCore
@@ -2207,7 +2348,7 @@ theorem lockSet_endpointReceiveOnCore_covers_donationOldHead
     (st : SystemState) (endpointId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId)
     (cnodeRootObjId : SeLe4n.ObjId) (replyId : Option SeLe4n.ReplyId)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
-    (hSc : receiveRendezvousDonatedSc? st endpointId = some scId)
+    (hSc : receiveRendezvousDonatedSc? st endpointId receiver = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_endpointReceiveOnCore st endpointId receiver cnodeRootObjId replyId).pairs := by
@@ -2353,7 +2494,7 @@ theorem lockSet_endpointReplyRecvOnCore_covers_redonationOldHead
     (st : SystemState) (replier : SeLe4n.ThreadId) (cnodeRootObjId : SeLe4n.ObjId)
     (target : SeLe4n.ThreadId) (endpointObjId : SeLe4n.ObjId)
     (scId : SeLe4n.SchedContextId) (oldHead : SeLe4n.ReplyId)
-    (hSc : receiveRendezvousDonatedSc? st endpointObjId = some scId)
+    (hSc : receiveRendezvousDonatedSc? st endpointObjId replier = some scId)
     (hOld : replyStackHead? st scId = some oldHead) :
     (replyLock oldHead, AccessMode.write)
       ∈ (lockSet_endpointReplyRecvOnCore st replier cnodeRootObjId target
@@ -3555,6 +3696,45 @@ theorem endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous
                exact hLeg'.trans (ipcUnwrapCaps_sameSchedContextBindings _ receiverCspaceRoot
                  receiverSlotBase _ stRecv _ _ hLegInv hUnwrap))
 
+/-- **WS-RR RR8.16 (`v0.35.189`): the narrowed receive-side member omits no lock
+the transition takes.**
+
+The soundness half of the object-domain narrowing, and the receive-side twin of
+`endpointCallDonatedSc?_some_of_post`.  WS-OD OD3.6's donation runs at the state
+the receive leg leaves and branches on `callDonationSchedContext?` there, while
+`lockSet_endpointReceiveOnCore` / `lockSet_endpointReplyRecvOnCore` resolve on the
+state the bracket acquires at — so "the transition donates ⟹ the footprint
+declares" is *post* `some` ⟹ *pre* `some`, which is exactly the direction Cut C1's
+binding frame gives.
+
+Until `v0.35.189` the member needed no such licence because it was *wider*: it was
+the queued sender's own `scId?`, with no test that the sender carries a `Call` and
+none that the receiver is passive, so it declared a SchedContext write lock on
+every rendezvous with a bound sender.  Narrowing it to the transition's own guard
+is what makes the declaration exact, and this is the theorem that the narrowing
+lost nothing. -/
+theorem receiveRendezvousDonatedSc?_some_of_post
+    (endpointId : SeLe4n.ObjId) (receiver sender : SeLe4n.ThreadId)
+    (replyId : Option SeLe4n.ReplyId) (receiverCspaceRoot : SeLe4n.ObjId)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (ep : Endpoint) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hEp : st.getEndpoint? endpointId = some ep)
+    (hSender : receiveRendezvousCallSender? st endpointId = some sender)
+    (hPost : callDonationSchedContext?
+      (endpointReceiveDualWithCapsOnCore endpointId receiver replyId receiverCspaceRoot
+        receiverSlotBase executingCore st).1 sender receiver = some scId) :
+    receiveRendezvousDonatedSc? st endpointId receiver = some scId := by
+  rw [receiveRendezvousDonatedSc?_of_sender st endpointId receiver sender hSender]
+  have hHead : ep.sendQ.head = some sender := by
+    have hS := receiveRendezvousCallSender?_eq_sender st endpointId sender hSender
+    unfold receiveRendezvousSender? at hS
+    simpa [hEp] using hS
+  exact callDonationSchedContext?_some_of_sameSchedContextBindings
+    (endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous endpointId receiver
+      replyId receiverCspaceRoot receiverSlotBase executingCore st ep sender hObjInv hEp hHead)
+    sender receiver scId hPost
+
 /-- **WS-RR RR8.12 (frame), restated per arm at `v0.35.161`**: a cross-core receive
 that **rendezvouses** touches no core's replenish queue.
 
@@ -4058,125 +4238,6 @@ theorem endpointReceiveDualWithCapsOnCore_preserves_replenishQueueAffinityConsis
                    receiverSlotBase _ stRecv _ _ tid hLegInv hUnwrap)).mpr (by simpa using hLeg))
 
 
-/-- **WS-RR RR8.12 (PR #897 Codex review): does this thread carry an outstanding
-`Call`?** -- the PRE-state sibling of `rendezvousDequeuedCall`, clause for clause.
-
-The two ask one question at two states and *must* be spelled separately, because a
-dequeued `Call` sender is `.blockedOnCall` before the receive leg runs and
-`.blockedOnReply` after it.  Asking for the post-state constructor at the pre-state
-would answer `false` for exactly the sender that *will* donate, so a footprint
-derived from it would **omit** a lock the transition writes -- and a footprint that
-omits a written lock is false, where one wider than its operation is merely
-expensive.
-
-Reads through `lookupTcb`, not `getTcb?`, for the reason `rendezvousDequeuedCall`
-does: `lookupTcb` refuses a reserved (idle) thread id, and it is the reader
-`endpointQueuePopHead` itself uses, so this is the leg's own branch condition
-rather than a second reading of it
-(`endpointQueuePopHead_popped_tcb_eq_lookup`). -/
-def rendezvousSenderIsCall (st : SystemState) (tid : SeLe4n.ThreadId) : Bool :=
-  match lookupTcb st tid with
-  | some tcb =>
-      match tcb.ipcState with
-      | .blockedOnCall _ => true
-      | _                => false
-  | none => false
-
-/-- **WS-RR RR8.12**: true exactly of a thread the store resolves as
-`.blockedOnCall`. -/
-theorem rendezvousSenderIsCall_of_blockedOnCall (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (callEp : SeLe4n.ObjId)
-    (hTcb : lookupTcb st tid = some tcb) (hCall : tcb.ipcState = .blockedOnCall callEp) :
-    rendezvousSenderIsCall st tid = true := by
-  unfold rendezvousSenderIsCall
-  simp only [hTcb, hCall]
-
-/-- **WS-RR RR8.12 (PR #897 Codex review)**: and false of one still parked
-`.blockedOnSend` -- the plain `Send` rendezvous this cut narrows the footprint on.
-
-`ipcStateQueueMembershipConsistent` admits exactly `.blockedOnSend` and
-`.blockedOnCall` for a thread on an endpoint's send queue, so this is *the*
-reachable non-`Call` shape there; the predicate is false for every other
-`ipcState` by construction. -/
-theorem rendezvousSenderIsCall_of_blockedOnSend (st : SystemState)
-    (tid : SeLe4n.ThreadId) (tcb : TCB) (sendEp : SeLe4n.ObjId)
-    (hTcb : lookupTcb st tid = some tcb) (hSend : tcb.ipcState = .blockedOnSend sendEp) :
-    rendezvousSenderIsCall st tid = false := by
-  unfold rendezvousSenderIsCall
-  simp only [hTcb, hSend]
-
-/-- **WS-RR RR8.12 (PR #897 Codex review): the queued sender, WHEN IT CARRIES A
-`Call`.**
-
-Derived from `receiveRendezvousSender?` -- the resolver the arm's own sender member
-and `receiveRendezvousDonatedSc?` already come from -- so the three cannot disagree
-about which thread a rendezvous dequeues, and narrowed by `rendezvousSenderIsCall`,
-which is `rendezvousDequeuedCall`'s pre-state sibling.  A `Bool` guard rather than a
-nested match, so a consumer splits an `if` rather than reducing a matcher. -/
-def receiveRendezvousCallSender? (st : SystemState) (endpointId : SeLe4n.ObjId) :
-    Option SeLe4n.ThreadId :=
-  (receiveRendezvousSender? st endpointId).bind fun sender =>
-    if rendezvousSenderIsCall st sender then some sender else none
-
-/-- **WS-RR RR8.12**: it narrows `receiveRendezvousSender?` and never names another
-thread -- the two resolvers agree about *which* thread whenever this one answers. -/
-theorem receiveRendezvousCallSender?_eq_sender (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (sender : SeLe4n.ThreadId)
-    (h : receiveRendezvousCallSender? st endpointId = some sender) :
-    receiveRendezvousSender? st endpointId = some sender := by
-  unfold receiveRendezvousCallSender? at h
-  cases hS : receiveRendezvousSender? st endpointId with
-  | none => rw [hS] at h; exact absurd h (by simp)
-  | some s =>
-    -- `cases hS :` has already substituted the resolver's value in the GOAL, so
-    -- only `h` still mentions it.
-    simp only [hS, Option.bind_some] at h
-    split at h
-    · exact congrArg some (Option.some.inj h)
-    · exact absurd h (by simp)
-
-/-- **WS-RR RR8.12**: `none` when the endpoint has no queued sender at all -- the
-block path, where the arm donates nothing. -/
-theorem receiveRendezvousCallSender?_of_blocked (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint)
-    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = none) :
-    receiveRendezvousCallSender? st endpointId = none := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
-  rw [hEp]
-  simp only [Option.bind_some, hHead]
-  rfl
-
-/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `none` on a plain `Send`
-rendezvous -- the case this cut exists to close. -/
-theorem receiveRendezvousCallSender?_of_blockedOnSend (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
-    (senderTcb : TCB) (sendEp : SeLe4n.ObjId)
-    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
-    (hTcb : lookupTcb st sender = some senderTcb)
-    (hSend : senderTcb.ipcState = .blockedOnSend sendEp) :
-    receiveRendezvousCallSender? st endpointId = none := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
-  rw [hEp]
-  simp only [Option.bind_some, hHead,
-    rendezvousSenderIsCall_of_blockedOnSend st sender senderTcb sendEp hTcb hSend]
-  rfl
-
-/-- **WS-RR RR8.12 (PR #897 Codex review)**: and `some sender` on a `Call`
-rendezvous -- the one shape on which the arm's donation can migrate a
-replenishment. -/
-theorem receiveRendezvousCallSender?_of_blockedOnCall (st : SystemState)
-    (endpointId : SeLe4n.ObjId) (ep : Endpoint) (sender : SeLe4n.ThreadId)
-    (senderTcb : TCB) (callEp : SeLe4n.ObjId)
-    (hEp : st.getEndpoint? endpointId = some ep) (hHead : ep.sendQ.head = some sender)
-    (hTcb : lookupTcb st sender = some senderTcb)
-    (hCall : senderTcb.ipcState = .blockedOnCall callEp) :
-    receiveRendezvousCallSender? st endpointId = some sender := by
-  unfold receiveRendezvousCallSender? receiveRendezvousSender?
-  rw [hEp]
-  simp only [Option.bind_some, hHead,
-    rendezvousSenderIsCall_of_blockedOnCall st sender senderTcb callEp hTcb hCall]
-  rfl
-
 /-- **WS-RR RR8.12 Cut C1 (register row 55): the queued sender whose `Call` the arm's
 donation WILL transfer** — `receiveRendezvousCallSender?` narrowed once more, by the
 donation's own resolver.
@@ -4250,6 +4311,38 @@ theorem receiveRendezvousDonatingSender?_of_donation (st : SystemState)
   unfold receiveRendezvousDonatingSender?
   rw [hCall]
   simp only [Option.bind_some, hSome, Option.isSome_some, if_true]
+
+/-- **WS-RR RR8.16 (`v0.35.189`; register row 56): the two lock domains' donation
+members declare on exactly the same states.**
+
+The OBJECT domain's member is the SchedContext a receive-side rendezvous hands
+over (`receiveRendezvousDonatedSc?`, a `SchedContextId`) and the SCHEDULER
+domain's segment is keyed by the thread that hands it over
+(`receiveRendezvousDonatingSender?`, a `ThreadId`).  Two different answers to one
+question — *does this rendezvous donate?* — and this is the statement that they
+cannot disagree about it: both compose `receiveRendezvousCallSender?` with
+`callDonationSchedContext?` at the same two threads, so neither can narrow or
+widen without the other.
+
+Stated rather than read off the two definitions because a reader of either
+footprint has to know that the arm declares a SchedContext write lock exactly
+when it declares the two replenish-queue write locks; a shared *spelling* is not
+that fact.  The object-domain member does **not** go through
+`receiveRendezvousDonatingSender?`: that resolver already asks
+`callDonationSchedContext?` to decide its guard, so composing through it would
+ask the same question twice and leave two places for the answer to be read. -/
+theorem receiveRendezvousDonatedSc?_isSome_iff_donatingSender (st : SystemState)
+    (endpointObjId : SeLe4n.ObjId) (receiver : SeLe4n.ThreadId) :
+    (receiveRendezvousDonatedSc? st endpointObjId receiver).isSome
+      = (receiveRendezvousDonatingSender? st endpointObjId receiver).isSome := by
+  unfold receiveRendezvousDonatedSc? receiveRendezvousDonatingSender?
+  cases hS : receiveRendezvousCallSender? st endpointObjId with
+  | none => simp
+  | some sender =>
+    simp only [Option.bind_some]
+    cases hD : callDonationSchedContext? st sender receiver with
+    | none => simp
+    | some _ => simp
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: the donation guard reads the store
 only through `lookupTcb`, so a step that fixes the `getTcb?` projection fixes the

@@ -1305,6 +1305,147 @@ theorem lookupTcb_backward {st st' : SystemState} (h : sameSchedContextBindings 
 
 end sameSchedContextBindings
 
+/-- WS-RR RR2.1: the SchedContext a `.call` donation would actually transfer —
+`some scId` exactly when `applyCallDonation` takes its donating arm (the
+receiver is passive and the caller holds a bound SchedContext), `none` on every
+no-op arm.
+
+Single-sourced here because three consumers need the same answer and a second
+copy would drift: `applyCallDonationOnCore` names the SchedContext whose
+replenishments migrate, the cross-core `.call` dispatch pre-resolves the
+`lockSet_endpointCall` donation footprint from it, and the affinity proof below
+case-splits on it.  Reading the same function is what keeps the declared lock
+footprint and the executed write the same set. -/
+def callDonationSchedContext? (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  match lookupTcb st receiver with
+  | some receiverTcb =>
+      match receiverTcb.schedContextBinding with
+      | .unbound =>
+          match lookupTcb st caller with
+          -- **WS-OD OD4.2**: the caller's *effective* context, bound or donated
+          -- (`SchedContextBinding.scId?`), so the resolver and the transition
+          -- widen in the same cut and cannot disagree about whether a call
+          -- donates.
+          | some callerTcb => callerTcb.schedContextBinding.scId?
+          | none => none
+      | _ => none
+  | none => none
+
+/-- **WS-OD OD4.2/OD4.6: the guard fires at call depth ≥ 2.**
+
+The resolver reads the caller's *effective* context, so a caller that is itself
+holding a donation (`.donated scId owner` -- the intermediate server of a chain)
+names `scId` exactly as a `.bound` caller names its own.  This is the fact that
+makes the chain transitive at the resolver, stated rather than read off the
+definition at each of its three consumers.
+
+The receiver's `.unbound` premise is the other half of the guard and is what a
+passive server *is*; without it the call is a no-op at any depth. -/
+theorem callDonationSchedContext?_of_donated_caller
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (cTcb rTcb : TCB)
+    (hR : lookupTcb st receiver = some rTcb)
+    (hRB : rTcb.schedContextBinding = .unbound)
+    (hC : lookupTcb st caller = some cTcb)
+    (hCB : cTcb.schedContextBinding = .donated scId owner) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext?
+  rw [hR]
+  simp only []
+  rw [hRB]
+  simp only []
+  rw [hC]
+  simp only []
+  rw [hCB]
+  rfl
+
+/-- **WS-RR RR8.12 Cut C1 (register row 55): the resolver's `some` answer transports
+BACKWARD across a binding-preserving step.**
+
+`sameSchedContextBindings st st'` says every post-state TCB pulls back to a pre-state
+TCB with the same binding, and `callDonationSchedContext?` reads nothing but two
+threads' bindings through `lookupTcb` — so a post-state `some scId` was already the
+pre-state's answer.  This is the direction a footprint needs and the only one the
+backward frame gives: the `.receive` arm's replenish segment is resolved on the
+syscall's PRE-state while WS-OD OD3.6's donation runs at the POST-receive-leg state,
+and a footprint is sound exactly when *the transition migrates ⟹ the footprint
+declares*, i.e. post `some` ⟹ pre `some`.  The forward direction (pre `some` ⟹ post
+`some`) is neither given by the frame nor needed: a footprint that declares on a
+pre-state `some` the transition then declines is wider than its operation, which is
+sound.
+
+Declared beside the resolver, which is why the frame moved down to
+`IPC/Operations/Endpoint.lean` in the same cut: *when a question has one owner and an
+asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`). -/
+theorem callDonationSchedContext?_some_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hPost : callDonationSchedContext? st' caller receiver = some scId) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext? at hPost ⊢
+  cases hR' : lookupTcb st' receiver with
+  | none => rw [hR'] at hPost; simp at hPost
+  | some rTcb' =>
+    rw [hR'] at hPost
+    simp only [] at hPost
+    obtain ⟨rTcb, hR, hRB⟩ := hSame.lookupTcb_backward receiver rTcb' hR'
+    rw [hR]
+    simp only []
+    cases hRB' : rTcb'.schedContextBinding with
+    | bound _ => rw [hRB'] at hPost; simp at hPost
+    | donated _ _ => rw [hRB'] at hPost; simp at hPost
+    | unbound =>
+      rw [hRB'] at hPost
+      simp only [] at hPost
+      rw [hRB, hRB']
+      simp only []
+      cases hC' : lookupTcb st' caller with
+      | none => rw [hC'] at hPost; simp at hPost
+      | some cTcb' =>
+        rw [hC'] at hPost
+        simp only [] at hPost
+        obtain ⟨cTcb, hC, hCB⟩ := hSame.lookupTcb_backward caller cTcb' hC'
+        rw [hC]
+        simp only []
+        rw [hCB]
+        exact hPost
+
+/-- **WS-RR RR8.12 Cut C1**: the contrapositive, in the shape the narrowed replenish
+segment consumes — a pre-state `none` is a post-state `none`, so a receive whose
+pre-state resolver declines migrates nothing at the state its donation runs on. -/
+theorem callDonationSchedContext?_none_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId)
+    (hPre : callDonationSchedContext? st caller receiver = none) :
+    callDonationSchedContext? st' caller receiver = none := by
+  cases hPost : callDonationSchedContext? st' caller receiver with
+  | none => rfl
+  | some scId =>
+    rw [callDonationSchedContext?_some_of_sameSchedContextBindings hSame caller receiver scId
+      hPost] at hPre
+    cases hPre
+
+/-- **WS-RR RR8.12 Cut C6f**: a thread donates nothing to itself.
+
+The resolver requires the *receiver* `.unbound` and then reads the **caller's**
+effective context — so with one thread in both roles the second read is of an
+`.unbound` binding, whose `scId?` is `none`.  The `.receive` arm's block path hands
+the hand-off the receiver's own id (it dequeued nobody), which is what makes this
+the whole of that path's donation story: no guard on the post-state `ipcState` is
+needed, because the resolver refuses on the pre-state shape alone. -/
+@[simp] theorem callDonationSchedContext?_self (st : SystemState) (tid : SeLe4n.ThreadId) :
+    callDonationSchedContext? st tid tid = none := by
+  unfold callDonationSchedContext?
+  cases hT : lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    cases hB : tcb.schedContextBinding with
+    | unbound => simp only [hB, SchedContextBinding.scId?]
+    | bound scId => simp only [hB]
+    | donated scId owner => simp only [hB]
+
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 
 Performs the full ownership transfer of the SchedContext from donor to server,
