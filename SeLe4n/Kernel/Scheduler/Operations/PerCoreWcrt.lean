@@ -131,8 +131,11 @@ and the secondary bring-up entry — bracket too since **WS-RR RR7.39**, which g
 shared bracket, so these bounds describe those entries as well.  What remains
 outside a declared footprint is the *syscall* seam's scheduler writes:
 `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a run-queue
-lock at all, so an `endpointSend`'s receiver wake is still uncovered.  That is
-`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8.
+lock at all, so an `endpointSend`'s receiver wake was still uncovered.  That was
+`UncoveredLockDomain.syscallSeamSchedulerDomain`, closed at WS-RR RR8.12 Cut C6h
+(`v0.35.181`): the seam brackets on `schedulerLockBracketDomain` over the unified
+`declaredUnifiedLockSetForAbiEntry`, so the live WCRT is the global entry lock's
+for the arms neither domain declares and the declared footprint's for the rest.
 
 RR7.39 also widened the tick's own footprint: its run-queue segment named the
 boot core, while the tick's replenish-drain and timeout wakes place via

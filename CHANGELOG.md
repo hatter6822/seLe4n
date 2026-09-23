@@ -1,3 +1,80 @@
+## v0.35.181 — WS-RR RR8.12 Cut C6h: the syscall seam brackets on the scheduler domain
+
+`UncoveredLockDomain.syscallSeamSchedulerDomain` is **deleted**.  It recorded
+that `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+run-queue lock at all, so the scheduler writes an `endpointSend`'s receiver wake
+or a `.tcbSuspend`'s cancellation performs sat outside the footprint the RR7.12
+seam acquired.  `syscallDispatchCrossCoreBracketedStep` now runs
+`Concurrency.runBracketed schedulerLockBracketDomain` over
+`declaredUnifiedLockSetForAbiEntry`, and the inventory falls from two entries to
+one (`taintTablePerKeyStore`, owner fine-lock Track D).
+
+### One footprint, not two brackets — and the constructor's own reason was false
+
+The retired entry said the object-domain footprints hold `stateLevelLock` and
+per-object locks *"**not** the object-store table lock"*.  They are the **same
+lock**: `acquireLockOnObject`'s `.objStore` arm writes `SystemState.objStoreLock`
+and reads nothing else of the `LockId`, so `stateLevelLock`
+(`⟨.objStore, ObjId.ofNat 0⟩`) and `schedObjStoreLockId`
+(`⟨.objStore, ObjId.sentinel⟩`) are one word under two keys.
+`schedObjStoreLockId`'s docstring has said so since SM5.A.2 and nothing stated
+it.
+
+That decides the design.  Nesting a scheduler bracket inside the object one would
+take that word **twice** on every arm whose object footprint names it, and would
+walk the SM0.I ladder backwards — the inner bracket's level-0 table lock after
+the outer bracket's levels 1..9 — because `lockAcquireSequence` orders *one* list.
+So the seam acquires one unified `SchedLockSet`: `SchedLockId` is the cross-domain
+order SM5.A.2 introduced for exactly this, and `canonicalSchedLockOfObject`
+collapses the two table-lock spellings onto one key so the union's `Nodup` holds
+and its acquisition sequence is one ladder.
+
+Four congruences pin the canonicalisation at **all four** primitives — acquire,
+release, withdraw and held — because a renaming is sound only if every operation
+the domain performs on the two keys agrees, and a release that read the `ObjId`
+would make the acquire's agreement worthless.
+
+### The bridge the deletion rests on
+
+`unifiedSchedLockSetForSyscall_coversWrites`.  Each of the sixteen declared arms'
+coverage theorems is stated over `schedLockSetForSyscall`'s answer; the bracket
+acquires `unifiedSchedLockSetForSyscall`'s.
+`mem_unifiedSchedLockSetForSyscall_of_sched` says the first is contained in the
+second, and `schedFootprintCoversWrites_mono` says coverage travels upward —
+every clause of the predicate is of the form *"a lock the footprint does **not**
+name"*, so a superset only discharges more antecedents.  One generic theorem
+rather than sixteen instances, which is what keeps "what does this arm's
+footprint cover" a single question.
+
+Monotone upward is about the *obligation*, not about footprint quality: lock
+contention is an observable channel (SM8.D's CC-5), which is why the footprints
+themselves are narrowed per arm rather than widened to `allCores`.
+
+### The fallback is unchanged, and that is what makes landing it safe
+
+An arm neither domain declares yields `none`
+(`declaredUnifiedLockSetForAbiEntry_undeclared`) and the bracket is the bare
+step, bit-identical to the pre-bracket seam.  An arm declared in one domain and
+not the other acquires what that domain declared — acquiring a footprint is not
+claiming coverage, which is the posture `runUnderDeclaredLockSet` has taken since
+RR7.12.
+
+### Files
+
+- `SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean` — the four aliasing
+  congruences, `canonicalSchedLockOfObject` and its two soundness theorems.
+- `SeLe4n/Kernel/SchedLockBracket.lean` — `schedFootprintCoversWrites_mono`.
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` — §15: the lift, the residue, the
+  unified resolver, its four relations, the coverage bridge and the seam-level
+  resolver.
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` — the bracket repointed.
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` — the constructor deleted
+  with a tombstone that carries the correction; both lists down to one entry.
+- `tests/SmpCrossCoreCallSuite.lean` — the eleven-assertion witness group;
+  `tests/SmpInformationFlowSuite.lean` — the inventory at one.
+- Citations swept across six Lean modules, `CLAUDE.md` / `AGENTS.md`, the spec,
+  the register and four plans.
+
 ## v0.35.180 — WS-RR RR8.12 Cut C6g: the live `.lifecycleRetype` ARM covered, and the family closed
 
 The sixteenth and last declared arm, so every arm

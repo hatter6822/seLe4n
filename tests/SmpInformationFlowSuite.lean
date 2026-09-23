@@ -8295,18 +8295,24 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- `resolveCapAddress`'s own recursion, `cspaceWalkLockSet` read-locks each, and
   -- `cspaceWalk_conflicts_with_delete` proves the conflict with a `cspaceDelete`
   -- on the path that the root-only footprint could not state.
-  assertBool "the two uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 2) &&
+  --
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): **one**, from two.  The syscall seam's
+  -- scheduler-domain entry is deleted — `syscallDispatchCrossCoreBracketedStep`
+  -- brackets on `schedulerLockBracketDomain` over the unified
+  -- `declaredUnifiedLockSetForAbiEntry`, whose `SchedLockId` members name the
+  -- run-queue and replenish-queue locks a `LockSet` could not express, and each
+  -- of the sixteen declared arms carries a coverage proof.
+  assertBool "the one uncovered lock domain is registered, with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 1) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.syscallSeamSchedulerDomain,
-          UncoveredLockDomain.taintTablePerKeyStore]) &&
+       = [UncoveredLockDomain.taintTablePerKeyStore]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 2))
+     decide (UncoveredLockDomain.all.length = 1))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is

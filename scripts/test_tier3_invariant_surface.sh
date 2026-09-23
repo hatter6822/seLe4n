@@ -6311,7 +6311,11 @@ run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel
 run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
-run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.syscallSeamSchedulerDomain\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintTablePerKeyStore\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam's scheduler-domain entry
+# is RETIRED — the seam brackets on `schedulerLockBracketDomain` over the unified
+# footprint now — so the constructor must not come back.
+run_negative_check "INVARIANT" rg -n 'syscallSeamSchedulerDomain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # **WS-RR RR7.39** — the scheduler lock domain, with a runtime.
 #
 # The domain's two per-core constructors named locks `SystemState` had no word
@@ -9813,9 +9817,11 @@ run_negative_check "INVARIANT" rg -n 'runQueue_lt_replenishQueue' SeLe4n/Kernel/
 
 # WS-RR RR8.12 (seventh cut): the three syscall arms that write no replenish queue
 # now declare a scheduler-domain footprint.  `UncoveredLockDomain.syscallSeamSchedulerDomain`
-# records that `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
-# run-queue lock at all, so an `endpointSend`'s receiver wake is outside the
-# footprint the RR7.12 seam acquires; these are the first three arms to have one.
+# recorded that `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
+# run-queue lock at all, so an `endpointSend`'s receiver wake was outside the
+# footprint the RR7.12 seam acquired; these were the first three arms to have one.
+# (That constructor is retired at Cut C6h, `v0.35.181`: the seam brackets on the
+# scheduler domain over the unified footprint, so the entry has no subject left.)
 run_check "INVARIANT" rg -n '^def schedLockSet_notificationSignalOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^def schedLockSet_notificationWaitOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
 run_check "INVARIANT" rg -n '^def schedLockSet_notificationSignalBoundOnCore \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
@@ -19859,5 +19865,41 @@ run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_fram
 run_check "INVARIANT" rg -n 'C6g: EVERY core outside the declared replenish segment keeps its replenish queue' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n 'C6g NEGATIVE: the retired reading FAILS the same replenish measurement' tests/SmpIpcSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "private def liveRetypeArm[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" tests/SmpIpcSuite.lean'
+
+# ============================================================================
+# WS-RR RR8.12 Cut C6h (`v0.35.181`): the syscall seam BRACKETS on the scheduler
+# domain, over ONE unified footprint spanning both.
+# ============================================================================
+#
+# The relation, not a presence check: the seam's bracket must name
+# `schedulerLockBracketDomain` and the unified resolver, because a bracket that
+# kept `runUnderDeclaredLockSet` would acquire the object footprint alone and the
+# scheduler writes would stay outside it — which is exactly what the retired
+# `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*Concurrency.runBracketed schedulerLockBracketDomain" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*declaredUnifiedLockSetForAbiEntry ctx execCore syscallId" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+# NEGATIVE: the object-domain-only bracket must not come back at the seam.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCoreBracketedStep[^\n]*(\n([ \t][^\n]*)?)*runUnderDeclaredLockSet" SeLe4n/Kernel/SyscallDispatchEntry.lean'
+# ONE footprint, not two brackets: the object domain's members are LIFTED into the
+# unified domain rather than acquired by a nested bracket, because the two domains
+# are one set of lock words — `stateLevelLock` and `schedObjStoreLockId` are the
+# same `objStoreLock`, so nesting takes it twice and walks the SM0.I ladder
+# backwards.
+run_check "INVARIANT" rg -n '^def unifiedSchedLockSetForSyscall' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def declaredUnifiedLockSetForAbiEntry' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def canonicalSchedLockOfObject' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem schedAcquireLock_objStore_congr' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem schedLockHeld_objStore_congr' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+# The bridge the deletion rests on: a per-arm coverage claim, stated over the
+# SCHEDULER footprint, reaches the UNIFIED one the bracket acquires — so the
+# sixteen theorems are not restated at a second footprint.
+run_check "INVARIANT" rg -n '^theorem unifiedSchedLockSetForSyscall_coversWrites' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedFootprintCoversWrites_mono[^\n]*(\n([ \t][^\n]*)?)*hSub : ∀ p ∈ S.pairs, p ∈ U.pairs" SeLe4n/Kernel/SchedLockBracket.lean'
+# And the membership it is built from, in BOTH directions — a unified footprint
+# that dropped a scheduler member would make every coverage claim about it false.
+run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_sched' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_object' SeLe4n/Kernel/SyscallSchedFootprint.lean
+# The inventory falls from two to one, measured rather than described.
+run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with an owner' tests/SmpInformationFlowSuite.lean
 
 finalize_report

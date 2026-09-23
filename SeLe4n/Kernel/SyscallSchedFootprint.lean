@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
 import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 import SeLe4n.Kernel.Scheduler.Operations.SchedLockSet
 import SeLe4n.Kernel.SyscallLockBracket
+import SeLe4n.Kernel.SchedLockBracket
 
 /-!
 # `v0.35.167` (WS-RR RR8.12 Cut C3b-i) — the syscall arms whose own modules cannot name a `SchedLockId`
@@ -2467,5 +2468,269 @@ theorem abiEntrySchedReceiverCspaceRoot (decoded : SyscallDecodeResult)
   obtain ⟨hLookup, hRoot, _⟩ := abiEntryGate_cspaceRoot decoded tid s tcb gate hGate
   rw [abiEntryLockOperands_caller decoded tid s ops hOps]
   exact ⟨hLookup, hRoot⟩
+
+-- ============================================================================
+-- §15  The UNIFIED syscall footprint — one ladder over both domains
+-- ============================================================================
+
+/-- **WS-RR RR8.12 Cut C6h**: an object-domain footprint's members lifted into
+the unified domain, with the table lock canonicalised.
+
+`canonicalSchedLockOfObject` is the per-lock half; this is the per-footprint one.
+It is a plain `map`, so the object domain's declaration order is preserved and
+`lockAcquireSequence` — which sorts — is what imposes the ladder, exactly as it
+is for a scheduler footprint. -/
+def liftObjectFootprint (S : Concurrency.LockSet) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  S.pairs.map (fun p => (canonicalSchedLockOfObject p.fst, p.snd))
+
+/-- **Cut C6h**: the lift preserves membership, which is what a coverage or
+conflict claim stated over the object footprint needs in order to reach the
+unified one. -/
+theorem mem_liftObjectFootprint (S : Concurrency.LockSet) (l : Concurrency.LockId)
+    (m : Concurrency.AccessMode) (h : (l, m) ∈ S.pairs) :
+    (canonicalSchedLockOfObject l, m) ∈ liftObjectFootprint S :=
+  List.mem_map_of_mem h
+
+/-- **Cut C6h**: the lifted members an already-named key would duplicate, dropped.
+
+A syscall's two footprints both name the object-store table lock — the object
+domain spells it `stateLevelLock` and the scheduler domain
+`schedObjStoreLockId`, and they are one word (`schedAcquireLock_objStore_congr`).
+Canonicalising makes them one **key**, so the union has to drop the second copy
+or `SchedLockSet.ofList?` refuses the whole footprint for a duplicate key.
+
+The drop is at `.write` only, which is the fail-closed direction: a scheduler
+footprint always names the table lock at `.write`
+(`schedFootprintOfCores_contains_objStore_write`), so a `.read` declaration on
+the object side is subsumed and anything the predicate cannot see keeps its own
+member and is refused by `ofList?` rather than silently merged at the weaker
+mode. -/
+def unifiedObjectResidue (O : Concurrency.LockSet) (S : SchedLockSet) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  (liftObjectFootprint O).filter
+    (fun p => !S.pairs.contains (p.fst, Concurrency.AccessMode.write))
+
+/-- **WS-RR RR8.12 Cut C6h: the syscall seam's UNIFIED footprint.**
+
+One `SchedLockSet` spanning both lock domains, which is what `SchedLockId` was
+introduced for (SM5.A.2) and what the seam has never had.  The two domains are
+not two lock *words*: `schedAcquireLock`'s `.object` arm calls SM3.C's own
+`acquireLockOnObject`, so a `.object` member writes exactly the state a `LockSet`
+member writes.  Bracketing them separately would therefore acquire the table lock
+**twice** on the five arms whose object footprint names `stateLevelLock`, and —
+worse — would walk the SM0.I ladder backwards: the inner bracket's level-0 table
+lock would be taken after the outer bracket's levels 1..9.  `lockAcquireSequence`
+sorts one list, so one footprint is one ladder.
+
+Four arms, and the `none` arm is what keeps the pre-bracket seam reachable:
+
+* **neither domain declares** — `none`, and the bracket falls back to the
+  unbracketed step, exactly as it did before this row;
+* **only the object domain** — the lifted object footprint;
+* **only the scheduler domain** — that footprint unchanged;
+* **both** — the scheduler footprint with the object domain's residue appended.
+
+Acquiring a footprint is not claiming coverage: an arm declared in one domain and
+not the other acquires what that domain declared, and the *other* domain's writes
+stay outside a footprint until that domain declares one for it.  That is the same
+posture `runUnderDeclaredLockSet` has taken since RR7.12 and is why landing this
+ahead of the remaining object-domain declarations is safe. -/
+def unifiedSchedLockSetForSyscall (sid : SyscallId) (ops : Concurrency.SyscallLockOperands)
+    (executingCore : CoreId) (st : SystemState) : Option SchedLockSet :=
+  match Concurrency.lockSetForSyscall sid ops st,
+        schedLockSetForSyscall sid ops executingCore st with
+  | none, none => none
+  | some O, none => SchedLockSet.ofList? (liftObjectFootprint O)
+  | none, some S => some S
+  | some O, some S => SchedLockSet.ofList? (S.pairs ++ unifiedObjectResidue O S)
+
+/-- **Cut C6h**: an arm neither domain declares yields no unified footprint.
+
+The statement a bracket reads as "no exclusion established", and the one that
+makes the fallback arm reachable rather than notional. -/
+@[simp] theorem unifiedSchedLockSetForSyscall_undeclared (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (hObj : Concurrency.lockSetForSyscall sid ops st = none)
+    (hSched : schedLockSetForSyscall sid ops executingCore st = none) :
+    unifiedSchedLockSetForSyscall sid ops executingCore st = none := by
+  unfold unifiedSchedLockSetForSyscall
+  rw [hObj, hSched]
+
+/-- **Cut C6h**: where only the scheduler domain declares, the unified footprint
+IS the scheduler footprint — no widening, no reordering, definitionally. -/
+@[simp] theorem unifiedSchedLockSetForSyscall_sched_only (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (S : SchedLockSet)
+    (hObj : Concurrency.lockSetForSyscall sid ops st = none)
+    (hSched : schedLockSetForSyscall sid ops executingCore st = some S) :
+    unifiedSchedLockSetForSyscall sid ops executingCore st = some S := by
+  unfold unifiedSchedLockSetForSyscall
+  rw [hObj, hSched]
+
+/-- **Cut C6h**: every member the SCHEDULER domain declared is in the unified
+footprint.
+
+The direction the coverage family needs: `schedFootprintCoversWrites` is stated
+of the scheduler footprint, and it is the unified one the bracket acquires, so a
+claim about the first has to reach the second.  Membership is enough — the
+predicate's three clauses are all of the form "a lock the footprint does **not**
+name", so a superset of the declared members only ever makes them easier. -/
+theorem mem_unifiedSchedLockSetForSyscall_of_sched (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (S U : SchedLockSet) (p : SchedLockId × Concurrency.AccessMode)
+    (hSched : schedLockSetForSyscall sid ops executingCore st = some S)
+    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
+    (hp : p ∈ S.pairs) : p ∈ U.pairs := by
+  unfold unifiedSchedLockSetForSyscall at hU
+  cases hObj : Concurrency.lockSetForSyscall sid ops st with
+  | none =>
+      rw [hObj, hSched] at hU
+      exact (Option.some.inj hU) ▸ hp
+  | some O =>
+      rw [hObj, hSched] at hU
+      rw [SchedLockSet.ofList?_pairs hU]
+      exact List.mem_append_left _ hp
+
+/-- **Cut C6h**: and every member the OBJECT domain declared is in it, at its own
+mode or subsumed by the table lock's write.
+
+The residue's filter is what makes the disjunction necessary: a member the
+scheduler footprint already names at `.write` is dropped, and the only member it
+can name is the canonical table lock. -/
+theorem mem_unifiedSchedLockSetForSyscall_of_object (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (O : Concurrency.LockSet) (U : SchedLockSet) (l : Concurrency.LockId)
+    (m : Concurrency.AccessMode)
+    (hObj : Concurrency.lockSetForSyscall sid ops st = some O)
+    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
+    (hp : (l, m) ∈ O.pairs) :
+    (canonicalSchedLockOfObject l, m) ∈ U.pairs ∨
+      (canonicalSchedLockOfObject l, Concurrency.AccessMode.write) ∈ U.pairs := by
+  unfold unifiedSchedLockSetForSyscall at hU
+  cases hSched : schedLockSetForSyscall sid ops executingCore st with
+  | none =>
+      rw [hObj, hSched] at hU
+      exact Or.inl ((SchedLockSet.ofList?_pairs hU) ▸ mem_liftObjectFootprint O l m hp)
+  | some S =>
+      rw [hObj, hSched] at hU
+      rw [SchedLockSet.ofList?_pairs hU]
+      by_cases hDrop : S.pairs.contains (canonicalSchedLockOfObject l,
+          Concurrency.AccessMode.write)
+      · exact Or.inr (List.mem_append_left _ (List.mem_of_elem_eq_true hDrop))
+      · refine Or.inl (List.mem_append_right _ ?_)
+        unfold unifiedObjectResidue
+        refine List.mem_filter.mpr ⟨mem_liftObjectFootprint O l m hp, ?_⟩
+        simp only [Bool.not_eq_true, Bool.not_eq_true'] at hDrop ⊢
+        exact hDrop
+
+/-- **WS-RR RR8.12 Cut C6h: the arm's coverage claim reaches what the seam
+ACQUIRES.**
+
+The bridge the deletion of `UncoveredLockDomain.syscallSeamSchedulerDomain`
+rests on.  Every per-arm coverage theorem in `SyscallSchedContainment` is stated
+over `schedLockSetForSyscall`'s answer; what the bracket acquires is
+`unifiedSchedLockSetForSyscall`'s, which is that footprint with the object
+domain's residue appended.  `mem_unifiedSchedLockSetForSyscall_of_sched` says the
+first is a sub-multiset of the second, and coverage is monotone upward
+(`schedFootprintCoversWrites_mono`), so the claim travels without being restated
+— which is what keeps "what does this arm's footprint cover" a single question.
+
+Stated once and generically rather than sixteen times at the arms: an instance
+per arm would be sixteen copies of one application, and the next declared arm
+would owe a seventeenth. -/
+theorem unifiedSchedLockSetForSyscall_coversWrites (sid : SyscallId)
+    (ops : Concurrency.SyscallLockOperands) (executingCore : CoreId) (st : SystemState)
+    (S U : SchedLockSet) (st₀ st₁ : SystemState)
+    (hSched : schedLockSetForSyscall sid ops executingCore st = some S)
+    (hU : unifiedSchedLockSetForSyscall sid ops executingCore st = some U)
+    (hCover : schedFootprintCoversWrites S st₀ st₁) :
+    schedFootprintCoversWrites U st₀ st₁ :=
+  schedFootprintCoversWrites_mono S U st₀ st₁
+    (fun p hp => mem_unifiedSchedLockSetForSyscall_of_sched sid ops executingCore st S U p
+      hSched hU hp)
+    hCover
+
+/-- **WS-RR RR8.12 Cut C6h: the unified footprint the live ABI seam declares.**
+
+`declaredLockSetForAbiEntry`'s and `declaredSchedLockSetForAbiEntry`'s successor
+at the seam, and their union by construction: it runs `abiEntryPlan` and
+`abiEntryLockOperands` once — the same decode both single-domain resolvers read,
+which `declaredSchedLockSetForAbiEntry_shares_decode` states — and hands the one
+answer to `unifiedSchedLockSetForSyscall`.
+
+The two single-domain resolvers are **kept**, not retired: each is what its own
+domain's theorems are stated over, and the relation below is what ties them to
+what the seam acquires. -/
+def declaredUnifiedLockSetForAbiEntry (ctx : LabelingContext) (executingCore : CoreId)
+    (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64) (st : SystemState) :
+    Option SchedLockSet :=
+  match abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+  | none => none
+  | some (tid, decoded, stFilled) =>
+    (abiEntryLockOperands decoded tid stFilled).bind
+      (fun ops => unifiedSchedLockSetForSyscall decoded.syscallId ops executingCore stFilled)
+
+/-- **Cut C6h**: an entry whose plan does not resolve declares nothing — the
+fail-closed direction both single-domain resolvers already take. -/
+@[simp] theorem declaredUnifiedLockSetForAbiEntry_of_no_plan (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState)
+    (h : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none := by
+  unfold declaredUnifiedLockSetForAbiEntry
+  rw [h]
+
+/-- **Cut C6h**: an entry undeclared in BOTH domains declares nothing.
+
+The seam-level fallback condition, and the one that has to name both domains:
+an arm the object domain declares nothing for is still bracketed when the
+scheduler domain declares, and the converse. -/
+theorem declaredUnifiedLockSetForAbiEntry_undeclared (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState)
+    (hObj : declaredLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none)
+    (hSched : declaredSchedLockSetForAbiEntry ctx executingCore syscallId msgInfo
+      x0 x1 x2 x3 x4 x5 st = none) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none := by
+  unfold declaredUnifiedLockSetForAbiEntry
+  unfold declaredLockSetForAbiEntry at hObj
+  unfold declaredSchedLockSetForAbiEntry at hSched
+  rcases hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st with
+    _ | ⟨tid, decoded, stFilled⟩
+  · rfl
+  · rw [hPlan] at hObj hSched
+    simp only at hObj hSched ⊢
+    rcases hOps : abiEntryLockOperands decoded tid stFilled with _ | ops
+    · rfl
+    · rw [hOps] at hObj hSched
+      simp only [Option.bind_some] at hObj hSched ⊢
+      exact unifiedSchedLockSetForSyscall_undeclared decoded.syscallId ops executingCore
+        stFilled hObj hSched
+
+/-- **Cut C6h**: the seam's unified footprint is the union of what the two
+single-domain resolvers declare, at the decode all three share.
+
+The relation that lets a claim stated over either single-domain footprint reach
+the set the bracket acquires — stated rather than left to be read off three
+definitions, which is the shape that lets one domain's footprint be acquired
+around the other domain's transition. -/
+theorem declaredUnifiedLockSetForAbiEntry_shares_decode (ctx : LabelingContext)
+    (executingCore : CoreId) (syscallId : UInt32) (msgInfo x0 x1 x2 x3 x4 x5 : UInt64)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult)
+    (stFilled : SystemState) (ops : Concurrency.SyscallLockOperands)
+    (hPlan : abiEntryPlan ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = some (tid, decoded, stFilled))
+    (hOps : abiEntryLockOperands decoded tid stFilled = some ops) :
+    declaredUnifiedLockSetForAbiEntry ctx executingCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = unifiedSchedLockSetForSyscall decoded.syscallId ops executingCore stFilled := by
+  unfold declaredUnifiedLockSetForAbiEntry
+  rw [hPlan]
+  simp only
+  rw [hOps]
+  rfl
 
 end SeLe4n.Kernel

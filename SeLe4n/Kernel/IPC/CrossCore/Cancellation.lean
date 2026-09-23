@@ -3509,8 +3509,9 @@ core to the home the context is bound to once the teardown has returned it, and
 Neither is the victim's placed core and neither is the holder's, so no member
 here named either, and a footprint that omits a written lock is false — which
 this project rates worse than a wide one.  It was latent rather than live, the
-syscall seam not yet bracketing the scheduler domain
-(`UncoveredLockDomain.syscallSeamSchedulerDomain`), so it is a *verification*
+syscall seam not then bracketing the scheduler domain
+(`UncoveredLockDomain.syscallSeamSchedulerDomain`, retired at Cut C6h,
+`v0.35.181`, where it started), so it is a *verification*
 defect of the same shape RR8.11 and OD3.9 each found one level down: everything
 stated over this footprint was **silent** about those two queues rather than
 conservative.  Found by declaring the resolved footprint the bracket will

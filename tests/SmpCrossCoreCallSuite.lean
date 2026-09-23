@@ -1505,6 +1505,111 @@ private def runAbiSchedFootprintChecks : IO Unit := do
   assertBool "CONTROL: the object domain declares for this entry too"
     ((bracketDecl bracketState).isSome && (bracketSchedDecl bracketState).isSome)
 
+/-- **WS-RR RR8.12 Cut C6h: the UNIFIED footprint the seam acquires.**
+
+`bracketDecl` is the object domain's answer at these words and `bracketSchedDecl`
+the scheduler domain's; this is the one the bracket takes.  The two are not two
+lock *words* — `schedAcquireLock`'s `.object` arm calls SM3.C's own
+`acquireLockOnObject` — so the seam acquires one set rather than nesting two
+brackets that would take the object-store table lock twice. -/
+private def bracketUnifiedDecl (st : SystemState) : Option SchedLockSet :=
+  declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 20) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- The same entry at an **undeclared** arm. -/
+private def undeclaredUnifiedDecl (st : SystemState) : Option SchedLockSet :=
+  declaredUnifiedLockSetForAbiEntry harnessLabelingContext bootCoreId
+    (syscallId := 4) (msgInfo := 0) (x0 := 1) (x1 := 0) (x2 := 0) (x3 := 0) (x4 := 0) (x5 := 0) st
+
+/-- **Cut C6h**: every mutation of the production side here fails to ELABORATE
+rather than failing this suite — the membership theorems and the bracket's own
+`_refused` proof name the unified resolver, so dropping either domain's members,
+un-canonicalising the table lock, or repointing the bracket at a single-domain
+footprint each stop the build.  That is §3.23's situation and the stronger
+outcome; what makes these assertions discriminate rather than merely pass is the
+**differential inside the suite**: each claim about the unified footprint is taken
+beside the same claim over `bracketDecl`, the object domain's answer, which must
+give the opposite verdict. -/
+private def runUnifiedBracketChecks : IO Unit := do
+  IO.println "--- WS-RR RR8.12 Cut C6h: the syscall seam's unified bracket ---"
+  -- (a) the seam declares a unified footprint, and it contains BOTH domains'.
+  assertBool "(a) the ABI seam declares a unified footprint for this decode"
+    (bracketUnifiedDecl bracketActiveVictimState).isSome
+  assertBool "(a) it contains every member the SCHEDULER domain declared"
+    (match bracketSchedDecl bracketActiveVictimState,
+           bracketUnifiedDecl bracketActiveVictimState with
+     | some sched, some uni => sched.pairs.all (fun p => uni.pairs.contains p)
+     | _, _ => false)
+  assertBool "(a) ...and every member the OBJECT domain declared, canonicalised"
+    (match bracketDecl bracketActiveVictimState,
+           bracketUnifiedDecl bracketActiveVictimState with
+     | some obj, some uni =>
+         obj.pairs.all (fun p =>
+           uni.pairs.contains (canonicalSchedLockOfObject p.fst, p.snd)
+             || uni.pairs.contains (canonicalSchedLockOfObject p.fst,
+                  Concurrency.AccessMode.write))
+     | _, _ => false)
+  -- (b) THE POINT OF THE CUT: the acquired set names the per-core scheduler
+  --     locks the object domain's `LockId` cannot express at all, which is what
+  --     `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded as uncovered.
+  assertBool "(b) the unified footprint names the executing core's run-queue write lock"
+    (match bracketUnifiedDecl bracketActiveVictimState with
+     | some uni =>
+         decide ((SchedLockId.runQueue ⟨bootCoreId⟩, Concurrency.AccessMode.write)
+           ∈ uni.pairs)
+     | none => false)
+  assertBool "(b) NEGATIVE: the OBJECT domain's footprint names no run-queue lock at all"
+    (match bracketDecl bracketActiveVictimState with
+     | some obj =>
+         Concurrency.allCores.all (fun c =>
+           !obj.pairs.any (fun p => decide (canonicalSchedLockOfObject p.fst
+             = SchedLockId.runQueue ⟨c⟩)))
+     | none => false)
+  -- ...and the negative is not vacuous: that footprint has members, and the
+  -- unified one is STRICTLY larger, so the claim is about what was added rather
+  -- than about an empty set.
+  assertBool "(b) CONTROL: the object footprint is non-empty and the unified one strictly larger"
+    (match bracketDecl bracketActiveVictimState, bracketUnifiedDecl bracketActiveVictimState with
+     | some obj, some uni => decide (0 < obj.pairs.length) && decide (obj.pairs.length < uni.pairs.length)
+     | _, _ => false)
+  -- (c) ONE table lock, not two.  `stateLevelLock` and `schedObjStoreLockId` are
+  --     the same word under two keys; canonicalising is what keeps the unified
+  --     set's `Nodup` true and its acquisition sequence one ladder.
+  assertBool "(c) the two table-lock spellings canonicalise to one key"
+    (decide (canonicalSchedLockOfObject Concurrency.stateLevelLock
+      = SchedLockId.object schedObjStoreLockId))
+  assertBool "(c) ...and the unified footprint names it exactly once"
+    (match bracketUnifiedDecl bracketActiveVictimState with
+     | some uni =>
+         decide ((uni.pairs.filter (fun p =>
+           decide (p.fst = SchedLockId.object schedObjStoreLockId))).length = 1)
+     | none => false)
+  -- (d) the ladder: what the bracket acquires is `SchedLockId`-ascending, which
+  --     is `lockAcquireSequence`'s job and not the resolver's.
+  assertBool "(d) the acquisition sequence is the SM0.I ladder, object < runQueue < replenishQueue"
+    (match bracketUnifiedDecl bracketActiveVictimState with
+     | some uni =>
+         let seq := uni.lockAcquireSequence
+         decide (seq.length = uni.pairs.length) &&
+         (List.range (seq.length - 1)).all (fun i =>
+           match seq[i]?, seq[i + 1]? with
+           | some a, some b => decide (a.fst ≤ b.fst)
+           | _, _ => true)
+     | none => false)
+  -- (e) NEGATIVE: an arm neither domain declares yields no unified footprint, so
+  --     the seam falls back to the unbracketed step exactly as before.
+  assertBool "(e) NEGATIVE: an arm undeclared in both domains declares nothing unified"
+    (decide (undeclaredUnifiedDecl bracketState = none) &&
+     decide (undeclaredSchedDecl bracketState = none) &&
+     decide (undeclaredDecl bracketState = none))
+  -- (f) the coverage bridge exists and takes the two footprints it must relate.
+  --     (The uncovered-domain inventory falling from two to one is measured in
+  --     `tests/SmpInformationFlowSuite.lean`, where `FineLockFlow` is in scope.)
+  assertBool "(f) the per-arm coverage claim reaches the set the bracket acquires"
+    (have _h := @SeLe4n.Kernel.unifiedSchedLockSetForSyscall_coversWrites
+     have _m := @SeLe4n.Kernel.schedFootprintCoversWrites_mono
+     true)
+
 def runSmpCrossCoreCallChecks : IO Unit := do
   IO.println "WS-SM SM6.A — Cross-core endpoint call suite"
   IO.println "===================================="
@@ -1517,6 +1622,7 @@ def runSmpCrossCoreCallChecks : IO Unit := do
   runDeclaredFootprintBracketChecks
   runDelegatedReplyRecvFootprintChecks
   runAbiSchedFootprintChecks
+  runUnifiedBracketChecks
   IO.println "===================================="
   IO.println "All SM6.A cross-core call checks PASS."
 

@@ -254,9 +254,11 @@ lives in the plan that owns the work.
   a *time* until `tCs` is measured on the board, which BP8 is the first point
   that can happen.  The third obligation this block used to name — the
   `SM3.C.9.b` timer-tick bracket — is **closed**: WS-RR RR7.39 landed it at
-  `v0.34.89`.  What survives of the scheduler domain is the syscall seam's own
-  wake targets (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
-  and Track D's completion must not be read as covering that either.
+  `v0.34.89`.  The syscall seam's own wake targets
+  (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
+  `v0.35.181` (RR8.12 Cut C6h), so the scheduler domain is covered end to end;
+  Track D's completion must not be read as covering the *taint table*, which is
+  the one entry left.
 - Tier 0..5 tests green at HEAD.
 
 ## 3. Sub-tasks

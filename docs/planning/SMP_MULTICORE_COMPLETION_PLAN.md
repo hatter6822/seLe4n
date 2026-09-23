@@ -120,11 +120,12 @@ elaborates the subset relevant to it.
 > `none`. The per-core scheduler entries — the timer tick, the
 > `.reschedule` SGI receiver, the secondary bring-up entry — bracket too
 > since **RR7.39** (v0.34.89), which gave `SchedLockId` its state words
-> and made the revalidating bracket shared; what remains uncovered there
-> is the *syscall* seam's scheduler writes
-> (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8). So the
-> per-object locks are still a model-level discipline on much of the
-> surface, and the shipping worst case is the global lock's, not §7.2's.
+> and made the revalidating bracket shared, and since **RR8.12 Cut C6h**
+> (v0.35.181), which moved the *syscall* seam onto that domain over one
+> unified footprint and retired
+> `UncoveredLockDomain.syscallSeamSchedulerDomain`. So the per-object locks
+> are still a model-level discipline on the arms neither domain declares,
+> and the shipping worst case is the global lock's, not §7.2's.
 >
 > Removing the entry lock is scheduled, not assumed: **RR7.39** (the
 > scheduler domain), **RR7.40** (the dynamic PIP chain) and **RR7.41**

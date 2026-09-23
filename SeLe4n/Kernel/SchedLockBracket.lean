@@ -28,8 +28,10 @@ cross-domain extension (tracked SM5.I closure target)".
 (`UncoveredLockDomain`'s own entry recorded the *syscall* half of the same
 domain — it names `suspendThreadOnCoreSchedLockSet`, a syscall footprint — and
 RR7.39 narrowed it to `syscallSeamSchedulerDomain` rather than deleting it, since
-`lockSetForSyscall` still returns a `LockSet` whose `LockId` cannot name a
-run-queue lock.)
+`lockSetForSyscall` still returned a `LockSet` whose `LockId` cannot name a
+run-queue lock.  WS-RR RR8.12 Cut C6h, `v0.35.181`, deleted it: the syscall seam
+brackets on this domain now, over one unified footprint spanning both — see
+`declaredUnifiedLockSetForAbiEntry`.)
 
 This module is that extension's consumer.  Three pieces, in the order the entries
 run them.
@@ -287,6 +289,37 @@ def schedFootprintCoversWrites (S : SchedLockSet) (st st' : SystemState) : Prop 
 theorem schedFootprintCoversWrites_refl (S : SchedLockSet) (st : SystemState) :
     schedFootprintCoversWrites S st st :=
   ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
+
+/-- **WS-RR RR8.12 Cut C6h**: coverage is MONOTONE in the footprint.
+
+A footprint that names more locks covers at least what a smaller one covers,
+because every clause of `schedFootprintCoversWrites` is of the form *"a lock the
+footprint does **not** name guards state the step did not change"* — so widening
+the footprint only ever discharges more of those antecedents.
+
+This is what lets a per-arm coverage theorem, stated over the arm's own
+scheduler footprint, reach the **unified** footprint the syscall seam actually
+acquires (`unifiedSchedLockSetForSyscall`, which appends the object domain's
+residue).  Without it the family would have to be restated at the unified
+footprint, which is one question with two answers.
+
+Over-declaring is the safe direction for coverage and **not** free in general:
+lock contention is an observable channel (SM8.D's CC-5), which is why the
+footprints themselves are narrowed per arm rather than widened to `allCores`.
+What this theorem says is only that the *proof obligation* travels upward, not
+that a wider footprint is a better one. -/
+theorem schedFootprintCoversWrites_mono (S U : SchedLockSet) (st st' : SystemState)
+    (hSub : ∀ p ∈ S.pairs, p ∈ U.pairs)
+    (h : schedFootprintCoversWrites S st st') :
+    schedFootprintCoversWrites U st st' := by
+  obtain ⟨hObj, hRun, hRepl⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro hTable oid hTcb
+    exact hObj (fun hMem => hTable (hSub _ hMem)) oid (fun hMem => hTcb (hSub _ hMem))
+  · intro d hd
+    exact hRun d (fun hMem => hd (hSub _ hMem))
+  · intro d hd
+    exact hRepl d (fun hMem => hd (hSub _ hMem))
 
 /-- **WS-RR RR8.12 Cut C6a**: a canonical footprint covers a step confined to
 its own two core lists.

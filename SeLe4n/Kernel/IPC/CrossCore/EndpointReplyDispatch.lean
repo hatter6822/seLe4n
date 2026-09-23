@@ -1006,7 +1006,8 @@ theorem endpointReply_donation_chain_length_bounded
 -- `lockSet_endpointReply` is an object-domain `LockSet` and cannot name a per-core
 -- run-queue or replenish-queue slot at all, so
 -- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.reply` arm's
--- scheduler writes as outside the footprint the RR7.12 seam acquires.  This
+-- scheduler writes as outside the footprint the RR7.12 seam acquired (that entry is
+-- retired at Cut C6h, `v0.35.181`).  This
 -- section declares the DISPATCH's: the arm's SM8.B write set (relocated here from
 -- the staged `InformationFlow/NonInterferenceCrossCore.lean`, whose confinement
 -- theorem `endpointReplyCrossCoreDispatch_confinedToCores` is stated at it and

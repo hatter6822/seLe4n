@@ -995,6 +995,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): the OBJECT domain's bracket instance.
+  -- The syscall seam moved to `schedulerLockBracketDomain` over the unified
+  -- footprint, so nothing a committing `@[export]` reaches acquires through this
+  -- one any more.  Not retired: it is the domain `runUnderDeclaredLockSet` is an
+  -- instance of, and the CSpace-walk bracket that still reads it is STAGED, so
+  -- no runtime path executes it.  It becomes live again when that surface is
+  -- promoted, or when a second object-domain seam is bracketed.
+  , `SeLe4n.Kernel.Concurrency.objectLockBracketDomain
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
   , `SeLe4n.Kernel.Concurrency.runChainExtension
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
@@ -1098,6 +1106,15 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.processRevokeNode
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): RR7.12's object-domain bracket at the
+  -- ABI seam, superseded there by `Concurrency.runBracketed schedulerLock\
+  -- BracketDomain` over `declaredUnifiedLockSetForAbiEntry` — the two domains
+  -- write the same lock words, so nesting two brackets would take the
+  -- object-store table lock twice.  Its remaining reader is the STAGED CSpace
+  -- walk (`withCSpaceWalkLocks`), which no committing seam runs; the
+  -- export-commit census still names it a bracket form, so a body that reaches
+  -- it counts as bracketed.
+  , `SeLe4n.Kernel.runUnderDeclaredLockSet
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
   , `SeLe4n.Kernel.replenishScOnCore

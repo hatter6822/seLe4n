@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.180` (`lakefile.toml`) |
+| **Package version** | `0.35.181` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 407,635 across 338 Lean files |
-| **Test LoC** | 83,095 across 70 Lean test suites |
-| **Proved declarations** | 13,486 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 408,061 across 338 Lean files |
+| **Test LoC** | 83,207 across 70 Lean test suites |
+| **Proved declarations** | 13,504 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1761,12 +1761,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    The **syscall seam** brackets since WS-RR RR7.12 (`v0.34.65`), the
    raw `suspend_thread_cross_core` since SM3.C.9's own exception, and
    the three per-core scheduler entries do too since WS-RR RR7.39, which
-   gave the `SchedLockId` domain a runtime.  What remains uncovered is
-   the *syscall* seam's scheduler writes —
-   `UncoveredLockDomain.syscallSeamSchedulerDomain`, since
-   `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
-   run-queue lock.  `ExportCommitDisciplineCensus` measures which is
-   which: seven seams commit, five bracket.)*
+   gave the `SchedLockId` domain a runtime.  The *syscall* seam's own
+   scheduler writes — `UncoveredLockDomain.syscallSeamSchedulerDomain`,
+   since `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot
+   name a run-queue lock — closed at WS-RR RR8.12 Cut C6h (`v0.35.181`),
+   which brackets that seam over one unified footprint spanning both
+   domains.  `ExportCommitDisciplineCensus` measures which is which:
+   seven seams commit, five bracket.)*
 
    *Progress.*  The piece that connects the SM3 footprints to a
    running syscall is `lockSetForSyscall : SyscallId →
@@ -1807,12 +1808,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    what makes bracketing safe while most arms are undeclared.  The
    **per-core scheduler path** brackets too since WS-RR RR7.39
    (`v0.34.89`), which gave `SchedLockId` the state words it never had
-   and made the revalidating bracket shared between the two domains;
-   what remains uncovered is the *syscall* seam's scheduler writes
-   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
-   because `lockSetForSyscall` returns a `LockSet` whose `LockId`
-   cannot name a run-queue lock.  Live WCRT remains the global entry
-   lock's until Track D retires it.
+   and made the revalidating bracket shared between the two domains.
+   The *syscall* seam's scheduler writes
+   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed
+   at WS-RR RR8.12 Cut C6h (`v0.35.181`): the seam brackets over one
+   unified footprint whose `SchedLockId` members name what a `LockSet`
+   could not.  Live WCRT remains the global entry lock's until Track D
+   retires it.
 
    *And how much of the kernel that is, is measured* (WS-RR RR7.13,
    `v0.34.66`).  `SeLe4n/Testing/ExportCommitDisciplineCensus.lean`
@@ -4841,8 +4843,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   RR8.12 Cut C6a, `v0.35.174`).  A footprint that omits a slot the transition
   writes is false, and the 2PL serialisation results, `boundedWait_under_2pl` and
   the CC-5 bound are then *silent* about that slot rather than conservative;
-  `UncoveredLockDomain.syscallSeamSchedulerDomain` is the register entry saying
-  the scheduler domain has not met that standard at the syscall seam, and the
+  `UncoveredLockDomain.syscallSeamSchedulerDomain` was the register entry saying
+  the scheduler domain had not met that standard at the syscall seam (retired at
+  Cut C6h, `v0.35.181`, once it had), and the
   coverage lands **before** the bracket because a bracket acquiring a footprint
   nobody proved covers the writes hands out exclusion the runtime never
   established.  `SeLe4n/Kernel/SyscallSchedContainment.lean` (staged, as

@@ -295,7 +295,8 @@ theorem endpointCallCrossCoreDispatch_no_receiver
 -- `lockSet_endpointCall` is an object-domain `LockSet` and cannot name a per-core
 -- run-queue or replenish-queue slot at all, so
 -- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.call` arm's
--- scheduler writes as outside the footprint the RR7.12 seam acquires.  This
+-- scheduler writes as outside the footprint the RR7.12 seam acquired (that entry is
+-- retired at Cut C6h, `v0.35.181`).  This
 -- section declares them, in the same cross-domain `SchedLockId` order every
 -- sibling footprint uses (`object < runQueue < replenishQueue`, each same-kind
 -- segment `CoreId`-ascending, so the list *is* the SM3.D acquisition sequence).

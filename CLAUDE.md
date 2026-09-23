@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.180.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.181.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,29 +222,29 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~78802 lines)
+- `CHANGELOG.md` (~79170 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
-- `tests/SmpInformationFlowSuite.lean` (~12178 lines)
+- `tests/SmpInformationFlowSuite.lean` (~12184 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~8517 lines)
+- `SeLe4n/Kernel/API.lean` (~8946 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8220 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~6971 lines)
+- `docs/spec/SELE4N_SPEC.md` (~7023 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
 - `SeLe4n/Model/State.lean` (~5743 lines)
-- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5592 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5401 lines)
-- `tests/SmpIpcSuite.lean` (~5165 lines)
+- `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5736 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5278 lines)
+- `tests/SmpIpcSuite.lean` (~5241 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5115 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5063 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
 - `tests/NegativeStateSuite.lean` (~4545 lines)
 - `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
-- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4225 lines)
+- `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4226 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3842 lines)
@@ -272,6 +272,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2820 lines)
 - `tests/SmpCancellationSuite.lean` (~2812 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2786 lines)
+- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2736 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
 - `SeLe4n/Kernel/Capability/Operations.lean` (~2633 lines)
@@ -285,22 +286,21 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2387 lines)
-- `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2360 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2294 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2285 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2203 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2184 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2179 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2174 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2123 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2080 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
@@ -333,21 +333,21 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.25.14_COMPREHENSIVE.md` (~1739 lines)
 - `docs/dev_history/audits/WORKSTREAM_PLAN_WS_O_SYSCALL_RUST_WRAPPERS.md` (~1725 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
-- `tests/FaultHandlingSuite.lean` (~1686 lines)
+- `tests/FaultHandlingSuite.lean` (~1700 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1663 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1650 lines)
+- `tests/SmpCrossCoreCallSuite.lean` (~1632 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1624 lines)
 - `SeLe4n/Kernel/FrozenOps/Core.lean` (~1611 lines)
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
-- `tests/SmpCrossCoreCallSuite.lean` (~1526 lines)
+- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1539 lines)
 - `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1517 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1510 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1511 lines)
 - `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1508 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
-- `SeLe4n/Kernel/IPC/Operations/Donation.lean` (~1473 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
@@ -391,14 +391,14 @@ To find files that need pagination today, run:
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1073 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1082 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1025 lines)
-- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1019 lines)
+- `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1022 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
@@ -429,22 +429,22 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/An10CascadeSuite.lean` (~866 lines)
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~851 lines)
 - `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
-- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~839 lines)
-- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~833 lines)
+- `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~835 lines)
 - `tests/DecodingSuite.lean` (~833 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (~822 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~822 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (~821 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
 - `docs/REGISTERED_DEBT.md` (~816 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~809 lines)
 - `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
@@ -7249,11 +7249,15 @@ code may assume:
   does not move.  (2) **The scheduler domain is not fully covered**: what remains
   is the *syscall* seam's scheduler writes — an `endpointSend`'s receiver wake —
   because `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
-  run-queue lock at all.  That is `UncoveredLockDomain.syscallSeamSchedulerDomain`,
-  owner RR8, and it needs per-arm resolved wake targets rather than the free
-  over-approximation, since those footprints hold `stateLevelLock` and per-object
-  locks rather than the table lock.  Live WCRT is still the global lock's, and
-  `PerCoreWcrt.lean` says which half acquires.
+  run-queue lock at all.  That was `UncoveredLockDomain.syscallSeamSchedulerDomain`,
+  owner RR8, and it needed per-arm resolved wake targets rather than the free
+  over-approximation.  **Closed at WS-RR RR8.12 Cut C6h (`v0.35.181`)**: the seam
+  brackets on `schedulerLockBracketDomain` over one unified footprint, and its own
+  stated reason — that the object-domain footprints hold `stateLevelLock` *"rather
+  than the table lock"* — was **false**, the two being one word
+  (`schedAcquireLock_objStore_congr`), which is why the cut unifies rather than
+  nests.  Live WCRT is still the global lock's for the arms neither domain
+  declares, and `PerCoreWcrt.lean` says which half acquires.
   **How much of the kernel that is, is measured rather than asserted** (RR7.13,
   v0.34.66): `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` derives the
   state-committing `@[export]` set from the elaborated environment — transitive
@@ -7403,10 +7407,10 @@ code may assume:
   tree-wide.
 
 - **...and the first three syscall arms declare one** (WS-RR RR8.12 seventh cut,
-  `v0.35.95`).  `UncoveredLockDomain.syscallSeamSchedulerDomain` records that
+  `v0.35.95`).  `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded that
   `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a run-queue
-  lock at all, so an `endpointSend`'s receiver wake is outside the footprint the
-  RR7.12 seam acquires.  `.notificationSignal` (through the **bound** arm the
+  lock at all, so an `endpointSend`'s receiver wake was outside the footprint the
+  RR7.12 seam acquired (that entry is retired at Cut C6h, `v0.35.181`).  `.notificationSignal` (through the **bound** arm the
   live dispatch routes to), `.notificationWait` and `.send` now have one —
   `schedLockSet_notificationSignalBoundOnCore`,
   `schedLockSet_notificationSignalOnCore`,
@@ -7445,8 +7449,10 @@ code may assume:
   `.tcbSuspend`, `.tcbResume`, the three SchedContext arms, `.tcbSetPriority`,
   `.tcbSetAffinity` and the retype are undeclared too and were in neither list.
   *A recognised set is not a derived set*, in the note written one cut earlier to
-  record which arms remain — read `UncoveredLockDomain.syscallSeamSchedulerDomain`
-  and the `schedLockSet_` inventory, never this paragraph, for what is left.
+  record which arms remain — read the `schedLockSet_` inventory and
+  `schedLockSetForSyscall`'s own `match`, never this paragraph, for what is left.
+  (`UncoveredLockDomain.syscallSeamSchedulerDomain` was the register entry until
+  Cut C6h retired it; the inventory is the derivation that outlives it.)
 
 - **...and the first DONATING arm declares one, so the first with a non-empty
   replenish segment** (WS-RR RR8.12 Cut 8a-ii, `v0.35.107`).
@@ -9490,8 +9496,9 @@ code may assume:
   writes is **false**, and the 2PL serialisation results,
   `boundedWait_under_2pl` and the CC-5 contention bound are then *silent* about
   that slot rather than conservative —
-  `UncoveredLockDomain.syscallSeamSchedulerDomain` is the register entry saying
-  the scheduler domain has not met that standard at the syscall seam.  Cut C4
+  `UncoveredLockDomain.syscallSeamSchedulerDomain` was the register entry saying
+  the scheduler domain had not met that standard at the syscall seam (retired at
+  Cut C6h, `v0.35.181`, once it had).  Cut C4
   gave every declared arm a footprint and C4b wired the seam's resolver to it;
   **the coverage lands before the bracket**, which is the numbering rule's
   semantic half: a bracket acquiring a footprint nobody proved covers the writes
@@ -9672,6 +9679,50 @@ code may assume:
   ``the `.receive` segment`` by exactly one.  The sweep reported it as a failing
   command rather than as a silent pass, which is the direction that class must
   fail in.
+- **...and two lock DOMAINS that write the same word are one footprint, never
+  two brackets** (WS-RR RR8.12 Cut C6h, `v0.35.181`).  The syscall seam brackets
+  on the scheduler domain now, which deletes
+  `UncoveredLockDomain.syscallSeamSchedulerDomain` — and the design was decided
+  by a measurement that **contradicted the retired constructor's own stated
+  reason**.  It said the object-domain footprints hold `stateLevelLock` and
+  per-object locks *"**not** the object-store table lock"*; they are the same
+  lock, because `acquireLockOnObject`'s `.objStore` arm writes
+  `SystemState.objStoreLock` and reads nothing else of the `LockId`.
+  `schedObjStoreLockId`'s docstring had said so since SM5.A.2 and **nothing
+  stated it**, which is why a claim built on the opposite could stand for
+  fourteen minor versions.  Four things new code must respect.
+
+  (1) **Nesting two brackets over one set of lock words is a ladder violation,
+  not a double-acquire nuisance.**  `lockAcquireSequence` orders *one* list, so
+  an inner bracket's level-0 table lock taken after an outer bracket's levels
+  1..9 is a sequence the SM0.I ordering theorem says nothing about — and
+  deadlock freedom in this tree rests on that ordering.  The seam therefore
+  acquires one unified `SchedLockSet`, which is what `SchedLockId` was
+  introduced for: *a cross-domain order exists precisely so a cross-domain
+  acquisition is one ladder.*
+
+  (2) **A canonicalisation is sound only if EVERY operation on the two keys
+  agrees**, so it is pinned at all four primitives — acquire, release, withdraw
+  and held.  Pinning the acquire alone would leave a release that read the
+  `ObjId` free to disagree, and the two keys would then be one word for taking
+  and two for giving back.
+
+  (3) **A claim travels to a superset rather than being restated at it.**
+  `schedFootprintCoversWrites_mono` is why the sixteen per-arm coverage theorems
+  are not re-proved over the unified footprint: every clause of the predicate is
+  of the form *"a lock the footprint does **not** name"*, so a superset only
+  discharges more antecedents.  Read the direction carefully — it is about the
+  *obligation*, not about footprint quality: lock contention is an observable
+  channel (SM8.D's CC-5), which is why the footprints themselves stay narrowed
+  per arm.
+
+  (4) **Acquiring is not covering, and that asymmetry is what makes a bracket
+  landable early.**  An arm declared in one domain and not the other acquires
+  what that domain declared; the other domain's writes stay outside a footprint
+  until it declares one.  An arm neither declares is the bare step, bit-identical
+  to the pre-bracket seam.  That is RR7.12's posture, and it is the reason a
+  bracket may precede the declarations it does not yet have while a *coverage*
+  claim may not.
 - **...and a claim's unit is the PROGRAM the arm runs, wrappers included** (WS-RR
   RR8.12 Cut C6g, `v0.35.180`).  The sixteenth and last declared arm, and the one
   whose transition is three wrappers deep: `.lifecycleRetype` dispatches
