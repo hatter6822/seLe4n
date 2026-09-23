@@ -121,7 +121,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **186** statements in the family, with the
+bound on a post-state across all **190** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -435,9 +435,22 @@ thread from the clause (the pair is what the teardown reads).  It stands to
 `donationOwnerValid`.  The **unit** is the restore-and-teardown pair: the restore
 wakes the victim and so breaks reciprocity, the teardown consumes the link that
 wake left dangling, and each is the other's repair — so `restoredAndConsumed` is
-what carries the full bundle end to end.  What that cut leaves owed rather than
-claimed is the splice's own bundle statement, registered in
-`docs/REGISTERED_DEBT.md`.
+what carries the full bundle end to end.
+
+**And the removal's own statement landed at `v0.35.188`** (WS-RR RR8.16), which
+that cut had left owed: `removeCallerReplyFrame` — the splice then the consume —
+now carries the relaxed bundle to the full one
+(`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage`).
+What it needed was a **unit** rather than an argument.  The relaxed predicate was
+written flat, and a `replyLinkageFrame` transports the reciprocal *pair*, so there
+was nothing for the frame to carry and the splice would have had to re-run the
+full store's case analysis; split as `replyCallerLinkage` is —
+`replyCallerLinkageReciprocalExcept ∧ blockedOnReplyHasReplyObject` — the
+transport is its full sibling one strength down.  Two collapses rode along, each
+one question given one owner: everything but the reciprocal pair is proved once
+and assembled twice, and the splice's store chain is one transport over any
+predicate a caller-preserving Reply store carries, rather than a copy per bundle.
+See `SELE4N_SPEC.md` §8.12.16.
 
 **And with the arm keystone, all three cancellation arms carry the bundle**
 (WS-RR RR8.7, `v0.35.82`): the blocked-on-endpoint arm since `v0.34.95`, the

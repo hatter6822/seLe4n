@@ -1,3 +1,77 @@
+## v0.35.188 — WS-RR RR8.16: the removal's bundle statement, and the unit it needed
+
+**Closes the register row WS-RR RR8.7 opened at `v0.35.80`.**  That cut deleted
+`removeCallerReplyFrame_preserves_ipcInvariantFull` because its premises were
+**contradictory** — the full bundle of the state it runs on *together with* that
+state's answered caller not being `.blockedOnReply`, which `replyCallerLinkage`'s
+second direction refutes — and registered the honest statement as owed.  It is
+written now:
+`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage`, over
+the relaxed pre-state.
+
+**What it needed was a UNIT, not an argument.**  The register row predicted "a
+relaxed twin of `storeObject_reply_stackLinks_preserves_ipcInvariantFull` … its
+own argument over the twenty conjuncts".  That was the wrong diagnosis, and
+measuring it is what this cut records: the twenty conjuncts were never the
+obstacle.  `replyCallerLinkageExcept` was written **flat**, and a
+`replyLinkageFrame` transports the reciprocal **pair** — so there was no name for
+the frame to carry, and the splice's relaxed carriage would have had to re-run the
+full store's case analysis.  Split exactly as its full sibling is
+(`replyCallerLinkageReciprocalExcept ∧ blockedOnReplyHasReplyObject`, mirroring
+`replyCallerLinkage`), `replyCallerLinkageReciprocalExcept_of_frame` is
+`replyCallerLinkageReciprocal_of_frame` one strength down, differing only where the
+relaxation is spent: `tid = woken` survives untouched (a frame moves no thread's
+identity) and the blocked branch pushes forward exactly as before.
+
+**The frame member the family lacked.**  `storeObject_reply_caller_replyLinkageFrame`
+— a `.reply` store that keeps the stored Reply's `caller` — is what both transports
+compose.  Its neighbour `storeObject_nonTcbNonReply_replyLinkageFrame` excludes a
+Reply *on purpose* (a store that overwrote one would destroy a back-link, and
+nothing about the written object says otherwise), so a Reply store was left outside
+the family and the full bundle's carriage re-derived the agreement by hand.  That
+hand-written agreement is **gone**, not duplicated.
+
+**Two collapses, each one question given one owner.**  Everything but the
+reciprocal pair is proved once — `storeObject_reply_stackLinks_preserves_nonReciprocal`,
+over the six pre-state facts a stack-link store actually reads — and assembled
+twice, because the two bundles differ in the pair and nowhere else.  And the
+splice's store chain has one owner: `spliceReplyFrameOut_transport`, stated over
+*any* predicate a caller-preserving Reply store carries, since which stores run, in
+what order, with which lookups surviving between them is a fact about the
+**operation** and not about a bundle.  A second copy per bundle is how the two
+would come to disagree about the chain; both carriages are one application of it,
+and `spliceReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
+`P := replyLinkageFrame st`, which is what makes a chain of frames one frame.
+
+**The composite states every hypothesis on the state the removal runs on.**  The
+answered Reply survives the splice with its `caller` (`replyCallerAgree`) and the
+woken caller's TCB survives it verbatim (`spliceReplyFrameOutOrSelf_tcb_backward`);
+both are discharged inside the theorem rather than pushed onto a caller who would
+have to reason about a state the operation does not rest at.
+
+**The premises are jointly satisfiable, and that is exhibited rather than argued.**
+`restoredAndConsumed_preserves_ipcInvariantFull` already supplies the relaxed bundle
+and the woken caller's non-`.blockedOnReply`-ness *at one state* to
+`consumeReplyLink_closes_exceptReplyLinkage` — which is exactly the pairing the
+deleted theorem could not have — so the vacuity this row descends from is refuted by
+a live production composite, not by a fixture.
+
+**No consumer today, and that is why it is anchored.**  The reply spine proves the
+same result per conjunct over the whole `endpointReply`
+(`endpointReply_preserves_replyCallerLinkageReciprocal`), and collapsing those two
+routes is a cut of its own.  Eighteen Tier 3 anchors pin the split, both transports,
+the shared chain, the exact-name relations (so the longer `…ExceptReplyLinkage`
+theorem cannot satisfy the shorter one's anchor) and the composite's relaxed
+pre-state; each was mutation-tested in both directions, including a negative that
+fires when either carriage re-runs the chain itself and a control that stays silent
+on a comment-only edit.
+
+**Mechanical.**  Five projection sites moved with the split (`h.1` → `h.1.1`,
+`h.2.1` → `h.1.2`, `h.2.2` → `h.2`), and the RR8.7 anchor on the relaxed disjunct
+was repointed to the predicate that now owns it rather than deleted.  No behavioural
+change: no transition, fixture or trace moved, and the golden trace is
+byte-identical.
+
 ## v0.35.187 — a retyped object carries the slot's identity
 
 The improvement `v0.35.185` registered while measuring what its `hIdentity`

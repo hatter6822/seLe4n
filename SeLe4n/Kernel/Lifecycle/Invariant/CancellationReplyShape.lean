@@ -2629,7 +2629,7 @@ theorem restoreToReadyStaging_replyCallerLinkageExcept (st : SystemState)
           = some (.reply r)) ↔ (st.objects[rid.toObjId]? = some (.reply r)) :=
     fun rid r => restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup
       rid.toObjId (.reply r) (by simp)
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro tid tcb' rid hTcb' hRO
     rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
       tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨hk, rfl⟩
@@ -2757,7 +2757,7 @@ theorem consumeReplyLink_closes_exceptReplyLinkage (st : SystemState)
       st.objects[rid.toObjId]? = some (.reply r) → r.caller = some v →
       tcbSt.replyObject = some rid := by
     intro rid r hr hc
-    obtain ⟨t, ht, htr, _⟩ := hRecip.2.1 rid r v hr hc
+    obtain ⟨t, ht, htr, _⟩ := hRecip.1.2 rid r v hr hc
     rw [hStore] at ht
     rw [(KernelObject.tcb.inj (Option.some.inj ht)).symm] at htr
     exact htr
@@ -2773,7 +2773,7 @@ theorem consumeReplyLink_closes_exceptReplyLinkage (st : SystemState)
   | some rid =>
     rw [Lifecycle.Suspend.consumeReplyLink_some st v tcb rid hR]
     have hStRid : tcbSt.replyObject = some rid := by rw [hAgree, hR]
-    obtain ⟨r0, hr0, hc0⟩ := hRecip.1 v tcbSt rid hStore hStRid
+    obtain ⟨r0, hr0, hc0⟩ := hRecip.1.1 v tcbSt rid hStore hStRid
     exact consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage st _ v rid r0
       hExcept hInv ((SystemState.getReply?_eq_some_iff st rid r0).mpr hr0) hc0
       (fun t ht ep rt => by

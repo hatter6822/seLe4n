@@ -5800,7 +5800,8 @@ The relaxation is the **narrowest** one that admits the state: at the woken thre
 the reciprocal pair is still required to exist, and only the blocking clause is
 dropped.  Clause 1 and `blockedOnReplyHasReplyObject` are untouched, because
 waking a caller costs neither. -/
-def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+def replyCallerLinkageReciprocalExcept (st : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop :=
   (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.replyObject = some rid →
@@ -5810,25 +5811,78 @@ def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop
       r.caller = some tid →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
         (tid = woken ∨ ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
-          tcb.ipcState = .blockedOnReply ep rt)) ∧
-  blockedOnReplyHasReplyObject st
+          tcb.ipcState = .blockedOnReply ep rt))
 
-/-- WS-RR RR8.7: **a relaxed linkage with nothing referencing the woken thread is
-the full linkage.**  This is what the reply-link teardown supplies: it clears the
-one Reply that named the caller, and under the relaxed clause it is the only one
-that could (a second would force the caller's single `replyObject` to name two
-Reply objects). -/
+/-- WS-RR RR8.16: the relaxed linkage, split exactly as the full one is.
+
+`replyCallerLinkage` is `replyCallerLinkageReciprocal ∧ blockedOnReplyHasReplyObject`,
+and this is the same split one strength down — which is what lets the *pair* be
+transported across a `replyLinkageFrame` (`replyCallerLinkageReciprocalExcept_of_frame`)
+the way its full sibling already is, with the third clause supplied by whoever
+knows the step writes no TCB.  Stated flat, the relaxed triple had no unit at
+which that transport could be written, so the splice's relaxed carriage had to
+re-run the full store's whole case analysis instead of composing the frame. -/
+def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+  replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st
+
+/-- WS-RR RR8.7: **a relaxed reciprocal pair with nothing referencing the woken
+thread is the full pair.**  This is what the reply-link teardown supplies: it
+clears the one Reply that named the caller, and under the relaxed clause it is the
+only one that could (a second would force the caller's single `replyObject` to
+name two Reply objects). -/
+theorem replyCallerLinkageReciprocal_of_except_of_unreferenced {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : replyCallerLinkageReciprocalExcept st woken)
+    (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
+    replyCallerLinkageReciprocal st := by
+  refine ⟨h.1, ?_⟩
+  intro rid r tid hR hC
+  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2 rid r tid hR hC
+  rcases hCase with hEq | hBlk
+  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
+  · exact ⟨tcb, hT, hRO, hBlk⟩
+
+/-- WS-RR RR8.7: and the bundle-level lift. -/
 theorem replyCallerLinkage_of_except_of_unreferenced {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : replyCallerLinkageExcept st woken)
     (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
       st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
-    replyCallerLinkage st := by
-  refine ⟨⟨h.1, ?_⟩, h.2.2⟩
-  intro rid r tid hR hC
-  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2.1 rid r tid hR hC
-  rcases hCase with hEq | hBlk
-  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
-  · exact ⟨tcb, hT, hRO, hBlk⟩
+    replyCallerLinkage st :=
+  ⟨replyCallerLinkageReciprocal_of_except_of_unreferenced h.1 hFree, h.2⟩
+
+/-- **WS-RR RR8.16: the relaxed reciprocal pair transports across the very frame
+its full sibling does.**
+
+`replyCallerLinkageReciprocal_of_frame` is the same theorem one strength up, and
+the proofs differ in exactly one place: where that one reads the pre-state's
+`.blockedOnReply` witness and pushes it forward, this one case-splits the
+relaxation — `tid = woken` survives untouched (the frame moves no thread's
+identity), and the blocked branch pushes forward exactly as before.  Nothing else
+about a frame is needed, which is the measurement that the relaxation is about the
+*blocking* clause alone and not about the pair's existence.
+
+The third clause (`blockedOnReplyHasReplyObject`) is deliberately not concluded
+here, for the reason its full sibling does not conclude it either: a
+`replyLinkageFrame` says nothing about an **unlinked** thread's `ipcState`, so a
+step that blocks a reply-less thread satisfies the frame and breaks that clause.
+Whoever knows their step writes no TCB supplies it. -/
+theorem replyCallerLinkageReciprocalExcept_of_frame {st st' : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hFrame : replyLinkageFrame st st')
+    (hInv : replyCallerLinkageReciprocalExcept st woken) :
+    replyCallerLinkageReciprocalExcept st' woken := by
+  refine ⟨fun tid tcb' rid hTcb' hRO' => ?_, fun rid r tid hReply' hCaller => ?_⟩
+  · obtain ⟨tcb, hTcb, hEq⟩ := hFrame.pullback tid tcb' hTcb'
+    obtain ⟨r, hReply, hCaller⟩ := hInv.1 tid tcb rid hTcb (hEq ▸ hRO')
+    exact (hFrame.replyCallerAgree rid (some tid)).mpr ⟨r, hReply, hCaller⟩
+  · obtain ⟨r0, hReply0, hCaller0⟩ :=
+      (hFrame.replyCallerAgree rid (some tid)).mp ⟨r, hReply', hCaller⟩
+    obtain ⟨tcb, hTcb, hRO, hCase⟩ := hInv.2 rid r0 tid hReply0 hCaller0
+    obtain ⟨tcb', hTcb', hEq, hBlk'⟩ := hFrame.pushLinked tid tcb rid hTcb hRO
+    refine ⟨tcb', hTcb', hEq.trans hRO, ?_⟩
+    rcases hCase with hW | ⟨ep, rt, hb⟩
+    · exact Or.inl hW
+    · exact Or.inr (hBlk' ep rt hb)
 
 /-- **WS-RR RR8.7: `ipcInvariantFull` with the reply linkage relaxed at one woken
 caller** — the honest statement about the state a reply path reaches between
@@ -6026,6 +6080,27 @@ theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hTail : endpointQueueTailBlockedConsistent st)
     (hQNTB : queueNextTargetBlocked st) :
     ipcInvariantFull st :=
+  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
+   hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
+
+/-- **WS-RR RR8.16: the relaxed bundle's assembler**, the sibling of
+`ipcInvariantFull_of_core_replyCallerLinkage` one strength down.
+
+The two differ in their second argument and nowhere else, which is the statement
+that the relaxation is confined to the reciprocal pair: a step that carries the
+other nineteen conjuncts carries them for both bundles, so the reply-stack
+writers prove those once and assemble twice. -/
+theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (hCore : ipcInvariantCore st) (hLink : replyCallerLinkageExcept st woken)
+    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hQNTB : queueNextTargetBlocked st) :
+    ipcInvariantFullExceptReplyLinkage st woken :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,

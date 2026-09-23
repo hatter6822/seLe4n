@@ -5885,7 +5885,7 @@ theorem consumeCallerReply_closes_replyCallerLinkageExcept (st st' : SystemState
   have hReplyObj : st.objects[rid.toObjId]? = some (.reply r0) :=
     (getReply?_eq_some_iff st rid r0).mp hGetR
   -- mutual link: the caller points back at `rid` (reciprocity from `hRecip`).
-  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRecip.2.1 rid r0 caller hReplyObj hLinked
+  obtain ⟨tcbC, hCallerObj, hCallerRep, _⟩ := hRecip.1.2 rid r0 caller hReplyObj hLinked
   have hC_ne : caller.toObjId ≠ rid.toObjId :=
     getTcb?_getReply?_slot_ne st caller rid tcbC r0
       ((getTcb?_eq_some_iff st caller tcbC).mpr hCallerObj) hGetR
@@ -5937,7 +5937,7 @@ theorem consumeCallerReply_closes_replyCallerLinkageExcept (st st' : SystemState
       have htid_ne_rid : tid.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj'] at hTcb; cases hTcb
       rw [hFrame tid.toObjId htid_ne_rid htid_ne_caller] at hTcb
-      obtain ⟨r, hr, hrc⟩ := hRecip.1 tid tcb ridv hTcb hRep
+      obtain ⟨r, hr, hrc⟩ := hRecip.1.1 tid tcb ridv hTcb hRep
       have hridv_ne_rid : ridv.toObjId ≠ rid.toObjId := by
         intro h; rw [h, hReplyObj] at hr
         simp only [Option.some.injEq, KernelObject.reply.injEq] at hr
@@ -5957,7 +5957,7 @@ theorem consumeCallerReply_closes_replyCallerLinkageExcept (st st' : SystemState
       have hridv_ne_caller : ridv.toObjId ≠ caller.toObjId := by
         intro h; obtain ⟨t, ht⟩ := hCallerTcb'; rw [h, ht] at hRep; cases hRep
       rw [hFrame ridv.toObjId hridv_ne_rid hridv_ne_caller] at hRep
-      obtain ⟨tcb, ht, htr, hCase⟩ := hRecip.2.1 ridv r tid hRep hCaller
+      obtain ⟨tcb, ht, htr, hCase⟩ := hRecip.1.2 ridv r tid hRep hCaller
       have htid_ne_caller : tid.toObjId ≠ caller.toObjId := by
         intro h; rw [h, hCallerObj] at ht
         simp only [Option.some.injEq, KernelObject.tcb.injEq] at ht
@@ -6149,6 +6149,49 @@ theorem storeObject_nonTcbNonReply_replyLinkageFrame
       exact absurd (Option.some.inj hTcb) (hOrigNonTcb tcb)
     · refine ⟨tcb, ?_, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
       rw [storeObject_objects_ne st st' id tid.toObjId _ hEq hObjInv hStore]; exact hTcb
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: a `.reply` store that keeps the stored Reply's `caller` frames
+the reply linkage.**  The member of this family the reply-stack writers need: the
+splice's three stores and the donation pop's two rewrite `prev` / `next`, which
+the linkage reads nowhere, and leave `caller` exactly where it was.
+
+Its neighbour `storeObject_nonTcbNonReply_replyLinkageFrame` excludes a Reply on
+purpose — a store that *overwrote* one would destroy a back-link, and nothing
+about the written object says otherwise — so a Reply store states the agreement it
+genuinely has (`hCaller`) rather than being left outside the family.  That is the
+whole reason `storeObject_reply_stackLinks_preserves_ipcInvariantFull` used to
+re-derive the linkage by hand instead of composing a frame, and with it the
+relaxed twin beside that theorem is the same composition one strength down. -/
+theorem storeObject_reply_caller_replyLinkageFrame
+    (st st' : SystemState) (rid : SeLe4n.ReplyId) (r r' : Reply)
+    (hOrig : st.objects[rid.toObjId]? = some (.reply r))
+    (hCaller : r'.caller = r.caller)
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject rid.toObjId (.reply r') st = .ok ((), st')) :
+    replyLinkageFrame st st' := by
+  have hStored : st'.objects[rid.toObjId]? = some (.reply r') :=
+    storeObject_objects_eq st st' rid.toObjId _ hObjInv hStore
+  refine ⟨fun q c => ?_, fun tid tcb' hTcb' => ?_, fun tid tcb q hTcb hRO => ?_⟩
+  · by_cases hEq : q.toObjId = rid.toObjId
+    · rw [hEq, hStored, hOrig]
+      refine ⟨fun h => ?_, fun h => ?_⟩
+      · obtain ⟨r0, h0, hc0⟩ := h
+        refine ⟨r, rfl, ?_⟩
+        rw [← hc0, ← KernelObject.reply.inj (Option.some.inj h0), hCaller]
+      · obtain ⟨r0, h0, hc0⟩ := h
+        refine ⟨r', rfl, ?_⟩
+        rw [← hc0, ← KernelObject.reply.inj (Option.some.inj h0), hCaller]
+    · rw [storeObject_objects_ne st st' rid.toObjId q.toObjId _ hEq hObjInv hStore]
+  · by_cases hEq : tid.toObjId = rid.toObjId
+    · rw [hEq, hStored] at hTcb'; cases hTcb'
+    · rw [storeObject_objects_ne st st' rid.toObjId tid.toObjId _ hEq hObjInv hStore] at hTcb'
+      exact ⟨tcb', hTcb', rfl⟩
+  · by_cases hEq : tid.toObjId = rid.toObjId
+    · rw [hEq, hOrig] at hTcb; cases hTcb
+    · refine ⟨tcb, ?_, rfl, fun ep rt hb => ⟨ep, rt, hb⟩⟩
+      rw [storeObject_objects_ne st st' rid.toObjId tid.toObjId _ hEq hObjInv hStore]
+      exact hTcb
 
 open SeLe4n.Model.SystemState in
 /-- WS-RR RR3.7: an endpoint store frames the reply linkage. -/
@@ -15647,7 +15690,7 @@ theorem consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage
       have hTcbPre : st.objects[tid.toObjId]? = some (.tcb tcb) := by
         rw [← consumeCallerReply_objects_frame st st' caller rid hObjInv hStep tid.toObjId hTR hTC]
         exact hTcb
-      exact hInv.replyCallerLinkageExcept.2.2 tid tcb ep rt hTcbPre hBlk
+      exact hInv.replyCallerLinkageExcept.2 tid tcb ep rt hTcbPre hBlk
   refine ipcInvariantFull_of_core_replyCallerLinkage ?core hRCL'
     (consumeCallerReply_preserves_pendingReceiveReplyWellFormed st st' caller rid hObjInv
       hInv.pendingReceiveReplyWellFormed hStep)
@@ -15692,99 +15735,175 @@ theorem consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage
           ((getTcb?_eq_some_iff st1 caller tcb).mp hT) hStep
 
 open SeLe4n.Model.SystemState in
-/-- **WS-HP HP6.4: a `.reply` store that moves only stack links preserves the
-whole IPC bundle.**  Extracted from the removal's own proof so the splice's two
-stores compose it **twice** rather than re-running an eighty-line case analysis
-over two writes — one question, one answer.
+/-- **WS-RR RR8.16: what a stack-link `.reply` store does to every conjunct but
+the reciprocal pair.**  The two bundle theorems below are this plus one
+`replyLinkageFrame` transport plus one assembler — the full bundle and the bundle
+relaxed at a woken caller differ in the pair and nowhere else, so proving these
+nineteen twice would be two answers to one question.
 
 It is cheap by construction rather than by a new argument: **no conjunct of
-`ipcInvariantFull` reads `Reply.prev` or `Reply.next`**, and the two that read a
-Reply at all (`replyCallerLinkage`, `pendingReceiveReplyWellFormed`) read
-`caller`, which `hCaller` pins.  The fifteen structural conjuncts come from the
-generic reply-store frame, the two Reply-reading ones from that agreement, and
-the remaining three from the fact that a Reply store writes no TCB and no
-endpoint. -/
+either bundle reads `Reply.prev` or `Reply.next`**, and the two that read a Reply
+at all (the linkage, `pendingReceiveReplyWellFormed`) read `caller`, which
+`hCaller` pins.  The fifteen structural conjuncts come from the generic
+reply-store frame, the stash from that agreement, and the remaining three from
+the fact that a Reply store writes no TCB and no endpoint. -/
+theorem storeObject_reply_stackLinks_preserves_nonReciprocal
+  {st st' : SystemState} {above : SeLe4n.ReplyId} {a a' : Reply}
+  (hObjInv : st.objects.invExt)
+  (hCore : ipcInvariantCore st) (hBlkHas : blockedOnReplyHasReplyObject st)
+  (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
+  (hTail : endpointQueueTailBlockedConsistent st)
+  (hQNTB : queueNextTargetBlocked st)
+  (hA : st.getReply? above = some a) (hCaller : a'.caller = a.caller)
+  (hS : storeObject above.toObjId (.reply a') st = .ok ((), st')) :
+  ipcInvariantCore st' ∧ blockedOnReplyHasReplyObject st' ∧
+    pendingReceiveReplyWellFormed st' ∧ donationOwnerUnique st' ∧
+    endpointQueueTailBlockedConsistent st' ∧ queueNextTargetBlocked st' := by
+  have hAObj : st.objects[above.toObjId]? = some (.reply a) :=
+    (getReply?_eq_some_iff _ _ _).mp hA
+  -- A Reply store moves no TCB at either end: neither the written value nor the
+  -- previous occupant is one.  One lemma, stated beside the donation primitives.
+  have hTcbIff := storeObject_replyAt_objects_tcb_iff st st' above a a' hA hObjInv hS
+  refine ⟨storeObject_reply_preserves_ipcInvariantCore st st' above.toObjId a
+      a' hCore hObjInv hAObj hS, ?_, ?_, ?_, ?_, ?_⟩
+  -- `blockedOnReplyHasReplyObject`: no TCB moved.
+  · intro tid tcb ep rt hTcb hBlk
+    exact hBlkHas tid tcb ep rt ((hTcbIff _ _).mp hTcb) hBlk
+  -- `pendingReceiveReplyWellFormed`: the stash reads `caller`, which agrees.
+  · refine storeObject_reply_preserves_pendingReceiveReplyWellFormed st st' above a
+      a' hObjInv hA hPRR ?_ hS
+    intro hStashed
+    obtain ⟨tid, tcb, hTcb, hStash⟩ := hStashed
+    obtain ⟨_, r1, hr1, hc1⟩ := hPRR.1 tid tcb above hTcb hStash
+    rw [hCaller, ← KernelObject.reply.inj (Option.some.inj
+      (((getReply?_eq_some_iff _ _ _).mp hr1).symm.trans ((getReply?_eq_some_iff _ _ _).mp hA)))]
+    exact hc1
+  -- `donationOwnerUnique`: the store writes no TCB, so no binding moved.
+  · exact donationOwnerUnique_of_sameSchedContextBindings
+      (fun tid tcb' hTcb' => ⟨tcb', (hTcbIff _ _).mp hTcb', rfl⟩) hUnique
+  · exact storeObject_reply_preserves_endpointQueueTailBlockedConsistent st st' above
+      a' hObjInv hTail hS
+  · exact storeObject_reply_preserves_queueNextTargetBlocked st st' above
+      a' hObjInv hQNTB hS
+
+open SeLe4n.Model.SystemState in
+/-- **WS-HP HP6.4: a `.reply` store that moves only stack links preserves the
+whole IPC bundle.**  Extracted from the removal's own proof so the splice's three
+stores compose it **three times** rather than re-running a case analysis per
+write — one question, one answer.
+
+Since WS-RR RR8.16 the reciprocal pair travels through
+`storeObject_reply_caller_replyLinkageFrame`, the store's member of the
+`replyLinkageFrame` family, rather than through a hand-written agreement: the
+frame is the read set of the pair, so the relaxed twin below transports across
+the very same fact. -/
 theorem storeObject_reply_stackLinks_preserves_ipcInvariantFull
   {st st' : SystemState} {above : SeLe4n.ReplyId} {a a' : Reply}
   (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
   (hA : st.getReply? above = some a) (hCaller : a'.caller = a.caller)
   (hS : storeObject above.toObjId (.reply a') st = .ok ((), st')) :
   ipcInvariantFull st' := by
-  have hAObj : st.objects[above.toObjId]? = some (.reply a) :=
-    (getReply?_eq_some_iff _ _ _).mp hA
-  -- Every key other than `above` is untouched; `above` holds `a` before and
-  -- `a'` after, so every Reply's `caller` and every TCB
-  -- agree across the store.
-  have hNe : ∀ k : SeLe4n.ObjId, k ≠ above.toObjId → st'.objects[k]? = st.objects[k]? :=
-    fun k hk => storeObject_objects_ne st st' above.toObjId k _ hk hObjInv hS
-  have hAt : st'.objects[above.toObjId]? = some (.reply a') :=
-    storeObject_objects_eq' st _ _ _ hObjInv hS
-  have hTcbFwd : ∀ (k : SeLe4n.ObjId) (t : TCB),
-      st'.objects[k]? = some (.tcb t) → st.objects[k]? = some (.tcb t) := by
-    intro k t hk
-    by_cases hEq : k = above.toObjId
-    · rw [hEq, hAt] at hk; cases hk
-    · rw [← hNe k hEq]; exact hk
-  have hTcbBwd : ∀ (k : SeLe4n.ObjId) (t : TCB),
-      st.objects[k]? = some (.tcb t) → st'.objects[k]? = some (.tcb t) := by
-    intro k t hk
-    by_cases hEq : k = above.toObjId
-    · rw [hEq, hAObj] at hk; cases hk
-    · rw [hNe k hEq]; exact hk
-  have hReplyFwd : ∀ (q : SeLe4n.ReplyId) (rq : Reply),
-      st'.objects[q.toObjId]? = some (.reply rq) →
-      ∃ rp, st.objects[q.toObjId]? = some (.reply rp) ∧ rq.caller = rp.caller := by
-    intro q rq hq
-    by_cases hEq : q.toObjId = above.toObjId
-    · rw [hEq, hAt] at hq
-      exact ⟨a, by rw [hEq]; exact hAObj,
-        by rw [← KernelObject.reply.inj (Option.some.inj hq)]; exact hCaller⟩
-    · exact ⟨rq, by rw [← hNe q.toObjId hEq]; exact hq, rfl⟩
-  have hReplyBwd : ∀ (q : SeLe4n.ReplyId) (rp : Reply),
-      st.objects[q.toObjId]? = some (.reply rp) →
-      ∃ rq, st'.objects[q.toObjId]? = some (.reply rq) ∧ rq.caller = rp.caller := by
-    intro q rp hq
-    by_cases hEq : q.toObjId = above.toObjId
-    · refine ⟨a', by rw [hEq]; exact hAt, ?_⟩
-      rw [hEq, hAObj] at hq
-      rw [← KernelObject.reply.inj (Option.some.inj hq)]; exact hCaller
-    · exact ⟨rp, by rw [hNe q.toObjId hEq]; exact hq, rfl⟩
-  refine ipcInvariantFull_of_core_replyCallerLinkage
-    (storeObject_reply_preserves_ipcInvariantCore st st' above.toObjId a
-      a' hInv.toCore hObjInv hAObj hS)
-    ⟨⟨?_, ?_⟩, ?_⟩ ?_ ?_ ?_ ?_
-  -- `replyCallerLinkage`, forward: a TCB's forward link still resolves to a
-  -- Reply naming it back, because both halves are untouched.
-  · intro tid tcb q hTcb hLink
-    obtain ⟨r0, hr0, hc0⟩ := hInv.replyCallerLinkage.1.1 tid tcb q (hTcbFwd _ _ hTcb) hLink
-    obtain ⟨r1, hr1, hc1⟩ := hReplyBwd q r0 hr0
-    exact ⟨r1, hr1, by rw [hc1]; exact hc0⟩
-  -- `replyCallerLinkage`, reciprocal: a Reply's caller still points back.
-  · intro q r0 tid hr0 hc0
-    obtain ⟨rp, hrp, hcEq⟩ := hReplyFwd q r0 hr0
-    obtain ⟨tcb, hTcb, hLink, hBlk⟩ :=
-      hInv.replyCallerLinkage.1.2 q rp tid hrp (by rw [← hcEq]; exact hc0)
-    exact ⟨tcb, hTcbBwd _ _ hTcb, hLink, hBlk⟩
-  -- `blockedOnReplyHasReplyObject`: no TCB moved.
-  · intro tid tcb ep rt hTcb hBlk
-    exact hInv.replyCallerLinkage.2 tid tcb ep rt (hTcbFwd _ _ hTcb) hBlk
-  -- `pendingReceiveReplyWellFormed`: the stash reads `caller`, which agrees.
-  · refine storeObject_reply_preserves_pendingReceiveReplyWellFormed st st' above a
-      a' hObjInv hA hInv.pendingReceiveReplyWellFormed ?_ hS
-    intro hStashed
-    obtain ⟨tid, tcb, hTcb, hStash⟩ := hStashed
-    obtain ⟨_, r1, hr1, hc1⟩ := hInv.pendingReceiveReplyWellFormed.1 tid tcb above hTcb hStash
-    rw [hCaller, ← KernelObject.reply.inj (Option.some.inj
-      (((getReply?_eq_some_iff _ _ _).mp hr1).symm.trans ((getReply?_eq_some_iff _ _ _).mp hA)))]
-    exact hc1
-  -- `donationOwnerUnique`: the splice writes no TCB, so no binding moved.
-  · exact donationOwnerUnique_of_sameSchedContextBindings
-      (fun tid tcb' hTcb' => ⟨tcb', hTcbFwd _ _ hTcb', rfl⟩) hInv.donationOwnerUnique
-  · exact storeObject_reply_preserves_endpointQueueTailBlockedConsistent st st' above
-      a' hObjInv hInv.endpointQueueTailBlockedConsistent hS
-  · exact storeObject_reply_preserves_queueNextTargetBlocked st st' above
-      a' hObjInv hInv.queueNextTargetBlocked hS
+  obtain ⟨hCore, hBlkHas, hPRR, hUnique, hTail, hQNTB⟩ :=
+    storeObject_reply_stackLinks_preserves_nonReciprocal hObjInv hInv.toCore
+      hInv.replyCallerLinkage.2 hInv.pendingReceiveReplyWellFormed hInv.donationOwnerUnique
+      hInv.endpointQueueTailBlockedConsistent hInv.queueNextTargetBlocked hA hCaller hS
+  exact ipcInvariantFull_of_core_replyCallerLinkage hCore
+    ⟨replyCallerLinkageReciprocal_of_frame
+      (storeObject_reply_caller_replyLinkageFrame st st' above a a'
+        ((getReply?_eq_some_iff _ _ _).mp hA) hCaller hObjInv hS)
+      hInv.replyCallerLinkage.1, hBlkHas⟩ hPRR hUnique hTail hQNTB
 
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: and the same store carries the bundle relaxed at a woken
+caller** — the twin the tombstone below used to register as owed.
+
+The relaxation is about the *blocking* clause of the reciprocal pair, and a
+`.reply` store neither blocks nor wakes anything, so this is the full theorem
+above with one substitution on each of its two moving parts: the relaxed
+transport in place of the full one, and the relaxed assembler in place of the
+full one.  Nothing else about the store changes, which is what
+`storeObject_reply_stackLinks_preserves_nonReciprocal` beside them says. -/
+theorem storeObject_reply_stackLinks_preserves_ipcInvariantFullExceptReplyLinkage
+  {st st' : SystemState} {above : SeLe4n.ReplyId} {a a' : Reply}
+  {woken : SeLe4n.ThreadId}
+  (hObjInv : st.objects.invExt) (hInv : ipcInvariantFullExceptReplyLinkage st woken)
+  (hA : st.getReply? above = some a) (hCaller : a'.caller = a.caller)
+  (hS : storeObject above.toObjId (.reply a') st = .ok ((), st')) :
+  ipcInvariantFullExceptReplyLinkage st' woken := by
+  obtain ⟨hCore, hBlkHas, hPRR, hUnique, hTail, hQNTB⟩ :=
+    storeObject_reply_stackLinks_preserves_nonReciprocal hObjInv hInv.toCore
+      hInv.replyCallerLinkageExcept.2 hInv.pendingReceiveReplyWellFormed
+      hInv.donationOwnerUnique hInv.endpointQueueTailBlockedConsistent
+      hInv.queueNextTargetBlocked hA hCaller hS
+  exact ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept hCore
+    ⟨replyCallerLinkageReciprocalExcept_of_frame
+      (storeObject_reply_caller_replyLinkageFrame st st' above a a'
+        ((getReply?_eq_some_iff _ _ _).mp hA) hCaller hObjInv hS)
+      hInv.replyCallerLinkageExcept.1, hBlkHas⟩ hPRR hUnique hTail hQNTB
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: the splice's store chain, once, for any predicate a
+stack-link `.reply` store carries.**
+
+The removal writes one or three `.reply` stores that change stack links alone,
+and *which* three they are, in what order, with which lookups surviving between
+them, is a fact about the operation rather than about any bundle.  It was written
+out inside `spliceReplyFrameOut_preserves_ipcInvariantFull`, so carrying a second
+bundle across the splice meant a second copy of it — and a second copy is how the
+two would come to disagree about the chain.  Stated here as a transport, the full
+bundle and the bundle relaxed at a woken caller are one application each.
+
+`hStore` is exactly the shape both store theorems above have, which is the
+measurement that the chain needs nothing else: not the objects' contents, not the
+cut's position, only that a caller-preserving Reply store carries `P`. -/
+theorem spliceReplyFrameOut_transport {P : SystemState → Prop}
+    (hStore : ∀ {s s' : SystemState} {q : SeLe4n.ReplyId} {x x' : Reply},
+      s.objects.invExt → P s → s.getReply? q = some x → x'.caller = x.caller →
+      storeObject q.toObjId (.reply x') s = .ok ((), s') → P s')
+    {st st' : SystemState} {rid : SeLe4n.ReplyId}
+    (hObjInv : st.objects.invExt) (hP : P st)
+    (h : spliceReplyFrameOut st rid = .ok st') :
+    P st' := by
+  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP', hS⟩
+  · exact hP
+  · rcases spliceReplyFrameStores_cases hS with
+      ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
+    · exact hStore (x' := { a with prev := none }) hObjInv hP hA rfl hS1
+    · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
+      have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
+      have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP' hBelow
+      have hP1 : P s1 := hStore (x' := { a with prev := some below }) hObjInv hP hA rfl hS1
+      have hObjInv1 : s1.objects.invExt :=
+        SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+      have hB1 : s1.getReply? below = some b := by
+        rw [getReply?_eq_some_iff]
+        rw [storeObject_objects_ne st s1 above.toObjId below.toObjId _
+          (fun hEq => hNe (SeLe4n.ReplyId.toObjId_injective _ _ hEq)) hObjInv hS1]
+        exact (getReply?_eq_some_iff _ _ _).mp hB
+      have hP2 : P s2 :=
+        hStore (x' := { b with next := some (.frame above) }) hObjInv1 hP1 hB1 rfl hS2
+      have hObjInv2 : s2.objects.invExt :=
+        SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hObjInv1 hS2
+      have hR2 : s2.getReply? rid = some r := by
+        rw [getReply?_eq_some_iff]
+        rw [storeObject_objects_ne s1 s2 below.toObjId rid.toObjId _
+            (fun hEq => hNeBR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv1 hS2,
+          storeObject_objects_ne st s1 above.toObjId rid.toObjId _
+            (fun hEq => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv hS1]
+        exact (getReply?_eq_some_iff _ _ _).mp hR
+      exact hStore (x' := { r with prev := none }) hObjInv2 hP2 hR2 rfl hS3
+
+/-- WS-RR RR8.16: the fold inherits the transport. -/
+theorem spliceReplyFrameOutOrSelf_transport {P : SystemState → Prop}
+    (hStore : ∀ {s s' : SystemState} {q : SeLe4n.ReplyId} {x x' : Reply},
+      s.objects.invExt → P s → s.getReply? q = some x → x'.caller = x.caller →
+      storeObject q.toObjId (.reply x') s = .ok ((), s') → P s')
+    (st : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt) (hP : P st) :
+    P (spliceReplyFrameOutOrSelf st rid) := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  · rw [h]; exact hP
+  · exact spliceReplyFrameOut_transport hStore hObjInv hP h
 
 open SeLe4n.Model.SystemState in
 /-- **WS-RM (`v0.35.6`): the removal preserves the whole IPC bundle.**  Its one or
@@ -15796,40 +15915,30 @@ theorem spliceReplyFrameOut_preserves_ipcInvariantFull
     {st st' : SystemState} {rid : SeLe4n.ReplyId}
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (h : spliceReplyFrameOut st rid = .ok st') :
-    ipcInvariantFull st' := by
-  rcases spliceReplyFrameOut_cases h with rfl | ⟨r, above, a, hR, hN, hA, hP, hS⟩
-  · exact hInv
-  · rcases spliceReplyFrameStores_cases hS with
-      ⟨_, hS1⟩ | ⟨below, b, s1, s2, hBelow, hS1, hS2, hS3⟩
-    · exact storeObject_reply_stackLinks_preserves_ipcInvariantFull
-        (a' := { a with prev := none }) hObjInv hInv hA rfl hS1
-    · obtain ⟨_, hNe, hB, _⟩ := spliceFrameBelow?_eq_some hBelow
-      have hNeBR : below ≠ rid := spliceFrameBelow?_ne_cut hR hN hBelow
-      have hNeAR : above ≠ rid := spliceFrameBelow?_above_ne_cut hR hA hP hBelow
-      have hInv1 : ipcInvariantFull s1 :=
-        storeObject_reply_stackLinks_preserves_ipcInvariantFull
-          (a' := { a with prev := some below }) hObjInv hInv hA rfl hS1
-      have hObjInv1 : s1.objects.invExt :=
-        SeLe4n.Model.storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
-      have hB1 : s1.getReply? below = some b := by
-        rw [getReply?_eq_some_iff]
-        rw [storeObject_objects_ne st s1 above.toObjId below.toObjId _
-          (fun hEq => hNe (SeLe4n.ReplyId.toObjId_injective _ _ hEq)) hObjInv hS1]
-        exact (getReply?_eq_some_iff _ _ _).mp hB
-      have hInv2 : ipcInvariantFull s2 :=
-        storeObject_reply_stackLinks_preserves_ipcInvariantFull
-          (a' := { b with next := some (.frame above) }) hObjInv1 hInv1 hB1 rfl hS2
-      have hObjInv2 : s2.objects.invExt :=
-        SeLe4n.Model.storeObject_preserves_objects_invExt s1 s2 _ _ hObjInv1 hS2
-      have hR2 : s2.getReply? rid = some r := by
-        rw [getReply?_eq_some_iff]
-        rw [storeObject_objects_ne s1 s2 below.toObjId rid.toObjId _
-            (fun hEq => hNeBR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv1 hS2,
-          storeObject_objects_ne st s1 above.toObjId rid.toObjId _
-            (fun hEq => hNeAR (SeLe4n.ReplyId.toObjId_injective _ _ hEq).symm) hObjInv hS1]
-        exact (getReply?_eq_some_iff _ _ _).mp hR
-      exact storeObject_reply_stackLinks_preserves_ipcInvariantFull
-        (a' := { r with prev := none }) hObjInv2 hInv2 hR2 rfl hS3
+    ipcInvariantFull st' :=
+  spliceReplyFrameOut_transport
+    (fun hOI hP hA hCaller hS =>
+      storeObject_reply_stackLinks_preserves_ipcInvariantFull hOI hP hA hCaller hS)
+    hObjInv hInv h
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: and the splice carries the bundle relaxed at a woken caller.**
+
+This is what the removal's own statement needed and what the tombstone below used
+to register as owed.  The relaxation is confined to the reciprocal pair's blocking
+clause, and a stack-link store neither blocks nor wakes anything, so the splice
+transports it for the same reason it transports the full bundle: the same chain,
+the same per-store fact, one strength down. -/
+theorem spliceReplyFrameOut_preserves_ipcInvariantFullExceptReplyLinkage
+    {st st' : SystemState} {rid : SeLe4n.ReplyId} {woken : SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFullExceptReplyLinkage st woken)
+    (h : spliceReplyFrameOut st rid = .ok st') :
+    ipcInvariantFullExceptReplyLinkage st' woken :=
+  spliceReplyFrameOut_transport (P := fun s => ipcInvariantFullExceptReplyLinkage s woken)
+    (fun hOI hP hA hCaller hS =>
+      storeObject_reply_stackLinks_preserves_ipcInvariantFullExceptReplyLinkage
+        hOI hP hA hCaller hS)
+    hObjInv hInv h
 
 /-- The fold inherits it. -/
 theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull
@@ -15839,6 +15948,15 @@ theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFull
   rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
   · rw [h]; exact hInv
   · exact spliceReplyFrameOut_preserves_ipcInvariantFull hObjInv hInv h
+
+/-- WS-RR RR8.16: and so does the relaxed form. -/
+theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage
+    (st : SystemState) (rid : SeLe4n.ReplyId) (woken : SeLe4n.ThreadId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFullExceptReplyLinkage st woken) :
+    ipcInvariantFullExceptReplyLinkage (spliceReplyFrameOutOrSelf st rid) woken := by
+  rcases spliceReplyFrameOutOrSelf_cases st rid with h | h
+  · rw [h]; exact hInv
+  · exact spliceReplyFrameOut_preserves_ipcInvariantFullExceptReplyLinkage hObjInv hInv h
 
 /-- **WS-RR RR8.7**: and the fold over a thread's own reply object inherits it.
 
@@ -15871,14 +15989,73 @@ What replaced its content is
 which takes the honest pre-state — the bundle with reciprocity relaxed at the
 woken caller (`ipcInvariantFullExceptReplyLinkage`).
 
-**What is owed**, and why it is not written here: the removal is the splice then
-the consume, so its own relaxed-bundle form needs the *splice* to carry the
-relaxed bundle, and the splice's full-bundle proof runs through
-`storeObject_reply_stackLinks_preserves_ipcInvariantFull` — a whole-bundle store
-lemma with no per-conjunct parts to re-compose.  Writing its relaxed twin is a
-cut of its own and is registered in `docs/REGISTERED_DEBT.md`.  The cancellation's
-reply arm does not need it: that arm splices, restores and consumes as three
-separate steps rather than through this composite. -/
+**What replaced it at WS-RR RR8.16** is
+`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage`
+below: the removal is the splice then the consume, so its honest form needed the
+*splice* to carry the relaxed bundle, and that needed the reciprocal pair to have
+a unit at which a `replyLinkageFrame` could transport it
+(`replyCallerLinkageReciprocalExcept`).  With those the composite is the splice's
+transport followed by the consume's existing theorem, and the two intermediate
+facts — that the answered Reply survives the splice with its `caller` and that
+the woken caller's TCB survives it verbatim — are discharged there rather than
+pushed onto a caller.  The cancellation's reply arm does not consume it: that arm
+splices, restores and consumes as three separate steps rather than through this
+composite. -/
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: the splice frames the reply linkage.**  The transport above at
+`P := replyLinkageFrame st`, which is what makes a chain of frames one frame: each
+store contributes its own and `replyLinkageFrame.trans` composes it onto the
+prefix.  A caller that needs the *caller* agreement across a splice reads
+`replyCallerAgree` off this rather than re-deriving it per store. -/
+theorem spliceReplyFrameOutOrSelf_replyLinkageFrame
+    (st : SystemState) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    replyLinkageFrame st (spliceReplyFrameOutOrSelf st rid) :=
+  spliceReplyFrameOutOrSelf_transport (P := fun s => replyLinkageFrame st s)
+    (fun hOI hP hA hCaller hS =>
+      hP.trans (storeObject_reply_caller_replyLinkageFrame _ _ _ _ _
+        ((getReply?_eq_some_iff _ _ _).mp hA) hCaller hOI hS))
+    st rid hObjInv (replyLinkageFrame.refl st)
+
+open SeLe4n.Model.SystemState in
+/-- **WS-RR RR8.16: `removeCallerReplyFrame` establishes the whole IPC bundle from
+the honest pre-state** — the statement WS-RR RR8.7 deleted a *vacuous* version of
+and registered the honest one as owed.
+
+Every hypothesis is about the state the **removal** runs on, not about the state
+its second half runs on: the splice is a Reply-only write, so the answered Reply's
+`caller` survives it (`replyCallerAgree`) and the woken caller's TCB survives it
+verbatim (`spliceReplyFrameOutOrSelf_tcb_backward`), and both facts are discharged
+here rather than pushed onto a caller who would have to reason about an
+intermediate state the operation does not rest at.
+
+`hCallerWoken` beside the relaxed bundle is satisfiable rather than
+self-defeating, which is the whole content of WS-RR RR8.7: asked beside the
+*full* bundle it contradicts reciprocity, and the two theorems that used to ask
+for that pair asserted nothing. -/
+theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage
+    (st st' : SystemState) (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (r0 : SeLe4n.Kernel.Reply)
+    (hInv : ipcInvariantFullExceptReplyLinkage st caller) (hObjInv : st.objects.invExt)
+    (hGetR0 : st.getReply? rid = some r0) (hLinked : r0.caller = some caller)
+    (hCallerWoken : ∀ (tcb : TCB), st.objects[caller.toObjId]? = some (.tcb tcb) →
+        ∀ ep rt, tcb.ipcState ≠ .blockedOnReply ep rt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  -- The answered Reply survives the splice with its `caller` untouched.
+  obtain ⟨r1, hR1Obj, hR1Caller⟩ :=
+    ((spliceReplyFrameOutOrSelf_replyLinkageFrame st rid hObjInv).replyCallerAgree
+      rid (some caller)).mpr ⟨r0, (getReply?_eq_some_iff _ _ _).mp hGetR0, hLinked⟩
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage
+    (spliceReplyFrameOutOrSelf st rid) st' caller rid r1
+    (spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage st rid caller
+      hObjInv hInv)
+    (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv)
+    ((getReply?_eq_some_iff _ _ _).mpr hR1Obj) hR1Caller
+    (fun tcb hTcb => hCallerWoken tcb
+      (spliceReplyFrameOutOrSelf_tcb_backward st rid hObjInv caller.toObjId tcb hTcb))
+    hStep
 
 
 /-! ### WS-SM SM6.D reply-fold foundation (PR #827 review #3)

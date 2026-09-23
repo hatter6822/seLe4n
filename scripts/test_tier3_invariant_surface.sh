@@ -16514,10 +16514,9 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the deschedule dual is NOT confined to th
 # caller, and the restore/teardown pair is what opens and closes it.
 run_check "INVARIANT" rg -n '^def replyCallerLinkageExcept ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptReplyLinkage ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-# The relaxation is the NARROWEST one that admits the state: the reciprocal pair
-# is still required to exist at the woken thread and only the blocking clause is
-# dropped, as a disjunct rather than by excusing the thread from the clause.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageExcept[^\n]*(\n([ \t][^\n]*)?)*\(tid = woken ∨" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# WS-RR RR8.16 (`v0.35.188`) moved the relaxed disjunct into
+# `replyCallerLinkageReciprocalExcept`, where the frame transport can reach it;
+# the anchor on it moved with it, into that cut's block below.
 # The pin that the contradictory pairing must not be restated.
 run_check "INVARIANT" rg -n '^theorem replyCallerLinkage_refutes_woken_linked_caller' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The restore opens the relaxation; the teardown closes it; the pair is the unit.
@@ -16537,6 +16536,51 @@ run_negative_check "INVARIANT" rg -n 'removeCallerReplyFrame_preserves_ipcInvari
 # parameter and neither arm carries its own copy.
 run_check "INVARIANT" rg -n '^theorem notQueueBlocked_bounds_no_endpoint_queue' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem purgedAndRestored_victim_off_endpoint_boundaries[^\n]*(\n([ \t][^\n]*)?)*notQueueBlocked_bounds_no_endpoint_queue" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
+
+# ---------------------------------------------------------------------------
+# v0.35.188 -- WS-RR RR8.16: the removal's bundle statement, at the honest
+# pre-state, and the one owner the two bundles' carriage now shares
+# ---------------------------------------------------------------------------
+# RR8.7 deleted a VACUOUS removal theorem and registered the honest one as owed.
+# What it needed was a unit at which the relaxed reciprocity could be transported
+# -- so the relaxed predicate is split exactly as the full one is, and the pair
+# travels across the same `replyLinkageFrame` its full sibling does.
+run_check "INVARIANT" rg -n '^def replyCallerLinkageReciprocalExcept ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The relaxation is the NARROWEST one that admits the state: the reciprocal pair
+# is still required to exist at the woken thread and only the blocking clause is
+# dropped, as a disjunct rather than by excusing the thread from the clause.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageReciprocalExcept[^\n]*(\n([ \t][^\n]*)?)*\(tid = woken ∨" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+# And the split is the FULL predicate's split one strength down -- the pair and
+# the third clause, not a flat triple, which is what gives the transport a unit.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageExcept[^\n]*(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" rg -n '^theorem replyCallerLinkageReciprocalExcept_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The store's member of the `replyLinkageFrame` family -- the fact that made the
+# hand-written per-store agreement unnecessary.
+run_check "INVARIANT" rg -n '^theorem storeObject_reply_caller_replyLinkageFrame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+# Everything but the reciprocal pair is proved ONCE and assembled twice.
+run_check "INVARIANT" rg -n '^theorem storeObject_reply_stackLinks_preserves_nonReciprocal' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_reply_stackLinks_preserves_ipcInvariantFull\n([ \t][^\n]*)?(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocal_of_frame" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_reply_stackLinks_preserves_ipcInvariantFullExceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocalExcept_of_frame" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# The splice's store chain has ONE owner: which stores run, in what order, with
+# which lookups surviving between them, is a fact about the operation and not
+# about any bundle, so both carriages are one application of the transport.
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_transport' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFull\n([ \t][^\n]*)?(\n([ \t][^\n]*)?)*spliceReplyFrameOut_transport" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFullExceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameOut_transport" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# ... and neither carriage may re-run the chain itself, which is how the two
+# would come to disagree about it.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameStores_cases" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_replyLinkageFrame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+# The removal's own statement, and the relation that it takes the RELAXED
+# pre-state: asked beside the full bundle the pairing is contradictory, which is
+# the vacuity RR8.7 found.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*hInv : ipcInvariantFullExceptReplyLinkage st caller" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+# Its two halves are the splice's relaxed carriage and the consume's existing
+# theorem -- a composite that re-derived either would be a second answer.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage st rid caller" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.8 -- what the endpoint admission gate admits onto one queue.

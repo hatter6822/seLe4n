@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.187` (`lakefile.toml`) |
+| **Package version** | `0.35.188` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 410,383 across 338 Lean files |
+| **Production LoC** | 410,635 across 338 Lean files |
 | **Test LoC** | 83,589 across 70 Lean test suites |
-| **Proved declarations** | 13,573 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,584 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4243,7 +4243,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **186** statements in the family (the
+bound on a post-state across all **190** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -6069,12 +6069,48 @@ arm actually performs — is what carries `ipcInvariantFull` end to end
 (`restoredAndConsumed_preserves_ipcInvariantFull`).  A claim taken at either half is a
 claim about a state the arm does not rest at.
 
-What is **owed** rather than claimed: the splice's own bundle statement.  Deleting the
-retired composite theorem leaves `removeCallerReplyFrame` — the splice then the consume
-— with no `ipcInvariantFull` result, and the honest one is the relaxed form, which needs
-a relaxed twin of `storeObject_reply_stackLinks_preserves_ipcInvariantFull`.  It is
-registered in `docs/REGISTERED_DEBT.md` rather than absorbed, and the deletion carries a
-tombstone naming both the replacement and what is missing.
+**The removal's own statement landed at `v0.35.188` (WS-RR RR8.16), and what it needed
+was a unit rather than an argument.**  Deleting the retired composite left
+`removeCallerReplyFrame` — the splice then the consume — with no `ipcInvariantFull`
+result at all, and the honest one is the relaxed form.  The obstacle was that
+`replyCallerLinkageExcept` was written **flat**: a `replyLinkageFrame` transports the
+reciprocal *pair*, and with no name for the relaxed pair there was nothing for it to
+carry, so the splice's relaxed carriage would have had to re-run the full store's case
+analysis.  It is now split exactly as `replyCallerLinkage` is —
+`replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st` — and
+`replyCallerLinkageReciprocalExcept_of_frame` is `replyCallerLinkageReciprocal_of_frame`
+one strength down, differing only where the relaxation is spent.  The frame the two
+share is the family member the tree lacked:
+`storeObject_reply_caller_replyLinkageFrame`, a `.reply` store that keeps the stored
+Reply's `caller`, which its neighbour `storeObject_nonTcbNonReply_replyLinkageFrame`
+excludes on purpose because a store that *overwrote* a Reply would destroy a back-link.
+
+Three things that cut fixed the shape of, and each is one question given one owner.
+**Everything but the reciprocal pair is proved once**
+(`storeObject_reply_stackLinks_preserves_nonReciprocal`, over the six pre-state facts a
+stack-link store actually reads) and assembled twice, because the full bundle and the
+relaxed one differ in the pair and nowhere else.  **The splice's store chain has one
+owner** — `spliceReplyFrameOut_transport`, stated over *any* predicate a
+caller-preserving Reply store carries — since which stores run, in what order, with
+which lookups surviving between them, is a fact about the operation and not about a
+bundle; both carriages are one application of it, and
+`spliceReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
+`P := replyLinkageFrame st`.  And **the composite states every hypothesis on the state
+the removal runs on**: the answered Reply survives the splice with its `caller`
+(`replyCallerAgree`) and the woken caller's TCB survives it verbatim
+(`spliceReplyFrameOutOrSelf_tcb_backward`), both discharged inside
+`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage` rather than
+pushed onto a caller who would have to reason about a state the operation does not rest
+at.
+
+The premises are **jointly satisfiable, and that is exhibited rather than argued**:
+`restoredAndConsumed_preserves_ipcInvariantFull` already supplies the relaxed bundle and
+the woken caller's non-`.blockedOnReply`-ness *at one state*, which is exactly the
+pairing the deleted theorem could not have — so the vacuity this section is about is
+refuted by a live production composite rather than by a fixture.  Nothing consumes the
+new composite today (the reply spine proves the same result per conjunct over the whole
+`endpointReply`, and collapsing those two routes is a cut of its own), so it is
+**anchored** for the reason `replyCallerLinkage_refutes_woken_linked_caller` is.
 
 One de-duplication rode along.  "Does this victim bound an endpoint queue?" was asked by
 the notification arm and, in this cut, by the reply arm — of victims in *different*
