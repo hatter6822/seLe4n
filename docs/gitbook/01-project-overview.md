@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.35.202): 417,409 lines of production Lean across 340 files, 84,545 lines across 70 Lean test suites,
+Current state (as of v0.35.203): 417,409 lines of production Lean across 340 files, 84,545 lines across 70 Lean test suites,
 13,810 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -50,26 +50,35 @@ per-object locks, per-core scheduler state and scheduling, cross-core IPC, TLB
 shootdown and cache maintenance, SMP information flow, and declassification.
 The syscall return ABI is complete.
 
-**SM10 — release closure at v1.0.0 — is blocked on WS-RR**, the pre-1.0
-remediation phase now in flight: 198 sub-tasks across nine phases, of which
-**RR0–RR7 have landed** — the boot-path fail-open closure (v0.34.48), the
-verified lock primitives (v0.34.50), which made the deployed reader-writer lock
-the ticket-FIFO one the Lean spec describes and refined it to that spec before
-the switch, and the forty-one-sub-task medium-severity sweep (v0.34.47 →
-v0.34.92). What remains is **RR8**, the closure phase, which grew from five
+**WS-RR — the pre-1.0 remediation phase — is complete at v0.35.203**
+([`SMP_RELEASE_READINESS_PLAN.md`](../planning/SMP_RELEASE_READINESS_PLAN.md)):
+198 sub-tasks across nine phases, all landed — the boot-path fail-open closure
+(v0.34.48), the verified lock primitives (v0.34.50), which made the deployed
+reader-writer lock the ticket-FIFO one the Lean spec describes and refined it
+to that spec before the switch, the forty-one-sub-task medium-severity sweep
+(v0.34.47 → v0.34.92), and **RR8**, the closure phase, which grew from five
 rows to sixteen at v0.35.56 once its gate walk measured that eight register
-rows gate the closure and none of them is bookkeeping.  Three have landed: the
-gate walk itself, the renumber, and — at v0.35.57 — `queuePPrev`/`queuePrev`
-agreement as an invariant, which is what makes the dual queue's O(1) removal
-discharge its own precondition instead of assuming it.
+rows gate the closure and none of them is bookkeeping (v0.35.55 → v0.35.203).
+Its last act was to read the debt register against the tree rather than against
+its own CHANGELOG, which is what found two rows recording work already
+done — one discharged 276 versions earlier, one whose claim the cut that closed
+it had made false.
 
-**WS-LC** runs ahead of RR7 and closes the two lock **datatype** residuals
-RR6 re-registered rather than absorbed. LC1 (v0.34.51) added the abstract
-withdrawal — a queued core may take its request back — with all five
-reader-writer invariants preserved and the liveness results that conclude
-"becomes the holder" restated under an explicit no-withdrawal window. The
-deployed lock cannot withdraw yet, and no bound on that surface is denominated
-in time; both are open phases of the same plan.
+**SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
+path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43
+sub-tasks across nine phases, none started.
+
+**WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
+RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core
+may take its request back in the abstract lock, in the ticket-FIFO refinement
+and in the deployed `QueuedRwLock`; all five reader-writer invariants are
+preserved and the liveness results that conclude "becomes the holder" are
+restated under an explicit no-withdrawal window; both two-phase-locking unwinds
+withdraw before they release; and the lock-delay bounds are denominated — in
+lock operations unconditionally, in cycles under a stated per-critical-section
+ceiling, and in hardware ticks only where a board's counter frequency is
+named.
 
 **The kernel does not boot yet.** Producing a bootable image is SM10.1's work;
 until it lands, every runtime seam behind the per-core readiness gate is wired

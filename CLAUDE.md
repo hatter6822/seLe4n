@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.202.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.203.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7128,8 +7128,8 @@ SGI INTID 0..4 reserved for kernel SMP coordination (SM0.H).
 | SM9.E | LANDED | v0.33.100 | Tests + closure: acceptance scenarios run live and pinned as golden fixtures; seam boundary coverage of both declassifying syscalls; the epoch exercised with survivors |
 | SM9 | CLOSED | v0.33.100 | Declassification completion — reader, refusal auditing, data-carrying signal, causal provenance, acceptance fixtures |
 | SM5 runtime seams | LANDED | v0.34.1 | The three seams SM5's docstrings promised between the verified per-core scheduler and the hardware IRQ path — IRQ vector redirect, `.reschedule` SGI receiver, secondary bring-up entry — all dormant behind the per-core `lean_ready` gate until SM10.1 |
-| WS-RR | IN FLIGHT | RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8.1 v0.35.55, RR8.2 v0.35.56, RR8.3 v0.35.57, RR8.4 v0.35.58, RR8.5 v0.35.63, RR8.6 v0.35.79 (RR8 grew 5 → 16 rows) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (187 subs across RR0..RR8) |
-| SM10 | BLOCKED on WS-RR | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above) |
+| WS-RR | **COMPLETE** | v0.34.26–v0.35.203 (RR0 v0.34.26; RR1 v0.34.41; RR2 v0.34.42; RR3 v0.34.43; RR4 v0.34.44; RR5 v0.34.48; RR6 v0.34.50; RR7 v0.34.47 → v0.34.92; RR8 v0.35.55 → v0.35.203, RR8 having grown 5 → 16 rows at v0.35.56) | Pre-SM10 remediation: the audit's 3 blockers, 11 security findings, fault IPC, de-threading closure, lock completion (**198** subs across RR0..RR8 — the figure the plan declares and the gate holds it to; this cell read 187 until v0.35.203) |
+| SM10 | **UNBLOCKED v0.35.203** | — | Release closure (→ v1.0.0); SM10.1's content is **WS-BP** (see above), which opens first |
 
 **Plans**: master overview at
 [`docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md);
@@ -7144,12 +7144,14 @@ SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **42 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+sequences **43 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  No sub-task has started;
-WS-BP must not open until RR8 closes.
+**WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
+IPC-buffer write there rather than leaving it owned by a finished phase.
 
 Four things new code must respect.  **WS-BP takes its own prefix and renumbers
 nothing**: `SM10.1.1` still means the image *packaging* the release cut

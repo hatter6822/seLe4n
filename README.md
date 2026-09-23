@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.202-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.35.203-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -86,7 +86,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 
 | Attribute | Value |
 |-----------|-------|
-| **Version** | `0.35.202` |
+| **Version** | `0.35.203` |
 | **Lean toolchain** | `v4.28.0` |
 | **Production Lean LoC** | 417,409 across 340 files |
 | **Test Lean LoC** | 84,545 across 70 test suites |
@@ -244,10 +244,10 @@ TLB shootdown and cache maintenance, SMP information flow, and the
 declassification completion (SM9, closed at v0.33.100). The syscall return
 ABI workstream (**WS-RA**) is complete.
 
-**SM10 is blocked on WS-RR** (SMP release readiness), the pre-1.0 remediation
-phase now in flight
+**WS-RR** (SMP release readiness), the pre-1.0 remediation phase, is
+**complete at v0.35.203**
 ([`SMP_RELEASE_READINESS_PLAN.md`](docs/planning/SMP_RELEASE_READINESS_PLAN.md)):
-198 sub-tasks across nine phases, of which **RR0–RR7** have landed (registration
+198 sub-tasks across nine phases, all landed (registration
 and plan correction; the aarch64 cross-build gate; the invariant gaps behind
 the live dispatch arms; `ipcInvariantFull` de-threading and its dispatch
 payoff; full fault IPC with reply-based restart; the boot-path fail-open
@@ -258,22 +258,32 @@ primitives — the deployed reader-writer lock is now the ticket-FIFO
 `QueuedRwLock` the Lean spec describes, refined to it before the switch, with
 each refinement bridge deriving its trace correspondence instead of assuming
 it, at v0.34.50; and the forty-one-sub-task medium-severity sweep, v0.34.47 →
-v0.34.92). **RR8** remains — the closure phase, grown from five rows to sixteen
-at v0.35.56 once its gate walk measured that eight register rows gate the
-closure and none of them is bookkeeping; three have landed, most recently
-RR8.3 at v0.35.57, which made `queuePPrev`/`queuePrev` agreement an invariant so
-the O(1) endpoint-queue removal's own precondition is discharged rather than
-assumed — then **SM10** (release closure → v1.0.0).
+v0.34.92; and **RR8**, the closure phase, grown from five rows to sixteen at
+v0.35.56 once its gate walk measured that eight register rows gate the closure
+and none of them is bookkeeping, v0.35.55 → v0.35.203). Its last act was to read
+the debt register against the tree: fifteen rows of its table A were corrected,
+fourteen of them naming a phase that had finished, and two of those recorded
+work already done — one discharged 276 versions earlier, one whose claim the cut
+that closed it had made **false**. The rest are re-homed to the workstreams that
+can now act.
 
-Running ahead of RR7 is **WS-LC** (lock datatype completion,
+**SM10 is blocked on WS-BP** (the bare-metal boot path,
+[`SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)), which became
+SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43 sub-tasks
+across nine phases, none started — aarch64 Lean object code, bare-metal runtime
+hosting, the RPi5 deployment, the image, per-core readiness, the context
+restore, and first boot. Then **SM10** (release closure → v1.0.0).
+
+Closed beside RR7 is **WS-LC** (lock datatype completion,
 [`SMP_LOCK_DATATYPE_COMPLETION_PLAN.md`](docs/planning/SMP_LOCK_DATATYPE_COMPLETION_PLAN.md)):
 51 sub-tasks closing the two lock **datatype** residuals RR6 re-registered
-rather than absorbed. LC1 landed at v0.34.51 — a queued core may now withdraw
-its request in the abstract lock, with all five reader-writer invariants
-preserved and the liveness results that conclude "becomes the holder" restated
-under an explicit no-withdrawal window. The deployed lock cannot withdraw yet
-(LC2), neither two-phase-locking unwind emits one (LC3), and no bound on that
-surface is denominated in time (LC4).
+rather than absorbed, **complete at v0.34.55** (v0.34.51 → v0.34.55). A queued
+core may withdraw its request in the abstract lock, in the ticket-FIFO
+refinement and in the deployed `QueuedRwLock`; both two-phase-locking unwinds
+emit one before they release; and the lock-delay bounds are denominated — in
+lock operations unconditionally, in cycles under a stated per-critical-section
+ceiling, and in hardware ticks only where a board's counter frequency is
+named.
 
 Closed beside RR7 is **WS-OD** (SchedContext donation chains,
 [`SCHEDCONTEXT_DONATION_CHAIN_PLAN.md`](docs/planning/SCHEDCONTEXT_DONATION_CHAIN_PLAN.md)):
@@ -288,10 +298,13 @@ fields the model declared and never wrote (`Reply.donatedSc`, `Reply.prev`,
 states the result positively rather than as the absence of a regression. A
 reused Reply cannot redirect a donation — the freshening refuses a Reply that
 still names a donated context, and the pop refuses to read past a below-head
-frame donating a different one — and a cancelled middle caller severs the stack
-at the cut, recorded as a named policy constant with theorems reading it and a
-depth-three witness measuring what it costs. The chain costs no lock-footprint ceiling: `maxLockSetSize`
-is unmoved at 14, so no published WCRT or contention figure is recomputed.
+frame donating a different one. A cancelled middle caller was *severed* from the
+stack at the cut, which is what seL4-MCS does and what strands the client's
+reservation at call depth ≥ 3; **WS-HP** (the head-driven donation pop,
+[`DONATION_POP_TRIGGER_PLAN.md`](docs/planning/DONATION_POP_TRIGGER_PLAN.md),
+complete at v0.35.54) replaced it with a **splice** at v0.35.45 and recovered the
+depth-2 case at v0.35.53 from the reservation's recorded origin, so a completed
+call chain now returns a client's reservation at every reply-stack depth.
 
 Master plan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 with per-phase plans in `docs/planning/SMP_*.md`. The canonical per-phase

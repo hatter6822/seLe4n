@@ -1,7 +1,8 @@
 # SM10 — Boot Path, Documentation, Tests, Version Closure (WS-SM Phase 10)
 
-> **Status**: **PLANNED — BLOCKED on WS-RR.**  SM10 must not open until
-> RR8 closes.  Re-baselined against the pre-SM10 completeness audit at
+> **Status**: **PLANNED — UNBLOCKED at `v0.35.203`**, WS-RR RR8 having closed;
+> **WS-BP opens first**, since SM10.1's content is that workstream's.
+> Re-baselined against the pre-SM10 completeness audit at
 > `v0.34.3`; §1 states what the phase actually owns, which is a boot path
 > as well as a release cut.
 
@@ -10,8 +11,8 @@
 > **Audited cut**: `v0.31.2`; **re-baselined against** the pre-SM10
 > completeness audit at `v0.34.3`
 > ([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §2.2)
-> **Blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
-> SM10 must not open until RR8 closes
+> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
+> RR8 closed at `v0.35.203`
 > **Target releases**: v0.98.0 → **v1.0.0**
 > **Calendar estimate**: **14–24 weeks**, superseding the original 4–6 weeks,
 > which covered documentation only.  Derived in §1.1 from a sized breakdown of
@@ -162,7 +163,7 @@ repurposed ID**.
 
 WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
 [`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
-**42 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
+**43 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
 findings 19, 32 and 40–44 each scheduled to a named row and WS-XV absorbed as
 `BP0` at `v0.34.124`.  Nothing here is
 renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
@@ -295,7 +296,7 @@ makes: its *"State at the audited cut"* table is a measurement of `v0.34.3` and
 is labelled as one, and every row of it that has since moved carries its closing
 version in place (the aarch64 compile-coverage row at `v0.34.41`).  The
 deliverable list is unchanged in content; the runtime port it names is
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)'s 42 sub-tasks, and `SM10.1.1`
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)'s 43 sub-tasks, and `SM10.1.1`
 still means the image packaging.
 
 #### What the check found
@@ -394,7 +395,7 @@ image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
 
 **The port itself is planned in
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 42 sub-tasks
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 43 sub-tasks
 across `BP0..BP8`), which is where its schedule, its acceptance gate and its
 risk inventory live.  `SM10.1.1` below is unchanged and remains the release
 cut's row for the image *packaging*; `BP5.3` is the sub-task that produces

@@ -1,3 +1,103 @@
+## v0.35.203 — WS-RR RR8.16: the closure entry, and the register read against the tree
+
+**WS-RR is complete** (v0.34.26 → v0.35.203; 198 sub-tasks across RR0..RR8).
+RR8.16 is the closure entry, and its own row says what that means: *it also
+closes the residue the hand-off check surfaces*.  So the last act of the
+workstream was to read `docs/REGISTERED_DEBT.md` against the tree rather than
+against its own CHANGELOG — and that is where the value was.
+
+**Two rows recorded work already done.**  SM6's tracked-debt row ("carries no
+explicit closure target, and its `schedContextConfigure` entry went stale") was
+discharged by RR7.21 at `v0.34.72`, which rewrote the plan's tracked-debt block
+so each of its three items names an **owner and a version** rather than a
+theorem name — *a theorem name is a destination, not a schedule* — and deleted
+the stale entry.  Read against the tree: item 1's per-conjunct splice suite
+landed at `v0.34.73` (all twenty conjuncts, not the fourteen the item counted)
+and both composites it waited on exist; item 2 is fine-lock Track D,
+post-v1.0.0; item 3 is non-load-bearing and deliberately unowned.  The closure
+went unrecorded for **276** versions.
+
+And the `numCores` row — "a literal `4` ... so the Sim binding's `coreCount := 1`
+can never shape kernel state" — became **false** at `v0.34.79` (RR7.30) and
+stood for **269** more.  A narrower binding *does* shape kernel state:
+`declaredCores` bounds the boot's idle install, `bootAffinitiesDeclared` refuses
+a config pinning a TCB outside them, `MachineState.declaredCoreCount` carries
+the number into the live state so `setThreadCpuAffinityWithMigration` refuses an
+out-of-range affinity, and `determineTargetCore_lt_declaredCoreCount` closes the
+unpinned half.  What remains is that `numCores` is a fixed-width
+over-approximation, which `numCores_eq_rpi5_coreCount` pins at equality for the
+shipped image — a stated design choice at the constant, not a deferral, so it
+opens no successor row.
+
+**The sharpest evidence for reading the tree is that the tree had already said
+so, in the other register.**  RR8.13 (`v0.35.89`) swept
+`docs/planning/UNFINISHED_SMP_WORK.md` and marked its row 10 — the same
+`numCores` finding — CLOSED, with the argument *and* the declined remedy
+(`CoreId = Fin numCores` fixes the width of every per-core `Vector`, so a
+typeclass bound would make every kernel theorem relative to a binding).  It
+swept the audit register and not the debt register, so for 113 versions one said
+closed and the other said open.  A closure phase reads **both**.
+
+**Fifteen rows of table A were corrected**, fourteen of them naming a phase that
+had finished — RR2.18, RR7, RR7.20, RR7.22, RR7.30, RR7.36, the RR7.7–RR7.41
+fine-lock span, SM10.1, and RR8.16 itself.  A **third** already-closed row had
+been closed in prose only, while the cell a scan of closure cells reads still
+said `RR7`.  The remaining twelve are re-homed
+**in place** — to WS-BP BP7.6, to **WS-BP BP7.8** (added to that plan in this cut
+rather than left as a wish), to WS-CB, to fine-lock Track D, to the
+untyped/retype surface, and to *no owner before v1.0.0* with what each
+constrains v1.0.0 from claiming.  Six §C rows whose targets named RR6–RR8,
+RR5.14 or WS-HP were re-pointed the same way; one of them, "idle TCBs carry
+`ObjId.sentinel` roots", had a **conditional** target — *RR5.14 must either give
+them real roots or re-register this row* — and RR5.14 landed at `v0.34.48` doing
+neither, so the alternative selected itself silently.  A conditional closure
+target is a closure target nobody reads back.
+
+**Why re-homed in place.**  A table A/B/C row has no identifier of its own, so a
+`row N` citation is its **line number**, and every row inserted above it
+renumbers the citation.  Measured: `v0.35.196` cites *row 183* for the
+receive-side endpoint gate, `v0.35.201` added four rows above it, and *row 183*
+is now a different row.  Moving rows between tables would renumber everything
+below them, so the hand-off re-homed twenty-one rows without moving one.
+Registered post-v1.0.0 with the namespace collision its fix must resolve, and
+mitigated now by a convention — cite the number **and** the row's opening
+phrase, which resolves after the drift.  The connection to
+`scripts/check_source_line_citations.py` was found by that gate catching this
+cut's own first draft: the project has forbidden line-number citations in prose
+since `v0.35.106`, on exactly this reasoning, and cannot see the register's
+because they are written `row N` rather than as a path and a number.
+
+**And the gate half of that collision was live.**
+`scripts/check_deferral_registration.py` ran its row pattern
+(`^\|\s*(\d+)\s*\|\s*` followed by a backticked path) over the **whole**
+register, and the WS-IN remainder table's first column is an *occurrence count*
+— so six counts (63, 78, 88, 94, 104, 292) sat in the index as debt rows, and a
+comment citing *row 292* in `scripts/test_tier3_invariant_surface.sh` would have
+satisfied both halves of the gate, existence and file-agreement, while naming no
+row at all.  `enumerated_table` scopes the parse to §C.1 and **refuses** a
+register whose heading it cannot find, because an empty index would fail every
+citation with the diagnostic for a *nonexistent row* rather than for an
+unreadable register — this project's "could not read" and "read and clean"
+collision, in the FAIL direction.  Three mutations each caught: parse the whole
+file, fall back instead of raising, run the section to end-of-file.  The fixture
+register gained the `#### C.1` heading, because a fixture thinner than the file
+it stands for passes checks the real file would fail — and here would have
+failed one the real file passes.
+
+**Status surfaces swept.**  `CLAUDE.md`/`AGENTS.md` (WS-RR `COMPLETE`, SM10
+`UNBLOCKED`, and the sub-task figure corrected 187 → **198**, which is what the
+plan declares and the gate holds it to), the readiness plan (RR7 and RR8 marked
+landed with their spans), the boot-path, release-closure and hierarchical-CBS
+plans (all three said *BLOCKED on WS-RR*), `README.md`, `docs/spec/SELE4N_SPEC.md`,
+four GitBook chapters and all **eleven** `docs/i18n/*/README.md`.  Two live false
+claims went with them: the README said a cancelled middle caller *severs* the
+reply stack, which WS-HP replaced with a splice at `v0.35.45`, and that WS-LC's
+deployed lock "cannot withdraw yet", which LC3 closed at `v0.34.53`.
+
+No Lean source changed; the golden trace is byte-identical.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md RR8.16
+
 ## v0.35.202 — WS-RR RR8.16: a tactic that unfolds an accessor is not adoption of it (closes the `v0.35.201` metric row; renames the two AK7 cascade scripts)
 
 **The metric defect `v0.35.201` registered, closed.**  `unfold

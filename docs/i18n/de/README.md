@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Sicherheit" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.202-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.35.203-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Lizenz" /></a>
 </p>
@@ -95,7 +95,7 @@ Lean-4-Beweissystem ermöglicht werden:
 
 | Eigenschaft | Wert |
 |-------------|------|
-| **Version** | `0.35.202` |
+| **Version** | `0.35.203` |
 | **Lean-Toolchain** | `v4.28.0` |
 | **Produktions-LoC (Lean)** | 417.409 über 340 Dateien |
 | **Test-LoC (Lean)** | 84.545 über 70 Testsuiten |
@@ -237,7 +237,7 @@ Vervollständigung der Deklassifizierung (SM9, abgeschlossen bei v0.33.100).
 Die verbleibende Phase ist **SM10** (Release-Abschluss → v1.0.0). Der
 Workstream zum Syscall-Rückgabe-ABI (**WS-RA**) ist abgeschlossen.
 
-**SM10 ist durch WS-RR blockiert** (SMP-Release-Reife), die derzeit laufende Remediationsphase vor 1.0 ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 stehen noch aus, danach **SM10** (Release-Abschluss → v1.0.0).
+**WS-RR** (SMP-Release-Reife), die Remediationsphase vor 1.0, ist **abgeschlossen mit v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 sind ebenfalls abgeschlossen (RR8 mit v0.35.203). **SM10 ist jetzt durch WS-BP blockiert** (der Bare-Metal-Bootpfad, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), den Inhalt von SM10.1, in dem noch keine Teilaufgabe begonnen hat; danach **SM10** (Release-Abschluss → v1.0.0).
 
 Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung
