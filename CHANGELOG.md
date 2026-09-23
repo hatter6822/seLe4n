@@ -1,3 +1,110 @@
+## v0.35.197 — WS-RR RR8.16: the two cross-subsystem bundles get their frames (register row 85, first half)
+
+`docs/REGISTERED_DEBT.md` row 85 asks for `schedulerInvariantBundle` and
+`capabilityInvariantBundle` across the cross-core Call and reply chains, and then
+for the `faultDeliverOnCore` / `faultReplyOnCore` composition the row is named
+for.  **The measurement that shaped this cut**: neither bundle had a *frame*.
+Twelve per-conjunct preservation lemmas existed across the **scheduler**
+transitions and **none** for a step that writes nothing the invariant reads, and
+the only reusable capability shape was
+`capabilityInvariantBundle_of_storeTcbAndEnsureRunnable` — one *operation*'s
+forty-line argument rather than a statement about the bundle.  So every step of
+both chains would have owed a fresh case analysis over predicates it does not
+touch.  This cut states the read set once.
+
+**The scheduler frame takes TCB SURVIVAL, not store equality.**
+`schedulerInvariantBase_perCore_of_frame` and its `_smp` twin ask that the
+scheduler be unchanged and that no key stop holding a TCB — because a step that
+rewrites the *current thread's own* TCB (the reply leg's `ipcState` write, the
+donation's binding write, the walk's `pipBoost` write) is the common case, and
+equality would refuse exactly the steps the frame exists for.  A Tier 3 negative
+refuses that hypothesis coming back.
+
+**And the narrower frame is at the fields the invariant reads.**
+`SchedulerState` has nine fields and the base invariant reads two — `current`
+(all three conjuncts) and `runQueue` (the first two) — so a step that writes
+`replenishQueue` and nothing else satisfies `_of_schedulerFields` while
+`st'.scheduler = st.scheduler` is *false* of it.  Demanding whole-scheduler
+equality there would refuse a step the invariant provably does not see.
+
+**The capability frame states the DIRECTION each conjunct transports in**, which
+is its whole content.  Three conjuncts read CNodes and go **backward** (a
+post-state CNode must be a pre-state CNode — what a store at a TCB key gives);
+`cdtCompleteness` and the Reply half of `replyCapPointsToValidReply` go
+**forward** (a store removes no key and no Reply); `cspaceLookupSound` is
+structural and `cdtAcyclicity` reads `st.cdt` alone.  A mutation that flips
+either direction keeps every token, and both are anchored.
+
+**`cnode` is excluded from the pointwise instance, in one direction only.**  A
+CNode *rewrite* keeps the key and the kind while changing the slots, and three of
+the bundle's conjuncts are about the **value** — so a genuinely CNode-writing
+step (`ipcTransferSingleCap`, `ipcUnwrapCaps`) takes the general frame, and both
+already have their own bundle lemmas.  `storeObject_preserves_capabilityInvariantBundle_of_kind`
+is the instance every IPC store chain is built from: `storeObject` writes no CDT
+table, so four of the frame's six hypotheses are that lemma pair plus the
+`invExt` frame, and what is left is the store's own key.
+
+**A lift is not always a frame application, and the walk is the example.**
+`propagatePipChainCrossCore` re-buckets, so neither whole-scheduler nor field
+equality holds of it; its two lifts compose four facts stated *beside the
+transition* — `_currentOnCore` (the current slot is fixed), `_mem_runQueueOnCore`
+(membership is fixed, so the current thread stays off its queue),
+`_runQueueUniqueOnCore` (the `remove`-then-`insert` keeps `Nodup`) and
+`_getTcb?_isSome` / `_objects_pointwise` (the only object write is a TCB for a
+TCB).  The three steps both chains share now have their lifts: the walk (both
+bundles), the placement removal with `descheduleAtPlacement`, and the SM5.H
+replenishment migration.
+
+**One retirement, found because the asker could not see the owner.**
+`migrateSchedContextReplenishment_currentOnCore` (in
+`IPC/Invariant/DispatchArmPreservation.lean`) was a second answer to a question
+`SchedContext/ReplenishAffinity.lean` — the module that *declares* the migration
+— already answers as `…_runQueue_current_eq`, whose `.2` is that statement
+verbatim.  It had one consumer, inside its own module, and it sat outside the
+closure of the asker that needed it; the duplicate surfaced when
+`Scheduler/Invariant/PerCore.lean` needed exactly that fact and could not reach
+it.  Callers read `.2` of the owner.
+
+**And mutation-testing this cut's own anchors found a class of its own.**  A bare
+`rg '^theorem foo'` anchor is satisfied by `theorem fooX`, so an anchor over a
+declaration with no other consumer — which is what these anchors exist for — goes
+on reporting PASS after the name it pins is gone.  That is `v0.35.29`'s
+tautological pin reached by a *rename* rather than by a deletion, and it is a
+rule `CLAUDE.md` already states (Cut C3b-iv, `v0.35.170`) and did not sweep.
+Measured at **2404 of 7061** anchors; this cut bounds the 19 in its own two
+blocks and mutation-tests that the bounding is what decides, and registers the
+remaining 2385 with the two-part remedy — the mechanical sweep (verifiable,
+because bounding a positive is strictly stricter, so an anchor that goes red is
+one whose bare form was matching a *different* declaration) and a Tier 0 check,
+since a rule restated twice is owed a check rather than a third telling.
+
+**And one negative was NARROWED, which is a decision rather than an
+accommodation.**  `v0.35.158` retired the suspend pipeline's placement payoff's
+resolvability chain — `propagatePipChainCrossCore_getTcb?_isSome` and its two
+step-level siblings — and banned the three names tree-wide.  That is a ban on a
+**fact**, not on the retired approach: the base scheduler invariant's
+`currentThreadValidOnCore` genuinely needs "the walk resolves every thread the
+pre-state resolved", for a consumer that did not exist when the line was
+written.  What the retirement is about is the *placement payoff* re-acquiring a
+resolvability hypothesis, and that is now kept out where the relation lives —
+declaration-bounded negatives on `handleRescheduleSgiOnCore_preserves_unplaced`
+and `suspendRescheduleOnCore_preserves_unplaced`, beside the one
+`switchToThreadOnCore_preserves_unplaced` already had — which is strictly
+sharper than a name ban.  The payoff itself is deliberately not among them: it
+takes the **victim's** TCB, which the suspend resolves for its own reasons, so a
+blanket negative there would be false of a correct theorem.  Both new negatives
+are mutation-tested by adding a real hypothesis binder; a first attempt that
+mutated into a *comment* was MISSED, which is the code view working.
+
+**What remains of row 85**, in execution order: `returnDonatedSchedContext`,
+`applyReplyDonationOnCore`, `endpointReplyOnCore` and the reply chain; then
+`endpointCallOnCore` / `endpointCallWithCapsOnCore`, `applyCallDonationOnCore`
+and the call chain; then the fault composition.  Each is now an application
+rather than an argument, which is the change this cut made.  No behaviour
+changed and the golden trace is byte-identical.
+
+Refs: docs/REGISTERED_DEBT.md row 85 (WS-RR RR8.16)
+
 ## v0.35.196 — WS-RR RR8.16: the receiving side of the endpoint gate (register row 183)
 
 `docs/REGISTERED_DEBT.md` row 183 was the successor `v0.35.191` opened rather

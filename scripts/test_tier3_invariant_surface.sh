@@ -17014,7 +17014,23 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_prese
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_mem_runQueueOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_currentOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_negative_check "INVARIANT" rg -n 'propagatePipChainCrossCore_getTcb\?_isSome|pipBoostWithWake_getTcb\?_isSome|updatePipBoostOnCore_getTcb\?_isSome|handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore|suspendRescheduleOnCore_preserves_threadPlacedOnSomeCore|cancelSuspendDonation_getTcb\?_isSome' --glob '*.lean' SeLe4n tests
+# NARROWED at WS-RR RR8.16 (`v0.35.197`).  This negative used to ban the walk's
+# own resolvability fact tree-wide alongside the three retired *consumers*, and
+# that is a ban on a FACT rather than on the retired approach: the base
+# scheduler invariant's `currentThreadValidOnCore` genuinely needs "the walk
+# resolves every thread the pre-state resolved", for a consumer that did not
+# exist when `v0.35.158` wrote this line.  What the retirement is about is the
+# **placement payoff** re-acquiring a resolvability hypothesis, and that is kept
+# out by the declaration-bounded negatives below and by the existing one on
+# `switchToThreadOnCore_preserves_unplaced` -- which is where the relation
+# lives, and which is strictly sharper than a name ban.  The payoff itself
+# (`suspendThreadOnCore_holder_unplaced`) is deliberately not among them: it
+# takes the VICTIM's TCB, which the suspend resolves for its own reasons, so a
+# blanket `getTcb?` negative there would be false of a correct theorem.  The walk's
+# survival family is anchored positively in the `v0.35.197` block.
+run_negative_check "INVARIANT" rg -n 'handleRescheduleSgiOnCore_preserves_threadPlacedOnSomeCore|suspendRescheduleOnCore_preserves_threadPlacedOnSomeCore|cancelSuspendDonation_getTcb\?_isSome' --glob '*.lean' SeLe4n tests
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem handleRescheduleSgiOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_preserves_unplaced[^\n]*(\n([ \t][^\n]*)?)*getTcb\?" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The three retired one-direction forms must not come back: the biconditional is
 # the answer, and `updatePipBoostOnCore_mem_runQueueOnCore` had been the
 # step-level one since WS-RR RR2.6.
@@ -20682,11 +20698,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[
 run_check "INVARIANT" bash -lc 'rg -U -n "^def blockedReceiverFlowsFromEndpoint[^\n]*(\n([ \t][^\n]*)?)*ThreadIpcState\.blockedOnReceive epId" SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean'
 # ESTABLISHED AT THE SAME WRITE as its sibling -- one production store of a
 # blocking `ipcState`, so a second establishment site is a second answer.
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem blockedReceiverShrinks_of_ipcStateFrame' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_shrinks' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_none_blocked' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedReceiverFlowsFromEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverShrinks_of_ipcStateFrame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_shrinks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem blockedReceiverFlowsFromEndpoint_of_none_blocked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # RELATION: the new derivation reads the receive half OFF THE STATE.  Its
 # `v0.35.126` sibling `donationFlowFromBlockedDonor` takes the same fact as an
 # ARGUMENT (`hReceiveGate`), which is exactly why no dispatch could discharge
@@ -20710,18 +20726,18 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCor
 # carry the fact, so it is the one step with a gate-keyed hypothesis -- keyed on
 # the donation's OWN resolver, not on the two threads' identities.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonationOnCore_preserves_donationOwnerFlowsToHolder[^\n]*(\n([ \t][^\n]*)?)*callDonationSchedContext\? st callerVtid\.val receiverVtid\.val = some scId" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 # The chain walk's frame is stated at the RECORD, so the `ipcState` reading
 # (`blockedSenderShrinks`) and the `schedContextBinding` reading
 # (`donationOwnerFlowsToHolder`) are two instances of one proof.  A mutation
 # that narrows it back to one field keeps the name and breaks the second asker.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem updatePipBoostOnCore_tcb_backward[^\n]*(\n([ \t][^\n]*)?)*tcb. = \{ tcb with pipBoost := p \}" SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean'
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_backward($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # (2) The labelled pack is OPT-IN: `ipcReachable` is unchanged and projects out
 # of it, so no existing consumer carries a `ctx` it does not read.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*ipcReachable st ." SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def ipcReachableUnder[^\n]*(\n([ \t][^\n]*)?)*blockedReceiverFlowsFromEndpoint ctx st" SeLe4n/Kernel/IPC/Invariant/Reachability.lean'
-run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem ipcReachableUnder_default($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # MEASURED: the decisive case keeps the caller's gate passing and the donation
 # minted, and makes the RECEIVER-side fact false -- so the hypothesis the lift
 # takes is load-bearing rather than decorative.  A witness whose three cases all
@@ -20734,5 +20750,65 @@ run_check "INVARIANT" rg -n 'SEND-DENIED: the dispatch commits nothing, so no do
 # the dispatch mints nothing -- which passes every outcome assertion vacuously.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def flowState[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualOnCore flowEp flowServer \(some flowReply\)" tests/SmpInformationFlowSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "  runAbortPrefixProjectionChecks\n  runReceiverGateFlowChecks" tests/SmpInformationFlowSuite.lean'
+
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.197`) — the two bundles get their FRAMES, and the steps
+# both cross-core IPC chains share get their lifts
+# ============================================================================
+#
+# Register row 85 asks for `schedulerInvariantBundle` and `capabilityInvariantBundle`
+# across the cross-core Call and reply chains.  Most steps of those chains write
+# nothing either invariant reads, and before this cut there was no frame for
+# either -- twelve per-conjunct lemmas existed across the *scheduler*
+# transitions and none for an objects-only step, so each IPC step's lift would
+# have been a fresh case analysis over predicates it does not touch.
+#
+# SURVIVAL, not equality: a step that rewrites the current thread's own TCB (the
+# reply leg's `ipcState` write, the donation's binding write, the walk's
+# `pipBoost` write) is the common case, so a frame demanding store equality
+# would refuse exactly the steps it exists for.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedulerInvariantBase_perCore_of_frame[^\n]*(\n([ \t][^\n]*)?)*hTcb : . tid : SeLe4n\.ThreadId, \(st\.getTcb\? tid\)\.isSome . \(st.\.getTcb\? tid\)\.isSome" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedulerInvariantBase_perCore_of_frame[^\n]*(\n([ \t][^\n]*)?)*hObjs : st.\.objects = st\.objects" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+# ...and the NARROWER frame is at the two fields the invariant reads, which is
+# what the replenishment migration needs: `SchedulerState` has nine fields and
+# the base invariant reads two, so whole-scheduler equality is false of a step
+# the invariant provably does not see.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedulerInvariantBase_perCore_of_schedulerFields[^\n]*(\n([ \t][^\n]*)?)*hRq : st.\.scheduler\.runQueue = st\.scheduler\.runQueue" SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean'
+run_check "INVARIANT" rg -n '^theorem schedulerInvariantBase_smp_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulerInvariantBase_smp_of_schedulerFields($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+# DIRECTION is the content of the capability frame: three conjuncts read CNodes
+# and transport BACKWARD (a post-state CNode must be a pre-state CNode, which a
+# store at a TCB key gives), while `cdtCompleteness` and the Reply half
+# transport FORWARD (a store removes no key and no Reply).  A mutation that
+# flips either direction keeps every token.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_frame[^\n]*(\n([ \t][^\n]*)?)*st.\.objects\[oid\]\? = some \(\.cnode cn\) . st\.objects\[oid\]\? = some \(\.cnode cn\)" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_frame[^\n]*(\n([ \t][^\n]*)?)*hReply : . rid : SeLe4n\.ReplyId, st\.getReply\? rid . none . st.\.getReply\? rid . none" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+# ...and the pointwise instance EXCLUDES `cnode`, which is load-bearing in one
+# direction only: a CNode rewrite keeps the key and the kind while changing the
+# slots, and three of the bundle's conjuncts are about the value.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_kindPreserving[^\n]*(\n([ \t][^\n]*)?)*post\.objectType . KernelObjectType\.cnode" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_objects_and_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# The store-level instance is what every IPC step's chain is built from: it
+# takes the PRE-state object and the kind equality, so a store that changes an
+# object's kind -- or writes a CNode -- does not reach it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_capabilityInvariantBundle_of_kind[^\n]*(\n([ \t][^\n]*)?)*hKind : obj\.objectType = pre\.objectType" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_capabilityInvariantBundle_of_kind[^\n]*(\n([ \t][^\n]*)?)*hNotCnode : obj\.objectType . KernelObjectType\.cnode" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+# The three shared steps' lifts.  The walk is NOT an application of either
+# frame -- it re-buckets, so neither whole-scheduler nor field equality holds of
+# it -- and its four facts live beside the transition.
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_runQueueUniqueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_getTcb\?_isSome' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_objects_pointwise($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+# RETIRED: a second answer to "does the migration repoint a current slot", in a
+# module downstream of the one that declares the migration and outside the
+# closure of the asker that needed it.  Callers read `.2` of the owner.
+run_negative_check "INVARIANT" rg -n 'theorem migrateSchedContextReplenishment_currentOnCore' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n 'migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore toCore' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 
 finalize_report

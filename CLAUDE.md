@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.196.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.197.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,7 +222,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~80573 lines)
+- `CHANGELOG.md` (~80662 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -235,7 +235,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Model/State.lean` (~5772 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `tests/SmpIpcSuite.lean` (~5560 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5458 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5457 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5450 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5389 lines)
@@ -283,6 +283,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2504 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2484 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2482 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
@@ -296,7 +297,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2281 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2207 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2203 lines)
 - `SeLe4n/Prelude.lean` (~2187 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2176 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
@@ -363,6 +363,7 @@ To find files that need pagination today, run:
 - `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` (~1370 lines)
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
+- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~1348 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `tests/SmpCbsSuite.lean` (~1307 lines)
@@ -393,7 +394,6 @@ To find files that need pagination today, run:
 - `tests/SmpIdleSuite.lean` (~1118 lines)
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1099 lines)
-- `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~1097 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Fault.lean` (~1082 lines)
 - `SeLe4n/Kernel/SchedContext/Operations.lean` (~1078 lines)
@@ -437,13 +437,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~849 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~836 lines)
 - `tests/DecodingSuite.lean` (~835 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
-- `docs/REGISTERED_DEBT.md` (~818 lines)
+- `docs/REGISTERED_DEBT.md` (~819 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~812 lines)
@@ -8382,6 +8383,46 @@ code may assume:
   receiver-side fact is false; its fixture is built by the **live** receive,
   because a hand-built blocked server carries no Reply object, `donationPushFrame?`
   then refuses, and every outcome assertion passes vacuously.
+- **The two cross-subsystem invariant bundles have FRAMES, so a step that writes
+  nothing they read costs one application** (WS-RR RR8.16, `v0.35.197`, register
+  row 85's first half).  Before this cut neither `schedulerInvariantBase_smp` nor
+  `capabilityInvariantBundle` had one: twelve per-conjunct lemmas existed across
+  the *scheduler* transitions and **none** for an objects-only step, and the only
+  reusable capability shape was one operation's forty-line argument — so each IPC
+  step's lift would have been a fresh case analysis over predicates it does not
+  touch.  Six things new code must respect.  (1) **The scheduler frame takes TCB
+  SURVIVAL, not store equality.**  A step that rewrites the current thread's own
+  TCB — the reply leg's `ipcState` write, the donation's binding write, the
+  walk's `pipBoost` write — is the common case, and equality would refuse exactly
+  the steps the frame exists for; a Tier 3 negative refuses that hypothesis
+  coming back.  (2) **The narrower frame is at the fields the invariant reads**:
+  `SchedulerState` has nine and the base invariant reads `current` and
+  `runQueue`, so a step that writes `replenishQueue` alone (the SM5.H migration)
+  satisfies `_of_schedulerFields` and *not* whole-scheduler equality — demanding
+  the latter would refuse a step the invariant provably does not see.  (3) **The
+  capability frame states the DIRECTION each conjunct transports in**, which is
+  its whole content: three conjuncts read CNodes and go **backward** (a post-state
+  CNode must be a pre-state CNode — what a store at a TCB key gives), while
+  `cdtCompleteness` and the Reply half of `replyCapPointsToValidReply` go
+  **forward** (a store removes no key and no Reply).  `cspaceLookupSound` is
+  structural and `cdtAcyclicity` reads `st.cdt` alone.  (4) **`cnode` is excluded
+  from the pointwise instance, in one direction only**: a CNode *rewrite* keeps
+  the key and the kind while changing the slots, and three conjuncts are about
+  the **value** — so a genuinely CNode-writing step (`ipcTransferSingleCap`,
+  `ipcUnwrapCaps`) takes the general frame and has its own bundle lemma already.
+  (5) **`storeObject_preserves_capabilityInvariantBundle_of_kind` is what every
+  IPC store chain is built from**: `storeObject` writes no CDT table, so of the
+  frame's six hypotheses four are that lemma pair and the `invExt` frame, and
+  what is left is the store's own key.  (6) **A lift is not always a frame
+  application, and the walk is the example**: `propagatePipChainCrossCore`
+  re-buckets, so neither whole-scheduler nor field equality holds of it, and its
+  lift composes four facts stated *beside the transition* — the current slot is
+  fixed, membership is fixed, the `remove`-then-`insert` keeps `Nodup`, and the
+  only object write is a TCB for a TCB.  An instance of a frame lives beside the
+  frame; a fact about a transition lives beside the transition; where a
+  transition's own module is upstream of the predicate's (which is true of
+  `Propagate.lean` and of `Scheduler/Operations/Selection.lean`), the lift goes
+  to the predicate's module and says so.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

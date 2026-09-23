@@ -699,6 +699,285 @@ theorem schedulerInvariant_smp_to_base {st : SystemState}
     (h : schedulerInvariant_smp st) : schedulerInvariantBase_smp st :=
   fun c => schedulerInvariant_perCore_to_base (h c)
 
+/-! ### §3.4a  The base invariant's FRAME (WS-RR RR8.16, `v0.35.197`)
+
+Register row 85's closure needs the base scheduler invariant carried across the
+cross-core IPC chains, and most steps of those chains **write no scheduler state
+at all** — they rewrite TCBs, Reply objects and endpoints.  Before this cut every
+such step would have owed its own three-conjunct argument, which is the
+duplication this project spends its length retiring: twelve per-conjunct lemmas
+exist across the *scheduler* transitions and **none** for an objects-only step,
+so each IPC step's lift would have been a fresh case analysis over predicates it
+does not touch.
+
+The frame states what the invariant READS, once.  Two conjuncts
+(`queueCurrentConsistentOnCore`, `runQueueUniqueOnCore`) are properties of
+`st.scheduler` alone; the third (`currentThreadValidOnCore`) additionally asks
+that the core's current thread resolve to a TCB.  So a step that leaves the
+scheduler alone needs only that it does not *remove* a TCB — which is what every
+store-shaped step gives, since a store never erases a key.
+
+Stated with `hTcb` as a **survival** hypothesis rather than as store equality
+deliberately: a step that rewrites the current thread's own TCB (the reply leg's
+`ipcState` write, the donation's binding write, the walk's `pipBoost` write) is
+the common case, and demanding equality there would refuse exactly the steps the
+frame exists for. -/
+theorem schedulerInvariantBase_perCore_of_frame {st st' : SystemState} {c : CoreId}
+    (h : schedulerInvariantBase_perCore st c)
+    (hSched : st'.scheduler = st.scheduler)
+    (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
+    schedulerInvariantBase_perCore st' c := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h
+  refine ⟨by rw [hSched]; exact hQCC, by rw [hSched]; exact hRQU, ?_⟩
+  unfold currentThreadValidOnCore at hCTV ⊢
+  rw [hSched]
+  cases hCur : st.scheduler.currentOnCore c with
+  | none => simp
+  | some tid =>
+      rw [hCur] at hCTV
+      obtain ⟨tcb, hTcbSome⟩ := hCTV
+      have : (st'.getTcb? tid).isSome := hTcb tid (by rw [hTcbSome]; rfl)
+      cases hPost : st'.getTcb? tid with
+      | none => rw [hPost] at this; exact absurd this (by simp)
+      | some tcb' => exact ⟨tcb', hPost⟩
+
+/-- WS-RR RR8.16 (`v0.35.197`): the system-wide instance — a step that frames the
+scheduler and removes no TCB carries the base invariant on **every** core, so a
+transition's lift is one application rather than one per core. -/
+theorem schedulerInvariantBase_smp_of_frame {st st' : SystemState}
+    (h : schedulerInvariantBase_smp st)
+    (hSched : st'.scheduler = st.scheduler)
+    (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
+    schedulerInvariantBase_smp st' :=
+  fun c => schedulerInvariantBase_perCore_of_frame (h c) hSched hTcb
+
+/-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance, for a step that writes
+nothing the invariant reads.  Kept beside the frame rather than left to each
+caller to re-derive, since `st'.objects = st.objects` is the commonest shape a
+scheduler-framing step comes in. -/
+theorem schedulerInvariantBase_smp_of_objects_and_scheduler_eq {st st' : SystemState}
+    (h : schedulerInvariantBase_smp st)
+    (hSched : st'.scheduler = st.scheduler)
+    (hObjs : st'.objects = st.objects) :
+    schedulerInvariantBase_smp st' :=
+  schedulerInvariantBase_smp_of_frame h hSched (fun tid hSome => by
+    unfold SystemState.getTcb? at hSome ⊢
+    rw [hObjs]; exact hSome)
+
+/-- WS-RR RR8.16 (`v0.35.197`): the frame at the **fields the invariant reads**,
+which is narrower than the whole scheduler and is what the SM5.H replenishment
+migration needs.
+
+`SchedulerState` has nine fields; the base invariant reads exactly two —
+`current` (all three conjuncts) and `runQueue` (the first two).  A step that
+moves a scheduling context's replenishments between cores writes
+`replenishQueue` and nothing else, so `st'.scheduler = st.scheduler` is false of
+it while the invariant is untouched.  Demanding whole-scheduler equality there
+would refuse a step the invariant provably does not see, which is the
+over-strong-hypothesis shape this project retires elsewhere. -/
+theorem schedulerInvariantBase_perCore_of_schedulerFields {st st' : SystemState}
+    {c : CoreId}
+    (h : schedulerInvariantBase_perCore st c)
+    (hCur : st'.scheduler.current = st.scheduler.current)
+    (hRq : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
+    schedulerInvariantBase_perCore st' c := by
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h
+  have hCurOn : ∀ d : CoreId, st'.scheduler.currentOnCore d = st.scheduler.currentOnCore d := by
+    intro d; unfold SchedulerState.currentOnCore; rw [hCur]
+  have hRqOn : ∀ d : CoreId, st'.scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d := by
+    intro d; unfold SchedulerState.runQueueOnCore; rw [hRq]
+  refine ⟨?_, ?_, ?_⟩
+  · unfold queueCurrentConsistentOnCore at hQCC ⊢
+    rw [hCurOn, hRqOn]; exact hQCC
+  · unfold runQueueUniqueOnCore at hRQU ⊢
+    rw [hRqOn]; exact hRQU
+  · unfold currentThreadValidOnCore at hCTV ⊢
+    rw [hCurOn]
+    cases hCurEq : st.scheduler.currentOnCore c with
+    | none => simp
+    | some tid =>
+        rw [hCurEq] at hCTV
+        obtain ⟨tcb, hTcbSome⟩ := hCTV
+        have hPostSome : (st'.getTcb? tid).isSome := hTcb tid (by rw [hTcbSome]; rfl)
+        cases hPost : st'.getTcb? tid with
+        | none => rw [hPost] at hPostSome; exact absurd hPostSome (by simp)
+        | some tcb' => exact ⟨tcb', hPost⟩
+
+/-- WS-RR RR8.16 (`v0.35.197`): the system-wide instance of the field frame. -/
+theorem schedulerInvariantBase_smp_of_schedulerFields {st st' : SystemState}
+    (h : schedulerInvariantBase_smp st)
+    (hCur : st'.scheduler.current = st.scheduler.current)
+    (hRq : st'.scheduler.runQueue = st.scheduler.runQueue)
+    (hTcb : ∀ tid : SeLe4n.ThreadId, (st.getTcb? tid).isSome → (st'.getTcb? tid).isSome) :
+    schedulerInvariantBase_smp st' :=
+  fun c => schedulerInvariantBase_perCore_of_schedulerFields (h c) hCur hRq hTcb
+
+/-- WS-RR RR8.16 (`v0.35.197`): **the SM5.H replenishment migration preserves the
+base SMP scheduler invariant** — vacuously, in the sense that matters: the
+migration writes `replenishQueue` and nothing else, and the base invariant reads
+`current`, `runQueue` and the object store.
+
+Stated per core off the migration's own two frames rather than through
+`_of_schedulerFields`, because those frames are `runQueueOnCore` / `currentOnCore`
+equalities at a core and the field frame wants the two `Vector`s -- the same
+split the walk's lift takes, and the reason the field frame exists at all is the
+*other* direction (a caller that has whole-field equality and would otherwise
+have to demand whole-scheduler equality). -/
+theorem migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp
+    {st : SystemState} (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (migrateSchedContextReplenishment st scId fromCore toCore) := by
+  intro c
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h c
+  refine ⟨?_, ?_, ?_⟩
+  · unfold queueCurrentConsistentOnCore at hQCC ⊢
+    rw [(migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore toCore c).2,
+      migrateSchedContextReplenishment_runQueueOnCore st scId fromCore toCore c]
+    exact hQCC
+  · unfold runQueueUniqueOnCore at hRQU ⊢
+    rw [migrateSchedContextReplenishment_runQueueOnCore st scId fromCore toCore c]
+    exact hRQU
+  · unfold currentThreadValidOnCore at hCTV ⊢
+    rw [(migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore toCore c).2]
+    cases hCur : st.scheduler.currentOnCore c with
+    | none => simp
+    | some tid =>
+        rw [hCur] at hCTV
+        obtain ⟨tcb, hT⟩ := hCTV
+        exact ⟨tcb, by
+          unfold SystemState.getTcb? at hT ⊢
+          rw [migrateSchedContextReplenishment_objects st scId fromCore toCore]
+          exact hT⟩
+
+/-- WS-RR RR8.16 (`v0.35.197`): **a placement removal preserves the base SMP
+scheduler invariant.**
+
+The other scheduler-writing step of the cross-core reply chain (the donation
+pop's deschedule), and of the cancellation teardown.  Every conjunct moves in the
+safe direction: the run queue only *loses* a member, so `Nodup` survives a
+sublist and a thread that was off it stays off; and the current slot either keeps
+its value or becomes `none`, which `currentThreadValidOnCore` answers vacuously.
+
+It lives here rather than beside `removeRunnableOnCore` because
+`Scheduler/Operations/Selection.lean` is upstream of the module that *defines*
+the three conjunct predicates, so it cannot name them.  That is the same split
+the walk's lift above takes, and the reason is the layering rather than a
+convention: a transition whose own module can see the predicate keeps its
+preservation lemma beside it (`PerCoreWake.lean` does). -/
+theorem removeRunnableOnCore_preserves_schedulerInvariantBase_smp {st : SystemState}
+    (tid : SeLe4n.ThreadId) (c : CoreId) (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (removeRunnableOnCore st tid c) := by
+  intro c'
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h c'
+  by_cases hcc : c = c'
+  · subst hcc
+    refine ⟨?_, ?_, ?_⟩
+    · unfold queueCurrentConsistentOnCore at hQCC ⊢
+      rw [removeRunnableOnCore_currentOnCore_self st tid c,
+        removeRunnableOnCore_runQueueOnCore_self st tid c]
+      by_cases hIs : st.scheduler.currentOnCore c = some tid
+      · rw [if_pos hIs]; simp
+      · rw [if_neg hIs]
+        cases hCur : st.scheduler.currentOnCore c with
+        | none => simp
+        | some x =>
+            rw [hCur] at hQCC
+            intro hMem
+            exact hQCC ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ x).mpr
+              ((SeLe4n.Kernel.RunQueue.mem_remove _ tid x).mp
+                ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ x).mp hMem)).1)
+    · unfold runQueueUniqueOnCore at hRQU ⊢
+      rw [removeRunnableOnCore_runQueueOnCore_self st tid c]
+      exact SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup _ tid hRQU
+    · unfold currentThreadValidOnCore at hCTV ⊢
+      rw [removeRunnableOnCore_currentOnCore_self st tid c]
+      by_cases hIs : st.scheduler.currentOnCore c = some tid
+      · rw [if_pos hIs]; simp
+      · rw [if_neg hIs]
+        cases hCur : st.scheduler.currentOnCore c with
+        | none => simp
+        | some x =>
+            rw [hCur] at hCTV
+            obtain ⟨tcb, hT⟩ := hCTV
+            exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+  · refine ⟨?_, ?_, ?_⟩
+    · unfold queueCurrentConsistentOnCore at hQCC ⊢
+      rw [removeRunnableOnCore_currentOnCore_ne st tid c c' hcc,
+        removeRunnableOnCore_runQueueOnCore_ne st tid c c' hcc]
+      exact hQCC
+    · unfold runQueueUniqueOnCore at hRQU ⊢
+      rw [removeRunnableOnCore_runQueueOnCore_ne st tid c c' hcc]
+      exact hRQU
+    · unfold currentThreadValidOnCore at hCTV ⊢
+      rw [removeRunnableOnCore_currentOnCore_ne st tid c c' hcc]
+      cases hCur : st.scheduler.currentOnCore c' with
+      | none => simp
+      | some x =>
+          rw [hCur] at hCTV
+          obtain ⟨tcb, hT⟩ := hCTV
+          exact ⟨tcb, by rw [removeRunnableOnCore_getTcb? st tid c x]; exact hT⟩
+
+/-- WS-RR RR8.16 (`v0.35.197`): the state-resolved instance — the spelling every
+donation pop and every cancellation teardown calls. -/
+theorem descheduleAtPlacement_preserves_schedulerInvariantBase_smp {st : SystemState}
+    (tid : SeLe4n.ThreadId) (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (descheduleAtPlacement st tid) := by
+  unfold descheduleAtPlacement descheduleAt
+  cases placedCoreOf? st tid with
+  | none => exact h
+  | some c => exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp tid c h
+
+/-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
+base SMP scheduler invariant** — the first instance of the frames above, and the
+one both cross-core IPC chains need, since the walk is the one step of each that
+writes a run queue.
+
+It is *not* an application of either frame: the walk re-buckets, so neither
+`st'.scheduler = st.scheduler` nor the narrower field equality holds of it.  What
+it has instead is the three facts stated beside the transition —
+`_currentOnCore` (the current slot is fixed), `_mem_runQueueOnCore` (membership
+is fixed, so the current thread stays off its queue), `_runQueueUniqueOnCore`
+(the `remove`-then-`insert` keeps `Nodup`) and `_getTcb?_isSome` (the only object
+write is a TCB for a TCB).  It lives here rather than beside the walk because
+`Propagate.lean` is upstream of this module and cannot name the aggregate; the
+facts it composes are all beside the transition, which is the split this project
+uses wherever a predicate and a transition sit in different layers. -/
+theorem propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp
+    (st : SystemState) (startTid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat)
+    (hInv : st.objects.invExt) (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp
+      (PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
+  intro c
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h c
+  refine ⟨?_, ?_, ?_⟩
+  · unfold queueCurrentConsistentOnCore at hQCC ⊢
+    rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore fuel st startTid ec c]
+    cases hCur : st.scheduler.currentOnCore c with
+    | none => simp
+    | some tid =>
+        rw [hCur] at hQCC
+        intro hMem
+        exact hQCC ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ tid).mpr
+          ((PriorityInheritance.propagatePipChainCrossCore_mem_runQueueOnCore fuel st
+            startTid tid ec c).mp
+            ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ tid).mp hMem)))
+  · exact PriorityInheritance.propagatePipChainCrossCore_runQueueUniqueOnCore fuel st
+      startTid ec c hRQU
+  · unfold currentThreadValidOnCore at hCTV ⊢
+    rw [PriorityInheritance.propagatePipChainCrossCore_currentOnCore fuel st startTid ec c]
+    cases hCur : st.scheduler.currentOnCore c with
+    | none => simp
+    | some tid =>
+        rw [hCur] at hCTV
+        obtain ⟨tcb, hTcbSome⟩ := hCTV
+        have hPost := PriorityInheritance.propagatePipChainCrossCore_getTcb?_isSome fuel st
+          startTid ec hInv tid (by rw [hTcbSome]; rfl)
+        cases hP : (PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1.getTcb?
+            tid with
+        | none => rw [hP] at hPost; exact absurd hPost (by simp)
+        | some tcb' => exact ⟨tcb', hP⟩
+
 -- ============================================================================
 -- §3.5  Extended per-core invariant (mirroring `schedulerInvariantBundleExtended`)
 -- ============================================================================

@@ -676,3 +676,174 @@ theorem capabilityInvariantBundle_of_components
   ⟨cspaceLookupSound_holds st,
     hBounded, hComp, hAcyclic, hDepth, hObjInv, hRCPV⟩
 
+/-! ## WS-RR RR8.16 (`v0.35.197`) — what the capability bundle READS
+
+Register row 85's closure needs this bundle carried across the cross-core IPC
+chains, whose steps rewrite TCBs, Reply objects and endpoints and touch no
+CNode and no CDT table.  Before this cut the only reusable shape was
+`capabilityInvariantBundle_of_storeTcbAndEnsureRunnable`, which is one
+*operation*'s argument rather than a statement about the bundle, so each further
+step owed a fresh forty-line case analysis over predicates it does not touch.
+
+The frame states the read set once, and it is smaller than the bundle's
+quantifiers suggest.  `cspaceLookupSound` is structural
+(`cspaceLookupSound_holds`), so it needs nothing.  Three conjuncts
+(`cspaceSlotCountBounded`, `cspaceDepthConsistent`, and the CNode half of
+`replyCapPointsToValidReply`) read **CNodes** and are transported **backward** —
+a post-state CNode must be a pre-state CNode, which is exactly what a store at a
+TCB key gives.  `cdtCompleteness` reads the CDT's slot map and asks that the
+named CNode's key be **present**, which is forward and which a store never
+breaks.  `cdtAcyclicity` reads `st.cdt` alone.  And the Reply half of
+`replyCapPointsToValidReply` asks that a Reply still resolve, which is forward.
+
+So a step frames the bundle when it (a) keeps the two CDT fields, (b) introduces
+no CNode that was not one, (c) removes no key, and (d) removes no Reply.  Each
+is a fact the step's own object frame already states. -/
+theorem capabilityInvariantBundle_of_frame {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
+    (hCdt : st'.cdt = st.cdt)
+    (hCnode : ∀ (oid : SeLe4n.ObjId) (cn : CNode),
+      st'.objects[oid]? = some (.cnode cn) → st.objects[oid]? = some (.cnode cn))
+    (hPresent : ∀ oid : SeLe4n.ObjId, st.objects[oid]? ≠ none → st'.objects[oid]? ≠ none)
+    (hReply : ∀ rid : SeLe4n.ReplyId, st.getReply? rid ≠ none → st'.getReply? rid ≠ none)
+    (hObjInv : st'.objects.invExt) :
+    capabilityInvariantBundle st' := by
+  obtain ⟨_, hBounded, hComp, hAcyclic, hDepth, _, hRCPV⟩ := h
+  refine capabilityInvariantBundle_of_components st' ?_ ?_ ?_ ?_ hObjInv ?_
+  · exact fun oid cn hCn => hBounded oid cn (hCnode oid cn hCn)
+  · intro nodeId ref hRef
+    rw [hCdtNodeSlot] at hRef
+    exact hPresent ref.cnode (hComp nodeId ref hRef)
+  · unfold cdtAcyclicity at hAcyclic ⊢; rw [hCdt]; exact hAcyclic
+  · exact fun oid cn hCn => hDepth oid cn (hCnode oid cn hCn)
+  · exact fun oid cn slot cap rid hCn hLook hTgt =>
+      hReply rid (hRCPV oid cn slot cap rid (hCnode oid cn hCn) hLook hTgt)
+
+/-- WS-RR RR8.16 (`v0.35.197`): the degenerate instance — a step that writes no
+object and no CDT table.  Kept beside the frame rather than left to each caller,
+since it is the shape a scheduler-only step comes in. -/
+theorem capabilityInvariantBundle_of_objects_and_cdt_eq {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hObjs : st'.objects = st.objects)
+    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
+    (hCdt : st'.cdt = st.cdt) :
+    capabilityInvariantBundle st' :=
+  capabilityInvariantBundle_of_frame h hCdtNodeSlot hCdt
+    (fun _ _ hCn => by rw [hObjs] at hCn; exact hCn)
+    (fun _ hP => by rw [hObjs]; exact hP)
+    (fun _ hR => by unfold SystemState.getReply? at hR ⊢; rw [hObjs]; exact hR)
+    (by rw [hObjs]; exact h.2.2.2.2.2.1)
+
+/-- WS-RR RR8.16 (`v0.35.197`): the **pointwise** instance, which is the one the
+IPC chains use.  A step whose every write lands on a key that keeps its object
+*kind*, and whose kind is not `cnode`, keeps every CNode value, every key and
+every Reply — so the four transport hypotheses collapse into one statement about
+the store.
+
+Stated as *at each key the object is unchanged, or both sides hold an object of
+the same non-CNode kind* rather than as a list of written keys: the reply leg
+writes two TCBs and a Reply, the donation writes two TCBs and a SchedContext, and
+enumerating them per step is the recognised-set shape this project retires — the
+property is a relation between the two stores, which is what a caller can prove
+from its own frames.
+
+The `cnode` exclusion is load-bearing in one direction only: a CNode *rewrite*
+keeps the key and the kind while changing the slots, and the bundle's three
+CNode-reading conjuncts are about the **value**.  A step that genuinely rewrites
+a CNode therefore takes the general frame and discharges `hCnode` itself. -/
+theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
+    (h : capabilityInvariantBundle st)
+    (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
+    (hCdt : st'.cdt = st.cdt)
+    (hObjInv : st'.objects.invExt)
+    (hAt : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+      ∃ pre post : KernelObject,
+        st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+        post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode) :
+    capabilityInvariantBundle st' := by
+  refine capabilityInvariantBundle_of_frame h hCdtNodeSlot hCdt ?_ ?_ ?_ hObjInv
+  · intro oid cn hCn
+    rcases hAt oid with hEq | ⟨_, post, _, hPost, _, hNe⟩
+    · rw [← hEq]; exact hCn
+    · rw [hPost] at hCn
+      cases hCn
+      exact absurd rfl hNe
+  · intro oid hP
+    rcases hAt oid with hEq | ⟨_, _, _, hPost, _, _⟩
+    · rw [hEq]; exact hP
+    · rw [hPost]; simp
+  · intro rid hR
+    unfold SystemState.getReply? at hR ⊢
+    rcases hAt rid.toObjId with hEq | ⟨pre, post, hPre, hPost, hType, _⟩
+    · rw [hEq]; exact hR
+    · rw [hPre] at hR
+      rw [hPost]
+      cases pre with
+      | reply r =>
+          cases post <;> simp [KernelObject.objectType] at hType ⊢
+      | _ => exact absurd rfl hR
+
+/-- WS-RR RR8.16 (`v0.35.197`): **a kind-preserving `storeObject` preserves the
+capability invariant bundle** — the instance every IPC step's store chain is
+built from.
+
+`storeObject` writes `objects`, the two indices, the lifecycle table and the ASID
+table, and **no CDT table** (`storeObject_cdt_eq`, `storeObject_cdtNodeSlot_eq`);
+so of the frame's six hypotheses, four are that lemma pair and the `invExt`
+frame, and what is left is the store's own key.  A store that replaces an object
+with one of the same kind — which is what every IPC transition's writes are, a
+TCB for a TCB, a Reply for a Reply, a SchedContext for a SchedContext — leaves
+that key non-CNode and present, so the kind-preserving instance applies
+pointwise.
+
+The `cnode` exclusion is what a CNode-writing step (`ipcTransferSingleCap`,
+`cspaceInsertSlot`) must not take: those have their own bundle lemmas, because
+rewriting a CNode changes exactly the value three of the bundle's conjuncts read. -/
+theorem storeObject_preserves_capabilityInvariantBundle_of_kind
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj pre : KernelObject}
+    (h : capabilityInvariantBundle st)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hPre : st.objects[oid]? = some pre)
+    (hKind : obj.objectType = pre.objectType)
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
+    capabilityInvariantBundle st' := by
+  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  refine capabilityInvariantBundle_of_kindPreserving h
+    (storeObject_cdtNodeSlot_eq st st' oid obj hStore).1
+    (storeObject_cdt_eq st st' oid obj hStore)
+    (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore) ?_
+  intro k
+  by_cases hEq : k = oid
+  · subst hEq
+    exact Or.inr ⟨pre, obj, hPre,
+      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode⟩
+  · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+
+/-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
+capability invariant bundle** — the first instance of the frame above, and one of
+the two steps every cross-core IPC chain ends in.
+
+One application: the walk writes no CDT table and its every object write replaces
+a TCB with a TCB (`propagatePipChainCrossCore_objects_pointwise`), so the frame's
+four transport hypotheses collapse.  It lives beside the frame it instantiates
+rather than beside the walk, because `Propagate.lean` is upstream of this module
+and cannot name the bundle. -/
+theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle
+    (st : SystemState) (startTid : SeLe4n.ThreadId)
+    (ec : SeLe4n.Kernel.Concurrency.CoreId) (fuel : Nat)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle
+      (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
+  have hInv : st.objects.invExt := h.2.2.2.2.2.1
+  refine capabilityInvariantBundle_of_kindPreserving h
+    (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdtNodeSlot fuel st
+      startTid ec)
+    (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdt fuel st startTid ec)
+    (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st
+      startTid ec fuel hInv) ?_
+  intro oid
+  rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
+      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost⟩
+  · exact Or.inl hEq
+  · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType]⟩

@@ -718,15 +718,14 @@ theorem unboundQueuedThreadsIdleAllowed_of_objects_runQueues_eq {st st' : System
   rw [hRq c] at hQ
   exact h c t tcb hT hU hQ
 
-/-- The replenishment migration repoints no core's `current` slot. -/
-theorem migrateSchedContextReplenishment_currentOnCore (st : SystemState)
-    (scId : SeLe4n.SchedContextId) (fromCore toCore c' : CoreId) :
-    (migrateSchedContextReplenishment st scId fromCore toCore).scheduler.currentOnCore c'
-      = st.scheduler.currentOnCore c' := by
-  unfold migrateSchedContextReplenishment
-  split
-  · rfl
-  · simp
+-- RETIRED at WS-RR RR8.16 (`v0.35.197`): `migrateSchedContextReplenishment_currentOnCore`
+-- was a second answer to a question `SchedContext/ReplenishAffinity.lean` -- the
+-- module that declares the migration -- already answers as
+-- `migrateSchedContextReplenishment_runQueue_current_eq`, whose `.2` is this
+-- statement verbatim.  It had one consumer, in this module, and it sat outside
+-- the closure of every asker upstream: `Scheduler/Invariant/PerCore.lean` needed
+-- exactly this fact for the base-invariant lift and could not see it, which is
+-- how the duplicate was found.  Callers use `(…_runQueue_current_eq …).2`.
 
 /-- The replenishment migration preserves the whole bundle: objects, run
 queues and `current` are all untouched. -/
@@ -742,8 +741,8 @@ theorem migrateSchedContextReplenishment_preserves_ipcInvariantFull (st : System
       (fun y hy => by
         rw [migrateSchedContextReplenishment_runQueueOnCore]
         exact hy)
-      (migrateSchedContextReplenishment_currentOnCore st scId fromCore toCore
-        Concurrency.bootCoreId))
+      (migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore toCore
+        Concurrency.bootCoreId).2)
     hInv.passiveServerIdle
 
 /-- The affinity run-queue migration moves no object. -/
