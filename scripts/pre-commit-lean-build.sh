@@ -201,7 +201,20 @@ for file in "${STAGED_LEAN_FILES[@]}"; do
     # Build with timeout (5 minutes per module)
     if ! timeout 300 lake build "$MODULE" > "${BUILD_LOG}" 2>&1; then
         BUILD_ERRORS=$((BUILD_ERRORS + 1))
-        ERROR_COUNT=$(grep -c "^error:" "${BUILD_LOG}" 2>/dev/null || echo "?")
+        # `grep -c` prints `0` and exits 1 when nothing matches, so a
+        # `|| echo "?"` appended a second line and `ERROR_COUNT` held `0\n?` —
+        # which is neither the count nor the sentinel, so the `!= "?"` test
+        # below passed and the integer comparison beside it died.  Read the
+        # status instead, and keep `?` for the one case it means: this hook
+        # could not read its own build log.  (`v0.35.186`.)
+        ERROR_COUNT="?"
+        GREP_RC=0
+        ERROR_LINES=$(grep -c "^error:" "${BUILD_LOG}" 2>/dev/null) || GREP_RC=$?
+        if [ "${GREP_RC}" -eq 0 ]; then
+            ERROR_COUNT="${ERROR_LINES}"
+        elif [ "${GREP_RC}" -eq 1 ]; then
+            ERROR_COUNT=0
+        fi
         echo "  FAILED: $MODULE ($ERROR_COUNT errors)"
         grep "^error:" "${BUILD_LOG}" 2>/dev/null | head -5 | sed 's/^/    /'
         if [ "$ERROR_COUNT" != "?" ] && [ "$ERROR_COUNT" -gt 5 ]; then

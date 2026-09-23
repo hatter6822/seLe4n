@@ -229,7 +229,27 @@ generate_sequences | while IFS= read -r seq; do
     fi
 done
 
-mismatches=$(grep -c '^END$' "$MISMATCH_LOG" 2>/dev/null || echo 0)
+# `grep -c` exits 1 for "no matches" and >1 for an I/O failure, and the two must
+# NOT answer the same: an unreadable log is this gate failing to read its own
+# evidence, not a clean run.  The `|| echo 0` that stood here conflated them AND
+# was wrong on the clean path: on a run with no mismatches `grep -c` prints `0`
+# *and* exits 1, so the `||` fired and appended a second line -- `mismatches`
+# held `0\n0`, `[ "0\n0" -gt 0 ]` died with `integer expression expected`, and
+# the gate took the else arm and printed PASS.  The one comparison this whole
+# gate exists for did not decide; it agreed with the truth by accident of which
+# arm `[`'s failure takes.  (`v0.35.186`, found by running the
+# gate for the hand-off check rather than by reading it.)
+grep_rc=0
+mismatches=$(grep -c '^END$' "$MISMATCH_LOG" 2>/dev/null) || grep_rc=$?
+if [ "$grep_rc" -gt 1 ]; then
+    echo "tier5: FAIL - could not read the mismatch log ($MISMATCH_LOG):"
+    echo "tier5:        grep exited $grep_rc.  'could not read' and 'read and"
+    echo "tier5:        clean' must never produce the same verdict."
+    exit 1
+fi
+if [ "$grep_rc" -eq 1 ]; then
+    mismatches=0
+fi
 if [ "$mismatches" -gt 0 ]; then
     echo "tier5: FAIL — mismatches found:"
     head -60 "$MISMATCH_LOG"
@@ -237,7 +257,13 @@ if [ "$mismatches" -gt 0 ]; then
     exit 1
 fi
 
-excluded=$(wc -l < "$EXCLUDED_LOG" 2>/dev/null || echo 0)
+# Same rule for the exclusion count: a log this gate cannot read is a gate
+# failure, never "nothing was excluded".
+if [ ! -r "$EXCLUDED_LOG" ]; then
+    echo "tier5: FAIL - could not read the exclusion log ($EXCLUDED_LOG)."
+    exit 1
+fi
+excluded=$(wc -l < "$EXCLUDED_LOG")
 # Compared by cross-multiplication, never through an integer percentage: the
 # percentage rounds DOWN, so 101..109 excluded of 1000 would read as 10% and
 # pass a 10% ceiling they exceed (PR #890 review).

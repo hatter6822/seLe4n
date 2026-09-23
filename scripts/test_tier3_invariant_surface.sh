@@ -10672,6 +10672,53 @@ run_check "INVARIANT" rg -n 'CONTROL: \.\.\.and the two replacements differ in .
 run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
 
 # ---------------------------------------------------------------------------
+# WS-RR RR8.15 (`v0.35.186`): the Tier 5 gate's central comparison DECIDES.
+#
+# It read its mismatch count as `grep -c ... || <default>`, and on a CLEAN run
+# `grep -c` prints `0` *and exits 1* -- so the fallback fired, the variable held
+# two lines, the integer comparison died with `integer expression expected`, and
+# the gate took the else arm and printed PASS.  The one comparison the whole
+# gate exists for agreed with the truth by accident of which arm the failing
+# `[` takes, and an UNREADABLE log answered exactly as a clean one.
+#
+# Found by RUNNING the gate for the RR8.15 hand-off check rather than by reading
+# it: the shell's own error line was the only evidence, and it sat above a PASS.
+# ---------------------------------------------------------------------------
+
+# `grep`'s status is captured rather than discarded...
+# The patterns below are single-quoted on purpose: they must match the literal
+# `$grep_rc` / `$EXCLUDED_LOG` / `$MISMATCH_LOG` the gate's source spells, not
+# this shell's expansion of them.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n ') || grep_rc=$?' scripts/test_tier5_cross_language.sh
+# ...and a status above 1 -- an I/O failure rather than "no matches" -- is a
+# named gate failure.  "Could not read" and "read and clean" must never produce
+# the same verdict.  Mutation: widen the test to `-gt 0`, or drop the branch.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n 'if [ "$grep_rc" -gt 1 ]; then' scripts/test_tier5_cross_language.sh
+# The same rule at the exclusion count: an unreadable log is refused, never read
+# as "nothing was excluded".  Mutation: restore the defaulting read below.
+# shellcheck disable=SC2016
+run_check "INVARIANT" rg -F -n 'if [ ! -r "$EXCLUDED_LOG" ]; then' scripts/test_tier5_cross_language.sh
+# NEGATIVE: and neither defaulting read may come back.  Scoped to the retired
+# EXPRESSION rather than to the `|| echo 0` idiom, because the comment above the
+# fix quotes that idiom in order to explain it and a `.sh` file is read raw --
+# contorting the prose to satisfy the scanner is what this project forbids.
+# Mutation: restore either assignment.
+# shellcheck disable=SC2016
+run_negative_check "INVARIANT" rg -F -n '"$MISMATCH_LOG" 2>/dev/null || echo 0)' scripts/test_tier5_cross_language.sh
+# shellcheck disable=SC2016
+run_negative_check "INVARIANT" rg -F -n 'excluded=$(wc -l < "$EXCLUDED_LOG" 2>/dev/null || echo 0)' scripts/test_tier5_cross_language.sh
+# NEGATIVE, tree-wide: and no FOURTH asker of the idiom.  `grep -c` prints its
+# count on the failing path too, so ANY `|| <something that prints>` appends a
+# second line -- the sweep off the Tier 5 gate found three more sites
+# (`ak7_cascade_baseline.sh` twice, the commit hook once), all latent, and this
+# is what stops a fifth.  Scoped away from this file, whose own negatives above
+# quote the retired expressions in order to refuse them.  Mutation: restore the
+# idiom at any of the four sites.
+run_negative_check "INVARIANT" bash -lc 'rg -n -g "!test_tier3_invariant_surface.sh" "grep -c[^|]*\|\|[^|]*echo" scripts/'
+
+# ---------------------------------------------------------------------------
 # Register row 63 (`v0.35.185`): the retype COMPOSITE's two invariant theorems.
 #
 # `lifecycleRetypeDirectWithCleanup` is the cleanup, then `scrubObjectMemory`,

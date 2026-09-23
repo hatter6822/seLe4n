@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.185.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.186.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1464,6 +1464,35 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   and the two new fixtures are decided by *different* conditions: restoring the
   fall-through flips both, while opening the assignment set flips only one — which
   is what keeps either from being inert.
+
+  **And the shell has the same defect with a second failure mode: the fallback
+  APPENDS** (WS-RR RR8.15, `v0.35.186`).  The rule above is about Python calling
+  git; every shell gate in this tree counts with `grep -c`, which *prints its
+  count on the failing path too* — so `n=$(grep -c PAT F || echo 0)` does not
+  substitute a default, it **adds a second line**.  On a clean run `grep -c`
+  prints `0` and exits 1 (no matches), so `n` holds `0\n0`, every later
+  `[ "$n" -gt … ]` dies with `integer expression expected`, and the `if` takes
+  the else arm.  `test_tier5_cross_language.sh` did exactly that: **the one
+  comparison the whole gate exists for did not decide**, and agreed with the
+  truth by accident of which arm a failing `[` takes, while an *unreadable*
+  mismatch log — `grep -c` exits 1 for "no matches" and above 1 for an I/O
+  failure — produced the same verdict as a clean one.  Read the status
+  (`n=$(grep -c …) || rc=$?`), make `rc > 1` a named gate failure, and refuse an
+  unreadable input rather than defaulting it.  The sweep off that one found
+  **three** more, all latent — `ak7_cascade_baseline.sh` twice and the commit
+  hook once — and a Tier 3 negative refuses a fifth.  Two things this cut
+  measured about its own method.  `shellcheck` passes every one of them, and the
+  shell's error line sat *above* the gate's `PASS`, so only **running** the gate
+  found it; this is the second consecutive cut where running an artefact found
+  what auditing it did not.  And the mutation harness written to judge the fix's
+  anchors re-implemented `test_lib.sh`'s own view routing, always using the
+  overlay — where `rg` skips the symlinks the overlay is made of on a *recursive*
+  scan, and where a `bash -lc … scripts/…` anchor does not run at all — so a
+  decisive anchor read as MISSED.  **A harness that re-implements the gate's
+  routing answers a different question from the gate**; it sources
+  `_run_with_view` now, with `set +e` after the source, because under `set -e`
+  the failing command a negative anchor *expects* kills the harness at the first
+  one and truncates the run.
 
   **And a default branch over a closed inductive is a decision five artefacts got
   wrong** (PR #897 review, `v0.35.114` and `v0.35.115`).  The rule above is about

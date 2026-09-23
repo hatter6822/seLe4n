@@ -501,11 +501,32 @@ STOREOBJECTCHECKED_ADOPTION=$(count_adoption "storeObjectKindChecked")
 SENTINEL_CHECK_DISPATCH=$(grep -c "validateThreadIdArg\|validateSchedContextIdArg\|validateObjIdArg" \
   SeLe4n/Kernel/API.lean 2>/dev/null || echo 0)
 
+# Count matching lines, failing closed.  `grep -c` exits 1 for "no matches" and
+# >1 for an I/O failure, and the two must NOT answer the same: an unreadable
+# file is this baseline failing to measure, never a file with nothing in it.
+# The `|| echo 0` this replaces also APPENDED — `grep -c` prints `0` on its
+# failing path too, so the variable held two lines and every later integer
+# comparison on it died with `integer expression expected`.
+# (`v0.35.186`: found in `test_tier5_cross_language.sh`, where the same idiom
+# stopped the gate's central comparison deciding, and swept here.)
+count_lines_matching() {
+  local pattern="$1" file="$2" n rc=0
+  n=$(grep -c -- "${pattern}" "${file}" 2>/dev/null) || rc=$?
+  if [[ ${rc} -gt 1 ]]; then
+    echo "error: could not read ${file} (grep exited ${rc})" >&2
+    return 1
+  fi
+  if [[ ${rc} -ne 0 ]]; then
+    n=0
+  fi
+  printf '%s\n' "${n}"
+}
+
 # AN10 regression suite test count (cascades into the post-AN10 floor).
 READER_HYGIENE_SUITE_TESTS=0
 if [[ -f tests/An10CascadeSuite.lean ]]; then
   # Per-test definitions are named `def an10_<letter>_<id>`.
-  READER_HYGIENE_SUITE_TESTS=$(grep -c "^def an10_" tests/An10CascadeSuite.lean 2>/dev/null || echo 0)
+  READER_HYGIENE_SUITE_TESTS=$(count_lines_matching "^def an10_" tests/An10CascadeSuite.lean)
 fi
 
 # AN11-A KernelError matrix row count (cascades into the post-AN11 floor).
@@ -513,7 +534,7 @@ fi
 # by counting `private def row_*` per-row definitions.  Should-grow metric.
 KERRORMATRIX_ROWS=0
 if [[ -f tests/KernelErrorMatrixSuite.lean ]]; then
-  KERRORMATRIX_ROWS=$(grep -c "^private def row_" tests/KernelErrorMatrixSuite.lean 2>/dev/null || echo 0)
+  KERRORMATRIX_ROWS=$(count_lines_matching "^private def row_" tests/KernelErrorMatrixSuite.lean)
 fi
 
 # Proof-surface health (should-stay-zero).

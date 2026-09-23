@@ -1,3 +1,112 @@
+## v0.35.186 — WS-RR RR8.15: the hand-off check, and the Tier 5 gate that did not decide
+
+RR8.15 is the last thing WS-RR does before recording its own closure, and it is
+ordered first deliberately: recording closure and *then* finding an unmet
+dependency would mean retracting a claim rather than fixing one.  Its content is
+to confirm that SM10's §2 dependencies are genuinely met and that its §1 scope
+statement matches the tree — a hundred and sixty patch versions after RR0.4 and
+RR1.11 established them, so a tick taken from that cut would certify a
+measurement nobody repeated.
+
+[`SMP_RELEASE_CLOSURE_PLAN.md`](docs/planning/SMP_RELEASE_CLOSURE_PLAN.md) §2.1
+records it: a row per dependency, each naming the artefact that decides it, none
+inherited from the phase that claimed it.  All seven are met.  **Running them
+rather than reading them is the whole of the method**, and it found three things
+a read would not have.
+
+### The Tier 5 gate's central comparison did not decide
+
+`test_tier5_cross_language.sh` compares a Lean oracle against a Rust one over a
+thousand generated lock-operation sequences, and counted its mismatches with
+
+```sh
+mismatches=$(grep -c '^END$' "$MISMATCH_LOG" 2>/dev/null || echo 0)
+if [ "$mismatches" -gt 0 ]; then
+```
+
+On a **clean** run `grep -c` prints `0` *and exits 1* — "no matches" is a
+nonzero status — so the `||` fired and appended a second line.  `mismatches`
+held `0\n0`, `[ "0\n0" -gt 0 ]` died with `integer expression expected`, the
+`if` took the else arm, and the gate printed `PASS`.
+
+The one comparison the whole gate exists for agreed with the truth **by accident
+of which arm a failing `[` takes**.  And the same reading conflated the two
+outcomes this project insists must never answer alike: `grep -c` exits 1 for *no
+matches* and above 1 for *an I/O failure*, so an unreadable mismatch log — the
+gate unable to read its own evidence — produced exactly the verdict a clean run
+produces.
+
+Fixed: `grep`'s status is captured, a status above 1 is a named gate failure,
+and the exclusion count refuses an unreadable log rather than defaulting to
+zero.  Five mutation cases decide it — a clean run with no shell error, a
+planted mismatch that fails, each log made unreadable, and one that **restores
+the retired reading** and asserts the `integer expression expected` line
+together with **exit 0**, which is the defect stated as a measurement rather
+than as a description.
+
+**The sweep found three more**, all latent and all the same idiom:
+`ak7_cascade_baseline.sh` counts two suite sizes that way (they feed a metrics
+baseline, so a two-line value would corrupt it the day either suite went empty),
+and the commit hook's own `ERROR_COUNT` would hold `0\n?` on a build that fails
+with no `^error:` line — which then passes its `!= "?"` guard and dies on the
+integer comparison beside it.  All three fixed, the two in `ak7_cascade_baseline.sh`
+through one local helper rather than twice, and a tree-wide Tier 3 negative
+refuses a fifth asker.
+
+Three things worth keeping.  The defect was invisible to every gate the tree
+has: `shellcheck` passes all four files, and the error line the shell printed sat
+*above* a `PASS`.  It was invisible to reading, too — this is the second
+consecutive cut in which running an artefact found what auditing it did not.  And
+**the mutation harness written to judge the fix's own anchors had a sibling of
+the same defect**: it re-implemented `test_lib.sh`'s view routing instead of
+calling it, so it judged every anchor in the code-view overlay — where `rg` skips
+the symlinks the overlay is built from on a *recursive* scan, and where a
+`bash -lc … scripts/…` anchor does not run at all — and reported a decisive
+anchor as MISSED.  It sources `_run_with_view` now, with `set +e` after the
+source, because under `set -e` the failing command a negative anchor *expects*
+kills the harness at the first one and silently truncates the run.  Both
+mutation suites were re-run through the corrected routing; all twenty-two
+mutations are caught.
+
+### Two documentation drifts, each a sibling left unswept
+
+The fine-lock Track B/C dependency closed with *"SM10 may read 'the syscall path
+brackets' as settled and must not read it as covering the scheduler path"* —
+**stale five patch versions after RR8.12 Cut C6h made the seam cover exactly
+that**.  Corrected, naming what is genuinely still uncovered: the taint table,
+the one `UncoveredLockDomain` constructor left (measured from the elaborated
+environment, not from a grep).
+
+And §8's acceptance gate said *"README + 10 i18n synced"* where the tree carries
+**11** — the identical figure §4 of the same plan had already recorded as
+drifted and corrected in the version-site list at `v0.34.29`, unswept onto its
+sibling eleven lines from the correction.  *A fix applied at one site and not at
+its sibling*, in a plan that says so about itself.
+
+### The measurements
+
+| §2 dependency | Verdict |
+|---------------|---------|
+| SM0..SM9 complete | Met — every phase row LANDED or CLOSED, SM9 at `v0.33.100` |
+| SM0..SM9 acceptance gates green | Met — the RR8.1 walk plus the tier stack re-run |
+| WS-RA complete | Met; `Architecture.timeoutFrame`, `…cancelledIpcFrame` and `KernelError.ipcCancelled` all resolve.  SM10.1 still owes **delivery** at the context restore |
+| WS-DT complete | Met — the production payoff and both staged ones resolve; the de-threading gate reports zero post-state bindings over 178 bundles |
+| Fine-lock Tracks B and C | Met — `declaredFootprintSyscall` is `true` on exactly 8 of 35 arms, the rest pinned `none` |
+| Fine-lock Track D / the scheduler domain | Met — `UncoveredLockDomain` has **one** constructor in the environment |
+| Tier 0..5 green at HEAD | Met — Tier 0–3, Rust, the aarch64 cross build and Tier 5 all exit 0; Tier 4 with the experimental candidates enabled exits 77 with every runnable check passing and the QEMU boot-check gate NOT RUN for want of `qemu-system-aarch64`, which is the "honest about what did not run" the readiness plan's box records |
+
+### Two acceptance boxes ticked, one of them ninety-seven versions late
+
+`SMP_RELEASE_CLOSURE_PLAN.md §1 scope and estimate match the tree` is RR8.15's
+own, now evidenced.  `UNFINISHED_SMP_WORK.md updated with closing versions` is
+**RR8.13's output at `v0.35.89`** and stayed unticked for ninety-seven patch
+versions after its row landed — *an acceptance box is a present-tense claim*,
+the rule the walk's own preamble states, failing at the next opportunity.
+Re-measured before ticking: all 26 findings carry a status marker, derived by
+walking the headers rather than by counting marker strings.
+
+Refs: docs/planning/SMP_RELEASE_READINESS_PLAN.md §5 (RR8.15)
+
 ## v0.35.185 — the retype composite's two invariant theorems (register row 63 CLOSED)
 
 The theorem register row 63 was opened for, and the row closes.  `v0.35.164` gave
