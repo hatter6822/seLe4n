@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.184.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.185.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,22 +222,22 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~79374 lines)
+- `CHANGELOG.md` (~79580 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23641 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12184 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~8946 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8238 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8268 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8116 lines)
-- `docs/spec/SELE4N_SPEC.md` (~7042 lines)
+- `docs/spec/SELE4N_SPEC.md` (~7082 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6311 lines)
 - `SeLe4n/Platform/Boot.lean` (~5961 lines)
-- `SeLe4n/Model/State.lean` (~5773 lines)
+- `SeLe4n/Model/State.lean` (~5772 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
+- `tests/SmpIpcSuite.lean` (~5342 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5278 lines)
-- `tests/SmpIpcSuite.lean` (~5241 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5142 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5139 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5097 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
@@ -246,7 +246,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4226 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3993 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean` (~3981 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Preservation.lean` (~3843 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean` (~3811 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
@@ -264,7 +264,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3131 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~3119 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~3131 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~3054 lines)
 - `SeLe4n/Model/Object/Types.lean` (~2930 lines)
@@ -293,12 +293,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2294 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2219 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean` (~2207 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2203 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2184 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2176 lines)
 - `SeLe4n/Prelude.lean` (~2166 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2123 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
@@ -355,6 +355,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
 - `docs/dev_history/AUDIT_v0.23.21_WORKSTREAM_PLAN.md` (~1411 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1409 lines)
 - `docs/planning/SMP_RWLOCK_DEFERRED_COMPLETION_PLAN.md` (~1392 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean` (~1385 lines)
 - `docs/dev_history/planning/WS_AB_DEFERRED_OPERATIONS_WORKSTREAM_PLAN.md` (~1382 lines)
@@ -368,7 +369,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant.lean` (~1256 lines)
 - `SeLe4n/Kernel/InformationFlow/Projection.lean` (~1255 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1254 lines)
 - `docs/dev_history/audits/AUDIT_v0.22.17_WORKSTREAM_PLAN.md` (~1252 lines)
@@ -381,6 +381,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1165 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1165 lines)
+- `SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` (~1161 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
 - `SeLe4n/Kernel/Architecture/VSpace.lean` (~1142 lines)
@@ -398,12 +399,12 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean` (~1043 lines)
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
+- `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~1041 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1025 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1022 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
-- `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~990 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~984 lines)
 - `docs/dev_history/audits/AUDIT_v0.19.6_WORKSTREAM_PLAN.md` (~984 lines)
 - `SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean` (~973 lines)
@@ -441,7 +442,7 @@ To find files that need pagination today, run:
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~817 lines)
-- `docs/REGISTERED_DEBT.md` (~816 lines)
+- `docs/REGISTERED_DEBT.md` (~817 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
@@ -9073,11 +9074,81 @@ code may assume:
   asserts Z4-O **false**, against a CONTROL on the pristine replacement where it
   holds — so the claim is about `boundThread` rather than about the retype.
 
-  What register row 63 still carries is the retype **composite**'s two theorems.
-  With the clause above, its `.ok` path knows the installed context binds nobody,
-  so no hypothesis about `newObj` is needed beyond what the runtime checks; what it
-  does need is a relaxed view for the intermediate, the SchedContext arm's own
-  post-state refuting Z4-O by design.
+  Register row 63's last half — the retype **composite**'s two theorems — is
+  `v0.35.185`, the bullet below.
+- **...and the COMPOSITE crosses through one intermediate, carved out of BOTH
+  sides, and it is the intermediate BOTH invariants need** (`v0.35.185`,
+  register row 63 CLOSED).  `lifecycleRetypeDirectWithCleanup` is the cleanup,
+  then `scrubObjectMemory`, then a `storeObject` at `target`, and a composite
+  stated as *"Z4-O of the post-cleanup state carries to the post-store state"* is
+  a statement about a state the pipeline does not rest at — the `.schedContext`
+  arm refutes Z4-O on its own post-state by design (the item above).  Six things
+  new code must respect.
+
+  (1) **`schedContextBindingRetypeReady st target` is Z4-O with `target` carved
+  out of the SUBJECT and of the OBJECT of both clauses**, and all four carve-outs
+  earn their place at the store: the forward clause's `scId.toObjId ≠ target`
+  rules out a thread still bound to the *destroyed context* (after the store the
+  target holds `newObj`, so it would have no witness), the backward clause's
+  `tid.toObjId ≠ target` a surviving context still naming the *destroyed thread*
+  (after the store its record is `newObj`'s).  Neither follows from the other, and
+  dropping either makes
+  `storeObject_establishes_schedContextBindingConsistent` **false** rather than
+  unprovable.  It stands to the retype as
+  `ipcInvariantFullExceptDonationOwner` stands to the bare reply and
+  `replyCallerLinkageExcept` to the woken caller.
+
+  (2) **The SAME predicate carries the replenish half**, which is the measurement
+  that it is the destroy path's own fact rather than one proof's scaffolding:
+  `storeObject_preserves_replenishQueueAffinityConsistent_smp` consumes it because
+  the backward carve-out is exactly what keeps the store from moving a replenish
+  entry's home core — the replacement TCB's `cpuAffinity` is its own.  A second,
+  private readiness predicate for that half would be *one question, two answers*
+  inside the remedy for it.
+
+  (3) **`retypeTargetUnpaired` is the fact each cleanup arm establishes**, stated
+  once, and `lifecyclePreRetypeCleanup_targetUnpaired` proves it for five of the
+  six arms; `hNotSc` is the sixth, free at the live call site.  The store's two
+  remaining conditions are the replacement's: `hScFresh` is a **runtime refusal**
+  (`v0.35.184`) read off the wrapper's own guard, and `hTcbFresh` the
+  `retypeReplacementFresh` pack the live dispatch already supplies.
+
+  (4) **`hIdentity` — a TCB is stored under its own thread id — is a hypothesis,
+  and the reason it is one is a registered gap.**  The `.tcb` arm is handed `tcb`
+  and operates on `tcb.tid` while the store is at `target`, so without their
+  agreement the cleanup can clear a binding at one key and leave the retype's own
+  key paired.  Four measurements place it: `PlatformConfig.wellFormed`'s
+  `embeddedIdentitiesMatchSlots` establishes it for every boot object,
+  `enqueueIdleThreadOnCore` stores `queuedIdleThread c` at
+  `(idleThreadId c).toObjId` carrying that very id, **no transition writes
+  `TCB.tid`**, and the one remaining builder (`objectOfKernelType`) sets it to
+  `ThreadId.sentinel` but is refused by `KernelObject.wellFormed`, whose `.tcb`
+  arm requires the replacement's `cspaceRoot` and `vspaceRoot` to resolve while
+  that builder sets both to `ObjId.sentinel`.  **That last refusal is a
+  convention, not an invariant** — the H-06/WS-E3 reservation of id 0 is enforced
+  at boot for the *boot VSpace root alone* and by no store-level invariant, and no
+  conjunct of `PlatformConfig.wellFormed` refuses an `initialObjects` entry at
+  slot 0 — so the agreement holds of every reachable state and is stated by
+  nothing, a latent false-assurance gap with its own register row whose remedy is
+  to **stamp the slot's identity** rather than to weaken the claim.
+
+  (5) **The claim's unit is the PROGRAM THE ARM RUNS.**  The live
+  `.lifecycleRetype` dispatch runs
+  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache`, so both theorems are
+  lifted through the three cached-structure layers — Cut C6g's rule, and the lift
+  is a citation rather than a second argument because each layer frames `objects`
+  and `scheduler` outright.  One shared frame
+  (`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame`) says it for
+  both, so a fourth layer costs one proof rather than one per consumer.
+
+  (6) **What the composite DID has one owner**, and a `private` frame has none.
+  `lifecycleRetypeDirectWithCleanup_ok_decompose` replaced the same twenty-line
+  decomposition inlined in both proofs, which were free to disagree about which
+  state the cleanup left; and `retypeInitiatorDrain_objects` is public beside its
+  `_scheduler` and `_machine` siblings, where it was the `.1` of a `private`
+  conjunction whose `.2` duplicated the public `_scheduler` two lines from the
+  step it frames — half a second answer, half unreachable from every asker
+  upstream.  Both are refused in their retired spellings by Tier 3 negatives.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write

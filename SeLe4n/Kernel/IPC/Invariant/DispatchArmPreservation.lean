@@ -3906,15 +3906,12 @@ theorem lifecycleRetypeDirectWithCleanupShootdown_preserves_ipcInvariantFull
         (retypeAsidRoundFold_objects ec _ stB)
         (retypeAsidRoundFold_scheduler ec _ stB) hB
 
-/-- The initiator drain is `perCoreTlb`-only. -/
-private theorem retypeInitiatorDrain_objects_scheduler
-    (ec : CoreId) (asids : List SeLe4n.ASID) (stX : SystemState) :
-    (retypeInitiatorDrain ec asids stX).objects = stX.objects ∧
-    (retypeInitiatorDrain ec asids stX).scheduler = stX.scheduler := by
-  unfold retypeInitiatorDrain
-  cases asids with
-  | nil => exact ⟨rfl, rfl⟩
-  | cons a rest => exact ⟨rfl, rfl⟩
+-- `v0.35.185` (register row 63): `retypeInitiatorDrain_objects_scheduler` is
+-- **deleted**.  Its `.2` duplicated the public `retypeInitiatorDrain_scheduler`
+-- and its `.1` is now the public `retypeInitiatorDrain_objects`, both beside the
+-- step they frame in `Lifecycle/Operations/RetypeWrappers.lean` — where the
+-- retype composite's own invariant theorems, upstream of this module, can read
+-- them.  A `private` frame is invisible to every asker but one.
 
 /-- The initiator-atomic per-core retype wrapper. -/
 theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_ipcInvariantFull
@@ -3938,8 +3935,8 @@ theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_ipcInvariantF
       simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
       subst hStep
       exact ipcInvariantFull_of_objects_scheduler_eq
-        (retypeInitiatorDrain_objects_scheduler ec _ stB).1
-        (retypeInitiatorDrain_objects_scheduler ec _ stB).2 hB
+        (retypeInitiatorDrain_objects ec _ stB)
+        (retypeInitiatorDrain_scheduler ec _ stB) hB
 
 /-- `.lifecycleRetype` (dispatch arm): the full stack — well-formedness guard,
 per-kind cleanup, scrub, pristine write, ASID shootdown rounds, initiator

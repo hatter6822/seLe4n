@@ -795,6 +795,159 @@ theorem schedContextBindingConsistent_of_objects_eq {st st' : SystemState}
     (fun tid => by rw [SystemState.getTcb?_frame hObj tid])
     (fun scId => by rw [SystemState.getSchedContext?_frame hObj scId]) h
 
+/-- **`v0.35.185` (register row 63): Z4-O with the retype's target carved out of
+BOTH sides.**
+
+The intermediate the destroy path passes through, and it has to exist: the
+cleanup's `.schedContext` arm *refutes* Z4-O on its own post-state by design
+(`releaseSchedContextBinding_refutes_schedContextBindingConsistent`, `v0.35.183`)
+— it clears the bound thread's binding and leaves the destroyed context's
+`boundThread` naming it, for the retype's own `storeObject` at that key to
+replace.  So a composite stated as "Z4-O of the post-cleanup state carries to the
+post-store state" is a statement about a state the pipeline does not rest at.
+
+Both clauses carve `target` out of their **subject** and of their **object**, and
+each of the four carve-outs earns its place at the store.  The forward clause's `scId.toObjId ≠ target` is what rules
+out a thread still bound to the *destroyed* context — after the store the target
+holds `newObj`, so such a thread would have no witness.  The backward clause's
+`tid.toObjId ≠ target` is what rules out a surviving context still naming the
+*destroyed* thread — after the store its record is `newObj`'s, whose binding is
+not that context's.  Neither follows from the other, and dropping either makes
+the store lemma false rather than merely unprovable.
+
+It stands to the retype as `ipcInvariantFullExceptDonationOwner` stands to the
+bare reply and `replyCallerLinkageExcept` to the woken caller: the honest
+statement about a state one step of a composite leaves. -/
+def schedContextBindingRetypeReady (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
+  (∀ (tid : SeLe4n.ThreadId) (tcb : TCB),
+    st.objects[tid.toObjId]? = some (.tcb tcb) → tid.toObjId ≠ target →
+    ∀ scId, tcb.schedContextBinding = .bound scId →
+      scId.toObjId ≠ target ∧
+      ∃ sc, st.objects[scId.toObjId]? = some (.schedContext sc) ∧
+        sc.boundThread = some tid) ∧
+  (∀ (scId : SeLe4n.SchedContextId) (sc : SchedContext),
+    st.objects[scId.toObjId]? = some (.schedContext sc) → scId.toObjId ≠ target →
+    ∀ tid, sc.boundThread = some tid →
+      tid.toObjId ≠ target ∧
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        (tcb.schedContextBinding = .bound scId ∨
+         ∃ owner, tcb.schedContextBinding = .donated scId owner))
+
+/-- **`v0.35.185`**: the target participates in no binding pair — the fact each
+cleanup arm establishes, stated once.
+
+Two clauses because the target may hold either side of a pair: a TCB, whose
+binding the `.tcb` arm clears, or a scheduling context, whose `boundThread` is
+what the `.schedContext` arm's own release leaves *uncleared* — which is why that
+arm needs `schedContextBindingRetypeReady` argued directly rather than through
+this predicate. -/
+def retypeTargetUnpaired (st : SystemState) (target : SeLe4n.ObjId) : Prop :=
+  (∀ tcb : TCB, st.objects[target]? = some (.tcb tcb) →
+      tcb.schedContextBinding = SchedContextBinding.unbound) ∧
+  (∀ sc : SchedContext, st.objects[target]? = some (.schedContext sc) →
+      sc.boundThread = none)
+
+/-- **`v0.35.185`**: an unpaired target reads the object table and nothing else. -/
+theorem retypeTargetUnpaired_of_objects_eq {st st' : SystemState}
+    {target : SeLe4n.ObjId} (hObj : st'.objects = st.objects)
+    (h : retypeTargetUnpaired st target) :
+    retypeTargetUnpaired st' target := by
+  simp only [retypeTargetUnpaired, hObj]; exact h
+
+/-- **`v0.35.185`**: Z4-O plus an unpaired target is retype-ready.
+
+The five cleanup arms that *preserve* Z4-O reach the store through this: each
+leaves the target holding either a `.unbound` TCB (the `.tcb` arm) or an object
+that is neither a TCB nor a context (every other arm but `.schedContext`), and
+the two carved-out side conditions then follow from Z4-O's own clauses rather
+than from a fresh argument.
+
+Read the derivation in each direction, because each uses the *other* clause of
+`retypeTargetUnpaired`: a thread bound to a context at `target` would put itself
+in that context's `boundThread` (Z4-O forward), which the second clause forbids;
+and a surviving context naming the thread at `target` would make that thread's
+binding name it (Z4-O backward), which the first clause forbids. -/
+theorem schedContextBindingRetypeReady_of_consistent {st : SystemState}
+    {target : SeLe4n.ObjId} (hUnpaired : retypeTargetUnpaired st target)
+    (h : schedContextBindingConsistent st) :
+    schedContextBindingRetypeReady st target := by
+  refine ⟨fun tid tcb hT _ scId hB => ?_, fun scId sc hS hNe tid hBT => ?_⟩
+  · obtain ⟨sc, hSc, hBT⟩ := h.1 tid tcb hT scId hB
+    refine ⟨fun hEq => ?_, sc, hSc, hBT⟩
+    -- The context is AT the target, so the target's own `boundThread` names `tid`.
+    rw [hEq] at hSc
+    rw [hUnpaired.2 sc hSc] at hBT
+    exact absurd hBT (by simp)
+  · obtain ⟨tcb, hT, hBind⟩ := h.2 scId sc hS tid hBT
+    refine ⟨fun hEq => ?_, tcb, hT, hBind⟩
+    -- The thread is AT the target, so its binding is `.unbound`.
+    rw [hEq] at hT
+    rw [hUnpaired.1 tcb hT] at hBind
+    rcases hBind with hc | ⟨_, hc⟩ <;> exact absurd hc (by simp)
+
+/-- **`v0.35.185`**: readiness reads the object table and nothing else. -/
+theorem schedContextBindingRetypeReady_of_objects_eq {st st' : SystemState}
+    {target : SeLe4n.ObjId} (hObj : st'.objects = st.objects)
+    (h : schedContextBindingRetypeReady st target) :
+    schedContextBindingRetypeReady st' target := by
+  simp only [schedContextBindingRetypeReady, hObj]; exact h
+
+/-- **`v0.35.185` (register row 63): the retype's store re-establishes Z4-O.**
+
+The payoff of the two carve-outs, and of the freshness the runtime already
+checks.  `storeObject` writes the object table at `target` alone, so every pair
+the readiness predicate vouches for survives untouched — and the two pairs it
+does *not* vouch for are exactly the ones the replacement cannot form:
+
+* a thread at `target` is `newObj`'s TCB, whose binding is `.unbound` (`hTcbFresh`,
+  from `retypeReplacementFresh`), so it owes no context;
+* a context at `target` is `newObj`'s, whose `boundThread` is `none` (`hScFresh`),
+  which `KernelObject.wellFormed`'s `.schedContext` arm makes a **runtime
+  refusal** (`v0.35.184`) rather than a hypothesis a caller must supply.
+
+Without `hScFresh` this theorem is false, not unprovable: a replacement context
+claiming a thread that does not name it back is precisely the state Z4-O
+forbids. -/
+theorem storeObject_establishes_schedContextBindingConsistent
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hTcbFresh : ∀ t : TCB, newObj = .tcb t →
+      t.schedContextBinding = SchedContextBinding.unbound)
+    (hScFresh : ∀ sc : SchedContext, newObj = .schedContext sc → sc.boundThread = none)
+    (hReady : schedContextBindingRetypeReady st target)
+    (hStore : storeObject target newObj st = .ok ((), st')) :
+    schedContextBindingConsistent st' := by
+  have hAt : st'.objects[target]? = some newObj :=
+    storeObject_objects_eq st st' target newObj hObjInv hStore
+  have hOff : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid hNe => storeObject_objects_ne st st' target oid newObj hNe hObjInv hStore
+  refine ⟨fun tid tcb hT scId hB => ?_, fun scId sc hS tid hBT => ?_⟩
+  · by_cases hTgt : tid.toObjId = target
+    · -- The replacement's own TCB is unbound, so it names no context.
+      rw [hTgt, hAt] at hT
+      cases newObj with
+      | tcb t =>
+        have hSame : t = tcb := by injection Option.some.inj hT
+        rw [← hSame, hTcbFresh t rfl] at hB
+        exact absurd hB (by simp)
+      | _ => exact absurd hT (by simp)
+    · rw [hOff _ hTgt] at hT
+      obtain ⟨hScNe, sc, hSc, hBT⟩ := hReady.1 tid tcb hT hTgt scId hB
+      exact ⟨sc, by rw [hOff _ hScNe]; exact hSc, hBT⟩
+  · by_cases hTgt : scId.toObjId = target
+    · -- The replacement's own context binds nobody, which the retype REFUSES to
+      -- install otherwise (`KernelObject.wellFormed`, `v0.35.184`).
+      rw [hTgt, hAt] at hS
+      cases newObj with
+      | schedContext s0 =>
+        have hSame : s0 = sc := by injection Option.some.inj hS
+        rw [← hSame, hScFresh s0 rfl] at hBT
+        exact absurd hBT (by simp)
+      | _ => exact absurd hS (by simp)
+    · rw [hOff _ hTgt] at hS
+      obtain ⟨hTidNe, tcb, hT, hBind⟩ := hReady.2 scId sc hS hTgt tid hBT
+      exact ⟨tcb, by rw [hOff _ hTidNe]; exact hT, hBind⟩
+
 /-- Z4-O: Default state has no objects — vacuously true. -/
 theorem default_schedContextBindingConsistent :
     schedContextBindingConsistent (default : SystemState) := by

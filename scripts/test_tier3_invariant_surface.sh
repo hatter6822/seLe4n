@@ -10672,6 +10672,79 @@ run_check "INVARIANT" rg -n 'CONTROL: \.\.\.and the two replacements differ in .
 run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
 
 # ---------------------------------------------------------------------------
+# Register row 63 (`v0.35.185`): the retype COMPOSITE's two invariant theorems.
+#
+# `lifecycleRetypeDirectWithCleanup` is the cleanup, then `scrubObjectMemory`,
+# then a `storeObject` at `target`, and the binding invariant crosses it through
+# ONE intermediate -- `schedContextBindingRetypeReady`, the invariant with the
+# retype's target carved out of BOTH sides.  It has to be an intermediate rather
+# than the invariant itself, because the cleanup's `.schedContext` arm REFUTES
+# the invariant on its own post-state by design (`v0.35.183`).
+#
+# The same predicate carries the SM5.H replenish-affinity invariant, which is
+# the measurement that it is the destroy path's own fact rather than one proof's
+# scaffolding.
+# ---------------------------------------------------------------------------
+
+# The intermediate and the fact each cleanup arm establishes.
+run_check "INVARIANT" rg -n '^def schedContextBindingRetypeReady \(st : SystemState\) \(target : SeLe4n\.ObjId\) : Prop :=$' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^def retypeTargetUnpaired \(st : SystemState\) \(target : SeLe4n\.ObjId\) : Prop :=$' SeLe4n/Kernel/Scheduler/Invariant.lean
+# RELATION: the FORWARD clause carves `target` out of its SUBJECT and of its
+# OBJECT.  Subject alone would admit a thread at the destroyed key; object alone
+# would admit a thread still bound to the destroyed CONTEXT, which after the
+# store has no witness.  Neither follows from the other and dropping either makes
+# the store lemma FALSE rather than unprovable.  Mutation: keep the clause and
+# delete either inequality.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBindingRetypeReady[^\n]*(\n([ \t][^\n]*)?)*tid\.toObjId . target .\n *. scId, tcb\.schedContextBinding = \.bound scId .\n *scId\.toObjId . target ." SeLe4n/Kernel/Scheduler/Invariant.lean'
+# RELATION: and the BACKWARD clause does the same, the other way round.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBindingRetypeReady[^\n]*(\n([ \t][^\n]*)?)*scId\.toObjId . target .\n *. tid, sc\.boundThread = some tid .\n *tid\.toObjId . target ." SeLe4n/Kernel/Scheduler/Invariant.lean'
+# The builder every preserving cleanup arm reaches the store through.
+run_check "INVARIANT" rg -n '^theorem schedContextBindingRetypeReady_of_consistent ' SeLe4n/Kernel/Scheduler/Invariant.lean
+# RELATION: the store RE-ESTABLISHES the binding invariant, and the clause it
+# consumes about the replacement is a RUNTIME REFUSAL (`v0.35.184`) rather than a
+# caller obligation.  Without `hScFresh` the theorem is false, not unprovable: a
+# replacement context claiming a thread that does not name it back IS the state
+# the invariant forbids.  Mutation: keep the theorem and drop the hypothesis.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_establishes_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hScFresh : . sc : SchedContext, newObj = \.schedContext sc . sc\.boundThread = none\)[^\n]*(\n([ \t][^\n]*)?)*\(hReady : schedContextBindingRetypeReady st target\)" SeLe4n/Kernel/Scheduler/Invariant.lean'
+# RELATION: and the replenish half consumes the SAME readiness predicate -- the
+# measurement that it is the destroy path's own intermediate.  Its carve-out is
+# what keeps the store from moving a replenish entry's home core: the surviving
+# context's bound thread is not at the destroyed key, so its `cpuAffinity`
+# survives.  Mutation: state a second, private predicate for this half.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*\(hReady : schedContextBindingRetypeReady st target\)" SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean'
+# RELATION: the cleanup leaves the target unpaired, under the slot/identity
+# agreement the `.tcb` arm needs -- the arm is handed `tcb` and operates on
+# `tcb.tid` while the store is at `target`, so without it the cleanup can clear a
+# binding at one key and leave the retype's own key paired.  Mutation: keep the
+# theorem and drop `hIdentity`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_targetUnpaired[^\n]*(\n([ \t][^\n]*)?)*\(hIdentity : . tcb : TCB, currentObj = \.tcb tcb . tcb\.tid\.toObjId = target\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+# The composite's two theorems, and the shared decomposition they read.
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanup_ok_decompose$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanup_ok_decompose h" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithCleanup_preserves_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*lifecycleRetypeDirectWithCleanup_ok_decompose h" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+# NEGATIVE: and neither may go back to re-deriving what the composite did.  Two
+# readings of one transition is what the decomposition retires, and the two
+# proofs would then be free to disagree about which state the cleanup left.
+# Mutation: re-inline `unfold lifecycleRetypeDirectWithCleanup at h` in either.
+run_negative_check "INVARIANT" rg -n 'unfold lifecycleRetypeDirectWithCleanup at h' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# RELATION: the claim's unit is the PROGRAM THE ARM RUNS.  The live
+# `.lifecycleRetype` dispatch runs the composite under three cached-structure
+# layers, and a theorem stated one wrapper down is a claim about a program no
+# syscall reaches (Cut C6g's rule).  Mutation: state either preservation theorem
+# at `lifecycleRetypeDirectWithCleanup` alone and delete the arm-level one.
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_preserves_replenishQueueAffinityConsistent_smp$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# The drain's third frame, public and beside its two siblings -- the layering
+# rule `v0.35.166` paid for the cleanup's sweeps and Cut C6g for this same step.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_objects$' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+# NEGATIVE: and the `private` conjunction it replaced must not come back.  Its
+# `.2` duplicated the public `retypeInitiatorDrain_scheduler` two lines above,
+# and its `.1` was unreachable from every module upstream of the one that held
+# it.  Mutation: restore the private lemma anywhere under `SeLe4n/`.
+run_negative_check "INVARIANT" rg -n 'retypeInitiatorDrain_objects_scheduler' SeLe4n/
+
+# ---------------------------------------------------------------------------
 # WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved
 # scheduler-domain footprints.
 #

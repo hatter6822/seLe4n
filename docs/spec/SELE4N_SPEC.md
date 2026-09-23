@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.184` (`lakefile.toml`) |
+| **Package version** | `0.35.185` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 409,214 across 338 Lean files |
+| **Production LoC** | 410,148 across 338 Lean files |
 | **Test LoC** | 83,492 across 70 Lean test suites |
-| **Proved declarations** | 13,536 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,560 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4661,8 +4661,38 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   every future replacement builder rather than of the one that exists.
   `tests/SmpIpcSuite.lean` §3.34 is the witness, with the retired guard spelled in
   the suite alone: it stores the claiming replacement and Z4-O is **falsified**,
-  against a control on the pristine replacement where it holds.  What register row
-  63 still carries is the retype composite's two theorems.
+  against a control on the pristine replacement where it holds.
+
+  **And the composite is stated, so register row 63 closes** (`v0.35.185`).  The
+  crossing goes through one intermediate — `schedContextBindingRetypeReady`, Z4-O
+  with the retype's target carved out of **both the subject and the object** of
+  both clauses — and it has to be an intermediate rather than Z4-O itself, because
+  the `.schedContext` arm refutes Z4-O on its own post-state by design.  All four
+  carve-outs earn their place at the store and neither pair follows from the
+  other: the forward clause rules out a thread still bound to the *destroyed
+  context*, the backward clause a surviving context still naming the *destroyed
+  thread*, and dropping either makes
+  `storeObject_establishes_schedContextBindingConsistent` false rather than
+  unprovable.  The **same** predicate carries
+  `storeObject_preserves_replenishQueueAffinityConsistent_smp`, which is the
+  measurement that it is the destroy path's own fact rather than one proof's
+  scaffolding: the backward carve-out is exactly what keeps the store from moving
+  a replenish entry's home core, the replacement TCB's `cpuAffinity` being its
+  own.  Both theorems are stated of the **program the live arm runs** —
+  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache`, the composite under
+  the ASID shootdown rounds, the initiator's per-core TLB drain and the
+  instruction-cache broadcast — lifted by one shared frame, since a theorem stated
+  one wrapper down is a claim about a program no syscall reaches.  Two hypotheses
+  remain and both are free at the live call site: `hNotSc`, from
+  `retypeTargetDetached`'s `notSc`, and `hIdentity` — a TCB is stored under its
+  own thread id — which holds of every reachable state by four measurements and
+  is stated by no invariant, so the model-level gap behind it carries a register
+  row of its own with the improvement as its remedy: `objectOfKernelType` stamps
+  the *sentinel* identity rather than the target slot's, which is exactly what
+  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` enforces at boot,
+  and the one thing standing between that and a reachable violation is the
+  H-06/WS-E3 reservation of id 0 — a **convention**, enforced at boot for the boot
+  VSpace root alone and by no store-level invariant.
 
   **And the three TCB-control arms declare theirs, in a module of their own**
   (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,

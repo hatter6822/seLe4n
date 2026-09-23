@@ -3896,16 +3896,9 @@ theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent
   have hNotResOwn : ¬ originalOwner.isReserved :=
     returnDonatedSchedContext_ok_recipient_not_reserved st st' serverTid scId originalOwner
       newOwner? h
-  have hNe : originalOwner ≠ serverTid := by
-    intro hEq
-    have hLk : lookupTcb st originalOwner = some serverTcb := by
-      unfold lookupTcb
-      rw [if_neg hNotResOwn, hEq]
-      exact hServer
-    have hU := returnDonatedSchedContext_ok_recipient_unbound st st' serverTid scId
-      originalOwner newOwner? h serverTcb hLk
-    rw [hServerBinding] at hU
-    exact absurd hU (by simp)
+  have hNe : originalOwner ≠ serverTid :=
+    returnDonatedSchedContext_ok_recipient_ne_server st st' serverTid scId originalOwner
+      newOwner? serverTcb hServer (by rw [hServerBinding]; simp) h
   obtain ⟨⟨ownerTcb, hOwnerPre, hOwnerPost⟩, ⟨srvTcb, hSrvPre, hSrvPost⟩, hOther⟩ :=
     returnDonatedSchedContext_getTcb?_char st st' serverTid scId originalOwner hObjInv hNe
       newOwner? h

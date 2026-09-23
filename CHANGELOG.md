@@ -1,3 +1,145 @@
+## v0.35.185 — the retype composite's two invariant theorems (register row 63 CLOSED)
+
+The theorem register row 63 was opened for, and the row closes.  `v0.35.164` gave
+the retype's TCB cleanup the suspend pipeline's donation arm, `v0.35.165` gave its
+SchedContext cleanup the binding release, `v0.35.166` closed the layering blocker
+and stated the *cleanup*'s replenish-affinity theorem, `v0.35.183` built the
+`schedContextBindingConsistent` preservation family the tree did not have, and
+`v0.35.184` closed the replacement-freshness hole.  What was left was the
+composite, for both invariants.
+
+### The intermediate, and why there has to be one
+
+`lifecycleRetypeDirectWithCleanup` is the cleanup, then `scrubObjectMemory`, then
+a `storeObject` at `target`.  A composite stated as *"`schedContextBindingConsistent`
+of the post-cleanup state carries to the post-store state"* is a statement about a
+state the pipeline does not rest at: the cleanup's `.schedContext` arm **refutes**
+that invariant on its own post-state by design
+(`releaseSchedContextBinding_refutes_schedContextBindingConsistent`, `v0.35.183`) —
+it clears the bound thread's binding and leaves the destroyed context's
+`boundThread` naming it, for the retype's own store at that key to replace.
+
+`schedContextBindingRetypeReady st target` is the honest statement about that
+state: the invariant with the retype's target carved out of **both the subject and
+the object** of both clauses.  It stands to the retype as
+`ipcInvariantFullExceptDonationOwner` stands to the bare reply and
+`replyCallerLinkageExcept` to the woken caller.
+
+All four carve-outs earn their place at the store, and neither pair follows from
+the other:
+
+* the forward clause's `scId.toObjId ≠ target` rules out a thread still bound to
+  the **destroyed context** — after the store the target holds `newObj`, so such a
+  thread would have no witness;
+* the backward clause's `tid.toObjId ≠ target` rules out a surviving context still
+  naming the **destroyed thread** — after the store its record is `newObj`'s, whose
+  binding is not that context's.
+
+Dropping either makes `storeObject_establishes_schedContextBindingConsistent`
+**false** rather than merely unprovable.
+
+### The same predicate carries the replenish half
+
+`storeObject_preserves_replenishQueueAffinityConsistent_smp` consumes the **same**
+readiness predicate, and that is the measurement that it is the destroy path's own
+intermediate rather than one proof's scaffolding: the backward carve-out — a
+surviving context names no thread at the destroyed key — is exactly what keeps the
+store from moving a replenish entry's home core.  Without it the last step is
+false, because the replacement TCB's `cpuAffinity` is its own.
+
+### What the store consumes, and what the runtime already refuses
+
+`retypeTargetUnpaired` is the fact each cleanup arm establishes, stated once;
+`lifecyclePreRetypeCleanup_targetUnpaired` proves it for five of the six arms
+(`hNotSc` is the sixth, free at the live call site from `retypeTargetDetached`'s
+`notSc`).  The store then needs two things of the replacement, and **one of them
+is a runtime refusal rather than a caller obligation**: `hScFresh` is
+`KernelObject.wellFormed`'s `.schedContext` clause from `v0.35.184`, read off the
+wrapper's own guard, so the retype *refuses* to install a context claiming a
+thread; `hTcbFresh` is the `retypeReplacementFresh` pack the live dispatch already
+supplies.
+
+### `hIdentity`, and a latent gap it measures
+
+The `.tcb` arm is handed `tcb` and operates on `tcb.tid`, while the store is at
+`target`, so the composite needs their agreement — otherwise the cleanup can clear
+a binding at one key and leave the retype's own key paired, which the store does
+not repair.  Four measurements place it, and the fourth is where the finding is.
+`PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` establishes it for
+every boot object.  `enqueueIdleThreadOnCore` stores `queuedIdleThread c`, whose
+`tid` is `idleThreadId c`, at `(idleThreadId c).toObjId` — agreement by
+construction.  **No transition writes `TCB.tid`.**  And the one remaining
+installer, `objectOfKernelType` through the retype, sets it to `ThreadId.sentinel`
+and both of its roots to `ObjId.sentinel`, so `KernelObject.wellFormed`'s `.tcb`
+arm — which requires those roots to resolve — refuses it **on any state that
+honours the H-06/WS-E3 sentinel convention**.
+
+That last qualifier is not a hedge: the convention is enforced at boot for the
+*boot VSpace root alone* (`entry.id.isReserved`) and by **no store-level
+invariant**, and no conjunct of `PlatformConfig.wellFormed` refuses an
+`initialObjects` entry at slot 0.  So an integrator's configuration could make
+`objects[ObjId.sentinel]?` resolve and admit a `.tcb` retype carrying the sentinel
+identity.  `hIdentity` is therefore a hypothesis stated by no invariant, which is
+what keeps it a hypothesis here and a register row rather than a derived fact.  The underlying model-level gap is registered: `objectOfKernelType` gives a
+retyped TCB, SchedContext or Reply the **sentinel** identity rather than the target
+slot's, which breaks exactly the slot/identity agreement the boot check enforces
+and whose hazard that check's own docstring states.  Measured exposure today:
+`SchedContext.scId`'s only reader (`replenishScOnCore`) has no production caller,
+`Reply.replyId` is normalised to the sentinel by `projectKernelObject` anyway, and
+the `.tcb` retype is refused by the roots clause above.  A latent false-assurance
+gap rather than a reachable defect — with the caveat that its one mitigation is a
+convention, which is the argument for stamping the slot's identity rather than for
+leaving it.
+
+### The claim's unit is the program the arm runs
+
+The live `.lifecycleRetype` dispatch runs
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache` — the composite under the
+`.aside1` shootdown rounds, the initiator's per-core TLB drain and the domain-wide
+`IC IALLUIS` — so a theorem stated one wrapper down is a claim about a program no
+syscall reaches (WS-RR RR8.12 Cut C6g's rule).  All three layers frame `objects`
+and `scheduler` outright, so the lift is a citation rather than a second argument:
+`lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_ok_frame` says it **once**,
+for both invariants, and a fourth layer costs one proof rather than one per
+consumer.
+
+### Two de-duplications the cut found
+
+**One decomposition, not two.**  Both composite proofs had the same twenty-line
+*what did the retype do* inlined, so they were free to disagree about which state
+the cleanup left or which store the retype performed.
+`lifecycleRetypeDirectWithCleanup_ok_decompose` is the one answer — the
+`wellFormed` guard passed, the target held some object, and the whole of the commit
+is one `storeObject` on the scrubbed post-cleanup state — with the pre-existing
+`_vspaceRoot_storeObject` its specialisation.  A Tier 3 negative refuses either
+proof re-unfolding the wrapper.
+
+**A `private` frame is invisible to every asker but one.**
+`retypeInitiatorDrain_objects_scheduler` was `private` in
+`IPC/Invariant/DispatchArmPreservation.lean`, and its `.2` duplicated the *public*
+`retypeInitiatorDrain_scheduler` two lines from the step it frames, while the half
+that was new was unreachable from every module upstream.  Both halves now live
+beside the step, `retypeInitiatorDrain_objects` joining its `_scheduler` and
+`_machine` siblings — `v0.35.59`'s rule, which `v0.35.166` paid for the cleanup's
+two sweeps and Cut C6g for this same step's other two frames.
+
+### Coverage
+
+Seventeen Tier 3 anchors, every one mutation-tested in both directions (sixteen
+mutations, all caught): the two predicates and the builder; the four carve-outs, by
+mutations that **keep the predicate and break the relation**; the store's two
+establishment theorems with the hypotheses that make them true rather than
+provable; the cleanup's unpaired lemma with `hIdentity`; both composites reading
+the shared decomposition, with a negative refusing a re-derivation; the three
+arm-level theorems, by mutations that keep the token and make the declaration
+`private` — this cut's own finding, applied to its own anchors; and the retired
+private conjunction, refused tree-wide by a mutation that restores it as code.
+
+No behaviour changed and no fixture moved: `main_trace_smoke.expected` is
+byte-identical at 239/239.
+
+Refs: docs/REGISTERED_DEBT.md table C (register row 63)
+
 ## v0.35.184 — the retype refuses a replacement SchedContext that claims a thread
 
 The model-level hole `v0.35.183` measured while sizing the retype composite's

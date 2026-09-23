@@ -6684,6 +6684,36 @@ theorem returnDonatedSchedContext_ok_recipient_not_reserved
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   exact lookupTcb_some_not_reserved s2 originalOwner clientTcb hL1
 
+/-- **`v0.35.185`**: a successful pop's recipient is not its holder.
+
+One thread has one binding, and the pop's own guard refuses a recipient that
+holds any (`_ok_recipient_unbound`) — so a holder whose binding is *not*
+`.unbound` cannot also be the recipient.  `hNotUnbound` is what every caller has:
+the pop is reached through the `.donated` arm of a binding match.
+
+Extracted at `v0.35.185` from the Z4-O preservation proof that first needed it,
+because the destroy path's own `.donated` arm needs the same distinctness to read
+the pop's per-thread characterisation, and a second copy of a four-line argument
+is the duplication this project treats as debt. -/
+theorem returnDonatedSchedContext_ok_recipient_ne_server
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId) (serverTcb : TCB)
+    (hServer : st.getTcb? serverTid = some serverTcb)
+    (hNotUnbound : serverTcb.schedContextBinding ≠ SchedContextBinding.unbound)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    originalOwner ≠ serverTid := by
+  intro hEq
+  have hNotResOwn : ¬ originalOwner.isReserved :=
+    returnDonatedSchedContext_ok_recipient_not_reserved st st' serverTid scId originalOwner
+      newOwner? h
+  have hLk : lookupTcb st originalOwner = some serverTcb := by
+    unfold lookupTcb
+    rw [if_neg hNotResOwn, hEq]
+    exact hServer
+  exact hNotUnbound (returnDonatedSchedContext_ok_recipient_unbound st st' serverTid scId
+    originalOwner newOwner? h serverTcb hLk)
+
 /-- **WS-HP HP4.6 (the refusal): the pop declines a recipient that already holds a
 binding**, committing nothing.  The direction that says the guard fires, stated
 so a mutation which deletes it is visible: without the guard this state reaches

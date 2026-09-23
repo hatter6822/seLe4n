@@ -276,6 +276,30 @@ def lifecycleRetypeDirect
         else
           .error .illegalState
 
+/-- **`v0.35.185` (register row 63): the direct retype IS a `storeObject`, under
+two guards that commit nothing.**
+
+`lifecycleRetypeObject_ok_as_storeObject`'s sibling for the pre-resolved variant
+— the same decomposition, at a `Capability` rather than a `CSpaceAddr`, so a
+consumer reasoning about what the retype writes has one step to reason about.
+
+Stated because the retype composite's invariant theorems need exactly this: every
+object-level fact about the destroy path's last step is a fact about
+`storeObject`. -/
+theorem lifecycleRetypeDirect_ok_as_storeObject
+    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    storeObject target newObj st = .ok ((), st') := by
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · split at h
+      · exact h
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+
 /-- **WS-RR RR8.12 Cut C6g**: the direct retype is scheduler- and machine-silent —
 it is a `storeObject` under two guards, and the guards commit nothing.
 
@@ -331,6 +355,60 @@ def lifecycleRetypeDirectWithCleanup
           | .ok stClean =>
             let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
             lifecycleRetypeDirect authCap target newObj stScrubbed
+
+/-- **`v0.35.185` (register row 63): what a successful cleanup-composed retype
+did**, in one place.
+
+Three facts, and the composite's invariant theorems each need all three: the
+`wellFormed` guard passed (which is what makes `v0.35.184`'s `.schedContext`
+clause a *runtime refusal* rather than a caller obligation), the target held some
+object the cleanup ran on, and the whole of the commit is one `storeObject` on
+the scrubbed post-cleanup state.
+
+The `none` arm of the wrapper's own `getObject?` match is unreachable on `.ok`,
+because `lifecycleRetypeDirect` re-asks the same question and answers
+`.objectNotFound` — so the existential is total on the success path rather than
+a case the caller must still split.
+
+Stated once because two invariant theorems (`…_preserves_schedContextBindingConsistent`
+and `…_preserves_replenishQueueAffinityConsistent_smp`) had the same twenty-line
+decomposition inlined, and a second reading of what a transition does is the
+duplication this project treats as debt.
+`lifecycleRetypeDirectWithCleanup_vspaceRoot_storeObject` is this fact
+specialised to a `.vspaceRoot` current object, where the cleanup is the
+identity. -/
+theorem lifecycleRetypeDirectWithCleanup_ok_decompose
+    {st st' : SystemState} {authCap : Capability} {target : SeLe4n.ObjId}
+    {newObj : KernelObject}
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    newObj.wellFormed st.objects ∧
+      ∃ currentObj stClean,
+        st.objects[target]? = some currentObj ∧
+        lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean ∧
+        storeObject target newObj
+            (scrubObjectMemory stClean target currentObj.objectType) = .ok ((), st') := by
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i hWF
+    refine ⟨by simpa using hWF, ?_⟩
+    cases hCur : st.objects[target]? with
+    | none =>
+      -- Unreachable: the direct retype re-asks and answers `.objectNotFound`.
+      rw [hCur] at h
+      unfold lifecycleRetypeDirect SystemState.getObject? at h
+      rw [hCur] at h
+      exact absurd h (by simp)
+    | some currentObj =>
+      rw [hCur] at h
+      simp only [] at h
+      cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+      | error e => rw [hClean] at h; exact absurd h (by simp)
+      | ok stClean =>
+        rw [hClean] at h
+        simp only [] at h
+        exact ⟨currentObj, stClean, rfl, hClean,
+          lifecycleRetypeDirect_ok_as_storeObject _ st' authCap target newObj h⟩
 
 -- ============================================================================
 -- WS-SM SM7.B.11 / SM7.F.4(b)(iii): the ASID set a retype owes the TLB
@@ -1127,6 +1205,24 @@ footprint's replenish exactness frame — can read it. -/
     (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
     (st : SystemState) :
     (retypeInitiatorDrain executingCore asids st).machine = st.machine := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
+
+/-- **`v0.35.185` (register row 63): and object-silent**, the third member of the
+drain's frame family.
+
+It existed as the `.1` of a `private` conjunction in
+`IPC/Invariant/DispatchArmPreservation.lean`, whose `.2` duplicated the public
+`retypeInitiatorDrain_scheduler` two lines above — so half of it was a second
+answer to a question this module already owned, and the half that was new was
+unreachable from every module upstream of that one.  Both halves live here now,
+beside the step they frame: `v0.35.59`'s rule, which `v0.35.166` paid for the
+cleanup's two sweeps and Cut C6g for this same step's scheduler and machine
+frames. -/
+@[simp] theorem retypeInitiatorDrain_objects
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).objects = st.objects := by
   unfold retypeInitiatorDrain
   cases asids <;> rfl
 

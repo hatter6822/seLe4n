@@ -210,6 +210,62 @@ theorem replenishQueueAffinityConsistent_smp_frame {st st' : SystemState}
   ⟨fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mp (h c),
    fun h c => (replenishQueueAffinityConsistentOnCore_frame (hRepl c) hObj).mpr (h c)⟩
 
+/-- **`v0.35.185` (register row 63): the retype's store preserves the SM5.H
+replenish-affinity invariant.**
+
+The other half of `storeObject_establishes_schedContextBindingConsistent`, and it
+consumes the **same** readiness predicate — which is the measurement that
+`schedContextBindingRetypeReady` is the intermediate the destroy path needs
+rather than one invariant's private scaffolding.
+
+Three readings, and the carve-outs answer the two the store can move.  The
+entries are the pre-state's (`storeObject` writes no scheduler state).  A context
+**at** `target` is the replacement's, whose `boundThread` is `none` — a runtime
+refusal since `v0.35.184` — so it constrains nothing; a context elsewhere is the
+pre-state's.  And the thread such a context names is not at `target`
+(readiness's backward clause), so its `cpuAffinity` — the only field
+`determineTargetCore` reads — survives the store untouched.
+
+Without the carve-out the last step is *false*: the replacement TCB's affinity is
+its own, so a surviving context still naming the destroyed thread would have its
+entries on whatever core the replacement happens to declare. -/
+theorem storeObject_preserves_replenishQueueAffinityConsistent_smp
+    {st st' : SystemState} {target : SeLe4n.ObjId} {newObj : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hScFresh : ∀ sc : SchedContext, newObj = .schedContext sc → sc.boundThread = none)
+    (hReady : schedContextBindingRetypeReady st target)
+    (hStore : storeObject target newObj st = .ok ((), st'))
+    (h : replenishQueueAffinityConsistent_smp st) :
+    replenishQueueAffinityConsistent_smp st' := by
+  have hAt : st'.objects[target]? = some newObj :=
+    storeObject_objects_eq st st' target newObj hObjInv hStore
+  have hOff : ∀ oid : SeLe4n.ObjId, oid ≠ target → st'.objects[oid]? = st.objects[oid]? :=
+    fun oid hNe => storeObject_objects_ne st st' target oid newObj hNe hObjInv hStore
+  have hSched : st'.scheduler = st.scheduler :=
+    storeObject_scheduler_eq st st' target newObj hStore
+  intro c scId t hMem sc hSc tid hBT
+  rw [hSched] at hMem
+  have hScRaw : st'.objects[scId.toObjId]? = some (.schedContext sc) :=
+    (SystemState.getSchedContext?_eq_some_iff st' scId sc).mp hSc
+  by_cases hTgt : scId.toObjId = target
+  · -- The replacement's own context binds nobody, so it constrains no entry.
+    rw [hTgt, hAt] at hScRaw
+    cases newObj with
+    | schedContext s0 =>
+      have hSame : s0 = sc := by injection Option.some.inj hScRaw
+      rw [← hSame, hScFresh s0 rfl] at hBT
+      exact absurd hBT (by simp)
+    | _ => exact absurd hScRaw (by simp)
+  · rw [hOff _ hTgt] at hScRaw
+    obtain ⟨hTidNe, _⟩ := hReady.2 scId sc hScRaw hTgt tid hBT
+    -- The bound thread is not the destroyed key, so its home core is unmoved.
+    have hTcbEq : st'.getTcb? tid = st.getTcb? tid := by
+      unfold SystemState.getTcb?; rw [hOff _ hTidNe]
+    rw [show determineTargetCore st' tid = determineTargetCore st tid from by
+      unfold determineTargetCore; rw [hTcbEq]]
+    exact h c scId t hMem sc
+      ((SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScRaw) tid hBT
+
 /-- **WS-RR RR8.11: the core a scheduling context's replenishments must sit on.**
 
 This is `replenishQueueAffinityConsistentOnCore`'s own reading, made a function:
