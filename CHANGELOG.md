@@ -1,3 +1,84 @@
+## v0.35.195 — WS-RR RR8.16: the dispatch payoff's `.reply` arm covers a faulted caller (register row 81)
+
+`docs/REGISTERED_DEBT.md` row 81 named its own missing lemma exactly: the staged
+dispatch payoff's `.reply` arm was confined to **unfaulted** callers by the pack
+field `syscallDispatchQuiescence.replyNoPendingFault`, because composing the
+fault branch needed a fact the reply chain did not carry — that
+`endpointReplyCrossCoreDispatch` leaves its target `.ready`, hence
+`passiveServerIdleAllowed`, which the fault reply's *abandon* arm consumes at the
+**post**-state.  Threading a post-state hypothesis is what the RR3 de-threading
+gate forbids, so the branch was excluded rather than approximated.
+
+`endpointReplyCrossCoreDispatch_ok_target_ready` reads that fact off the
+dispatch's own **outcome** instead, and with it the arm case-splits on
+`threadHasPendingFault` and covers both branches.
+
+### The chain
+
+* `endpointReplyOnCore_ok_decompose` / `_ok_target_ready`
+  (`IPC/CrossCore/EndpointReply.lean`) — a successful reply leg *is* the
+  statement that its five preconditions held, so the SM6.C delivery result
+  (`_perCore_delivery`, stated over those preconditions) becomes a fact keyed on
+  the **outcome**, which is the shape a consumer of the whole dispatch holds.
+* `applyReplyDonationOnCore_tcb_ipcState_backward` and
+  `endpointReplyCrossCoreDispatch_ok_target_ready`
+  (`IPC/CrossCore/EndpointReplyDispatchInvariant.lean`) — every step after the
+  leg frames the answered thread's `ipcState`, so the `.ready` the leg writes is
+  what the dispatch's consumer reads back.
+* `faultReplyOnCore_preserves_ipcInvariantFull` sheds `hTargetIdleAllowed`; the
+  obligation is a `have` inside its own `.ok` branch, which is where the
+  hypothesis was consumed and nowhere else.
+* `syscallDispatchQuiescence.replyNoPendingFault` is **retired** for
+  `replyFaultStage`: the same five pre-state-computable conditions the ordinary
+  branch already carries, at the `IpcMessage.empty` the seam replies with, gated
+  on `threadHasPendingFault st callerTid = true` so a caller owes nothing on the
+  branch it does not take.  The pack's inhabitation witness discharges it from
+  `witnessSt4_no_pendingFault`, the fact RR4.14's confinement rested on.
+
+### Two things the closure measured that the row did not predict
+
+**The transition-level bundle the row called *proven* was vacuous on the path it
+is named for.**  It composed the non-donating
+`endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, whose
+`hNoDonationOwnedBy` says no thread's binding is `.donated _ faulted` — and
+`faultDeliverOnCore` composes the live `.call` chain, so a faulted thread holding
+a reservation **lends it to its handler** and the handler's binding is
+`.donated sc faulted` in exactly the state it replies from.  The bundle composes
+the `_establishes_` form now, so the donating fault reply is covered and the
+confinement is gone rather than restated.  `tests/FaultHandlingSuite.lean` §7f
+exhibits that state, built by ordinary operations (receive, deliver, reply),
+drives **both** reply outcomes on it — the restart and the abandon, the arm whose
+idle-state obligation this cut retires — and carries the control that an unbound
+faulter's delivery donates nothing, so the assertions are about the reservation
+rather than about the fault.
+
+**And the `ipcState` frame the dispatch-level statement composes had to move.**
+`v0.35.191` introduced `propagatePipChainCrossCore_ipcStateFrame` in
+`IPC/Invariant/BlockedSenderPreservation.lean`, which is outside the import
+closure of every asker on the reply path (`FaultPreservation`,
+`DispatchPayoff`, `EndpointReplyDispatchInvariant`).  The *fact* is
+`PriorityInheritance.propagatePipChainCrossCore_tcb_ipcState_backward` now —
+beside the transition it frames and beside its `_notification_backward` sibling,
+which is where a frame over a production transition belongs — with the
+relation-shaped `ipcStateFrame` restatements left where the relation is declared,
+each one application of the new owner.  `updatePipBoostOnCore` and
+`pipBoostWithWake` moved with it, because a fix applied at one site and not its
+siblings leaves the class open.
+
+### Also
+
+* `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull` lost its last
+  in-tree consumer to that move.  It cannot diverge (its proof is one application
+  of the general form), so it is **anchored** rather than orphaned, with the
+  reason recorded at the declaration.
+* Nineteen Tier 3 anchors, mutation-tested in both directions: composing the
+  non-donating form again, taking the ordinary seam branch on a faulted caller,
+  and renaming the pack field back are each caught, every token preserved.
+* Twenty-four unused `simp only` arguments removed from
+  `BlockedSenderPreservation.lean` (`cases h : e with` already substitutes in the
+  goal, so the hypothesis rewrite was a no-op while the iota reduction was not) —
+  the module now builds warning-free.
+
 ## v0.35.194 — WS-RR RR8.16: the citation gate's two domains derived, where two recognised sets stood in for them
 
 **A recognised set is not a derived set, twice in one gate.**

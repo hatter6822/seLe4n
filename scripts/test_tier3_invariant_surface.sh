@@ -20608,4 +20608,55 @@ run_check "INVARIANT" rg -n 'sd059_source_slot_survives' tests/SyscallDispatchSu
 run_check "INVARIANT" rg -n 'sd059_revoke_then_delete' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "sd058_mintReplyCapThroughTheSyscallGate\n *sd059_cspaceRevokeThroughTheSyscallGate" tests/SyscallDispatchSuite.lean'
 
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.195`) — the payoff's `.reply` arm covers a faulted caller
+# ============================================================================
+#
+# The register row this closes asked for one lemma: that the cross-core reply
+# leaves its target `.ready`, hence `passiveServerIdleAllowed`, which the fault
+# reply's abandon arm consumes at the POST-state.  Reading it off the OUTCOME is
+# what retires the hypothesis; threading a post-state one is what the RR3
+# de-threading gate forbids.
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_decompose' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_target_ready' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_ok_target_ready' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_tcb_ipcState_backward' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+# The frame the dispatch-level statement composes lives beside the transition it
+# frames and beside its notification sibling, not in whichever module first
+# needed it -- `BlockedSenderPreservation.lean` is outside the closure of every
+# asker on the reply path.
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_ipcState_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem updatePipBoostOnCore_tcb_ipcState_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_negative_check "INVARIANT" rg -n 'induction fuel generalizing st tid with' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# RETIRED: the hypothesis and the pack field that carried the confinement.  A
+# `run_check` on a deleted symbol fails outright; a silent `run_negative_check`
+# is what keeps the retired spelling from coming back under the same name.
+run_negative_check "INVARIANT" rg -n 'hTargetIdleAllowed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_negative_check "INVARIANT" rg -n 'replyNoPendingFault' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+# RELATION, not presence: the payoff's `.reply` arm must reach BOTH branches of
+# the seam.  Every existing anchor over that arm is satisfied by the unfaulted
+# branch alone, which is exactly the confinement this cut removed.
+run_check "INVARIANT" rg -n 'replyTransferOnCore_of_fault tid callerTid decoded\.msgInfo' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n 'faultReplyOnCore_preserves_ipcInvariantFull tid' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+run_check "INVARIANT" rg -n '  replyFaultStage : ' SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean
+# ...and the bundle it reaches must compose the DONATING form.  Both names
+# contain `endpointReplyCrossCoreDispatch`, so a presence check for the dispatch
+# passes on the non-donating one -- the premise a faulted thread holding a
+# reservation refutes.
+run_check "INVARIANT" bash -lc 'rg -U -n "have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier\n *faulted IpcMessage\.empty" SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean'
+run_negative_check "INVARIANT" rg -n 'endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull replier' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+# The non-donating corollary lost its last in-tree consumer to that move.  It
+# cannot diverge (its proof is one application of the general form), so it is
+# anchored rather than orphaned -- a derivation nothing consults reads exactly
+# like one nobody checked.
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+# MEASURED: the witness exhibits the state the retired hypothesis refutes --
+# built by ordinary operations, with the CONTROL that an unbound faulter's
+# delivery donates nothing, so the assertions are about the reservation rather
+# than about the fault.
+run_check "INVARIANT" rg -n 'the delivery lends the faulted thread.s reservation to its handler' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'control: with no reservation to lend' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n 'the live \.reply dispatch abandons a faulted caller that had donated' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "  runReplySeamChecks\n  runFaultDonationChecks\n  runProgressChecks" tests/FaultHandlingSuite.lean'
+
 finalize_report

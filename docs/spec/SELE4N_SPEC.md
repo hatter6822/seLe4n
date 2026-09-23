@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.194` (`lakefile.toml`) |
+| **Package version** | `0.35.195` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 413,049 across 339 Lean files |
-| **Test LoC** | 84,109 across 70 Lean test suites |
-| **Proved declarations** | 13,648 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 413,406 across 339 Lean files |
+| **Test LoC** | 84,248 across 70 Lean test suites |
+| **Proved declarations** | 13,654 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4366,7 +4366,16 @@ on the unbound-delivery path only, `.replyRecv` excluding a live donation
 edge naming the woken caller, retype and suspend behind their quiescence
 disciplines — so `ipcInvariantFull` across a syscall is machine-checked
 *given the packs*, and the pack-hardening residue is registered as WS-DT debt
-in `docs/REGISTERED_DEBT.md`.
+in `docs/REGISTERED_DEBT.md`.  The `.reply` arm's own confinement is
+**retired** at `v0.35.195` (WS-RR RR8.16): RR4.14 held the payoff to *unfaulted*
+callers because the seam is seL4's `doReplyTransfer` and the fault branch's
+abandon arm needs the answered thread `passiveServerIdleAllowed` at the
+**post**-state, which the de-threading discipline forbids threading.
+`endpointReplyCrossCoreDispatch_ok_target_ready` reads that off the dispatch's
+own outcome, so the arm case-splits on `threadHasPendingFault` and covers both
+branches — the donating one included, which
+`faultReplyOnCore_preserves_ipcInvariantFull` had been excluding through a
+premise the fault path itself refutes.
 
 **Invariants** (`ipcInvariantFull` 20 conjuncts — the first 15 forming
 `ipcInvariantCore` after WS-RC R4.C.7's close-out

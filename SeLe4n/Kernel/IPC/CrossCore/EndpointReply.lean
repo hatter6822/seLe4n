@@ -2007,6 +2007,85 @@ theorem endpointReplyOnCore_perCore_delivery
       exact ⟨tx, (SystemState.getTcb?_eq_some_iff st'' target tx).mpr hTx,
         by rw [hIpcEq], by rw [hMsgEq]⟩
 
+/-- **WS-RR RR8.16 (`v0.35.195`)**: a successful reply leg reduces to its own
+preconditions.
+
+Every refusal arm of `endpointReplyOnCore` returns `(st, .error _)`, so an `.ok`
+result *is* the statement that the size guards passed, that `target` resolved,
+that it was `.blockedOnReply` recording a replier, and that the delivery store
+succeeded.  Stated as a decomposition because the family above takes those five
+as hypotheses: a consumer holding only the outcome could not reach them, and
+re-deriving each one at its own call site would be a second case analysis of the
+operation. -/
+theorem endpointReplyOnCore_ok_decompose
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) {sgi? : Option (CoreId × SgiKind)}
+    (hOk : (endpointReplyOnCore replier target msg executingCore st).2 = .ok sgi?) :
+    ¬ msg.registers.size > maxMessageRegisters ∧
+    ¬ msg.caps.size > maxExtraCaps ∧
+    ∃ (tcb : TCB) (ep : SeLe4n.ObjId) (expected : SeLe4n.ThreadId) (st' : SystemState),
+      lookupTcb st target = some tcb ∧
+      tcb.ipcState = .blockedOnReply ep (some expected) ∧
+      storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) = .ok st' := by
+  unfold endpointReplyOnCore at hOk
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · rw [if_pos hSz1] at hOk; exact absurd hOk (by simp)
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · rw [if_neg hSz1, if_pos hSz2] at hOk; exact absurd hOk (by simp)
+  rw [if_neg hSz1, if_neg hSz2] at hOk
+  refine ⟨hSz1, hSz2, ?_⟩
+  cases hLk : lookupTcb st target with
+  | none => rw [hLk] at hOk; exact absurd hOk (by simp)
+  | some tcb =>
+    rw [hLk] at hOk
+    simp only at hOk
+    cases hIpc : tcb.ipcState with
+    | ready => rw [hIpc] at hOk; exact absurd hOk (by simp)
+    | blockedOnSend e => rw [hIpc] at hOk; exact absurd hOk (by simp)
+    | blockedOnReceive e => rw [hIpc] at hOk; exact absurd hOk (by simp)
+    | blockedOnNotification n => rw [hIpc] at hOk; exact absurd hOk (by simp)
+    | blockedOnCall e => rw [hIpc] at hOk; exact absurd hOk (by simp)
+    | blockedOnReply ep rt =>
+      rw [hIpc] at hOk
+      simp only at hOk
+      cases hRT : rt with
+      | none => rw [hRT] at hOk; exact absurd hOk (by simp)
+      | some expected =>
+        rw [hRT] at hOk
+        simp only at hOk
+        cases hStore : storeTcbIpcStateAndMessage_fromTcb st target tcb .ready (some msg) with
+        | error e => rw [hStore] at hOk; exact absurd hOk (by simp)
+        | ok st' => exact ⟨tcb, ep, expected, st', rfl, by rw [hIpc, hRT], hStore⟩
+
+/-- **WS-RR RR8.16 (`v0.35.195`)**: a successful reply leg leaves its target
+`.ready`.
+
+The fact the fault reply's abandon arm needs, and the one its own docstring had
+been asserting in prose since WS-RR RR4.18: `.ready` is a
+`passiveServerIdleAllowed` state, so the abandon's idle-state obligation is a
+consequence of the reply having succeeded rather than a hypothesis a caller must
+carry.  Composed from the SM6.C.6 delivery result over the decomposition above,
+so it states nothing the delivery lemma does not already prove — what is new is
+that it is keyed on the **outcome** instead of on the preconditions. -/
+theorem endpointReplyOnCore_ok_target_ready
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    {sgi? : Option (CoreId × SgiKind)}
+    (hOk : (endpointReplyOnCore replier target msg executingCore st).2 = .ok sgi?)
+    {t : TCB}
+    (hTcb : (endpointReplyOnCore replier target msg executingCore st).1.getTcb? target
+        = some t) :
+    t.ipcState = .ready := by
+  obtain ⟨hSz1, hSz2, tcb, ep, expected, st', hLk, hIpc, hStore⟩ :=
+    endpointReplyOnCore_ok_decompose replier target msg executingCore st hOk
+  obtain ⟨t', hT', hReady, _⟩ :=
+    endpointReplyOnCore_perCore_delivery replier target msg executingCore st st' tcb ep
+      expected hSz1 hSz2 hLk hIpc hStore hObjInv
+  rw [hTcb] at hT'
+  rw [Option.some.injEq] at hT'
+  rw [hT']
+  exact hReady
+
 -- ── SM6.C.6 — the caller-TCB write lock is in the footprint (the reply-state
 --    lifecycle write `blockedOnReply → .ready` lands on this lock) ──
 

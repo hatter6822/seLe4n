@@ -153,59 +153,38 @@ theorem removeRunnableOnCore_ipcStateFrame (st : SystemState)
 
 /-- WS-RR RR8.16: a priority-inheritance boost frames every `ipcState`.
 
-Its only object write is the boosted holder's own `{ tcb with pipBoost := _ }`, so
-at that key the field is preserved definitionally and at every other key the store
-is untouched — which is the fact `propagatePipChainCrossCore`'s own docstring
-already relies on when it reads `blockingServer` from the pre-mutation state. -/
+**`v0.35.195`**: the *fact* is
+`PriorityInheritance.updatePipBoostOnCore_tcb_ipcState_backward`, which lives
+beside the transition and beside its notification sibling
+(`Scheduler/PriorityInheritance/Propagate.lean`) — a frame over a production
+transition belongs there rather than in whichever module first needed it, and the
+reply path's own askers cannot see this module.  What stays here is the
+restatement in the relation's vocabulary, because `ipcStateFrame` is declared in
+`QueueSplicePreservation.lean` and the scheduler layer is upstream of it. -/
 theorem updatePipBoostOnCore_ipcStateFrame (st : SystemState) (c : CoreId)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
-    ipcStateFrame st (PriorityInheritance.updatePipBoostOnCore st c tid) := by
-  cases hT : st.getTcb? tid with
-  | none =>
-      rw [PriorityInheritance.updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]
-      exact ipcStateFrame.refl st
-  | some tcb =>
-      intro t tcb' hTcb'
-      by_cases hEq : t.toObjId = tid.toObjId
-      · obtain ⟨p, hAt⟩ := PriorityInheritance.updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-        rw [hEq] at hTcb'
-        rw [SystemState.getTcb?_eq_some_iff] at hAt
-        rw [hAt] at hTcb'
-        refine ⟨tcb, ?_, ?_⟩
-        · rw [hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
-        · simp only [Option.some.injEq, KernelObject.tcb.injEq] at hTcb'
-          rw [← hTcb']
-      · refine ⟨tcb', ?_, rfl⟩
-        rw [← PriorityInheritance.updatePipBoostOnCore_objects_ne st c tid t.toObjId
-          (by simp only [beq_iff_eq]; exact fun h => hEq h.symm) hInv]
-        exact hTcb'
+    ipcStateFrame st (PriorityInheritance.updatePipBoostOnCore st c tid) :=
+  fun t tcb' hTcb' =>
+    PriorityInheritance.updatePipBoostOnCore_tcb_ipcState_backward st c tid hInv t tcb'
+      hTcb'
 
 /-- WS-RR RR8.16: the wake-surfacing form is the boost with an SGI computation
 beside it, so it frames the same thing. -/
 theorem pipBoostWithWake_ipcStateFrame (st : SystemState) (tid : SeLe4n.ThreadId)
     (ec : CoreId) (hInv : st.objects.invExt) :
     ipcStateFrame st (PriorityInheritance.pipBoostWithWake st tid ec).1 :=
-  updatePipBoostOnCore_ipcStateFrame st (determineTargetCore st tid) tid hInv
+  fun t tcb' hTcb' =>
+    PriorityInheritance.pipBoostWithWake_tcb_ipcState_backward st tid ec hInv t tcb' hTcb'
 
 /-- WS-RR RR8.16: and the whole chain walk inherits it by induction on the fuel —
 the shape `propagatePipChainCrossCore_notification_backward` already has for the
 notification half of the same question. -/
 theorem propagatePipChainCrossCore_ipcStateFrame (st : SystemState)
     (tid : SeLe4n.ThreadId) (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt) :
-    ipcStateFrame st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 := by
-  induction fuel generalizing st tid with
-  | zero =>
-      rw [PriorityInheritance.propagatePipChainCrossCore_zero]
-      exact ipcStateFrame.refl st
-  | succ n ih =>
-      rw [PriorityInheritance.propagatePipChainCrossCore_step]
-      have hNext := PriorityInheritance.pipBoostWithWake_preserves_objects_invExt st tid ec hInv
-      cases hB : PriorityInheritance.blockingServer st tid with
-      | none => simpa [hB] using pipBoostWithWake_ipcStateFrame st tid ec hInv
-      | some nextServer =>
-          simp only [hB]
-          exact (pipBoostWithWake_ipcStateFrame st tid ec hInv).trans
-            (ih _ nextServer hNext)
+    ipcStateFrame st (PriorityInheritance.propagatePipChainCrossCore st tid ec fuel).1 :=
+  fun t tcb' hTcb' =>
+    PriorityInheritance.propagatePipChainCrossCore_tcb_ipcState_backward st tid ec fuel
+      hInv t tcb' hTcb'
 
 /-- WS-RR RR8.16: the SchedContext donation frames every `ipcState`.
 
@@ -431,26 +410,26 @@ theorem endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
       -- `hasReceiver` is a `let` over the pre-state endpoint lookup, so the
       -- lookup has to be resolved before the `if` it guards can be split.
       cases hEp : st.getEndpoint? endpointId with
-      | none => simp only [hEp]; split <;> exact hSendPre
+      | none => simp only []; split <;> exact hSendPre
       | some ep =>
-        simp only [hEp]
+        simp only []
         cases hHead : ep.receiveQ.head with
-        | none => simp only [hHead]; split <;> exact hSendPre
+        | none => simp only []; split <;> exact hSendPre
         | some receiverId =>
-          simp only [hHead]
+          simp only []
           split
           · exact hSendPre
           · cases hRoot : lookupCspaceRoot st' receiverId with
-            | none => simp only [hRoot]; exact hSendPre
+            | none => simp only []; exact hSendPre
             | some recvRoot =>
-              simp only [hRoot]
+              simp only []
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st' with
-              | error e => simp only [hUnwrap]; exact hSendPre
+              | error e => simp only []; exact hSendPre
               | ok pair =>
                 obtain ⟨summary, st''⟩ := pair
-                simp only [hUnwrap]
+                simp only []
                 exact blockedSenderFlowsToEndpoint_of_shrinks hSendPre
                   (blockedSenderShrinks_of_ipcStateFrame
                     (ipcUnwrapCaps_ipcStateFrame _ recvRoot receiverSlotBase _ st' st''
@@ -633,26 +612,26 @@ theorem endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint
     | ok sgi =>
       simp only []
       cases hEp : st.getEndpoint? endpointId with
-      | none => simp only [hEp]; split <;> exact hCallPre
+      | none => simp only []; split <;> exact hCallPre
       | some ep =>
-        simp only [hEp]
+        simp only []
         cases hHead : ep.receiveQ.head with
-        | none => simp only [hHead]; split <;> exact hCallPre
+        | none => simp only []; split <;> exact hCallPre
         | some receiverId =>
-          simp only [hHead]
+          simp only []
           split
           · exact hCallPre
           · cases hRoot : lookupCspaceRoot stCall receiverId with
-            | none => simp only [hRoot]; exact hCallPre
+            | none => simp only []; exact hCallPre
             | some recvRoot =>
-              simp only [hRoot]
+              simp only []
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) stCall with
-              | error e => simp only [hUnwrap]; exact hCallPre
+              | error e => simp only []; exact hCallPre
               | ok pair =>
                 obtain ⟨summary, stFinal⟩ := pair
-                simp only [hUnwrap]
+                simp only []
                 exact blockedSenderFlowsToEndpoint_of_shrinks hCallPre
                   (blockedSenderShrinks_of_ipcStateFrame
                     (ipcUnwrapCaps_ipcStateFrame _ recvRoot receiverSlotBase _ stCall stFinal
@@ -830,26 +809,26 @@ theorem endpointSendDualWithCapsOnCore_sameSchedContextBindings
     | ok sgi =>
       simp only []
       cases hEp : st.getEndpoint? endpointId with
-      | none => simp only [hEp]; split <;> exact hSend
+      | none => simp only []; split <;> exact hSend
       | some ep =>
-        simp only [hEp]
+        simp only []
         cases hHead : ep.receiveQ.head with
-        | none => simp only [hHead]; split <;> exact hSend
+        | none => simp only []; split <;> exact hSend
         | some receiverId =>
-          simp only [hHead]
+          simp only []
           split
           · exact hSend
           · cases hRoot : lookupCspaceRoot st' receiverId with
-            | none => simp only [hRoot]; exact hSend
+            | none => simp only []; exact hSend
             | some recvRoot =>
-              simp only [hRoot]
+              simp only []
               cases hUnwrap : ipcUnwrapCaps
                   { msg with capsGranted := endpointRights.mem .grant } recvRoot
                   receiverSlotBase (endpointRights.mem .grant) st' with
-              | error e => simp only [hUnwrap]; exact hSend
+              | error e => simp only []; exact hSend
               | ok pair =>
                 obtain ⟨summary, st''⟩ := pair
-                simp only [hUnwrap]
+                simp only []
                 exact hSend.trans (ipcUnwrapCaps_sameSchedContextBindings _ recvRoot
                   receiverSlotBase _ st' st'' summary hSendInv hUnwrap)
 

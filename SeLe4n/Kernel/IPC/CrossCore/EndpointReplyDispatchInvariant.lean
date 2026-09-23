@@ -420,6 +420,117 @@ theorem applyReplyDonationOnCore_preserves_objects_invExt
     rw [hEq, descheduleAtPlacement_preserves_objects, migrateSchedContextReplenishment_objects]
     exact hInv'
 
+/-- **WS-RR RR8.16 (`v0.35.195`)**: the cross-core donation return preserves every
+thread's `ipcState` backward.
+
+Its three object writes rewrite a `SchedContext`'s `boundThread` and two TCBs'
+`schedContextBinding` (`returnDonatedSchedContext_tcb_ipcState_replyObject_backward`),
+and the migration and the deschedule write no object at all — which is what
+`applyReplyDonationOnCore_objects_eq` already says, so this costs no second case
+analysis over the return's arms. -/
+theorem applyReplyDonationOnCore_tcb_ipcState_backward
+    (st st'' : SystemState) (rid : SeLe4n.ReplyId) (targetVtid : SeLe4n.ValidThreadId)
+    (holderHome ownerHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'')
+    (t : SeLe4n.ObjId) (tcb' : TCB)
+    (hTcb' : st''.objects[t]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[t]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+  rcases applyReplyDonationOnCore_objects_eq st st'' rid targetVtid holderHome ownerHome h with
+    ⟨_, hObj⟩ | ⟨scId, holder, newOwner?, st', hRet, hObj⟩
+  · exact ⟨tcb', by rw [← hObj]; exact hTcb', rfl⟩
+  · rw [hObj] at hTcb'
+    obtain ⟨tcb, hPre, hIpc, _⟩ :=
+      returnDonatedSchedContext_tcb_ipcState_replyObject_backward st st' holder scId
+        (replyDonationRecipient st scId targetVtid.val) hObjInv newOwner? hRet t tcb' hTcb'
+    exact ⟨tcb, hPre, hIpc⟩
+
+/-- **WS-RR RR8.16 (`v0.35.195`)**: a successful cross-core reply leaves the thread
+it answers `.ready`.
+
+The fault reply's abandon arm needs exactly this, and carried it as a caller
+hypothesis (`hTargetIdleAllowed`) from WS-RR RR4.18 until this cut: the abandon
+deschedules the faulted thread, so `passiveServerIdle` has to be re-established at
+it, and `.ready` is a `passiveServerIdleAllowed` state.  Reading it off the
+**outcome** instead is what retires that hypothesis — and the hypothesis was
+consumed on the `.ok` branch alone, so nothing weaker was ever being asked for.
+
+Every step after the reply leg frames the answered thread's `ipcState`: the
+donation return through `applyReplyDonationOnCore_tcb_ipcState_backward`, the
+priority-inheritance reversion through
+`PriorityInheritance.propagatePipChainCrossCore_tcb_ipcState_backward`.  So the
+`.ready` the leg writes (`endpointReplyOnCore_ok_target_ready`) is what a consumer
+of the whole dispatch reads back. -/
+theorem endpointReplyCrossCoreDispatch_ok_target_ready
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    {sgi? : Option (CoreId × SgiKind)}
+    (hOk : (endpointReplyCrossCoreDispatch replier target msg executingCore st).2 = .ok sgi?)
+    {t : TCB}
+    (hTcb : (endpointReplyCrossCoreDispatch replier target msg executingCore st).1.getTcb? target
+        = some t) :
+    t.ipcState = .ready := by
+  have hReplyInv : (endpointReplyOnCore replier target msg executingCore st).1.objects.invExt :=
+    endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore st hObjInv
+  unfold endpointReplyCrossCoreDispatch at hOk hTcb
+  cases hRep : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res =>
+    rw [hRep] at hOk hTcb hReplyInv
+    cases res with
+    | error e => exact absurd hOk (by simp)
+    | ok replySgi =>
+      simp only at hOk hTcb
+      have hLeg' : ∀ u : TCB, st1.getTcb? target = some u → u.ipcState = .ready := fun u hU =>
+        endpointReplyOnCore_ok_target_ready replier target msg executingCore st hObjInv
+          (by rw [hRep]) (by rw [hRep]; exact hU)
+      cases hRec : recordedReplyServer? st target with
+      | none => rw [hRec] at hOk; exact absurd hOk (by simp)
+      | some expected =>
+        rw [hRec] at hOk hTcb
+        simp only at hOk hTcb
+        cases hEV : SeLe4n.ThreadId.toValid? expected with
+        | none => rw [hEV] at hOk; exact absurd hOk (by simp)
+        | some _expectedV =>
+          rw [hEV] at hOk hTcb
+          simp only at hOk hTcb
+          cases hRid : answeredReplyObject? st target with
+          | none =>
+              rw [hRid] at hTcb
+              simp only at hTcb
+              rw [SystemState.getTcb?_eq_some_iff] at hTcb
+              obtain ⟨u, hU, hIpc⟩ :=
+                PriorityInheritance.propagatePipChainCrossCore_tcb_ipcState_backward st1
+                  expected executingCore _ hReplyInv target t hTcb
+              rw [← hIpc]
+              exact hLeg' u ((SystemState.getTcb?_eq_some_iff st1 target u).mpr hU)
+          | some rid =>
+            rw [hRid] at hOk hTcb
+            simp only at hOk hTcb
+            cases hTV : SeLe4n.ThreadId.toValid? target with
+            | none => rw [hTV] at hOk; exact absurd hOk (by simp)
+            | some targetV =>
+              rw [hTV] at hOk hTcb
+              simp only at hOk hTcb
+              cases hDon : applyReplyDonationOnCore st1 rid targetV
+                  (replyDonationHolderHome st1 rid target)
+                  (replyDonationRecipientHome st1 rid target) with
+              | error e => rw [hDon] at hOk; exact absurd hOk (by simp)
+              | ok st2 =>
+                rw [hDon] at hTcb
+                simp only at hTcb
+                have hDonInv : st2.objects.invExt :=
+                  applyReplyDonationOnCore_preserves_objects_invExt st1 st2 rid targetV _ _
+                    hReplyInv hDon
+                rw [SystemState.getTcb?_eq_some_iff] at hTcb
+                obtain ⟨u, hU, hIpcU⟩ :=
+                  PriorityInheritance.propagatePipChainCrossCore_tcb_ipcState_backward st2
+                    expected executingCore _ hDonInv target t hTcb
+                obtain ⟨v, hV, hIpcV⟩ :=
+                  applyReplyDonationOnCore_tcb_ipcState_backward st1 st2 rid targetV _ _
+                    hReplyInv hDon target.toObjId u hU
+                rw [← hIpcU, ← hIpcV]
+                exact hLeg' v ((SystemState.getTcb?_eq_some_iff st1 target v).mpr hV)
+
 /-- **WS-RR RR3.12: the live cross-core `.reply` dispatch preserves
 `ipcInvariantFull` on every path — the donating one included.**
 
@@ -448,7 +559,15 @@ link from the answered caller to its frame exists only before the leg.
 
 This supersedes the `hNoDonationOwnedBy` form below, which is the same statement
 restricted to non-donating replies; that one is kept because it is what the bare
-`endpointReplyOnCore` bundle can offer on its own. -/
+`endpointReplyOnCore` bundle can offer on its own.
+
+**WS-RR RR8.16 (`v0.35.195`)**: that form's last in-tree consumer was the fault
+reply's bundle, and it moved here — `faultDeliverOnCore` composes the live `.call`
+chain, so a faulted thread that holds a reservation donates it to its handler and
+`hNoDonationOwnedBy` is **false** in exactly the state the handler replies from.
+The corollary is kept (it cannot diverge: its proof is one application of this
+theorem) and anchored in Tier 3, since a derivation nothing consults reads exactly
+like one nobody checked. -/
 theorem endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
     (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
     (st : SystemState)

@@ -507,41 +507,77 @@ reason a bare reply's post-state satisfies only
 `ipcInvariantFullExceptDonationOwner` and this one satisfies the full bundle),
 then either the restart writeback or the abandon.
 
-`hTargetIdleAllowed` is a post-reply side condition of exactly the kind the
-`.reply` chain's own theorem already carries as `hServerIdleAllowed`, and it
-is dischargeable for the same reason: the reply wakes its target `.ready`, and
-`.ready` is a `passiveServerIdleAllowed` state. It binds only on the abandon
-arm, where the thread is descheduled — the restart arm writes no scheduler
-slot at all. -/
+**WS-RR RR8.16 (`v0.35.195`): the DONATING fault reply is covered, and until this
+cut it was not.**  The composition ran through
+`endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, whose
+`hNoDonationOwnedBy` says no thread's binding is `.donated _ faulted` — and on the
+ordinary MCS fault path of a thread that holds a reservation that is **false**:
+`faultDeliverOnCore` composes the live `.call` chain, so the delivery donates the
+faulted thread's scheduling context to its handler, and the handler's binding is
+`.donated sc faulted` in exactly the state it replies from.  So the payoff was
+stated over a premise the path it is named for refutes, which is vacuity wearing a
+confinement.  It composes `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`
+instead — the same five pre-state-computable conditions the live `.reply` arm's
+own dispatch payoff already carries, at `IpcMessage.empty` — and the confinement is
+gone rather than restated.
+
+**WS-RR RR8.16 (`v0.35.195`): the abandon arm's idle-state side condition is
+DERIVED, not carried.**  It used to be a hypothesis (`hTargetIdleAllowed`), a
+post-reply fact about the dispatch's own output, and the docstring said in prose
+why it holds: *the reply wakes its target `.ready`, and `.ready` is a
+`passiveServerIdleAllowed` state*.  A sentence is not a discharge, and the
+hypothesis was consumed on the `.ok` branch alone — so nothing weaker was ever
+being asked for, and
+`endpointReplyCrossCoreDispatch_ok_target_ready` reads the same fact off the
+**outcome**, which is what retires it.  Closing this is what lets the staged
+dispatch payoff's `.reply` arm cover a faulted caller at all: a caller could not
+discharge a post-state hypothesis without threading one, which is what the RR3
+de-threading gate forbids.
+
+The condition binds only on the abandon arm, where the thread is descheduled —
+the restart arm writes no scheduler slot at all. -/
 theorem faultReplyOnCore_preserves_ipcInvariantFull
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
-      (scId : SeLe4n.SchedContextId),
-      st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .donated scId faulted)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    -- **WS-HP HP4.4**: the head-driven pop is the identity exactly when the
-    -- answered frame heads no scheduling context, which is the other half of
-    -- "this reply returns no donation" -- see
-    -- `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull` for why the
-    -- binding half no longer implies it.
-    (hNoHead : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+    -- **WS-RR RR8.16**: the five conditions
+    -- `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull` carries, at
+    -- the empty message this seam replies with.  Each is a pre-state-computable
+    -- expression, so the de-threading discipline is respected and a caller
+    -- discharges them before the step.
+    (hDonationReturned : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1.objects[s.toObjId]?
+            = some (.tcb sTcb) →
+        sTcb.schedContextBinding = .donated sc faulted →
+        ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid ∧
+          replyFrameHeadHolder?
+            (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid = some (sc, s))
+    (hHolderDonation : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      replyFrameHeadHolderDonation
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
+    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+        (holder : SeLe4n.ThreadId),
+      answeredReplyObject? st faulted = some rid →
       replyFrameHeadHolder?
-        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid = none)
-    (hTargetIdleAllowed : ∀ tcb : TCB,
-      (endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st).1.getTcb? faulted
+          (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid
+            = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore replier faulted IpcMessage.empty c st).1.getTcb? holder
           = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
+        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the reply's donation return resolves its new owner from
     -- the context's reply stack; this is the obligation that resolution carries,
     -- stated at the state the pop runs at (the reply leg commits first).
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid
           (endpointReplyOnCore replier faulted IpcMessage.empty c st).1
-          scId serverTid originalOwner) :
+          scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, at the same
+    -- state and quantified over the answered frame like the trigger's own fields.
+    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      redirectedOriginFrameCoherent
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted) :
     ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st).1 := by
   cases hTcb : st.getTcb? faulted with
   | none => simpa only [faultReplyOnCore, hTcb] using hInv
@@ -549,20 +585,29 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       cases hFault : tcb.pendingFault with
       | none => simpa only [faultReplyOnCore, hTcb, hFault] using hInv
       | some tf =>
-          have hRep := endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull replier
-            faulted IpcMessage.empty c st hInv hObjInv
-            (fun t tcb' sc hS => hNoDonationOwnedBy t tcb' sc
-              ((SystemState.getTcb?_eq_some_iff st t tcb').mpr hS))
-            hAllBudgetsNone hNoHead hStackValid
+          have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
+            faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
+            hAllBudgetsNone hHolderIdleAllowed hStackValid hOriginCoherent
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
             with ⟨stR, res⟩
-          rw [hStep] at hRep hRepObj hTargetIdleAllowed
-          simp only at hRep hRepObj hTargetIdleAllowed
+          rw [hStep] at hRep hRepObj
+          simp only at hRep hRepObj
           cases res with
           | error e => simpa only [faultReplyOnCore, hTcb, hFault, hStep] using hInv
           | ok sgi? =>
+              -- **WS-RR RR8.16**: the abandon arm's idle-state obligation, read
+              -- off the dispatch's own `.ok` outcome rather than carried.
+              have hAbandonIdleAllowed : ∀ u : TCB, stR.getTcb? faulted = some u →
+                  u.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed u.ipcState := by
+                intro u hU
+                refine Or.inr ?_
+                have hReady : u.ipcState = .ready :=
+                  endpointReplyCrossCoreDispatch_ok_target_ready replier faulted
+                    IpcMessage.empty c st hObjInv (by rw [hStep]) (by rw [hStep]; exact hU)
+                rw [hReady]
+                exact Or.inl rfl
               simp only [faultReplyOnCore, hTcb, hFault, hStep, faultReplyApplyOnCore]
               cases hOut : decodeFaultReply tf.fault tf.context mi regs with
               | restart frame =>
@@ -571,7 +616,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
               | abandon =>
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_ipcInvariantFull stR faulted
-                      (determineTargetCore stR faulted) hRepObj hTargetIdleAllowed hRep
+                      (determineTargetCore stR faulted) hRepObj hAbandonIdleAllowed hRep
 
 /-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
 theorem faultReplyOnCore_preserves_objects_invExt
