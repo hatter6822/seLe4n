@@ -20999,4 +20999,54 @@ run_negative_check "INVARIANT" rg -n 'theorem linkCallerReply_preserves_objects_
 run_negative_check "INVARIANT" rg -n 'theorem storeTcbIpcStateAndMessage_cdt_eq' SeLe4n/Kernel/Capability/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.201`) — a capability is installed only at a slot the
+# target CNode can address
+# ============================================================================
+#
+# `CNode.resolveSlot` masks with `2 ^ radixWidth`, so an index at or above
+# `slotCount` can be STORED and can never be REACHED.  `cspaceInsertSlot` -- the
+# one primitive every capability install passes through -- asks
+# `slotAddressable` BEFORE it asks about occupancy.
+run_check "INVARIANT" rg -n '^def slotAddressable \(node : CNode\) \(s : SeLe4n\.Slot\) : Bool :=' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" bash -lc "rg -n -U 'def cspaceInsertSlot[^\n]*(\n([ \t][^\n]*)?)*slotAddressable' SeLe4n/Kernel/Capability/Operations.lean"
+run_check "INVARIANT" bash -lc "rg -n -U 'def cspaceInsertSlot[^\n]*(\n([ \t][^\n]*)?)*invalidArgument' SeLe4n/Kernel/Capability/Operations.lean"
+# ...and the two halves of the claim: the bounded scan produces only addressable
+# slots, and CSpace resolution REACHES only addressable slots, so the guard
+# refuses exactly what no CPtr can name.
+run_check "INVARIANT" rg -n '^theorem findFirstEmptySlotChecked_slotAddressable($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem resolveSlot_slotAddressable($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+# The IPC transfer scans within the radix, so a receiver with no free in-range
+# slot answers `.noSlot`.  The unchecked scan sat on the live path for the whole
+# of this repository's visible history while the checked variant that supersedes
+# it had NO production consumer -- it must not come back.  The
+# literal carries the argument, because `findFirstEmptySlotChecked slotBase`
+# does not contain `findFirstEmptySlot slotBase`.
+run_check "INVARIANT" bash -lc "rg -n -U 'def ipcTransferSingleCap[^\n]*(\n([ \t][^\n]*)?)*findFirstEmptySlotChecked slotBase scanLimit' SeLe4n/Kernel/Capability/Operations.lean"
+run_negative_check "INVARIANT" rg -n 'findFirstEmptySlot slotBase' SeLe4n/Kernel/Capability/Operations.lean
+# What a successful insert CONSISTS of has one owner; eight sites re-derived it
+# inline from the operation's own `match` tree and the guard broke all eight.
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_negative_check "INVARIANT" rg -n 'unfold cspaceInsertSlot SystemState\.getCNode\? at hStep' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean SeLe4n/Kernel/Capability/Invariant/Preservation/BadgeIpcCapsAndCdtMaps.lean SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean SeLe4n/Kernel/CrossSubsystem.lean SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# ...and three frames live beside the primitive, where a frame over a primitive
+# belongs: `_cdt_eq` relocated out of a preservation module, `_cdtNodeSlot_eq`
+# and `_objects_eq` new -- the last replacing a `private` copy in an IPC
+# dispatch module.
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_cdtNodeSlot_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_objects_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_negative_check "INVARIANT" rg -n 'theorem cspaceInsertSlot_cdt_eq' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+run_negative_check "INVARIANT" rg -n 'cspaceInsertSlot_cnode_shape' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# An invariant no runtime check asserts is one a fixture can violate silently:
+# `slotCountBounded` appeared NOWHERE under `SeLe4n/Testing/`, which is how six
+# fixture CNodes -- the trace harness's own bootstrap root CSpace among them --
+# came to hold capabilities no CPtr could reach.
+run_check "INVARIANT" rg -n '^private def cspaceSlotAddressableChecks($|[ ({:\[\]])' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n '\+\+ cspaceSlotAddressableChecks objectIds st' SeLe4n/Testing/InvariantChecks.lean
+# The witness computes the RETIRED reading beside the live one, so each
+# assertion is known to discriminate rather than merely to pass.
+run_check "INVARIANT" rg -n '^private def unguardedInsertSlot($|[ ({:\[\]])' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n 'SeLe4n\.Testing\.runWSRR8CSpaceSlotRangeChecks' tests/NegativeStateSuite.lean
+run_negative_check "INVARIANT" rg -n 'unguardedInsertSlot' SeLe4n/Kernel/ SeLe4n/Model/ SeLe4n/Testing/
+
 finalize_report

@@ -69,20 +69,10 @@ theorem cspaceInsertSlot_preserves_projectObjectIndex
     (hOidHigh : objectObservable ctx observer addr.cnode = false)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     projectObjectIndex ctx observer st' = projectObjectIndex ctx observer st := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_preserves_projectObjectIndex ctx observer st st'
-                addr.cnode _ hOidHigh hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preserves_projectObjectIndex ctx observer st st'
+    addr.cnode _ hOidHigh hStore
 
 -- ============================================================================
 -- Shared non-interference proof infrastructure

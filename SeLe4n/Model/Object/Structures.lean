@@ -967,6 +967,52 @@ WS-RC R4.A: `cn.slots.size` is the `UniqueSlotMap.size` accessor
 def slotCountBounded (cn : CNode) : Prop :=
   cn.slots.size ≤ cn.slotCount
 
+/-- **WS-RR RR8.16** (`v0.35.201`): *is this slot index addressable by this
+CNode's radix width?*
+
+`resolveSlot` extracts a slot by masking with `2 ^ radixWidth`, so an index at or
+above `slotCount` can be **stored** and can never be **reached** by any CPtr.  A
+capability installed there is therefore invisible to its holder while still
+consuming a slot-table entry in an object whose memory was accounted, at retype
+time, by `2 ^ radixWidth` slots — so an install that does not ask this question
+lets a CNode grow without bound.  Every capability install asks it, at
+`cspaceInsertSlot`, which is the one primitive all four of them pass through. -/
+def slotAddressable (node : CNode) (s : SeLe4n.Slot) : Bool :=
+  s.toNat < node.slotCount
+
+/-- **WS-RR RR8.16** (`v0.35.201`): the radix-bounded scan produces only
+addressable slots — `findFirstEmptySlotChecked_within_radix` restated in the
+vocabulary the insert guard reads, so the transfer path's `.ok` is provably not
+the guard's refusal. -/
+theorem findFirstEmptySlotChecked_slotAddressable
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) (s : SeLe4n.Slot)
+    (hFind : cn.findFirstEmptySlotChecked base limit = some s) :
+    cn.slotAddressable s = true := by
+  unfold slotAddressable slotCount
+  exact decide_eq_true (findFirstEmptySlotChecked_within_radix cn base limit s hFind)
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and so does CSpace resolution, which is
+the other half of the claim: the guard refuses exactly the slots no CPtr can
+name. -/
+theorem resolveSlot_slotAddressable
+    (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) (s : SeLe4n.Slot)
+    (hRes : node.resolveSlot cptr bitsRemaining = .ok s) :
+    node.slotAddressable s = true := by
+  unfold resolveSlot at hRes
+  by_cases hDepth : bitsRemaining < node.bitsConsumed
+  · simp only [hDepth, if_pos] at hRes
+    exact absurd hRes (by simp)
+  · simp only [hDepth, if_neg, not_false_eq_true] at hRes
+    by_cases hGuard :
+        ((((cptr.toNat % SeLe4n.machineWordMax) >>> (bitsRemaining - node.bitsConsumed))
+          / 2 ^ node.radixWidth) % (2 ^ node.guardWidth)) = node.guardValue
+    · simp only [hGuard, if_pos] at hRes
+      cases hRes
+      unfold slotAddressable slotCount SeLe4n.Slot.toNat SeLe4n.Slot.ofNat
+      exact decide_eq_true (Nat.mod_lt _ (Nat.two_pow_pos node.radixWidth))
+    · simp only [hGuard, if_neg, not_false_eq_true] at hRes
+      exact absurd hRes (by simp)
+
 /-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
 theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
   unfold slotCountBounded empty slotCount

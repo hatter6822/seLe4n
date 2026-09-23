@@ -1645,13 +1645,9 @@ theorem cspaceInsertSlot_preservesFieldsOutside
     (addr : CSpaceAddr) (cap : Capability) (st st' : SystemState)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     preservesFieldsOutside capabilityOp_modifiedFields st st' := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  dsimp only at hStep
-  split at hStep
-  · split at hStep
-    · cases hStep
-    · exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStep
-  · cases hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preservesFieldsOutside_capability _ _ _ _ hStore
 
 theorem cspaceDeleteSlotCore_preservesFieldsOutside
     (addr : CSpaceAddr) (st st' : SystemState)

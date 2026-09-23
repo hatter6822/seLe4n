@@ -155,31 +155,17 @@ private theorem cspaceInsertSlot_lookup_eq
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     cspaceLookupSlot addr st' = .ok (cap, st') := by
   rcases addr with ⟨cnodeId, slot⟩
-  cases hObj : st.objects[cnodeId]? with
-  | none => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-  | some obj =>
-      cases obj with
-      | tcb tcb => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | endpoint ep => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | notification ntfn => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | vspaceRoot root => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | untyped _ => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | schedContext _ | reply _ => simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-      | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp [cspaceInsertSlot, hObj, SystemState.getCNode?] at hStep
-          cases hLookupGuard : cn.lookup slot with
-          | some _ => simp [hLookupGuard] at hStep
-          | none =>
-              simp [hLookupGuard] at hStep
-              cases hStep
-              -- AN10-residual (R1): include `getCNode?` in the unfold set so
-              -- the inner match (which never fires here, since `lookupSlotCap`
-              -- succeeds via the inserted cap) collapses with the outer one.
-              simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
-                SystemState.getCNode?, RHTable_getElem?_eq_get?]
-              rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
-              simp [CNode.lookup_insert_eq cn slot cap hUniq]
+  obtain ⟨cn, _, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' _ cap hStep
+  have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
+  simp only [SeLe4n.Model.storeObject] at hStore
+  cases hStore
+  -- AN10-residual (R1): include `getCNode?` in the unfold set so
+  -- the inner match (which never fires here, since `lookupSlotCap`
+  -- succeeds via the inserted cap) collapses with the outer one.
+  simp only [cspaceLookupSlot, SystemState.lookupSlotCap, SystemState.lookupCNode,
+    SystemState.getCNode?, RHTable_getElem?_eq_get?]
+  rw [RHTable_getElem?_insert st.objects _ _ hObjInv]
+  simp [CNode.lookup_insert_eq cn slot cap hUniq]
 
 theorem cspaceInsertSlot_establishes_ownsSlot
     (st st' : SystemState)

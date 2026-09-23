@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.200.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.201.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,7 +222,7 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~80927 lines)
+- `CHANGELOG.md` (~81058 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
@@ -235,14 +235,14 @@ To find files that need pagination today, run:
 - `SeLe4n/Platform/Boot.lean` (~6000 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `tests/SmpIpcSuite.lean` (~5560 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5457 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5439 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean` (~5413 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean` (~5402 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean` (~5389 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCoreInvariantSuite.lean` (~4850 lines)
+- `tests/NegativeStateSuite.lean` (~4770 lines)
 - `docs/dev_history/audits/AUDIT_v0.29.0_WORKSTREAM_PLAN.md` (~4721 lines)
-- `tests/NegativeStateSuite.lean` (~4629 lines)
-- `SeLe4n/Kernel/CrossSubsystem.lean` (~4454 lines)
+- `SeLe4n/Kernel/CrossSubsystem.lean` (~4450 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/QueuedRwLockRefinement.lean` (~4263 lines)
 - `SeLe4n/Kernel/InformationFlow/FineLockFlow.lean` (~4226 lines)
 - `docs/dev_history/audits/AUDIT_v0.30.6_WORKSTREAM_PLAN.md` (~4130 lines)
@@ -252,15 +252,15 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/AuditRead.lean` (~3789 lines)
 - `SeLe4n/Platform/FFI.lean` (~3596 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean` (~3517 lines)
-- `SeLe4n/Testing/MainTraceHarness.lean` (~3459 lines)
+- `SeLe4n/Testing/MainTraceHarness.lean` (~3477 lines)
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3328 lines)
 - `tests/OperationChainSuite.lean` (~3289 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~3281 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~3253 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3249 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~3207 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3199 lines)
 - `tests/FrozenOpsSuite.lean` (~3142 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
@@ -271,8 +271,8 @@ To find files that need pagination today, run:
 - `tests/SmpCancellationSuite.lean` (~2904 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2820 lines)
-- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2786 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~2774 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2815 lines)
+- `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2778 lines)
 - `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2749 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
@@ -349,7 +349,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.3_WORKSTREAM_PLAN.md` (~1452 lines)
-- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1451 lines)
+- `SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean` (~1441 lines)
 - `tests/SmpFoundationsSuite.lean` (~1419 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreSwitchToThread.lean` (~1417 lines)
 - `docs/dev_history/audits/WS_RC_R5_DEFERRED_COMPLETION_PLAN.md` (~1414 lines)
@@ -364,10 +364,10 @@ To find files that need pagination today, run:
 - `docs/planning/DONATION_POP_TRIGGER_PLAN.md` (~1366 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.8_IPC_SUBSYSTEM_WORKSTREAM_PLAN.md` (~1357 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean` (~1348 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (~1345 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.0_IPC_CAPABILITY_WORKSTREAM_PLAN.md` (~1342 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean` (~1313 lines)
 - `tests/SmpCbsSuite.lean` (~1307 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean` (~1278 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean` (~1272 lines)
 - `SeLe4n/Kernel/InformationFlow/Taint.lean` (~1261 lines)
 - `docs/planning/SMP_VERIFIED_LOCK_PRIMITIVES_PLAN.md` (~1261 lines)
@@ -422,9 +422,9 @@ To find files that need pagination today, run:
 - `tests/SmpTimerSuite.lean` (~934 lines)
 - `docs/planning/SMP_TLB_SHOOTDOWN_PLAN.md` (~933 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.2_WORKSTREAM_PLAN.md` (~930 lines)
+- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~923 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_COMPREHENSIVE.md` (~921 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
-- `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~910 lines)
 - `tests/SuspendResumeSuite.lean` (~910 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~899 lines)
@@ -432,19 +432,19 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~875 lines)
+- `SeLe4n/Testing/InvariantChecks.lean` (~879 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/An10CascadeSuite.lean` (~866 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
-- `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~836 lines)
 - `tests/DecodingSuite.lean` (~835 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
+- `docs/REGISTERED_DEBT.md` (~822 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
-- `docs/REGISTERED_DEBT.md` (~819 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~812 lines)
@@ -8163,6 +8163,82 @@ code may assume:
   materialized one because a userspace invocation has no channel to receive a
   report through.  A variant with no in-kernel caller either gains one or is
   retired.
+- **A capability is installed only at a slot the target CNode can address**
+  (WS-RR RR8.16, `v0.35.201`).  `CNode.resolveSlot` extracts a slot by masking
+  with `2 ^ radixWidth`, so an index at or above `slotCount` can be **stored**
+  and can never be **reached**; `cspaceInsertSlot` — the one primitive every
+  capability install passes through — asks `CNode.slotAddressable` before it
+  asks about occupancy, and refuses with `.invalidArgument`.  Before it, a
+  `seL4_CNode_Copy` whose `dstSlot` came verbatim from a message register grew a
+  fixed-size kernel object without bound and falsified `cspaceSlotCountBounded`,
+  a conjunct of `capabilityInvariantBundle`, on a state one ordinary syscall
+  reaches.  Six things new code must respect.
+
+  (1) **The chokepoint is the primitive, not the four arms.**  `cspaceCopy`,
+  `cspaceMint`, `cspaceMove` and the IPC capability transfer all reach
+  `cspaceInsertSlot`, so the range check is stated once — the *creator is exactly
+  one function* principle `ipcTransferSingleCap`'s own comment already invokes
+  for the revocation window.  A new install path inherits it by calling the
+  primitive; one that writes a CNode directly is the defect returning.
+
+  (2) **The transfer path answers `.noSlot`, it does not refuse.**
+  `ipcTransferSingleCap` scans with `findFirstEmptySlotChecked`, so a receiver
+  CNode with no free in-range slot yields an outcome the transfer summary already
+  models rather than an error — and `findFirstEmptySlotChecked_slotAddressable`
+  is what makes its `.ok` provably not the guard's refusal.  Its sibling
+  `resolveSlot_slotAddressable` is the other half of the claim: the guard refuses
+  exactly the slots no CPtr can name.
+
+  (3) **A helper written for a hazard and never wired is the hazard, unfixed.**
+  `findFirstEmptySlotChecked` was written by AK8-F for *precisely* this, proved
+  `findFirstEmptySlotChecked_within_radix`, said in its own docstring that the
+  zero-width window ensures no out-of-range slot is ever produced — and had **no
+  production consumer at all**, in the whole of this repository's visible
+  history, which begins at `v0.32.69` and in which the checked variant is
+  present from the first commit, while `findFirstEmptySlot` sat on the live
+  transfer path.  The tree held the fix and
+  the defect at once.  *A helper whose docstring names the hazard it prevents is
+  a claim that the hazard is prevented; check who calls it.*
+
+  (4) **A fixture built on the defect makes the defect invisible to every test,
+  and landing the guard is what finds it.**  Six fixture CNodes were malformed,
+  the trace harness's own **bootstrap root CSpace** among them: CNode ⟨10⟩
+  declared `radixWidth := 0` — *one* slot — while holding capabilities at 0, 5
+  and 6, so `cspaceSlotCountBounded` was **false** of the state every trace
+  scenario starts from and every capability but slot 0's was unreachable.  No
+  audit of the guard's *call sites* could have shown that; the diff after
+  landing it did, in one run.  Two of the six carried a **comment naming the
+  radix the code did not have** (`S2-G-05`: *"Build a CNode with radixWidth=2 …
+  fill slots 0-3"* over `radixWidth := 0`) — a defect report nobody read.  *A
+  fixture comment that names a parameter the code does not have is a finding.*
+
+  (5) **An invariant no runtime check asserts is one a fixture can violate
+  silently** — which is *why* (4) could persist for as long as those fixtures
+  have existed: `slotCountBounded` appeared nowhere under `SeLe4n/Testing/`.
+  `cspaceSlotAddressableChecks` is part of `stateInvariantChecksFor` now, and it
+  asserts the **structural** property rather than the cardinality: slot keys are
+  unique, so *every occupied index is below `slotCount`* entails the count bound
+  and, unlike it, names the offending slot.  This is RR8.3's *the conjunct is
+  checked at runtime, not only proved* rule meeting a conjunct that predates
+  this repository's visible history and had been checked never.  What the boot still
+  bounds is the **count** and not the **indices**, so a `PlatformConfig` CNode
+  may hold four capabilities at slots 0, 9, 17 and 33 in four addressable slots;
+  that is registered rather than assumed away.
+
+  (6) **A scanner for this class must resolve indirection, and the runtime check
+  is the authority.**  The static sweep written to size the damage read slot
+  indices out of CNode literals and **missed** `strictSeed`, whose slots are
+  spelled `strictRootSlot.slot` — *a helper the scanner cannot see is a spelling
+  that evades the metric*, arriving inside the measurement written to size the
+  class.  The runtime check named it in one run.  And a guard forces a sweep of
+  every **re-derivation** of the operation it guards: a successful insert's
+  decomposition was re-derived inline at **eight** sites and the guard broke all
+  eight, so they read `cspaceInsertSlot_ok_decompose` now and three frames moved
+  beside the primitive (`_cdt_eq` relocated out of a preservation module,
+  `_cdtNodeSlot_eq` and `_objects_eq` new, the last replacing a `private` copy).
+  With the fixtures repaired the golden trace is **byte-identical** but for the
+  post-dispatch check count the new runtime check moves (29 → 32), which is the
+  measurement that the guard refuses only what was already unreachable.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every

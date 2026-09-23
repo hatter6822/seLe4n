@@ -1,3 +1,118 @@
+## v0.35.201 — WS-RR RR8.16: a capability is installed only at a slot the target CNode can address (closes register row 111)
+
+**The High-severity defect `v0.35.200` found and registered, closed in the shape
+that row prescribed.**  `CNode.resolveSlot` extracts a slot by masking with
+`2 ^ radixWidth`, so an index at or above `slotCount` can be **stored** and can
+never be **reached**.  `cspaceInsertSlot` — the one primitive `cspaceCopy`,
+`cspaceMint`, `cspaceMove` and the IPC capability transfer all pass through —
+now asks `CNode.slotAddressable` *before* it asks about occupancy and refuses
+with `.invalidArgument`; `ipcTransferSingleCap` scans with
+`findFirstEmptySlotChecked`, so a receiver CNode with no free in-range slot
+answers `.noSlot`, an outcome the transfer summary already models.
+`findFirstEmptySlotChecked_slotAddressable` and `resolveSlot_slotAddressable`
+are the two halves of the claim: the bounded scan produces only addressable
+slots, and CSpace resolution reaches only addressable slots, so the guard
+refuses exactly what no CPtr can name.
+
+**A helper written for a hazard and never wired is the hazard, unfixed.**
+`findFirstEmptySlotChecked` was written by AK8-F (C-M07) for *precisely* this,
+proved `findFirstEmptySlotChecked_within_radix`, and said in its own docstring
+that the zero-width window ensures no out-of-range slot is ever produced — and
+had **no production consumer at all** — in the whole of this repository's
+visible history, which begins at `v0.32.69` and in which the checked variant is
+present from the first commit — while `findFirstEmptySlot` sat on the live
+transfer path.  The tree held the fix and the defect at once.
+
+**What landing the guard found is the sharper half, and it was found by landing
+it rather than by auditing fixtures.**  Six fixture CNodes were built on the
+defect, the trace harness's own **bootstrap root CSpace** among them: CNode
+⟨10⟩ declared `radixWidth := 0` — *one* slot — while holding capabilities at 0,
+5 and 6 and receiving one at 7, so `cspaceSlotCountBounded` was **false** of the
+state every trace scenario starts from and every capability but slot 0's was
+unreachable by any CPtr; CNode ⟨11⟩ was `CNode.empty` (one slot) with mints and
+copies at 3, 4 and 7; `NegativeStateSuite`'s `baseState` CNode was one slot
+against slot indices up to 12, and its `strictSeed` rebuild another.  Two of the
+six carried a **comment naming the radix the code did not have** (`S2-G-05`:
+*"Build a CNode with radixWidth=2 … fill slots 0-3"* over `radixWidth := 0`) — a
+defect report nobody read.  **With the six repaired the golden trace is
+byte-identical** but for the one line the cut's new runtime check moves, which
+is the measurement that the guard costs the tree nothing and refuses only what
+was already unreachable.
+
+**An invariant no runtime check asserts is one a fixture can violate silently**,
+which is *why* those six could persist: `slotCountBounded` appeared nowhere
+under `SeLe4n/Testing/`.  `cspaceSlotAddressableChecks` is part of
+`stateInvariantChecksFor` now, asserting the **structural** property rather than
+the cardinality — slot keys are unique, so *every occupied index is below
+`slotCount`* entails the count bound and, unlike it, names the offending slot.
+This is WS-RR RR8.3's *a conjunct is checked at runtime, not only proved* rule
+meeting one that predates this repository's visible history and was checked
+never;
+the golden trace's post-dispatch check count moves 29 → 32, which is the
+measurement that it runs.  Its first run found `strictSeed`, which the static
+sweep written to size the damage had **missed** — that fixture spells its slot
+indices `strictRootSlot.slot`, so *a helper the scanner cannot see is a spelling
+that evades the metric*, arriving inside the measurement written to size the
+class.
+
+**The sweep the guard forced.**  What a successful insert *consists of* was
+re-derived inline at **eight** sites — twice in
+`Capability/Invariant/Preservation/Insert.lean`, once each in
+`CopyMoveMutate.lean`, `BadgeIpcCapsAndCdtMaps.lean`,
+`InformationFlow/Invariant/Helpers.lean`, `CrossSubsystem.lean`, a `private`
+copy in `DispatchArmPreservation.lean`, and `cspaceInsertSlot_cdt_eq` itself —
+each a second reading of the operation's own `match` tree, and the guard broke
+all eight.  They read `cspaceInsertSlot_ok_decompose` now, and three frames live
+beside the primitive where a frame over a primitive belongs:
+`cspaceInsertSlot_cdt_eq` (relocated out of a preservation module, with a
+tombstone), and the new `_cdtNodeSlot_eq` and `_objects_eq`, the last replacing
+the `private` copy.
+
+**Witnesses.**  Seven checks in `tests/NegativeStateSuite.lean`
+(`runWSRR8CSpaceSlotRangeChecks`), each computing the **retired** reading beside
+the live one: the three install arms refuse an unaddressable destination; the
+retired unguarded insert succeeds there and leaves `slots.size = 5` in a
+four-slot CNode holding a capability `resolveSlot` cannot reach; the transfer
+answers `.noSlot` where the retired unchecked scan answers slot 4 of a four-slot
+CNode; and an in-range copy is the CONTROL.  Nineteen Tier 3 anchors, fifteen
+mutations, all CAUGHT — including one that had to be **re-planted as code**
+rather than as a comment, since the negative routes through the code view and a
+comment mentioning the retired name is correctly not a leak.
+
+**Two residues are registered rather than absorbed**, each its own row: the
+refusal is `.invalidArgument`, which a userspace CSpace allocator cannot
+distinguish from malformed rights bits (seL4 answers this class with
+`seL4_RangeError`, and a distinct `KernelError` costs an ABI discriminant); and
+the boot check bounds the slot **count** and not the slot **indices**, so a
+`PlatformConfig` CNode may hold four capabilities at slots 0, 9, 17 and 33 in
+four addressable slots — a claim this cut's own first draft got wrong in the
+other direction and corrected by reading `bootSafeCnodeCheck` rather than
+inferring it.
+
+**A should-grow floor fell because its metric counts the wrong thing.**
+Collapsing the eight re-derivations *lowered* `GETCNODE_ADOPTION` from 147 to
+129 and failed the AK7 cascade gate — every removed occurrence was inside
+`unfold cspaceInsertSlot SystemState.getCNode? at hStep`, a tactic that takes
+the accessor **out** of the goal to reach the raw store, which is the opposite
+of the migration the metric is named for.  Measured: **43 of 172** whole-symbol
+`getCNode?` occurrences sit in an `unfold` / `simp` / `dsimp` / `rw` list.  That
+is `v0.35.7`'s finding — a lemma *about* a helper counted as a *use* of it — one
+form down, and it is registered with its measurement rather than patched here,
+because deciding whether an occurrence is a read *through* an accessor is an
+elaboration question and a line-level tactic-context regex is the substitution
+this project retires.  The baseline is re-anchored, which is not a ratchet
+running backwards in substance (the metric's subject improved while its number
+fell); the same regeneration **raised** `GETTCB_ADOPTION` 2449 → 2747 and four
+siblings, the committed baseline having lagged several cuts.  `SORRY_COUNT`,
+`AXIOM_COUNT`, `STORE_READ_CODE` and `STORE_WRITE_CODE` are unmoved at zero.
+
+**One documentation correction.**  `v0.35.200` wrote *"Nineteen so far"* in the
+RR8.16 plan row where thirteen had been the count at `v0.35.199` and one cut had
+landed since.  The figure is the length of the enumeration it sits over, so it
+is stated as such now — a hand-kept number beside a derivation, drifting by five
+in a single cut, which is this project's own recorded hazard arriving in a plan
+row.
+
 ## v0.35.200 — WS-RR RR8.16: the call chain and the fault composition close register row 85
 
 The row is named for the fault path, and the fault path could not compose what

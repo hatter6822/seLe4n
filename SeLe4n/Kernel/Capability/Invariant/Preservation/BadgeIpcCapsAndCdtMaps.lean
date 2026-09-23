@@ -77,44 +77,32 @@ theorem cspaceMint_preserves_badgeWellFormed
     | error e => simp [hMint] at hStep
     | ok child =>
       simp only [hMint] at hStep
-      -- cspaceInsertSlot stores a CNode
-      unfold cspaceInsertSlot SystemState.getCNode? at hStep
-      cases hObj : pair.2.objects[dst.cnode]? with
-      | none => simp [hObj] at hStep
-      | some obj =>
-        cases obj with
-        | cnode cn =>
-          have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-          simp only [hObj] at hStep
-          split at hStep
-          · simp at hStep  -- slot occupied
-          · cases hStore : storeObject dst.cnode (.cnode (cn.insert dst.slot child)) pair.2 with
-            | error e => simp [hStore] at hStep
-            | ok storeResult =>
-              obtain ⟨_, stMid⟩ := storeResult
-              simp [hStore] at hStep
-              -- hStep : stMid = st'
-              have hObjEq : st'.objects = stMid.objects := by rw [hStep]
-              apply badgeWellFormed_of_objects_eq stMid st' hObjEq
-              -- Extract child.badge from mintDerivedCap. AN4-E (H-06)
-              -- refactors the body to wrap the `.ok` in a second `if` that
-              -- rejects null-valued candidates, so walk both splits.
-              have hChildBadge : child.badge = badge :=
-                mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights badge child hMint
-              constructor
-              · exact storeObject_cnode_preserves_notificationBadgesWellFormed
-                  pair.2 stMid dst.cnode _ hNtfn hObjInv hStore
-              · exact storeObject_cnode_preserves_capabilityBadgesWellFormed
-                  pair.2 stMid dst.cnode _ hCap hObjInv hStore
-                  (fun slot' cap' badge' hLk hBdg => by
-                    by_cases hSlotEq : dst.slot = slot'
-                    · subst hSlotEq
-                      rw [CNode.lookup_insert_eq cn dst.slot child hUniq] at hLk
-                      cases hLk; rw [hChildBadge] at hBdg
-                      exact hBadgeValid badge' hBdg
-                    · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
-                      exact hCap dst.cnode cn slot' cap' badge' hObj hLk hBdg)
-        | _ => simp [hObj] at hStep
+      -- `cspaceInsertSlot` stores a CNode; what a successful insert consists of
+      -- is `cspaceInsertSlot_ok_decompose`'s to say (WS-RR RR8.16, `v0.35.201`),
+      -- not this proof's — re-deriving it here is a second reading of the
+      -- operation's own `match` tree.
+      obtain ⟨cn, hCnOpt, _hAddr, _hLk, hStore⟩ :=
+        cspaceInsertSlot_ok_decompose pair.2 st' dst child hStep
+      have hObj : pair.2.objects[dst.cnode]? = some (.cnode cn) :=
+        (SystemState.getCNode?_eq_some_iff pair.2 dst.cnode cn).mp hCnOpt
+      have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
+      -- Extract child.badge from mintDerivedCap. AN4-E (H-06) refactors the body
+      -- to wrap the `.ok` in a second `if` that rejects null-valued candidates,
+      -- so walk both splits.
+      have hChildBadge : child.badge = badge :=
+        mintDerivedCap_badge_propagated ⟨pair.fst, hNotNull⟩ rights badge child hMint
+      exact ⟨storeObject_cnode_preserves_notificationBadgesWellFormed
+          pair.2 st' dst.cnode _ hNtfn hObjInv hStore,
+        storeObject_cnode_preserves_capabilityBadgesWellFormed
+          pair.2 st' dst.cnode _ hCap hObjInv hStore
+          (fun slot' cap' badge' hLk hBdg => by
+            by_cases hSlotEq : dst.slot = slot'
+            · subst hSlotEq
+              rw [CNode.lookup_insert_eq cn dst.slot child hUniq] at hLk
+              cases hLk; rw [hChildBadge] at hBdg
+              exact hBadgeValid badge' hBdg
+            · rw [CNode.lookup_insert_ne cn dst.slot slot' child hSlotEq hUniq] at hLk
+              exact hCap dst.cnode cn slot' cap' badge' hObj hLk hBdg)⟩
 
 /-- WS-F5/D1d: `cspaceMutate` preserves `badgeWellFormed` when the mutated
 badge (if any) is valid. -/
@@ -222,7 +210,7 @@ theorem ipcTransferSingleCap_preserves_capabilityInvariantBundle
     have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
       (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
       | none =>
         simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
       | some emptySlot =>

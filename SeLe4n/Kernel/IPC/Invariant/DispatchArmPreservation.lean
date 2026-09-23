@@ -861,29 +861,11 @@ theorem detachSlotFromCdt_scheduler_eq (st : SystemState) (ref : SlotRef) :
   unfold SystemState.detachSlotFromCdt
   split <;> rfl
 
-/-- Success shape of `cspaceInsertSlot`: the target CNode existed, and the
-post-state holds it with the capability inserted. -/
-private theorem cspaceInsertSlot_cnode_shape
-    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
-    (hObjInv : st.objects.invExt)
-    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
-    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
-      st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      simp only [hObj] at hStep
-      cases hLk : cn.lookup addr.slot with
-      | some c => simp [hLk] at hStep
-      | none =>
-        simp only [hLk] at hStep
-        exact ⟨cn, rfl, storeObject_objects_eq st st' addr.cnode
-          (.cnode (cn.insert addr.slot cap)) hObjInv hStep⟩
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ => simp [hObj] at hStep
+-- **WS-RR RR8.16** (`v0.35.201`): `cspaceInsertSlot_cnode_shape` was declared
+-- here, `private`, re-deriving the insert's success shape from the operation's
+-- own `match` tree.  It is `SeLe4n.Kernel.cspaceInsertSlot_objects_eq` now, in
+-- `Kernel/Capability/Operations.lean` beside the primitive and beside the
+-- "every other key" half of the same frame.
 
 /-- `cspaceInsertSlot` preserves the whole bundle: its one object write is a
 CNode, and the inserted capability's badge is valid. -/
@@ -893,7 +875,7 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
     (hCapValid : ∀ b, cap.badge = some b → b.valid)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨cn, hPre, hAt⟩ := cspaceInsertSlot_cnode_shape st st' addr cap hObjInv hStep
+  obtain ⟨cn, hPre, hAt⟩ := cspaceInsertSlot_objects_eq st st' addr cap hObjInv hStep
   have hNe : ∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode →
       st'.objects[oid]? = st.objects[oid]? :=
     fun oid h => cspaceInsertSlot_preserves_objects_ne st st' addr cap oid h hObjInv hStep

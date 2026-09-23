@@ -499,12 +499,73 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
     | some cn =>
-        match cn.lookup addr.slot with
-        | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
-        | none =>
-            let cn' := cn.insert addr.slot cap
-            storeObject addr.cnode (.cnode cn') st
+        -- **WS-RR RR8.16** (`v0.35.201`): the destination index must be one this
+        -- CNode can *address*.  `resolveSlot` extracts a slot by masking with
+        -- `2 ^ radixWidth`, so an index at or above `slotCount` can be stored
+        -- and can never be reached by any CPtr — and `CNode.insert` at a fresh
+        -- key grows the slot table, so without this check a holder of a copy- or
+        -- mint-bearing capability grows a *fixed-size* kernel object without
+        -- bound and falsifies `cspaceSlotCountBounded`.
+        --
+        -- The check is here, and only here, because this is the one primitive
+        -- all four installs pass through — `cspaceCopy`, `cspaceMint`,
+        -- `cspaceMove` (each taking `dstSlot` verbatim from a message register)
+        -- and `ipcTransferSingleCap`.  *The creator is exactly one function*,
+        -- which is the reasoning `ipcTransferSingleCap` already records for the
+        -- revocation window; checking at each caller is what let this through.
+        if !cn.slotAddressable addr.slot then .error .invalidArgument
+        else
+          match cn.lookup addr.slot with
+          | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
+          | none =>
+              let cn' := cn.insert addr.slot cap
+              storeObject addr.cnode (.cnode cn') st
     | none => .error .objectNotFound
+
+/-- **WS-RR RR8.16** (`v0.35.201`): **what a successful insert consists of.**
+
+One description of the operation, so every frame over it is a citation rather
+than a re-run of its `match` tree — and so the range guard is threaded once
+rather than at each of the six frames below, and at the eight further sites
+across the capability, information-flow and IPC invariant surfaces that split on
+the lookup themselves.  The pattern is
+`returnDonatedSchedContext_ok_storeChain`'s, at a much smaller operation. -/
+theorem cspaceInsertSlot_ok_decompose
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ∃ cn, st.getCNode? addr.cnode = some cn
+      ∧ cn.slotAddressable addr.slot = true
+      ∧ cn.lookup addr.slot = none
+      ∧ storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st = .ok ((), st') := by
+  unfold cspaceInsertSlot at hStep
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at hStep; cases hStep
+  | some cn =>
+      rw [hCn] at hStep
+      simp only at hStep
+      by_cases hAddr : cn.slotAddressable addr.slot = true
+      · rw [hAddr] at hStep
+        simp only [Bool.not_true, Bool.false_eq_true, if_false] at hStep
+        cases hLk : cn.lookup addr.slot with
+        | some _ => rw [hLk] at hStep; cases hStep
+        | none =>
+            rw [hLk] at hStep
+            exact ⟨cn, rfl, hAddr, hLk, hStep⟩
+      · simp only [Bool.not_eq_true] at hAddr
+        rw [hAddr] at hStep
+        simp only [Bool.not_false, if_true] at hStep
+        cases hStep
+
+/-- **WS-RR RR8.16** (`v0.35.201`): the guard is the refusal, stated so a caller
+can see what it costs — an out-of-range destination is `.invalidArgument`, never
+an install. -/
+theorem cspaceInsertSlot_rejects_unaddressable_slot
+    (st : SystemState) (addr : CSpaceAddr) (cap : Capability) (cn : CNode)
+    (hObj : st.objects[addr.cnode]? = some (.cnode cn))
+    (hAddr : cn.slotAddressable addr.slot = false) :
+    cspaceInsertSlot addr cap st = .error .invalidArgument := by
+  unfold cspaceInsertSlot SystemState.getCNode?
+  simp [hObj, hAddr]
 
 theorem cspaceInsertSlot_preserves_scheduler
     (st st' : SystemState)
@@ -512,20 +573,9 @@ theorem cspaceInsertSlot_preserves_scheduler
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_scheduler_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_scheduler_eq _ _ _ _ hStore
 
 theorem cspaceInsertSlot_preserves_services
     (st st' : SystemState)
@@ -533,20 +583,9 @@ theorem cspaceInsertSlot_preserves_services
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.services = st.services := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_preserves_services _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preserves_services _ _ _ _ hStore
 
 theorem cspaceInsertSlot_preserves_objects_ne
     (st st' : SystemState)
@@ -557,20 +596,24 @@ theorem cspaceInsertSlot_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStore
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and the CNode it names holds the
+capability afterwards — the "at the key" half of the frame whose "every other
+key" half sits above.  The IPC dispatch surface had its own `private` copy of
+this, which is a second reading of what a successful insert leaves behind. -/
+theorem cspaceInsertSlot_objects_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn)
+      ∧ st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
+  obtain ⟨cn, hCnOpt, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact ⟨cn, (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCnOpt,
+    storeObject_objects_eq _ _ _ _ hObjInv hStore⟩
 
 /-- `cspaceInsertSlot` preserves `objects.invExt`. -/
 theorem cspaceInsertSlot_preserves_objects_invExt
@@ -578,70 +621,66 @@ theorem cspaceInsertSlot_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStore
 
 /-- `cspaceInsertSlot` preserves machine state. -/
 theorem cspaceInsertSlot_preserves_machine
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.machine = st.machine := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_machine_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_machine_eq _ _ _ _ hStore
+
+/-- WS-E4/C-03: `cspaceInsertSlot` preserves the CDT — it only calls
+`storeObject`, which touches objects, the lifecycle table and the object index
+and nothing else.
+
+Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`,
+where it sat beside its `cdtMapsConsistent` consumer: a *frame over a primitive*
+belongs beside the primitive, so the CDT pair reads like the scheduler, services,
+machine and IRQ frames above rather than like an invariant argument. -/
+theorem cspaceInsertSlot_cdt_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_cdt_eq _ _ _ _ hStore
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and the CDT node→slot map with it.  The
+copy/move path re-derived this inline from the operation's own `match` tree,
+which is a second reading of what a successful insert consists of; it reads the
+decomposition now, so the two cannot disagree. -/
+theorem cspaceInsertSlot_cdtNodeSlot_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_cdtNodeSlot_eq _ _ _ _ hStore
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
 theorem cspaceInsertSlot_preserves_irqHandlers
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_irqHandlers_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_irqHandlers_eq _ _ _ _ hStore
 
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
     (st : SystemState) (addr : CSpaceAddr) (cap existingCap : Capability)
     (cn : CNode)
     (hObj : st.objects[addr.cnode]? = some (.cnode cn))
+    (hAddr : cn.slotAddressable addr.slot = true)
     (hOccupied : cn.lookup addr.slot = some existingCap) :
     cspaceInsertSlot addr cap st = .error .targetSlotOccupied := by
   unfold cspaceInsertSlot SystemState.getCNode?
-  simp [hObj, hOccupied]
+  simp [hObj, hAddr, hOccupied]
 
 theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     (st : SystemState)
@@ -2177,7 +2216,14 @@ def ipcTransferSingleCap
     -- semantics-preserving.
     match st.getCNode? receiverCspaceRoot with
     | some cn =>
-        match cn.findFirstEmptySlot slotBase scanLimit with
+        -- **WS-RR RR8.16** (`v0.35.201`): the **radix-bounded** scan.  The
+        -- unchecked `findFirstEmptySlot` walks `base, base+1, …` without
+        -- consulting `radixWidth`, so on a receiver CNode with no free
+        -- in-range slot it answered an index `cspaceInsertSlot` would then
+        -- install at, outside anything a CPtr can name.  The checked variant
+        -- AK8-F wrote for exactly this hazard answers `none` there, which is
+        -- `.noSlot` — an outcome the transfer summary already models.
+        match cn.findFirstEmptySlotChecked slotBase scanLimit with
         | none => .ok (.noSlot, st)
         | some emptySlot =>
             -- **The source must still be a live slot at the moment the edge is
@@ -2268,7 +2314,7 @@ theorem ipcTransferSingleCap_installed_implies_revocable_source
     | none => simp [hCn] at hStep
     | some cn =>
       simp only [hCn] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
       | none => simp [hSlot] at hStep
       | some _ => simp [hSlot, hSrc] at hStep
   | true => rfl
@@ -2304,7 +2350,7 @@ theorem ipcTransferSingleCap_sourceRevoked_preserves_state
   | none => simp [hCn] at hStep
   | some cn =>
     simp only [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep
     | some emptySlot =>
       simp only [hSlot] at hStep
@@ -2345,7 +2391,7 @@ theorem ipcTransferSingleCap_preserves_scheduler
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2384,7 +2430,7 @@ theorem ipcTransferSingleCap_preserves_machine
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2422,7 +2468,7 @@ theorem ipcTransferSingleCap_preserves_objects_ne
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2457,7 +2503,7 @@ theorem ipcTransferSingleCap_preserves_services
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2493,7 +2539,7 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2562,7 +2608,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
     have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
       (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none =>
       simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
       intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
@@ -2596,15 +2642,12 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject,
           -- so pair.2.objects[receiverRoot]? should be some (.cnode cn')
           -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
-          unfold cspaceInsertSlot SystemState.getCNode? at hIns
-          simp [hObj] at hIns
-          cases hLookup : cn.lookup emptySlot with
-          | some _ => simp [hLookup] at hIns
-          | none =>
-            simp [hLookup] at hIns
-            have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
-            rw [hStoreObj] at h
-            exact absurd h (by simp)
+          obtain ⟨cn', _, _, _, hStore⟩ :=
+            cspaceInsertSlot_ok_decompose st pair.2
+              { cnode := receiverRoot, slot := emptySlot } cap hIns
+          have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
+          rw [hStoreObj] at h
+          exact absurd h (by simp)
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all endpoint objects.
 When `oid = receiverRoot` and the object is an endpoint, the function
@@ -2741,7 +2784,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mpr hCn
   simp only [ipcTransferSingleCap] at hStep
   simp [hCnTyped] at hStep
-  cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+  cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
   | none =>
     simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
     exact ⟨cn, hCn⟩
@@ -2760,15 +2803,15 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
       have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
         { cnode := receiverRoot, slot := emptySlot }
       -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
-      unfold cspaceInsertSlot SystemState.getCNode? at hIns
-      simp [hCn] at hIns
-      cases hLookup : cn.lookup emptySlot with
-      | some _ => simp [hLookup] at hIns
-      | none =>
-        simp [hLookup] at hIns
-        have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
-        refine ⟨cn.insert emptySlot cap, ?_⟩
-        simp only [hObjSrc]
-        exact hStoreObj
+      obtain ⟨cn', hCn', _, _, hStore⟩ :=
+        cspaceInsertSlot_ok_decompose st pair.2
+          { cnode := receiverRoot, slot := emptySlot } cap hIns
+      have hCnEq : cn' = cn := by
+        simp only [hCnTyped] at hCn'; exact (Option.some.inj hCn').symm
+      subst hCnEq
+      have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
+      refine ⟨cn'.insert emptySlot cap, ?_⟩
+      simp only [hObjSrc]
+      exact hStoreObj
 
 end SeLe4n.Kernel

@@ -40,7 +40,9 @@ private def vaddrPrimary : SeLe4n.VAddr := (SeLe4n.VAddr.ofNat 4096)
 private def paddrPrimary : SeLe4n.PAddr := (SeLe4n.PAddr.ofNat 12288)
 
 private def slot0 : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 0 }
-private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
+-- WS-RR RR8.16 (`v0.35.201`): `cnodeId` consumes 4 bits per hop, so a path into
+-- it carries at least that depth; CPtr 0 still names slot 0.
+private def slot0Path : SeLe4n.Kernel.CSpacePathAddr := { cnode := cnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 4 }
 private def guardedPathBadDepth : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 1 }
 private def badSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := wrongTypeId, slot := SeLe4n.Slot.ofNat 0 }
 private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := guardedCnodeId, cptr := SeLe4n.CPtr.ofNat 0, depth := 3 }
@@ -48,11 +50,15 @@ private def guardedPathBadGuard : SeLe4n.Kernel.CSpacePathAddr := { cnode := gua
 private def baseState : SystemState :=
   (BootstrapBuilder.empty
     |>.withObject endpointId (.endpoint {})
+    -- WS-RR RR8.16 (`v0.35.201`): sixteen addressable slots.  This fixture
+    -- declared `radixWidth := 0` — one slot — while the checks below move,
+    -- mint and map CDT nodes at slot indices up to 12, none of which any CPtr
+    -- could have named.
     |>.withObject cnodeId (.cnode {
-      depth := 0
+      depth := 4
       guardWidth := 0
       guardValue := 0
-      radixWidth := 0
+      radixWidth := 4
       slots := SeLe4n.UniqueSlotMap.ofListWF [
         (SeLe4n.Slot.ofNat 0, {
           target := .object endpointId
@@ -365,10 +371,12 @@ private def runCspaceMutationAndRevokeNegativeChecks : IO Unit := do
   let strictSeed : SystemState :=
     { baseState with
       objects := baseState.objects.insert cnodeId (.cnode {
-            depth := 0
+            -- WS-RR RR8.16 (`v0.35.201`): the same sixteen slots `baseState`
+            -- declares; this rebuild holds capabilities at 5 and 6.
+            depth := 4
             guardWidth := 0
             guardValue := 0
-            radixWidth := 0
+            radixWidth := 4
             slots := SeLe4n.UniqueSlotMap.ofListWF [
               (strictRootSlot.slot, {
                 target := .object endpointId
@@ -3843,10 +3851,13 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   let mintDst : SeLe4n.Kernel.CSpaceAddr := { cnode := cnodeId, slot := SeLe4n.Slot.ofNat 3 }
   -- slot0 in baseState has rights [read, write]; create a read-only source
   let readOnlyCnode : KernelObject := .cnode {
-    depth := 0
+    -- WS-RR RR8.16 (`v0.35.201`): four addressable slots, so the destination
+    -- (slot 3) is in range and the refusal this check names — rights
+    -- attenuation — is the only one that can produce it.
+    depth := 2
     guardWidth := 0
     guardValue := 0
-    radixWidth := 0
+    radixWidth := 2
     slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, {
         target := .object endpointId
@@ -3888,10 +3899,13 @@ private def runS2GCapabilityErrorTests : IO Unit := do
   IO.println "negative check passed [S2-G-04: empty revoke returns clean report]"
 
   -- S2-G-05: cspaceCopy to full CNode (all slots occupied) → targetSlotOccupied
-  -- Build a CNode with radixWidth=2 (capacity 16, default), fill slots 0-3
+  -- Build a CNode with radixWidth=2 (four addressable slots), fill slots 0-3.
+  -- WS-RR RR8.16 (`v0.35.201`): the code said `radixWidth := 0` — one slot —
+  -- against a comment that has always said 2, so "full" named a CNode holding
+  -- three capabilities no CPtr could reach.  At radix 2 it is genuinely full.
   let fullCnodeId : SeLe4n.ObjId := ⟨70⟩
   let fullCnode : KernelObject := .cnode {
-    depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
     slots := SeLe4n.UniqueSlotMap.ofListWF [
       (SeLe4n.Slot.ofNat 0, { target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none }),
       (SeLe4n.Slot.ofNat 1, { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }),
@@ -4598,6 +4612,132 @@ private def runR5EOrphanedSchedContextChecks : IO Unit := do
           s!"R5.E-NEG-01: expected .missingSchedContext, got {toString e}"
   IO.println "all WS-RC R5.E missingSchedContext surface checks passed"
 
+-- ============================================================================
+-- WS-RR RR8.16 (`v0.35.201`): a CSpace destination slot is addressable, or the
+-- install is refused
+-- ============================================================================
+
+/-- `cspaceInsertSlot` as it read before `v0.35.201`: occupancy alone, with no
+radix bound.  Spelled here and nowhere else, so the checks below are known to
+**discriminate** between the two readings rather than merely to pass — every
+one of them succeeds under this reading and is refused by the live one. -/
+private def unguardedInsertSlot (addr : SeLe4n.Kernel.CSpaceAddr) (cap : Capability) :
+    SeLe4n.Model.Kernel Unit :=
+  fun st =>
+    match st.getCNode? addr.cnode with
+    | some cn =>
+        match cn.lookup addr.slot with
+        | some _ => Except.error KernelError.targetSlotOccupied
+        | none => SeLe4n.Model.storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st
+    | none => Except.error KernelError.objectNotFound
+
+/-- WS-RR RR8.16 (`v0.35.201`): no capability is installed at a slot index the
+target CNode's radix width cannot address.
+
+`CNode.resolveSlot` extracts a slot by masking with `2 ^ radixWidth`, so an
+index at or above `slotCount` can be **stored** and can never be **reached**.
+The four install paths — `cspaceCopy`, `cspaceMint`, `cspaceMove` and the IPC
+capability transfer — all pass through `cspaceInsertSlot`, which is where the
+range check lives; the transfer's own slot scan is radix-bounded so that a
+receiver CNode with no free in-range slot answers `.noSlot` rather than
+scanning past its own width. -/
+private def runWSRR8CSpaceSlotRangeChecks : IO Unit := do
+  IO.println "=== WS-RR RR8.16: CSpace destination slots are radix-bounded ==="
+  -- A four-slot CNode (indices 0..3) holding one capability at slot 0.
+  let rangeCnodeId : SeLe4n.ObjId := ⟨71⟩
+  let rangeCnode : CNode := {
+    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
+      (SeLe4n.Slot.ofNat 0, ({ target := .object endpointId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
+    ]
+  }
+  let rangeState : SystemState :=
+    { baseState with objects := baseState.objects.insert rangeCnodeId (.cnode rangeCnode) }
+  let rangeSrc : SeLe4n.Kernel.CSpaceAddr := { cnode := rangeCnodeId, slot := SeLe4n.Slot.ofNat 0 }
+  let inRangeDst : SeLe4n.Kernel.CSpaceAddr := { cnode := rangeCnodeId, slot := SeLe4n.Slot.ofNat 2 }
+  let outOfRangeDst : SeLe4n.Kernel.CSpaceAddr := { cnode := rangeCnodeId, slot := SeLe4n.Slot.ofNat 9 }
+
+  -- CONTROL: an in-range destination still installs, so the refusal below is
+  -- about the slot index and not about the copy.
+  let (_, copiedState) ← expectOkVal "RR8-CSR-01 CONTROL in-range cspaceCopy installs"
+    (SeLe4n.Kernel.cspaceCopy rangeSrc inRangeDst rangeState)
+  match SeLe4n.Model.SystemState.lookupSlotCap copiedState inRangeDst with
+  | none => throw <| IO.userError "RR8-CSR-01: in-range destination slot is empty after copy"
+  | some _ => IO.println "positive check passed [RR8-CSR-01 CONTROL: slot 2 of a four-slot CNode installs]"
+
+  -- DEFECT: a destination the CNode's radix cannot address is refused.
+  expectErr "RR8-CSR-02 cspaceCopy to an unaddressable destination slot"
+    (SeLe4n.Kernel.cspaceCopy rangeSrc outOfRangeDst rangeState)
+    .invalidArgument
+  expectErr "RR8-CSR-03 cspaceMint to an unaddressable destination slot"
+    (SeLe4n.Kernel.cspaceMint rangeSrc outOfRangeDst
+      (AccessRightSet.ofList [.read]) (badge := none) rangeState)
+    .invalidArgument
+  expectErr "RR8-CSR-04 cspaceMove to an unaddressable destination slot"
+    (SeLe4n.Kernel.cspaceMove rangeSrc outOfRangeDst rangeState)
+    .invalidArgument
+
+  -- A CNode at capacity: four capabilities in four addressable slots.
+  let fullCnodeId : SeLe4n.ObjId := ⟨72⟩
+  let occupied : Capability :=
+    { target := .object endpointId, rights := AccessRightSet.ofList [.read], badge := none }
+  let fullCnode : CNode := {
+    depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2,
+    slots := SeLe4n.UniqueSlotMap.ofListWF [
+      (SeLe4n.Slot.ofNat 0, occupied), (SeLe4n.Slot.ofNat 1, occupied),
+      (SeLe4n.Slot.ofNat 2, occupied), (SeLe4n.Slot.ofNat 3, occupied) ]
+  }
+  let fullState : SystemState :=
+    { baseState with objects := baseState.objects.insert fullCnodeId (.cnode fullCnode) }
+  let fullOutOfRangeDst : SeLe4n.Kernel.CSpaceAddr :=
+    { cnode := fullCnodeId, slot := SeLe4n.Slot.ofNat 9 }
+
+  -- ...and the retired reading installs there, leaving a CNode holding more
+  -- capabilities than it has slots — `cspaceSlotCountBounded` false at a
+  -- capability no CPtr can name.
+  match unguardedInsertSlot fullOutOfRangeDst occupied fullState with
+  | .error e =>
+      throw <| IO.userError
+        s!"RR8-CSR-05: the retired unguarded insert was expected to succeed, got {toString e}"
+  | .ok (_, unguardedState) =>
+      match unguardedState.getCNode? fullCnodeId with
+      | none => throw <| IO.userError "RR8-CSR-05: the target CNode vanished"
+      | some cn' =>
+          if cn'.slots.size ≤ cn'.slotCount then
+            throw <| IO.userError
+              "RR8-CSR-05: the retired insert was expected to break slotCountBounded"
+          else if cn'.resolveSlot (SeLe4n.CPtr.ofNat 9) 2 == .ok (SeLe4n.Slot.ofNat 9) then
+            throw <| IO.userError
+              "RR8-CSR-05: the unaddressable slot was expected to be unreachable by CPtr 9"
+          else
+            IO.println
+              ("negative check passed [RR8-CSR-05: the retired unguarded insert stores at "
+               ++ s!"slot 9 of a {cn'.slotCount}-slot CNode, leaving slots.size = {cn'.slots.size} "
+               ++ "and the capability unreachable by any CPtr]")
+
+  -- The IPC transfer path scans within the radix, so a receiver with no free
+  -- in-range slot answers `.noSlot` rather than installing out of range.
+  let (transferResult, _) ← expectOkVal "RR8-CSR-06 ipcTransferSingleCap on a full receiver CNode"
+    (SeLe4n.Kernel.ipcTransferSingleCap occupied ⟨0⟩ fullCnodeId (SeLe4n.Slot.ofNat 0) 8 fullState)
+  match transferResult with
+  | .noSlot => IO.println "negative check passed [RR8-CSR-06: a full receiver CNode answers .noSlot]"
+  | other =>
+      throw <| IO.userError
+        s!"RR8-CSR-06: expected .noSlot from a full receiver CNode, got {reprStr other}"
+  -- ...where the unchecked scan walks straight past the CNode's own width.
+  match fullCnode.findFirstEmptySlot (SeLe4n.Slot.ofNat 0) 8 with
+  | none => throw <| IO.userError "RR8-CSR-07: the retired unchecked scan was expected to answer a slot"
+  | some s =>
+      if s.toNat < fullCnode.slotCount then
+        throw <| IO.userError
+          s!"RR8-CSR-07: the retired scan answered in-range slot {s.toNat}; expected one past the radix"
+      else
+        IO.println
+          ("negative check passed [RR8-CSR-07: the retired unchecked scan answers slot "
+           ++ s!"{s.toNat} of a {fullCnode.slotCount}-slot CNode]")
+
+  IO.println "all WS-RR RR8.16 CSpace slot-range checks passed"
+
 end SeLe4n.Testing
 
 def main : IO Unit := do
@@ -4627,3 +4767,4 @@ def main : IO Unit := do
   SeLe4n.Testing.runAC1CdtTrackingChecks
   SeLe4n.Testing.runR1IpcCallPathSymmetryChecks
   SeLe4n.Testing.runR5EOrphanedSchedContextChecks
+  SeLe4n.Testing.runWSRR8CSpaceSlotRangeChecks

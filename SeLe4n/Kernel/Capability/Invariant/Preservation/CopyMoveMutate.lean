@@ -128,20 +128,8 @@ theorem cspaceMove_preserves_capabilityInvariantBundle
                 (fun cn hObj => hDstCapacity cn cap hObj)
                 (objects_invExt_of_capabilityInvariantBundle st hInv)
                 (replyCapBacked_of_source_slot st src cap hInv hSrc) hInsert
-              have hNSSt2 : st2.cdtNodeSlot = st.cdtNodeSlot := by
-                unfold cspaceInsertSlot SystemState.getCNode? at hInsert
-                cases hPre : st.objects[dst.cnode]? with
-                | none => simp [hPre] at hInsert
-                | some obj =>
-                  cases obj with
-                  | cnode cn =>
-                    simp [hPre] at hInsert
-                    cases hLookup : cn.lookup dst.slot with
-                    | some _ => simp [hLookup] at hInsert
-                    | none =>
-                      simp [hLookup] at hInsert
-                      exact (storeObject_cdtNodeSlot_eq st st2 dst.cnode _ hInsert).1
-                  | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ => simp [hPre] at hInsert
+              have hNSSt2 : st2.cdtNodeSlot = st.cdtNodeSlot :=
+                cspaceInsertSlot_cdtNodeSlot_eq st st2 dst cap hInsert
               have hBundleSt3 := cspaceDeleteSlotCore_preserves_capabilityInvariantBundle st2 st3 src hBundleSt2
                 (by rw [hNSSt2]; exact hNodeSlotK) hDelete
               rcases hBundleSt3 with ⟨_, hBnd3, _, _, hDepth3, hObjInv3, hRCPV3⟩
