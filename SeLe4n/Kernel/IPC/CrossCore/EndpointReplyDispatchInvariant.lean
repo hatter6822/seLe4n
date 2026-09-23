@@ -1012,4 +1012,152 @@ theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed
                   executingCore _ hInv2 hChain2
 
 
+-- ============================================================================
+-- WS-RR RR8.16 (`v0.35.199`) — the reply path's two cross-subsystem bundles
+-- ============================================================================
+--
+-- Register row 85's substance.  `v0.35.197` gave `schedulerInvariantBase_smp`
+-- and `capabilityInvariantBundle` their frames and lifted the three steps both
+-- IPC chains share; `v0.35.199` adds the reply path's own, and each is the
+-- composition of citations rather than an argument -- which is the change the
+-- frames made.
+--
+-- This module is where they live because it is the first that sees the reply
+-- dispatch, the two invariants and the frames at once.
+
+/-- WS-RR RR8.16 (`v0.35.199`): **the reply path's donation pop preserves the base
+SMP scheduler invariant.**
+
+Three steps, one citation each: the return writes no scheduler state, the SM5.H
+migration writes `replenishQueue` alone (which the invariant does not read), and
+the deschedule is a placement removal. -/
+theorem applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp
+    {st st'' : SystemState} {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId}
+    {holderHome ownerHome : CoreId}
+    (hObjInv : st.objects.invExt)
+    (h : schedulerInvariantBase_smp st)
+    (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    schedulerInvariantBase_smp st'' := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome hStep
+    with ⟨_, rfl⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
+  · exact h
+  · subst hEq
+    exact descheduleAtPlacement_preserves_schedulerInvariantBase_smp _
+      (migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp _ _ _
+        (returnDonatedSchedContext_preserves_schedulerInvariantBase_smp hObjInv h hRet))
+
+/-- WS-RR RR8.16 (`v0.35.199`): **and the capability bundle.**
+
+The migration and the deschedule write no object at all
+(`applyReplyDonationOnCore_objects_eq` reads the pop down to the return's own
+store), so this is the return's lift plus a `_of_objects_and_cdt_eq`. -/
+theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
+    {st st'' : SystemState} {rid : SeLe4n.ReplyId} {targetVtid : SeLe4n.ValidThreadId}
+    {holderHome ownerHome : CoreId}
+    (h : capabilityInvariantBundle st)
+    (hStep : applyReplyDonationOnCore st rid targetVtid holderHome ownerHome = .ok st'') :
+    capabilityInvariantBundle st'' := by
+  rcases applyReplyDonationOnCore_ok_decompose st st'' rid targetVtid holderHome ownerHome hStep
+    with ⟨_, rfl⟩ | ⟨scId, holderVtid, newOwner?, st', _, _, hRet, hEq⟩
+  · exact h
+  · subst hEq
+    refine capabilityInvariantBundle_of_objects_and_cdt_eq
+      (returnDonatedSchedContext_preserves_capabilityInvariantBundle h hRet) ?_ ?_ ?_
+    · rw [descheduleAtPlacement_preserves_objects,
+        migrateSchedContextReplenishment_objects]
+    · rw [descheduleAtPlacement_cdtNodeSlot, migrateSchedContextReplenishment_cdtNodeSlot]
+    · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
+
+/-- **WS-RR RR8.16** (`v0.35.199`): **the live `.reply` chain preserves the base
+SMP scheduler invariant.**
+
+The composition, step for step: the reply leg (which writes the answered caller's
+TCB, wakes it and runs seL4's `reply_remove`), the donation pop when the answered
+frame heads a context, and the priority-inheritance reversion.  Each is a
+citation; nothing here is a fresh argument, which is what `v0.35.197`'s two
+frames bought.
+
+`hNotCur` is the reply leg's own precondition, unchanged, and stated rather than
+derived for the reason that leg records: what turns the answered caller's
+`.blockedOnReply` into "not current" is a per-core current-thread-IPC-readiness
+discipline this tree states at the boot core only. -/
+theorem endpointReplyCrossCoreDispatch_preserves_schedulerInvariantBase_smp
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st target) ≠ some target)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp
+      (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
+  have hRep := endpointReplyOnCore_preserves_schedulerInvariantBase_smp replier target msg
+    executingCore st hObjInv hNotCur h
+  have hRepObj := endpointReplyOnCore_preserves_objects_invExt replier target msg
+    executingCore st hObjInv
+  unfold endpointReplyCrossCoreDispatch
+  cases hRepEq : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res1 =>
+      rw [hRepEq] at hRep hRepObj
+      simp only at hRep hRepObj ⊢
+      cases res1 with
+      | error e => exact h
+      | ok replySgi? =>
+          simp only
+          split
+          · split
+            · split
+              · exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp
+                  _ _ _ _ hRepObj hRep
+              · split
+                · exact h
+                · split
+                  · exact h
+                  · rename_i st2 hRet
+                    exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp
+                      _ _ _ _
+                      (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRepObj hRet)
+                      (applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp hRepObj hRep hRet)
+            · exact h
+          · exact h
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and the **capability invariant bundle**,
+unconditionally.
+
+None of the chain's three steps writes a CNode or either CDT table: the reply
+leg's writes are TCBs and Reply objects, the pop's are a SchedContext, two TCBs
+and the two stack frames, and the reversion's are TCBs and run queues. -/
+theorem endpointReplyCrossCoreDispatch_preserves_capabilityInvariantBundle
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle
+      (endpointReplyCrossCoreDispatch replier target msg executingCore st).1 := by
+  have hRep := endpointReplyOnCore_preserves_capabilityInvariantBundle replier target msg
+    executingCore st hObjInv h
+  have hRepObj := endpointReplyOnCore_preserves_objects_invExt replier target msg
+    executingCore st hObjInv
+  unfold endpointReplyCrossCoreDispatch
+  cases hRepEq : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res1 =>
+      rw [hRepEq] at hRep hRepObj
+      simp only at hRep hRepObj ⊢
+      cases res1 with
+      | error e => exact h
+      | ok replySgi? =>
+          simp only
+          split
+          · split
+            · split
+              · exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle
+                  _ _ _ _ hRep
+              · split
+                · exact h
+                · split
+                  · exact h
+                  · rename_i st2 hRet
+                    exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle
+                      _ _ _ _
+                      (applyReplyDonationOnCore_preserves_capabilityInvariantBundle hRep hRet)
+            · exact h
+          · exact h
+
+
 end SeLe4n.Kernel

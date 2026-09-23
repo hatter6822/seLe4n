@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.198.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.199.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,17 +222,17 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~80662 lines)
+- `CHANGELOG.md` (~80836 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
 - `SeLe4n/Kernel/API.lean` (~9013 lines)
-- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8416 lines)
+- `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8617 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8272 lines)
 - `docs/spec/SELE4N_SPEC.md` (~7313 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Platform/Boot.lean` (~6000 lines)
-- `SeLe4n/Model/State.lean` (~5772 lines)
+- `SeLe4n/Model/State.lean` (~5934 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `tests/SmpIpcSuite.lean` (~5560 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5457 lines)
@@ -280,19 +280,19 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2604 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
+- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2512 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Preservation.lean` (~2505 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/QueueNextTransport.lean` (~2504 lines)
 - `SeLe4n/Kernel/InformationFlow/TaintPropagation.lean` (~2484 lines)
-- `SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean` (~2482 lines)
 - `docs/dev_history/audits/AUDIT_v0.17.14_WORKSTREAM_PLAN.md` (~2476 lines)
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_WORKSTREAM_PLAN.md` (~2472 lines)
 - `tests/ModelIntegritySuite.lean` (~2456 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2380 lines)
 - `SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean` (~2356 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2351 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.14_WORKSTREAM_PLAN.md` (~2340 lines)
 - `docs/dev_history/audits/AUDIT_v0.16.13_CAPABILITY_SUBSYSTEM_WORKSTREAM_PLAN.md` (~2339 lines)
 - `docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md` (~2325 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/Selection.lean` (~2294 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNextBlocking.lean` (~2290 lines)
 - `SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean` (~2287 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean` (~2281 lines)
@@ -306,10 +306,11 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Architecture/Invariant.lean` (~2057 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean` (~2031 lines)
 - `SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean` (~2031 lines)
+- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~2021 lines)
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1996 lines)
-- `SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean` (~1981 lines)
 - `tests/SyscallDispatchSuite.lean` (~1976 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1970 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Platform/DeviceTree.lean` (~1960 lines)
@@ -322,7 +323,6 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md` (~1889 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean` (~1884 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1866 lines)
 - `tests/FaultHandlingSuite.lean` (~1839 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1834 lines)
 - `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
@@ -382,6 +382,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean` (~1168 lines)
 - `SeLe4n/Kernel/Scheduler/RunQueue.lean` (~1168 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean` (~1165 lines)
+- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1161 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean` (~1161 lines)
 - `SeLe4n/Platform/RPi5/MmioAdapter.lean` (~1154 lines)
 - `tests/KernelErrorMatrixSuite.lean` (~1154 lines)
@@ -404,7 +405,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Service/Invariant/Acyclicity.lean` (~1043 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean` (~1041 lines)
 - `SeLe4n/Kernel/SyscallDispatchEntry.lean` (~1022 lines)
-- `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1015 lines)
 - `tests/DeadlockFreedomSuite.lean` (~1008 lines)
 - `SeLe4n/Kernel/Concurrency/Runtime.lean` (~1000 lines)
 - `SeLe4n/Kernel/IPC/Operations/CapTransfer.lean` (~993 lines)
@@ -431,13 +431,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
 - `docs/planning/SYSCALL_RETURN_ABI_PLAN.md` (~880 lines)
+- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~878 lines)
 - `SeLe4n/Kernel/SchedContext/BindingAffinity.lean` (~868 lines)
 - `docs/planning/SMP_RUST_HAL_PLAN.md` (~868 lines)
 - `tests/An10CascadeSuite.lean` (~866 lines)
 - `SeLe4n/Kernel/IPC/Operations/Fault.lean` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
 - `SeLe4n/Testing/InvariantChecks.lean` (~851 lines)
-- `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~849 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
 - `docs/gitbook/12-proof-and-invariant-map.md` (~836 lines)
 - `tests/DecodingSuite.lean` (~835 lines)
@@ -8449,6 +8449,68 @@ code may assume:
   transition's own module is upstream of the predicate's (which is true of
   `Propagate.lean` and of `Scheduler/Operations/Selection.lean`), the lift goes
   to the predicate's module and says so.
+- **...and the relation those frames read has ONE NAME, so the reply chain is
+  citations rather than an argument** (WS-RR RR8.16, `v0.35.199`, register row
+  85's reply half).  `v0.35.197` stated each frame's pointwise instance as an
+  inline condition on the two stores, which is the recognised-set shape one level
+  down: a step's lift had to spell it out, and a widening would reach whichever
+  consumer a review named.  `kindPreservingWrite st st'` — *at every key the
+  object is unchanged, or both sides hold an object of the same non-`cnode` kind*
+  — is the one name both bundles' frames take (`_of_kindPreserving` on each), so
+  a widening reaches the scheduler bundle and the capability bundle by
+  construction.  Five things new code must respect.
+
+  (1) **A store primitive answers this question BESIDE ITSELF.**  The two
+  primitives are `storeObject_kindPreservingWrite` and
+  `rewriteObject_kindPreservingWrite`, and every composite reaches them through
+  `.trans` rather than through a pointwise walk: the consume, the splice, seL4's
+  `reply_remove`, the delivery store, the enqueue, the wake and the donation pop
+  each carry one, and each is a few lines because the primitive carries the
+  content.  A new store-shaped step states its own on the day it is written.
+
+  (2) **The in-place primitive needs NO side condition, and that is not an
+  economy.**  A `rewriteObject` carries its own proof that the key holds an
+  object of the replacement's kind *and* that the kind is bookkeeping-neutral
+  (`rewriteAdmissible`), and `KernelObjectType.rewriteNeutral` is `false` at
+  `.cnode` — so **both** of the store lemma's hypotheses are already inside the
+  rewrite's proof argument.  A Tier 3 negative refuses a `cnode` side condition
+  coming back, because re-adding one reads as caution and is the statement that
+  the admissibility argument was not consulted.
+
+  (3) **The two lifts of one transition take DIFFERENT preconditions, and the
+  asymmetry is the claim.**  The capability bundle reads the object store and the
+  two CDT tables, all of which the reply chain frames or writes
+  kind-preservingly, so `endpointReplyOnCore_preserves_capabilityInvariantBundle`
+  and the dispatch's are **unconditional**; the scheduler bundle reads
+  `currentOnCore`, and the wake's `queueCurrentConsistentOnCore` preservation
+  needs the thread it enqueues not to be that core's current thread, so the
+  scheduler lifts carry `hNotCur`.  Both directions are pinned — a positive that
+  the scheduler lift has it, a negative that the capability lift does not — since
+  a mutation either way keeps every other token.
+
+  (4) **`hNotCur` is stated on the PRE-state, which is where a caller can
+  discharge it — and it is STATED rather than derived, which is a gap this cut
+  names rather than closes.**  The delivery store frames the scheduler and every
+  thread's `cpuAffinity`, so the core the wake enqueues on and the slot it reads
+  are the pre-state's; a lift that asked for the post-delivery state would be
+  asking a caller about a state it does not hold.  What would *derive* it is a
+  **per-core** current-thread-IPC-readiness discipline, and this tree states that
+  at the boot core only (`currentThreadIpcReady`); `blockedOnReplyNotRunnable` is
+  not it, since it says a reply-blocked thread is not in a run **queue**, which
+  `queueCurrentConsistentOnCore` makes compatible with being current rather than
+  incompatible.  The single-core `endpointReply_preserves_schedulerInvariantBundle`
+  has taken the boot-core form since WS-H1 for the same reason.
+
+  (5) **What remains of row 85 is the CALL chain and the fault composition**, and
+  it is a measurement rather than an estimate: `endpointCallOnCore`'s six store
+  primitives (`endpointQueueEnqueue`, `endpointQueuePopHead`,
+  `storeTcbQueueLinks`, `linkCallerReply`, `linkServerStashedReply`, and the
+  delivery store this cut already covers) have **no** CDT frames and no
+  `kindPreservingWrite` instances, so each owes the pair this cut wrote for the
+  reply side; `endpointCallWithCapsOnCore` then takes the *general* capability
+  frame, because `ipcUnwrapCaps` writes CNodes and has its own bundle lemma
+  (`ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant`).  That is a cut of
+  its own rather than a rider on this one.
 - **...and `passiveServerIdle` is preserved by `cancelIpcBlocking` on every arm**
   (WS-OD OD1.5, v0.34.105) — the theorem OD1 exists to prove, and one that was
   *false* before the abort prefix: the reply arm's reclaim could leave a holder

@@ -1863,4 +1863,117 @@ theorem endpointReplyRecvOnCore_observer_atomic
       target msg replyId executingCore s' h)
 
 
+-- ============================================================================
+-- §11  WS-RR RR8.16 (`v0.35.199`) — the reply leg's two cross-subsystem bundles
+-- ============================================================================
+--
+-- Register row 85.  `v0.35.197` gave `schedulerInvariantBase_smp` and
+-- `capabilityInvariantBundle` their frames; here the reply leg's own store chain
+-- -- the delivery, the wake and seL4's `reply_remove` -- is carried across both,
+-- each step by a citation rather than by an argument.
+--
+-- The two lifts take different preconditions, and the asymmetry is the content:
+-- the capability bundle reads only the object store and the two CDT tables, all
+-- three of which the leg frames or writes kind-preservingly, so it is
+-- **unconditional**; the scheduler bundle reads `currentOnCore`, and the wake's
+-- `queueCurrentConsistentOnCore` preservation needs the thread it enqueues not
+-- to be that core's current thread.
+
+/-- **WS-RR RR8.16** (`v0.35.199`): the cross-core reply leg preserves the **base
+SMP scheduler invariant**.
+
+Three steps, one citation each: the delivery store is a `kindPreservingWrite` on
+a state whose scheduler it does not touch, the wake is `wakeThread`'s own lift,
+and seL4's `reply_remove` is another kind-preserving object write.
+
+`hNotCur` is stated on the **pre**-state, which is where a caller can discharge
+it: the delivery frames the scheduler and every thread's `cpuAffinity`, so the
+core the wake enqueues on and the slot it reads are the pre-state's.
+
+It is **stated rather than derived**, and the reason is a gap this cut does not
+close: the answered caller is `.blockedOnReply` in the pre-state, and what turns
+that into "not current" is a *per-core* current-thread-IPC-readiness discipline,
+which this tree states at the boot core only (`currentThreadIpcReady`).
+`blockedOnReplyNotRunnable` is not it — it says a reply-blocked thread is not in
+a run **queue**, which `queueCurrentConsistentOnCore` makes compatible with being
+current rather than incompatible.  A per-core `currentThreadIpcReady` retires the
+hypothesis; until there is one, a caller supplies it (the single-core
+`endpointReply_preserves_schedulerInvariantBundle` has taken the boot-core form
+since WS-H1 for the same reason). -/
+theorem endpointReplyOnCore_preserves_schedulerInvariantBase_smp
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st target) ≠ some target)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]; exact h
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hSched : st'.scheduler = st.scheduler :=
+      storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
+    have hObj' : st'.objects.invExt :=
+      storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg)
+        hObjInv hStore'
+    have h1 : schedulerInvariantBase_smp st' :=
+      schedulerInvariantBase_smp_of_kindPreserving h hSched
+        (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv
+          (lookupTcb_some_objects st target tcb hLk) hStore)
+    have hNotCur' :
+        st'.scheduler.currentOnCore (determineTargetCore st' target) ≠ some target := by
+      rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st st' target .ready (some msg)
+        target hObjInv hStore', hSched]
+      exact hNotCur
+    have h2 : schedulerInvariantBase_smp (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_schedulerInvariantBase_smp st' target executingCore hObj'
+        hNotCur' h1
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact h2
+    · exact schedulerInvariantBase_smp_of_kindPreserving h2
+        (removeCallerReplyFrame_scheduler_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_kindPreservingWrite _ _ target rid
+          (wakeThread_preserves_objects_invExt st' target executingCore hObj') hCons)
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and the **capability invariant bundle**,
+with no precondition beyond object-store integrity.
+
+Every write the leg performs replaces an object with one of the same non-`cnode`
+kind -- a TCB for a TCB at the answered caller, the woken thread's own `.ready`
+rewrite, and a Reply for a Reply at each frame `reply_remove` repairs -- and no
+step writes either CDT table.  That is exactly what
+`capabilityInvariantBundle_of_kindPreserving` asks. -/
+theorem endpointReplyOnCore_preserves_capabilityInvariantBundle
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]; exact h
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hObj' : st'.objects.invExt :=
+      storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg)
+        hObjInv hStore'
+    have hCdt := storeTcbIpcStateAndMessage_fromTcb_cdt_eq hStore
+    have h1 : capabilityInvariantBundle st' :=
+      capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1 hObj'
+        (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv
+          (lookupTcb_some_objects st target tcb hLk) hStore)
+    have hObjW : (wakeThread st' target executingCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt st' target executingCore hObj'
+    have h2 : capabilityInvariantBundle (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_capabilityInvariantBundle st' target executingCore hObj' h1
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact h2
+    · exact capabilityInvariantBundle_of_kindPreserving h2
+        (removeCallerReplyFrame_cdtNodeSlot_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_cdt_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hObjW hCons)
+        (removeCallerReplyFrame_kindPreservingWrite _ _ target rid hObjW hCons)
+
+
 end SeLe4n.Kernel

@@ -764,6 +764,36 @@ theorem schedulerInvariantBase_smp_of_objects_and_scheduler_eq {st st' : SystemS
     unfold SystemState.getTcb? at hSome ⊢
     rw [hObjs]; exact hSome)
 
+/-- WS-RR RR8.16 (`v0.35.199`): the frame stated over the shared object relation,
+which is what every IPC store chain supplies.
+
+`kindPreservingWrite`'s `getTcb?_isSome` reading IS this frame's `hTcb`, so a
+step that has the relation needs nothing further — and the relation composes by
+`.trans`, where a survival hypothesis restated per step does not. -/
+theorem schedulerInvariantBase_smp_of_kindPreserving {st st' : SystemState}
+    (h : schedulerInvariantBase_smp st)
+    (hSched : st'.scheduler = st.scheduler)
+    (hW : kindPreservingWrite st st') :
+    schedulerInvariantBase_smp st' :=
+  schedulerInvariantBase_smp_of_frame h hSched
+    (kindPreservingWrite.getTcb?_isSome hW)
+
+/-- WS-RR RR8.16 (`v0.35.199`): **the donation return preserves the base SMP
+scheduler invariant** — it writes no scheduler state at all
+(`returnDonatedSchedContext_scheduler_eq`), so the frame and the relation are the
+whole proof. -/
+theorem returnDonatedSchedContext_preserves_schedulerInvariantBase_smp
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (h : schedulerInvariantBase_smp st)
+    (hStep : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    schedulerInvariantBase_smp st' :=
+  schedulerInvariantBase_smp_of_kindPreserving h
+    (returnDonatedSchedContext_scheduler_eq st st' serverTid scId originalOwner newOwner? hStep)
+    (returnDonatedSchedContext_kindPreservingWrite hObjInv hStep)
+
 /-- WS-RR RR8.16 (`v0.35.197`): the frame at the **fields the invariant reads**,
 which is narrower than the whole scheduler and is what the SM5.H replenishment
 migration needs.

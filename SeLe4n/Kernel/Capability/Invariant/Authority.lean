@@ -757,10 +757,7 @@ theorem capabilityInvariantBundle_of_kindPreserving {st st' : SystemState}
     (hCdtNodeSlot : st'.cdtNodeSlot = st.cdtNodeSlot)
     (hCdt : st'.cdt = st.cdt)
     (hObjInv : st'.objects.invExt)
-    (hAt : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
-      ∃ pre post : KernelObject,
-        st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
-        post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode) :
+    (hAt : kindPreservingWrite st st') :
     capabilityInvariantBundle st' := by
   refine capabilityInvariantBundle_of_frame h hCdtNodeSlot hCdt ?_ ?_ ?_ hObjInv
   · intro oid cn hCn
@@ -809,16 +806,24 @@ theorem storeObject_preserves_capabilityInvariantBundle_of_kind
     (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
     capabilityInvariantBundle st' := by
   have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
-  refine capabilityInvariantBundle_of_kindPreserving h
+  exact capabilityInvariantBundle_of_kindPreserving h
     (storeObject_cdtNodeSlot_eq st st' oid obj hStore).1
     (storeObject_cdt_eq st st' oid obj hStore)
-    (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore) ?_
-  intro k
-  by_cases hEq : k = oid
-  · subst hEq
-    exact Or.inr ⟨pre, obj, hPre,
-      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode⟩
-  · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+    (storeObject_preserves_objects_invExt st st' oid obj hObjInv hStore)
+    (storeObject_kindPreservingWrite hObjInv hStore hPre hKind hNotCnode)
+
+/-- WS-RR RR8.16 (`v0.35.199`): the walk's own `kindPreservingWrite`, so a chain
+that ends in it is a `.trans` rather than a second pointwise argument. -/
+theorem propagatePipChainCrossCore_kindPreservingWrite (st : SystemState)
+    (startTid : SeLe4n.ThreadId) (ec : SeLe4n.Kernel.Concurrency.CoreId) (fuel : Nat)
+    (hInv : st.objects.invExt) :
+    kindPreservingWrite st
+      (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
+  intro oid
+  rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
+      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost⟩
+  · exact Or.inl hEq
+  · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType]⟩
 
 /-- WS-RR RR8.16 (`v0.35.197`): **the priority-inheritance chain walk preserves the
 capability invariant bundle** — the first instance of the frame above, and one of
@@ -836,14 +841,35 @@ theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle
     capabilityInvariantBundle
       (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore st startTid ec fuel).1 := by
   have hInv : st.objects.invExt := h.2.2.2.2.2.1
-  refine capabilityInvariantBundle_of_kindPreserving h
+  exact capabilityInvariantBundle_of_kindPreserving h
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdtNodeSlot fuel st
       startTid ec)
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_cdt fuel st startTid ec)
     (SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt st
-      startTid ec fuel hInv) ?_
-  intro oid
-  rcases SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCore_objects_pointwise fuel st
-      startTid ec hInv oid with hEq | ⟨pre, post, hPre, hPost⟩
-  · exact Or.inl hEq
-  · exact Or.inr ⟨.tcb pre, .tcb post, hPre, hPost, rfl, by simp [KernelObject.objectType]⟩
+      startTid ec fuel hInv)
+    (propagatePipChainCrossCore_kindPreservingWrite st startTid ec fuel hInv)
+
+/-- WS-RR RR8.16 (`v0.35.199`): **the donation return preserves the capability
+invariant bundle.**
+
+One application of the frame: the return writes no CDT table
+(`returnDonatedSchedContext_cdt_eq`) and its whole store chain is a
+`kindPreservingWrite` (a SchedContext for a SchedContext, a Reply for a Reply,
+two TCBs for two TCBs).  The register row this closes asked for an *argument*
+per step; with the relation it is a citation. -/
+theorem returnDonatedSchedContext_preserves_capabilityInvariantBundle
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : capabilityInvariantBundle st)
+    (hStep : SeLe4n.Kernel.returnDonatedSchedContext st serverTid scId originalOwner
+      newOwner? = .ok st') :
+    capabilityInvariantBundle st' := by
+  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  exact capabilityInvariantBundle_of_kindPreserving h
+    (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep).2
+    (SeLe4n.Kernel.returnDonatedSchedContext_cdt_eq hStep).1
+    (SeLe4n.Kernel.returnDonatedSchedContext_preserves_objects_invExt' st st' serverTid scId
+      originalOwner newOwner? hObjInv hStep)
+    (SeLe4n.Kernel.returnDonatedSchedContext_kindPreservingWrite hObjInv hStep)
+

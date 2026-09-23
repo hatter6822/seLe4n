@@ -644,6 +644,52 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the delivery store is a
+`kindPreservingWrite` — one `storeObject` of a `.tcb` at a key the caller has
+already resolved to a TCB.
+
+The shape register row 85's two bundle frames consume.  Stated beside the
+definition rather than at each IPC chain: every arm of the reply and call spines
+opens with this store, and re-deriving the fact per arm is the duplication this
+project retires. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hObjInv : st.objects.invExt)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStore
+  cases hS : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  | error e => rw [hS] at hStore; cases hStore
+  | ok p =>
+    obtain ⟨_, s1⟩ := p
+    rw [hS] at hStore
+    simp only [Except.ok.injEq] at hStore
+    subst hStore
+    exact storeObject_kindPreservingWrite hObjInv hS hPre rfl
+      (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither CDT table —
+`storeObject` writes `objects`, the two indices, the lifecycle table and the ASID
+table, and no more. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStore
+  cases hS : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  | error e => rw [hS] at hStore; cases hStore
+  | ok p =>
+    obtain ⟨_, s1⟩ := p
+    rw [hS] at hStore
+    simp only [Except.ok.injEq] at hStore
+    subst hStore
+    exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
 /-- WS-L1/L1-B: Equivalence theorem — `_fromTcb` produces identical results
 to the original when the provided TCB matches the state. All existing
 preservation theorems for `storeTcbIpcStateAndMessage` apply to `_fromTcb`
@@ -3713,6 +3759,64 @@ theorem storeDonationHeadPop_non_reply_eq
           (fun hk => hNotReply b (by rw [← e1, hk]; exact hReadB)) hInv1 hS2
     rw [e2, e1]
 
+/-- WS-RR RR8.16 (`v0.35.199`): the head clear writes no CDT table -- it is one
+`storeObject`, which writes `objects`, the two indices, the lifecycle table and
+the ASID table. -/
+theorem storeDonationHeadClear_cdt_eq {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationHeadClear head? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): and neither does the re-head. -/
+theorem storeReplyReHead_cdt_eq {scId : SeLe4n.SchedContextId}
+    {below? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeReplyReHead scId below? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): so the pop writes no CDT table either. -/
+theorem storeDonationHeadPop_cdt_eq {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} {st st' : SystemState}
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  cases head? with
+  | none => cases h; exact ⟨rfl, rfl⟩
+  | some p =>
+      obtain ⟨rid, r⟩ := p
+      rw [storeDonationHeadPop_some] at h
+      revert h
+      cases hClear : storeDonationHeadClear (some rid) st with
+      | error _ => intro h; simp only at h; cases h
+      | ok s1 =>
+          intro h
+          simp only at h
+          have h1 := storeDonationHeadClear_cdt_eq hClear
+          have h2 := storeReplyReHead_cdt_eq h
+          exact ⟨h2.1.trans h1.1, h2.2.trans h1.2⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): the pop is a `kindPreservingWrite` — every key
+it touches held a Reply and still holds one, and every other key is untouched.
+
+The shape register row 85's two bundle frames consume, so the donation return's
+whole store chain composes by `.trans` rather than by a pointwise argument per
+step. -/
+theorem storeDonationHeadPop_kindPreservingWrite
+    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    kindPreservingWrite st st' := by
+  intro k
+  by_cases hRep : ∃ r : Reply, st.objects[k]? = some (.reply r)
+  · obtain ⟨r, hr⟩ := hRep
+    obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hObjInv h k r hr
+    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType]⟩
+  · exact Or.inl (storeDonationHeadPop_non_reply_eq hObjInv h k (fun r hr => hRep ⟨r, hr⟩))
+
 /-- A non-Reply found after the pop was there before it. -/
 theorem storeDonationHeadPop_non_reply_backward
     {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
@@ -5575,6 +5679,33 @@ theorem removeCallerReplyFrame_cdtNodeSlot_eq (st st' : SystemState)
   exact (SystemState.consumeCallerReply_cdtNodeSlot_eq _ st' caller rid hStep).trans
     (spliceReplyFrameOutOrSelf_cdtNodeSlot_eq st rid)
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the splice is a `kindPreservingWrite` — it
+rewrites the stack links of up to three Reply objects and touches nothing else,
+so every key it writes held a Reply and still holds one. -/
+theorem spliceReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (spliceReplyFrameOutOrSelf st rid) := by
+  intro k
+  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType]⟩
+
+/-- **WS-RR RR8.16** (`v0.35.199`): and so is the removal — the splice above, then
+the consume, which writes a Reply for a Reply and a TCB for a TCB.
+
+This is what carries register row 85's two bundles across seL4's `reply_remove`:
+the capability bundle's four transport hypotheses collapse into it
+(`capabilityInvariantBundle_of_kindPreserving`) and the scheduler bundle reads the
+`getTcb?` half of it. -/
+theorem removeCallerReplyFrame_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (spliceReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv).trans
+    (SystemState.consumeCallerReply_kindPreservingWrite _ st' caller rid
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+
 theorem removeCallerReplyFrame_preserves_objects_invExt (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
@@ -7348,6 +7479,76 @@ theorem returnDonatedSchedContext_objects_forward_of_kind
       exact absurd (by rw [← Option.some.inj h3]; exact trivial) hKind
     · rw [storeObject_objects_ne s3 s4 serverTid.toObjId oid _ hk hInv3 hS4]; exact h3
   rw [hEq]; exact h4
+
+/-- WS-RR RR8.16 (`v0.35.199`): **the donation return is a `kindPreservingWrite`.**
+
+Its whole store chain, composed: a SchedContext for a SchedContext, the head
+pop's Reply-for-Reply, and two TCBs for two TCBs.  Register row 85's two bundle
+frames consume exactly this, so the reply chain's lift is a `.trans` rather than
+a fresh pointwise argument -- and the `.trans` is the content, since a key the
+first store rewrote and a later one left alone is still a same-kind
+replacement. -/
+theorem returnDonatedSchedContext_kindPreservingWrite
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  -- Step 1: the SchedContext rewrite.
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1 hSc rfl (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  -- Step 2: the head pop, a Reply for a Reply.
+  have hW2 : kindPreservingWrite s1 s2 := storeDonationHeadPop_kindPreservingWrite hInv1 hClear
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  -- Step 3: the recipient's TCB.
+  have hPre3 : s2.objects[originalOwner.toObjId]? = some (.tcb clientTcb) :=
+    lookupTcb_some_objects s2 originalOwner clientTcb hL1
+  have hW3 : kindPreservingWrite s2 s3 :=
+    storeObject_kindPreservingWrite hInv2 hS3 hPre3 rfl (by simp [KernelObject.objectType])
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- Step 4: the holder's TCB.
+  have hPre4 : s3.objects[serverTid.toObjId]? = some (.tcb serverTcb) :=
+    lookupTcb_some_objects s3 serverTid serverTcb hL2
+  have hW4 : kindPreservingWrite s3 s4 :=
+    storeObject_kindPreservingWrite hInv3 hS4 hPre4 rfl (by simp [KernelObject.objectType])
+  -- The `scThreadIndex` rewrite that closes the chain touches no object.
+  have hLast : kindPreservingWrite s4 st' :=
+    kindPreservingWrite.of_objects_eq (by rw [hEq])
+  exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
+
+/-- WS-RR RR8.16 (`v0.35.199`): the donation return writes no CDT table.
+
+Read off its own store chain, beside the transition, rather than from
+`CrossSubsystem.lean`'s `returnDonatedSchedContext_preservesFieldsOutside`: that
+module is downstream of every capability-side asker, so the bundle frame could
+not reach it.  The two are the same fact at different strengths, and this is the
+one the capability lift consumes. -/
+theorem returnDonatedSchedContext_cdt_eq
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    _hSc, _, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have e1 := storeObject_cdt_eq st s1 _ _ hS1
+  have e1' := storeObject_cdtNodeSlot_eq st s1 _ _ hS1
+  have e2 := storeDonationHeadPop_cdt_eq hClear
+  have e3 := storeObject_cdt_eq s2 s3 _ _ hS3
+  have e3' := storeObject_cdtNodeSlot_eq s2 s3 _ _ hS3
+  have e4 := storeObject_cdt_eq s3 s4 _ _ hS4
+  have e4' := storeObject_cdtNodeSlot_eq s3 s4 _ _ hS4
+  refine ⟨?_, ?_⟩
+  · rw [hEq]; simp only
+    rw [e4, e3, e2.1, e1]
+  · rw [hEq]; simp only
+    rw [e4', e3', e2.2, e1']
 
 /-- WS-OD OD3.2: the donation return preserves the object store's extended
 invariant.  Relocated off the store chain, where it was a fifth copy of the

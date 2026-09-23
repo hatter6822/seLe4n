@@ -2587,6 +2587,78 @@ theorem storeObject_cdtNodeSlot_eq
   rfl
 
 -- ============================================================================
+-- WS-RR RR8.16 (`v0.35.199`) — the shape every IPC store chain has
+-- ============================================================================
+--
+-- Register row 85 needs `capabilityInvariantBundle` and
+-- `schedulerInvariantBase_smp` carried across the cross-core Call and reply
+-- chains, and every step of both writes objects the same way: a TCB for a TCB,
+-- a Reply for a Reply, a SchedContext for a SchedContext.  `v0.35.197` gave
+-- both bundles frames keyed on exactly that, stated inline at each consumer;
+-- stating it once here is what makes a chain a `.trans` rather than a fresh
+-- pointwise argument per step.
+--
+-- It lives in the model, upstream of both invariants, because it is a relation
+-- between two object stores and mentions neither.
+
+/-- WS-RR RR8.16 (`v0.35.199`): **at every key, the store is unchanged or holds
+an object of the same kind, and that kind is not `cnode`.**
+
+The `cnode` exclusion is what the capability bundle needs and the scheduler
+bundle does not: three of that bundle's conjuncts read a CNode's *value*, so a
+CNode rewrite keeps the key and the kind while changing what they read.  It is
+carried here rather than at the consumer so a chain does not have to re-establish
+it per step. -/
+def kindPreservingWrite (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : KernelObject,
+      st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode
+
+namespace kindPreservingWrite
+
+theorem refl (st : SystemState) : kindPreservingWrite st st := fun _ => Or.inl rfl
+
+theorem trans {st st' st'' : SystemState}
+    (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
+    kindPreservingWrite st st'' := by
+  intro oid
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
+    · exact Or.inl (e₂.trans e₁)
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁⟩
+    · rw [hq₁] at hp₂
+      cases hp₂
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
+object at all. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    kindPreservingWrite st st' := fun _ => Or.inl (by rw [h])
+
+end kindPreservingWrite
+
+/-- WS-RR RR8.16 (`v0.35.199`): a `storeObject` that replaces an object with one
+of the same non-`cnode` kind is a `kindPreservingWrite` — the step every IPC
+chain is built from. -/
+theorem storeObject_kindPreservingWrite
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj pre : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hPre : st.objects[oid]? = some pre)
+    (hKind : obj.objectType = pre.objectType)
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
+    kindPreservingWrite st st' := by
+  intro k
+  by_cases hEq : k = oid
+  · subst hEq
+    exact Or.inr ⟨pre, obj, hPre,
+      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode⟩
+  · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+
+-- ============================================================================
 -- WS-G3/F-P06: storeObject ASID table maintenance lemmas
 -- ============================================================================
 
@@ -2789,6 +2861,24 @@ The frame every transition discharges, now with no hypothesis: it used to requir
 agreement at the thread's priority source. -/
 theorem threadBasePriority_congr {st st' : SystemState} (tcb : TCB) :
     st'.threadBasePriority tcb = st.threadBasePriority tcb := rfl
+
+/-- WS-RR RR8.16 (`v0.35.199`): **a thread that resolved still resolves.**
+
+The scheduler-side reading of `kindPreservingWrite`, and what
+`currentThreadValidOnCore` needs: the relation says a key keeps its kind, so a
+key holding a TCB still holds one.  It sits here rather than with the relation's
+other algebra because `getTcb?` is declared below that block. -/
+theorem _root_.SeLe4n.Model.kindPreservingWrite.getTcb?_isSome {st st' : SystemState}
+    (h : kindPreservingWrite st st') (t : SeLe4n.ThreadId)
+    (hSome : (st.getTcb? t).isSome) : (st'.getTcb? t).isSome := by
+  unfold SystemState.getTcb? at hSome ⊢
+  rcases h t.toObjId with e | ⟨pre, post, hp, hq, ht, _⟩
+  · rw [e]; exact hSome
+  · rw [hp] at hSome
+    rw [hq]
+    cases pre with
+    | tcb _ => cases post <;> simp [KernelObject.objectType] at ht ⊢
+    | _ => simp at hSome
 
 /-- WS-SM SM6.D: Read a Reply from the global object store. -/
 def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
@@ -3847,6 +3937,50 @@ theorem consumeCallerReply_tcb_caller (st st' : SystemState)
     have hT : st1.getTcb? caller = some t0 := (getTcb?_eq_some_iff st1 caller t0).mpr h1
     simp only [hT] at hStep
     exact storeObject_objects_eq st1 st' caller.toObjId _ hInv1 hStep
+
+/-- **WS-RR RR8.16** (`v0.35.199`): `consumeReply` is a `kindPreservingWrite` —
+its one store replaces a Reply with that Reply's own consumed record. -/
+theorem consumeReply_kindPreservingWrite (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeReply rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold consumeReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; cases hStep; exact kindPreservingWrite.refl _
+  | some r =>
+    rw [hGet] at hStep
+    exact storeObject_kindPreservingWrite hObjInv hStep
+      ((getReply?_eq_some_iff st rid r).mp hGet) rfl (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.199`): and so is `consumeCallerReply` — the Reply
+store above, then a TCB store at the caller's own key.
+
+The shape register row 85's two bundle frames consume.  Stated here rather than
+at the reply path, because it is a fact about this primitive and every asker (the
+reply leg's removal, the cancellation teardown) is downstream of it. -/
+theorem consumeCallerReply_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : kindPreservingWrite st st1 :=
+      consumeReply_kindPreservingWrite st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact h1.trans (storeObject_kindPreservingWrite hInv1 hStep
+        ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl
+        (by simp [KernelObject.objectType]))
 
 /-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
 (object-store writes only). -/
@@ -4988,6 +5122,34 @@ theorem rewriteObject_objects_ne (st : SystemState) (id k : SeLe4n.ObjId) (new :
   unfold rewriteObject
   simp only [RHTable_getElem?_eq_get?]
   exact RHTable.getElem?_insert_ne st.objects id k new (fun hb => hNe (eq_of_beq hb)) hInv
+
+/-- **WS-RR RR8.16** (`v0.35.199`): **every `rewriteObject` is a
+`kindPreservingWrite`, with no side condition at all.**
+
+The in-place sibling of `storeObject_kindPreservingWrite`, and strictly cheaper:
+a rewrite carries its own proof that the key holds an object of the replacement's
+kind *and* that the kind is bookkeeping-neutral (`rewriteAdmissible`), and
+`KernelObjectType.rewriteNeutral` is `false` at `.cnode` — so both of the store
+lemma's hypotheses are already in the rewrite's proof argument.  That is the
+whole difference between the two, and the reason they are separate lemmas rather
+than one.
+
+Stated here so register row 85's frame question has one answer per store
+primitive, beside the primitive. -/
+theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.rewriteObject id new h) := by
+  intro k
+  by_cases hEq : id = k
+  · subst hEq
+    have hAdm := h
+    obtain ⟨pre, hPre, hKind, hNeutral⟩ := hAdm
+    refine Or.inr ⟨pre, new, hPre, rewriteObject_objects_self st id new h hInv,
+      hKind.symm, ?_⟩
+    intro hCn
+    rw [hCn] at hNeutral
+    exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
+  · exact Or.inl (rewriteObject_objects_ne st id k new h hEq hInv)
 
 -- The bookkeeping, unconditionally.
 

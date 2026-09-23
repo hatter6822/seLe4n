@@ -408,6 +408,26 @@ theorem mem_foldl_insert_provenance (moved : List (SchedContextId × Nat))
     (migrateSchedContextReplenishment st scId fromCore toCore).objects = st.objects := by
   unfold migrateSchedContextReplenishment; split <;> rfl
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the migration writes neither
+capability-derivation table.
+
+Stated beside the object frame because the reply path's donation return composes
+this migration with a deschedule, and the *capability* bundle reads `cdtNodeSlot`
+and `cdt` exactly as it reads the store — so the consumer that carries the bundle
+across the return needs all three, from the transition rather than from an
+unfold at the call site. -/
+@[simp] theorem migrateSchedContextReplenishment_cdtNodeSlot (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).cdtNodeSlot
+      = st.cdtNodeSlot := by
+  unfold migrateSchedContextReplenishment; split <;> rfl
+
+/-- ...and the derivation tree itself (`v0.35.199`). -/
+@[simp] theorem migrateSchedContextReplenishment_cdt (st : SystemState)
+    (scId : SchedContextId) (fromCore toCore : CoreId) :
+    (migrateSchedContextReplenishment st scId fromCore toCore).cdt = st.cdt := by
+  unfold migrateSchedContextReplenishment; split <;> rfl
+
 /-- WS-SM SM5.H.4: the migration never advances the machine timer. -/
 @[simp] theorem migrateSchedContextReplenishment_machine (st : SystemState)
     (scId : SchedContextId) (fromCore toCore : CoreId) :

@@ -1454,6 +1454,37 @@ def enqueueRunnableOnCore (st : SystemState) (c : CoreId)
               ((st.scheduler.runQueueOnCore c).insert tid (tcb.boostedPriority)) }
   | none => st
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the enqueue is a `kindPreservingWrite` — its
+one object write is the `rewriteObject` that marks the woken thread `.ready`, at
+a key the enqueue has already resolved to a TCB.
+
+The shape register row 85's two bundle frames consume; the wake lifts it through
+`wakeThread_state_eq_enqueue`. -/
+theorem enqueueRunnableOnCore_kindPreservingWrite (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (enqueueRunnableOnCore st c tid) := by
+  unfold enqueueRunnableOnCore
+  cases hT : st.getTcbWitnessed? tid with
+  | none => exact kindPreservingWrite.refl _
+  | some p =>
+    obtain ⟨tcb, hw⟩ := p
+    simp only
+    split
+    · exact kindPreservingWrite.refl _
+    · exact SystemState.rewriteObject_kindPreservingWrite st tid.toObjId _
+        (SystemState.rewriteAdmissible_tcb hw _) hInv
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither CDT table — the
+enqueue's two writes are one object and one run-queue slot. -/
+theorem enqueueRunnableOnCore_cdt (st : SystemState) (c : CoreId)
+    (tid : SeLe4n.ThreadId) :
+    (enqueueRunnableOnCore st c tid).cdt = st.cdt
+      ∧ (enqueueRunnableOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold enqueueRunnableOnCore
+  split
+  · split <;> exact ⟨rfl, rfl⟩
+  · exact ⟨rfl, rfl⟩
+
 /-- WS-SM SM5.I: `enqueueRunnableOnCore` leaves every core's replenish-queue slot
 unchanged — it writes only objects (`ipcState := .ready`) and a run queue.
 
@@ -1659,6 +1690,32 @@ theorem descheduleAtPlacement_preserves_objects_invExt (st : SystemState)
     (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) :
     (descheduleAtPlacement st tid).objects.invExt := by
   rw [descheduleAtPlacement_preserves_objects]; exact hInv
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither capability-derivation
+table, at either branch.
+
+Stated beside the object frame for the same reason that one is stated here: the
+reply path's donation return composes this deschedule, and the *capability*
+bundle (`capabilityInvariantBundle`) reads `cdtNodeSlot` and `cdt` exactly as it
+reads the store — so a consumer that has the objects frame and re-derives these
+two by unfolding the step is doing at the call site what belongs at the
+transition. -/
+@[simp] theorem descheduleAtPlacement_cdtNodeSlot (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · simp only [removeRunnableOnCore]
+  · rfl
+
+/-- ...and the derivation tree itself (`v0.35.199`). -/
+@[simp] theorem descheduleAtPlacement_cdt (st : SystemState)
+    (tid : SeLe4n.ThreadId) :
+    (descheduleAtPlacement st tid).cdt = st.cdt := by
+  unfold descheduleAtPlacement descheduleAt
+  split
+  · simp only [removeRunnableOnCore]
+  · rfl
 
 /-- WS-RR RR8.11: ...and hence moves no thread's home core.  Stated beside the
 object frame it is derived from, because the SM5.H replenish-affinity invariant

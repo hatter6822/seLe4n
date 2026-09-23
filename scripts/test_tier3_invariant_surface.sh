@@ -20790,7 +20790,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_
 # ...and the pointwise instance EXCLUDES `cnode`, which is load-bearing in one
 # direction only: a CNode rewrite keeps the key and the kind while changing the
 # slots, and three of the bundle's conjuncts are about the value.
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_kindPreserving[^\n]*(\n([ \t][^\n]*)?)*post\.objectType . KernelObjectType\.cnode" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+#
+# REPOINTED at `v0.35.199`: the exclusion moved into `kindPreservingWrite`, the
+# named relation the instance now takes, so the claim is a property of that
+# definition and the instance merely consumes it.  Anchoring the consumer would
+# be a pin on a spelling the cut deleted; this pins the relation at its owner.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def kindPreservingWrite[^\n]*(\n([ \t][^\n]*)?)*post\.objectType . KernelObjectType\.cnode" SeLe4n/Model/State.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem capabilityInvariantBundle_of_kindPreserving[^\n]*(\n([ \t][^\n]*)?)*hAt : kindPreservingWrite st st." SeLe4n/Kernel/Capability/Invariant/Authority.lean'
 run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_objects_and_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 # The store-level instance is what every IPC step's chain is built from: it
 # takes the PRE-state object and the kind equality, so a store that changes an
@@ -20814,5 +20820,66 @@ run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_preserves
 # closure of the asker that needed it.  Callers read `.2` of the owner.
 run_negative_check "INVARIANT" rg -n 'theorem migrateSchedContextReplenishment_currentOnCore' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 run_check "INVARIANT" rg -n 'migrateSchedContextReplenishment_runQueue_current_eq st scId fromCore toCore' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.199`) — the REPLY chain carries both bundles
+# ============================================================================
+#
+# Register row 85's store-chain arithmetic, reply half.  `v0.35.197` stated the
+# two read sets as frames; this cut gives each store primitive the relation
+# those frames consume and composes the reply chain out of citations.
+#
+# ONE NAMED RELATION, not a per-step pointwise statement.  `kindPreservingWrite`
+# is what both frames read, so a widening reaches the scheduler bundle and the
+# capability bundle by construction rather than at whichever consumer a review
+# names.
+run_check "INVARIANT" rg -n '^def kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem schedulerInvariantBase_smp_of_kindPreserving($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+# The IN-PLACE primitive needs NO side condition, and that is the content: a
+# `rewriteObject` carries its own proof that the key holds an object of the
+# replacement's kind AND that the kind is bookkeeping-neutral, and
+# `KernelObjectType.rewriteNeutral` is `false` at `.cnode` -- so both of the
+# store lemma's hypotheses are already in the rewrite's proof argument.  A
+# mutation that re-adds `hNotCnode` keeps every other token.
+run_check "INVARIANT" rg -n '^theorem rewriteObject_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem rewriteObject_kindPreservingWrite[^\n]*(\n([ \t][^\n]*)?)*hNotCnode" SeLe4n/Model/State.lean'
+# The reply chain's four store primitives.
+run_check "INVARIANT" rg -n '^theorem consumeReply_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+# The CDT frames each lift consumes, beside the transitions they frame.
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAtPlacement_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAtPlacement_cdt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem migrateSchedContextReplenishment_cdt($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem enqueueRunnableOnCore_cdt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+# The wake's two lifts, beside the three conjunct lemmas they assemble.
+run_check "INVARIANT" rg -n '^theorem wakeThread_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreWake.lean
+# The donation pop, at both units.
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+# ...and the `v0.35.197` bundle lift CONSUMES it rather than restating the walk's
+# pointwise argument: the two were the same twelve lines until this cut.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem propagatePipChainCrossCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*propagatePipChainCrossCore_objects_pointwise" SeLe4n/Kernel/Capability/Invariant/Authority.lean'
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+# The reply LEG and the whole `.reply` chain.  The ASYMMETRY between the two
+# lifts is the claim: the scheduler bundle reads `currentOnCore`, so the wake's
+# own precondition survives into it; the capability bundle reads only the object
+# store and the two CDT tables, so it is unconditional.  A mutation that adds
+# `hNotCur` to the capability lift -- or drops it from the scheduler one --
+# keeps every other token, so each direction is pinned.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : st\.scheduler\.currentOnCore \(determineTargetCore st target\) . some target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hNotCur" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : st\.scheduler\.currentOnCore \(determineTargetCore st target\) . some target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hNotCur" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 
 finalize_report

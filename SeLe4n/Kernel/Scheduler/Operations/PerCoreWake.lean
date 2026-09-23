@@ -1760,6 +1760,48 @@ theorem wakeThread_preserves_runQueueUniqueOnCore (st : SystemState) (tid : SeLe
   exact enqueueRunnableOnCore_preserves_runQueueUniqueOnCore st
     (determineTargetCore st tid) c' tid hnd
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the wake preserves the **base SMP scheduler
+invariant** — the three conjunct lemmas above, at every core, under one name.
+
+Register row 85's reply and call chains each end in a wake, and each was
+otherwise obliged to re-assemble this triple.  The `hNotCur` precondition is the
+one `queueCurrentConsistentOnCore` needs — the discipline that a wake never
+targets the running thread — and it is carried rather than discharged here: no
+invariant in this tree entails it per core, `currentThreadIpcReady` being stated
+at the boot core alone, so it travels to whichever caller can supply it. -/
+theorem wakeThread_preserves_schedulerInvariantBase_smp (st : SystemState)
+    (tid : SeLe4n.ThreadId) (executingCore : CoreId)
+    (hInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st tid) ≠ some tid)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (wakeThread st tid executingCore).1 := by
+  intro c
+  obtain ⟨hQCC, hRQU, hCTV⟩ := h c
+  exact ⟨wakeThread_preserves_queueCurrentConsistentOnCore st tid executingCore c hNotCur hQCC,
+    wakeThread_preserves_runQueueUniqueOnCore st tid executingCore c hRQU,
+    wakeThread_preserves_currentThreadValidOnCore st tid executingCore c hInv hCTV⟩
+
+/-- **WS-RR RR8.16** (`v0.35.199`): the wake is a `kindPreservingWrite` — its one
+object write marks the woken thread `.ready`, in place. -/
+theorem wakeThread_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
+    (executingCore : CoreId) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (wakeThread st tid executingCore).1 := by
+  rw [wakeThread_state_eq_enqueue]
+  exact enqueueRunnableOnCore_kindPreservingWrite st (determineTargetCore st tid) tid hInv
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither CDT table, so it
+preserves the **capability invariant bundle**. -/
+theorem wakeThread_preserves_capabilityInvariantBundle (st : SystemState)
+    (tid : SeLe4n.ThreadId) (executingCore : CoreId) (hInv : st.objects.invExt)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (wakeThread st tid executingCore).1 := by
+  have hCdt := enqueueRunnableOnCore_cdt st (determineTargetCore st tid) tid
+  refine capabilityInvariantBundle_of_kindPreserving h ?_ ?_
+    (wakeThread_preserves_objects_invExt st tid executingCore hInv)
+    (wakeThread_kindPreservingWrite st tid executingCore hInv)
+  · rw [wakeThread_state_eq_enqueue]; exact hCdt.2
+  · rw [wakeThread_state_eq_enqueue]; exact hCdt.1
+
 /-- WS-SM SM5.I.8 (preservation, SM4.C `runnableThreadsAreTCBsOnCore`): a wake on
 core `c` preserves runnable-threads-are-TCBs on **every** core `c'`.  A sibling's
 queue is framed (members resolve via `getTcb?_isSome`); the target's queue gains at

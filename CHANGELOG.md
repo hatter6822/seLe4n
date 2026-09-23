@@ -1,3 +1,120 @@
+## v0.35.199 — WS-RR RR8.16: the reply chain carries both cross-subsystem bundles
+
+Register row 85's store-chain arithmetic, reply half.  `v0.35.197` gave
+`schedulerInvariantBase_smp` and `capabilityInvariantBundle` their frames; this
+cut gives the relation those frames read a **name**, gives each store primitive
+its instance of that relation beside itself, and composes the whole `.reply`
+chain out of citations.
+
+**One named relation, not a per-step pointwise statement.**  `v0.35.197` spelled
+the pointwise instance inline in each frame, which is the recognised-set shape
+one level down: a step's lift had to restate it, and a widening would reach
+whichever consumer a review named.  `kindPreservingWrite st st'` — *at every key
+the object is unchanged, or both sides hold an object of the same non-`cnode`
+kind* — is what `schedulerInvariantBase_smp_of_kindPreserving` and
+`capabilityInvariantBundle_of_kindPreserving` now both take, so a widening
+reaches both bundles by construction.  Its `refl` / `trans` / `of_objects_eq`
+are what make a store **chain** a composition rather than a walk, and
+`kindPreservingWrite.getTcb?_isSome` is the scheduler-side reading of it.
+
+**A store primitive answers the question beside itself, and the in-place one
+needs no side condition.**  `storeObject_kindPreservingWrite` takes the
+pre-state object, the kind equality and the `cnode` exclusion;
+`rewriteObject_kindPreservingWrite` takes **none of the three**, because
+`rewriteAdmissible` already carries the kind equality *and*
+`KernelObjectType.rewriteNeutral`, which is `false` at `.cnode`.  That is the
+whole difference between the two and the reason they are separate lemmas rather
+than one; a Tier 3 negative refuses a `cnode` side condition coming back, since
+re-adding one reads as caution and is the statement that the admissibility
+argument was not consulted.
+
+**Ten composites over the two primitives, each a few lines.**  `consumeReply`
+and `consumeCallerReply` (`Model/State.lean`, beside `v0.35.63`'s sharp pointwise
+readings); `storeTcbIpcStateAndMessage_fromTcb`, `spliceReplyFrameOutOrSelf`,
+`removeCallerReplyFrame` — seL4's `reply_remove` — `storeDonationHeadPop` and
+`returnDonatedSchedContext`, in `IPC/Operations/Endpoint.lean` beside the
+primitives they frame; `enqueueRunnableOnCore` in `Selection.lean`; `wakeThread`
+in `PerCoreWake.lean`; and the priority-inheritance walk in `Authority.lean`,
+where the `v0.35.197` bundle lift now cites it instead of restating its twelve
+lines.  Each carries its CDT-frame pair beside it,
+and `descheduleAtPlacement` and `migrateSchedContextReplenishment` gained theirs
+for the same reason — the capability bundle reads `cdtNodeSlot` and `cdt`
+exactly as it reads the store, so a consumer that has the objects frame and
+unfolds the step for the other two is doing at the call site what belongs at the
+transition.
+
+**The wake's two lifts, beside the three conjunct lemmas they assemble.**
+`wakeThread_preserves_schedulerInvariantBase_smp` is
+`queueCurrentConsistentOnCore`, `runQueueUniqueOnCore` and
+`currentThreadValidOnCore` at every core under one name, which both IPC chains
+were otherwise obliged to re-assemble;
+`wakeThread_preserves_capabilityInvariantBundle` is the kind-preserving instance.
+
+**On that, the reply chain is citations.**
+`returnDonatedSchedContext_preserves_capabilityInvariantBundle` (over its
+`_ok_storeChain`'s four object stores and the `scThreadIndex` rewrite that
+closes it, composed by `.trans`),
+`applyReplyDonationOnCore_preserves_{schedulerInvariantBase_smp,capabilityInvariantBundle}`,
+`endpointReplyOnCore_preserves_…` and
+`endpointReplyCrossCoreDispatch_preserves_…`.  Nothing here is a fresh case
+analysis over predicates the step does not touch, which is the change the frames
+bought.
+
+**The two lifts of one transition take different preconditions, and the
+asymmetry is the claim.**  The capability bundle reads the object store and the
+two CDT tables, all of which the chain frames or writes kind-preservingly, so
+both capability lifts are **unconditional**; the scheduler bundle reads
+`currentOnCore`, and the wake's `queueCurrentConsistentOnCore` preservation needs
+the thread it enqueues not to be that core's current thread, so the scheduler
+lifts carry `hNotCur`.  It is stated on the **pre**-state, which is where a
+caller can discharge it: the delivery store frames the scheduler and every
+thread's `cpuAffinity`, so the core the wake enqueues on and the slot it reads
+are the pre-state's.  It is **stated rather than derived**, and the cut names the
+gap rather than closing it: what turns the answered caller's `.blockedOnReply`
+into "not current" is a *per-core* current-thread-IPC-readiness discipline, and
+this tree states that at the boot core only (`currentThreadIpcReady`) —
+`blockedOnReplyNotRunnable` is not it, saying only that a reply-blocked thread is
+not in a run **queue**, which `queueCurrentConsistentOnCore` makes compatible with
+being current.  The single-core `endpointReply_preserves_schedulerInvariantBundle`
+has taken the boot-core form since WS-H1 for the same reason.  A positive pins
+that the scheduler lift has the hypothesis and a negative that the capability
+lift does not, because a mutation either way keeps every other token.
+
+**One anchor repointed rather than deleted.**  `v0.35.197`'s pin that the
+pointwise instance excludes `cnode` was a bounded-gap search inside
+`capabilityInvariantBundle_of_kindPreserving`, whose body no longer spells that
+condition — the exclusion moved into the named relation.  The claim is now a
+property of `kindPreservingWrite`, so the anchor moved to its definition, with a
+second pinning that the instance takes the relation: *sweep what was pinning the
+thing you deleted*, in the direction where the thing was a spelling rather than a
+symbol.
+
+**Seven mutations decide the block**, each keeping every other token: the
+capability lift acquiring `hNotCur` (both at the leg and at the dispatch), the
+scheduler lift's `hNotCur` moved off the pre-state, the rewrite primitive
+re-acquiring a `cnode` side condition, a suffix rename of the wake's relation,
+the relation dropping its own exclusion, and the walk's bundle lift restating the
+pointwise argument it now cites — the walk's `kindPreservingWrite` and that
+lift's `v0.35.197` body were the same twelve lines until this cut, which is the
+duplication the naming exists to retire, one consumer over.
+
+**One of them read as MISSED on its first run, and the harness was wrong rather
+than the anchor.**  The mutation that drops the relation's own `cnode` exclusion
+is decided by the **repointed** anchor, which lives in the `v0.35.197` block; the
+harness extracted the `v0.35.199` block alone, so the deciding anchor was not in
+it.  *A harness that answers a different question from the gate* — caught by
+running that anchor by itself, where it fires.
+
+**What remains of row 85 is the call chain and the fault composition**, and the
+scope is measured rather than estimated: `endpointCallOnCore`'s store primitives
+— `endpointQueueEnqueue`, `endpointQueuePopHead`, `storeTcbQueueLinks`,
+`linkCallerReply`, `linkServerStashedReply` — have **no** CDT frames and no
+`kindPreservingWrite` instances, so each owes the pair the reply side now has;
+`endpointCallWithCapsOnCore` then takes the **general** capability frame, because
+`ipcUnwrapCaps` writes CNodes and has its own bundle lemma
+(`ipcUnwrapCaps_preserves_capabilityInvariantBundle_grant`).  That is a cut of
+its own rather than a rider on this one, and the register row says so.
+
 ## v0.35.198 — WS-RR RR8.16: a bare-name anchor pins nothing (register row closed)
 
 `v0.35.197`'s mutation run over its own Tier 3 anchors found a class and
