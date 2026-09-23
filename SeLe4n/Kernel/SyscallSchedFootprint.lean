@@ -2166,7 +2166,7 @@ def schedLockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
                   SchedLockSet.ofList?
                     (schedLockSet_endpointReplyRecvOnCore epId ops.caller rid prevCaller msg
                       receiver.cspaceRoot slotBase executingCore st)
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery
@@ -2185,11 +2185,14 @@ footprint without listing it here breaks
 still answers `none` is refused by that arm's own `_isSome_iff`, which states
 the exact operands under which it declares.
 
-There are `SyscallId.count = 35` arms; **sixteen** declare and nineteen answer
-`none`.  *Which* of those nineteen write a scheduler slot at all is this
+There are `SyscallId.count = 36` arms; **sixteen** declare and twenty answer
+`none`.  *Which* of those twenty write a scheduler slot at all is this
 enumeration's own open question — the arms above are the ones WS-RR RR8.12's
-sequence identified, and a nineteenth found to write one is a footprint to
-declare rather than a row to move. -/
+sequence identified, and a twenty-first found to write one is a footprint to
+declare rather than a row to move.  `.cspaceRevoke` (`v0.35.190`) is in the
+`none` group for the same reason its `.cspaceDelete` sibling is: the revocation
+family writes CNodes, the derivation tree and in-flight messages, and no
+run-queue or replenish-queue slot on any core. -/
 def declaredSchedFootprintSyscall : SyscallId → Bool
   | .tcbSuspend | .tcbResume
   | .tcbSetPriority | .tcbSetMCPriority | .tcbSetAffinity
@@ -2197,7 +2200,7 @@ def declaredSchedFootprintSyscall : SyscallId → Bool
   | .lifecycleRetype
   | .notificationSignal | .notificationWait
   | .send | .receive | .call | .reply | .replyRecv => true
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke
   | .mintReplyCap
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
   | .serviceRegister | .serviceRevoke | .serviceQuery

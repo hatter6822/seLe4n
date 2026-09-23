@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.189` (`lakefile.toml`) |
+| **Package version** | `0.35.190` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 410,884 across 338 Lean files |
-| **Test LoC** | 83,710 across 70 Lean test suites |
-| **Proved declarations** | 13,591 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 411,743 across 338 Lean files |
+| **Test LoC** | 83,880 across 70 Lean test suites |
+| **Proved declarations** | 13,613 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -1446,7 +1446,17 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (kernel-checked `decide` over packed keys, `SeLe4n/PackedString.lean`;
    the list size once forced `native_decide` here), and a
    coverage theorem `lockSet_consistent_aggregate_covers_every_syscall`
-   pinning `consistency category count = SyscallId.count`.
+   pinning `consistency category count` to the syscalls that declare a
+   **static** footprint (`declaresStaticLockFootprint`, `v0.35.190`).
+   Stated over that classification rather than against `SyscallId.count`
+   because `.cspaceRevoke` declares none: `cspaceRevokeCdt` walks the CDT
+   across arbitrary CNodes, a set the state discovers and nothing bounds,
+   while a `LockSet` is capped at `maxLockSetSize` — so a static footprint
+   naming only the source CNode would be **false** of the transition, and
+   demanding an entry for it would force a footprint to exist in order to
+   satisfy a number.  `permittedKinds .cspaceRevoke` says which kinds a
+   future declaration may contain, in the shape the PIP chain walk's
+   `pipChainStart_<τ>` markers take for the same reason.
 
    **Production/staged partition**: all five SM3.B modules
    (`LockSet`, `LockIdProjection`, `LockSetTransitions`,
@@ -2018,7 +2028,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (35 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (36 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -2313,7 +2323,8 @@ instruction is precisely the livelock RR4 exists to remove.
   a lock set (caller's TCB, target's TCB, target's CNode root in read mode),
   preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
   is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
-  (`tcb_set_fault_handler`; 35 syscalls).
+  (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
+  `.cspaceRevoke`).
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -4046,6 +4057,86 @@ All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 - **31 post-mutation invariant checks** in the trace harness covering all
   major transition families (IPC, VSpace, lifecycle, scheduler, capability).
 
+### 8.11.1 Capability Revocation (`seL4_CNode_Revoke`, WS-RR RR8.16)
+
+`SyscallId.cspaceRevoke` (discriminant 35) revokes every capability derived
+from the one in the named slot of the invoked CNode.  It was added at
+`v0.35.190`: the revocation family was verified machinery with **no ABI path**
+— `API.lean` carried no revocation arm at all, so no capability a thread could
+present revoked anything — which the reachability census found and the
+implement-the-improvement rule says to close by wiring the syscall rather than
+documenting its absence.
+
+**What the arm dispatches, and why.**  `cspaceRevokeCdt`, the CDT-traversing
+variant, not the local `cspaceRevoke` it opens with.  The local primitive
+reaches only the *containing* CNode, so a derived capability copied into any
+other CSpace would survive a revocation that claimed to destroy it; the CDT
+walk follows the derivation tree across arbitrary CNodes and ends with the
+in-flight sweep (`revokePendingTransfersFrom`), which consumes derivations
+parked in senders' `pendingMessage` and have therefore not landed yet.  The
+three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
+`…Transactional`) are the same scaffold at a different traversal and are
+offered to **in-kernel** callers: a userspace invocation has no channel to
+receive a structured failure report through.
+
+**ABI.**  The delete's layout — one message register naming the slot
+(`decodeCSpaceDeleteArgs`) — since both name one slot of the invoked CNode.
+The authority is the **write** right on that CNode, not `.grant`: grant
+authorises *creating* a derivation (mint/copy/move), and destroying one is not
+that authority.  The return shape is `.unit`.
+
+**The source slot survives.**  Revocation destroys a capability's derivations,
+not the capability itself, which is what distinguishes it from the delete and
+what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
+dischargeable: a caller revokes, then deletes.
+
+**Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm
+in the capability-only dispatch payoff.  Three things that chain records:
+
+- `donationReadAgreement` no longer demands `pendingMessage` **equality**.  The
+  in-flight sweep is the one transition in the tree that rewrites a
+  `TCB.pendingMessage` to a *different* value while the thread stays blocked,
+  and equality was strictly more than the bundle reads — only
+  `allPendingMessagesBounded` and `blockedThreadsPendingMessageConsistent` read
+  the field.  The relation is `pendingMessageReadAgrees` (presence agrees,
+  boundedness transfers) and the sweep's write is a *drop*
+  (`TCB.pendingCapsDropped`: every other field equal, registers kept,
+  capability array shorter), which both conjuncts survive.
+- The scaffold's case analysis and the traversal's induction are
+  **predicate-free and live beside their definitions**
+  (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`,
+  `revokeCdtMaterializedTraversal_ok_induct`), so the capability bundle's
+  argument and the IPC bundle's are one answer rather than two;
+  `revokeCdtFoldBody` moved to `Capability/Operations.lean` with them and the
+  materialized traversal is now *defined* through it.
+- The arm declares **no static lock footprint**, and that is a decision: the
+  CDT walk's CNode set is state-discovered and unbounded while a `LockSet` is
+  capped at `maxLockSetSize`, so a footprint naming only the source CNode would
+  be *false* of the transition.  `declaresStaticLockFootprint` is the total
+  classification that records it, and the SM3.B inventory's coverage theorem is
+  stated over that rather than against `SyscallId.count`.
+
+**Information flow.**  Classified `.inert`, on the *scope* ground
+`.cspaceMint` rests on rather than the self-loop ground its CSpace siblings do.
+It writes a content-tracked field — the sweep rewrites `TCB.pendingMessage`,
+which the Tier-1 reach gate detects and is right to — and moves no tracked
+content: `revokePendingTransfersFrom_preserves_trackedContent` says the payload
+(`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks, which is
+the same capability metadata `capabilityBadgeChannel_out_of_scope` already
+excludes.  That theorem is the gate's `CONTENT_WRITE_EXEMPT` justification,
+reconciled in both directions.
+
+**Frozen surface.**  No mirror: the traversal's per-node step ends in
+`cdt.removeNode`, a *key removal* from the derivation tree, and the frozen CDT
+is four `FrozenMap`s with no `erase` — the same reason `lifecycleRetype` and
+the two service operations give.
+
+**Witness.**  `tests/SyscallDispatchSuite.lean` SD-059 drives the live dispatch
+on a state whose derivation lives in a **second** CNode, computing the retired
+local-only reading beside it (spelled in the suite and nowhere else), so the
+assertions are known to discriminate; a mutation of the arm to the local
+variant fails exactly the one that names the claim.
+
 ### 8.12 Scheduling Context Objects
 A `SchedContext` is a first-class kernel object containing CPU budget, period,
 priority, deadline, and domain parameters for CBS (Constant Bandwidth Server)
@@ -4243,7 +4334,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **190** statements in the family (the
+bound on a post-state across all **196** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to

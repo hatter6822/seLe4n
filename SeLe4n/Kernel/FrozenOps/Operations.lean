@@ -1927,6 +1927,12 @@ def frozenOpCoverage : SyscallId → Bool
   | .cspaceCopy => false      -- builder-only (structural copy)
   | .cspaceMove => false      -- builder-only (structural move)
   | .cspaceDelete => true     -- frozenCspaceDelete
+  | .cspaceRevoke => false    -- WS-RR RR8.16 (`v0.35.190`): the traversal's per-node
+                             -- step is `processRevokeNode`, which ends in
+                             -- `cdt.removeNode` — a *key removal* from the
+                             -- derivation tree, and the frozen CDT is four
+                             -- `FrozenMap`s with no `erase`, exactly as for
+                             -- `lifecycleRetype` and the two service ops.
   | .lifecycleRetype => false -- builder-only (adds keys)
   | .vspaceMap => true        -- frozenVspaceLookup (read-only in frozen phase)
   | .vspaceUnmap => true      -- frozenVspaceLookup (read-only in frozen phase)
@@ -1956,8 +1962,8 @@ def frozenOpCoverage : SyscallId → Bool
   | .auditDrain => false             -- WS-SM SM9.A.13: removes a prefix of the mounted audit trail — a *shrinking* write, and the frozen snapshot is a record rather than a running system, so nothing may remove entries from it
 
 /-- S3-L/Z8-H/D1/D2/D3: Exactly 20 SyscallId arms have frozen operation coverage.
-    The 14 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
-    lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
+    The 15 uncovered arms are builder-only / structural operations (cspaceCopy, cspaceMove,
+    cspaceRevoke, lifecycleRetype, serviceRegister, serviceRevoke, mintReplyCap) plus the
     runtime-scheduler `tcbSetAffinity` (WS-SM SM5.H.4), the production-only
     notification-binding ops (tcbBind/UnbindNotification, WS-SM SM6.B), the
     cache-maintenance `vspaceUnifyInstruction` (WS-SM SM7.D — the frozen phase
@@ -1971,6 +1977,7 @@ theorem frozenOpCoverage_count :
     (([SyscallId.send, .receive, .call, .reply, .cspaceMint, .cspaceCopy,
        .cspaceMove, .cspaceDelete, .lifecycleRetype, .vspaceMap,
        .vspaceUnmap, .serviceRegister, .serviceRevoke, .serviceQuery,
+       .cspaceRevoke,
        .notificationSignal, .notificationWait, .replyRecv,
        .schedContextConfigure, .schedContextBind, .schedContextUnbind,
        .tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
@@ -1981,7 +1988,7 @@ theorem frozenOpCoverage_count :
          frozenOpCoverage).length = 20) := by
   decide
 
-/-- S3-L/D1/D2/D3: All 34 SyscallId arms are accounted for (either covered or documented as builder-only). -/
+/-- S3-L/D1/D2/D3: All 35 SyscallId arms are accounted for (either covered or documented as builder-only). -/
 theorem frozenOpCoverage_exhaustive :
     ∀ (s : SyscallId), frozenOpCoverage s = true ∨ frozenOpCoverage s = false := by
   intro s; cases s <;> simp [frozenOpCoverage]

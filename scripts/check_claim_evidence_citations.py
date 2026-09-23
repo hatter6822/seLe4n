@@ -53,6 +53,7 @@ INDEX = "docs/CLAIM_EVIDENCE_INDEX.md"
 # the one branch a scanner is allowed to be silent about -- so it is spelled out
 # rather than defaulted.
 CITATION_EXEMPTIONS: dict[str, str] = {
+    "seL4_CNode_Revoke": "seL4's own syscall name, cited for fidelity",
     "seL4_Fault_tag": "seL4's own ABI field name, cited for fidelity",
     "seL4_ReplyRecv": "seL4's own syscall name, cited for fidelity",
     "reply_remove": "seL4's own kernel function name, cited for fidelity",

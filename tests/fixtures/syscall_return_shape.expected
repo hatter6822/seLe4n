@@ -1,5 +1,5 @@
 # syscall return shapes: <id> <shape> (Lean/Rust cross-check)
-count 35
+count 36
 0 unit
 1 message
 2 message
@@ -35,3 +35,4 @@ count 35
 32 word
 33 unit
 34 unit
+35 unit

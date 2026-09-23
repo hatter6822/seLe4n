@@ -876,6 +876,50 @@ def allPendingMessagesBounded (st : SystemState) : Prop :=
     tcb.pendingMessage = some msg →
     msg.bounded
 
+/-- **WS-RR RR8.16 (`v0.35.190`): what the bundle reads of a pending message.**
+
+`donationReadAgreement` demanded pending-message *equality* from the day it was
+written, because every transition it covered wrote none.  Only two conjuncts of
+`ipcInvariantFull` read the field at all — `blockedThreadsPendingMessageConsistent`
+asks whether one is present, and `allPendingMessagesBounded` asks whether it is
+within the payload bounds — so equality was strictly more than the agreement
+transports, and the one transition that drops capabilities from a message in
+flight (`revokePendingTransfersFrom`, the tail of every CDT revocation) could not
+be given an agreement at all.
+
+Stated in the direction the transports use it: `mx` is the post-state reading and
+`my` the pre-state one, so a *shrinking* rewrite qualifies and a growing one does
+not.  Equality gives it outright (`pendingMessageReadAgrees_of_eq`), so every
+existing producer is unchanged. -/
+def pendingMessageReadAgrees (mx my : Option IpcMessage) : Prop :=
+  mx.isSome = my.isSome ∧
+  ∀ m m', mx = some m → my = some m' → m'.bounded → m.bounded
+
+/-- Equality is agreement — the shape every pre-`v0.35.190` producer supplies. -/
+theorem pendingMessageReadAgrees_of_eq {mx my : Option IpcMessage} (h : mx = my) :
+    pendingMessageReadAgrees mx my := by
+  subst h
+  refine ⟨rfl, fun m m' hm hm' hb => ?_⟩
+  rw [hm] at hm'
+  exact (Option.some.inj hm').symm ▸ hb
+
+/-- Reflexivity. -/
+@[simp] theorem pendingMessageReadAgrees_refl (m : Option IpcMessage) :
+    pendingMessageReadAgrees m m := pendingMessageReadAgrees_of_eq rfl
+
+/-- Transitivity — what `donationReadAgreement.trans` composes. -/
+theorem pendingMessageReadAgrees_trans {ma mb mc : Option IpcMessage}
+    (h1 : pendingMessageReadAgrees ma mb) (h2 : pendingMessageReadAgrees mb mc) :
+    pendingMessageReadAgrees ma mc := by
+  refine ⟨h1.1.trans h2.1, fun m m'' hm hm'' hb => ?_⟩
+  cases hb' : mb with
+  | none =>
+      have hFalse : (none : Option IpcMessage).isSome = (some m'').isSome := by
+        rw [← hb', h2.1, hm'']
+      simp at hFalse
+  | some m' =>
+      exact h1.2 m m' hm hb' (h2.2 m' m'' hb' hm'' hb)
+
 /-- WS-RR RR3.11: **every in-flight message satisfies `P`** — the shape shared by
 every property of messages parked in a TCB's `pendingMessage`.
 
@@ -4950,6 +4994,25 @@ theorem donationBudgetTransfer_of_sameSchedContextBindings
   obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
   obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
   exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+/-- **WS-RR RR8.16 (`v0.35.190`): `donationChainAcyclic` is a binding fact too.**
+
+Its two siblings above — `donationBudgetTransfer` and `donationOwnerUnique` —
+have carried across a binding frame since IPC de-threading D6, and this one, whose
+whole statement is a pair of `.donated` bindings, did not: every caller unfolded
+the definition and pulled both bindings back by hand.  *Keep the tables
+symmetric*; the revocation family's in-flight sweep is the first transition to
+need all three at once. -/
+theorem donationChainAcyclic_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hInv : donationChainAcyclic st) :
+    donationChainAcyclic st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 hP1 hP2
     (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
 
 /-- IPC de-threading D6 (`donationOwnerUnique`): every binding-frame transition preserves

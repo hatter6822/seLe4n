@@ -317,6 +317,16 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
+  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- state discovers and nothing bounds — while a `LockSet` is capped at
+  -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
+  -- a deep derivation tree.  The unbounded-walk treatment this tree already
+  -- uses is the PIP chain's (`pipChainStart_<τ>` markers plus
+  -- `pipChainSchedFootprint`, declared per walked member), and giving
+  -- revocation one is a cut of its own.
+  | .cspaceRevoke
   | .mintReplyCap
   | .lifecycleRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -1153,13 +1163,23 @@ mechanically closed. The other direction — listing an arm that still answers
 and pre-state under which its arm declares, so an arm that had quietly become
 unconditionally `none` could not satisfy its own `iff`.
 
-There are `SyscallId.count = 35` arms; eight are declared and twenty-seven
+There are `SyscallId.count = 36` arms; eight are declared and twenty-eight
 answer `none`. -/
 def declaredFootprintSyscall : SyscallId → Bool
   | .tcbSuspend
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
+  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- state discovers and nothing bounds — while a `LockSet` is capped at
+  -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
+  -- a deep derivation tree.  The unbounded-walk treatment this tree already
+  -- uses is the PIP chain's (`pipChainStart_<τ>` markers plus
+  -- `pipChainSchedFootprint`, declared per walked member), and giving
+  -- revocation one is a cut of its own.
+  | .cspaceRevoke
   | .mintReplyCap
   | .lifecycleRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction

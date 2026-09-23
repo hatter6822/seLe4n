@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.189.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.190.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8048,6 +8048,93 @@ code may assume:
   hypotheses of theorems *about* them included), and it did **not** ride Cut C4,
   which restated each arm's members without touching these two — so it is a cut of
   its own after Cut C4 rather than inside it.
+- **...and `seL4_CNode_Revoke` has an arm** (WS-RR RR8.16, `v0.35.190`).  The
+  revocation family was verified machinery with **no ABI path**: `API.lean` had
+  no revocation arm at all, so no capability a thread could present revoked
+  anything — the register row RR8.12's reachability census opened on its first
+  run, closed the way this project's implement-the-improvement rule says to close
+  one.  `SyscallId.cspaceRevoke` (discriminant 35) is the arm.  Seven things new
+  code must respect.
+
+  (1) **It dispatches `cspaceRevokeCdt`, and that is its whole security
+  content.**  The local `cspaceRevoke` the scaffold opens with reaches only the
+  *containing* CNode, so a derived capability copied into any other CSpace
+  survives it; the CDT walk follows the derivation tree across arbitrary CNodes.
+  `tests/SyscallDispatchSuite.lean` SD-059 computes the local-only reading beside
+  the live arm on a state whose derivation lives in a **second** CNode — spelled
+  in the suite and nowhere else — so its assertions are known to discriminate,
+  and a mutation of the arm to the local variant fails exactly the one that names
+  the claim.
+
+  (2) **The source slot survives, and that is what makes the delete's refusal
+  dischargeable.**  Revocation destroys a capability's derivations, not the
+  capability, so `cspaceDeleteSlot`'s `.revocationRequired` is answered by
+  *revoke, then delete* — both halves run in the witness.  The arm takes the
+  delete's one-register ABI (`decodeCSpaceDeleteArgs`), since both name one slot
+  of the invoked CNode, and requires `.write`: `.grant` authorises **creating** a
+  derivation (mint/copy/move), and destroying one is not that authority.
+
+  (3) **A `donationReadAgreement` no longer demands `pendingMessage`
+  EQUALITY.**  `revokePendingTransfersFrom` — the in-flight sweep the scaffold
+  ends with — is the one transition in the tree that rewrites a
+  `TCB.pendingMessage` to a *different* value while the thread stays blocked, and
+  every bundle transport demanded the field be unchanged.  Equality was strictly
+  more than the bundle reads: only `allPendingMessagesBounded` and
+  `blockedThreadsPendingMessageConsistent` read it, the first needs the payload
+  still bounded and the second needs a blocked sender still to *have* one.  So
+  the relation is `pendingMessageReadAgrees` (presence agrees; boundedness
+  transfers), the sweep's write is a **drop** (`TCB.pendingCapsDropped`: every
+  other field equal, registers kept, capability array shorter), and a drop
+  satisfies both.  A new transition that shortens a parked message reaches for
+  those two; one that rewrites the field arbitrarily still has no transport, and
+  that is correct.
+
+  (4) **The scaffold's case analysis and the traversal's induction are
+  predicate-free and live beside their definitions.**
+  `revokeCdtScaffold_ok_decompose` says what a successful revocation *consists
+  of* (local revoke, then the traversal and the sweep, or the local revoke's own
+  state), and `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`
+  carry any `P` through the fold — so the capability bundle's argument and the
+  IPC bundle's are **one** answer.  Each was the capability bundle's alone,
+  spelled inside its preservation module; a second copy per predicate is the
+  duplication this file spends its length retiring.  `revokeCdtFoldBody` moved to
+  `Capability/Operations.lean` with them and `revokeCdtMaterializedTraversal` is
+  *defined* through it — keeping the fold body in an invariant module is what had
+  forced that traversal's proof to `change` its way into an inlined lambda.
+
+  (5) **`.cspaceRevoke` declares NO static lock footprint, and that is a
+  decision.**  The CDT walk's CNode set is state-discovered and unbounded while a
+  `LockSet` is capped at `maxLockSetSize`, so a footprint naming only the source
+  CNode would be **false** of the transition — which this project rates worse
+  than no footprint at all.  `permittedKinds .cspaceRevoke` says which kinds a
+  future declaration may contain, in the shape the PIP chain walk's
+  `pipChainStart_<τ>` markers take for the same reason.  The inventory's coverage
+  claim is therefore stated over `declaresStaticLockFootprint` — a total
+  classification with its own `_false_iff` pin — rather than against
+  `SyscallId.count`, because demanding an entry for this arm would force a
+  footprint to exist in order to satisfy a number.
+
+  (6) **`SyscallId.count` is 36, and the exhaustive tables moved with it**: the
+  ABI mirrors in `sele4n-types` and the HAL, the return-shape table on both sides
+  of the ABI (`.unit`, with `tests/fixtures/syscall_return_shape.expected`
+  regenerated deliberately), `refusalSeamClass` (`.exempt`),
+  `capFaultReceivePhase?` (`some false` — a send-phase capability fault),
+  `frozenOpCoverage` (`false`: the per-node step ends in `cdt.removeNode`, a key
+  *removal*, and the frozen CDT is four `FrozenMap`s with no `erase` — the same
+  reason `lifecycleRetype` and the two service ops give), the enforcement
+  boundary (`capabilityOnly "cspaceRevokeCdt"` — the composite a capability
+  reaches, never the inner local step), and a `sele4n-sys` wrapper
+  (`cspace::cspace_revoke`) so the conformance sweep can drive it.
+
+  (7) **What the reachability census still lists is a narrower claim.**  The
+  three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
+  `…Transactional`) with their traversals, the streaming BFS and the reporting
+  fold step remain outside the live closure: each is the same scaffold at a
+  different traversal, offered to **in-kernel** callers that want a structured
+  failure report or an `O(branching-factor)` walk, and the syscall dispatches the
+  materialized one because a userspace invocation has no channel to receive a
+  report through.  A variant with no in-kernel caller either gains one or is
+  retired.
 - **A definition that transforms kernel state is wired or recorded** (WS-RR
   RR8.12 third cut, `v0.35.91`).
   `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (Tier 1) derives every
@@ -8069,10 +8156,9 @@ code may assume:
   a member wrongly included must be explained and a member wrongly excluded is
   never looked at.  (3) **The 240 carry no per-entry prose**, deliberately —
   that many shallow reasons read as justification while asserting nothing — so
-  the obligation falls on whoever adds the next entry.  (4) **Two known residues are
-  named in the pin's docstring rather than left to read as unexamined**: the
-  revocation family, which has no syscall arm at all, and four transformers
-  consumed by nothing; both carry register rows, because each needs the
+  the obligation falls on whoever adds the next entry.  (4) **The known residue is
+  named in the pin's docstring rather than left to read as unexamined**: four
+  transformers consumed by nothing, which carry a register row because each needs the
   wire-or-retire judgement `v0.35.78` made for the capability-reference table.
 
   **What it does not decide, and this corrects the row that asked for it**:

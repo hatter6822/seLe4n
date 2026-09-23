@@ -201,6 +201,26 @@ AUDIT_APPEND_EXEMPT = {
     "auditDrain": "SeLe4n.Kernel.newlyRecordedEvents_auditDrain",
 }
 
+# WS-RR RR8.16 (`v0.35.190`): arms that reach a write to a content-tracked FIELD
+# while moving no tracked CONTENT, each with the theorem that says so.
+#
+# Property (A) is field-granular, which is what makes it a detector rather than a
+# table of promises: it asks "does this arm reach a constant that writes
+# `TCB.pendingMessage`", and it cannot ask what the write leaves behind.  For
+# `.cspaceRevoke` the answer to the first question is yes and to the second is
+# nothing: the revocation's last step consumes the derivations that have not
+# landed yet, and that write is a *drop* — `IpcMessage.registers` kept, entries
+# removed from `IpcMessage.caps`, which is capability metadata and therefore the
+# boundary `capabilityBadgeChannel_out_of_scope` already declares out of scope.
+#
+# Same bite as the append exemption above, in both directions: the probe asserts
+# the named theorem is in the elaborated environment, and an exempted arm that
+# has stopped reaching a content write is a stale entry that fails rather than
+# reading as coverage.
+CONTENT_WRITE_EXEMPT = {
+    "cspaceRevoke": "SeLe4n.Kernel.revokePendingTransfersFrom_preserves_trackedContent",
+}
+
 # The self-test's planted channel: a field every inert scheduling arm writes
 # with an open value (`priority := newPrio`).  If the write detector has stopped
 # detecting, planting it flags nothing and the self-test fails — which is the
@@ -1089,7 +1109,9 @@ def run_probe(roots: dict[str, set[str]], depth: int, channels,
         '("{}", "{}")'.format(arm, " ".join(sorted(stems)))
         for arm, stems in sorted(roots.items()))
     quoted_api = ", ".join(f"`{n}" for n in sorted(DECLARED_TAINT_WRITERS))
-    quoted_just = ", ".join(f"`{n}" for n in sorted(set(AUDIT_APPEND_EXEMPT.values())))
+    quoted_just = ", ".join(
+        f"`{n}" for n in sorted(set(AUDIT_APPEND_EXEMPT.values())
+                                | set(CONTENT_WRITE_EXEMPT.values())))
     quoted_ctors = ", ".join(f"`{n}" for n in sorted(STATE_CONSTRUCTORS))
     src = (PROBE
            .replace("@CHANNELS@", quoted_channels)
@@ -1425,11 +1447,29 @@ def main() -> int:
     # (A) no unclassified content movement
     for key in sorted(roots):
         arm = arm_of(key)
+        if arm in CONTENT_WRITE_EXEMPT:
+            continue
         if cls[arm] in ("inert", "clearsProvenance") and hits.get(key, 0) > 0:
             failures.append(
                 f"  `.{arm}` (in `{dispatcher_of(key)}`) is classified "
                 f"`.{cls[arm]}` but reaches "
                 f"{hits[key]} content write(s): {', '.join(detail.get(key, [])[:4])}")
+
+    # …and the content-write exemption's bite, in both directions.  An exemption
+    # whose justification has been deleted exempts nothing and hides whatever
+    # takes the name; one whose arm has stopped reaching a content write is a
+    # stale entry reading exactly like coverage.
+    for arm, thm in sorted(CONTENT_WRITE_EXEMPT.items()):
+        if thm not in justified:
+            failures.append(
+                f"  `.{arm}` is exempted from the content-write check by `{thm}`, "
+                f"which is not in the elaborated environment — the exemption has "
+                f"outlived its justification")
+        if not any(arm_of(k) == arm and hits.get(k, 0) > 0 for k in roots):
+            failures.append(
+                f"  `.{arm}` is exempted from the content-write check but reaches "
+                f"no content write — a stale exemption reads exactly like "
+                f"coverage; delete it")
 
     # (C3) WS-SM SM9.D.13a: the recording classification must match the reach.
     #
@@ -1651,7 +1691,9 @@ def main() -> int:
           f"{len(roots)} dispatcher implementation(s); "
           f"{moving} moving content ({by_write} reaching an object content write, "
           f"{moving - by_write} delivering through the return frame); "
-          f"{len(arms) - moving} inert or clearing, none reaching a content write; "
+          f"{len(arms) - moving} inert or clearing, none reaching a content write "
+          f"outside the {len(CONTENT_WRITE_EXEMPT)} exempted by a payload-preservation "
+          f"theorem ({', '.join('.' + a for a in sorted(CONTENT_WRITE_EXEMPT))}); "
           f"{recording} recording a declassification, and no other arm reaches an "
           f"audit-trail append.")
     return 0

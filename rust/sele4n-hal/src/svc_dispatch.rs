@@ -8,7 +8,7 @@
 //!
 //! ## Mirror discipline
 //!
-//! `SyscallId` here mirrors the 34-variant enum in
+//! `SyscallId` here mirrors the 36-variant enum in
 //! `sele4n-types/src/syscall.rs`.  We do NOT depend on `sele4n-types`
 //! in the runtime build (the HAL crate is the lowest-level workspace
 //! member with zero runtime dependencies, by design — see
@@ -141,11 +141,15 @@ pub enum SyscallId {
     /// PR #887 review: install a thread's fault-handler CPtr (seL4's
     /// `TCB_SetSpace` fault endpoint), validated kernel-side at set time.
     TcbSetFaultHandler = 34,
+    /// WS-RR RR8.16 (`v0.35.190`): revoke every capability derived from the one
+    /// in the named slot (seL4's `seL4_CNode_Revoke`).  The source slot itself
+    /// survives — revocation destroys derivations, not the capability.
+    CspaceRevoke = 35,
 }
 
 impl SyscallId {
     /// Total number of modelled syscalls (must match `sele4n-types`).
-    pub const COUNT: u32 = 35;
+    pub const COUNT: u32 = 36;
 
     /// AN9-F.1.b: decode a raw `u32` syscall id, rejecting values
     /// outside the valid 0..=33 range with `None`.
@@ -186,6 +190,7 @@ impl SyscallId {
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
+            35 => Some(Self::CspaceRevoke),
             _ => None,
         }
     }
@@ -221,6 +226,9 @@ impl SyscallId {
             Self::CSpaceCopy => 2,
             Self::CSpaceMove => 2,
             Self::CSpaceDelete => 1,
+            // WS-RR RR8.16: the revoke takes the delete's argument layout —
+            // x2 = the slot of the invoked CNode whose derivations go.
+            Self::CspaceRevoke => 1,
             Self::LifecycleRetype => 3,
             Self::VSpaceMap => 4,
             Self::VSpaceUnmap => 2,
@@ -1207,7 +1215,10 @@ mod tests {
         // PR #887 review: the fault-handler CPtr is one inline register too.
         assert_eq!(SyscallId::TcbSetFaultHandler.min_inline_args(), 1);
         assert_eq!(SyscallId::from_u32(34), Some(SyscallId::TcbSetFaultHandler));
-        assert_eq!(SyscallId::from_u32(35), None);
+        // WS-RR RR8.16: the revoke takes the delete's one-register layout.
+        assert_eq!(SyscallId::CspaceRevoke.min_inline_args(), 1);
+        assert_eq!(SyscallId::from_u32(35), Some(SyscallId::CspaceRevoke));
+        assert_eq!(SyscallId::from_u32(36), None);
     }
 
     // WS-RR RR5.6: the regression guard for the off-by-one ABI bug — a valid

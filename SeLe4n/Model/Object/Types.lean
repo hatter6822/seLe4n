@@ -1401,6 +1401,91 @@ that, so single-sourcing the clear costs no existing proof. -/
           queuePPrev := none
           pendingReceiveReply := none } := rfl
 
+/-- **WS-RR RR8.16 (`v0.35.190`): what a CDT revocation may do to a message in
+flight.**
+
+`revokePendingTransfersFrom` — the tail of every revocation entry point — drops
+from a blocked sender's `pendingMessage` the capabilities whose derivation nodes
+the revocation destroyed.  It is the *only* transition in the tree that rewrites
+`TCB.pendingMessage` to a different value while leaving the thread blocked, and
+stating what it may do is what lets the sweep carry `ipcInvariantFull`: the two
+conjuncts that read the field ask whether a message is present
+(`blockedThreadsPendingMessageConsistent`) and whether it is within the payload
+bounds (`allPendingMessagesBounded`), and a drop settles both.
+
+Reflexive and transitive, so a fold over the object-store keys composes it. -/
+def TCB.pendingCapsDropped (t t' : TCB) : Prop :=
+  t' = { t with pendingMessage := t'.pendingMessage } ∧
+  match t.pendingMessage, t'.pendingMessage with
+  | none, none => True
+  | some m, some m' => m'.registers = m.registers ∧ m'.caps.size ≤ m.caps.size
+  | _, _ => False
+
+/-- Reflexivity — a key the sweep leaves alone. -/
+@[simp] theorem TCB.pendingCapsDropped_refl (t : TCB) : TCB.pendingCapsDropped t t := by
+  refine ⟨rfl, ?_⟩
+  cases t.pendingMessage with
+  | none => trivial
+  | some m => exact ⟨rfl, Nat.le_refl _⟩
+
+/-- Transitivity — two sweep steps at the same key. -/
+theorem TCB.pendingCapsDropped_trans {a b c : TCB}
+    (h1 : TCB.pendingCapsDropped a b) (h2 : TCB.pendingCapsDropped b c) :
+    TCB.pendingCapsDropped a c := by
+  obtain ⟨hb, hmb⟩ := h1
+  obtain ⟨hc, hmc⟩ := h2
+  refine ⟨?_, ?_⟩
+  · rw [hc, hb]
+  · have hbF : b.pendingMessage = { a with pendingMessage := b.pendingMessage }.pendingMessage := by
+      rw [← hb]
+    cases ha : a.pendingMessage <;> cases hbb : b.pendingMessage <;> cases hcc : c.pendingMessage <;>
+      rw [ha, hbb] at hmb <;> rw [hbb, hcc] at hmc <;> simp only [] at hmb hmc ⊢ <;>
+      first
+        | trivial
+        | exact hmb.elim
+        | exact hmc.elim
+        | exact ⟨hmc.1.trans hmb.1, Nat.le_trans hmc.2 hmb.2⟩
+
+/-- A message drop leaves every other field alone — the projection the invariant
+transports read. -/
+theorem TCB.pendingCapsDropped_fields {t t' : TCB} (h : TCB.pendingCapsDropped t t') :
+    t'.ipcState = t.ipcState ∧ t'.queueNext = t.queueNext ∧ t'.queuePrev = t.queuePrev ∧
+      t'.queuePPrev = t.queuePPrev ∧ t'.timeoutBudget = t.timeoutBudget ∧
+      t'.replyObject = t.replyObject ∧ t'.pendingReceiveReply = t.pendingReceiveReply ∧
+      t'.schedContextBinding = t.schedContextBinding := by
+  rw [h.1]
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+
+/-- ...and it preserves the *payload*, which is the only part of a parked message
+this kernel's information-flow model tracks as content.
+
+The dropped entries are `IpcMessage.caps` — capability metadata, the declared
+out-of-scope channel (`capabilityBadgeChannel_out_of_scope`) — so a drop rewrites
+a content-tracked **field** while moving no tracked **content**. -/
+theorem TCB.pendingCapsDropped_registers {t t' : TCB} (h : TCB.pendingCapsDropped t t')
+    {m m' : IpcMessage} (hm0 : t.pendingMessage = some m) (hm : t'.pendingMessage = some m') :
+    m'.registers = m.registers := by
+  obtain ⟨_, hrel⟩ := h
+  rw [hm0, hm] at hrel
+  simp only [] at hrel
+  exact hrel.1
+
+/-- ...and it preserves presence, which is the other thing the bundle reads. -/
+theorem TCB.pendingCapsDropped_isSome {t t' : TCB} (h : TCB.pendingCapsDropped t t') :
+    t'.pendingMessage.isSome = t.pendingMessage.isSome := by
+  obtain ⟨_, hm⟩ := h
+  cases ha : t.pendingMessage <;> cases hb : t'.pendingMessage <;>
+    rw [ha, hb] at hm <;> simp only [] at hm ⊢ <;> first | rfl | exact hm.elim
+
+/-- ...and it preserves the payload bounds. -/
+theorem TCB.pendingCapsDropped_bounded {t t' : TCB} (h : TCB.pendingCapsDropped t t')
+    {m m' : IpcMessage} (hm : t'.pendingMessage = some m') (hm0 : t.pendingMessage = some m)
+    (hb : m.bounded) : m'.bounded := by
+  obtain ⟨_, hrel⟩ := h
+  rw [hm0, hm] at hrel
+  simp only [] at hrel
+  exact ⟨hrel.1 ▸ hb.1, Nat.le_trans hrel.2 hb.2⟩
+
 /-- U2-N/U-M17: Negative `LawfulBEq` witness for `TCB`.
     `BEq TCB` is field-wise comparison including `registerContext : RegisterFile`.
     Since `RegisterFile.BEq` is not lawful (see `RegisterFile.not_lawfulBEq`),
@@ -2471,6 +2556,8 @@ inductive SyscallId where
                            -- label boundary the base policy denies, audited per hop
   | tcbSetFaultHandler     -- Review round (PR #887): install a thread's fault-handler CPtr
                            -- (seL4_TCB_SetSpace's fault_ep), validated at set time
+  | cspaceRevoke           -- WS-RR RR8.16 (`v0.35.190`): revoke a capability's derivations
+                           -- (seL4_CNode_Revoke), dispatched through `cspaceRevokeCdt`
   deriving Repr, DecidableEq, Inhabited
 
 namespace SyscallId
@@ -2513,9 +2600,10 @@ namespace SyscallId
   | .auditDrain            => 32
   | .declassifySignal      => 33
   | .tcbSetFaultHandler    => 34
+  | .cspaceRevoke          => 35
 
 /-- Total number of modeled syscalls. -/
-def count : Nat := 35
+def count : Nat := 36
 
 /-- Decode a natural number to a syscall identifier.
     Returns `none` for values outside the modeled set. -/
@@ -2555,6 +2643,7 @@ def count : Nat := 35
   | 32 => some .auditDrain
   | 33 => some .declassifySignal
   | 34 => some .tcbSetFaultHandler
+  | 35 => some .cspaceRevoke
   | _  => none
 
 instance : ToString SyscallId where
@@ -2594,6 +2683,7 @@ instance : ToString SyscallId where
     | .auditDrain            => "auditDrain"
     | .declassifySignal      => "declassifySignal"
     | .tcbSetFaultHandler    => "tcbSetFaultHandler"
+    | .cspaceRevoke          => "cspaceRevoke"
 
 /-- AC4-D/IF-01: Exhaustive list of all SyscallId variants. Used by the enforcement
     boundary completeness witness to ensure every syscall is classified. The
@@ -2610,7 +2700,8 @@ def all : List SyscallId :=
   , .tcbSetIPCBuffer, .tcbSetAffinity
   , .tcbBindNotification, .tcbUnbindNotification
   , .mintReplyCap, .vspaceUnifyInstruction, .declassify
-  , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler ]
+  , .auditRead, .auditDrain, .declassifySignal, .tcbSetFaultHandler
+  , .cspaceRevoke ]
 
 /-- AC4-D: Compile-time check — `all` has exactly `count` elements.
     Fails at compile time if a variant is added to the inductive but not to `all`. -/
@@ -2642,9 +2733,9 @@ theorem toNat_ofNat {n : Nat} {s : SyscallId} (h : SyscallId.ofNat? n = some s) 
   | 14 | 15 | 16 | 17 | 18 | 19
   | 20 | 21 | 22 | 23 | 24 | 25
   | 26 | 27 | 28 | 29 | 30
-  | 31 | 32 | 33 | 34 =>
+  | 31 | 32 | 33 | 34 | 35 =>
     intro s h; simp [ofNat?] at h; subst h; rfl
-  | n + 35 => intro s h; simp [ofNat?] at h
+  | n + 36 => intro s h; simp [ofNat?] at h
 
 /-- Injectivity: the toNat encoding is injective. -/
 theorem toNat_injective {a b : SyscallId} (h : a.toNat = b.toNat) : a = b := by

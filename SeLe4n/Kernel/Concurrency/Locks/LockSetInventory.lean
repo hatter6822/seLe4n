@@ -472,13 +472,19 @@ theorem lockSetTheorems_descriptions_nodup :
   nodup_map_stringOfPacked LockSetTheorem.descriptionKey (fun t _ => t.descriptionKey_wf)
     (by decide +kernel)
 
-/-- WS-SM SM3.B.4 aggregate count: there is exactly one consistency
-entry per SyscallId variant.  This pairs with
-`SyscallId.count` (in `Model/Object/Types.lean`) to witness
-*coverage* of the plan §5.2.SM3.B.4 obligation across every
-modeled kernel transition. -/
+/-- WS-SM SM3.B.4 aggregate count: there is exactly one consistency entry per
+SyscallId variant **that declares a static footprint**, which witnesses
+*coverage* of the plan §5.2.SM3.B.4 obligation across every modeled kernel
+transition that has something to be consistent about.
+
+`v0.35.190`: stated over `declaresStaticLockFootprint` rather than against
+`SyscallId.count`, because `.cspaceRevoke` declares no static footprint — the
+CDT walk's CNode set is unbounded and a `LockSet` is capped — so demanding an
+entry for it would force a footprint to exist in order to satisfy a number,
+which is the substitution this project retires everywhere else.  The exemption
+is a total classification with its own `_false_iff` pin, not an off-by-one. -/
 theorem lockSet_consistent_aggregate_covers_every_syscall :
     (lockSetTheorems.filter (fun t => t.category == .consistency)).length =
-    SyscallId.count := by decide
+    (SyscallId.all.filter declaresStaticLockFootprint).length := by decide
 
 end SeLe4n.Kernel.Concurrency

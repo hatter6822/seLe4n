@@ -267,6 +267,13 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .cspaceCopy            => .unit
   | .cspaceMove            => .unit
   | .cspaceDelete          => .unit
+  -- **WS-RR RR8.16 (`v0.35.190`)**: revocation returns nothing.  seL4's
+  -- `seL4_CNode_Revoke` returns only an error code, and the count of
+  -- destroyed derivations is deliberately not a return value: it is a
+  -- measure of *other* CSpaces' contents, which the invoker may hold no
+  -- authority over, so returning it would make the CDT's shape readable
+  -- from a slot the caller merely owns.
+  | .cspaceRevoke          => .unit
   | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit

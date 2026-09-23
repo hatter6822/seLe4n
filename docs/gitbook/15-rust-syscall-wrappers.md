@@ -32,7 +32,7 @@ Core type definitions with zero `unsafe` and zero external dependencies:
 - **`AccessRight` / `AccessRights`**: 5-right bitmask (O(1) operations).
   `TryFrom<u8>` rejects invalid bytes with bits 5–7 set (U3-D)
 - **`AccessRightsError`**: Error type for invalid `AccessRights` construction
-- **`SyscallId`**: 35-variant enum (0–34), including tcbSetFaultHandler (the fault-handler configuration syscall, PR #887 review round), notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4), tcbBindNotification/Unbind (SM6.B), mintReplyCap (SM6.C), vspaceUnifyInstruction (SM7.D), and the SM9 declassification family — declassify (30), auditRead (31), auditDrain (32), declassifySignal (33)
+- **`SyscallId`**: 36-variant enum (0–35), including cspaceRevoke (`seL4_CNode_Revoke`, WS-RR RR8.16 — the arm the revocation family had never had; it dispatches the CDT-traversing `cspaceRevokeCdt`, takes the delete's one-register ABI and leaves the source slot standing), tcbSetFaultHandler (the fault-handler configuration syscall, PR #887 review round), notificationSignal, notificationWait, replyRecv (V2-A/D), schedContextConfigure/Bind/Unbind (AA1/Z5), tcbSuspend/Resume (D1), tcbSetPriority/SetMCPriority (D2), tcbSetIPCBuffer (D3), tcbSetAffinity (WS-SM SM5.H.4), tcbBindNotification/Unbind (SM6.B), mintReplyCap (SM6.C), vspaceUnifyInstruction (SM7.D), and the SM9 declassification family — declassify (30), auditRead (31), auditDrain (32), declassifySignal (33)
 
 ### sele4n-abi
 

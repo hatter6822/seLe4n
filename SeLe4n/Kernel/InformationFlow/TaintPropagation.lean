@@ -117,20 +117,39 @@ justified groups:
   and `mintReplyCap` all take the CNode from the *capability* and both slots from
   the decoded arguments (`src.cnode = dst.cnode = cnodeId`, verified at the
   arms), so source and sink are the same object and an edge would be a self-loop.
-* **Outside the tracked-content scope** — `cspaceMint`.  Its slots are
-  same-CNode like its siblings, but unlike them it does not merely relocate an
-  existing capability: `decodeCSpaceMintArgs` reads the new **badge** and
-  **rights** from the caller's message registers, so a mint writes
-  caller-supplied bits into the destination capability.  Those bits are
+* **Outside the tracked-content scope** — `cspaceMint`, and since `v0.35.190`
+  `cspaceRevoke`.  Neither rests on the self-loop claim above, and they reach the
+  boundary from opposite sides.
+
+  `cspaceMint`'s slots are same-CNode like its siblings, but unlike them it does
+  not merely relocate an existing capability: `decodeCSpaceMintArgs` reads the
+  new **badge** and **rights** from the caller's message registers, so a mint
+  writes caller-supplied bits into the destination capability.  Those bits are
   *capability metadata* — the authority a capability names, and the identity a
   badged endpoint delivers — not the message/notification payload this model
   tracks as content (`contentTrackedFields`).  Classifying mint `.inert` is
-  therefore a statement about the **scope boundary**, not the self-loop claim its
-  siblings rest on, and the boundary is deliberate: a capability badge is
-  authority-identity, and tracking it as content would have to follow every
-  `cspace*` operation and every badged delivery.  Recorded as an accepted
-  out-of-scope channel (`capabilityBadgeChannel_out_of_scope`) rather than left
-  to a justification that does not hold for this arm.
+  therefore a statement about the **scope boundary**, and the boundary is
+  deliberate: a capability badge is authority-identity, and tracking it as
+  content would have to follow every `cspace*` operation and every badged
+  delivery.  Recorded as an accepted out-of-scope channel
+  (`capabilityBadgeChannel_out_of_scope`) rather than left to a justification
+  that does not hold for this arm.
+
+  `cspaceRevoke` writes the tracked **field** and moves no tracked **content**,
+  which is the only arm in this table that does.  `cspaceRevokeCdt` walks the CDT
+  across arbitrary CNodes, so the self-loop claim is plainly false of it, and its
+  last step (`revokePendingTransfersFrom`) rewrites `TCB.pendingMessage` to
+  consume derivations that have not landed yet.  The Tier-1 reach gate detects
+  that write and is right to — the check is field-granular, which is what makes
+  it a detector rather than a table of promises.  What it cannot decide is what
+  the write leaves behind:
+  `revokePendingTransfersFrom_preserves_trackedContent` says the payload
+  (`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks, so the
+  bytes that leave are the same capability metadata the mint's boundary already
+  excludes.  That theorem is the gate's `CONTENT_WRITE_EXEMPT` justification, and
+  the exemption is reconciled in both directions: delete the theorem, or let the
+  arm stop reaching a content write, and the gate fails rather than keeping a
+  pass it no longer earns.
 * **Scheduler and lifecycle state** — priorities, affinities, binding, suspend
   and resume move no content between objects; they move a thread's *scheduling*
   attributes.  `.tcbSetIPCBuffer` installs a buffer address, not its contents.
@@ -159,6 +178,21 @@ def contentFlowClass : SyscallId → ContentFlowClass
   | .cspaceMove => .inert
   | .cspaceMint => .inert
   | .cspaceDelete => .inert
+  -- **WS-RR RR8.16 (`v0.35.190`)**: inert on the *scope* ground `.cspaceMint`
+  -- rests on, not the self-loop ground its three siblings above do — the
+  -- self-loop argument is **false** of it, since `cspaceRevokeCdt` walks the CDT
+  -- across arbitrary CNodes.  And unlike `.cspaceMint` it genuinely writes a
+  -- content-tracked field: its last step
+  -- (`revokePendingTransfersFrom`) rewrites `TCB.pendingMessage`, which the
+  -- Tier-1 reach gate detects and is right to.  What the gate cannot decide is
+  -- what that write leaves behind, and
+  -- `revokePendingTransfersFrom_preserves_trackedContent` states it: the
+  -- payload (`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks,
+  -- which is capability metadata and so the boundary
+  -- `capabilityBadgeChannel_out_of_scope` already declares out of scope.  That
+  -- theorem is the gate's `CONTENT_WRITE_EXEMPT` justification; delete it and
+  -- this arm goes back to failing rather than keeping a pass it no longer earns.
+  | .cspaceRevoke => .inert
   | .mintReplyCap => .inert
   -- VSpace and cache/TLB maintenance: page-table entries and cache lines, not
   -- object content.
@@ -236,6 +270,7 @@ def syscallRecordsDeclassification : SyscallId → Bool
   | .send | .receive | .call | .reply | .replyRecv => false
   | .notificationSignal | .notificationWait => false
   | .cspaceCopy | .cspaceMove | .cspaceMint | .cspaceDelete | .mintReplyCap => false
+  | .cspaceRevoke => false
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => false
   | .lifecycleRetype => false
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority => false
@@ -296,6 +331,68 @@ theorem capabilityBadgeChannel_out_of_scope :
       ("CNode", "slots") ∉ contentTrackedFields := by
   refine ⟨rfl, ?_⟩
   simp [contentTrackedFields]
+
+/-- **WS-RR RR8.16 (`v0.35.190`): the revocation sweep rewrites a content-tracked
+FIELD and moves no tracked CONTENT.**
+
+`revokePendingTransfersFrom` — the last step of every revocation, which consumes
+the derivations that have not landed yet — writes `TCB.pendingMessage`, and that
+field *is* `contentTrackedFields`' first entry.  So the Tier-1 reach gate
+(`scripts/check_content_flow_coverage.py`) sees a content write under an arm
+classified `.inert`, and it is right to: the check is field-granular, which is
+what makes it a detector rather than a table of promises.
+
+What it cannot decide is what this theorem states.  The sweep's write is a
+**drop** (`TCB.pendingCapsDropped`): the message's `registers` — the payload this
+model tracks — are kept, and what leaves is `IpcMessage.caps`, which is
+capability metadata and therefore the boundary
+`capabilityBadgeChannel_out_of_scope` already declares out of scope.  Nothing
+else in the store moves at all, so no notification badge can change either.
+
+Two halves, both quantified over every key, because "the payload at the keys the
+sweep happens to write" would be a statement about the fixture:
+
+* a post-state thread holding a parked message held one before, with the **same
+  registers**; and
+* a notification is in the post-state exactly when it was in the pre-state, so
+  `Notification.pendingBadge` — the other tracked channel — is untouched.
+
+This is the justification `CONTENT_WRITE_EXEMPT` names.  Delete it and
+`.cspaceRevoke` goes back to failing the gate rather than quietly keeping a pass
+it no longer earns, which is the bite `AUDIT_APPEND_EXEMPT` already has. -/
+theorem revokePendingTransfersFrom_preserves_trackedContent
+    (st : SystemState) (nodes : List CdtNodeId) (hExt : st.objects.invExt) :
+    (∀ (oid : SeLe4n.ObjId) (t' : TCB) (m' : IpcMessage),
+        (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') →
+        t'.pendingMessage = some m' →
+        ∃ t m, st.objects[oid]? = some (.tcb t) ∧ t.pendingMessage = some m ∧
+          m'.registers = m.registers) ∧
+    (∀ (oid : SeLe4n.ObjId) (n : Notification),
+        (revokePendingTransfersFrom st nodes).objects[oid]? = some (.notification n) ↔
+        st.objects[oid]? = some (.notification n)) := by
+  obtain ⟨_, _, _, _, _, hObj⟩ := revokePendingTransfersFrom_frame st nodes hExt
+  constructor
+  · intro oid t' m' hPost hMsg
+    rcases hObj oid with hEq | ⟨u, u', hU, hUD, hU'⟩
+    · exact ⟨t', m', by rw [← hEq]; exact hPost, hMsg, rfl⟩
+    · rw [hPost] at hU'
+      obtain rfl : t' = u' := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU'
+      -- the drop keeps presence, so the pre-state message exists…
+      have hPre : u.pendingMessage.isSome := by
+        have := TCB.pendingCapsDropped_isSome hUD
+        rw [hMsg] at this; exact (this.symm ▸ rfl : u.pendingMessage.isSome = true)
+      obtain ⟨m, hm⟩ := Option.isSome_iff_exists.mp hPre
+      exact ⟨u, m, hU, hm, TCB.pendingCapsDropped_registers hUD hm hMsg⟩
+  · intro oid n
+    rcases hObj oid with hEq | ⟨_, u', _, _, hU'⟩
+    · rw [hEq]
+    · constructor
+      · intro h; rw [h] at hU'; exact absurd (Option.some.inj hU') (by simp)
+      · intro h
+        rcases hObj oid with hEq' | ⟨_, _, hV, _, _⟩
+        · rw [hEq']; exact h
+        · rw [h] at hV; exact absurd (Option.some.inj hV) (by simp)
 
 -- ============================================================================
 -- §2  WS-SM SM9.D.8-.D.11 — the edges
@@ -747,7 +844,7 @@ def contentFlowEdges (st : SystemState) (tid : SeLe4n.ThreadId)
         match cap.target with
         | .object nid => waitTaintEdges tid nid
         | _ => []
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -923,7 +1020,7 @@ def declassifyBypassedTargets (st : SystemState) (tid : SeLe4n.ThreadId)
       | none => []
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait | .declassifySignal
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
   | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
   | .schedContextConfigure | .schedContextBind | .schedContextUnbind
   | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -958,7 +1055,7 @@ def contentFlowBypassed (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalBypassedNotification st nid
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv | .notificationWait
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
@@ -1029,7 +1126,7 @@ def contentFlowClears (st : SystemState) (tid : SeLe4n.ThreadId)
         | .object nid => signalClearedNotification st nid
         | _ => []
     | .send | .receive | .call | .reply | .replyRecv
-    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .lifecycleRetype
+    | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke | .lifecycleRetype
     | .vspaceMap | .vspaceUnmap | .serviceRegister | .serviceRevoke | .serviceQuery
     | .schedContextConfigure | .schedContextBind | .schedContextUnbind
     | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority

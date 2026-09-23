@@ -596,7 +596,7 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- a post-state TCB is its pre-state self up to the binding -/
   tcbBwd : ∀ (oid : SeLe4n.ObjId) (tx : TCB), st'.objects[oid]? = some (.tcb tx) →
     ∃ ty, st.objects[oid]? = some (.tcb ty) ∧
-      tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
       tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
       tx.queuePPrev = ty.queuePPrev ∧
       tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyObject = ty.replyObject ∧
@@ -604,7 +604,7 @@ structure donationReadAgreement (st st' : SystemState) : Prop where
   /-- and conversely -/
   tcbFwd : ∀ (oid : SeLe4n.ObjId) (ty : TCB), st.objects[oid]? = some (.tcb ty) →
     ∃ tx, st'.objects[oid]? = some (.tcb tx) ∧
-      tx.ipcState = ty.ipcState ∧ tx.pendingMessage = ty.pendingMessage ∧
+      tx.ipcState = ty.ipcState ∧ pendingMessageReadAgrees tx.pendingMessage ty.pendingMessage ∧
       tx.queueNext = ty.queueNext ∧ tx.queuePrev = ty.queuePrev ∧
       tx.queuePPrev = ty.queuePPrev ∧
       tx.timeoutBudget = ty.timeoutBudget ∧ tx.replyObject = ty.replyObject ∧
@@ -633,8 +633,8 @@ namespace donationReadAgreement
 
 /-- Reflexivity — a state agrees with itself. -/
 theorem refl (st : SystemState) : donationReadAgreement st st :=
-  ⟨fun _ tx h => ⟨tx, h, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩,
-   fun _ ty h => ⟨ty, h, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩,
+  ⟨fun _ tx h => ⟨tx, h, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩,
+   fun _ ty h => ⟨ty, h, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩,
    fun _ _ _ _ _ => Iff.rfl,
    fun _ _ => Iff.rfl,
    fun _ sc h => ⟨sc, h⟩⟩
@@ -647,14 +647,14 @@ theorem trans {st st' st'' : SystemState}
     intro oid tx hx
     obtain ⟨ty, hy, e1, e2, e3, e4, e5, e6, e7, e8⟩ := h2.tcbBwd oid tx hx
     obtain ⟨tz, hz, f1, f2, f3, f4, f5, f6, f7, f8⟩ := h1.tcbBwd oid ty hy
-    exact ⟨tz, hz, e1.trans f1, e2.trans f2, e3.trans f3, e4.trans f4, e5.trans f5,
-      e6.trans f6, e7.trans f7, e8.trans f8⟩
+    exact ⟨tz, hz, e1.trans f1, pendingMessageReadAgrees_trans e2 f2, e3.trans f3,
+      e4.trans f4, e5.trans f5, e6.trans f6, e7.trans f7, e8.trans f8⟩
   tcbFwd := by
     intro oid ty hy
     obtain ⟨tx, hx, e1, e2, e3, e4, e5, e6, e7, e8⟩ := h1.tcbFwd oid ty hy
     obtain ⟨tz, hz, f1, f2, f3, f4, f5, f6, f7, f8⟩ := h2.tcbFwd oid tx hx
-    exact ⟨tz, hz, f1.trans e1, f2.trans e2, f3.trans e3, f4.trans e4, f5.trans e5,
-      f6.trans e6, f7.trans e7, f8.trans e8⟩
+    exact ⟨tz, hz, f1.trans e1, pendingMessageReadAgrees_trans f2 e2, f3.trans e3,
+      f4.trans e4, f5.trans e5, f6.trans e6, f7.trans e7, f8.trans e8⟩
   otherKind := fun oid k hk hsc hr =>
     (h2.otherKind oid k hk hsc hr).trans (h1.otherKind oid k hk hsc hr)
   replyCallerAgree := fun rid c =>
@@ -682,11 +682,13 @@ theorem donationReadAgreement_of_schedContextStore
   · intro oid tx hx
     by_cases hEq : oid = scKey
     · rw [hEq, hAt] at hx; cases hx
-    · rw [hNe oid hEq] at hx; exact ⟨tx, hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · rw [hNe oid hEq] at hx
+      exact ⟨tx, hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · intro oid ty hy
     by_cases hEq : oid = scKey
     · rw [hEq, hPre] at hy; cases hy
-    · exact ⟨ty, by rw [hNe oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact ⟨ty, by rw [hNe oid hEq]; exact hy, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl,
+        rfl, rfl⟩
   · intro oid k _ hsc _
     by_cases hEq : oid = scKey
     · subst hEq
@@ -734,17 +736,21 @@ theorem donationReadAgreement_of_tcbFieldUpdate
     · rw [hEq, hAt] at hx
       obtain rfl : newTcb = tx := by
         simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hx
-      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, hMsg, hNext, hPrev, hPPrev, hBudget,
+      exact ⟨oldTcb, by rw [hEq]; exact hPre, hIpc, pendingMessageReadAgrees_of_eq hMsg,
+        hNext, hPrev, hPPrev, hBudget,
         hReply, hStash⟩
-    · rw [hFrame oid hEq] at hx; exact ⟨tx, hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · rw [hFrame oid hEq] at hx
+      exact ⟨tx, hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · intro oid ty hy
     by_cases hEq : oid = key
     · rw [hEq, hPre] at hy
       obtain rfl : oldTcb = ty := by
         simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
-      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, hMsg, hNext, hPrev, hPPrev, hBudget,
+      exact ⟨newTcb, by rw [hEq]; exact hAt, hIpc, pendingMessageReadAgrees_of_eq hMsg,
+        hNext, hPrev, hPPrev, hBudget,
         hReply, hStash⟩
-    · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+    · exact ⟨ty, by rw [hFrame oid hEq]; exact hy, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl,
+        rfl, rfl, rfl⟩
   · intro oid k hk _ _
     by_cases hEq : oid = key
     · subst hEq
@@ -803,10 +809,10 @@ theorem donationReadAgreement_of_headClear
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeDonationHeadClear_tcb_backward hObjInv h oid tx hx,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact fun oid ty hy =>
       ⟨ty, storeDonationHeadClear_tcb_eq hObjInv h oid ty hy,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · intro oid k _ _ hr
     rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
     · exact Iff.rfl
@@ -840,10 +846,10 @@ theorem donationReadAgreement_of_reHead
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, storeReplyReHead_tcb_backward hObjInv h oid tx hx,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact fun oid ty hy =>
       ⟨ty, storeReplyReHead_tcb_eq hObjInv h oid ty hy,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · intro oid k _ _ hr
     rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, hRead, hS⟩
     · exact Iff.rfl
@@ -896,10 +902,10 @@ theorem donationReadAgreement_of_replyStackStore
   refine ⟨?_, ?_, ?_, ?_, ?_⟩
   · exact fun oid tx hx =>
       ⟨tx, (storeObject_replyAt_objects_tcb_iff st st' rid r _ hPre hObjInv hS oid tx).mp hx,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · exact fun oid ty hy =>
       ⟨ty, (storeObject_replyAt_objects_tcb_iff st st' rid r _ hPre hObjInv hS oid ty).mpr hy,
-        rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+        rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
   · intro oid k _ _ hr
     by_cases hEq : oid = rid.toObjId
     · rw [hEq, storeObject_objects_eq st st' rid.toObjId _ hObjInv hS, hRaw]

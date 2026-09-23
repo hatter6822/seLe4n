@@ -5334,7 +5334,7 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # the theorem without the sentence and this fails, which is the only mechanism
 # that has actually held.
 run_prose_check "INVARIANT" rg -n 'per-core boundary has 59 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
@@ -6074,8 +6074,10 @@ run_check "INVARIANT" rg -n 'NEGATIVE: linearOrder disagrees on exactly one of t
 # across six expansions.
 run_prose_negative_check "INVARIANT" rg -n 'classification table \([0-9]+ entries\)' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # WS-SM SM8.E.3 took the canonical boundary 39 -> 40 with the 2PL bracket;
-# SM9.A.11 took it 40 -> 42 with the two audit readers.
-run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 44' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+# SM9.A.11 took it 40 -> 42 with the two audit readers; WS-RR RR8.16
+# (`v0.35.190`) took it 44 -> 45 with `cspaceRevokeCdt`.  The anchor pins HEAD's
+# value; the arrows above are history, which is why they are not restated in it.
+run_check "INVARIANT" rg -n 'enforcementBoundaryExtended.length = 45' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 run_check "INVARIANT" rg -n '^  runEndpointPolicyGateChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow the lattice denies' tests/SmpInformationFlowSuite.lean
 
@@ -6552,7 +6554,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' t
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'SCOPE: the decidable slice cannot see a badge write' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-information-flow\]' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'enforcement boundary: canonical 44' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'enforcement boundary: canonical 45' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'smp_information_flow\.expected' tests/fixtures/smp_information_flow.expected.sha256
 # The FIXTURE's independence probe must land on a core whose current thread the
 # low observer can SEE, or the reported set is `allCores` and the line is
@@ -6729,10 +6731,12 @@ run_check "INVARIANT" rg -n '\| \.auditRead\s+=> 31' SeLe4n/Model/Object/Types.l
 run_check "INVARIANT" rg -n '\| \.auditDrain\s+=> 32' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '31 => some \.auditRead' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '32 => some \.auditDrain' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def count : Nat := 35' SeLe4n/Model/Object/Types.lean
+# The count anchors pin HEAD's value, not the value the cut above produced:
+# `.tcbSetFaultHandler` took it to 35 and WS-RR RR8.16's `.cspaceRevoke` to 36.
+run_check "INVARIANT" rg -n '^def count : Nat := 36' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'AuditRead = 31' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditDrain = 32' rust/sele4n-types/src/syscall.rs
-run_check "INVARIANT" rg -n 'pub const COUNT: usize = 35;' rust/sele4n-types/src/syscall.rs
+run_check "INVARIANT" rg -n 'pub const COUNT: usize = 36;' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'AuditFieldTooLarge = 55' rust/sele4n-types/src/error.rs
 
 # SM9.A.8: the safe wrappers.  Without them the syscalls are hand-encode-only,
@@ -6823,7 +6827,7 @@ run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where 
 run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 59' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
@@ -6911,7 +6915,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped thi
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^private def auditReaderTraceLines' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
 # caller's own preloaded `x0`.  Without the staged frame the assertion below
 # would read back whatever the caller left there.
@@ -7131,7 +7135,7 @@ run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInfo
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
-run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=35 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
+run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36 opcodes=30 readableStructures=2' tests/fixtures/smp_information_flow.expected
 
 # ============================================================================
 # WS-SM SM9.C — the data-carrying declassification
@@ -7239,7 +7243,7 @@ run_negative_check "INVARIANT" rg -n 'declassifiedSignal' SeLe4n/Kernel/Informat
 # SM9.C.8: the syscall, both Rust mirrors and the seam classification the total
 # `refusalSeamClass` forced it to supply.
 run_check "INVARIANT" rg -n '^  \| declassifySignal' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n 'def count : Nat := 35' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n 'def count : Nat := 36' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'DeclassifySignal = 33' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-types/src/error.rs
@@ -20353,5 +20357,86 @@ run_check "INVARIANT" rg -n '\(e\) PAYOFF: the resolved \x60\.replyRecv\x60 foot
 # ...and the retired readings live in the witness that refutes them, and nowhere
 # else in the tree.
 run_negative_check "INVARIANT" rg -n 'callerKeyedCallDonatedSc\?|senderKeyedDonatedSc\?' SeLe4n
+
+# ---------------------------------------------------------------------------
+# v0.35.190 -- WS-RR RR8.16: `seL4_CNode_Revoke` gets an arm
+# ---------------------------------------------------------------------------
+# The revocation family was verified machinery with NO ABI path: `API.lean`
+# carried no revocation arm at all, so no capability a thread could present
+# revoked anything.  The row's own remedy, and this project's
+# implement-the-improvement rule: wire the syscall.
+#
+# 1. THE ARM DISPATCHES THE CDT-TRAVERSING VARIANT, which is its whole security
+# content -- the local `cspaceRevoke` the scaffold opens with reaches only the
+# CONTAINING CNode, so a derived capability copied into any other CSpace would
+# survive a revocation that claimed to destroy it.
+run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdt addr st" SeLe4n/Kernel/API.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st$" SeLe4n/Kernel/API.lean'
+# ...and it takes the DELETE's decoder, since both name one slot of the invoked
+# CNode and a second decoder for one operand is a spelling nobody needs.
+run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*decodeCSpaceDeleteArgs decoded" SeLe4n/Kernel/API.lean'
+# 2. THE AUTHORITY IS `.write`, not `.grant`: grant authorises CREATING a
+# derivation (mint/copy/move), and destroying one is not that authority.
+run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke    => \.write' SeLe4n/Kernel/API.lean
+# 3. THE DISPATCH PAYOFF covers it -- the arm is in
+# `dispatchCapabilityOnly_preserves_ipcInvariantFull`, whose chain this cut built
+# from nothing (the family's preservation surface was `capabilityInvariantBundle`
+# alone).
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem processRevokeNode_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+# 4. ONE QUESTION, ONE OWNER: the scaffold's case analysis and the traversal's
+# induction are PREDICATE-FREE and live beside their definitions, so the
+# capability bundle's argument and the IPC bundle's are one answer rather than
+# two.  The fold body moved with them and the traversal is DEFINED through it --
+# keeping it in an invariant module is what forced that traversal's proof to
+# `change` its way into an inlined lambda.
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_decompose' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtFold_induct' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtMaterializedTraversal_ok_induct' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtMaterializedTraversal[^\n]*(\n([ \t][^\n]*)?)*descendants\.foldl revokeCdtFoldBody" SeLe4n/Kernel/Capability/Operations.lean'
+run_negative_check "INVARIANT" rg -n '^def revokeCdtFoldBody' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+# 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY.  The
+# in-flight sweep is the one transition in the tree that rewrites that field to a
+# DIFFERENT value while the thread stays blocked, and equality was strictly more
+# than the bundle reads: only two conjuncts read it, the write is a DROP, and a
+# drop is what both survive.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def pendingMessageReadAgrees[^\n]*(\n([ \t][^\n]*)?)*mx\.isSome = my\.isSome" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*pendingMessageReadAgrees tx\.pendingMessage ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationReadAgreement[^\n]*(\n([ \t][^\n]*)?)*tx\.pendingMessage = ty\.pendingMessage" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def TCB\.pendingCapsDropped[^\n]*(\n([ \t][^\n]*)?)*some m, some m. => m.\.registers = m\.registers" SeLe4n/Model/Object/Types.lean'
+# ...and the binding-frame table is SYMMETRIC: `donationChainAcyclic` carries
+# across a binding frame like its two siblings, which it had not since IPC
+# de-threading D6.
+run_check "INVARIANT" rg -n '^theorem donationChainAcyclic_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# 6. NO STATIC LOCK FOOTPRINT, and that is a DECISION: the CDT walk's CNode set
+# is state-discovered and unbounded while a `LockSet` is capped, so a footprint
+# naming only the source CNode would be FALSE of the transition.  Stated as a
+# total classification rather than as an off-by-one against `SyscallId.count`.
+run_check "INVARIANT" rg -n '^def declaresStaticLockFootprint' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem declaresStaticLockFootprint_false_iff' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*\(SyscallId\.all\.filter declaresStaticLockFootprint\)\.length" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*= *$\n *SyscallId\.count" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
+# 7. IT WRITES A CONTENT-TRACKED FIELD AND MOVES NO TRACKED CONTENT.  The reach
+# gate detects the sweep's `TCB.pendingMessage` write and is right to -- the
+# check is field-granular, which is what makes it a detector rather than a table
+# of promises.  What it cannot decide is what the write LEAVES: the payload is
+# kept and only the capability array shrinks, which is the metadata the mint's
+# boundary already excludes.  That theorem is the gate's justification, and the
+# exemption is reconciled in BOTH directions.
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_trackedContent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem TCB\.pendingCapsDropped_registers' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^CONTENT_WRITE_EXEMPT = \{\n *\x22cspaceRevoke\x22: \x22SeLe4n\.Kernel\.revokePendingTransfersFrom_preserves_trackedContent\x22," scripts/check_content_flow_coverage.py'
+run_check "INVARIANT" rg -n 'is exempted from the content-write check but reaches' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n 'is exempted from the content-write check by' scripts/check_content_flow_coverage.py
+# 8. MEASURED: the witness drives the LIVE dispatch on a state whose derivation
+# lives in a SECOND CNode and computes the retired local-only reading beside it,
+# so the assertions are known to discriminate rather than merely to pass.
+run_check "INVARIANT" rg -n 'sd059_local_only_leaves_the_cross_cnode_derivation' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd059_dispatch_removes_the_cross_cnode_derivation' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd059_source_slot_survives' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd059_revoke_then_delete' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "sd058_mintReplyCapThroughTheSyscallGate\n *sd059_cspaceRevokeThroughTheSyscallGate" tests/SyscallDispatchSuite.lean'
 
 finalize_report

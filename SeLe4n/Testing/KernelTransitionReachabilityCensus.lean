@@ -928,16 +928,30 @@ reasons would read as justification while asserting nothing, and the obligation
 that does the work falls on whoever adds the next entry, who must either wire it
 or say here why it exists.
 
-**Two known residues inside this list, both registered rather than absorbed.**
-The whole `cspaceRevoke*` / `revokeCdt*` / `streamingRevokeBFS` family is here
-because `API.lean` has no revocation syscall arm at all — verified machinery
-with no ABI path — and four members (`cleanupActiveDonation`, `timerTickChecked`,
+**One known residue inside this list, registered rather than absorbed**, and one
+closed.  Four members (`cleanupActiveDonation`, `timerTickChecked`,
 `switchDomainChecked`, `endpointCallWithDonation`) are consumed by nothing in the
-tree: no live path, no theorem, no suite, no gate.  Each needs the wire-or-retire
+tree: no live path, no theorem, no suite, no gate.  They need the wire-or-retire
 judgement `v0.35.78` made for the capability-reference table, which is a
-measurement and a decision rather than a line in a list, so both carry rows in
+measurement and a decision rather than a line in a list, so they carry a row in
 `docs/REGISTERED_DEBT.md`.  Naming them here keeps a *known* residue from reading
-like an unexamined one. -/
+like an unexamined one.
+
+**The revocation family's residue closed at `v0.35.190` (WS-RR RR8.16)**, and
+what is left of it here is a *narrower* claim than the one that was registered.
+`API.lean` gained the `.cspaceRevoke` arm, so `cspaceRevoke`, `cspaceRevokeCdt`,
+`revokeCdtScaffold`, `revokeCdtMaterializedTraversal`, `revokeCdtFoldBody`,
+`processRevokeNode` and the in-flight sweep are all in the live closure and have
+left this list.  What remains are the three **reporting variants**
+(`cspaceRevokeCdtStrict`, `cspaceRevokeCdtStreaming`,
+`cspaceRevokeCdtTransactional`) with their traversals, the streaming BFS and the
+reporting fold step: each is the same scaffold at a different traversal, offered
+to *in-kernel* callers that want a structured failure report or an
+`O(branching-factor)` walk, and the syscall arm dispatches the materialized
+variant because a userspace invocation has no channel to receive a report
+through.  A variant with no in-kernel caller either gains one or is retired;
+that is a smaller question than the one the register row asked, and it is what
+the row was closed down to. -/
 def nonExecutedTransitionsPlain : List Name :=
   [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.empty
   , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate
@@ -1026,7 +1040,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCoreState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePriorityInheritance
   , `SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
-  , `SeLe4n.Kernel.RevokeTraversalOutcome.state
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
@@ -1048,8 +1061,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
   , `SeLe4n.Kernel.cspaceResolvePath
-  , `SeLe4n.Kernel.cspaceRevoke
-  , `SeLe4n.Kernel.cspaceRevokeCdt
   , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
   , `SeLe4n.Kernel.cspaceRevokeCdtStrict
   , `SeLe4n.Kernel.cspaceRevokeCdtTransactional
@@ -1103,7 +1114,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationWaitChecked
   , `SeLe4n.Kernel.notificationWaitCrossCoreDispatch
   , `SeLe4n.Kernel.processReplenishmentsDue
-  , `SeLe4n.Kernel.processRevokeNode
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
   -- WS-RR RR8.12 Cut C6h (`v0.35.181`): RR7.12's object-domain bracket at the
@@ -1128,15 +1138,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.retypeAsidRoundFold
   , `SeLe4n.Kernel.retypeAsidRoundStep
   , `SeLe4n.Kernel.retypeFromUntyped
-  , `SeLe4n.Kernel.revokeCdtFoldBody
-  , `SeLe4n.Kernel.revokeCdtMaterializedTraversal
   , `SeLe4n.Kernel.revokeCdtReportingOutcome
   , `SeLe4n.Kernel.revokeCdtReportingStep
-  , `SeLe4n.Kernel.revokeCdtScaffold
   , `SeLe4n.Kernel.revokeCdtStreamingTraversal
   , `SeLe4n.Kernel.revokeCdtStrictTraversal
   , `SeLe4n.Kernel.revokeCdtTransactionalTraversal
-  , `SeLe4n.Kernel.revokePendingTransfersFrom
   , `SeLe4n.Kernel.saveOutgoingContext
   , `SeLe4n.Kernel.saveOutgoingContextChecked
   , `SeLe4n.Kernel.schedule
@@ -1235,7 +1241,6 @@ def nonExecutedTransitionsPrivate : List Name :=
   [ privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsDetailed
   , privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsGated
   , privateIn `SeLe4n.Kernel.Capability.Invariant.Defs `SeLe4n.Kernel.ScrubTokenImpl.stPre
-  , privateIn `SeLe4n.Kernel.Capability.Operations `SeLe4n.Kernel.revokePendingTransfersStep
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt1
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt2
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3

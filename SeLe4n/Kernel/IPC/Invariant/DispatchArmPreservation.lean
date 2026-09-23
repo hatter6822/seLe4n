@@ -919,8 +919,13 @@ theorem cspaceInsertSlot_preserves_ipcInvariantFull
     hBadge.2 hInv
 
 /-- Success shape of `cspaceDeleteSlotCore`: the target CNode existed, the
-post-state holds it with the slot removed, off-key objects and the scheduler
-are untouched. -/
+post-state holds it with the slot removed, off-key objects, the scheduler and the
+store invariant are untouched.
+
+The store invariant is a conjunct rather than a separate lemma because the
+revocation fold (`v0.35.190`) needs it *between* iterations: each
+`cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a fold over
+descendants has to carry it forward from the step that just ran. -/
 private theorem cspaceDeleteSlotCore_shape
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt)
@@ -928,7 +933,7 @@ private theorem cspaceDeleteSlotCore_shape
     ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn) ∧
       st'.objects[addr.cnode]? = some (.cnode (cn.remove addr.slot)) ∧
       (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
-      st'.scheduler = st.scheduler := by
+      st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
   unfold cspaceDeleteSlotCore SystemState.getCNode? at hStep
   cases hObj : st.objects[addr.cnode]? with
   | none => simp [hObj] at hStep
@@ -940,7 +945,7 @@ private theorem cspaceDeleteSlotCore_shape
       · contradiction
       · rename_i st1 hStore
         cases hStep
-        refine ⟨cn, rfl, ?_, ?_, ?_⟩
+        refine ⟨cn, rfl, ?_, ?_, ?_, ?_⟩
         · rw [SystemState.detachSlotFromCdt_objects_eq]
           exact storeObject_objects_eq st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hObjInv hStore
@@ -951,6 +956,9 @@ private theorem cspaceDeleteSlotCore_shape
         · rw [detachSlotFromCdt_scheduler_eq]
           exact storeObject_scheduler_eq st st1 addr.cnode
             (.cnode (cn.remove addr.slot)) hStore
+        · rw [SystemState.detachSlotFromCdt_objects_eq]
+          exact storeObject_preserves_objects_invExt st st1 addr.cnode
+            (.cnode (cn.remove addr.slot)) hObjInv hStore
     | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
     | schedContext _ | reply _ => simp [hObj] at hStep
 
@@ -961,7 +969,8 @@ theorem cspaceDeleteSlotCore_preserves_ipcInvariantFull
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : cspaceDeleteSlotCore addr st = .ok ((), st')) :
     ipcInvariantFull st' := by
-  obtain ⟨cn, hPre, hAt, hNe, hSched⟩ := cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
+  obtain ⟨cn, hPre, hAt, hNe, hSched, _⟩ :=
+    cspaceDeleteSlotCore_shape st st' addr hObjInv hStep
   have hView := ipcReadViewAgreement.of_single_inert_write hNe
     (by rw [hPre]; trivial) (by rw [hAt]; trivial)
   have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
@@ -1004,6 +1013,294 @@ theorem cspaceDeleteSlot_preserves_ipcInvariantFull
   split at hStep
   · contradiction
   · exact cspaceDeleteSlotCore_preserves_ipcInvariantFull st st' addr hObjInv hInv hStep
+
+-- ============================================================================
+-- WS-RR RR8.16 (`v0.35.190`): the revocation family preserves `ipcInvariantFull`
+-- ============================================================================
+
+/-! `seL4_CNode_Revoke` needed an arm, and an arm needs its place in the
+capability-only dispatch payoff.  The family's own preservation surface is
+stated against `capabilityInvariantBundle` (`Capability/Invariant/Preservation/
+Revoke.lean`); what it had never had is the *IPC* bundle, which is what
+`dispatchCapabilityOnly_preserves_ipcInvariantFull` composes.
+
+The argument is the delete's, folded.  Every write the family performs is a
+CNode store (`ipcReadInert` on both sides, so `ipcReadViewAgreement` carries the
+eighteen object conjuncts), a CDT-field update (which the bundle does not read
+at all), or the in-flight sweep's `pendingMessage` rewrite — and that last one is
+the only place the bundle has something to say, which is why it gets a frame of
+its own rather than riding the read view. -/
+
+/-- Success shape of `cspaceRevoke`: the target CNode existed, the post-state
+holds it with the revoked siblings filtered out, and off-key objects, the
+scheduler and the store invariant are untouched. -/
+private theorem cspaceRevoke_shape
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    ∃ (cn : CNode) (parent : Capability),
+      st.objects[addr.cnode]? = some (.cnode cn) ∧
+      st'.objects[addr.cnode]? = some (.cnode (cn.revokeTargetLocal addr.slot parent.target)) ∧
+      (∀ oid : SeLe4n.ObjId, oid ≠ addr.cnode → st'.objects[oid]? = st.objects[oid]?) ∧
+      st'.scheduler = st.scheduler ∧ st'.objects.invExt := by
+  unfold cspaceRevoke SystemState.getCNode? at hStep
+  cases hL : cspaceLookupSlot addr st with
+  | error e => simp [hL] at hStep
+  | ok p =>
+    rcases p with ⟨parent, stL⟩
+    have hEqL : stL = st := cspaceLookupSlot_preserves_state st stL addr parent hL
+    subst stL
+    cases hC : st.objects[addr.cnode]? with
+    | none => simp [hL, hC] at hStep
+    | some obj =>
+      cases obj with
+      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ | reply _ => simp [hL, hC] at hStep
+      | cnode cn =>
+        simp only [hL, hC] at hStep
+        exact ⟨cn, parent, rfl,
+          storeObject_objects_eq st st' addr.cnode _ hObjInv hStep,
+          fun oid hNe => storeObject_objects_ne st st' addr.cnode oid _ hNe hObjInv hStep,
+          storeObject_scheduler_eq st st' addr.cnode _ hStep,
+          storeObject_preserves_objects_invExt st st' addr.cnode _ hObjInv hStep⟩
+
+/-- `cspaceRevoke` preserves the bundle: local revocation only *removes* slots
+(`CNode.lookup_revokeTargetLocal_sub`), so the badge clause carries from the
+pre-state exactly as it does across the delete. -/
+theorem cspaceRevoke_preserves_ipcInvariantFull
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceRevoke addr st = .ok ((), st')) :
+    ipcInvariantFull st' := by
+  obtain ⟨cn, parent, hPre, hAt, hNe, hSched, _⟩ :=
+    cspaceRevoke_shape st st' addr hObjInv hStep
+  have hView := ipcReadViewAgreement.of_single_inert_write hNe
+    (by rw [hPre]; trivial) (by rw [hAt]; trivial)
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      st'.objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    by_cases hK : tid.toObjId = addr.cnode
+    · rw [hK, hAt] at h
+      exact absurd (Option.some.inj h) (fun hx => KernelObject.noConfusion hx)
+    · rw [hNe _ hK] at h
+      exact ⟨tcb', h, rfl, rfl⟩
+  have hCap : capabilityBadgesWellFormed st' := by
+    intro oid cn' slot cap badge hCn hLk hB
+    by_cases hK : oid = addr.cnode
+    · rw [hK, hAt] at hCn
+      obtain rfl : cn.revokeTargetLocal addr.slot parent.target = cn' := by
+        simpa only [Option.some.injEq, KernelObject.cnode.injEq] using hCn
+      exact hInv.badgeWellFormed.2 addr.cnode cn slot cap badge (hK ▸ hPre)
+        (CNode.lookup_revokeTargetLocal_sub cn addr.slot parent.target slot cap
+          (CNode.slotsUnique_holds cn) hLk) hB
+    · rw [hNe _ hK] at hCn
+      exact hInv.badgeWellFormed.2 oid cn' slot cap badge hCn hLk hB
+  exact ipcInvariantFull_of_readViewAgreement hView
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    hCap hInv
+
+
+/-- **The in-flight sweep preserves the bundle.**
+
+`revokePendingTransfersFrom` is the one transition in the tree that rewrites a
+`TCB.pendingMessage` to a *different* value while the thread stays blocked, which
+is why it needs a frame of its own rather than riding `ipcReadViewAgreement`:
+that relation reads the field, and two of the bundle's conjuncts
+(`allPendingMessagesBounded`, `blockedThreadsPendingMessageConsistent`) read it
+too.
+
+What the sweep does to that field is a **drop** — the registers are kept and the
+capability array shrinks (`TCB.pendingCapsDropped`) — and a drop is exactly what
+those two conjuncts survive: presence is preserved, so the "a blocked sender
+carries a message" clause carries, and a shorter array under an unchanged
+register file is still bounded.  Every other field is untouched, so the binding
+half of the argument is `sameSchedContextBindings` and the rest is
+`donationReadAgreement`. -/
+theorem revokePendingTransfersFrom_preserves_ipcInvariantFull
+    (st : SystemState) (nodes : List CdtNodeId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st) :
+    ipcInvariantFull (revokePendingTransfersFrom st nodes) := by
+  obtain ⟨_, _, _, _, hSched, hObj⟩ := revokePendingTransfersFrom_frame st nodes hObjInv
+  -- The two directions of "a TCB became a TCB with its caps dropped".
+  have hFwd : ∀ (oid : SeLe4n.ObjId) (t : TCB), st.objects[oid]? = some (.tcb t) →
+      ∃ t', (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') ∧
+        TCB.pendingCapsDropped t t' := by
+    intro oid t h
+    rcases hObj oid with hEq | ⟨u, u', hU, hUD, hU'⟩
+    · exact ⟨t, by rw [hEq]; exact h, TCB.pendingCapsDropped_refl t⟩
+    · rw [h] at hU
+      obtain rfl : t = u := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU
+      exact ⟨u', hU', hUD⟩
+  have hBwd : ∀ (oid : SeLe4n.ObjId) (t' : TCB),
+      (revokePendingTransfersFrom st nodes).objects[oid]? = some (.tcb t') →
+      ∃ t, st.objects[oid]? = some (.tcb t) ∧ TCB.pendingCapsDropped t t' := by
+    intro oid t' h
+    rcases hObj oid with hEq | ⟨u, u'', hU, hUD, hU'⟩
+    · exact ⟨t', by rw [← hEq]; exact h, TCB.pendingCapsDropped_refl t'⟩
+    · rw [h] at hU'
+      obtain rfl : t' = u'' := by
+        simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hU'
+      exact ⟨u, hU, hUD⟩
+  -- Nothing but TCBs moved, so every other kind agrees both ways.
+  have hOther : ∀ (oid : SeLe4n.ObjId) (k : KernelObject), (∀ t, k ≠ .tcb t) →
+      ((revokePendingTransfersFrom st nodes).objects[oid]? = some k ↔
+        st.objects[oid]? = some k) := by
+    intro oid k hK
+    rcases hObj oid with hEq | ⟨_, u', _, _, hU'⟩
+    · rw [hEq]
+    · constructor
+      · intro h; rw [h] at hU'; exact absurd (Option.some.inj hU') (hK u')
+      · intro h
+        rcases hObj oid with hEq' | ⟨_, v', hV, _, _⟩
+        · rw [hEq']; exact h
+        · rw [h] at hV; exact absurd (Option.some.inj hV) (hK _)
+  have hBind : sameSchedContextBindings st (revokePendingTransfersFrom st nodes) := by
+    intro tid tcb' h
+    obtain ⟨t, hPre, hD⟩ := hBwd _ _ h
+    exact ⟨t, hPre, (TCB.pendingCapsDropped_fields hD).2.2.2.2.2.2.2.symm⟩
+  have hAgree : donationReadAgreement st (revokePendingTransfersFrom st nodes) := by
+    refine ⟨?_, ?_, ?_, ?_, ?_⟩
+    · intro oid tx hx
+      obtain ⟨ty, hy, hD⟩ := hBwd oid tx hx
+      obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
+      exact ⟨ty, hy, hIs, ⟨TCB.pendingCapsDropped_isSome hD,
+        fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
+        hQN, hQP, hQPP, hTB, hRO, hPRR⟩
+    · intro oid ty hy
+      obtain ⟨tx, hx, hD⟩ := hFwd oid ty hy
+      obtain ⟨hIs, hQN, hQP, hQPP, hTB, hRO, hPRR, _⟩ := TCB.pendingCapsDropped_fields hD
+      exact ⟨tx, hx, hIs, ⟨TCB.pendingCapsDropped_isSome hD,
+        fun m m' hm hm' hb => TCB.pendingCapsDropped_bounded hD hm hm' hb⟩,
+        hQN, hQP, hQPP, hTB, hRO, hPRR⟩
+    · intro oid k hT _ _; exact hOther oid k hT
+    · intro rid caller
+      constructor
+      · rintro ⟨r, hr, hc⟩
+        exact ⟨r, (hOther rid.toObjId (.reply r) (fun _ h => by cases h)).mp hr, hc⟩
+      · rintro ⟨r, hr, hc⟩
+        exact ⟨r, (hOther rid.toObjId (.reply r) (fun _ h => by cases h)).mpr hr, hc⟩
+    · intro oid sc h
+      exact ⟨sc, (hOther oid (.schedContext sc) (fun _ h => by cases h)).mpr h⟩
+  -- The donation half: bindings are untouched, SchedContexts are untouched, and a
+  -- reply-blocked unbound owner stays one because its whole TCB but for the
+  -- message is the same record.
+  have hFrame : donationOwnerFrame st (revokePendingTransfersFrom st nodes) := by
+    refine ⟨?_, ?_⟩
+    · intro scId sc h
+      exact (hOther scId.toObjId (.schedContext sc) (fun _ h => by cases h)).mpr h
+    · intro owner ownerTcb h hU hR
+      obtain ⟨t', h', hD⟩ := hFwd _ _ h
+      obtain ⟨hIs, _, _, _, _, _, _, hBindEq⟩ := TCB.pendingCapsDropped_fields hD
+      exact ⟨t', h', hBindEq.trans hU, by rw [hIs]; exact hR⟩
+  have hBack : ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+      (revokePendingTransfersFrom st nodes).objects[tid.toObjId]? = some (.tcb tcb') →
+      ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+        tcb.ipcState = tcb'.ipcState ∧ tcb.schedContextBinding = tcb'.schedContextBinding := by
+    intro tid tcb' h
+    obtain ⟨t, hPre, hD⟩ := hBwd _ _ h
+    obtain ⟨hIs, _, _, _, _, _, _, hBindEq⟩ := TCB.pendingCapsDropped_fields hD
+    exact ⟨t, hPre, hIs.symm, hBindEq.symm⟩
+  exact ipcInvariantFull_of_donationReadAgreement st _ hInv hAgree
+    (donationChainAcyclic_of_sameSchedContextBindings hBind hInv.donationChainAcyclic)
+    (donationOwnerValid_of_frames hBind hFrame hInv.donationOwnerValid)
+    (passiveServerIdle_of_frame (passiveServerIdleFrame_of_backward hBack hSched)
+      hInv.passiveServerIdle)
+    (donationBudgetTransfer_of_sameSchedContextBindings hBind hInv.donationBudgetTransfer)
+    (donationOwnerUnique_of_sameSchedContextBindings hBind hInv.donationOwnerUnique)
+
+
+/-- **One revoked node preserves the bundle, and the store invariant with it.**
+
+The node's slot deletion is `cspaceDeleteSlotCore`'s; the `cdt` field update that
+follows it — which is the whole of the no-slot arm — is invisible to every
+conjunct, since none of the twenty reads the derivation tree.
+
+The store invariant rides along because the fold needs it *between* iterations:
+`cspaceDeleteSlotCore` takes `st.objects.invExt` as a hypothesis, so a traversal
+has to carry the one the previous descendant's deletion left. -/
+theorem processRevokeNode_preserves_ipcInvariantFull
+    (st st' : SystemState) (node : CdtNodeId)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : processRevokeNode st node = .ok st') :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  unfold processRevokeNode at hStep
+  cases hSlot : SystemState.lookupCdtSlotOfNode st node with
+  | none =>
+    simp [hSlot] at hStep; cases hStep
+    exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := st) rfl rfl hInv, hObjInv⟩
+  | some descAddr =>
+    simp [hSlot] at hStep
+    cases hDel : cspaceDeleteSlotCore descAddr st with
+    | error _ => simp [hDel] at hStep
+    | ok pair =>
+      obtain ⟨⟨⟩, stDel⟩ := pair
+      simp [hDel] at hStep; cases hStep
+      obtain ⟨_, _, _, _, _, hExtDel⟩ := cspaceDeleteSlotCore_shape st stDel descAddr hObjInv hDel
+      exact ⟨ipcInvariantFull_of_objects_scheduler_eq (st := stDel) rfl rfl
+        (cspaceDeleteSlotCore_preserves_ipcInvariantFull st stDel descAddr hObjInv hInv hDel),
+        hExtDel⟩
+
+/-- The materialized traversal preserves the bundle — the shared induction
+(`revokeCdtMaterializedTraversal_ok_induct`) at the pair this bundle carries. -/
+theorem revokeCdtMaterializedTraversal_preserves_ipcInvariantFull
+    (stLocal : SystemState) (rootNode : CdtNodeId) (descendants : List CdtNodeId)
+    (out : RevokeTraversalOutcome Unit)
+    (hObjInv : stLocal.objects.invExt) (hInv : ipcInvariantFull stLocal)
+    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
+    ipcInvariantFull out.state ∧ out.state.objects.invExt :=
+  revokeCdtMaterializedTraversal_ok_induct
+    (P := fun s => ipcInvariantFull s ∧ s.objects.invExt)
+    (fun stA stB nd hP hSt => processRevokeNode_preserves_ipcInvariantFull stA stB nd hP.2 hP.1 hSt)
+    stLocal rootNode descendants out ⟨hInv, hObjInv⟩ hTrav
+
+/-- **The scaffold preserves the bundle whenever its traversal does.**
+
+Stated over an arbitrary traversal for the reason the capability bundle's
+counterpart is: a revocation variant *is* its traversal, so this covers the four
+that exist and any that does not exist yet.  The case analysis is
+`revokeCdtScaffold_ok_decompose`'s, beside the definition, so the two bundles
+read one answer about what a successful revocation consists of. -/
+theorem revokeCdtScaffold_preserves_ipcInvariantFull {ρ : Type}
+    (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (hTraverse : ∀ (stLocal : SystemState) (rootNode : CdtNodeId)
+        (descendants : List CdtNodeId) (out : RevokeTraversalOutcome ρ),
+        ipcInvariantFull stLocal → stLocal.objects.invExt →
+        traverse stLocal rootNode descendants = .ok out →
+        ipcInvariantFull out.state ∧ out.state.objects.invExt)
+    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    ipcInvariantFull st' ∧ st'.objects.invExt := by
+  obtain ⟨stLocal, hRevoke, hRest⟩ :=
+    revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
+  obtain ⟨_, _, _, _, _, _, hExtL⟩ := cspaceRevoke_shape st stLocal addr hObjInv hRevoke
+  have hLocal := cspaceRevoke_preserves_ipcInvariantFull st stLocal addr hObjInv hInv hRevoke
+  rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
+  · exact ⟨hLocal, hExtL⟩
+  · obtain ⟨hOut, hOutExt⟩ := hTraverse stLocal rootNode _ out hLocal hExtL hTrav
+    exact ⟨revokePendingTransfersFrom_preserves_ipcInvariantFull _ _ hOutExt hOut,
+      (revokePendingTransfersFrom_frame _ _ hOutExt).1⟩
+
+/-- `.cspaceRevoke`: `seL4_CNode_Revoke` preserves the whole bundle.
+
+The arm the dispatcher routes — local revoke, the materialized descendant walk,
+and the in-flight sweep — with every step's obligation discharged by the theorem
+that owns it. -/
+theorem cspaceRevokeCdt_preserves_ipcInvariantFull
+    (st st' : SystemState) (addr : CSpaceAddr)
+    (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
+    (hStep : cspaceRevokeCdt addr st = .ok ((), st')) :
+    ipcInvariantFull st' :=
+  (revokeCdtScaffold_preserves_ipcInvariantFull () revokeCdtMaterializedTraversal
+    (fun stL rn ds out h1 h2 h3 =>
+      revokeCdtMaterializedTraversal_preserves_ipcInvariantFull stL rn ds out h2 h1 h3)
+    st st' addr () hObjInv hInv hStep).1
 
 /-- A capability read out of a CNode slot carries a valid badge, by the badge
 clause of the pre-state. -/
@@ -1553,19 +1850,19 @@ theorem ipcInvariantFull_of_schedBindingRewrite
     refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
     · intro oid tx hx
       obtain ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8, _⟩ := hBwd oid tx hx
-      exact ⟨ty, hy, h1, h2, h3, h4, h5, h6, h7, h8⟩
+      exact ⟨ty, hy, h1, pendingMessageReadAgrees_of_eq h2, h3, h4, h5, h6, h7, h8⟩
     · intro oid ty hy
       by_cases hT : oid = tid.toObjId
       · rw [hT, hPreT] at hy
         obtain rfl : tcb = ty := by
           simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hy
-        exact ⟨tcb', by rw [hT]; exact hAtT, hIpc, hMsg, hNext, hPrev, hPPrev,
-          hBudget, hReply, hStash⟩
+        exact ⟨tcb', by rw [hT]; exact hAtT, hIpc, pendingMessageReadAgrees_of_eq hMsg,
+          hNext, hPrev, hPPrev, hBudget, hReply, hStash⟩
       · by_cases hS : oid = scId.toObjId
         · rw [hS, hPreS] at hy
           exact absurd (Option.some.inj hy) (fun h => KernelObject.noConfusion h)
         · exact ⟨ty, by rw [hFrame oid hT hS]; exact hy,
-            rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+            rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid k hkT hkS _
       by_cases hT : oid = tid.toObjId
       · rw [hT, hAtT, hPreT]
@@ -2095,9 +2392,9 @@ private theorem insertObjects_schedContextClear_preserves_ipcInvariantFull
       { st with objects := st.objects.insert scObj (.schedContext sc') } := by
     refine ⟨?_, ?_, ?_, replyCallerAgree_of_objectAgree (fun rid r => ?_), ?_⟩
     · intro oid tx hx
-      exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨tx, (hTcbEq oid tx).mp hx, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid ty hy
-      exact ⟨ty, (hTcbEq oid ty).mpr hy, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
+      exact ⟨ty, (hTcbEq oid ty).mpr hy, rfl, pendingMessageReadAgrees_refl _, rfl, rfl, rfl, rfl, rfl, rfl⟩
     · intro oid k hkT hkS _
       by_cases h : oid = scObj
       · rw [h, hAt, hPre]

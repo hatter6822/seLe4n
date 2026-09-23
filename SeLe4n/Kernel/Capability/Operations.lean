@@ -1000,6 +1000,11 @@ private theorem revokePendingTransfersStep_cases (nodes : List CdtNodeId)
     (stAcc : SystemState) (key : SeLe4n.ObjId) :
     revokePendingTransfersStep nodes stAcc key = stAcc ∨
       ∃ tcb tcb', stAcc.objects[(SeLe4n.ThreadId.ofNat key.toNat).toObjId]? = some (.tcb tcb) ∧
+        -- **WS-RR RR8.16 (`v0.35.190`)**: and the rewrite is a message *drop* —
+        -- the fact `ipcInvariantFull` needs of this sweep, which "a TCB replaced
+        -- a TCB" does not give.  Stated here rather than at the fold because it
+        -- is a property of the one write, and `TCB.pendingCapsDropped` composes.
+        TCB.pendingCapsDropped tcb tcb' ∧
         revokePendingTransfersStep nodes stAcc key
           = { stAcc with objects :=
               stAcc.objects.insert (SeLe4n.ThreadId.ofNat key.toNat).toObjId (.tcb tcb') } := by
@@ -1009,7 +1014,17 @@ private theorem revokePendingTransfersStep_cases (nodes : List CdtNodeId)
     | exact Or.inl rfl
     | exact Or.inr ⟨_, _,
         (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) _).mp
-          (by assumption), rfl⟩
+          (by assumption),
+        ⟨rfl, by
+          first
+            | exact ⟨rfl, Array.size_filter_le⟩
+            | (rename_i h _ _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
+            | (rename_i _ h _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
+            | (rename_i _ _ h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
+            | (rename_i h _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
+            | (rename_i _ h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
+            | (rename_i h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)⟩,
+        rfl⟩
 
 /-- **The whole sweep writes only TCBs, and only where one already was.**
 
@@ -1027,43 +1042,51 @@ private theorem revokePendingTransfersGo_frame (nodes : List CdtNodeId) :
       (keys.foldl (revokePendingTransfersStep nodes) st).cdt = st.cdt ∧
       (keys.foldl (revokePendingTransfersStep nodes) st).cdtNodeSlot = st.cdtNodeSlot ∧
       (keys.foldl (revokePendingTransfersStep nodes) st).cdtSlotNode = st.cdtSlotNode ∧
+      (keys.foldl (revokePendingTransfersStep nodes) st).scheduler = st.scheduler ∧
       ∀ (oid : SeLe4n.ObjId), (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
           = st.objects[oid]? ∨
         ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
+          TCB.pendingCapsDropped t t' ∧
           (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
             = some (KernelObject.tcb t') := by
   intro keys
   induction keys with
-  | nil => intro st hExt; exact ⟨hExt, rfl, rfl, rfl, fun _ => Or.inl rfl⟩
+  | nil => intro st hExt; exact ⟨hExt, rfl, rfl, rfl, rfl, fun _ => Or.inl rfl⟩
   | cons key rest ih =>
     intro st hExt
     simp only [List.foldl_cons]
-    rcases revokePendingTransfersStep_cases nodes st key with hEq | ⟨tcb, tcb', hKey, hEq⟩
+    rcases revokePendingTransfersStep_cases nodes st key with hEq | ⟨tcb, tcb', hKey, hDrop, hEq⟩
     · rw [hEq]; exact ih st hExt
     · have hExt' : (revokePendingTransfersStep nodes st key).objects.invExt := by
         rw [hEq]; exact RHTable_insert_preserves_invExt _ key _ hExt
-      obtain ⟨hE, hC, hNS, hSN, hO⟩ := ih (revokePendingTransfersStep nodes st key) hExt'
-      refine ⟨hE, ?_, ?_, ?_, ?_⟩
+      obtain ⟨hE, hC, hNS, hSN, hSch, hO⟩ := ih (revokePendingTransfersStep nodes st key) hExt'
+      refine ⟨hE, ?_, ?_, ?_, ?_, ?_⟩
       · rw [hC, hEq]
       · rw [hNS, hEq]
       · rw [hSN, hEq]
+      · rw [hSch, hEq]
       · intro oid
         have hStep : (revokePendingTransfersStep nodes st key).objects[oid]? = st.objects[oid]? ∨
-            (∃ u u', st.objects[oid]? = some (KernelObject.tcb u) ∧
+            (∃ u u', st.objects[oid]? = some (KernelObject.tcb u) ∧ TCB.pendingCapsDropped u u' ∧
               (revokePendingTransfersStep nodes st key).objects[oid]? = some (KernelObject.tcb u')) := by
           by_cases hOid : key = oid
           · subst hOid
-            exact Or.inr ⟨tcb, tcb', hKey, by rw [hEq]; exact RHTable_get?_insert_self _ key _ hExt⟩
+            exact Or.inr ⟨tcb, tcb', hKey, hDrop,
+              by rw [hEq]; exact RHTable_get?_insert_self _ key _ hExt⟩
           · exact Or.inl (by
               rw [hEq]
               exact RHTable_get?_insert_ne _ key oid _ (by simp [hOid]) hExt)
-        rcases hO oid with hRest | ⟨v, v', hV, hV'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hU'⟩
+        rcases hO oid with hRest | ⟨v, v', hV, hVD, hV'⟩
+        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
           · exact Or.inl (hRest.trans hS)
-          · exact Or.inr ⟨u, u', hU, hRest.trans hU'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hU'⟩
-          · exact Or.inr ⟨v, v', hS ▸ hV, hV'⟩
-          · exact Or.inr ⟨u, v', hU, hV'⟩
+          · exact Or.inr ⟨u, u', hU, hUD, hRest.trans hU'⟩
+        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
+          · exact Or.inr ⟨v, v', hS ▸ hV, hVD, hV'⟩
+          · refine Or.inr ⟨u, v', hU, ?_, hV'⟩
+            have : u' = v := by
+              rw [hU'] at hV
+              simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hV
+            exact TCB.pendingCapsDropped_trans hUD (this ▸ hVD)
 
 
 /-- The frame in the caller's vocabulary: `revokePendingTransfersFrom` rewrites
@@ -1074,9 +1097,11 @@ theorem revokePendingTransfersFrom_frame (st : SystemState) (nodes : List CdtNod
     (revokePendingTransfersFrom st nodes).cdt = st.cdt ∧
     (revokePendingTransfersFrom st nodes).cdtNodeSlot = st.cdtNodeSlot ∧
     (revokePendingTransfersFrom st nodes).cdtSlotNode = st.cdtSlotNode ∧
+    (revokePendingTransfersFrom st nodes).scheduler = st.scheduler ∧
     ∀ (oid : SeLe4n.ObjId),
       (revokePendingTransfersFrom st nodes).objects[oid]? = st.objects[oid]? ∨
       ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
+        TCB.pendingCapsDropped t t' ∧
         (revokePendingTransfersFrom st nodes).objects[oid]? = some (KernelObject.tcb t') :=
   revokePendingTransfersGo_frame nodes _ st hExt
 
@@ -1588,29 +1613,145 @@ def revokeCdtScaffold {ρ : Type} (emptyReport : ρ)
                 .ok (out.report,
                   revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes))
 
-/-- Materialize the descendant list, then fold `processRevokeNode` over it,
-stopping at the first failure.
+/-- **What a successful scaffold run is made of.**
+
+Local revoke, then — when the source slot heads a CDT node and the traversal
+succeeds — the traversal and the consuming sweep; otherwise the local revoke's
+state is the answer.
+
+Every preservation argument over a revocation entry point is a case analysis of
+exactly this shape.  Until `v0.35.190` the capability bundle's was the only one
+and it was spelled inline; the IPC bundle needs the identical analysis, so it is
+stated once here, **predicate-free and beside the definition**, rather than
+re-derived once per predicate.  The report is deliberately not mentioned: no
+invariant reads it, and a decomposition that named it would have to be
+instantiated at the variant's report type to be used.
+-/
+theorem revokeCdtScaffold_ok_decompose {ρ : Type} (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
+    (hStep : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    ∃ stLocal, cspaceRevoke addr st = .ok ((), stLocal) ∧
+      (st' = stLocal ∨
+        ∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
+          traverse stLocal rootNode (stLocal.cdt.descendantsOf rootNode) = .ok out ∧
+          st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
+  unfold revokeCdtScaffold at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i stLocal hRevoke
+    refine ⟨stLocal, hRevoke, ?_⟩
+    split at hStep
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact Or.inl hStep.2.symm
+    · rename_i rootNode _
+      split at hStep
+      · simp at hStep
+      · rename_i out hTrav
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact Or.inr ⟨rootNode, out, hTrav, hStep.2.symm⟩
+
+/-- Fold body for the materialized traversal: process one CDT descendant node,
+propagating a failure rather than swallowing it.
+
+Materializing the descendant list and folding this over it is what
+`revokeCdtMaterializedTraversal` below is.
 
 AJ-L10: `descendantsOf` materializes the full descendant list before folding.
 For deep CDT trees this is a performance concern (O(n) allocation), not a
 correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
 alternative. -/
+def revokeCdtFoldBody
+    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
+    Except KernelError (Unit × SystemState) :=
+  match acc with
+  | .error e => .error e
+  | .ok ((), stAcc) =>
+      match processRevokeNode stAcc node with
+      | .error e => .error e
+      | .ok stNext => .ok ((), stNext)
+
+/-- Error propagation: `revokeCdtFoldBody` propagates errors unchanged. -/
+theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
+    revokeCdtFoldBody (.error e) node = .error e := by
+  unfold revokeCdtFoldBody; rfl
+
+/-- Fold error propagation: folding `revokeCdtFoldBody` from an error stays that
+error — the traversal stops at its first failing descendant. -/
+theorem revokeCdtFoldBody_foldl_error
+    (nodes : List CdtNodeId) (e : KernelError) :
+    nodes.foldl revokeCdtFoldBody (.error e) = .error e := by
+  induction nodes with
+  | nil => rfl
+  | cons node rest ih => simp [List.foldl, revokeCdtFoldBody_error, ih]
+
+/-- **The fold's induction, once, over any state predicate.**
+
+Every preservation argument over a revocation traversal is this induction with a
+different `P`.  It was the capability bundle's alone until `v0.35.190`, spelled
+in that bundle's own preservation module; the IPC bundle needs the identical
+induction, so it is stated here — predicate-free and beside the fold — rather
+than run a second time.
+
+`hNode` is the *only* part that differs between predicates, which is the same
+division `revokeCdtScaffold_ok_decompose` makes one level up. -/
+theorem revokeCdtFold_induct {P : SystemState → Prop}
+    (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
+      P stA → processRevokeNode stA node = .ok stB → P stB)
+    (nodes : List CdtNodeId) (stInit stFinal : SystemState) (hP : P stInit)
+    (hFold : nodes.foldl revokeCdtFoldBody (.ok ((), stInit)) = .ok ((), stFinal)) :
+    P stFinal := by
+  induction nodes generalizing stInit with
+  | nil => simp only [List.foldl_nil, Except.ok.injEq, Prod.mk.injEq] at hFold
+           exact hFold.2 ▸ hP
+  | cons node rest ih =>
+    simp only [List.foldl_cons] at hFold
+    cases hProc : processRevokeNode stInit node with
+    | error e =>
+      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .error e by
+            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
+      rw [revokeCdtFoldBody_foldl_error] at hFold
+      simp at hFold
+    | ok stMid =>
+      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .ok ((), stMid) by
+            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
+      exact ih stMid (hNode stInit stMid node hP hProc) hFold
+
+/-- The traversal is that fold, with the descendant list reported as revoked.
+
+`v0.35.190` gave the fold body a name here, beside the traversal, so the fold's
+own lemmas are about a function rather than about an inlined lambda a proof has
+to `change` its way into. -/
 def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
     (descendants : List CdtNodeId)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
-  match descendants.foldl (fun acc node =>
-      match acc with
-      | .error e => .error e
-      | .ok ((), stAcc) =>
-          match processRevokeNode stAcc node with
-          | .error e => .error e
-          | .ok stNext => .ok ((), stNext)
-    ) (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
+  match descendants.foldl revokeCdtFoldBody
+      (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
   | .error e => .error e
   | .ok ((), stDone) =>
       -- Reaching `.ok` means every descendant was processed, so the traversal
       -- revoked the whole list it was handed.
       .ok { report := (), revokedNodes := descendants, state := stDone }
+
+/-- **The traversal's induction, over any state predicate.**
+
+`revokeCdtFold_induct` at the traversal's own interface, so a caller need not
+know the traversal is a fold. -/
+theorem revokeCdtMaterializedTraversal_ok_induct {P : SystemState → Prop}
+    (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
+      P stA → processRevokeNode stA node = .ok stB → P stB)
+    (stLocal : SystemState) (rootNode : CdtNodeId) (descendants : List CdtNodeId)
+    (out : RevokeTraversalOutcome Unit) (hP : P stLocal)
+    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
+    P out.state := by
+  unfold revokeCdtMaterializedTraversal at hTrav
+  split at hTrav
+  · simp at hTrav
+  · rename_i stDone hFold
+    simp only [Except.ok.injEq] at hTrav
+    subst hTrav
+    exact revokeCdtFold_induct hNode descendants stLocal stDone hP hFold
 
 /-- WS-E4/C-04: Revoke all capabilities derived from the source capability
 via CDT traversal, across all CNodes in the system.

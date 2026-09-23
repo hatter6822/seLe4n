@@ -96,6 +96,19 @@ structural guarantees — the two that make revocation terminate and make it
 complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
 
+Since `v0.35.190` (WS-RR RR8.16) a thread can actually *reach* that machinery:
+`seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which routes
+`cspaceRevokeCdt` — the variant that walks the derivation tree across arbitrary
+CSpaces, not the local `cspaceRevoke` that reaches only the invoked CNode.
+Before it, the whole family was verified and unreachable.  The arm carries the
+capability-only dispatch payoff (`cspaceRevokeCdt_preserves_ipcInvariantFull`),
+whose scaffold and fold arguments are stated **predicate-free** beside their
+definitions (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`) so this
+bundle's argument and `ipcInvariantFull`'s are one induction rather than two.
+See `SELE4N_SPEC.md` §8.11.1 for the ABI, the authority and the two boundary
+statements the arm needed (no static lock footprint; a content-tracked field
+written with no tracked content moved).
+
 Two invariants that were once state-level predicates are now **structural**:
 `CNode.slots` is a `UniqueSlotMap` and `Notification.waitingThreads` is a
 `NoDupList ThreadId`, so uniqueness is a property of the type rather than a
@@ -121,7 +134,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **190** statements in the family, with the
+bound on a post-state across all **196** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,

@@ -5,7 +5,7 @@
 
 use crate::rights::AccessRight;
 
-/// Syscall identifier. 34 variants matching the Lean `SyscallId` inductive.
+/// Syscall identifier. 36 variants matching the Lean `SyscallId` inductive.
 ///
 /// The `toNat` encoding from Lean is reflected in the `#[repr(u64)]` discriminants.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
@@ -99,11 +99,21 @@ pub enum SyscallId {
     /// The first writer of `TCB.faultHandler`: without it every fault on a
     /// live system took the fail-closed suspend.
     TcbSetFaultHandler = 34,
+    /// WS-RR RR8.16 (`v0.35.190`): revoke every capability derived from the one
+    /// in the named slot — seL4's `seL4_CNode_Revoke`.
+    ///
+    /// The source slot itself **survives**: revocation destroys a capability's
+    /// derivations, not the capability, which is what distinguishes it from
+    /// `CSpaceDelete` and what makes that syscall's `RevocationRequired`
+    /// refusal dischargeable — a caller revokes, then deletes.  It takes the
+    /// delete's argument layout (one message register naming the slot), since
+    /// both name one slot of the invoked CNode.
+    CspaceRevoke = 35,
 }
 
 impl SyscallId {
     /// Total number of modeled syscalls.
-    pub const COUNT: usize = 35;
+    pub const COUNT: usize = 36;
 
     /// Convert from a raw `u64` value. Returns `None` for out-of-range.
     /// Lean: `SyscallId.ofNat?`
@@ -144,6 +154,7 @@ impl SyscallId {
             32 => Some(Self::AuditDrain),
             33 => Some(Self::DeclassifySignal),
             34 => Some(Self::TcbSetFaultHandler),
+            35 => Some(Self::CspaceRevoke),
             _ => None,
         }
     }
@@ -163,6 +174,11 @@ impl SyscallId {
             Self::Receive => AccessRight::Read,
             Self::CSpaceMint | Self::CSpaceCopy | Self::CSpaceMove => AccessRight::Grant,
             Self::CSpaceDelete => AccessRight::Write,
+            // WS-RR RR8.16: revocation writes the CNodes holding the derived
+            // capabilities, so it is a write on the invoked CNode exactly as the
+            // delete is.  Not `Grant`: grant authorises *creating* a derivation
+            // (mint/copy/move), and destroying one is not that authority.
+            Self::CspaceRevoke => AccessRight::Write,
             Self::LifecycleRetype => AccessRight::Retype,
             Self::VSpaceMap | Self::VSpaceUnmap => AccessRight::Write,
             Self::ServiceRegister | Self::ServiceRevoke => AccessRight::Write,
@@ -352,11 +368,20 @@ mod tests {
         // earlier discriminant is unchanged.
         assert_eq!(SyscallId::TcbSetFaultHandler.to_u64(), 34);
         assert_eq!(SyscallId::from_u64(34), Some(SyscallId::TcbSetFaultHandler));
-        assert_eq!(SyscallId::COUNT, 35);
         assert_eq!(
             SyscallId::TcbSetFaultHandler.required_right(),
             AccessRight::Write
         );
+    }
+
+    #[test]
+    fn cspace_revoke_discriminant() {
+        // WS-RR RR8.16 (`v0.35.190`): `seL4_CNode_Revoke`, appended so every
+        // earlier discriminant is unchanged.
+        assert_eq!(SyscallId::CspaceRevoke.to_u64(), 35);
+        assert_eq!(SyscallId::from_u64(35), Some(SyscallId::CspaceRevoke));
+        assert_eq!(SyscallId::COUNT, 36);
+        assert_eq!(SyscallId::CspaceRevoke.required_right(), AccessRight::Write);
     }
 
     #[test]

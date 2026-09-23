@@ -1,3 +1,120 @@
+## v0.35.190 — WS-RR RR8.16: `seL4_CNode_Revoke` gets an arm
+
+**The revocation family had no ABI path.**  `API.lean` carried no revocation
+arm at all, so no capability a thread could present revoked anything —
+`cspaceRevoke`, `cspaceRevokeCdt`, `revokeCdtScaffold`, `processRevokeNode` and
+the in-flight sweep were verified machinery outside the live closure.  WS-RR
+RR8.12's reachability census found it on its first run (`v0.35.91`) and
+registered it; this cut closes it the way the register row asked, and the way
+this project's implement-the-improvement rule requires: wire the syscall rather
+than document its absence.
+
+**`SyscallId.cspaceRevoke` (discriminant 35).**  Seven decisions:
+
+1. **It dispatches `cspaceRevokeCdt`**, the CDT-traversing variant, because the
+   local `cspaceRevoke` the scaffold opens with reaches only the *containing*
+   CNode: a derived capability copied into any other CSpace would survive a
+   revocation that claimed to destroy it.
+2. **The source slot survives.**  Revocation destroys a capability's
+   derivations, not the capability, which is what makes `cspaceDeleteSlot`'s own
+   `.revocationRequired` refusal dischargeable — revoke, then delete.
+3. **The ABI is the delete's** (`decodeCSpaceDeleteArgs`, one message register
+   naming the slot), and the authority is `.write`: grant authorises *creating* a
+   derivation (mint/copy/move), and destroying one is not that authority.
+4. **`donationReadAgreement` no longer demands `pendingMessage` equality.**  The
+   in-flight sweep is the one transition in the tree that rewrites a
+   `TCB.pendingMessage` to a *different* value while the thread stays blocked, and
+   equality was strictly more than the bundle reads — only
+   `allPendingMessagesBounded` and `blockedThreadsPendingMessageConsistent` read
+   the field.  The relation is `pendingMessageReadAgrees` (presence agrees,
+   boundedness transfers); the sweep's write is a **drop**
+   (`TCB.pendingCapsDropped`: every other field equal, registers kept, capability
+   array shorter), which both conjuncts survive.
+5. **The scaffold's case analysis and the traversal's induction are
+   predicate-free and beside their definitions.**
+   `revokeCdtScaffold_ok_decompose` says what a successful revocation consists
+   of and `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`
+   carry any `P` through the fold, so the capability bundle's argument and the
+   IPC bundle's are **one** answer; `revokeCdtFoldBody` moved to
+   `Capability/Operations.lean` with them and the materialized traversal is now
+   *defined* through it, which retires the `change`-into-an-inlined-lambda step
+   its old proof needed.
+6. **The arm declares no static lock footprint, and that is a decision.**  The
+   CDT walk's CNode set is state-discovered and unbounded while a `LockSet` is
+   capped at `maxLockSetSize`, so a footprint naming only the source CNode would
+   be *false* of the transition.  `declaresStaticLockFootprint` (total, with a
+   `_false_iff` pin) records it, and the SM3.B inventory's coverage theorem is
+   stated over that classification rather than against `SyscallId.count` —
+   demanding an entry for this arm would force a footprint to exist in order to
+   satisfy a number.
+7. **It writes a content-tracked FIELD and moves no tracked CONTENT.**  The
+   Tier-1 reach gate detects the sweep's `TCB.pendingMessage` write and is right
+   to; the check is field-granular, which is what makes it a detector rather than
+   a table of promises.  What it cannot decide is
+   `revokePendingTransfersFrom_preserves_trackedContent`: the payload
+   (`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks, which is
+   the capability metadata `capabilityBadgeChannel_out_of_scope` already
+   excludes.  That theorem is the gate's new `CONTENT_WRITE_EXEMPT`
+   justification, reconciled in **both** directions — delete the theorem, or let
+   the arm stop reaching a content write, and the gate fails rather than keeping
+   a pass it no longer earns.  Both branches mutation-tested.
+
+**Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm in
+`dispatchCapabilityOnly_preserves_ipcInvariantFull`, over a new chain:
+`cspaceRevoke_preserves_ipcInvariantFull`,
+`processRevokeNode_preserves_ipcInvariantFull` (bundle and `objects.invExt`
+together, because the fold needs the store invariant *between* iterations),
+`revokeCdtMaterializedTraversal_preserves_ipcInvariantFull`,
+`revokePendingTransfersFrom_preserves_ipcInvariantFull` and
+`revokeCdtScaffold_preserves_ipcInvariantFull` (stated over an arbitrary
+traversal, so it covers the four variants that exist and any that does not).
+`donationChainAcyclic_of_sameSchedContextBindings` joins its two siblings, which
+had carried across a binding frame since IPC de-threading D6 while this one was
+unfolded by hand at every caller — *keep the tables symmetric*.
+
+**Witness.**  `tests/SyscallDispatchSuite.lean` SD-059 drives the live dispatch
+on a state whose derivation lives in a **second** CNode and computes the retired
+local-only reading beside it — spelled in the suite and nowhere else — so the
+assertions are known to discriminate.  Mutating the arm to the local variant
+fails `sd059_dispatch_removes_the_cross_cnode_derivation` and nothing else.
+
+**Surface.**  `SyscallId.count` is 36, and every exhaustive table moved with it:
+the ABI mirrors in `sele4n-types` and the HAL, the return-shape table on both
+sides of the ABI (`.unit`, with `tests/fixtures/syscall_return_shape.expected`
+regenerated deliberately), `refusalSeamClass` (`.exempt`),
+`capFaultReceivePhase?` (`some false`), `frozenOpCoverage` (`false` — the
+per-node step ends in `cdt.removeNode`, a key *removal*, and the frozen CDT is
+four `FrozenMap`s with no `erase`), the enforcement boundary
+(`capabilityOnly "cspaceRevokeCdt"` — the composite a capability reaches, never
+the inner local step), `permittedKinds`, `schedLockSetForSyscall` (`none`: the
+family writes CNodes, the derivation tree and in-flight messages, and no
+per-core scheduler slot), and a `sele4n-sys` wrapper (`cspace::cspace_revoke`)
+so the conformance sweep can drive it.
+
+**Fixtures.**  Three, each a counter the new arm moves and no transition.  One
+golden-trace line changes — `[XVAL-002] SyscallId roundtrip ok: all 35 variants`
+becomes `all 36` — which is the ABI round-trip harness reporting the new
+discriminant, and the only behavioural difference `main_trace_smoke.expected`
+shows.  `syscall_return_shape.expected` grew its `35 unit` row and its `count`
+header, and is asserted byte-for-byte on both sides of the ABI.  And
+`smp_information_flow.expected` moves four numbers, all of them derivations over
+the arm inventory rather than over any state: the enforcement boundary's
+canonical size 44 → 45 and per-core size 59 → 60 (the arm is capability-only, so
+the capability-only column is what grows, 27 → 28, and the re-routed set stays at
+fifteen), the audit-ABI line's `syscalls=35` → `36`, and the taint classification's
+`inert=26` → `27`.  All three regenerated with their `.sha256` companions, as
+`tests/fixtures/README.md` prescribes.
+
+**What the register row was closed down to.**  The three *reporting* variants
+(`cspaceRevokeCdtStrict`, `…Streaming`, `…Transactional`) with their traversals,
+the streaming BFS and the reporting fold step stay outside the live closure:
+each is the same scaffold at a different traversal, offered to **in-kernel**
+callers, and the syscall dispatches the materialized one because a userspace
+invocation has no channel to receive a report through.  A variant with no
+in-kernel caller either gains one or is retired — a smaller question than the
+one the row asked.  **v1.0.0 may now claim that a capability derivation tree can
+be revoked by a thread holding the root.**
+
 ## v0.35.189 — WS-RR RR8.16: the object-domain donation members follow the donation's own guard
 
 **Closes register row 56**, opened at `v0.35.160` by the sweep WS-RR RR8.12 Cut C1

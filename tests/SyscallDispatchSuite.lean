@@ -1390,6 +1390,134 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
+
+/-- SD-059 (WS-RR RR8.16, `v0.35.190`): **`seL4_CNode_Revoke` through the syscall
+gate.**
+
+The revocation family was verified machinery with no ABI path — `API.lean` had
+no revocation arm at all, so no capability a thread could present revoked
+anything.  This drives the arm the dispatcher now routes, and its claims are
+the three the arm's own docstring decides:
+
+1. **It dispatches `cspaceRevokeCdt`, not the local `cspaceRevoke`.**  That is
+   the whole of the arm's security content: the local primitive reaches only the
+   *containing* CNode, so a derived capability copied into any other CSpace
+   survives it, while the CDT walk follows the derivation tree across arbitrary
+   CNodes.  The retired reading is computed beside the live one — `localOnly`
+   below, spelled here and nowhere else — on a state where a derivation of the
+   source lives in a **second** CNode, so the assertions are known to
+   discriminate rather than merely to pass.
+2. **The source slot survives.**  Revocation destroys a capability's
+   derivations, not the capability; that is what distinguishes it from the
+   delete and what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
+   dischargeable — a caller revokes, then deletes, and both halves are run here.
+3. **The authority is `.write` on the invoked CNode**, and a primary capability
+   that is not an `.object` is refused, so the arm's fail-closed
+   `| _ => fun _ => .error .invalidCapability` is exercised rather than
+   asserted. -/
+private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
+  let caller  : SeLe4n.ThreadId := ⟨1⟩
+  let cnA     : SeLe4n.ObjId := ⟨70⟩   -- the invoked CNode: holds the source slot
+  let cnB     : SeLe4n.ObjId := ⟨71⟩   -- a *second* CSpace the derivation lands in
+  let ntfnObj : SeLe4n.ObjId := ⟨72⟩   -- the object both capabilities name
+  let ntfnCap : Capability :=
+    { target := .object ntfnObj, rights := AccessRightSet.ofList [.read, .write] }
+  let cnBCap : Capability :=
+    { target := .object cnB, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let mkSt (primary : Capability) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
+      (ntfnObj, .notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }),
+      (cnA, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [ (SeLe4n.Slot.ofNat 0, primary)
+            , (SeLe4n.Slot.ofNat 1, ntfnCap)
+            , (SeLe4n.Slot.ofNat 3, cnBCap) ] }),
+      (cnB, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+    ]
+  let cnodeCapWrite : Capability :=
+    { target := .object cnA, rights := AccessRightSet.ofList [.read, .write] }
+  let cnodeCapNoWrite : Capability :=
+    { target := .object cnA, rights := AccessRightSet.ofList [.read] }
+  let wrongKindCap : Capability :=
+    { target := .cnodeSlot cnA (SeLe4n.Slot.ofNat 1),
+      rights := AccessRightSet.ofList [.read, .write] }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 1 }
+  -- The derived capability lands in the OTHER CNode, which is the only place the
+  -- two readings of "revoke" can disagree.
+  let derived : SeLe4n.Kernel.CSpaceAddr := { cnode := cnB, slot := SeLe4n.Slot.ofNat 0 }
+  let decoded (slot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .cspaceRevoke,
+      msgRegs := #[SeLe4n.RegValue.ofNat slot],
+      inlineCount := 1, overflowCount := 0 }
+  -- The right the gate demands, stated rather than assumed.
+  expect "sd059_required_right_is_write"
+    (decide (SeLe4n.Kernel.syscallRequiredRight .cspaceRevoke = AccessRight.write))
+    "the revoke arm must require write authority on the invoked CNode"
+  -- Build the cross-CNode derivation with the live mint, so the fixture is a
+  -- state the kernel reaches rather than one written by hand.
+  match SeLe4n.Kernel.cspaceMintWithCdt src derived
+      (AccessRightSet.ofList [.read]) none (mkSt cnodeCapWrite) with
+  | .error e =>
+      failLine "sd059_cross_cnode_mint"
+        s!"minting a derivation into the second CNode must succeed; got: {repr e}"
+  | .ok ((), stMinted) =>
+      expect "sd059_derivation_starts_present"
+        (match SeLe4n.Kernel.cspaceLookupSlot derived stMinted with
+         | .ok _ => true | .error _ => false)
+        "the derived capability must be present before the revocation"
+      -- 1a. The RETIRED reading — the local primitive the arm does NOT dispatch —
+      -- leaves the derivation standing.  Computed here and nowhere else.
+      match SeLe4n.Kernel.cspaceRevoke src stMinted with
+      | .error e =>
+          failLine "sd059_local_only_reading"
+            s!"the local revoke must succeed on this state; got: {repr e}"
+      | .ok ((), stLocalOnly) =>
+          expect "sd059_local_only_leaves_the_cross_cnode_derivation"
+            (match SeLe4n.Kernel.cspaceLookupSlot derived stLocalOnly with
+             | .ok _ => true | .error _ => false)
+            "the local revoke must NOT reach a derivation in another CNode \
+             (this is what makes the dispatched variant the security content)"
+      -- 1b. The LIVE arm, through the dispatcher, removes it.
+      match dispatchSyscall (decoded 1) caller stMinted with
+      | .error e =>
+          failLine "sd059_dispatch_succeeds"
+            s!"a write-bearing primary capability must revoke through the gate; got: {repr e}"
+      | .ok ((), stRevoked) =>
+          expect "sd059_dispatch_removes_the_cross_cnode_derivation"
+            (match SeLe4n.Kernel.cspaceLookupSlot derived stRevoked with
+             | .error _ => true | .ok _ => false)
+            "the dispatched revoke must remove a derivation held in another CNode"
+          -- 2. The source survives, and is then deletable.
+          expect "sd059_source_slot_survives"
+            (match SeLe4n.Kernel.cspaceLookupSlot src stRevoked with
+             | .ok (cap, _) => decide (cap.target = .object ntfnObj)
+             | .error _ => false)
+            "revocation must destroy derivations, not the capability itself"
+          expect "sd059_revoke_then_delete"
+            (match SeLe4n.Kernel.cspaceDeleteSlot src stRevoked with
+             | .ok _ => true | .error _ => false)
+            "a revoked source slot must then be deletable — the `.revocationRequired` \
+             refusal is what the revoke discharges"
+  -- 3. Authority: the same call without `.write` is refused.
+  expect "sd059_without_write_refused_on_authority"
+    (match dispatchSyscall (decoded 1) caller (mkSt cnodeCapNoWrite) with
+     | .error .illegalAuthority => true
+     | _ => false)
+    "a primary capability lacking write must be refused with illegalAuthority"
+  -- 4. A primary capability of the wrong target kind: the arm's fail-closed arm.
+  expect "sd059_wrong_primary_kind_refused"
+    (match dispatchSyscall (decoded 1) caller (mkSt wrongKindCap) with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a primary capability that is not an `.object` must be refused"
+
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
@@ -1844,4 +1972,5 @@ def main : IO Unit := do
   sd057_rawSuspendSeamRefusesIdleIds
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
+  sd059_cspaceRevokeThroughTheSyscallGate
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

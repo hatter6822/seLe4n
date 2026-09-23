@@ -3187,6 +3187,15 @@ def syscallRequiredRight : SyscallId → AccessRight
   | .cspaceCopy      => .grant
   | .cspaceMove      => .grant
   | .cspaceDelete    => .write
+  -- **WS-RR RR8.16 (`v0.35.190`)**: revocation is `.write`, the delete's right,
+  -- and that is seL4's authority model rather than a convenience.  The right to
+  -- destroy a capability's *derivations* comes from holding the **parent**, not
+  -- from holding the CNodes the descendants live in — which is exactly what a
+  -- capability derivation tree is for — so a revocation that reaches into other
+  -- CSpaces is authorised by write on the slot it starts from.  `.grant` would
+  -- be wrong in the other direction: granting is the right to *hand out*
+  -- authority, and revocation hands out none.
+  | .cspaceRevoke    => .write
   | .lifecycleRetype => .retype
   | .vspaceMap       => .write
   | .vspaceUnmap     => .write
@@ -3261,6 +3270,10 @@ def syscallChecksTargetFirst : SyscallId → Bool
   | .cspaceCopy      => false
   | .cspaceMove      => false
   | .cspaceDelete    => false
+  -- **WS-RR RR8.16 (`v0.35.190`)**: classic order.  The authority is an ordinary
+  -- CNode capability rather than a dedicated `CapTarget`, so there is no
+  -- wrong-kind refusal to sequence ahead of the rights gate.
+  | .cspaceRevoke    => false
   | .lifecycleRetype => false
   | .vspaceMap       => false
   | .vspaceUnmap     => false
@@ -3691,6 +3704,32 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
         | .ok args =>
             let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
             cspaceDeleteSlot addr st
+    | _ => fun _ => .error .invalidCapability
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `seL4_CNode_Revoke`.  The arm the revocation
+  -- family had never had — `cspaceRevokeCdt`'s own routing guide already named
+  -- `SyscallId.cspaceRevoke` as its caller, of a constructor that did not exist,
+  -- which is the implement-the-improvement rule's canonical case.
+  --
+  -- Three things this arm decides.  It dispatches **`cspaceRevokeCdt`**, the
+  -- CDT-traversing variant, because that is the correct default for an
+  -- untrusted userspace invocation: the local `cspaceRevoke` it opens with
+  -- reaches only the containing CNode, so a derived capability copied into any
+  -- other CSpace would survive a revocation that claimed to destroy it.  It
+  -- takes the **delete's** ABI (`decodeCSpaceDeleteArgs`, one message register
+  -- naming the slot), since both name one slot of the invoked CNode and a
+  -- second decoder for one operand is a spelling nobody needs.  And the source
+  -- slot **survives**: revocation destroys the derivations of a capability, not
+  -- the capability itself, which is what distinguishes it from the delete and
+  -- what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
+  -- discharegable — a caller revokes, then deletes.
+  | .cspaceRevoke =>
+    some <| match cap.target with
+    | .object cnodeId =>
+        fun st => match decodeCSpaceDeleteArgs decoded with
+        | .error e => .error e
+        | .ok args =>
+            let addr : CSpaceAddr := { cnode := cnodeId, slot := args.targetSlot }
+            cspaceRevokeCdt addr st
     | _ => fun _ => .error .invalidCapability
   -- PR #822 Phase H: mint a reply cap from an `.object`-to-Reply cap.  Same src/dst-slot
   -- ABI as `cspaceCopy` (reuses `decodeCSpaceCopyArgs`); the cap names the CNode, and
@@ -4238,6 +4277,16 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
       | ok args =>
           simp only [hDec] at hStep
           exact cspaceDeleteSlot_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
+    all_goals try cases hStep
+  case cspaceRevoke =>
+    cases hTgt : cap.target <;> simp only [hTgt] at hStep
+    case object cnodeId =>
+      try dsimp only [] at hStep
+      cases hDec : decodeCSpaceDeleteArgs decoded with
+      | error e => simp only [hDec] at hStep; cases hStep
+      | ok args =>
+          simp only [hDec] at hStep
+          exact cspaceRevokeCdt_preserves_ipcInvariantFull st st' _ hObjInv hInv hStep
     all_goals try cases hStep
   case mintReplyCap =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -6143,15 +6192,21 @@ theorem checkedDispatch_replyRecv_recv_flow_denied
     arms in `dispatchWithCap`. This proves the `| _ => fun _ => .error .illegalState`
     wildcard arm is unreachable at runtime.
 
-    The proof enumerates all 25 `SyscallId` constructors: 14 are routed to
-    `dispatchCapabilityOnly` (`.cspaceDelete`, `.lifecycleRetype`, `.vspaceMap`,
-    `.vspaceUnmap`, `.serviceRevoke`, `.serviceQuery`, `.schedContextConfigure`,
-    `.schedContextBind`, `.schedContextUnbind`, `.tcbSuspend`, `.tcbResume`,
-    `.tcbSetPriority`, `.tcbSetMCPriority`, `.tcbSetIPCBuffer`),
-    and the remaining 11
+    The proof enumerates every `SyscallId` constructor.  The partition is
+    `dispatchCapabilityOnly`'s own `match` — which arms it answers `some` for —
+    and `dispatchWithCap`'s explicit arms
     (`.send`, `.receive`, `.call`, `.reply`, `.cspaceMint`, `.cspaceCopy`,
     `.cspaceMove`, `.serviceRegister`, `.notificationSignal`, `.notificationWait`,
-    `.replyRecv`) are handled by explicit match arms in `dispatchWithCap`.
+    `.replyRecv`, `.declassify`, `.declassifySignal`, `.auditRead`,
+    `.auditDrain`); everything else is capability-only.
+
+    `v0.35.190`: the two hand-kept totals that used to open this paragraph
+    ("15 … the remaining 11") were stale — they summed to 26 against a
+    `SyscallId.count` that has been past that since SM9, and neither list was
+    the definition's.  A number beside a `match` is a second answer to a
+    question the `match` already decides, which is the substitution this project
+    retires everywhere else; the list below is the inventory, and `cases sid`
+    is what makes it exhaustive.
 
     AE1-D: The same completeness proof applies to `dispatchWithCapChecked`
     (see `dispatchWithCapChecked_wildcard_unreachable` below). -/
@@ -6166,7 +6221,8 @@ theorem dispatchWithCap_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler,
+            .cspaceRevoke] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- AE1-D: Every `SyscallId` variant is handled by either `dispatchCapabilityOnly`
@@ -6187,7 +6243,8 @@ theorem dispatchWithCapChecked_wildcard_unreachable (sid : SyscallId) :
             .tcbSetIPCBuffer, .tcbSetAffinity,
             .tcbBindNotification, .tcbUnbindNotification, .mintReplyCap,
             .vspaceUnifyInstruction, .declassify, .declassifySignal,
-            .auditRead, .auditDrain, .tcbSetFaultHandler] : List SyscallId) := by
+            .auditRead, .auditDrain, .tcbSetFaultHandler,
+            .cspaceRevoke] : List SyscallId) := by
   cases sid <;> simp [List.mem_cons]
 
 /-- WS-J1-C: Route decoded syscall arguments to the appropriate capability-gated

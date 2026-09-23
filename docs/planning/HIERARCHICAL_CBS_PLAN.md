@@ -1341,7 +1341,7 @@ neither cut's tree is described by the other's values:
 
 | Table | Where | `configureServer` | `bindServer` | `unbindServer` |
 |-------|-------|-------------------|--------------|----------------|
-| `SyscallId.toNat` / `ofNat?` / `ToString` | `Model/Object/Types.lean` | 35 | 36 | 37 |
+| `SyscallId.toNat` / `ofNat?` / `ToString` | `Model/Object/Types.lean` | 36 | 37 | 38 |
 | `syscallRequiredRight` | `Kernel/API.lean` | `.write` | `.write` | `.write` |
 | `syscallChecksTargetFirst` | `Kernel/API.lean` | as `.schedContextBind` | as `.schedContextBind` | as `.schedContextUnbind` |
 | `syscallDelegates` | `Kernel/API.lean` | the `…OnCore` transition | the `…OnCore` transition | the `…OnCore` transition |

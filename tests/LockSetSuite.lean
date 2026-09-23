@@ -1838,10 +1838,19 @@ private def runInventoryChecks : IO Unit := do
     (decide (lockSetTheorems.length = 113))
   assertBool "projection category count = 22"
     (decide ((lockSetTheorems.filter (fun t => t.category == .projection)).length = 22))
-  assertBool "lockSet category count = 35 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length = 35))
-  assertBool "consistency category count = 35 (one per SyscallId variant)"
-    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length = 35))
+  -- WS-RR RR8.16: the figure is DERIVED from the classifier rather than
+  -- written down.  `.cspaceRevoke` declares no static footprint (its CDT
+  -- subtree is unbounded and a `LockSet` is capped at `maxLockSetSize`), so
+  -- "one per SyscallId variant" stopped being true when that arm landed and a
+  -- hand-kept 35 beside a moving `SyscallId.count` is the drift this project
+  -- retires.  `declaresStaticLockFootprint` is total with no wildcard, so a
+  -- new arm has to be classified before this reduces.
+  assertBool "lockSet category count = one per declaring SyscallId variant"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .lockSet)).length
+      = (SyscallId.all.filter declaresStaticLockFootprint).length))
+  assertBool "consistency category count = one per declaring SyscallId variant"
+    (decide ((lockSetTheorems.filter (fun t => t.category == .consistency)).length
+      = (SyscallId.all.filter declaresStaticLockFootprint).length))
   assertBool "acquireSort category count = 6"
     (decide ((lockSetTheorems.filter (fun t => t.category == .acquireSort)).length = 6))
   assertBool "algebra category count = 9"

@@ -1141,10 +1141,10 @@ fn kernel_error_variant_count() {
 /// VSpaceUnifyInstruction at 29; WS-SM SM8.C.9 added Declassify at 30; WS-SM
 /// SM9.A.6 added AuditRead at 31 and AuditDrain at 32; WS-SM SM9.C.8 added
 /// DeclassifySignal at 33; PR #887's review round added TcbSetFaultHandler at
-/// 34).
+/// 34; WS-RR RR8.16 added CspaceRevoke at 35).
 #[test]
 fn syscall_id_variant_count() {
-    const SYSCALL_COUNT: u64 = 35;
+    const SYSCALL_COUNT: u64 = 36;
     assert_eq!(SyscallId::COUNT, SYSCALL_COUNT as usize);
     for i in 0..SYSCALL_COUNT {
         assert!(
@@ -1289,13 +1289,14 @@ fn sched_context_boundary() {
     assert_eq!(SyscallId::from_u64(20).unwrap(), SyscallId::TcbSuspend);
 }
 
-/// AA1-B-5: COUNT is updated to 35 (PR #887's review round added
-/// TcbSetFaultHandler, on top of WS-SM SM9.C.8's DeclassifySignal, WS-SM
-/// SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's Declassify, WS-SM SM7.D's
-/// VSpaceUnifyInstruction and PR #822 Phase H's MintReplyCap).
+/// AA1-B-5: COUNT is updated to 36 (WS-RR RR8.16 added CspaceRevoke, on top of
+/// PR #887's review round's TcbSetFaultHandler, WS-SM SM9.C.8's
+/// DeclassifySignal, WS-SM SM9.A.6's AuditRead/AuditDrain, WS-SM SM8.C.9's
+/// Declassify, WS-SM SM7.D's VSpaceUnifyInstruction and PR #822 Phase H's
+/// MintReplyCap).
 #[test]
 fn syscall_count_updated() {
-    assert_eq!(SyscallId::COUNT, 35);
+    assert_eq!(SyscallId::COUNT, 36);
 }
 
 /// AA1-B-6: SchedContext syscalls require Write access (API.lean:381-383).
@@ -1566,7 +1567,17 @@ fn tcb_set_fault_handler_roundtrip() {
     let sid = SyscallId::from_u64(34).expect("TcbSetFaultHandler must exist");
     assert_eq!(sid, SyscallId::TcbSetFaultHandler);
     assert_eq!(sid.to_u64(), 34);
-    assert_eq!(SyscallId::COUNT, 35);
+}
+
+/// WS-RR RR8.16: CspaceRevoke roundtrip (discriminant 35).
+#[test]
+fn cspace_revoke_roundtrip() {
+    use sele4n_types::rights::AccessRight;
+    let sid = SyscallId::from_u64(35).expect("CspaceRevoke must exist");
+    assert_eq!(sid, SyscallId::CspaceRevoke);
+    assert_eq!(sid.to_u64(), 35);
+    assert_eq!(sid.required_right(), AccessRight::Write);
+    assert_eq!(SyscallId::COUNT, 36);
 }
 
 /// WS-SM SM6.B: TcbBindNotification roundtrip (discriminant 26).
@@ -1628,14 +1639,13 @@ fn declassify_roundtrip() {
     assert_eq!(sid.required_right(), AccessRight::Write);
 }
 
-/// D6-D5: Boundary — discriminant 35 is out of range for SyscallId
-/// (PR #887's review round added TcbSetFaultHandler, moving the boundary from
-/// 33 to 34).
+/// D6-D5: Boundary — discriminant 36 is out of range for SyscallId
+/// (WS-RR RR8.16 added CspaceRevoke, moving the boundary from 35 to 36).
 #[test]
 fn syscall_boundary() {
-    assert!(SyscallId::from_u64(34).is_some()); // Last valid
-    assert!(SyscallId::from_u64(35).is_none()); // First invalid
-    assert_eq!(SyscallId::COUNT, 35);
+    assert!(SyscallId::from_u64(35).is_some()); // Last valid
+    assert!(SyscallId::from_u64(36).is_none()); // First invalid
+    assert_eq!(SyscallId::COUNT, 36);
 }
 
 /// WS-SM SM9.A.6: AuditRead roundtrip (discriminant 31).
@@ -1903,7 +1913,7 @@ enum ReturnShape {
 }
 
 /// The mirror of `Architecture.syscallReturnShape` — total over the same
-/// 35 variants (`SyscallId` here is `sele4n-types`', whose count pin is
+/// 36 variants (`SyscallId` here is `sele4n-types`', whose count pin is
 /// `syscall_id_variant_count`).
 ///
 /// **WS-RR RR7.17: no wildcard.**  This match had a `_ => ReturnShape::Unit`
@@ -1944,6 +1954,9 @@ fn syscall_return_shape(sid: SyscallId) -> ReturnShape {
         | SyscallId::CSpaceCopy
         | SyscallId::CSpaceMove
         | SyscallId::CSpaceDelete
+        // WS-RR RR8.16: revocation returns nothing — like the delete it
+        // generalises, its whole result is whether it succeeded.
+        | SyscallId::CspaceRevoke
         | SyscallId::LifecycleRetype
         | SyscallId::VSpaceMap
         | SyscallId::VSpaceUnmap
@@ -2257,6 +2270,8 @@ fn wrapper_lengths_clear_prefilter_minimums() {
     assert_clears("cspace_move", SyscallId::CSpaceMove);
     let _ = sele4n_sys::cspace::cspace_delete(cap, Slot::from(0u64));
     assert_clears("cspace_delete", SyscallId::CSpaceDelete);
+    let _ = sele4n_sys::cspace::cspace_revoke(cap, Slot::from(0u64));
+    assert_clears("cspace_revoke", SyscallId::CspaceRevoke);
 
     let _ = sele4n_sys::lifecycle::retype_tcb(cap, ObjId::from(1u64));
     assert_clears("lifecycle_retype (retype_tcb)", SyscallId::LifecycleRetype);

@@ -2,7 +2,7 @@
 //! CSpace operations — capability mint, copy, move, delete.
 //!
 //! Lean: `SeLe4n/Kernel/API.lean` — `apiCspaceMint`, `apiCspaceCopy`,
-//! `apiCspaceMove`, `apiCspaceDelete`.
+//! `apiCspaceMove`, `apiCspaceDelete`, `apiCspaceRevoke`.
 
 use sele4n_abi::args::cspace::*;
 use sele4n_abi::{invoke_syscall, MessageInfo, SyscallRequest, SyscallResponse};
@@ -87,6 +87,30 @@ pub fn cspace_delete(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<Syscall
         msg_info: MessageInfo::new_const(1, 0, 0),
         msg_regs: [encoded[0], 0, 0, 0],
         syscall_id: SyscallId::CSpaceDelete,
+    })
+}
+
+/// Revoke every capability derived from the one in `target_slot`.
+///
+/// Lean: the `.cspaceRevoke` arm (API.lean, WS-RR RR8.16) — requires `.write`
+/// on `cnode_cap`, and routes to `cspaceRevokeCdt`, which walks the slot's CDT
+/// descendants across *arbitrary* CSpaces rather than only the containing
+/// CNode.
+///
+/// The source slot itself **survives**: revocation destroys a capability's
+/// derivations, not the capability, which is what makes `cspace_delete`'s
+/// `RevocationRequired` refusal dischargeable — revoke, then delete.  It takes
+/// the delete's register shape (`decodeCSpaceDeleteArgs`: targetSlot MR\[0\]),
+/// since both name one slot of the invoked CNode.
+#[inline]
+pub fn cspace_revoke(cnode_cap: CPtr, target_slot: Slot) -> KernelResult<SyscallResponse> {
+    let args = CSpaceDeleteArgs { target_slot };
+    let encoded = args.encode();
+    invoke_syscall(SyscallRequest {
+        cap_addr: cnode_cap,
+        msg_info: MessageInfo::new_const(1, 0, 0),
+        msg_regs: [encoded[0], 0, 0, 0],
+        syscall_id: SyscallId::CspaceRevoke,
     })
 }
 
