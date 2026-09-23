@@ -1022,4 +1022,78 @@ theorem abortHolderSpliceHigh_of_victimHigh
       hVictimHigh)
     hNbr
 
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the obligation `abortHolderProjectionStable`
+states is **discharged** from `endpointSpliceHigh` — the connection the register
+row said was missing while the labelling layer under it was already proved.
+
+`v0.35.84` reduced the three write classes to one and stopped there, because
+`abortPendingIpcOnEndpoint` runs the *single* `endpointQueueRemove` and only the
+*dual* removal had a projection lemma.  It has one now
+(`endpointQueueRemove_preserves_projection`,
+`InformationFlow/Invariant/Operations.lean`), so the reclaim's abort prefix is
+provably invisible whenever the four objects it writes are, and the obligation is
+no longer a hypothesis a caller carries whole.
+
+`hPair` is RR8.3's fourth `dualQueueSystemInvariant` conjunct: the single removal
+reads `queuePrev` where `endpointSpliceHigh` names the predecessor through
+`queuePPrev`, and the pairing is what makes those the same thread.  A caller
+holding `ipcInvariantFull` has it. -/
+theorem abortHolderProjectionStable_of_spliceHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hPair : queuePPrevAgreesWithPrev st)
+    (hSplice : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
+      ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
+        lookupTcb st holder = some holderTcb →
+        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
+        endpointSpliceHigh ctx observer st epId holder) :
+    abortHolderProjectionStable ctx observer st victim tcb := by
+  intro scId holder hRes
+  exact abortHolderPendingIpc_preserves_projection ctx observer st holder
+    (hSplice scId holder hRes)
+    (fun _ hLk => queuePPrevAgreesWithPrev_lookupTcb hPair hLk) hObjInv
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the obligation, reduced to the **one** class
+no labelling fact can close.
+
+The composition of `abortHolderProjectionStable_of_spliceHigh` with
+`abortHolderSpliceHigh_of_victimHigh`: the endpoint object and the holder's own
+TCB are derived from the two flow facts and the coherence conjunct, the removal's
+invisibility is derived from those, and what a caller supplies is the holder's
+**queue neighbours** — whose labels are constrained only against the endpoint's,
+so a lower-labelled neighbour beside a higher-labelled holder is admitted by
+design (`endpointAdmissionAdmitsMixedObservability`).
+
+That residue is representational, not a missing proof: a queue's content must
+live in an object whose label *dominates* every member's, which the endpoint is
+and a member's own TCB is not.  It is registered in
+`docs/REGISTERED_DEBT.md` as non-intrusive endpoint queues, and it is now the
+*whole* of what this obligation costs. -/
+theorem abortHolderProjectionStable_of_neighbourHigh
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (victim : SeLe4n.ThreadId) (tcb : TCB)
+    (hValid : LabelingContextValid ctx)
+    (hFlow : donationOwnerFlowsToHolder ctx st)
+    (hEpFlow : blockedSenderFlowsToEndpoint ctx st)
+    (hOwed : ∀ rid, tcb.replyObject = some rid →
+      replyFrameHeadHolderDonation st rid victim)
+    (hVictimHigh : threadObservable ctx observer victim = false)
+    (hObjInv : st.objects.invExt)
+    (hPair : queuePPrevAgreesWithPrev st)
+    (hNbr : ∀ (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      Lifecycle.Suspend.cancelledCallerDonation? st victim tcb = some (scId, holder) →
+      ∀ t : TCB, lookupTcb st holder = some t →
+        (∀ p : SeLe4n.ThreadId, t.queuePPrev = some (.tcbNext p) →
+            objectObservable ctx observer p.toObjId = false)
+          ∧ (∀ n : SeLe4n.ThreadId, t.queueNext = some n →
+              objectObservable ctx observer n.toObjId = false)) :
+    abortHolderProjectionStable ctx observer st victim tcb :=
+  abortHolderProjectionStable_of_spliceHigh ctx observer st victim tcb hObjInv hPair
+    (fun scId holder hRes holderTcb epId hLookup hBlocked =>
+      abortHolderSpliceHigh_of_victimHigh ctx observer st victim tcb scId holder holderTcb
+        epId hValid hFlow hEpFlow hOwed hRes hLookup hBlocked hVictimHigh
+        (hNbr scId holder hRes))
 end SeLe4n.Kernel

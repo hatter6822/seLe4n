@@ -12076,6 +12076,153 @@ grep '^\\[declassification-taint\\]' > {declassificationTaintFixturePath}"
     IO.println s!"          (then refresh {declassificationTaintFixturePath}.sha256)"
     throw (IO.userError "taint-side acceptance trace fixture mismatch")
 
+-- ============================================================================
+-- §14  WS-RR RR8.8 (`v0.35.193`) — the cancellation reclaim's ABORT PREFIX is
+--      invisible, and the ONE class that is left is exhibited
+-- ============================================================================
+
+/-! ### §14 — the abort prefix's projection, and its residue
+
+`abortHolderProjectionStable` is the obligation WS-OD OD1.4 added when the
+cancellation reclaim grew a prefix that ends the holder's outstanding send or
+call.  `v0.35.84` proved the labelling layer under it — the endpoint object and
+the holder's own TCB are non-observable whenever the victim is — and could go no
+further, because the prefix runs the **single** `endpointQueueRemove` and only
+the **dual** removal had a projection lemma.  `v0.35.193` writes the single
+one (`endpointQueueRemove_preserves_projection`), so the obligation is
+discharged from `endpointSpliceHigh` and what a caller supplies is the holder's
+**queue neighbours** alone.
+
+These checks are that reduction, computed on a state the live operations build
+rather than asserted: the same abort, under two labellings that differ in
+exactly one object's label.  With the neighbour **high** the low observer's view
+is unchanged at every key the removal writes; with the neighbour **low** it
+changes at that key and at no other — which is register row 179's class, made
+visible rather than described.
+-/
+
+private def abortEp : SeLe4n.ObjId := ⟨1200⟩
+private def abortHolderTid : SeLe4n.ThreadId := ⟨1201⟩
+private def abortNeighbourTid : SeLe4n.ThreadId := ⟨1202⟩
+
+/-- The holder: blocked on a **call** at `abortEp`, at the head of its send
+queue.  That is the shape `abortHolderPendingIpc` aborts — a thread the reclaim
+found holding a donated reservation while it is itself waiting to be received. -/
+private def abortHolderTcb : TCB :=
+  { mkTcb 1201 40 none with
+      ipcState := .blockedOnCall abortEp
+      threadState := .BlockedCall
+      queuePrev := none
+      queuePPrev := some .endpointHead
+      queueNext := some abortNeighbourTid }
+
+/-- The thread queued **behind** it — the one the removal's successor patch
+rewrites, and the one whose label no fact of this tree constrains against the
+holder's. -/
+private def abortNeighbourTcb : TCB :=
+  { mkTcb 1202 40 none with
+      ipcState := .blockedOnSend abortEp
+      threadState := .BlockedSend
+      queuePrev := some abortHolderTid
+      queuePPrev := some (.tcbNext abortHolderTid)
+      queueNext := none }
+
+private def abortState : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject cnRoot (.cnode rootCNodeValue)
+    |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
+    |>.withObject abortEp (.endpoint
+        { sendQ := { head := some abortHolderTid, tail := some abortNeighbourTid } })
+    |>.withObject abortHolderTid.toObjId (.tcb abortHolderTcb)
+    |>.withObject abortNeighbourTid.toObjId (.tcb abortNeighbourTcb)
+    |>.build)
+
+/-- The live prefix, run for effect. -/
+private def abortPost : SystemState :=
+  Lifecycle.Suspend.abortHolderPendingIpc abortState abortHolderTid
+
+/-- Everything in the fixture high — the hypothesis `endpointSpliceHigh` states. -/
+private def abortLabelingAllHigh : LabelingContext :=
+  { objectLabelOf := fun _ => highLabel
+    threadLabelOf := fun _ => highLabel
+    endpointLabelOf := fun _ => highLabel
+    serviceLabelOf := fun _ => highLabel }
+
+/-- The same, with the **neighbour alone** dropped to low — the one clause of
+`endpointSpliceHigh` that no labelling fact of this tree can supply. -/
+private def abortLabelingLowNeighbour : LabelingContext :=
+  { abortLabelingAllHigh with
+      objectLabelOf := fun oid =>
+        if oid = abortNeighbourTid.toObjId then lowLabel else highLabel
+      threadLabelOf := fun t =>
+        if t = abortNeighbourTid then lowLabel else highLabel }
+
+/-- A thread's `queuePrev` **as the low observer sees it**: `none` when the
+thread is not observable at all, `some q` when it is.  `Option (Option ThreadId)`
+has `DecidableEq`, so unlike the whole projected state this is a decidable
+end-to-end read of the observable view. -/
+private def abortViewQueuePrev (ctx : LabelingContext) (st : SystemState)
+    (t : SeLe4n.ThreadId) : Option (Option SeLe4n.ThreadId) :=
+  match (projectState ctx lowObserver st).objects t.toObjId with
+  | some (.tcb pt) => some pt.queuePrev
+  | _ => none
+
+/-- An endpoint's send-queue head as the low observer sees it. -/
+private def abortViewSendHead (ctx : LabelingContext) (st : SystemState)
+    (oid : SeLe4n.ObjId) : Option (Option SeLe4n.ThreadId) :=
+  match (projectState ctx lowObserver st).objects oid with
+  | some (.endpoint ep) => some ep.sendQ.head
+  | _ => none
+
+def runAbortPrefixProjectionChecks : IO Unit := do
+  IO.println "-- §14 WS-RR RR8.8: the reclaim's abort prefix, and its residue --"
+  -- The fixture is a state the *live* removal acts on, not a hand-built
+  -- post-state: without this the invisibility below would be reporting an
+  -- operation that did nothing.
+  assertBool "the abort FIRES: the holder leaves the queue and is made ready"
+    (match abortPost.objects[abortHolderTid.toObjId]?,
+           abortPost.objects[abortEp]? with
+     | some (.tcb h), some (.endpoint ep) =>
+         decide (h.ipcState = ThreadIpcState.ready) &&
+         decide (h.queueNext = none) && decide (h.queuePPrev = none) &&
+         decide (ep.sendQ.head = some abortNeighbourTid)
+     | _, _ => false)
+  assertBool "…and it REWRITES the neighbour, which is what the residue is about"
+    (match abortPost.objects[abortNeighbourTid.toObjId]? with
+     | some (.tcb n) =>
+         decide (n.queuePrev = none) && decide (n.queuePPrev = some .endpointHead)
+     | _ => false)
+  -- (1) All four objects high — the theorem's hypothesis.  The low observer
+  -- sees none of them, before or after, so its view is unchanged at every key
+  -- the removal writes.
+  assertBool "ALL-HIGH: the low observer sees none of the three written objects"
+    (abortViewQueuePrev abortLabelingAllHigh abortState abortHolderTid == none &&
+     abortViewQueuePrev abortLabelingAllHigh abortState abortNeighbourTid == none &&
+     abortViewSendHead abortLabelingAllHigh abortState abortEp == none)
+  assertBool "ALL-HIGH: …and its view is UNCHANGED across the abort at each of them"
+    (abortViewQueuePrev abortLabelingAllHigh abortPost abortHolderTid
+        == abortViewQueuePrev abortLabelingAllHigh abortState abortHolderTid &&
+     abortViewQueuePrev abortLabelingAllHigh abortPost abortNeighbourTid
+        == abortViewQueuePrev abortLabelingAllHigh abortState abortNeighbourTid &&
+     abortViewSendHead abortLabelingAllHigh abortPost abortEp
+        == abortViewSendHead abortLabelingAllHigh abortState abortEp)
+  -- (2) The neighbour alone dropped to low — the class register row 179 owns.
+  -- The endpoint and the holder stay invisible, so the difference below is
+  -- attributable to the neighbour and to nothing else.
+  assertBool "LOW NEIGHBOUR: the endpoint and the holder are still invisible"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortState abortHolderTid == none &&
+     abortViewQueuePrev abortLabelingLowNeighbour abortPost abortHolderTid == none &&
+     abortViewSendHead abortLabelingLowNeighbour abortState abortEp == none &&
+     abortViewSendHead abortLabelingLowNeighbour abortPost abortEp == none)
+  assertBool "RESIDUE: the neighbour IS visible, and its link names the high holder"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortState abortNeighbourTid
+        == some (some abortHolderTid))
+  assertBool "RESIDUE: the abort of a HIGH holder MOVES that low view"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortPost abortNeighbourTid
+        == some none &&
+     abortViewQueuePrev abortLabelingLowNeighbour abortPost abortNeighbourTid
+        != abortViewQueuePrev abortLabelingLowNeighbour abortState abortNeighbourTid)
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B / SM9.C / SM9.D / \
 SM9.E — per-core observable state, non-interference, declassification audit, fine-lock \
@@ -12190,6 +12337,7 @@ declassification, causal provenance and the acceptance scenarios"
   runInformationFlowTraceFixtureCheck
   runDeclassificationReaderFixtureCheck
   runDeclassificationTaintFixtureCheck
+  runAbortPrefixProjectionChecks
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++

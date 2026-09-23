@@ -1990,12 +1990,26 @@ run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_tcb_frame' SeLe
 # second raw read site for a question the operation has already asked, which is
 # what the AK7 cascade floor counts.  The two error arms are
 # `endpointQueueRemove_ok_getEndpoint?`'s subject, not this theorem's.
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_ok_getEndpoint\?' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*\(hEp : st\.getEndpoint\? endpointId = some ep\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+# WS-RR RR8.8 (`v0.35.193`): both pins live beside `queueNeighbourPatch` and
+# `spliceOutMidQueueNode_eq_patches` -- the definitions they are stated over and
+# the sibling answer to the same question -- because the single removal's
+# projection lemma is stated in `InformationFlow/Invariant/Operations.lean`,
+# which is incomparable with `CancellationReplyShape.lean`: one of the two
+# askers could not reach the pin at all.
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_ok_getEndpoint\?' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*\(hEp : st\.getEndpoint\? endpointId = some ep\)" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch[^\n]*(\n([ \t][^\n]*)?)*queueNeighbourPatch" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# ...and the boundary and the link clear are spelled through the RR8.4 records,
+# not restated inline: this pin had carried a second copy of both, which is the
+# duplication RR8.4 removed arriving in the artefact that pins the removal.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*queueRemoveBoundary q tid tcb[^\n]*(\n([ \t][^\n]*)?)*tcbWithQueueLinks tcb none none none" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*head := if q\.head = some tid" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 # ...and it must not re-open the raw discriminator: an equation restating the
 # whole body is a second raw read site for a question the operation already asked.
-run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*match st\.objects\[" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_eq_patches[^\n]*(\n([ \t][^\n]*)?)*match st\.objects\[" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# ...and neither may come back to the module they were relocated out of.
+run_negative_check "INVARIANT" rg -n '^theorem endpointQueueRemove_ok_getEndpoint\?' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_negative_check "INVARIANT" rg -n '^theorem endpointQueueRemove_eq_patches' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 
 # OD3.5: **`.replyRecv` performs two SchedContext hand-offs and declared one.**
 # `replyRecvPostReceiveDonation` runs `applyCallDonationOnCore nextThread tid` when the
@@ -16661,6 +16675,55 @@ run_negative_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/IPC
 # reduce nothing while keeping the name.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*⟨blockedSenderEndpointObjectHigh ctx observer st holder holderTcb epId hValid hEpFlow" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHigh_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*hEp : objectObservable ctx observer epId = false" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# ---------------------------------------------------------------------------
+# WS-RR RR8.8 (`v0.35.193`) -- the SINGLE removal's projection lemma, which is
+# what closes the reduction.  `v0.35.84` proved the labelling layer and stopped
+# at `endpointSpliceHigh`, because `abortPendingIpcOnEndpoint` runs
+# `endpointQueueRemove` and only `endpointQueueRemoveDual` had such a lemma.
+run_check "INVARIANT" rg -n '^theorem queueNeighbourPatch_preserves_projection_high' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# The patch's hypothesis is quantified over the RESOLUTION, not over a supplied
+# thread: a caller that knows the removed node has no predecessor discharges it
+# by `simp` instead of inventing one, which is what keeps an under-stated
+# hypothesis out of the chain.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem queueNeighbourPatch_preserves_projection_high[^\n]*(\n([ \t][^\n]*)?)*hHigh : . n : SeLe4n.ThreadId, nid. = some n ." SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# The bridge the register row named as the one mismatch closing this class must
+# cross: the splice hypothesis names the predecessor through `queuePPrev`, the
+# single removal reads `queuePrev`, and RR8.3's pairing is what makes those one
+# thread.  A version that took the `queuePrev` fact as a hypothesis would bridge
+# nothing while keeping the name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSpliceHigh_queuePrev_high[^\n]*(\n([ \t][^\n]*)?)*hPair : tcb.queuePPrevAgreesWithPrev" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSpliceHigh_queuePrev_high[^\n]*(\n([ \t][^\n]*)?)*\(\w+ : [^\n]*objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# The removal's own lemma carries BOTH -- the four-object hypothesis and the
+# pairing.  Dropping the pairing is the token-preserving weakening this family
+# admits: the statement still elaborates for a removed HEAD, whose `queuePrev`
+# is `none`, and says nothing about an interior node.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_preserves_projection_and_invExt[^\n]*(\n([ \t][^\n]*)?)*hHigh : endpointSpliceHigh ctx observer st endpointId tid[^\n]*(\n([ \t][^\n]*)?)*hPair : . t : TCB, lookupTcb st tid = some t . t.queuePPrevAgreesWithPrev" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_projection$' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# The two lifts: the timeout's object-only prefix, and the reclaim's whole abort.
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+# ...and the abort's hypothesis is quantified over the endpoint the holder's own
+# `ipcState` names, never over a supplied one: the endpoint is not a parameter
+# of `abortHolderPendingIpc`, so taking one would let a caller be wrong about
+# which endpoint the prefix splices.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderPendingIpc_preserves_projection[^\n]*(\n([ \t][^\n]*)?)*hHigh : . \(holderTcb : TCB\) \(epId : SeLe4n.ObjId\)," SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderPendingIpc_preserves_projection[^\n]*(\n([ \t][^\n]*)?)*\n    \(epId : SeLe4n.ObjId\)" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
+# The conjunct, read at one thread through the kernel's own typed lookup --
+# stated beside the conjunct, so a consumer does not re-open the
+# `getTcb?` / `objects[..]?` bridge for itself.
+run_check "INVARIANT" rg -n '^theorem queuePPrevAgreesWithPrev_lookupTcb' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# The discharge itself: `abortHolderProjectionStable` is no longer a whole
+# obligation a caller carries.  The composed form's ONLY queue hypothesis is the
+# neighbour clause; an `endpointSpliceHigh` hypothesis there would reduce
+# nothing while keeping the name, which is exactly what this cut retires.
+run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_spliceHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderProjectionStable_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*hNbr : . \(scId : SeLe4n.SchedContextId\) \(holder : SeLe4n.ThreadId\)," SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderProjectionStable_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*\(\w+ : [^\n]*endpointSpliceHigh" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
+# The witness: the reduction computed on a state the live operations build, with
+# the residue exhibited rather than described -- the low observer's view of the
+# neighbour MOVES when a high holder is aborted, which is register row 179.
+run_check "INVARIANT" rg -n 'runAbortPrefixProjectionChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "def runAbortPrefixProjectionChecks[^\n]*(\n([ \t][^\n]*)?)*RESIDUE: the abort of a HIGH holder MOVES that low view" tests/SmpInformationFlowSuite.lean'
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.10 -- the cancellation's arm-complete IPC bundle, and its cross-core

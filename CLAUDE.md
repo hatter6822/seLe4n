@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.192.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.193.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -8234,7 +8234,30 @@ code may assume:
   `endpointSpliceHigh`).  **Read that as a reduction, not a closure**: `v0.35.84`
   called it *discharged*, which is what it would be if the fact it reduces to were
   a fact about reachable states, and for two cuts it was a `Prop` nothing
-  established — see item (4).  (3) **The residue is
+  established — see item (4).  **And a reduction to a predicate is not a
+  connection to the OPERATION** (`v0.35.193`): for nine cuts
+  `abortHolderProjectionStable` went on carrying its *whole* obligation as a
+  hypothesis, because the reduction stopped at `endpointSpliceHigh` and nothing
+  related that predicate to `abortHolderPendingIpc` — the prefix runs the
+  **single** `endpointQueueRemove`, and only the **dual** removal had a projection
+  lemma (RR7.22).  The labelling layer was proved and the wire was missing, which
+  in a bundle search reads exactly like a closed obligation.  The single removal
+  has one now (`endpointQueueRemove_preserves_projection{,_and_invExt}`, beside
+  `endpointSpliceHigh` in `InformationFlow/Invariant/Operations.lean`, built from
+  raw-insert frames because the removal's four writes are `RHTable.insert`s in one
+  record update rather than four store primitives), and with it
+  `abortHolderPendingIpc_preserves_projection` and the discharges
+  `abortHolderProjectionStable_of_{spliceHigh,neighbourHigh}` — so what a caller
+  supplies is the neighbour clause and nothing else.  The one mismatch that
+  crossing needed is a mismatch of *spelling*: `endpointSpliceHigh` names the
+  predecessor through `queuePPrev` and the single removal reads `queuePrev`, and
+  RR8.3's `TCB.queuePPrevAgreesWithPrev` is exactly the statement that those are
+  one thread (`endpointSpliceHigh_queuePrev_high`), read at a thread through
+  `queuePPrevAgreesWithPrev_lookupTcb` rather than by re-opening the
+  `getTcb?` / `objects[…]?` bridge at each consumer.  **When a reduction stops at
+  a predicate, ask what still connects that predicate to the transition**; a
+  hypothesis and its labelling layer can both be right while nothing joins them.
+  (3) **The residue is
   representational and the remedy is forced**: `queuePrev` / `queuePPrev` /
   `queueNext` survive `projectKernelObject`, so an observable thread's projection
   already names a non-observable one's identity with no operation having run —

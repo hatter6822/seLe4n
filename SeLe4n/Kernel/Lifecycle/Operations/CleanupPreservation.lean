@@ -2415,6 +2415,84 @@ theorem spliceOutMidQueueNode_eq_patches (st : SystemState) (tid : SeLe4n.Thread
              (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
              tcb.queueNext (queueUnlinkSuccessor tcb)) }) := rfl
 
+/-- **WS-OD OD3.5**: a successful `endpointQueueRemove` resolved its endpoint.
+
+The removal's two error arms are the unresolvable object and the wrong-kind
+object, and `getEndpoint?` collapses exactly those two; so `.ok` entails the
+typed read succeeded, which is what lets `endpointQueueRemove_eq_patches` be
+stated on the splicing arm without its callers having to carry the endpoint.
+
+**WS-RR RR8.8 (`v0.35.193`)** relocated it here from
+`Lifecycle/Invariant/CancellationReplyShape.lean`, beside the definitions it is
+stated over and beside `spliceOutMidQueueNode_eq_patches`, the sibling answer to
+the same question.  `InformationFlow/Invariant/Operations.lean` — which owns
+`endpointSpliceHigh` and `objects_insert_preserves_projection_high`, and which
+states the removal's projection lemma — is incomparable with that module, so one
+of the two askers could not reach the pin at all. -/
+theorem endpointQueueRemove_ok_getEndpoint?
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (st st' : SystemState)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    ∃ ep, st.getEndpoint? endpointId = some ep := by
+  cases hObj : st.objects[endpointId]? with
+  | none =>
+    simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
+    exact absurd hStep (by simp)
+  | some obj =>
+    cases obj with
+    | endpoint ep =>
+      exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+      simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
+      exact absurd hStep (by simp)
+
+/-- **WS-OD OD3.5**: `endpointQueueRemove`'s two link patches **are**
+`queueNeighbourPatch`, the same step `spliceOutMidQueueNode` performs twice.
+
+Stated on the arm that splices — the endpoint resolves, the thread resolves —
+rather than as a second copy of the whole body: the equation is then about the
+program the removal *runs*, its two error arms are `endpointQueueRemove_ok_getEndpoint?`'s
+subject rather than this one's, and the store is read through `getEndpoint?`
+rather than by re-opening the discriminator the operation has already opened
+(AK7 reader hygiene — a `rfl` restatement of a raw match is still a raw match
+site as far as every reader, human or scanner, is concerned).
+
+The tree had two inlined copies of this shape and one named abstraction over it;
+naming the third is what makes the removal's write set one lemma rather than a
+four-deep nested match.  The two `upd` functions are the shared
+`queueUnlinkPredecessor` / `queueUnlinkSuccessor` (WS-OD OD3.9) — the definitions
+`endpointQueueRemove` itself applies and `spliceOutMidQueueNode_eq_patches` names
+— so the two removals' write sets are stated over one spelling rather than over a
+lambda each that could drift apart.  The successor's carries `queuePPrev`
+(WS-OD OD1.1), which is why the two patches take different updates and not
+one.
+
+**WS-RR RR8.8 (`v0.35.193`)**: relocated here (see
+`endpointQueueRemove_ok_getEndpoint?` for why), and the *boundary* and the *link
+clear* are now spelled through `queueRemoveBoundary` and `tcbWithQueueLinks` —
+the two records WS-RR RR8.4 introduced so the three removals write one value
+rather than three authors agreeing.  This pin had restated both inline, which is
+a live instance of the duplication RR8.4 removed: the equation is still `rfl`,
+so a reader who follows it reaches the shared names rather than a second copy of
+what they unfold to. -/
+theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
+    (tid : SeLe4n.ThreadId) (st : SystemState) (ep : Endpoint) (tcb : TCB)
+    (hEp : st.getEndpoint? endpointId = some ep)
+    (hTcb : lookupTcb st tid = some tcb) :
+    endpointQueueRemove endpointId isReceiveQ tid st =
+      (let q := if isReceiveQ then ep.receiveQ else ep.sendQ
+       let objs := queueNeighbourPatch
+         (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
+         tcb.queueNext (queueUnlinkSuccessor tcb)
+       let q' : IntrusiveQueue := queueRemoveBoundary q tid tcb
+       let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
+       .ok { st with objects :=
+         ((objs.insert endpointId (.endpoint ep')).insert tid.toObjId
+           (.tcb (tcbWithQueueLinks tcb none none none))) }) := by
+  unfold endpointQueueRemove SystemState.getObject?
+  rw [(SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp, hTcb]
+  rfl
+
 theorem queueNeighbourPatch_invExt (objs : RHTable SeLe4n.ObjId KernelObject)
     (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB) (hInv : objs.invExt) :
     (queueNeighbourPatch objs nid? upd).invExt := by

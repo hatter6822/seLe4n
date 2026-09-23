@@ -774,68 +774,19 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hNe]
   exact spliceThreadReplyFrameOut_tcb_eq st tcbV hInv k t0 hPre
 
-/-- **WS-OD OD3.5**: a successful `endpointQueueRemove` resolved its endpoint.
-
-The removal's two error arms are the unresolvable object and the wrong-kind
-object, and `getEndpoint?` collapses exactly those two; so `.ok` entails the
-typed read succeeded, which is what lets `endpointQueueRemove_eq_patches` be
-stated on the splicing arm without its callers having to carry the endpoint. -/
-theorem endpointQueueRemove_ok_getEndpoint?
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    ∃ ep, st.getEndpoint? endpointId = some ep := by
-  cases hObj : st.objects[endpointId]? with
-  | none =>
-    simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
-    exact absurd hStep (by simp)
-  | some obj =>
-    cases obj with
-    | endpoint ep =>
-      exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
-      exact absurd hStep (by simp)
-
-/-- **WS-OD OD3.5**: `endpointQueueRemove`'s two link patches **are**
-`queueNeighbourPatch`, the same step `spliceOutMidQueueNode` performs twice.
-
-Stated on the arm that splices — the endpoint resolves, the thread resolves —
-rather than as a second copy of the whole body: the equation is then about the
-program the removal *runs*, its two error arms are `endpointQueueRemove_ok_getEndpoint?`'s
-subject rather than this one's, and the store is read through `getEndpoint?`
-rather than by re-opening the discriminator the operation has already opened
-(AK7 reader hygiene — a `rfl` restatement of a raw match is still a raw match
-site as far as every reader, human or scanner, is concerned).
-
-The tree had two inlined copies of this shape and one named abstraction over it;
-naming the third is what makes the removal's write set one lemma rather than a
-four-deep nested match.  The two `upd` functions are the shared
-`queueUnlinkPredecessor` / `queueUnlinkSuccessor` (WS-OD OD3.9) — the definitions
-`endpointQueueRemove` itself applies and `spliceOutMidQueueNode_eq_patches` names
-— so the two removals' write sets are stated over one spelling rather than over a
-lambda each that could drift apart.  The successor's carries `queuePPrev`
-(WS-OD OD1.1), which is why the two patches take different updates and not
-one. -/
-theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st : SystemState) (ep : Endpoint) (tcb : TCB)
-    (hEp : st.getEndpoint? endpointId = some ep)
-    (hTcb : lookupTcb st tid = some tcb) :
-    endpointQueueRemove endpointId isReceiveQ tid st =
-      (let q := if isReceiveQ then ep.receiveQ else ep.sendQ
-       let objs := queueNeighbourPatch
-         (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
-         tcb.queueNext (queueUnlinkSuccessor tcb)
-       let q' : IntrusiveQueue :=
-         { head := if q.head = some tid then tcb.queueNext else q.head,
-           tail := if q.tail = some tid then tcb.queuePrev else q.tail }
-       let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
-       .ok { st with objects :=
-         ((objs.insert endpointId (.endpoint ep')).insert tid.toObjId
-           (.tcb { tcb with queuePrev := none, queuePPrev := none, queueNext := none })) }) := by
-  unfold endpointQueueRemove SystemState.getObject?
-  rw [(SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp, hTcb]
-  rfl
+-- **WS-RR RR8.8 (`v0.35.193`) — RELOCATED.**  `endpointQueueRemove_ok_getEndpoint?`
+-- and `endpointQueueRemove_eq_patches` now live in
+-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, beside
+-- `queueNeighbourPatch` and `spliceOutMidQueueNode_eq_patches` — the definitions
+-- they are stated over and the *sibling* answer to the same question ("what does
+-- this removal write, named").  They moved because a second asker could not reach
+-- them: the single removal's projection lemma
+-- (`endpointQueueRemove_preserves_projection`) is stated over `endpointSpliceHigh`
+-- and built from `objects_insert_preserves_projection_high`, both of which live in
+-- `InformationFlow/Invariant/Operations.lean`, and that module is not in this
+-- one's import closure nor this one in its.  One question with one owner and an
+-- asker that cannot see it means the owner is in the wrong layer; the two pins
+-- are now in the module *both* askers import.
 
 /-- **WS-OD OD3.5: the removal writes four keys and no others** — the endpoint it
 splices, the removed thread, and the two queue neighbours whose links it patches.

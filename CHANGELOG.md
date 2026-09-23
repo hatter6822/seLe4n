@@ -1,3 +1,106 @@
+## v0.35.193 — WS-RR RR8.8: the single removal's projection lemma, and what a reduction to a predicate does not connect
+
+**A reduction to a predicate is not a connection to the operation.**  WS-OD
+OD1.4 added `abortHolderProjectionStable` when the cancellation reclaim grew a
+prefix that ends the holder's outstanding send or call, and `v0.35.84` proved
+the labelling layer under it: the endpoint object and the holder's own TCB are
+non-observable whenever the victim is, so the obligation *reduces* to the
+holder's queue neighbours (`abortHolderSpliceHigh_of_victimHigh`, over the
+shared `endpointSpliceHigh`).  For nine cuts that read like a closed obligation
+and was not: nothing related `endpointSpliceHigh` to `abortHolderPendingIpc`.
+The prefix runs the **single** `endpointQueueRemove`, and only the **dual**
+removal had a projection lemma (RR7.22) — so the labelling layer was proved,
+the wire was missing, and `abortHolderProjectionStable` went on carrying its
+*whole* obligation as a hypothesis.  In a bundle search a reduction and a
+closure look the same.  **When a reduction stops at a predicate, ask what still
+connects that predicate to the transition.**
+
+**The single removal has its lemma, and the reduction is now a discharge.**
+`endpointQueueRemove_preserves_projection{,_and_invExt}` sits beside
+`endpointSpliceHigh` and `objects_insert_preserves_projection_high` in
+`SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean`, with
+`queueNeighbourPatch_preserves_projection_high` under it, and
+`abortPendingIpcOnEndpoint_preserves_projection` /
+`abortHolderPendingIpc_preserves_projection` over it.  The discharges are
+`abortHolderProjectionStable_of_spliceHigh` and
+`_of_neighbourHigh` (`IPC/CrossCore/CancellationNI.lean`); the second takes the
+**queue-neighbour clause and nothing else**, which is the whole of what the
+obligation costs.  Register row 70 closes; row 179 — non-intrusive endpoint
+queues — keeps the residue, and keeps it for the reason it always had: a
+neighbour's label is constrained only against the *endpoint's*, so a
+lower-labelled neighbour beside a higher-labelled holder is admitted by design
+(`endpointAdmissionAdmitsMixedObservability`).
+
+**The one mismatch the register named is a mismatch of SPELLING.**
+`endpointSpliceHigh` names the predecessor through `queuePPrev` and the single
+removal reads `queuePrev`.  RR8.3's `TCB.queuePPrevAgreesWithPrev` is exactly
+the statement that everything `queuePPrev` says beyond "this node is linked at
+all" agrees with `queuePrev`, so the two predecessors are one thread —
+`endpointSpliceHigh_queuePrev_high`.  It is read at a thread through the new
+`queuePPrevAgreesWithPrev_lookupTcb`, stated beside the conjunct in
+`IPC/Invariant/Defs.lean`, because every consumer resolves its thread through
+`lookupTcb` and without the accessor each would re-open the
+`getTcb?` / `objects[…]?` bridge for itself — which is the raw-read hygiene the
+AK7 census exists to keep out of consumers.
+
+**The chain is over TABLES, not states** — the same property as the dual's
+lemma, a different proof, because the two removals are written differently.
+`endpointQueueRemove`'s four writes are raw `RHTable.insert`s inside **one**
+record update, not four store steps, so the proof composes
+`objects_insert_preserves_projection_high` at `{ st with objects := · }` and
+`queueNeighbourPatch_invExt`, carrying each step's projection equality back to
+the pre-state so the four writes compose with no transitivity hops at the
+leaves.  Both halves are proved together for the reason the dual's are: each
+step's frame needs the *previous* table's `invExt`.
+
+**Two pins moved down a layer, which is what made the lemma statable at all.**
+`endpointQueueRemove_ok_getEndpoint?` and `endpointQueueRemove_eq_patches` were
+in `Lifecycle/Invariant/CancellationReplyShape.lean`, and that module is
+**incomparable** with `InformationFlow/Invariant/Operations.lean`: neither is in
+the other's import closure, so the projection lemma could not reach the equation
+that decomposes the very operation it is about.  Re-deriving the decomposition
+would have been the four-deep nested match `_eq_patches` exists to retire.  Both
+now sit in `Lifecycle/Operations/CleanupPreservation.lean` beside
+`queueNeighbourPatch` and `spliceOutMidQueueNode_eq_patches` — the definitions
+they are stated over and the **sibling** answer to the same question, which is
+where the split was in the first place.  One question with one owner and an
+asker that cannot see it means the owner is in the wrong layer.
+
+**And `_eq_patches` stopped carrying a second copy of the RR8.4 records.**  Its
+right-hand side restated the boundary (`{ head := if q.head = some tid then … }`)
+and the link clear (`{ tcb with queuePrev := none, … }`) inline, which is a live
+instance of the duplication WS-RR RR8.4 removed when it gave the three removals
+one `queueRemoveBoundary` and one `tcbWithQueueLinks`.  It spells both through
+the shared names now; the equation is still `rfl`, so a reader who follows it
+reaches the shared records rather than a second copy of what they unfold to.
+
+**The residue is exhibited, not described.**
+`tests/SmpInformationFlowSuite.lean` §14 runs the **live** abort on one state
+under two labellings that differ in exactly one object's label.  With the
+neighbour high, the low observer sees none of the three written objects and its
+view is unchanged at every one of them.  With the neighbour low — and the
+endpoint and the holder still invisible, so the difference is attributable to
+the neighbour and nothing else — its view of that thread's `queuePrev` moves
+from `some holder` to `none`: register row 179's leak, computed.  Two positive
+controls keep the invisibility half from reporting an operation that did
+nothing: the abort really unqueues the holder and makes it `.ready`, and it
+really rewrites the neighbour.
+
+**Anchors.** Twenty-four, of which the four over the relocated pins are
+repointed rather than added, and six are new negatives: the retired inlined
+boundary must not come back to `_eq_patches`; neither pin may return to the
+module it left; the `queuePPrev` bridge must not take its own conclusion as a
+hypothesis (a binder mentioning `objectObservable`); the abort's endpoint must
+stay quantified over the holder's `ipcState` rather than becoming a binder; and
+the composed discharge must take no `endpointSpliceHigh` binder, since one would
+reduce nothing while keeping the name.  Every negative was mutation-tested by
+**keeping the token and breaking the relation** — restoring the inlined record,
+adding the assumed conclusion under a plain name, adding the endpoint binder,
+adding an `∀`-wrapped splice hypothesis — and two of the first drafts were
+**missed** because their patterns keyed on a bare `h[A-Za-z]*` name shape that a
+digit or an `∀` defeats; both were widened to ask about a *binder whose type
+mentions the predicate*, which is the question, and re-tested.
+
 ## v0.35.192 — WS-RR RR8.12 follow-on: four unconsumed transformers, judged both ways
 
 **The census named four and the answer was not one answer.**

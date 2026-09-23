@@ -250,6 +250,24 @@ theorem queuePPrevAgreesWithPrev_of_frame {st st' : SystemState}
   obtain ⟨tcb, hTcb, hPrev, hPPrev⟩ := hFrame tid tcb' hTcb'
   exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (h tid tcb hTcb)
 
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the conjunct, read at one thread through the
+kernel's own typed lookup.
+
+Every consumer that holds the store-level conjunct and wants the pairing at a
+*particular* thread has resolved that thread through `lookupTcb`, not through a
+raw store read — so without this accessor each one would re-open the
+`getTcb?` / `objects[…]?` bridge itself, which is the raw-read hygiene the AK7
+census exists to keep out of consumers.  Stated here, beside the conjunct,
+because that is the question's owner. -/
+theorem queuePPrevAgreesWithPrev_lookupTcb {st : SystemState}
+    (h : queuePPrevAgreesWithPrev st) {tid : SeLe4n.ThreadId} {t : TCB}
+    (hLk : lookupTcb st tid = some t) : t.queuePPrevAgreesWithPrev := by
+  refine h tid t ?_
+  unfold lookupTcb at hLk
+  split at hLk
+  · exact absurd hLk (by simp)
+  · exact (SystemState.getTcb?_eq_some_iff st tid t).mp hLk
+
 /-- Transitive closure of the queueNext relation: a path a →⁺ b exists in the
 system state when there is a chain of TCBs whose queueNext fields connect a to b. -/
 inductive QueueNextPath (st : SystemState) : SeLe4n.ThreadId → SeLe4n.ThreadId → Prop
