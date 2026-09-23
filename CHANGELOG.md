@@ -1,3 +1,120 @@
+## v0.35.183 — WS-RR RR8.12 Cut E1: Z4-O across the destroy path
+
+Register row 63's remaining half.  `v0.35.166` closed the reservation invariant
+across `lifecyclePreRetypeCleanup` and left the row stating, in terms, what
+blocked the other one: **there was no `preserves_schedContextBindingConsistent`
+theorem anywhere in the tree** — not for a queue sweep, not for either donation
+arm, not for a store — so every consumer of Z4-O had to take it as a hypothesis
+rather than inherit it across a step.  This cut builds that family and the
+composite it exists for.
+
+### The predicate reads exactly two projections, so one transfer lemma serves
+
+`schedContextBindingConsistent` (Z4-O) is bidirectional reciprocity between
+`TCB.schedContextBinding` and `SchedContext.boundThread`, and it reads nothing
+else.  `schedContextBindingConsistent_transfer` (beside the predicate, in
+`Scheduler/Invariant.lean`) takes both projections as `Option.map` frames and
+carries the invariant whole; `schedContextBindingConsistent_of_objects_eq` is
+the degenerate case for a step that writes no object at all.  Every preservation
+theorem below is one application of one of the two.
+
+**Both frames, never one.**  Framing the binding alone leaves the backward
+clause unsupported — a step that rewrites a `boundThread` and no binding would
+pass it — so the transfer takes `hSc` as well as `hTcb`, and a Tier 3 relation
+anchor is mutation-verified against dropping it.
+
+### The splice's field frame gets one owner, and the two projections are its instances
+
+`spliceOutMidQueueNode` rewrites its neighbours' **three** link fields and
+nothing else (WS-OD OD1.1 / OD3.9's own subject), so a projection that ignores
+those fields crosses it.  `tcbQueueLinkRewrite` states that as a relation,
+`spliceOutMidQueueNode_tcbField_frame` proves the frame once over an arbitrary
+`f`, and `_affinity_frame` (which `determineTargetCore_congr` consumes, from
+`v0.35.166`) and the new `_binding_frame` (which the transfer consumes) are
+one-line instances.  `insert_tcb_rewrite_lookup` is generalised over the motive
+for the same reason: a second lookup characterisation per field is the shape
+this tree spends its length retiring.
+
+`SystemState.map_cpuAffinity_eq_of_refines` generalises to
+`map_tcbField_eq_of_refines` beside it, and `updateTcb_objects_congr` is the
+bridge a composite needs when its TCB write is not the outermost one.
+
+### Eight preservation theorems, in the order they compose
+
+`returnDonatedSchedContext_preserves_schedContextBindingConsistent` is the
+substantive one: the pop moves **one whole reciprocal pair** — it clears the
+holder's binding, installs the recipient's, and rewrites the context's
+`boundThread` to name the recipient — so Z4-O's two clauses are re-established
+at the moved pair and transported everywhere else.  Its uniqueness obligations
+come from Z4-O itself rather than from a fresh argument, and
+`returnDonatedSchedContext_ok_recipient_not_reserved` is the resolution fact it
+needed.
+
+Over it: `cleanupDonatedSchedContext` (the resolved pop at the thread's own
+recorded `(scId, owner)`), `cancelDonatedDonationOnCore` (that plus the
+replenishment migration, which writes no object),
+`cancelBoundDonationOnCore` (the unbind, which *clears* both sides of one pair),
+and `cancelDonationArmOnCore` over all three bindings — so the suspend
+pipeline's G3 inherits it through `suspendDonationArm_eq_cancelDonationArmOnCore`.
+Beside them, `cleanupTcbReferences_binding_frame` and
+`cleanupTcbReferences_preserves_schedContextBindingConsistent` for the reference
+sweep's four whole-store folds, and
+`cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent`
+for the `.tcb` arm's two steps as one lemma.
+
+`lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent` is the
+composite, over all six object kinds.
+
+### The SchedContext arm REFUTES the invariant, and the cut states that
+
+`releaseSchedContextBinding` clears the bound thread's binding and deliberately
+leaves the destroyed context's `boundThread` naming it — `v0.35.165` says so in
+terms: *"what it does **not** do is rewrite the SchedContext record — the retype
+replaces the object outright"*.  So Z4-O's backward clause is **false** at that
+context on the arm's own post-state, repaired one step later by the retype's own
+`storeObject` at that very key.
+
+Neither alternative is right.  A reader who assumed the arm preserves the
+invariant would look for a proof that cannot exist; a cut that "fixed" it by
+writing `boundThread := none` would add a store to an object the very next step
+replaces, for no property that is not already had.  So the composite takes
+`hNotSc` and `releaseSchedContextBinding_refutes_schedContextBindingConsistent`
+is what shows the hypothesis necessary rather than convenient — the standard
+WS-RR RR8.7 set with `replyCallerLinkage_refutes_woken_linked_caller`, and
+anchored in Tier 3 for the same reason it is: a refutation nothing states is one
+the next cut re-discovers by shipping the search for its proof.  `hNotSc` is
+free at the live call site, where `retypeTargetDetached`'s `notSc` excludes a
+SchedContext target outright.
+
+### What remains, and one thing measuring it found
+
+The retype **composite**'s Z4-O theorem — `lifecycleRetypeDirectWithCleanup`'s
+cleanup, then `scrubObjectMemory`, then the `storeObject` at `target` — is the
+next cut, and measuring its hypotheses found a gap of its own worth recording
+before it is written: neither `KernelObject.wellFormed` nor
+`retypeReplacementFresh` constrains a replacement **SchedContext**'s
+`boundThread`, so the model's admissible replacement space contains a scheduling
+context claiming to be bound to a thread that does not name it back — which is
+precisely the state Z4-O forbids, and precisely the class SM6.D closed for
+`Reply` one field over (`wellFormed`'s `.reply` arm requires `caller = none ∧
+prev = none ∧ next = none`, with the stated reason that
+`lifecycleRetypeWithCleanup` "only checks `newObj.wellFormed`").  The live
+dispatch is unaffected — its replacement builder is `objectOfKernelType`, whose
+`.schedContext` arm is `SchedContext.empty`, which leaves `boundThread` at its
+`none` default — so this is a model-level hole rather than a reachable defect,
+and it is registered with that measurement rather than fixed here, a tightening
+of a runtime guard's refusal set being its own slice.
+
+### Two relocations, for the rule `v0.35.59` states
+
+`tcbQueueLinkRewrite` and its algebra moved above `insert_tcb_rewrite_lookup`
+(the lookup characterisation is stated over it), and
+`removeFromAllEndpointQueues_getTcb?_eq_splice` was extracted from
+`CancellationQueueShape.lean`'s affinity frame so the new binding frame is its
+sibling rather than a second fold-induction.
+
+Bumps version to 0.35.183.
+
 ## v0.35.182 — WS-RR RR8.12 Cut B2: a bind places a parked runnable thread
 
 seL4-MCS's `schedContext_bindTCB` ends in

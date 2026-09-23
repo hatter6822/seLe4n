@@ -712,6 +712,89 @@ def schedContextBindingConsistent (st : SystemState) : Prop :=
         (tcb.schedContextBinding = .bound scId ∨
          ∃ owner, tcb.schedContextBinding = .donated scId owner))
 
+/-- **`v0.35.183` (WS-RR RR8.12, register row 63): the two projections Z4-O
+reads, and the only two.**
+
+`schedContextBindingConsistent` is a reciprocity between a thread's
+`schedContextBinding` and a scheduling context's `boundThread`; it reads no other
+field of either record and no key outside the two it quantifies over.  So a step
+that fixes those two projections **pointwise** carries it whole, whatever else it
+rewrites — which is what every step of the destroy path but three does (queue
+links, `ipcState`, endpoints, notifications, `SchedContext.donationOrigin`, CDT
+edges, the service registry, the scheduler).
+
+Stated as a transfer over the projections rather than as a named `sameBindingGraph`
+relation with `refl` / `trans`, because each step's own frame already *is* an
+`Option.map` equality at an arbitrary key and `Eq.trans` chains them: a relation
+would be a second name for what the frames already say.  This mirrors
+`replenishQueueAffinityConsistentOnCore_transfer`, the shape the SM5.H invariant
+uses for the same reason.
+
+Register row 63 records that *no* `preserves_schedContextBindingConsistent`
+theorem existed anywhere in this tree, so every consumer of the invariant had to
+take it as a hypothesis; this is the one owner the destroy path's eight steps are
+proved through. -/
+theorem schedContextBindingConsistent_transfer {st st' : SystemState}
+    (hTcb : ∀ tid : SeLe4n.ThreadId, (st'.getTcb? tid).map (·.schedContextBinding)
+      = (st.getTcb? tid).map (·.schedContextBinding))
+    (hSc : ∀ scId : SeLe4n.SchedContextId, (st'.getSchedContext? scId).map (·.boundThread)
+      = (st.getSchedContext? scId).map (·.boundThread))
+    (h : schedContextBindingConsistent st) :
+    schedContextBindingConsistent st' := by
+  constructor
+  · intro tid tcb' hObj' scId hBound'
+    -- The thread's binding is the pre-state's, so Z4-O's forward clause applies
+    -- there and its witness is transported back by the context projection.
+    have hT : (st.getTcb? tid).map (·.schedContextBinding) = some (.bound scId) := by
+      rw [← hTcb tid, (SystemState.getTcb?_eq_some_iff st' tid tcb').mpr hObj']
+      simp [hBound']
+    cases hTPre : st.getTcb? tid with
+    | none => rw [hTPre] at hT; exact absurd hT (by simp)
+    | some tcb =>
+      rw [hTPre] at hT
+      have hBound : tcb.schedContextBinding = .bound scId := by
+        simpa using hT
+      obtain ⟨sc, hScObj, hBT⟩ := h.1 tid tcb
+        ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hTPre) scId hBound
+      have hS : (st'.getSchedContext? scId).map (·.boundThread) = some (some tid) := by
+        rw [hSc scId, (SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj]
+        simp [hBT]
+      cases hSPost : st'.getSchedContext? scId with
+      | none => rw [hSPost] at hS; exact absurd hS (by simp)
+      | some sc' =>
+        rw [hSPost] at hS
+        exact ⟨sc', (SystemState.getSchedContext?_eq_some_iff st' scId sc').mp hSPost,
+          by simpa using hS⟩
+  · intro scId sc' hObj' tid hBound'
+    have hS : (st.getSchedContext? scId).map (·.boundThread) = some (some tid) := by
+      rw [← hSc scId, (SystemState.getSchedContext?_eq_some_iff st' scId sc').mpr hObj']
+      simp [hBound']
+    cases hSPre : st.getSchedContext? scId with
+    | none => rw [hSPre] at hS; exact absurd hS (by simp)
+    | some sc =>
+      rw [hSPre] at hS
+      obtain ⟨tcb, hTObj, hBind⟩ := h.2 scId sc
+        ((SystemState.getSchedContext?_eq_some_iff st scId sc).mp hSPre) tid (by simpa using hS)
+      have hT : (st'.getTcb? tid).map (·.schedContextBinding)
+          = some tcb.schedContextBinding := by
+        rw [hTcb tid, (SystemState.getTcb?_eq_some_iff st tid tcb).mpr hTObj]
+        simp
+      cases hTPost : st'.getTcb? tid with
+      | none => rw [hTPost] at hT; exact absurd hT (by simp)
+      | some tcb' =>
+        rw [hTPost] at hT
+        have hEq : tcb'.schedContextBinding = tcb.schedContextBinding := by simpa using hT
+        refine ⟨tcb', (SystemState.getTcb?_eq_some_iff st' tid tcb').mp hTPost, ?_⟩
+        rw [hEq]; exact hBind
+
+/-- **`v0.35.183`**: a step that writes no object at all carries Z4-O. -/
+theorem schedContextBindingConsistent_of_objects_eq {st st' : SystemState}
+    (hObj : st'.objects = st.objects) (h : schedContextBindingConsistent st) :
+    schedContextBindingConsistent st' :=
+  schedContextBindingConsistent_transfer
+    (fun tid => by rw [SystemState.getTcb?_frame hObj tid])
+    (fun scId => by rw [SystemState.getSchedContext?_frame hObj scId]) h
+
 /-- Z4-O: Default state has no objects — vacuously true. -/
 theorem default_schedContextBindingConsistent :
     schedContextBindingConsistent (default : SystemState) := by

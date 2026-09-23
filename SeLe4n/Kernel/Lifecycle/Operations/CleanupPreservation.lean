@@ -361,6 +361,58 @@ theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
       · exact hAcc)
 
 
+/-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
+links rewritten.
+
+Stated as an existential over the three link fields rather than as a list of the
+fields that *agree*, which is the derive-don't-enumerate difference: a field added
+to `TCB` is covered by construction, where an agreement list would silently stop
+mentioning it.
+
+**`v0.35.183` (register row 63)**: declared here rather than beside the *backward*
+reading that first consumed it, because the **forward** reading below now concludes
+it too.  One relation, both directions: the forward one used to conclude
+`cpuAffinity` agreement alone, which is this project's *a field is not the
+relation* — the splice's own patches are link rewrites, so every non-link field is
+framed by the same fact, and fixing one field meant the next conjunct to need one
+(here `schedContextBinding`) had to re-derive the whole case analysis. -/
+def tcbQueueLinkRewrite (a b : TCB) : Prop :=
+  ∃ qp qpp qn, a = { b with queuePrev := qp, queuePPrev := qpp, queueNext := qn }
+
+theorem tcbQueueLinkRewrite.refl (a : TCB) : tcbQueueLinkRewrite a a :=
+  ⟨a.queuePrev, a.queuePPrev, a.queueNext, rfl⟩
+
+theorem tcbQueueLinkRewrite.trans {a b c : TCB}
+    (h1 : tcbQueueLinkRewrite a b) (h2 : tcbQueueLinkRewrite b c) :
+    tcbQueueLinkRewrite a c := by
+  obtain ⟨p1, pp1, n1, rfl⟩ := h1
+  obtain ⟨p2, pp2, n2, rfl⟩ := h2
+  exact ⟨p1, pp1, n1, rfl⟩
+
+/-- **`v0.35.183`**: a link rewrite agrees on every field but the three links.
+
+The projection form the `Option.map` frames consume, stated once over an
+arbitrary `f` rather than once per field: a link rewrite is a record update of
+exactly those three, so `f` is fixed by `rfl` after the existential is opened.
+The two link-writing updates the splice performs are its instances
+(`tcbQueueLinkRewrite_queueUnlinkPredecessor` / `_Successor` below). -/
+theorem tcbQueueLinkRewrite.field {α : Type} (f : TCB → α) {a b : TCB}
+    (h : tcbQueueLinkRewrite a b) (hf : ∀ (t : TCB) qp qpp qn,
+      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t) :
+    f a = f b := by
+  obtain ⟨qp, qpp, qn, rfl⟩ := h
+  exact hf b qp qpp qn
+
+/-- **`v0.35.183`**: the predecessor patch is a link rewrite. -/
+theorem tcbQueueLinkRewrite_queueUnlinkPredecessor (removed p : TCB) :
+    tcbQueueLinkRewrite (queueUnlinkPredecessor removed p) p :=
+  ⟨p.queuePrev, p.queuePPrev, removed.queueNext, rfl⟩
+
+/-- **`v0.35.183`**: and so is the successor patch. -/
+theorem tcbQueueLinkRewrite_queueUnlinkSuccessor (removed n : TCB) :
+    tcbQueueLinkRewrite (queueUnlinkSuccessor removed n) n :=
+  ⟨removed.queuePrev, removed.queuePPrev, n.queueNext, rfl⟩
+
 -- ============================================================================
 -- WS-SM SM6.E: per-key lookup characterisation of the cleanup sweeps
 -- ============================================================================
@@ -373,23 +425,33 @@ theorem removeFromAllNotificationWaitLists_preserves_objects_invExt
 -- key's stored value, so an endpoint-valued visit can never alias a
 -- TCB-holding key.
 
-/-- WS-SM SM6.E: re-inserting an affinity-preserving rewrite `q` of the TCB
-`p` read at key `nid` preserves TCB-kind and `cpuAffinity` at every key that
-held a TCB before the insert — the single-step frame instantiated by both
+/-- WS-SM SM6.E: re-inserting a rewrite `q` of the TCB `p` read at key `nid`
+preserves TCB-kind at every key that held a TCB before the insert, and carries
+whatever relation `q` bears to `p` — the single-step frame instantiated by both
 `spliceOutMidQueueNode` link patches and by every conditional TCB rewrite in
-the suspend teardown (`restoreToReady`, `consumeReplyLink`). -/
-theorem insert_tcb_rewrite_lookup
+the suspend teardown (`restoreToReady`, `consumeReplyLink`).
+
+**`v0.35.183` (register row 63): the relation is a PARAMETER.**  It was fixed at
+`cpuAffinity` agreement, which is one consequence of what the callers actually
+know: the splice's patches are *link rewrites* (`tcbQueueLinkRewrite`), which fix
+every non-link field at once, while the suspend teardown's rewrites clear IPC
+fields and genuinely agree on the affinity alone.  Two different relations, one
+question — so the relation is the argument, and `motive` need only be reflexive,
+because at every key the insert does not touch the pre-state value is returned
+unchanged. -/
+theorem insert_tcb_rewrite_lookup {motive : TCB → TCB → Prop}
     (objs : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject)
     (nid k : SeLe4n.ObjId) (p q t0 : TCB)
+    (hRefl : ∀ t : TCB, motive t t)
     (hInv : objs.invExt)
     (hRead : objs[nid]? = some (.tcb p))
-    (hAff : q.cpuAffinity = p.cpuAffinity)
+    (hRel : motive q p)
     (hPre : objs[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (objs.insert nid (.tcb q))[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ motive t' t0 := by
   by_cases hK : nid = k
   · -- The patched neighbour *is* `k`: the read value is `t0` (lookup
-    -- determinism), and the rewrite preserves `cpuAffinity` by hypothesis.
+    -- determinism), and the rewrite bears `motive` to it by hypothesis.
     subst hK
     have hpt : p = t0 := by
       rw [hPre] at hRead
@@ -397,25 +459,33 @@ theorem insert_tcb_rewrite_lookup
       injection h with h
       exact h.symm
     subst hpt
-    exact ⟨q, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hAff⟩
-  · refine ⟨t0, ?_, rfl⟩
+    exact ⟨q, SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_self _ _ _ hInv, hRel⟩
+  · refine ⟨t0, ?_, hRefl t0⟩
     show (objs.insert nid (.tcb q)).get? k = some (.tcb t0)
     rw [SeLe4n.Kernel.RobinHood.RHTable.getElem?_insert_ne _ _ _ _
       (fun hbeq => hK (eq_of_beq hbeq)) hInv]
     exact hPre
 
-/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves TCB-kind and `cpuAffinity`
-at every key — the link patches write `.tcb` values that differ from the
-values they read only in intrusive queue-link fields. -/
+/-- WS-SM SM6.E: `spliceOutMidQueueNode` preserves TCB-kind at every key, and
+what it leaves there is the value it read with **only its three intrusive queue
+links** rewritten — which is what the link patches write.
+
+**`v0.35.183` (register row 63)**: the conclusion was `cpuAffinity` agreement,
+one consequence of the relation the branches actually establish.  The backward
+reading (`spliceOutMidQueueNode_tcb_backward`) had concluded `tcbQueueLinkRewrite`
+since WS-RR RR7.22; the forward one had not, so a frame over any *other* non-link
+field — `schedContextBinding`, which `schedContextBindingConsistent` reads — could
+not be stated without re-running this whole case analysis.  One relation, both
+directions; `tcbQueueLinkRewrite.field` projects whichever field a frame needs. -/
 theorem spliceOutMidQueueNode_tcb_lookup
     (st : SystemState) (tid : SeLe4n.ThreadId) (k : SeLe4n.ObjId) (t0 : TCB)
     (hInv : st.objects.invExt)
     (hPre : st.objects[k]? = some (.tcb t0)) :
     ∃ t' : TCB, (spliceOutMidQueueNode st tid).objects[k]? = some (.tcb t')
-      ∧ t'.cpuAffinity = t0.cpuAffinity := by
+      ∧ tcbQueueLinkRewrite t' t0 := by
   simp only [spliceOutMidQueueNode]
   cases lookupTcb st tid with
-  | none => exact ⟨t0, hPre, rfl⟩
+  | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
   | some tcb =>
     simp only []
     cases tcb.queuePrev with
@@ -423,17 +493,18 @@ theorem spliceOutMidQueueNode_tcb_lookup
       -- No predecessor patch: the successor patch acts on `st.objects`.
       simp only []
       cases tcb.queueNext with
-      | none => exact ⟨t0, hPre, rfl⟩
+      | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
       | some nextTid =>
         simp only []
         cases hL2 : st.objects[nextTid.toObjId]? with
-        | none => exact ⟨t0, hPre, rfl⟩
+        | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
         | some obj =>
           cases obj
           case tcb nextTcb =>
             exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
-              _ t0 hInv hL2 rfl hPre
-          all_goals exact ⟨t0, hPre, rfl⟩
+              (queueUnlinkSuccessor tcb nextTcb) t0 tcbQueueLinkRewrite.refl hInv hL2
+              (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hPre
+          all_goals exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
     | some prevTid =>
       simp only []
       cases hL : st.objects[prevTid.toObjId]? with
@@ -441,17 +512,18 @@ theorem spliceOutMidQueueNode_tcb_lookup
         -- Absent predecessor entry: successor patch over `st.objects`.
         simp only []
         cases tcb.queueNext with
-        | none => exact ⟨t0, hPre, rfl⟩
+        | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
         | some nextTid =>
           simp only []
           cases hL2 : st.objects[nextTid.toObjId]? with
-          | none => exact ⟨t0, hPre, rfl⟩
+          | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
           | some obj =>
             cases obj
             case tcb nextTcb =>
               exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
-                _ t0 hInv hL2 rfl hPre
-            all_goals exact ⟨t0, hPre, rfl⟩
+                (queueUnlinkSuccessor tcb nextTcb) t0 tcbQueueLinkRewrite.refl hInv hL2
+                (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hPre
+            all_goals exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
       | some obj =>
         cases obj
         case tcb prevTcb =>
@@ -460,44 +532,48 @@ theorem spliceOutMidQueueNode_tcb_lookup
           cases tcb.queueNext with
           | none =>
             exact insert_tcb_rewrite_lookup st.objects prevTid.toObjId k prevTcb
-              _ t0 hInv hL rfl hPre
+              (queueUnlinkPredecessor tcb prevTcb) t0 tcbQueueLinkRewrite.refl hInv hL
+              (tcbQueueLinkRewrite_queueUnlinkPredecessor tcb prevTcb) hPre
           | some nextTid =>
             simp only []
             have hInv1 : (st.objects.insert prevTid.toObjId
                 (.tcb (queueUnlinkPredecessor tcb prevTcb))).invExt :=
               SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _ hInv
-            obtain ⟨t₁, hL1, hAff1⟩ :=
+            obtain ⟨t₁, hL1, hRw1⟩ :=
               insert_tcb_rewrite_lookup st.objects prevTid.toObjId k prevTcb
-                (queueUnlinkPredecessor tcb prevTcb) t0 hInv hL rfl hPre
+                (queueUnlinkPredecessor tcb prevTcb) t0 tcbQueueLinkRewrite.refl hInv hL
+                (tcbQueueLinkRewrite_queueUnlinkPredecessor tcb prevTcb) hPre
             cases hL2 : (st.objects.insert prevTid.toObjId
                 (.tcb (queueUnlinkPredecessor tcb prevTcb)))[nextTid.toObjId]? with
-            | none => exact ⟨t₁, hL1, hAff1⟩
+            | none => exact ⟨t₁, hL1, hRw1⟩
             | some obj2 =>
               cases obj2
               case tcb nextTcb =>
-                obtain ⟨t₂, hL2', hAff2⟩ :=
+                obtain ⟨t₂, hL2', hRw2⟩ :=
                   insert_tcb_rewrite_lookup
                     (st.objects.insert prevTid.toObjId
                       (.tcb (queueUnlinkPredecessor tcb prevTcb)))
                     nextTid.toObjId k nextTcb
-                    (queueUnlinkSuccessor tcb nextTcb) t₁ hInv1 hL2 rfl hL1
-                exact ⟨t₂, hL2', hAff2.trans hAff1⟩
-              all_goals exact ⟨t₁, hL1, hAff1⟩
+                    (queueUnlinkSuccessor tcb nextTcb) t₁ tcbQueueLinkRewrite.refl hInv1 hL2
+                    (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hL1
+                exact ⟨t₂, hL2', hRw2.trans hRw1⟩
+              all_goals exact ⟨t₁, hL1, hRw1⟩
         all_goals
           -- Non-TCB predecessor entry: successor patch over `st.objects`.
           (simp only []
            cases tcb.queueNext with
-           | none => exact ⟨t0, hPre, rfl⟩
+           | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
            | some nextTid =>
              simp only []
              cases hL2 : st.objects[nextTid.toObjId]? with
-             | none => exact ⟨t0, hPre, rfl⟩
+             | none => exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩
              | some obj2 =>
                cases obj2
                case tcb nextTcb =>
                  exact insert_tcb_rewrite_lookup st.objects nextTid.toObjId k nextTcb
-                   _ t0 hInv hL2 rfl hPre
-               all_goals exact ⟨t0, hPre, rfl⟩)
+                   (queueUnlinkSuccessor tcb nextTcb) t0 tcbQueueLinkRewrite.refl hInv hL2
+                   (tcbQueueLinkRewrite_queueUnlinkSuccessor tcb nextTcb) hPre
+               all_goals exact ⟨t0, hPre, tcbQueueLinkRewrite.refl t0⟩)
 
 /-- WS-SM SM6.E: the endpoint sweep preserves TCB-kind and `cpuAffinity` at
 every key (and `objects.invExt`) — every fold step rewrites an
@@ -512,7 +588,9 @@ theorem removeFromAllEndpointQueues_tcb_lookup
     ∧ ∃ t' : TCB,
       (removeFromAllEndpointQueues st tid).objects[k]? = some (.tcb t')
       ∧ t'.cpuAffinity = t0.cpuAffinity := by
-  obtain ⟨t₁, hL1, hAff1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
+  obtain ⟨t₁, hL1, hRw1⟩ := spliceOutMidQueueNode_tcb_lookup st tid k t0 hInv hPre
+  have hAff1 : t₁.cpuAffinity = t0.cpuAffinity :=
+    hRw1.field (·.cpuAffinity) (fun _ _ _ _ => rfl)
   have hInvS := spliceOutMidQueueNode_preserves_objects_invExt st tid hInv
   unfold removeFromAllEndpointQueues
   exact SeLe4n.Kernel.RobinHood.RHTable.fold_preserves_of_lookup
@@ -2305,26 +2383,6 @@ section EndpointSweep
 
 open SeLe4n.Kernel.RobinHood
 
-/-- **WS-RR RR7.22 (residual)**: `a` is `b` with (only) its three intrusive-queue
-links rewritten.
-
-Stated as an existential over the three link fields rather than as a list of the
-fields that *agree*, which is the derive-don't-enumerate difference: a field added
-to `TCB` is covered by construction, where an agreement list would silently stop
-mentioning it. -/
-def tcbQueueLinkRewrite (a b : TCB) : Prop :=
-  ∃ qp qpp qn, a = { b with queuePrev := qp, queuePPrev := qpp, queueNext := qn }
-
-theorem tcbQueueLinkRewrite.refl (a : TCB) : tcbQueueLinkRewrite a a :=
-  ⟨a.queuePrev, a.queuePPrev, a.queueNext, rfl⟩
-
-theorem tcbQueueLinkRewrite.trans {a b c : TCB}
-    (h1 : tcbQueueLinkRewrite a b) (h2 : tcbQueueLinkRewrite b c) :
-    tcbQueueLinkRewrite a c := by
-  obtain ⟨p1, pp1, n1, rfl⟩ := h1
-  obtain ⟨p2, pp2, n2, rfl⟩ := h2
-  exact ⟨p1, pp1, n1, rfl⟩
-
 /-- **WS-RR RR7.22 (residual)**: one neighbour patch of the mid-queue splice,
 named — the guarded "rewrite this thread's links if it exists" step that
 `spliceOutMidQueueNode` performs twice. -/
@@ -2555,17 +2613,40 @@ It lives here, beside the two readings its proof composes, rather than in the
 cancellation bundle that first needed it (WS-RR RR8.11 wrote it `private` there,
 downstream of both the destroy path and the retype wrapper — so the retype's own
 reservation theorems could not be stated at all until `v0.35.166` moved it). -/
-theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
-    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
-    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
-      = (st.getTcb? x).map (·.cpuAffinity) := by
-  refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
-  · obtain ⟨t', hL', hAff'⟩ := spliceOutMidQueueNode_tcb_lookup st tid x.toObjId t0 hInv
+theorem spliceOutMidQueueNode_tcbField_frame {α : Type} (f : TCB → α)
+    (hf : ∀ (t : TCB) qp qpp qn,
+      f { t with queuePrev := qp, queuePPrev := qpp, queueNext := qn } = f t)
+    (st : SystemState) (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt)
+    (x : SeLe4n.ThreadId) :
+    ((spliceOutMidQueueNode st tid).getTcb? x).map f = (st.getTcb? x).map f := by
+  refine SystemState.map_tcbField_eq_of_refines f (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  · obtain ⟨t', hL', hRw'⟩ := spliceOutMidQueueNode_tcb_lookup st tid x.toObjId t0 hInv
       ((SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
-    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hAff'⟩
+    exact ⟨t', (SystemState.getTcb?_eq_some_iff _ x t').mpr hL', hRw'.field f hf⟩
   · obtain ⟨t0, hL0, _⟩ := spliceOutMidQueueNode_tcb_backward st tid x.toObjId t' hInv
       ((SystemState.getTcb?_eq_some_iff _ x t').mp hT')
     exact ⟨t0, (SystemState.getTcb?_eq_some_iff st x t0).mpr hL0⟩
+
+/-- The `cpuAffinity` instance, which `determineTargetCore_congr` consumes. -/
+theorem spliceOutMidQueueNode_affinity_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.cpuAffinity)
+      = (st.getTcb? x).map (·.cpuAffinity) :=
+  spliceOutMidQueueNode_tcbField_frame (·.cpuAffinity) (fun _ _ _ _ => rfl) st tid hInv x
+
+/-- **`v0.35.183` (register row 63)**: the `schedContextBinding` instance, which
+`schedContextBindingConsistent_transfer` consumes.
+
+The splice writes link fields, so a thread's binding crosses it untouched — and
+that is the *whole* of what the destroy path's reference sweep needs from this
+step, since the sweep's other three phases write endpoints, notifications and
+`SchedContext.donationOrigin`. -/
+theorem spliceOutMidQueueNode_binding_frame (st : SystemState)
+    (tid : SeLe4n.ThreadId) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId) :
+    ((spliceOutMidQueueNode st tid).getTcb? x).map (·.schedContextBinding)
+      = (st.getTcb? x).map (·.schedContextBinding) :=
+  spliceOutMidQueueNode_tcbField_frame (·.schedContextBinding) (fun _ _ _ _ => rfl)
+    st tid hInv x
 
 -- The precise per-key readings of the two neighbour patches: what the splice
 -- installs at each key it touches, and what it leaves at every key it does not.

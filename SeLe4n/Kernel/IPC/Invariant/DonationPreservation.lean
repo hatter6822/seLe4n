@@ -3839,4 +3839,150 @@ theorem donationAccountingPreserved_atCallDepthTwo
       hNe none hPop
   exact ⟨tcb, hPre, by simpa [donationReturnBinding] using hPost⟩
 
+/-- **`v0.35.183` (WS-RR RR8.12, register row 63): the donation pop preserves
+Z4-O.**
+
+The pop rewrites *three* of the invariant's subjects at once — the holder's
+binding is cleared, the recipient's is set to `donationReturnBinding scId
+newOwner?`, and the context's `boundThread` moves from the holder to the
+recipient — so unlike every frame-shaped step it has to be argued, and the
+argument is that the pop moves **one whole reciprocal pair** from one thread to
+another.
+
+Four facts do it, and three come from the operation rather than from the
+invariant: the context's post-`boundThread` is the recipient
+(`returnDonatedSchedContext_post_boundThread`), every other context is untouched
+(`_getSchedContext?_ne`), every thread but the two is untouched and the two read
+exactly as above (`_getTcb?_char`), and the recipient held **no** binding before
+(`_ok_recipient_unbound`, which is WS-HP HP4.6's guard read backwards).  Z4-O
+itself is needed only to rule out a *third* thread having been bound to this
+context, which its backward clause does.
+
+`hServerBinding` is the caller's own arm condition — `cancelDonationArmOnCore`'s
+`.donated` branch has it from the match it dispatches on — and it is what makes
+the holder's pre-binding known; without it nothing says the pop's `serverTid` is
+the thread the context is bound to.
+
+Stated here rather than in the destroy path's own module because the subject is
+the pop, whose entire preservation family lives in this file; the destroy path is
+its first asker but the reply and cancellation spines run the same step. -/
+theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (originalOwner : SeLe4n.ThreadId) (newOwner? : Option SeLe4n.ThreadId)
+    (serverTcb : TCB)
+    (hObjInv : st.objects.invExt)
+    (hServer : st.getTcb? serverTid = some serverTcb)
+    (hServerBinding : serverTcb.schedContextBinding = .donated scId originalOwner)
+    (hCons : schedContextBindingConsistent st)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    schedContextBindingConsistent st' := by
+  -- What the return's binding is, in the two forms the invariant reads it in.
+  have hRetNames : ∀ s : SeLe4n.SchedContextId,
+      donationReturnBinding scId newOwner? = .bound s → s = scId := by
+    intro s hs
+    cases newOwner? with
+    | none =>
+      simp only [donationReturnBinding] at hs
+      injection hs with hs
+      exact hs.symm
+    | some outer => exact absurd hs (by simp [donationReturnBinding])
+  have hRetCites : donationReturnBinding scId newOwner? = .bound scId ∨
+      ∃ owner, donationReturnBinding scId newOwner? = .donated scId owner := by
+    cases newOwner? with
+    | none => exact Or.inl rfl
+    | some outer => exact Or.inr ⟨outer, rfl⟩
+  -- The recipient and the holder are different threads: the pop refuses a
+  -- recipient that already holds a binding, and the holder holds one.
+  have hNotResOwn : ¬ originalOwner.isReserved :=
+    returnDonatedSchedContext_ok_recipient_not_reserved st st' serverTid scId originalOwner
+      newOwner? h
+  have hNe : originalOwner ≠ serverTid := by
+    intro hEq
+    have hLk : lookupTcb st originalOwner = some serverTcb := by
+      unfold lookupTcb
+      rw [if_neg hNotResOwn, hEq]
+      exact hServer
+    have hU := returnDonatedSchedContext_ok_recipient_unbound st st' serverTid scId
+      originalOwner newOwner? h serverTcb hLk
+    rw [hServerBinding] at hU
+    exact absurd hU (by simp)
+  obtain ⟨⟨ownerTcb, hOwnerPre, hOwnerPost⟩, ⟨srvTcb, hSrvPre, hSrvPost⟩, hOther⟩ :=
+    returnDonatedSchedContext_getTcb?_char st st' serverTid scId originalOwner hObjInv hNe
+      newOwner? h
+  obtain ⟨scPost, hScPost, hScPostBound⟩ :=
+    returnDonatedSchedContext_post_boundThread st st' serverTid scId originalOwner hObjInv
+      newOwner? h
+  obtain ⟨scPre, hScPre, hScPreBound⟩ :=
+    returnDonatedSchedContext_ok_implies_sc_bound st st' serverTid scId originalOwner
+      newOwner? h
+  have hScNe : ∀ s : SeLe4n.SchedContextId, s ≠ scId →
+      st'.getSchedContext? s = st.getSchedContext? s := fun s hs =>
+    returnDonatedSchedContext_getSchedContext?_ne st st' serverTid scId s originalOwner hs
+      hObjInv newOwner? h
+  have hOwnerUnbound : ownerTcb.schedContextBinding = .unbound :=
+    returnDonatedSchedContext_ok_recipient_unbound st st' serverTid scId originalOwner
+      newOwner? h ownerTcb (by unfold lookupTcb; rw [if_neg hNotResOwn]; exact hOwnerPre)
+  -- The holder's pre-state record is the one the caller handed the arm.
+  have hSrvSame : srvTcb = serverTcb := by
+    rw [hServer] at hSrvPre; exact (Option.some.inj hSrvPre).symm
+  constructor
+  · intro x tcbX hObjX s hBoundX
+    have hX : st'.getTcb? x = some tcbX := (SystemState.getTcb?_eq_some_iff st' x tcbX).mpr hObjX
+    by_cases hXO : x = originalOwner
+    · -- The recipient: its binding is the return's, which names `scId`, and the
+      -- context is bound to it.
+      rw [hXO, hOwnerPost] at hX
+      rw [← Option.some.inj hX] at hBoundX
+      have hSId : s = scId := hRetNames s hBoundX
+      rw [hSId]
+      exact ⟨scPost, (SystemState.getSchedContext?_eq_some_iff st' scId scPost).mp hScPost,
+        hXO ▸ hScPostBound⟩
+    · by_cases hXS : x = serverTid
+      · rw [hXS, hSrvPost] at hX
+        rw [← Option.some.inj hX] at hBoundX
+        exact absurd hBoundX (by simp)
+      · rw [hOther x hXO hXS] at hX
+        obtain ⟨sc0, hSc0Raw, hBound0⟩ := hCons.1 x tcbX
+          ((SystemState.getTcb?_eq_some_iff st x tcbX).mp hX) s hBoundX
+        have hSc0 : st.getSchedContext? s = some sc0 :=
+          (SystemState.getSchedContext?_eq_some_iff st s sc0).mpr hSc0Raw
+        by_cases hSS : s = scId
+        · -- `s` is the popped context, which was bound to the holder.
+          rw [hSS, hScPre] at hSc0
+          rw [← Option.some.inj hSc0, hScPreBound] at hBound0
+          exact absurd (Option.some.inj hBound0).symm hXS
+        · refine ⟨sc0, (SystemState.getSchedContext?_eq_some_iff st' s sc0).mp ?_, hBound0⟩
+          rw [hScNe s hSS]; exact hSc0
+  · intro s scX hObjS y hBoundY
+    have hS : st'.getSchedContext? s = some scX :=
+      (SystemState.getSchedContext?_eq_some_iff st' s scX).mpr hObjS
+    by_cases hSS : s = scId
+    · -- The popped context: it is bound to the recipient, whose binding names it.
+      rw [hSS, hScPost] at hS
+      rw [← Option.some.inj hS, hScPostBound] at hBoundY
+      have hY : y = originalOwner := (Option.some.inj hBoundY).symm
+      refine ⟨{ ownerTcb with schedContextBinding := donationReturnBinding scId newOwner? },
+        (SystemState.getTcb?_eq_some_iff st' y _).mp (by rw [hY]; exact hOwnerPost), ?_⟩
+      rw [hSS]
+      exact hRetCites
+    · rw [hScNe s hSS] at hS
+      obtain ⟨tcb0, hT0, hBind0⟩ := hCons.2 s scX
+        ((SystemState.getSchedContext?_eq_some_iff st s scX).mp hS) y hBoundY
+      have hT0' : st.getTcb? y = some tcb0 :=
+        (SystemState.getTcb?_eq_some_iff st y tcb0).mpr hT0
+      by_cases hYO : y = originalOwner
+      · -- The recipient held no binding, so no context was bound to it.
+        rw [hYO, hOwnerPre] at hT0'
+        rw [← Option.some.inj hT0', hOwnerUnbound] at hBind0
+        rcases hBind0 with hc | ⟨_, hc⟩ <;> exact absurd hc (by simp)
+      · by_cases hYS : y = serverTid
+        · -- The holder's binding names the popped context, not `s`.
+          rw [hYS, hSrvPre] at hT0'
+          rw [← Option.some.inj hT0', hSrvSame, hServerBinding] at hBind0
+          rcases hBind0 with hc | ⟨owner, hc⟩
+          · exact absurd hc (by simp)
+          · injection hc with hSc _; exact absurd hSc.symm hSS
+        · refine ⟨tcb0, (SystemState.getTcb?_eq_some_iff st' y tcb0).mp ?_, hBind0⟩
+          rw [hOther y hYO hYS]; exact hT0'
+
 end SeLe4n.Kernel

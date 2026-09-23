@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.182` (`lakefile.toml`) |
+| **Package version** | `0.35.183` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 408,352 across 338 Lean files |
+| **Production LoC** | 409,202 across 338 Lean files |
 | **Test LoC** | 83,391 across 70 Lean test suites |
-| **Proved declarations** | 13,510 theorem/lemma declarations (zero sorry/axiom) |
+| **Proved declarations** | 13,536 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4626,12 +4626,31 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp` and
   `lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp` over
   all six object kinds, with **no** detachment pack, so it covers exactly the
-  states on which the runtime arms do the work.  What register row 63 still carries
-  is `schedContextBindingConsistent` across either program — an effort fact,
-  measured: no `preserves_schedContextBindingConsistent` theorem exists anywhere in
-  the tree — and the retype *composite*'s affinity theorem, whose `storeObject` at
-  `target` preserves the invariant exactly when no surviving context is bound to the
-  destroyed thread, which is a consequence of that reciprocity.
+  states on which the runtime arms do the work.
+
+  **And Z4-O crosses that cleanup too, with the SchedContext arm refuted rather
+  than proved** (`v0.35.183`, register row 63's remaining half).  What the row then
+  carried was an effort fact — no `preserves_schedContextBindingConsistent` theorem
+  existed anywhere in the tree — and it is built: `schedContextBindingConsistent`
+  reads exactly two projections, so `schedContextBindingConsistent_transfer` beside
+  the predicate carries it whole given both frames, `spliceOutMidQueueNode`'s field
+  frame has one owner over an arbitrary projection with the affinity and binding
+  readings its instances, and eight preservation theorems run from
+  `returnDonatedSchedContext` — the pop, which moves one whole reciprocal pair — up
+  to `lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent`.  The
+  `.schedContext` arm is excluded by `hNotSc` and **refuted**
+  (`releaseSchedContextBinding_refutes_schedContextBindingConsistent`): the arm
+  deliberately leaves the destroyed context's `boundThread` naming the thread it
+  has just unbound, for the retype's own `storeObject` at that key to replace, so
+  Z4-O's backward clause is false on the arm's post-state and repaired one step
+  later — and `retypeTargetDetached`'s `notSc` makes the hypothesis free at the live
+  call site.  What register row 63 still carries is the retype *composite*'s two
+  theorems, and the model-level hole measuring their hypotheses found: neither
+  `KernelObject.wellFormed` nor `retypeReplacementFresh` constrains a replacement
+  SchedContext's `boundThread`, so the admissible replacement space contains a
+  context claiming a thread that does not name it back — the class SM6.D closed for
+  `Reply` one field over, unreachable on the live path since `objectOfKernelType`
+  installs `SchedContext.empty`.
 
   **And the three TCB-control arms declare theirs, in a module of their own**
   (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,

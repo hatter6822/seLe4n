@@ -3171,26 +3171,33 @@ theorem getSchedContext?_eq_of_kind_iff {sa sb : SystemState}
     rw [(getSchedContext?_eq_some_iff sb scId sc).mpr
       ((h sc).mpr ((getSchedContext?_eq_some_iff sa scId sc).mp hA))]
 
-/-- **`v0.35.166`: the shape every `cpuAffinity` frame in this tree is proved in.**
+/-- **`v0.35.166`: the shape every TCB-field frame in this tree is proved in.**
 
-A step whose TCB readings refine forward with the affinity preserved, and whose
-post-state TCBs all have pre-state TCBs at the same key, frames
-`determineTargetCore` at that key — `determineTargetCore_congr` consumes exactly
-the `Option.map (·.cpuAffinity)` equality this produces.  The `none` case of the
-backward direction is the statement that the step *materialises* no thread where
-none was, which is why it is needed at all: a forward refinement alone leaves the
-post-state free to invent one.
+A step whose TCB readings refine forward with `f` preserved, and whose post-state
+TCBs all have pre-state TCBs at the same key, frames `f` at that key.  The `none`
+case of the backward direction is the statement that the step *materialises* no
+thread where none was, which is why it is needed at all: a forward refinement
+alone leaves the post-state free to invent one.
 
 Beside `getTcb?_eq_some_iff` for the reason the bridge above is beside its own
 accessor's: it is a fact about `getTcb?` and one TCB field, and it has askers on
 the cancellation path, on the destroy path and in the reservation frames.
 (WS-RR RR8.11 wrote it `private` in `IPC/Invariant/CancellationBundle.lean`;
-moved here at `v0.35.166`.) -/
-theorem map_cpuAffinity_eq_of_refines {sa sb : SystemState} {x : SeLe4n.ThreadId}
+moved here at `v0.35.166`.)
+
+**`v0.35.183` (register row 63): the field is a PARAMETER.**  It was written for
+`cpuAffinity`, whose consumer is `determineTargetCore_congr`, and the bridge has
+nothing to do with which field is read — *a field is not the relation*, and the
+version that fixes one is a bridge the next conjunct cannot use.  Register row 63
+needs exactly this shape for `TCB.schedContextBinding`, which
+`schedContextBindingConsistent_transfer` consumes, so the fix is to take `f`
+rather than to write a second bridge beside this one. -/
+theorem map_tcbField_eq_of_refines {α : Type} (f : TCB → α)
+    {sa sb : SystemState} {x : SeLe4n.ThreadId}
     (hFwd : ∀ t0, sa.getTcb? x = some t0 →
-      ∃ t', sb.getTcb? x = some t' ∧ t'.cpuAffinity = t0.cpuAffinity)
+      ∃ t', sb.getTcb? x = some t' ∧ f t' = f t0)
     (hBwd : ∀ t', sb.getTcb? x = some t' → ∃ t0, sa.getTcb? x = some t0) :
-    (sb.getTcb? x).map (·.cpuAffinity) = (sa.getTcb? x).map (·.cpuAffinity) := by
+    (sb.getTcb? x).map f = (sa.getTcb? x).map f := by
   cases hA : sa.getTcb? x with
   | none =>
     cases hB : sb.getTcb? x with
@@ -3200,9 +3207,9 @@ theorem map_cpuAffinity_eq_of_refines {sa sb : SystemState} {x : SeLe4n.ThreadId
       rw [hA] at h0
       exact absurd h0 (by simp)
   | some t0 =>
-    obtain ⟨t', hB, hAff⟩ := hFwd t0 hA
+    obtain ⟨t', hB, hField⟩ := hFwd t0 hA
     rw [hB]
-    simp [hAff]
+    simp [hField]
 
 /-- WS-SM SM6.D: link a Reply object to the caller about to block on it
 (sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
@@ -5165,6 +5172,28 @@ theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
     st.updateTcb tid f = st := by
   unfold updateTcb
   rw [getTcbWitnessed?_eq_none h]
+
+/-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
+table and nothing else, so two states that agree on it agree after the update.
+
+The bridge a *composite* needs when its TCB write is not the outermost one: an
+operation that writes the scheduler between its object writes leaves a state
+whose `objects` field is the earlier one's but whose other fields are not, and
+`rfl` will not see through the dependent `getTcbWitnessed?` match at two
+different states.  Proved through the update's own two equations rather than by
+unfolding it, which is what makes it independent of how the witness is spelled. -/
+theorem updateTcb_objects_congr {A B : SystemState} (hObj : A.objects = B.objects)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (A.updateTcb tid f).objects = (B.updateTcb tid f).objects := by
+  have hGet : A.getTcb? tid = B.getTcb? tid := getTcb?_frame hObj tid
+  cases hA : A.getTcb? tid with
+  | none =>
+    rw [updateTcb_eq_self_of_none hA, updateTcb_eq_self_of_none (hGet ▸ hA)]
+    exact hObj
+  | some t =>
+    rw [updateTcb_eq_of_some hA, updateTcb_eq_of_some (hGet ▸ hA)]
+    simp only []
+    rw [hObj]
 
 /-- `updateTcb` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/

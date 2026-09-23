@@ -6666,6 +6666,24 @@ theorem returnDonatedSchedContext_ok_server_not_reserved
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   exact lookupTcb_some_not_reserved s3 serverTid serverTcb hL2
 
+/-- **`v0.35.183`**: and neither is its recipient.
+
+The sibling of the fact above, at the other thread the pop resolves through
+`lookupTcb`: the recipient's binding write reads it (`_ok_storeChain`'s `hL1`),
+and `lookupTcb` refuses a reserved id, so a successful pop's recipient is
+promotable.  Added beside the server's for register row 63, whose Z4-O proof
+needs the recipient's *pre*-state binding and can only reach it through
+`lookupTcb`. -/
+theorem returnDonatedSchedContext_ok_recipient_not_reserved
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    ¬ originalOwner.isReserved := by
+  obtain ⟨_, _, clientTcb, _, _, s2, _, _, _, _, _, _, _, _, hL1, _, _, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  exact lookupTcb_some_not_reserved s2 originalOwner clientTcb hL1
+
 /-- **WS-HP HP4.6 (the refusal): the pop declines a recipient that already holds a
 binding**, committing nothing.  The direction that says the guard fires, stated
 so a mutation which deletes it is visible: without the guard this state reaches

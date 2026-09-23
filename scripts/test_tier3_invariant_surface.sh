@@ -10493,7 +10493,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| schedContext _ =>[^\n]*(\n([ \t][^\
 # retype wrapper.  Each frame is now beside the fact its proof rests on.
 # The two generic accessor bridges, beside the accessors' own unfolding lemmas.
 run_check "INVARIANT" rg -n '^theorem getSchedContext\?_eq_of_kind_iff \{' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem map_cpuAffinity_eq_of_refines \{' SeLe4n/Model/State.lean
+# (`v0.35.183` generalised the affinity bridge to an arbitrary projection, so a
+# second one per field is impossible; the `cpuAffinity` reading is one instance.)
+run_check "INVARIANT" rg -n '^theorem map_tcbField_eq_of_refines \{' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n 'map_cpuAffinity_eq_of_refines' SeLe4n/
 # The splice's affinity frame, beside the two readings its proof composes.
 run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_affinity_frame \(' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # Each sweep's pair, beside that sweep's own `non…` biconditional.
@@ -10546,6 +10549,87 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_pre
 # caller obligation and the runtime arm is what makes a violation safe.
 # Mutation: add a `retypeTargetDetached` hypothesis to the composite.
 run_negative_check "INVARIANT" rg -n 'retypeTargetDetached' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+
+# ---------------------------------------------------------------------------
+# WS-RR RR8.12 (`v0.35.183`, register row 63's remaining half): Z4-O
+# (`schedContextBindingConsistent`) across the destroy path.
+#
+# `v0.35.166` closed the reservation invariant and left the row saying, in terms,
+# that NO `preserves_schedContextBindingConsistent` theorem existed anywhere in
+# the tree -- so every consumer of Z4-O had to take it as a hypothesis rather
+# than inherit it across a step.  This is that family, and the composite it
+# builds to.
+# ---------------------------------------------------------------------------
+
+# The shared transfer lemma, beside the predicate it is about.
+run_check "INVARIANT" rg -n '^theorem schedContextBindingConsistent_transfer \{' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBindingConsistent_of_objects_eq \{' SeLe4n/Kernel/Scheduler/Invariant.lean
+# RELATION: the transfer takes BOTH projections.  Z4-O is bidirectional, so
+# framing the binding alone leaves its backward clause unsupported -- a step that
+# rewrites a `SchedContext.boundThread` and no binding would pass.  Mutation:
+# keep `hTcb` and drop `hSc`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBindingConsistent_transfer[^\n]*(\n([ \t][^\n]*)?)*\(hSc :[^\n]*(\n([ \t][^\n]*)?)*\(h : schedContextBindingConsistent st\)" SeLe4n/Kernel/Scheduler/Invariant.lean'
+
+# The splice's field frame has ONE owner and the two projections are its
+# instances -- the affinity one `determineTargetCore_congr` consumes and the
+# binding one `schedContextBindingConsistent_transfer` does.
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_tcbField_frame \{' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_affinity_frame[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_tcbField_frame" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceOutMidQueueNode_binding_frame[^\n]*(\n([ \t][^\n]*)?)*spliceOutMidQueueNode_tcbField_frame" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# The splice's TCB rewrite relation, which is what makes one owner possible: the
+# splice writes THREE link fields and nothing else, so an arbitrary projection
+# that ignores them crosses it.
+run_check "INVARIANT" rg -n '^def tcbQueueLinkRewrite \(a b : TCB\) : Prop :=' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def tcbQueueLinkRewrite[^\n]*(\n([ \t][^\n]*)?)*queuePrev := qp, queuePPrev := qpp, queueNext := qn" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
+# NEGATIVE: and a whole-record `getTcb?` equality for the splice, or for the
+# sweep built over it, must not be claimed -- both are FALSE, the splice
+# rewriting its neighbours' links by design (WS-OD OD3.9).  Mutation: add a
+# `spliceOutMidQueueNode_getTcb?_eq` or a `cleanupTcbReferences_getTcb?_eq`.
+run_negative_check "INVARIANT" rg -n 'spliceOutMidQueueNode_getTcb\?_eq|cleanupTcbReferences_getTcb\?_eq' SeLe4n/
+
+# §1: the reference sweep's binding frame, and Z4-O across it -- the FIRST
+# `preserves_schedContextBindingConsistent` theorem in the tree.
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_binding_frame \(' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# RELATION: it is the transfer at the sweep's own two frames, not a fresh case
+# analysis of four whole-store folds.  Mutation: keep both frames and inline the
+# predicate's definition instead.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cleanupTcbReferences_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*schedContextBindingConsistent_transfer[^\n]*(\n([ \t][^\n]*)?)*cleanupTcbReferences_boundThread_frame" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+
+# §3: the four donation-side steps, in the order they compose.
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# RELATION: the arm theorem covers all THREE bindings -- `.unbound` the identity,
+# `.bound` the unbind that clears a whole reciprocal pair, `.donated` the pop that
+# moves one -- so the suspend pipeline's G3 inherits it through
+# `suspendDonationArm_eq_cancelDonationArmOnCore`.  Mutation: keep the theorem and
+# drop either non-identity citation.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelBoundDonationOnCore_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*cancelDonatedDonationOnCore_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+
+# The REFUTATION: `releaseSchedContextBinding` does not preserve Z4-O, and that
+# is deliberate -- it clears the bound thread's binding and leaves the destroyed
+# context's `boundThread` naming it for the retype's own `storeObject` to
+# replace.  Consumed by nothing, and anchored for exactly that reason (WS-RR
+# RR8.7's `replyCallerLinkage_refutes_woken_linked_caller` is the precedent): a
+# refutation nothing states is one the next cut re-discovers by looking for a
+# proof that cannot exist.
+run_check "INVARIANT" rg -n '^theorem releaseSchedContextBinding_refutes_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+# NEGATIVE: so the preservation must not be claimed anywhere -- it is FALSE.
+# Mutation: add a `releaseSchedContextBinding_preserves_schedContextBindingConsistent`.
+run_negative_check "INVARIANT" rg -n 'releaseSchedContextBinding_preserves_schedContextBindingConsistent' SeLe4n/
+
+# §3's composite, and the relation the refutation licenses: the `.schedContext`
+# arm is excluded by `hNotSc` rather than proved, and `hNotSc` is free at the
+# live call site (`retypeTargetDetached`'s `notSc`).  Mutation: keep every other
+# token and try to discharge the arm.
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent$' SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hNotSc :[^\n]*(\n([ \t][^\n]*)?)*exact absurd hC \(hNotSc sc\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+# RELATION: and the `.tcb` arm is the two-step lemma, not a re-derivation.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*exact cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved

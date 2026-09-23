@@ -478,7 +478,7 @@ theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull
 -- stated until now.  Each one is public and beside the fact its proof rests on:
 --
 --   * `SystemState.getSchedContext?_eq_of_kind_iff` and
---     `SystemState.map_cpuAffinity_eq_of_refines` → `Model/State.lean`, beside
+--     `SystemState.map_tcbField_eq_of_refines` → `Model/State.lean`, beside
 --     `getSchedContext?_eq_some_iff` / `getTcb?_eq_some_iff`, whose unfolding is
 --     the whole of each proof.  Both are generic bridges between the kind
 --     biconditionals the store's frames produce and the typed readings the
@@ -735,7 +735,7 @@ private theorem endpointQueueRemove_affinity_frame {endpointId : SeLe4n.ObjId}
     (hInv : st.objects.invExt)
     (h : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') (x : SeLe4n.ThreadId) :
     (st'.getTcb? x).map (·.cpuAffinity) = (st.getTcb? x).map (·.cpuAffinity) := by
-  refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_) (fun t' hT' => ?_)
+  refine SystemState.map_tcbField_eq_of_refines (·.cpuAffinity) (fun t0 hT0 => ?_) (fun t' hT' => ?_)
   · obtain ⟨ot', hL', hAff'⟩ := endpointQueueRemove_getTcb_upToAffinity endpointId isReceiveQ
       tid st st' hInv h x.toObjId t0
       (by rw [← RHTable_getElem?_eq_get?]; exact (SystemState.getTcb?_eq_some_iff st x t0).mp hT0)
@@ -861,7 +861,7 @@ private theorem consumeReplyLink_affinity_frame (st : SystemState) (tid : SeLe4n
   | none => rfl
   | some rid =>
     have hStep := SystemState.consumeCallerReply_eq_link st tid rid
-    refine SystemState.map_cpuAffinity_eq_of_refines (fun t0 hT0 => ?_)
+    refine SystemState.map_tcbField_eq_of_refines (·.cpuAffinity) (fun t0 hT0 => ?_)
       (fun t' hT' => consumeCallerReply_getTcb?_backward hInv hStep x t' hT')
     by_cases hk : x.toObjId = tid.toObjId
     · refine ⟨{ t0 with replyObject := none }, ?_, rfl⟩
