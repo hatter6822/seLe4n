@@ -1,3 +1,73 @@
+## v0.35.192 — WS-RR RR8.12 follow-on: four unconsumed transformers, judged both ways
+
+**The census named four and the answer was not one answer.**
+`KernelTransitionReachabilityCensus`'s first run (`v0.35.91`) found four state
+transformers outside the live closure with no theorem, no suite and no gate
+naming them — the tautological-citation shape this project retires for anchors —
+and registered the wire-or-retire judgement they had never had.  This cut makes
+it, and it goes both ways, which is why it was a decision rather than a line in a
+list.
+
+**Two are deleted, because each was superseded by something live.**
+
+* `cleanupActiveDonation` (Z7-E) was an alias for `returnDonatedSchedContext` —
+  definitionally that function at the same five arguments — whose docstring
+  described *a server with a `.donated` binding blocking on receive without
+  replying first*.  That scenario has had a live implementation since AK1-A and
+  now has three: `cleanupPreReceiveDonation` resolves the binding out of the
+  receiver's own TCB rather than taking it as arguments a caller must already
+  know, `…Checked` surfaces the failure a kernel path needs, and `…Migrated`
+  carries the replenishment across cores (`v0.35.161`).
+* `endpointCallWithDonation` (Z7) was the single-core donation-aware Call —
+  `endpointCall`, `applyCallDonation`, `propagatePriorityInheritance` — superseded
+  by `endpointCallCrossCoreDispatch`, the same three steps at their per-core forms
+  and what the live `.call` arm dispatches.  Unlike the single-core reference
+  transitions this tree deliberately keeps, it was tied to its successor by **no**
+  equivalence theorem: a reference earns its place by being pinned to the
+  cross-core form, and this one was an orphan.  `endpointReplyWithDonation` beside
+  it is **not** in that position and is kept — it is the composite PR #895 review
+  round 22 measured against the cross-core dispatch, with
+  `endpointReplyWithDonation_refuses_delegated_replier` pinning the divergence in
+  delegated authority that makes the two non-interchangeable.
+
+**Two are kept, and given witnesses that measure what they add.**
+`timerTickChecked` and `switchDomainChecked` are two of the four X2-I
+API-boundary wrappers, and deleting half of a symmetric family is the asymmetry
+this project's implement-the-improvement rule forbids.  So they gained what their
+two driven siblings have — and the witnesses are **differentials against the
+unchecked form on the same state** rather than smoke tests, because a wrapper no
+state distinguishes from its delegate would have earned deletion instead.  Each
+measures a different half, which the measurement decided rather than the
+docstring:
+
+* `timerTickChecked` **saves the outgoing register context** (the current thread's
+  `registerContext` picks up the executing core's bank) where the bare
+  `timerTick` leaves the TCB's own alone.  Its guard adds nothing on a dangling
+  current thread — the bare tick refuses there with the *same* discriminant — and
+  the witness asserts that too rather than leaving it implicit, since it is why
+  the save had to be what is measured.
+* `switchDomainChecked`'s **guard refuses** a dangling current thread that the
+  bare `switchDomain` proceeds on, its internal `saveOutgoingContext` absorbing
+  the TCB miss silently.  There the guard is what discriminates.
+
+That closes *"no suite drives them"*; *"outside the live closure"* stays true and
+stays recorded in the census, where it belongs.
+
+**Every citation of the two deleted names was swept, and the sweep was an
+improvement at each site**, because each pointed at a definition outside the live
+closure for a claim about live behaviour: `docs/planning/UNFINISHED_SMP_WORK.md`
+§F-3 most sharply, which cited the single-core Call as evidence of *live
+semantics*; the spec's two PIP integration points; four Lean module headers; the
+lock-set chain-start docstrings; and the `popHead_returns_head` composition note.
+The first sweep pass missed four of them because its output was `head`ed — the
+exhaustive re-run is what found `DualQueue.lean` and the three in
+`Donation/Primitives.lean`.
+
+No transition on any live path changed, no fixture moved and the golden trace is
+byte-identical.  Tier 0–3 all pass.
+
+Closes the WS-RR RR8.12 follow-on register row.
+
 ## v0.35.191 — WS-RR RR8.16: the two flow-gate facts reach the two dispatches
 
 **A fact established at a write and inhabited at the boot, and carried across

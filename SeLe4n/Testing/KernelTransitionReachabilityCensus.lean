@@ -928,14 +928,19 @@ reasons would read as justification while asserting nothing, and the obligation
 that does the work falls on whoever adds the next entry, who must either wire it
 or say here why it exists.
 
-**One known residue inside this list, registered rather than absorbed**, and one
-closed.  Four members (`cleanupActiveDonation`, `timerTickChecked`,
-`switchDomainChecked`, `endpointCallWithDonation`) are consumed by nothing in the
-tree: no live path, no theorem, no suite, no gate.  They need the wire-or-retire
-judgement `v0.35.78` made for the capability-reference table, which is a
-measurement and a decision rather than a line in a list, so they carry a row in
-`docs/REGISTERED_DEBT.md`.  Naming them here keeps a *known* residue from reading
-like an unexamined one.
+**The four-member residue this list named closed at `v0.35.192`**, and the
+judgement went both ways, which is why it was a decision rather than a line.
+`cleanupActiveDonation` and `endpointCallWithDonation` are **deleted**: the first
+was Z7-E's alias for `returnDonatedSchedContext` whose scenario the live
+`cleanupPreReceiveDonation{,Checked,Migrated}` family implements, the second Z7's
+single-core donation-aware Call that `endpointCallCrossCoreDispatch` superseded,
+tied to it by no equivalence theorem.  `timerTickChecked` and
+`switchDomainChecked` are **kept**, because they are two of the four X2-I
+API-boundary wrappers and deleting half of a symmetric family is the asymmetry
+this project's implement-the-improvement rule forbids — so they gained the
+witnesses their two driven siblings have (`tests/NegativeStateSuite.lean`), which
+closes *"no suite drives them"* while leaving *"outside the live closure"* true
+and recorded **here**, where it belongs.
 
 **The revocation family's residue closed at `v0.35.190` (WS-RR RR8.16)**, and
 what is left of it here is a *narrower* claim than the one that was registered.
@@ -1052,7 +1057,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.chooseThread
   , `SeLe4n.Kernel.chooseThreadEffective
   , `SeLe4n.Kernel.chooseThreadInDomain
-  , `SeLe4n.Kernel.cleanupActiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
@@ -1075,7 +1079,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointCall
   , `SeLe4n.Kernel.endpointCallChecked
   , `SeLe4n.Kernel.endpointCallWithCaps
-  , `SeLe4n.Kernel.endpointCallWithDonation
   , `SeLe4n.Kernel.endpointReceiveDual
   , `SeLe4n.Kernel.endpointReceiveDualChecked
   , `SeLe4n.Kernel.endpointReceiveDualWithCaps

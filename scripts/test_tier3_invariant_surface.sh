@@ -18366,6 +18366,41 @@ run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchCh
 run_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/DispatchInvariant.lean
 
+# ===========================================================================
+# WS-RR RR8.12 follow-on (v0.35.192): the four unconsumed state transformers,
+# judged BOTH ways
+# ===========================================================================
+# The reachability census's first run named four definitions outside the live
+# closure with no theorem, no suite and no gate.  Two were superseded and are
+# deleted; two are half of a symmetric API-boundary family and are kept, with
+# witnesses that measure what they add rather than that they run.
+# ---------------------------------------------------------------------------
+# (1) THE TWO DELETIONS MUST NOT COME BACK.  `cleanupActiveDonation` was an alias
+# for `returnDonatedSchedContext` whose scenario `cleanupPreReceiveDonation*`
+# implements; `endpointCallWithDonation` was the single-core Call that
+# `endpointCallCrossCoreDispatch` superseded, tied to it by no equivalence
+# theorem.  Scoped to the modules that held them, because the tombstones and the
+# history notes name both in prose.
+run_negative_check "INVARIANT" rg -F -n 'def cleanupActiveDonation' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_negative_check "INVARIANT" rg -F -n 'def endpointCallWithDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+# ...and the census pin they left is derived-and-reconciled, so a re-entry fails
+# Tier 1; what a text anchor can add is that the LIVE family they were superseded
+# by is still there to be superseded by.
+run_check "INVARIANT" rg -F -n 'def cleanupPreReceiveDonation (st : SystemState)' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -F -n 'def cleanupPreReceiveDonationMigrated' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+# (2) THE TWO KEPT WRAPPERS ARE DRIVEN, and each witness is a DIFFERENTIAL: the
+# tick's is the context save the bare tick does not perform, the domain switch's
+# is the guard refusing a state the bare form proceeds on.  A witness with no
+# control asserts that the wrapper runs, not that it does anything.
+run_check "INVARIANT" rg -F -n 'positive check passed [timerTickChecked saves the outgoing context]' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare timerTick leaves the outgoing context alone]' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -F -n 'switchDomainChecked refuses a dangling current thread' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -F -n 'CONTROL passed [the bare switchDomain proceeds on the state the wrapper refuses]' tests/NegativeStateSuite.lean
+# ...and the honest half: on the dangling state the tick's guard adds nothing,
+# because its own internals refuse with the same discriminant.  Asserted rather
+# than left implicit — it is why the tick's witness had to measure the save.
+run_check "INVARIANT" rg -F -n '…and so does the bare timerTick, with the same discriminant' tests/NegativeStateSuite.lean
+
 
 # ===========================================================================
 # v0.35.127 (PR #897 review): the probe locator's TEXT is what the program

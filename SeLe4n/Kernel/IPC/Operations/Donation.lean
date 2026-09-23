@@ -38,8 +38,9 @@ The donation logic is split across two sibling modules:
   witnesses). Re-exported by `SeLe4n.Kernel.IPC.Operations` (the IPC operations
   hub).
 * This file - donation-aware wrappers around the core transport-layer IPC
-  entry points (`endpointCallWithDonation`, `endpointReplyWithDonation`,
-  `endpointReplyRecvWithDonation`). These unavoidably depend on
+  entry points (`endpointReplyWithDonation`, `endpointReplyRecvWithDonation`;
+  `endpointCallWithDonation` was deleted at `v0.35.192` — see the tombstone
+  below). These unavoidably depend on
   `SeLe4n.Kernel.IPC.DualQueue.Transport`, so re-exporting this file from
   the operations hub would reintroduce the `Operations -> Donation ->
   Transport -> Core -> Operations` import cycle closed by AI4-A.
@@ -69,52 +70,27 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 -- Z7: Donation-aware IPC operation wrappers (transport-dependent subset)
 -- ============================================================================
 
-/-- Z7: Donation-aware endpointCall. Composes the standard `endpointCall` with
-post-call SchedContext donation to passive servers.
-
-Before calling `endpointCall`, checks if the endpoint has a waiting receiver
-(handshake path). If so, records the receiver's ThreadId. After `endpointCall`
-completes, applies donation from the caller to the receiver if the receiver
-was passive (unbound). -/
-def endpointCallWithDonation
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
-  fun st =>
-    -- Pre-check: determine receiver before endpointCall pops it.
-    -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
-    -- receiver matches the thread actually dequeued by endpointCall, ensuring
-    -- donation targets the correct thread.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let maybeReceiver := match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head
-      | none    => none
-    match endpointCall endpointId caller msg st with
-    | .error e => .error e
-    | .ok ((), st') =>
-      match maybeReceiver with
-      | some receiverTid =>
-        -- Handshake path: a receiver was woken — apply donation.
-        -- AH2-C: Propagate donation errors.
-        -- AN10-residual-1 deep-audit: `applyCallDonation` now requires
-        -- `ValidThreadId` for both caller and receiver.  Promote the raw
-        -- tids via `toValid?` with `.error .invalidArgument` rejection;
-        -- under the AL7 dispatch-gate validators on `caller` and the
-        -- `endpointQueuePopHead_returns_head`-witnessed `receiverTid`
-        -- (which came from a previously-stored TCB), the rejection
-        -- arm is structurally unreachable.
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerVtid, some receiverVtid =>
-          match applyCallDonation st' callerVtid receiverVtid with
-          | .error e => .error e
-          | .ok st'' =>
-            -- D4-L: Apply PIP — propagate priority inheritance from the server
-            -- upward through the blocking chain. The server may itself be blocked
-            -- on another server, requiring transitive propagation.
-            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
-        | _, _ => .error .invalidArgument
-      | none =>
-        -- Blocking path: no receiver was available, caller blocked
-        .ok ((), st')
+-- **WS-RR RR8.12 follow-on (`v0.35.192`): `endpointCallWithDonation` is DELETED.**
+--
+-- Z7's single-core donation-aware Call — `endpointCall`, then
+-- `applyCallDonation` on the handshake branch, then
+-- `propagatePriorityInheritance` — superseded by `endpointCallCrossCoreDispatch`
+-- (`IPC/CrossCore/EndpointCallDispatch.lean`), which is the same three steps in
+-- the same order at their per-core forms (`endpointCallWithCapsOnCore`,
+-- `applyCallDonationOnCore` with WS-RR RR2.7's replenishment migration, and
+-- `propagatePipChainCrossCore`) and which is what the live `.call` arm
+-- dispatches.
+--
+-- Unlike the single-core reference transitions this tree deliberately keeps, it
+-- was pinned to its successor by **no** equivalence theorem — no
+-- `_eq_single_on_bootCore` names it — and consumed by nothing: no live path, no
+-- theorem, no suite, no gate.  A single-core form kept as a reference earns its
+-- place by being tied to the cross-core one; this one was an orphan.
+--
+-- `endpointReplyWithDonation` below is **not** in that position and is kept: it
+-- is the composite PR #895 review round 22 measured against the cross-core
+-- dispatch, with `endpointReplyWithDonation_refuses_delegated_replier` pinning
+-- the divergence in delegated authority that makes the two non-interchangeable.
 
 /-- Z7: Donation-aware endpointReply. Composes the standard `endpointReply`
 with post-reply SchedContext return from the server. -/

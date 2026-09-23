@@ -4149,6 +4149,87 @@ private def runX2RuntimeInvariantTests : IO Unit := do
     (SeLe4n.Kernel.handleYieldChecked (default : SystemState))
     .invalidArgument
 
+  -- ── WS-RR RR8.12 follow-on (`v0.35.192`): the other two X2-I wrappers ──
+  --
+  -- The register row that scheduled the wire-or-retire judgement for the four
+  -- unconsumed state transformers observed that `timerTickChecked` and
+  -- `switchDomainChecked` are the undriven members of a four-member symmetric
+  -- family whose other two ARE driven, so deleting half of it may be worse than
+  -- keeping it.  They are kept — and these are the witnesses that make the
+  -- keeping mean something, because each is a DIFFERENTIAL against the unchecked
+  -- form on the same state rather than a smoke test.  A wrapper whose behaviour
+  -- no state distinguishes from its delegate's would have earned deletion
+  -- instead, and that is what these two measure.
+  --
+  -- (1) `timerTickChecked` SAVES THE OUTGOING CONTEXT and `timerTick` does not.
+  -- The checked wrapper runs `saveOutgoingContextChecked` before delegating, so
+  -- the current thread's `registerContext` picks up the executing core's bank;
+  -- the bare tick leaves the TCB's own context alone.  The control is the bare
+  -- tick on the identical state.
+  let x2Tid : SeLe4n.ThreadId := ⟨5⟩
+  let x2Tcb : TCB := {
+    tid := x2Tid, priority := ⟨100⟩, domain := ⟨0⟩,
+    cspaceRoot := SeLe4n.ObjId.ofNat 0, vspaceRoot := SeLe4n.ObjId.ofNat 0,
+    ipcBuffer := SeLe4n.VAddr.ofNat 0, timeSlice := 9,
+    ipcState := .ready, schedContextBinding := .unbound }
+  let x2Base : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withObject x2Tid.toObjId (.tcb x2Tcb)
+      |>.withCurrent (some x2Tid)
+      |>.build)
+  let x2Regs : RegisterFile := { (default : RegisterFile) with pc := ⟨4242⟩ }
+  let x2Live : SystemState :=
+    { x2Base with
+        machine := x2Base.machine.setRegsOnCore
+          SeLe4n.Kernel.Concurrency.bootCoreId x2Regs }
+  let x2PcAfter : SystemState → Option Nat :=
+    fun st => (st.getTcb? x2Tid).map (·.registerContext.pc.val)
+  match SeLe4n.Kernel.timerTickChecked x2Live with
+  | .error e =>
+    throw <| IO.userError s!"timerTickChecked must succeed on a resolvable current thread, got {repr e}"
+  | .ok (_, stChecked) =>
+    if x2PcAfter stChecked = some 4242 then
+      IO.println "positive check passed [timerTickChecked saves the outgoing context]"
+    else
+      throw <| IO.userError s!"timerTickChecked must save the outgoing context, got pc = {toString (x2PcAfter stChecked)}"
+  match SeLe4n.Kernel.timerTick x2Live with
+  | .error e =>
+    throw <| IO.userError s!"the CONTROL (bare timerTick) must succeed on the same state, got {repr e}"
+  | .ok (_, stBare) =>
+    if x2PcAfter stBare = some 0 then
+      IO.println "CONTROL passed [the bare timerTick leaves the outgoing context alone]"
+    else
+      throw <| IO.userError s!"the CONTROL is inert: bare timerTick already saved the context, pc = {toString (x2PcAfter stBare)}"
+
+  -- (2) `switchDomainChecked` REFUSES a state `switchDomain` proceeds on.  Its
+  -- guard fires exactly when the current slot names a thread the store does not
+  -- hold — an invariant violation `currentThreadValid` forbids — and the bare
+  -- `switchDomain` absorbs that silently (its internal `saveOutgoingContext`
+  -- returns the state unchanged on a TCB miss).  So here the GUARD is what
+  -- discriminates, where in (1) it was the save.
+  let x2Dangling : SystemState :=
+    (BootstrapBuilder.empty
+      |>.withCurrent (some (SeLe4n.ThreadId.ofNat 77))
+      |>.build)
+  expectErr "switchDomainChecked refuses a dangling current thread"
+    (SeLe4n.Kernel.switchDomainChecked x2Dangling)
+    .schedulerInvariantViolation
+  match SeLe4n.Kernel.switchDomain x2Dangling with
+  | .error e =>
+    throw <| IO.userError s!"the CONTROL (bare switchDomain) must PROCEED on the dangling state — that is what the wrapper adds — got {repr e}"
+  | .ok _ =>
+    IO.println "CONTROL passed [the bare switchDomain proceeds on the state the wrapper refuses]"
+
+  -- ...and on that same state the tick's own internals already refuse with the
+  -- same discriminant, so the guard adds nothing THERE.  Asserted rather than
+  -- left implicit: it is why (1) had to measure the save instead.
+  expectErr "timerTickChecked refuses a dangling current thread"
+    (SeLe4n.Kernel.timerTickChecked x2Dangling)
+    .schedulerInvariantViolation
+  expectErr "…and so does the bare timerTick, with the same discriminant"
+    (SeLe4n.Kernel.timerTick x2Dangling)
+    .schedulerInvariantViolation
+
   IO.println "all X2 runtime invariant tests passed"
 
 -- ============================================================================

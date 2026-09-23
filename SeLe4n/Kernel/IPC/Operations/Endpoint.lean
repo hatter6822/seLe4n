@@ -58,12 +58,13 @@ finding ID, the affected site, and the remediation applied.
   observe the timeout deterministically on the next receive attempt.
   No behavior change required.
 
-- **I-L3 — `endpointCallWithDonation` `popHead_returns_head` external
-  composition.** `endpointQueuePopHead_returns_head` (defined in
-  `IPC/Invariant/Defs.lean`) is referenced across both
-  `endpointCallWithDonation` (Operations/Donation.lean) and
-  `endpointSendDualWithCaps` (DualQueue/WithCaps.lean) without a local
-  composition wrapper. The theorem is non-fragile (invariant-independent)
+- **I-L3 — `popHead_returns_head` external composition.**
+  `endpointQueuePopHead_returns_head` (defined in `IPC/Invariant/Defs.lean`) is
+  referenced across more than one caller — `endpointSendDualWithCaps`
+  (DualQueue/WithCaps.lean) among them — without a local composition wrapper.
+  (The note named `endpointCallWithDonation` as the other until `v0.35.192`
+  deleted it; the live Call path reads the same theorem through
+  `endpointCallCrossCoreDispatch`.) The theorem is non-fragile (invariant-independent)
   so inlining its composition is not required; cross-file use is
   idiomatic.
 
@@ -6327,18 +6328,24 @@ theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack
   returnDonatedSchedContextResolved_of_resolved
     (replyStackOuterCaller?_of_no_stack st scId sc hSc hNoHead)
 
-/-- Z7-E: Clean up an active donation when a server with `.donated` binding
-blocks on receive without replying first (abnormal path).
-
-Returns the SchedContext to the original owner and sets the server to unbound.
-This prevents resource leaks when a server drops a call without replying. -/
-def cleanupActiveDonation
-    (st : SystemState)
-    (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId)
-    (originalOwner : SeLe4n.ThreadId)
-    (newOwner? : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
-  returnDonatedSchedContext st serverTid scId originalOwner newOwner?
+-- **WS-RR RR8.12 follow-on (`v0.35.192`): `cleanupActiveDonation` is DELETED.**
+--
+-- Z7-E's alias for `returnDonatedSchedContext` — definitionally that function,
+-- with the same five arguments in the same order — whose docstring described
+-- "a server with a `.donated` binding blocking on receive without replying
+-- first".  That scenario has a live implementation, and has had one since
+-- AK1-A: `cleanupPreReceiveDonation` resolves the binding out of the receiver's
+-- own TCB rather than taking it as three arguments a caller must already know,
+-- `cleanupPreReceiveDonationChecked` propagates the failure a kernel path needs
+-- surfaced, and `cleanupPreReceiveDonationMigrated` (WS-RR, `v0.35.161`) carries
+-- the replenishment across cores.  The alias was superseded by all three and
+-- consumed by nothing: no live path, no theorem, no suite, no gate.
+--
+-- The register row that scheduled the wire-or-retire judgement recorded the risk
+-- of deleting part of a symmetric family; this one is not part of one — it is a
+-- lone alias whose replacement family is three definitions wide.  The two X2-I
+-- wrappers named in the same row were judged the other way and kept, with
+-- witnesses: see `SeLe4n/Kernel/API.lean`.
 
 -- ============================================================================
 -- AN10 residual closure (H5–H6): typed entry-points for donation handlers

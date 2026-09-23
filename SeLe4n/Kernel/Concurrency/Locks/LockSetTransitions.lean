@@ -4032,9 +4032,11 @@ Four user syscalls (`.call`, `.reply`, `.replyRecv`, `.receive`) invoke a
 priority-inheritance chain walk after their core IPC mutation
 completes, and `.replyRecv` invokes **two** (WS-OD OD3.14):
 
-* `endpointCallWithDonation`: calls `propagatePriorityInheritance
+* `endpointCallCrossCoreDispatch`: calls `propagatePipChainCrossCore
   receiverTid` on the handshake path (only when the endpoint had a
-  blocked receiver waiting at call-time).
+  blocked receiver waiting at call-time).  Named for the single-core
+  `endpointCallWithDonation` until `v0.35.192` deleted it; the live `.call`
+  arm has dispatched the cross-core form since WS-SM SM6.A.5.
 * `endpointReplyWithDonation`: calls `revertPriorityInheritance
   callerTid` after the base reply.
 * `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
@@ -4122,9 +4124,9 @@ Detailed dynamic-walk design lives in SM3.C.11 (see
 
 /-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.call`.
 
-`endpointCallWithDonation` invokes `propagatePriorityInheritance
-receiverTid` **only on the handshake path** (when the endpoint had
-a blocked receiver at call-time).  When `receiverTid = none` the
+The live `.call` arm (`endpointCallCrossCoreDispatch`) invokes a
+priority-inheritance chain walk on `receiverTid` **only on the handshake
+path** (when the endpoint had a blocked receiver at call-time).  When `receiverTid = none` the
 caller blocks waiting, and no chain walk is invoked.  So the
 chain-start signal mirrors the `receiverTid` argument exactly. -/
 @[inline] def pipChainStart_endpointCall

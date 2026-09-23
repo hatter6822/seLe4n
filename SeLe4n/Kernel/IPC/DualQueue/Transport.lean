@@ -2744,8 +2744,10 @@ def endpointReplyRecv
 -- AJ1-C (M-02): Pre-send receiver linking. The theorem
 -- `endpointQueuePopHead_returns_head` (IPC/Invariant/Defs.lean) proves that
 -- `endpointQueuePopHead` dequeues the queue head, linking the pre-inspected
--- receiver in `endpointCallWithDonation` and `endpointSendDualWithCaps` to
--- the thread actually dequeued by the underlying call.
+-- receiver in `endpointCallCrossCoreDispatch` (the live `.call` arm; the note
+-- named the single-core `endpointCallWithDonation` until `v0.35.192` deleted it)
+-- and `endpointSendDualWithCaps` to the thread actually dequeued by the
+-- underlying call.
 
 -- ============================================================================
 -- WS-L3/L3-D: Tail consistency theorems for endpointQueueRemoveDual

@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.191` (`lakefile.toml`) |
+| **Package version** | `0.35.192` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 412,643 across 339 Lean files |
-| **Test LoC** | 83,880 across 70 Lean test suites |
+| **Production LoC** | 412,636 across 339 Lean files |
+| **Test LoC** | 83,961 across 70 Lean test suites |
 | **Proved declarations** | 13,638 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -1554,11 +1554,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      violation, both objects are correctly locked.  This makes
      the reply paths symmetric with `lockSet_tcbSuspend`.
 
-   * **PIP-chain dynamic-locking acknowledged**: traced
-     `endpointCallWithDonation` /
-     `endpointReplyWithDonation` through
-     `propagatePriorityInheritance` /
-     `revertPriorityInheritance`.  These walk arbitrarily-long
+   * **PIP-chain dynamic-locking acknowledged**: traced the live `.call`
+     and `.reply` arms through
+     `propagatePipChainCrossCore` /
+     `revertPriorityInheritance`.  (Traced through the single-core
+     `endpointCallWithDonation` when this note was written; that definition
+     was deleted at `v0.35.192`, superseded by
+     `endpointCallCrossCoreDispatch`.)  These walk arbitrarily-long
      blocking-graph chains, touching TCB `pipBoost` fields.
      Chain length is state-discovered, not statically
      pre-resolvable.  Plan §4.1's "variable number of locks"
@@ -6325,7 +6327,9 @@ bounded by `objectIndex.length`.
 - `revertPriorityInheritance`: structurally identical to propagation (same updatePipBoost)
 
 **Integration points**:
-- `endpointCallWithDonation`: propagates PIP after Call completes (D4-L)
+- `endpointCallCrossCoreDispatch`: propagates PIP after Call completes (D4-L;
+  the single-core `endpointCallWithDonation` held this integration point until
+  `v0.35.192` deleted it as superseded)
 - `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
 - `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
 - `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
