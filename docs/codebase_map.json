@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "28b47f9827e9a15676fc7064a0df61b392c6607d",
-      "tree_sha": "87fafc6d5b84ca9dcbed9ee524860a49ca1229bb",
-      "committed_at_utc": "2026-09-23T08:33:14+00:00"
+      "commit_sha": "98056e27e499768652390cbffefbf66abf733a4c",
+      "tree_sha": "87a3e1597b1a43061e0a37db354989f116eb2313",
+      "committed_at_utc": "2026-09-23T11:30:52+00:00"
     }
   },
   "source_sync": {
@@ -17,20 +17,20 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "d922013e3442aa0a1de24f8613a0a73bf86de9965bccd7d58affbb8aba751ea6"
+    "source_digest": "6a05e49569e25bbf508a9ab0a272434281c5f17d8b834887fe48ab69b90b3fcf"
   },
   "summary": {
-    "module_count": 408,
-    "declaration_count": 22758
+    "module_count": 409,
+    "declaration_count": 22784
   },
   "readme_sync": {
-    "version": "0.35.190",
+    "version": "0.35.191",
     "lean_toolchain": "v4.28.0",
-    "production_files": 338,
-    "production_loc": 411743,
+    "production_files": 339,
+    "production_loc": 412643,
     "test_files": 70,
     "test_loc": 83880,
-    "proved_theorem_lemma_decls": 13613,
+    "proved_theorem_lemma_decls": 13638,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
   "modules": [
@@ -72824,7 +72824,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant",
       "path": "SeLe4n/Kernel/IPC/CrossCore/DispatchInvariant.lean",
-      "declaration_count": 8,
+      "declaration_count": 7,
       "declarations": [
         {
           "kind": "namespace",
@@ -72933,35 +72933,8 @@
         },
         {
           "kind": "theorem",
-          "name": "endpointCallWithCapsOnCore_preserves_objects_invExt",
-          "line": 298,
-          "called": [
-            "AccessRightSet",
-            "CoreId",
-            "IpcMessage",
-            "ObjId",
-            "Slot",
-            "SystemState",
-            "ThreadId",
-            "endpointCallOnCore",
-            "endpointCallOnCore_preserves_objects_invExt",
-            "endpointCallWithCapsOnCore",
-            "endpointId",
-            "getEndpoint",
-            "head",
-            "invExt",
-            "ipcUnwrapCaps",
-            "ipcUnwrapCaps_preserves_objects_invExt",
-            "lookupCspaceRoot",
-            "mem",
-            "none",
-            "st"
-          ]
-        },
-        {
-          "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_getTcb",
-          "line": 344,
+          "line": 309,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -72992,7 +72965,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallWithCapsOnCore_ok_implies_call_ok",
-          "line": 409,
+          "line": 374,
           "called": [
             "AccessRightSet",
             "CapTransferSummary",
@@ -73013,7 +72986,7 @@
         {
           "kind": "theorem",
           "name": "endpointCallCrossCoreDispatch_preserves_ipcInvariantFull",
-          "line": 441,
+          "line": 406,
           "called": [
             "AccessRightSet",
             "CoreId",
@@ -74795,7 +74768,7 @@
     {
       "module": "SeLe4n.Kernel.IPC.CrossCore.EndpointCallDispatch",
       "path": "SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean",
-      "declaration_count": 30,
+      "declaration_count": 31,
       "declarations": [
         {
           "kind": "namespace",
@@ -75459,7 +75432,6 @@
             "AccessRightSet",
             "CoreId",
             "IpcMessage",
-            "Kernel",
             "ObjId",
             "Slot",
             "SystemState",
@@ -75477,6 +75449,34 @@
             "propagatePipChainCrossCore_replenishQueueOnCore",
             "replenishQueueOnCore",
             "scId",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallWithCapsOnCore_preserves_objects_invExt",
+          "line": 890,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointCallOnCore",
+            "endpointCallOnCore_preserves_objects_invExt",
+            "endpointCallWithCapsOnCore",
+            "endpointId",
+            "getEndpoint",
+            "head",
+            "invExt",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_preserves_objects_invExt",
+            "lookupCspaceRoot",
+            "mem",
+            "none",
             "st"
           ]
         }
@@ -90961,6 +90961,593 @@
       "path": "SeLe4n/Kernel/IPC/DualQueue.lean",
       "declaration_count": 0,
       "declarations": []
+    },
+    {
+      "module": "SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation",
+      "path": "SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean",
+      "declaration_count": 26,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Kernel",
+          "line": 75,
+          "called": []
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcStateFrame_of_objects_eq",
+          "line": 85,
+          "called": [
+            "SystemState",
+            "ipcStateFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcStateFrame_of_donationReadAgreement",
+          "line": 95,
+          "called": [
+            "SystemState",
+            "donationReadAgreement",
+            "ipcStateFrame",
+            "st",
+            "symm",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueuePopHead_ipcStateFrame",
+          "line": 103,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "TCB",
+            "ThreadId",
+            "endpointId",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_tcb_ipcState_backward",
+            "invExt",
+            "ipcStateFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointQueueEnqueue_ipcStateFrame",
+          "line": 114,
+          "called": [
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_tcb_ipcState_backward",
+            "invExt",
+            "ipcStateFrame",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "ipcUnwrapCaps_ipcStateFrame",
+          "line": 126,
+          "called": [
+            "CapTransferSummary",
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "invExt",
+            "ipcStateFrame",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_tcb_backward",
+            "st",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "linkServerStashedReply_ipcStateFrame",
+          "line": 139,
+          "called": [
+            "SystemState",
+            "ThreadId",
+            "invExt",
+            "ipcStateFrame",
+            "linkServerStashedReply",
+            "linkServerStashedReply_tcb_ipcState_backward",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "removeRunnableOnCore_ipcStateFrame",
+          "line": 149,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "ipcStateFrame",
+            "ipcStateFrame_of_objects_eq",
+            "removeRunnableOnCore",
+            "removeRunnableOnCore_preserves_objects",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "updatePipBoostOnCore_ipcStateFrame",
+          "line": 160,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "getTcb",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame.refl",
+            "none",
+            "st",
+            "symm",
+            "toObjId",
+            "updatePipBoostOnCore",
+            "updatePipBoostOnCore_eq_self_of_getTcb",
+            "updatePipBoostOnCore_objects_at",
+            "updatePipBoostOnCore_objects_ne"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "pipBoostWithWake_ipcStateFrame",
+          "line": 185,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "determineTargetCore",
+            "invExt",
+            "ipcStateFrame",
+            "pipBoostWithWake",
+            "st",
+            "updatePipBoostOnCore_ipcStateFrame"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "propagatePipChainCrossCore_ipcStateFrame",
+          "line": 193,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockingServer",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame.refl",
+            "none",
+            "pipBoostWithWake_ipcStateFrame",
+            "pipBoostWithWake_preserves_objects_invExt",
+            "propagatePipChainCrossCore",
+            "propagatePipChainCrossCore_step",
+            "propagatePipChainCrossCore_zero",
+            "st",
+            "trans",
+            "zero"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyCallDonation_ipcStateFrame",
+          "line": 216,
+          "called": [
+            "SystemState",
+            "ValidThreadId",
+            "applyCallDonation",
+            "applyCallDonation_donationReadAgreement",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame_of_donationReadAgreement",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "applyCallDonationOnCore_ipcStateFrame",
+          "line": 226,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ValidThreadId",
+            "applyCallDonationOnCore",
+            "applyCallDonationOnCore_ok_decompose",
+            "applyCallDonation_ipcStateFrame",
+            "invExt",
+            "ipcStateFrame",
+            "ipcStateFrame_of_objects_eq",
+            "migrateSchedContextReplenishment_objects",
+            "scId",
+            "st",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "enqueueRunnableOnCore_blockedSenderShrinks",
+          "line": 251,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderShrinks",
+            "blockedSenderShrinks.refl",
+            "enqueueRunnableOnCore",
+            "enqueueRunnableOnCore_eq_self_of_runnable",
+            "enqueueRunnableOnCore_getTcb",
+            "enqueueRunnableOnCore_makes_ready",
+            "enqueueRunnableOnCore_no_tcb_noop",
+            "epId",
+            "getTcb",
+            "invExt",
+            "isReserved",
+            "lookupTcb",
+            "lookupTcb_some_not_reserved",
+            "none",
+            "runnableOnSomeCore",
+            "st",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "wakeThread_blockedSenderShrinks",
+          "line": 280,
+          "called": [
+            "CoreId",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderShrinks",
+            "determineTargetCore",
+            "enqueueRunnableOnCore_blockedSenderShrinks",
+            "invExt",
+            "st",
+            "wakeThread",
+            "wakeThread_state_eq_enqueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "storeTcbReceiveComplete_blockedSenderShrinks",
+          "line": 288,
+          "called": [
+            "IpcMessage",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderShrinks",
+            "epId",
+            "invExt",
+            "isReserved",
+            "lookupTcb_of_objects_of_not_reserved",
+            "lookupTcb_some_not_reserved",
+            "lookupTcb_some_objects",
+            "st",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_ipcState_eq",
+            "storeTcbReceiveComplete_preserves_objects_ne",
+            "toObjId"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint",
+          "line": 324,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "blockedSenderFlowsToEndpoint_of_shrinks",
+            "blockedSenderShrinks_of_ipcStateFrame",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_ipcStateFrame",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_ipcStateFrame",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointSendDualOnCore",
+            "getEndpoint",
+            "getTcb",
+            "head",
+            "invExt",
+            "none",
+            "removeRunnableOnCore_ipcStateFrame",
+            "securityFlowsTo",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_blockedSenderShrinks",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "wakeThread_blockedSenderShrinks"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint",
+          "line": 406,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "blockedSenderFlowsToEndpoint_of_shrinks",
+            "blockedSenderShrinks_of_ipcStateFrame",
+            "endpointId",
+            "endpointSendDualOnCore",
+            "endpointSendDualOnCore_preserves_blockedSenderFlowsToEndpoint",
+            "endpointSendDualOnCore_preserves_objects_invExt",
+            "endpointSendDualWithCapsOnCore",
+            "getEndpoint",
+            "head",
+            "invExt",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_ipcStateFrame",
+            "lookupCspaceRoot",
+            "mem",
+            "none",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint",
+          "line": 468,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "endpointFlowGate_implies_securityFlowsTo",
+            "endpointId",
+            "endpointSendCrossCoreDispatchChecked",
+            "endpointSendDualWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint",
+          "line": 506,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "blockedSenderFlowsToEndpoint_of_shrinks",
+            "blockedSenderShrinks_of_ipcStateFrame",
+            "determineTargetCore",
+            "endpointCallOnCore",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_ipcStateFrame",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_ipcStateFrame",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "enqueueRunnableOnCore_preserves_objects_invExt",
+            "getEndpoint",
+            "head",
+            "invExt",
+            "linkServerStashedReply",
+            "linkServerStashedReply_ipcStateFrame",
+            "none",
+            "removeRunnableOnCore_ipcStateFrame",
+            "securityFlowsTo",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint",
+            "storeTcbIpcStateAndMessage_preserves_objects_invExt",
+            "wakeThread",
+            "wakeThread_blockedSenderShrinks",
+            "wakeThread_state_eq_enqueue"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint",
+          "line": 610,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "blockedSenderFlowsToEndpoint_of_shrinks",
+            "blockedSenderShrinks_of_ipcStateFrame",
+            "endpointCallOnCore",
+            "endpointCallOnCore_preserves_blockedSenderFlowsToEndpoint",
+            "endpointCallOnCore_preserves_objects_invExt",
+            "endpointCallWithCapsOnCore",
+            "endpointId",
+            "getEndpoint",
+            "head",
+            "invExt",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_ipcStateFrame",
+            "lookupCspaceRoot",
+            "mem",
+            "none",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint",
+          "line": 668,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "applyCallDonationOnCore_ipcStateFrame",
+            "applyCallDonationOnCore_preserves_objects_invExt",
+            "blockedSenderFlowsToEndpoint",
+            "blockedSenderFlowsToEndpoint_of_shrinks",
+            "blockedSenderShrinks_of_ipcStateFrame",
+            "endpointCallCrossCoreDispatch",
+            "endpointCallWithCapsOnCore",
+            "endpointCallWithCapsOnCore_preserves_blockedSenderFlowsToEndpoint",
+            "endpointCallWithCapsOnCore_preserves_objects_invExt",
+            "endpointId",
+            "invExt",
+            "propagatePipChainCrossCore_ipcStateFrame",
+            "securityFlowsTo",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint",
+          "line": 717,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "blockedSenderFlowsToEndpoint",
+            "endpointCallCrossCoreDispatchChecked",
+            "endpointCallCrossCoreDispatch_preserves_blockedSenderFlowsToEndpoint",
+            "endpointFlowGate_implies_securityFlowsTo",
+            "endpointId",
+            "invExt",
+            "st"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualOnCore_sameSchedContextBindings",
+          "line": 746,
+          "called": [
+            "CoreId",
+            "IpcMessage",
+            "ObjId",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointQueueEnqueue",
+            "endpointQueueEnqueue_preserves_objects_invExt",
+            "endpointQueueEnqueue_sameSchedContextBindings",
+            "endpointQueuePopHead",
+            "endpointQueuePopHead_preserves_objects_invExt",
+            "endpointQueuePopHead_sameSchedContextBindings",
+            "endpointSendDualOnCore",
+            "getEndpoint",
+            "getTcb",
+            "head",
+            "invExt",
+            "none",
+            "of_objects_eq",
+            "refl",
+            "removeRunnableOnCore_preserves_objects",
+            "sameSchedContextBindings",
+            "st",
+            "storeTcbIpcStateAndMessage",
+            "storeTcbIpcStateAndMessage_sameSchedContextBindings",
+            "storeTcbReceiveComplete",
+            "storeTcbReceiveComplete_getTcb",
+            "storeTcbReceiveComplete_preserves_objects_invExt",
+            "storeTcbReceiveComplete_sameSchedContextBindings",
+            "trans",
+            "wakeThread_sameSchedContextBindings_of_ready"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendDualWithCapsOnCore_sameSchedContextBindings",
+          "line": 811,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "endpointId",
+            "endpointSendDualOnCore",
+            "endpointSendDualOnCore_preserves_objects_invExt",
+            "endpointSendDualOnCore_sameSchedContextBindings",
+            "endpointSendDualWithCapsOnCore",
+            "getEndpoint",
+            "head",
+            "invExt",
+            "ipcUnwrapCaps",
+            "ipcUnwrapCaps_sameSchedContextBindings",
+            "lookupCspaceRoot",
+            "mem",
+            "none",
+            "sameSchedContextBindings",
+            "st",
+            "trans"
+          ]
+        },
+        {
+          "kind": "theorem",
+          "name": "endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder",
+          "line": 870,
+          "called": [
+            "AccessRightSet",
+            "CoreId",
+            "IpcMessage",
+            "Kernel",
+            "LabelingContext",
+            "ObjId",
+            "Slot",
+            "SystemState",
+            "ThreadId",
+            "donationOwnerFlowsToHolder",
+            "donationOwnerFlowsToHolder_of_sameSchedContextBindings",
+            "endpointId",
+            "endpointSendCrossCoreDispatchChecked",
+            "endpointSendDualWithCapsOnCore_sameSchedContextBindings",
+            "invExt",
+            "st"
+          ]
+        }
+      ]
     },
     {
       "module": "SeLe4n.Kernel.IPC.Invariant.CallReplyRecv.Call",

@@ -885,4 +885,49 @@ theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe
         · exact hFrame
       · exact hFrame
 
+/-- WS-RR RR2.6: `endpointCallWithCapsOnCore` preserves the object store's
+extended invariant. -/
+theorem endpointCallWithCapsOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st).1.objects.invExt := by
+  have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBareInv
+    cases res with
+    | error e => exact hBareInv
+    | ok sgi =>
+      simp only
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only; split <;> exact hBareInv
+      | some ep =>
+        simp only
+        cases hHead : ep.receiveQ.head with
+        | none => simp only; split <;> exact hBareInv
+        | some receiverId =>
+          simp only
+          split
+          · exact hBareInv
+          · cases hRoot : lookupCspaceRoot stCall receiverId with
+            | none => exact hBareInv
+            | some recvRoot =>
+              simp only
+              cases hUnwrap : ipcUnwrapCaps
+                  { msg with capsGranted := endpointRights.mem AccessRight.grant }
+                  recvRoot receiverSlotBase
+                  (endpointRights.mem AccessRight.grant) stCall with
+              | error e => exact hBareInv
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
+                simp only
+                exact ipcUnwrapCaps_preserves_objects_invExt _ recvRoot
+                  receiverSlotBase _ stCall stFinal summary hBareInv hUnwrap
+
 end SeLe4n.Kernel

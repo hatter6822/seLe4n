@@ -1,3 +1,96 @@
+## v0.35.191 — WS-RR RR8.16: the two flow-gate facts reach the two dispatches
+
+**A fact established at a write and inhabited at the boot, and carried across
+nothing.**  `v0.35.126` gave `blockedSenderFlowsToEndpoint` a transport relation,
+an establishment at `storeTcbIpcStateAndMessage` — the one production write that
+creates a blocked sender — and an inhabitant at the production boot state, and
+left the **per-transition lift** owed: neither checked dispatch that performs
+that write carried the fact, so a consumer of WS-RR RR8.8's cancellation-NI
+reductions had to re-establish it by hand across a send or a call.
+
+`SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean` (production, in the
+library root) is that lift.
+`endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint` and
+`endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint`
+each carry it under the `endpointFlowGate` its own branch condition supplies,
+read through `endpointFlowGate_implies_securityFlowsTo`; the unchecked composites
+take the gate as an argument, so the caps-carrying wrappers compose them and the
+theorem is about the **checked** arm and false of the unchecked one.
+
+**The per-TCB dichotomy the register row estimated was not needed**, and that
+correction is the cut's finding.  Every step of both composites falls into one of
+three classes rather than needing a pullback:
+
+* **it preserves every `ipcState`** — the queue splice, the capability transfer,
+  the server-first reply link, the SchedContext donation, the priority-inheritance
+  chain walk, the run-queue removal.  Each gets `ipcStateFrame`, the relation
+  `QueueSplicePreservation.lean` has owned for this question since RR7.22, and
+  `blockedSenderShrinks_of_ipcStateFrame` turns it into the transport.  The
+  donation's is read off its own `donationReadAgreement`, whose `tcbBwd` clause
+  states the conjunct outright, so a later widening of the donation inherits it;
+  the chain walk's is an induction on the fuel, the shape
+  `propagatePipChainCrossCore_notification_backward` already had for the
+  notification half of the same question.
+* **it writes `.ready`** — `storeTcbReceiveComplete` and the wake's
+  `enqueueRunnableOnCore`.  `.ready` is neither `.blockedOnSend` nor
+  `.blockedOnCall`, so these *shrink* the blocked-sender set rather than framing
+  it; they are `blockedSenderShrinks` and two Tier 3 negatives refuse the stronger
+  `ipcStateFrame` claim, which is false of both.
+* **it is the blocking store** — which `v0.35.126` already covered.  The `.call`
+  rendezvous reaches that lemma twice with a **vacuous** gate, because it writes
+  the receiver `.ready` and the caller `.blockedOnReply`, and a caller waiting on
+  a reply is on no endpoint's send queue.
+
+**The sibling fact is lifted at the send too.**
+`endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder` rides
+`endpointSendDualOnCore_sameSchedContextBindings` — the send binds no SchedContext
+on either path, a frame the `.call` chain has had since RR2 and the send did not,
+so a consumer had to carry the donation fact by hand across a send as well.
+
+**What is NOT claimed, and why.**  The `.call` arm has no such counterpart and
+cannot have one from this direction: its dispatch **mints** a donation, so the
+post-state fact is about a binding the pre-state does not have, and what makes a
+donated context's two ends comparable is the *receiving* gate the server passed
+when it blocked on its own `Recv` — `donationFlowFromBlockedDonor`'s
+`hReceiveGate`, which no state records.  A Tier 3 negative keeps a later cut from
+asserting it without the receiver-side predicate that would close it.  That
+predicate, and the `ctx`-parametrised reachable-state pack neither fact can join,
+are registered together as the successor row rather than approximated here.
+
+**One relocation, for the layering rule this project states.**
+`endpointCallWithCapsOnCore_preserves_objects_invExt` moved from the **staged**
+`IPC/CrossCore/DispatchInvariant.lean` to `IPC/CrossCore/EndpointCallDispatch.lean`,
+beside the transition it frames and beside
+`endpointCallOnCore_preserves_objects_invExt`, which has always sat next to
+`endpointCallOnCore`.  It composes that lemma and
+`ipcUnwrapCaps_preserves_objects_invExt`, both production, so it was staged by
+association rather than by what it reads — the same reading the RR2 closure audit
+applied when it moved the `.reply` chain's bundle and the PIP-walk bundle out of
+that module.  A production asker could not reach it there.
+
+**Why the lift is its own module.**  `EndpointSend.lean` and
+`EndpointCallDispatch.lean` are *operations* modules and this project keeps the
+Operations/Invariant split; `EndpointSendInvariant.lean` is the only production
+invariant module that sees both dispatches and its subject is the send alone, so
+a `.call` result there would be filed under the wrong name.  The two lifts share a
+module of their own, which is the shape `SyscallSchedContainment.lean` and
+`IPC/Invariant/CancellationBundle.lean` already have.  **Nothing was relocated to
+make it work**: `blockedSenderFlowsToEndpoint`, `blockedSenderShrinks` and the
+store establishment stay in `InformationFlow/Invariant/Composition.lean`, because
+the new module *can see them* — the layering rule is that an owner whose asker
+cannot reach it is in the wrong layer, and here the asker reaches it.
+
+**One stale figure corrected.**  `CLAUDE.md` / `AGENTS.md` said the tree has 68
+staged-only modules; `scripts/staged_module_allowlist.txt` has had 69 since
+`v0.35.76`, and the gate reports 69 on every run.  A hand-kept number beside a
+derivation, drifting exactly as this project's own rule predicts; the prose now
+says to read the gate.
+
+No transition changed, no fixture moved and the golden trace is byte-identical.
+Tier 0–3, Rust and the aarch64 cross build all pass.
+
+Closes the WS-RR **RR8.16** register row; its two residues open as their own row.
+
 ## v0.35.190 — WS-RR RR8.16: `seL4_CNode_Revoke` gets an arm
 
 **The revocation family had no ABI path.**  `API.lean` carried no revocation

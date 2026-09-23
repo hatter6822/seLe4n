@@ -18317,6 +18317,55 @@ run_check "INVARIANT" rg -F -n 'theorem foldl_enqueueIdleThread_objects_cases' S
 run_check "INVARIANT" rg -F -n 'theorem bootFromPlatformChecked_ok_tcb_bootSafeFields' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -F -n '  let hTcb := bootFromPlatformChecked_ok_tcb_bootSafeFields config ist h oid tcb hObj' SeLe4n/Platform/Boot.lean
 
+# ===========================================================================
+# WS-RR RR8.16 (v0.35.191): the two gate facts are LIFTED to the two checked
+# dispatches that perform the blocking write
+# ===========================================================================
+# `v0.35.126` established the blocked-sender fact at the store and inhabited it at
+# the boot; nothing carried it across a transition, so a consumer of the
+# cancellation-NI reductions re-established it by hand across a send or a call.
+# ---------------------------------------------------------------------------
+# (1) THE LIFT IS AT THE CHECKED ARM, and is false of the unchecked one: what
+# discharges the blocking store's obligation is the gate the dispatch evaluates,
+# read through `endpointFlowGate_implies_securityFlowsTo`.
+run_check "INVARIANT" rg -F -n 'theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSendCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_securityFlowsTo" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatchChecked_preserves_blockedSenderFlowsToEndpoint[^\n]*(\n([ \t][^\n]*)?)*endpointFlowGate_implies_securityFlowsTo" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+# (2) THE BLOCKING STORE IS THE ONLY STEP THAT NEEDS THE GATE.  Both composites
+# reach `storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint`; the
+# `.call` rendezvous reaches it TWICE with a vacuous gate, because `.ready` and
+# `.blockedOnReply` are not blocked-sender states.  A revert that hypothesised the
+# fact at the post-state instead would not name this lemma at all.
+run_check "INVARIANT" rg -F -n 'storeTcbIpcStateAndMessage_preserves_blockedSenderFlowsToEndpoint ctx st1 st2' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n '                  (by rintro ep' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# (3) THE `.ready` WRITERS SHRINK RATHER THAN FRAME.  A wake and a receive
+# completion write `.ready`, which is neither blocked-sender state — so they are
+# `blockedSenderShrinks` and NOT `ipcStateFrame`, and a negative refuses the
+# stronger claim, which is false of both.
+run_check "INVARIANT" rg -F -n 'theorem enqueueRunnableOnCore_blockedSenderShrinks' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n 'theorem storeTcbReceiveComplete_blockedSenderShrinks' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_negative_check "INVARIANT" rg -F -n 'theorem enqueueRunnableOnCore_ipcStateFrame' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_negative_check "INVARIANT" rg -F -n 'theorem storeTcbReceiveComplete_ipcStateFrame' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# (4) THE DONATION FRAME IS READ OFF ITS OWN READ AGREEMENT, whose `tcbBwd` clause
+# states the conjunct outright — so a later widening of the donation inherits it
+# rather than needing a second case analysis over the donation's arms.
+run_check "INVARIANT" rg -F -n 'theorem ipcStateFrame_of_donationReadAgreement' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyCallDonation_ipcStateFrame[^\n]*(\n([ \t][^\n]*)?)*applyCallDonation_donationReadAgreement" SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean'
+# (5) THE SIBLING FACT IS LIFTED AT THE SEND, over the send's own binding frame —
+# which the `.call` chain has had since RR2 and the send did not.
+run_check "INVARIANT" rg -F -n 'theorem endpointSendDualOnCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+run_check "INVARIANT" rg -F -n 'theorem endpointSendCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# ...and the `.call` arm has NO such counterpart, deliberately: its dispatch mints
+# a donation, so the fact needs the RECEIVING gate, which no state records.  The
+# negative is what keeps a later cut from asserting it without the receiver-side
+# predicate register row 183 names.
+run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallCrossCoreDispatchChecked_preserves_donationOwnerFlowsToHolder' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
+# (6) THE WITHCAPS INVEXT FRAME IS PRODUCTION, beside the transition it frames: it
+# composes two production lemmas and was staged by association.  Both directions.
+run_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_negative_check "INVARIANT" rg -F -n 'theorem endpointCallWithCapsOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/DispatchInvariant.lean
+
 
 # ===========================================================================
 # v0.35.127 (PR #897 review): the probe locator's TEXT is what the program

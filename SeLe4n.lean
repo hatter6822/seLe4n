@@ -179,6 +179,17 @@ import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
+-- **WS-RR RR8.16**: the blocked-sender flow fact across the two blocking
+-- dispatches (`IPC.Invariant.BlockedSenderPreservation`).  The per-transition
+-- lift the `v0.35.126` register row named as owed: `blockedSenderFlowsToEndpoint`
+-- is carried by `endpointSendCrossCoreDispatchChecked` and
+-- `endpointCallCrossCoreDispatchChecked`, each under its own `endpointFlowGate`,
+-- with the `ipcState` frames every step of both composites needs.  It is its own
+-- module rather than either arm's, because the two dispatches' invariant modules
+-- are `EndpointSendInvariant` (whose subject is the send alone) and the staged
+-- `DispatchInvariant` — the shape `SyscallSchedContainment` and
+-- `IPC.Invariant.CancellationBundle` already have.  Production-clean.
+import SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation
 -- WS-RR (bind/unbind affinity closure): the replenish-queue invariant surface
 -- for the two live arms that create and destroy a SchedContext's binding —
 -- the orphan-freedom invariant (`replenishQueueEntriesBound_smp`), the
