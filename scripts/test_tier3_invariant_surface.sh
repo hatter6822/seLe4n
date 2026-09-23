@@ -1718,7 +1718,7 @@ run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Ke
 # between the two
 # neighbours that bracket the group rather than on the whole runner: the
 # sequence below it is what the fixture check ends.
-run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runRetypeFootprintChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "  runHandlerContentionChecks\n  runDonationChainStructureChecks\n  runDonationReturnPopChecks\n  runDonationPushChecks\n  runMiddleCallerRemovalChecks\n  runReplyFrameRemovalChecks\n  runReplyRecvLoopCompletionChecks\n  runMiddleRemovalDepthThreeChecks\n  runMiddleRemovalDepthFourChecks\n  runDonationOriginIdReuseChecks\n  runDonationOriginRedirectChecks\n  runReceivePriorityHandoffChecks\n  runReceiveReplenishSegmentChecks\n  runReplyRecvHolderDescheduleChecks\n  runPreReceiveReturnMigrationChecks\n  runReplyRecvFootprintChecks\n  runCallReplyFootprintChecks\n  runRetypeReservationChecks\n  runRetypeSchedContextChecks\n  runRetypeFootprintChecks\n  runRetypeReplacementGuardChecks\n  runTraceFixtureCheck" tests/SmpIpcSuite.lean'
 
 # ============================================================================
 # WS-OD OD3 — the pop, generalised and inert
@@ -10630,6 +10630,46 @@ run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_preserves_schedC
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*\(hNotSc :[^\n]*(\n([ \t][^\n]*)?)*exact absurd hC \(hNotSc sc\)" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
 # RELATION: and the `.tcb` arm is the two-step lemma, not a re-derivation.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent[^\n]*(\n([ \t][^\n]*)?)*exact cleanupTcbReferences_after_donationArm_preserves_schedContextBindingConsistent" SeLe4n/Kernel/Lifecycle/Invariant/RetypeReservation.lean'
+
+# ---------------------------------------------------------------------------
+# Register row 63 (`v0.35.184`): the retype refuses a replacement SchedContext
+# that claims a thread.
+#
+# `lifecycleRetypeDirectWithCleanup` validates the replacement with
+# `newObj.wellFormed` and nothing else, and that predicate's `.schedContext` arm
+# was `True` -- so the model admitted a retype installing a scheduling context
+# claiming a thread which does not name it back, which is exactly what
+# `schedContextBindingConsistent` forbids.  It is the class SM6.D closed
+# for `Reply` ONE FIELD OVER, on the same guard and for the same stated reason.
+# ---------------------------------------------------------------------------
+
+# The clause itself, beside the `Reply` clause whose precedent it follows.
+run_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext sc => sc.boundThread = none" SeLe4n/Model/Object/Structures.lean'
+run_check "INVARIANT" bash -lc 'rg -F -n "| .reply r => r.caller = none" SeLe4n/Model/Object/Structures.lean'
+# NEGATIVE: and the retired arm must not come back.  `wellFormed` is what the two
+# retype wrappers check and the ONLY thing they check of the replacement, so an
+# arm reverting to `True` re-opens the whole hole.  Mutation: restore
+# `| .schedContext _ => True`.
+run_negative_check "INVARIANT" bash -lc 'rg -F -n "| .schedContext _ => True" SeLe4n/Model/Object/Structures.lean'
+# RELATION: EACH retype wrapper checks `wellFormed` and commits nothing when it
+# fails -- which is what makes the clause above a REFUSAL rather than a comment.
+# Scoped per wrapper, because a single tree-wide pattern is satisfied by whichever
+# of the two still carries the guard, which is a presence check.  Mutation: keep
+# the guard and disable it in either wrapper.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . newObj\.wellFormed st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecycleRetypeDirectWithCleanup[^\n]*(\n([ \t][^\n]*)?)*if . newObj\.wellFormed st\.objects then\n *\.error \.illegalState" SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean'
+# The §3.34 witness: the pristine replacement is accepted, the claiming one is
+# refused with the guard's own error, and the RETIRED guard stores it and
+# falsifies the invariant -- with a CONTROL on the pristine replacement, so the negative is
+# about `boundThread` rather than about the retype.
+run_check "INVARIANT" rg -n '^private def runRetypeReplacementGuardChecks : IO Unit := do$' tests/SmpIpcSuite.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeReplacementGuardChecks[^\n]*(\n([ \t][^\n]*)?)*NEGATIVE \(the defect\): \.\.\.so the binding invariant is FALSIFIED[^\n]*(\n([ \t][^\n]*)?)*CONTROL: on the pristine replacement the retired guard breaks nothing" tests/SmpIpcSuite.lean'
+# RELATION: the two replacements differ in `boundThread` ALONE, asserted rather
+# than left to the reader.  Mutation: keep both fixtures and drop the assertion.
+run_check "INVARIANT" rg -n 'CONTROL: \.\.\.and the two replacements differ in .boundThread. alone' tests/SmpIpcSuite.lean
+# NEGATIVE: the retired guard is spelled in the suite that refutes it and nowhere
+# else.  Mutation: declare a `retiredWellFormedRetype` under `SeLe4n/`.
+run_negative_check "INVARIANT" rg -n 'retiredWellFormedRetype' SeLe4n/
 
 # ---------------------------------------------------------------------------
 # WS-RR RR8.12 Cut C3b-i (`v0.35.167`): the three TCB-control arms' resolved

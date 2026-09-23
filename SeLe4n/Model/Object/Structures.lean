@@ -2979,7 +2979,9 @@ at construction time:
 - **Notification**: always well-formed (waiter validity tracked by `crossSubsystemInvariant`).
 - **VSpaceRoot**: always well-formed (ASID validity is a platform-level concern,
   tracked by `asidTableInvariant`).
-- **Untyped**: always well-formed (size constraints are enforced by the allocator). -/
+- **Untyped**: always well-formed (size constraints are enforced by the allocator).
+- **SchedContext**: must start with **no bound thread** (`v0.35.184`, see below).
+- **Reply**: must start inert (WS-SM SM6.D, see below). -/
 def wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
   match obj with
@@ -2991,7 +2993,17 @@ def wellFormed (obj : KernelObject)
   | .notification _ => True
   | .vspaceRoot _ => True
   | .untyped _ => True
-  | .schedContext _ => True
+  -- **`v0.35.184` (register row 63)**: a retyped/created SchedContext must start
+  -- with **no bound thread** -- the `Reply` clause below, one field over, for the
+  -- same reason and found by the same question.  `lifecycleRetypeDirectWithCleanup`
+  -- checks only `newObj.wellFormed`, so without this the model admits a retype
+  -- installing a scheduling context that claims a thread which does not name it
+  -- back, which is exactly what `schedContextBindingConsistent` (Z4-O) forbids: the
+  -- thread's own binding is whatever it was, and no operation reconciles the two.
+  -- The live dispatch already satisfies it -- `objectOfKernelType`'s `.schedContext`
+  -- arm is `SchedContext.empty`, whose `boundThread` is at its `none` default -- so
+  -- this refuses nothing the kernel does and closes what the *model* admitted.
+  | .schedContext sc => sc.boundThread = none
   -- WS-SM SM6.D (PR #822 review): a retyped/created Reply must start INERT — no
   -- caller and no reply-stack link in either direction — mirroring the boot-safe Reply
   -- requirement.  Otherwise `lifecycleRetypeWithCleanup` (which only checks
@@ -3008,8 +3020,8 @@ instance (obj : KernelObject)
   | .tcb _ => exact instDecidableAnd
   | .cnode _ => exact inferInstance
   | .reply _ => exact inferInstance
-  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _
-  | .schedContext _ =>
+  | .schedContext _ => exact inferInstance
+  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
     exact instDecidableTrue
 
 /-- WS-SM SM8.D: well-formedness does not read the lock word, so the lock-erased

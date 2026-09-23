@@ -1,3 +1,75 @@
+## v0.35.184 — the retype refuses a replacement SchedContext that claims a thread
+
+The model-level hole `v0.35.183` measured while sizing the retype composite's
+hypotheses, closed the way this project's own precedent closed it one field over.
+
+`lifecycleRetypeDirectWithCleanup` validates the replacement object with
+`newObj.wellFormed` and **nothing else** — and that predicate's `.schedContext`
+arm was `True`.  So the model admitted a retype installing a scheduling context
+that claims `boundThread = some tid` for a thread whose own
+`schedContextBinding` names nothing, which is exactly the state
+`schedContextBindingConsistent` (Z4-O) forbids and which no operation
+reconciles: the context's claim and the thread's binding simply disagree,
+permanently.
+
+That is the class WS-SM SM6.D closed for `Reply`, on the same guard, in the same
+`match`, with its reason stated in terms: a retyped Reply "must start INERT ...
+otherwise `lifecycleRetypeWithCleanup` (which only checks `newObj.wellFormed`)
+could install a Reply that bypasses the `linkCallerReply` setup path".  Every
+word of that applies to a SchedContext's `boundThread` and
+`schedContextBind`/`donateSchedContext`.
+
+### What changed
+
+`KernelObject.wellFormed`'s `.schedContext` arm is `sc.boundThread = none`, and
+its `Decidable` instance follows.  Both retype wrappers already refuse a
+replacement that fails `wellFormed` with `.illegalState`, committing nothing, so
+the clause *is* the refusal — no call site changed.
+
+### Measured before it was chosen, and after
+
+**Nothing in the tree depended on the arm being `True`**: the whole library and
+every suite build unchanged, because the only two consumers are the wrappers'
+guards and neither destructures the predicate.
+
+**And the live dispatch never built such a replacement.**  The `.lifecycleRetype`
+arm's replacement builder is `objectOfKernelType`, whose `.schedContext` arm is
+`SchedContext.empty`, which leaves `boundThread` at its `none` default — so this
+refuses nothing the kernel does.  A guard that costs the tree nothing is the one
+worth taking, and it is what makes the property true of *every* future
+replacement builder rather than of the one that happens to exist: the difference
+between an invariant maintained by convention and one enforced structurally.
+
+### The witness is decisive, and its negative is the falsification
+
+`tests/SmpIpcSuite.lean` §3.34 retypes an endpoint into a scheduling context on
+a state where Z4-O holds, with the claimed thread `.unbound`:
+
+* **(b) PAYOFF** — the pristine replacement is accepted and Z4-O survives.
+* **(c) PAYOFF** — the claiming replacement is refused, with `.illegalState`,
+  which is the `wellFormed` guard's own arm.
+* **(d) NEGATIVE** — the *retired* guard (`wellFormed`'s `.schedContext` arm as
+  `True`, spelled in the suite and nowhere else) stores it, and the resulting
+  state **falsifies** Z4-O.
+* **(e) CONTROL** — the retired guard stores the *pristine* replacement too and
+  breaks nothing there, and the two replacements are asserted to differ in
+  `boundThread` **alone** — so (d) is about the field rather than about the
+  retype.
+
+Nine Tier 3 anchors, six mutations, all caught; the per-wrapper guard relation is
+scoped to each wrapper's own declaration, because one tree-wide pattern is
+satisfied by whichever of the two still carries the guard, which is a presence
+check.
+
+### What register row 63 still carries
+
+The retype **composite**'s two invariant theorems.  This cut removes the
+obstacle they ran into — with the clause in place, `lifecycleRetypeDirectWithCleanup`'s
+`.ok` path *knows* the installed context binds nobody, so the composite needs no
+hypothesis about `newObj` beyond what the runtime already checks.
+
+Bumps version to 0.35.184.
+
 ## v0.35.183 — WS-RR RR8.12 Cut E1: Z4-O across the destroy path
 
 Register row 63's remaining half.  `v0.35.166` closed the reservation invariant

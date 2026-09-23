@@ -49,10 +49,10 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.183` (`lakefile.toml`) |
+| **Package version** | `0.35.184` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 409,202 across 338 Lean files |
-| **Test LoC** | 83,391 across 70 Lean test suites |
+| **Production LoC** | 409,214 across 338 Lean files |
+| **Test LoC** | 83,492 across 70 Lean test suites |
 | **Proved declarations** | 13,536 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
@@ -4646,11 +4646,23 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   later — and `retypeTargetDetached`'s `notSc` makes the hypothesis free at the live
   call site.  What register row 63 still carries is the retype *composite*'s two
   theorems, and the model-level hole measuring their hypotheses found: neither
-  `KernelObject.wellFormed` nor `retypeReplacementFresh` constrains a replacement
-  SchedContext's `boundThread`, so the admissible replacement space contains a
+  `KernelObject.wellFormed` nor `retypeReplacementFresh` constrained a replacement
+  SchedContext's `boundThread`, so the admissible replacement space contained a
   context claiming a thread that does not name it back — the class SM6.D closed for
-  `Reply` one field over, unreachable on the live path since `objectOfKernelType`
-  installs `SchedContext.empty`.
+  `Reply` one field over.
+
+  **And that hole is closed** (`v0.35.184`).  `KernelObject.wellFormed`'s
+  `.schedContext` arm is `sc.boundThread = none`, and since both retype wrappers
+  answer `.illegalState` and commit nothing when `wellFormed` fails, the clause *is*
+  the refusal — no call site changed.  It costs the tree nothing: nothing depended
+  on the arm being `True`, and the live dispatch's builder `objectOfKernelType`
+  installs `SchedContext.empty`, whose `boundThread` is at its `none` default.  That
+  is what makes it structural enforcement rather than a convention — it holds of
+  every future replacement builder rather than of the one that exists.
+  `tests/SmpIpcSuite.lean` §3.34 is the witness, with the retired guard spelled in
+  the suite alone: it stores the claiming replacement and Z4-O is **falsified**,
+  against a control on the pristine replacement where it holds.  What register row
+  63 still carries is the retype composite's two theorems.
 
   **And the three TCB-control arms declare theirs, in a module of their own**
   (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,

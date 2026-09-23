@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.183.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.184.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -9052,16 +9052,32 @@ code may assume:
   WS-RR RR8.7 set with `replyCallerLinkage_refutes_woken_linked_caller`.  A proof
   that wants the preservation is asking for a premise the arm refutes.
 
-  (5) **The replacement space is where the remaining work starts.**  Neither
-  `KernelObject.wellFormed` nor `retypeReplacementFresh` constrains a replacement
-  **SchedContext**'s `boundThread`, so the model admits a retype installing a
-  context that claims a thread which does not name it back — exactly what Z4-O
-  forbids, and exactly the class SM6.D closed for `Reply` one field over.
-  Unreachable on the live path (`objectOfKernelType`'s `.schedContext` arm is
-  `SchedContext.empty`, whose `boundThread` is at its `none` default), so it is a
-  guard to tighten rather than a defect to fix; until it is tightened, the retype
-  composite's Z4-O theorem cannot be stated without a hypothesis about `newObj`,
-  and the register row carries both.
+  (5) **A retyped SchedContext starts bound to nobody, and that is a runtime
+  refusal** (`v0.35.184`).  `KernelObject.wellFormed`'s `.schedContext` arm is
+  `sc.boundThread = none`, following the `Reply` clause SM6.D added one field over
+  and for the reason SM6.D states in terms: the two retype wrappers check
+  `wellFormed` and **nothing else** of the replacement, so an arm reading `True`
+  admits a retype installing a context that claims a thread which does not name it
+  back — exactly what Z4-O forbids, and a disagreement no operation reconciles.
+  Three things new code must respect.  The clause **is** the refusal, because both
+  wrappers answer `.illegalState` and commit nothing when `wellFormed` fails; a
+  Tier 3 anchor is scoped to **each** wrapper's declaration, since one tree-wide
+  pattern is satisfied by whichever of the two still carries the guard.  It costs
+  the tree nothing — nothing depended on the arm being `True`, and the live
+  dispatch's builder is `objectOfKernelType`, whose `.schedContext` arm is
+  `SchedContext.empty` — which is what makes it the difference between an invariant
+  maintained by convention and one enforced structurally, true of every *future*
+  replacement builder rather than of the one that exists.  And the witness's
+  negative is the falsification: `tests/SmpIpcSuite.lean` §3.34 computes the
+  retired guard beside the live one, stores the claiming replacement through it and
+  asserts Z4-O **false**, against a CONTROL on the pristine replacement where it
+  holds — so the claim is about `boundThread` rather than about the retype.
+
+  What register row 63 still carries is the retype **composite**'s two theorems.
+  With the clause above, its `.ok` path knows the installed context binds nobody,
+  so no hypothesis about `newObj` is needed beyond what the runtime checks; what it
+  does need is a relaxed view for the intermediate, the SchedContext arm's own
+  post-state refuting Z4-O by design.
 - **...and the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
   RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
   `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's own SM8.B write

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/busy-einstein-93g7iy",
-      "commit_sha": "e11b92603b9a684a9d2ae6aecc8a8b028454cdc3",
-      "tree_sha": "1168a9132424be1ff8197cb68dd68026c9974e28",
-      "committed_at_utc": "2026-09-23T02:25:38+00:00"
+      "commit_sha": "f628822bbee906fe8f1e12d7a36a84bf93833f2d",
+      "tree_sha": "a6171b8f6f0c404698ec6afd59d7066800d6af01",
+      "committed_at_utc": "2026-09-23T03:51:42+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "5695f8c66304996b63f8ec0e438b1c35028f8a70692a9cfbd5e86618a4e3f089"
+    "source_digest": "c0a95f9146420a2e63a92a387cbe788e497d0d732ab9867d31f3ea8352d18105"
   },
   "summary": {
     "module_count": 408,
-    "declaration_count": 22655
+    "declaration_count": 22660
   },
   "readme_sync": {
-    "version": "0.35.183",
+    "version": "0.35.184",
     "lean_toolchain": "v4.28.0",
     "production_files": 338,
-    "production_loc": 409202,
+    "production_loc": 409214,
     "test_files": 70,
-    "test_loc": 83391,
+    "test_loc": 83492,
     "proved_theorem_lemma_decls": 13536,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -255091,7 +255091,7 @@
         {
           "kind": "def",
           "name": "wellFormed",
-          "line": 2983,
+          "line": 2985,
           "called": [
             "KernelObject",
             "ObjId",
@@ -255102,8 +255102,8 @@
         },
         {
           "kind": "instance",
-          "name": "<anonymous:instance:3003>",
-          "line": 3003,
+          "name": "<anonymous:instance:3015>",
+          "line": 3015,
           "called": [
             "KernelObject",
             "ObjId",
@@ -255114,7 +255114,7 @@
         {
           "kind": "theorem",
           "name": "eraseLock_wellFormed",
-          "line": 3021,
+          "line": 3033,
           "called": [
             "KernelObject",
             "ObjId",
@@ -255128,13 +255128,13 @@
         {
           "kind": "def",
           "name": "maxCdtDepth",
-          "line": 3069,
+          "line": 3081,
           "called": []
         },
         {
           "kind": "theorem",
           "name": "edgeWellFounded_no_self_reachable",
-          "line": 3084,
+          "line": 3096,
           "called": [
             "CapDerivationTree",
             "CdtChildReachable",
@@ -255146,7 +255146,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_edges_length",
-          "line": 3101,
+          "line": 3113,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -255158,7 +255158,7 @@
         {
           "kind": "theorem",
           "name": "addEdge_maintains_depth_bound",
-          "line": 3113,
+          "line": 3125,
           "called": [
             "CapDerivationTree",
             "CdtNodeId",
@@ -332008,7 +332008,7 @@
     {
       "module": "tests.SmpIpcSuite",
       "path": "tests/SmpIpcSuite.lean",
-      "declaration_count": 258,
+      "declaration_count": 263,
       "declarations": [
         {
           "kind": "namespace",
@@ -335889,8 +335889,85 @@
         },
         {
           "kind": "def",
+          "name": "freshScReplacement",
+          "line": 5216,
+          "called": [
+            "KernelObject",
+            "donEp",
+            "empty",
+            "ofObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "boundScReplacement",
+          "line": 5222,
+          "called": [
+            "KernelObject",
+            "donEp",
+            "donServer",
+            "empty",
+            "ofObjId"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "liveRetypeInto",
+          "line": 5227,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "lifecycleRetypeDirectWithCleanup",
+            "okExcept",
+            "retypeCapOn",
+            "st"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "retiredWellFormedRetype",
+          "line": 5236,
+          "called": [
+            "KernelObject",
+            "ObjId",
+            "SystemState",
+            "getObject",
+            "lifecyclePreRetypeCleanup",
+            "none",
+            "objectType",
+            "scrubObjectMemory",
+            "st",
+            "withObjectStored"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "runRetypeReplacementGuardChecks",
+          "line": 5246,
+          "called": [
+            "assertBool",
+            "boundScReplacement",
+            "donEp",
+            "donFixtureTypes",
+            "donServer",
+            "freshScReplacement",
+            "getObject",
+            "getTcb",
+            "lifecycleRetypeDirectWithCleanup",
+            "liveRetypeInto",
+            "none",
+            "retiredWellFormedRetype",
+            "retypeCapOn",
+            "schedContextBindingConsistentB",
+            "stPreReturnSameCore",
+            "withRetypeTypes"
+          ]
+        },
+        {
+          "kind": "def",
           "name": "runSmpIpcChecks",
-          "line": 5196,
+          "line": 5296,
           "called": [
             "runCallReplyFootprintChecks",
             "runCancellationCompositionChecks",
@@ -335922,6 +335999,7 @@
             "runReplyRecvLoopChecks",
             "runReplyRecvLoopCompletionChecks",
             "runRetypeFootprintChecks",
+            "runRetypeReplacementGuardChecks",
             "runRetypeReservationChecks",
             "runRetypeSchedContextChecks",
             "runSendReceiveChecks",
@@ -335933,7 +336011,7 @@
         {
           "kind": "def",
           "name": "main",
-          "line": 5240,
+          "line": 5341,
           "called": [
             "runSmpIpcChecks"
           ]

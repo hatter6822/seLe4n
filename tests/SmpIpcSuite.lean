@@ -5193,6 +5193,106 @@ private def runRetypeFootprintChecks : IO Unit := do
     assertBool "(d) C6g: ...and the domain-wide instruction-cache layer really did run"
       (stArm.pendingIcacheMaintenance.length > stBound.pendingIcacheMaintenance.length)
 
+-- ============================================================================
+-- §3.34 the retype refuses a replacement SchedContext that claims a thread
+--       (register row 63, `v0.35.184`)
+-- ============================================================================
+
+/-! `lifecycleRetypeDirectWithCleanup` validates the replacement with
+`newObj.wellFormed` and nothing else, and that predicate's `.schedContext` arm was
+`True` — so the model admitted a retype installing a scheduling context claiming a
+thread which does not name it back, which is exactly the state
+`schedContextBindingConsistent` forbids.  It is the class WS-SM SM6.D closed
+for `Reply` one field over, on the same guard and for the same stated reason.
+
+The live dispatch never built such a replacement (`objectOfKernelType` installs
+`SchedContext.empty`, whose `boundThread` is at its `none` default), so this is the
+*model's* admissible space rather than a reachable defect — and a guard that refuses
+nothing the kernel does is exactly the one worth having, because the next replacement
+builder need not be that one. -/
+
+/-- The pristine replacement `objectOfKernelType .schedContext` builds, at the key
+the retype targets. -/
+private def freshScReplacement : KernelObject :=
+  .schedContext (SchedContext.empty (SchedContextId.ofObjId donEp))
+
+/-- The same replacement CLAIMING `donServer`, which is `.unbound` and names no
+context — one field apart from the pristine one, so an assertion that separates
+them is about `boundThread` and nothing else. -/
+private def boundScReplacement : KernelObject :=
+  .schedContext { SchedContext.empty (SchedContextId.ofObjId donEp) with
+    boundThread := some donServer }
+
+/-- The LIVE retype into a caller-supplied replacement. -/
+private def liveRetypeInto (st : SystemState) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target newObj st)).map
+    Prod.snd
+
+/-- The RETIRED guard: `wellFormed`'s `.schedContext` arm as `True`, so the
+replacement is stored whatever it claims — the cleanup, the scrub and the store the
+live pipeline performs, with the validation dropped.  Spelled here and nowhere
+else. -/
+private def retiredWellFormedRetype (st : SystemState) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Option SystemState :=
+  match st.getObject? target with
+  | none => none
+  | some obj =>
+      match lifecyclePreRetypeCleanup st target obj newObj with
+      | .error _ => none
+      | .ok stClean =>
+          some ((scrubObjectMemory stClean target obj.objectType).withObjectStored target newObj)
+
+private def runRetypeReplacementGuardChecks : IO Unit := do
+  IO.println "--- §3.34 register row 63: the retype refuses a replacement SchedContext that claims a thread ---"
+  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  assertBool "(a) setup: the target holds an endpoint whose recorded type matches"
+    ((match stEp.getObject? donEp with | some (.endpoint _) => true | _ => false)
+      && stEp.lifecycle.objectTypes[donEp]? == some KernelObjectType.endpoint)
+  assertBool "(a) setup: the thread the bad replacement claims is `.unbound`"
+    (match stEp.getTcb? donServer with
+     | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
+  assertBool "(a) setup: the binding invariant holds before the retype"
+    (schedContextBindingConsistentB stEp)
+  -- (b) PAYOFF: the pristine replacement is accepted and Z4-O survives.
+  match liveRetypeInto stEp donEp freshScReplacement with
+  | none => assertBool "(b) PAYOFF: the pristine SchedContext replacement is accepted" false
+  | some stFresh =>
+    assertBool "(b) PAYOFF: the slot holds the fresh context, bound to nobody"
+      (match stFresh.getObject? donEp with
+       | some (.schedContext sc) => sc.boundThread.isNone | _ => false)
+    assertBool "(b) PAYOFF: the binding invariant holds after it"
+      (schedContextBindingConsistentB stFresh)
+  -- (c) PAYOFF: the claiming replacement is REFUSED, and nothing is committed.
+  assertBool "(c) PAYOFF: the claiming replacement is refused"
+    (liveRetypeInto stEp donEp boundScReplacement).isNone
+  assertBool "(c) PAYOFF: ...with `.illegalState`, which is the `wellFormed` guard's own arm"
+    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp boundScReplacement stEp with
+     | .error e => e == KernelError.illegalState | .ok _ => false)
+  -- (d) NEGATIVE: the retired guard stores it, and the result FALSIFIES Z4-O.
+  match retiredWellFormedRetype stEp donEp boundScReplacement with
+  | none => assertBool "(d) NEGATIVE setup: the retired guard stores the claiming replacement" false
+  | some stBad =>
+    assertBool "(d) NEGATIVE: the retired guard leaves a context claiming an `.unbound` thread..."
+      (match stBad.getObject? donEp with
+       | some (.schedContext sc) => sc.boundThread == some donServer | _ => false)
+    assertBool "(d) NEGATIVE (the defect): ...so the binding invariant is FALSIFIED"
+      (!schedContextBindingConsistentB stBad)
+  -- (e) CONTROL: the retired guard stores the PRISTINE replacement too, and there
+  -- Z4-O survives — so (d) is about `boundThread` rather than about the retype.
+  match retiredWellFormedRetype stEp donEp freshScReplacement with
+  | none => assertBool "(e) CONTROL setup: the retired guard stores the pristine replacement" false
+  | some stCtl =>
+    assertBool "(e) CONTROL: on the pristine replacement the retired guard breaks nothing"
+      (schedContextBindingConsistentB stCtl)
+    assertBool "(e) CONTROL: ...and the two replacements differ in `boundThread` alone"
+      (match freshScReplacement, boundScReplacement with
+       | .schedContext a, .schedContext b =>
+           a.boundThread.isNone && b.boundThread == some donServer
+             && { a with boundThread := some donServer } == b
+       | _, _ => false)
+
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -5231,6 +5331,7 @@ def runSmpIpcChecks : IO Unit := do
   runRetypeReservationChecks
   runRetypeSchedContextChecks
   runRetypeFootprintChecks
+  runRetypeReplacementGuardChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."
