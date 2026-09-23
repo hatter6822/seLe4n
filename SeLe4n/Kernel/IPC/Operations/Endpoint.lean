@@ -644,6 +644,58 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   | .error e => .error e
   | .ok ((), st') => .ok st'
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the resolving spelling of the delivery store
+is a `kindPreservingWrite` too — it looks the TCB up itself, so it needs no
+`hPre`.
+
+The `.call` leg writes through this form where the reply leg writes through
+`_fromTcb`, and both spellings are one store; stating the relation at each is
+what keeps a chain over either a citation. -/
+theorem storeTcbIpcStateAndMessage_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLk : lookupTcb st tid with
+  | none => rw [hLk] at hStore; cases hStore
+  | some tcb =>
+    rw [hLk] at hStore
+    simp only at hStore
+    cases hS : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => rw [hS] at hStore; cases hStore
+    | ok p =>
+      obtain ⟨_, s1⟩ := p
+      rw [hS] at hStore
+      simp only [Except.ok.injEq] at hStore
+      subst hStore
+      exact storeObject_kindPreservingWrite hObjInv hS
+        (lookupTcb_some_objects st tid tcb hLk) rfl (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it writes neither CDT table. -/
+theorem storeTcbIpcStateAndMessage_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLk : lookupTcb st tid with
+  | none => rw [hLk] at hStore; cases hStore
+  | some tcb =>
+    rw [hLk] at hStore
+    simp only at hStore
+    cases hS : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => rw [hS] at hStore; cases hStore
+    | ok p =>
+      obtain ⟨_, s1⟩ := p
+      rw [hS] at hStore
+      simp only [Except.ok.injEq] at hStore
+      subst hStore
+      exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
 /-- **WS-RR RR8.16** (`v0.35.199`): the delivery store is a
 `kindPreservingWrite` — one `storeObject` of a `.tcb` at a key the caller has
 already resolved to a TCB.
@@ -1036,6 +1088,46 @@ theorem storeDonationFramePush_preserves_objects_invExt
   rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
   · exact hInv1
   · exact storeObject_preserves_objects_invExt s1 st' _ _ hInv1 hS2
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the frame push is a `kindPreservingWrite` —
+a Reply for a Reply at the pushed frame, and another at the old head when the
+context already headed one.
+
+The pushed frame's pre-state record is a hypothesis rather than derived: the
+push takes it as an *argument*, and `donationPushFrame?_ok` is what the donation
+supplies it from. -/
+theorem storeDonationFramePush_kindPreservingWrite
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (hPre : st.getReply? pushRid = some pushReply)
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1
+      ((SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hPre) rfl
+      (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  rcases hRest with ⟨_, rfl⟩ | ⟨old, oldR, _, hR, hS2⟩
+  · exact hW1
+  · exact hW1.trans (storeObject_kindPreservingWrite hInv1 hS2
+      ((SystemState.getReply?_eq_some_iff s1 old oldR).mp hR) rfl
+      (by simp [KernelObject.objectType]))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the push writes neither CDT table. -/
+theorem storeDonationFramePush_cdt_eq
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
+    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
+  · exact e1
+  · exact ⟨(storeObject_cdt_eq _ _ _ _ hS2).trans e1.1,
+      (storeObject_cdtNodeSlot_eq _ _ _ _ hS2).trans e1.2⟩
 
 /-- The pushed frame's record afterwards. -/
 theorem storeDonationFramePush_getReply?_pushed

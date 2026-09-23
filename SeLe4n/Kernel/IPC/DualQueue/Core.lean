@@ -76,6 +76,55 @@ theorem storeTcbQueueLinks_preserves_objects_ne
       have hEq : pair.snd = st' := Except.ok.inj hStep; subst hEq
       exact storeObject_objects_ne' st tid.toObjId oid _ pair hNe hObjInv hStore
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the link store is a `kindPreservingWrite` —
+one `storeObject` of a `.tcb` at a key the store has already resolved to a TCB.
+
+The shape register row 85's two bundle frames consume; the `.call` chain's own
+store chain composes it with `.trans`.  Stated beside the primitive, as the
+reply side's are: every arm of both IPC spines writes queue links through this
+one function, and re-deriving the fact per arm is the duplication this project
+retires. -/
+theorem storeTcbQueueLinks_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
+    {next : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨_, s1⟩ := pair
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact storeObject_kindPreservingWrite hObjInv hStore
+        (lookupTcb_some_objects st tid tcb hTcb) rfl (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it writes neither CDT table. -/
+theorem storeTcbQueueLinks_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {prev : Option SeLe4n.ThreadId} {pprev : Option QueuePPrev}
+    {next : Option SeLe4n.ThreadId}
+    (hStep : storeTcbQueueLinks st tid prev pprev next = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeTcbQueueLinks at hStep
+  cases hTcb : lookupTcb st tid with
+  | none => simp [hTcb] at hStep
+  | some tcb =>
+    simp only [hTcb] at hStep
+    cases hStore : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) st with
+    | error e => simp [hStore] at hStep
+    | ok pair =>
+      obtain ⟨_, s1⟩ := pair
+      simp only [hStore] at hStep
+      have hEq := Except.ok.inj hStep; subst hEq
+      exact ⟨storeObject_cdt_eq _ _ _ _ hStore, storeObject_cdtNodeSlot_eq _ _ _ _ hStore⟩
+
 /-- WS-F1: storeTcbQueueLinks does not modify the scheduler. -/
 theorem storeTcbQueueLinks_scheduler_eq
     (st st' : SystemState) (tid : SeLe4n.ThreadId)
@@ -609,6 +658,136 @@ theorem endpointQueuePopHead_preserves_objects_invExt
                     intro ⟨_, _, rfl⟩
                     exact storeTcbQueueLinks_preserves_objects_invExt _ _ headTid _ _ _ hInv2 hFinal
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the pop is a `kindPreservingWrite` — an
+endpoint for an endpoint, then up to two TCBs for two TCBs.
+
+Composed by `.trans` off the same case analysis its `invExt` proof runs, so the
+two cannot disagree about which stores fire. -/
+theorem endpointQueuePopHead_kindPreservingWrite
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {headTcb : TCB}
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    kindPreservingWrite st st' := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          split at hStep
+          · simp at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            obtain ⟨_, s1⟩ := pair
+            have hW1 : kindPreservingWrite st s1 :=
+              storeObject_kindPreservingWrite hObjInv hStore hObj rfl
+                (by simp [KernelObject.objectType])
+            have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hStore
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks s1 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                exact hW1.trans (storeTcbQueueLinks_kindPreservingWrite hInv1 hFinal)
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb s1 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks s1 nextTid none (some QueuePPrev.endpointHead)
+                    nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have hW2 := storeTcbQueueLinks_kindPreservingWrite hInv1 hLink
+                  have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ nextTid _ _ _
+                    hInv1 hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    exact (hW1.trans hW2).trans
+                      (storeTcbQueueLinks_kindPreservingWrite hInv2 hFinal)
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the pop writes neither CDT table. -/
+theorem endpointQueuePopHead_cdt_eq
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {headTcb : TCB}
+    (hStep : endpointQueuePopHead endpointId isReceiveQ st = .ok (tid, headTcb, st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold endpointQueuePopHead SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hHead : (if isReceiveQ then ep.receiveQ else ep.sendQ).head with
+      | none => simp [hHead] at hStep
+      | some headTid =>
+        simp only [hHead] at hStep
+        cases hLookup : lookupTcb st headTid with
+        | none => simp [hLookup] at hStep
+        | some tcb =>
+          simp only [hLookup] at hStep
+          split at hStep
+          · simp at hStep
+          revert hStep
+          cases hStore : storeObject endpointId _ st with
+          | error e => simp
+          | ok pair =>
+            obtain ⟨_, s1⟩ := pair
+            have e0 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
+              ⟨storeObject_cdt_eq _ _ _ _ hStore, storeObject_cdtNodeSlot_eq _ _ _ _ hStore⟩
+            cases hNext : tcb.queueNext with
+            | none =>
+              simp only []
+              cases hFinal : storeTcbQueueLinks s1 headTid none none none with
+              | error e => simp
+              | ok st3 =>
+                simp only [Except.ok.injEq, Prod.mk.injEq]
+                intro ⟨_, _, rfl⟩
+                have e1 := storeTcbQueueLinks_cdt_eq hFinal
+                exact ⟨e1.1.trans e0.1, e1.2.trans e0.2⟩
+            | some nextTid =>
+              simp only []
+              cases hLookupNext : lookupTcb s1 nextTid with
+              | none => simp
+              | some nextTcb =>
+                simp only []
+                cases hLink : storeTcbQueueLinks s1 nextTid none (some QueuePPrev.endpointHead)
+                    nextTcb.queueNext with
+                | error e => simp
+                | ok st2 =>
+                  simp only []
+                  have e1 := storeTcbQueueLinks_cdt_eq hLink
+                  cases hFinal : storeTcbQueueLinks st2 headTid none none none with
+                  | error e => simp
+                  | ok st3 =>
+                    simp only [Except.ok.injEq, Prod.mk.injEq]
+                    intro ⟨_, _, rfl⟩
+                    have e2 := storeTcbQueueLinks_cdt_eq hFinal
+                    exact ⟨(e2.1.trans e1.1).trans e0.1, (e2.2.trans e1.2).trans e0.2⟩
+
 /-- endpointQueueEnqueue preserves objects.invExt. -/
 theorem endpointQueueEnqueue_preserves_objects_invExt
     (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
@@ -658,6 +837,126 @@ theorem endpointQueueEnqueue_preserves_objects_invExt
                     have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _ hInv1 hLink1
                     intro hStep
                     exact storeTcbQueueLinks_preserves_objects_invExt _ _ tid _ _ _ hInv2 hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the enqueue is a `kindPreservingWrite` — an
+endpoint for an endpoint, then up to two TCBs for two TCBs.
+
+Composed by `.trans` off the same case analysis its `invExt` proof runs, so the
+two cannot disagree about which stores fire. -/
+theorem endpointQueueEnqueue_kindPreservingWrite
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                obtain ⟨_, s1⟩ := pair
+                simp only []
+                have hW1 : kindPreservingWrite st s1 :=
+                  storeObject_kindPreservingWrite hObjInv hStore hObj rfl
+                    (by simp [KernelObject.objectType])
+                have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hStore
+                intro hStep
+                exact hW1.trans (storeTcbQueueLinks_kindPreservingWrite hInv1 hStep)
+            | some tailTid =>
+              cases hLookupT : lookupTcb st tailTid
+              · simp [hLookupT]
+              · rename_i tailTcb
+                simp only [hLookupT]
+                cases hStore : storeObject endpointId _ st
+                · simp
+                · rename_i pair
+                  obtain ⟨_, s1⟩ := pair
+                  simp only []
+                  have hW1 : kindPreservingWrite st s1 :=
+                    storeObject_kindPreservingWrite hObjInv hStore hObj rfl
+                      (by simp [KernelObject.objectType])
+                  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hStore
+                  cases hLink1 : storeTcbQueueLinks s1 tailTid _ _ (some tid)
+                  · simp
+                  · rename_i st2
+                    simp only []
+                    have hW2 := storeTcbQueueLinks_kindPreservingWrite hInv1 hLink1
+                    have hInv2 := storeTcbQueueLinks_preserves_objects_invExt _ _ tailTid _ _ _
+                      hInv1 hLink1
+                    intro hStep
+                    exact (hW1.trans hW2).trans
+                      (storeTcbQueueLinks_kindPreservingWrite hInv2 hStep)
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the enqueue writes neither CDT table. -/
+theorem endpointQueueEnqueue_cdt_eq
+    {endpointId : SeLe4n.ObjId} {isReceiveQ : Bool}
+    {tid : SeLe4n.ThreadId} {st st' : SystemState}
+    (hStep : endpointQueueEnqueue endpointId isReceiveQ tid st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold endpointQueueEnqueue SystemState.getObject? at hStep
+  cases hObj : st.objects[endpointId]? with
+  | none => simp [hObj] at hStep
+  | some obj => cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
+        simp [hObj] at hStep
+    | endpoint ep =>
+      simp only [hObj] at hStep
+      cases hLookup : lookupTcb st tid with
+      | none => simp [hLookup] at hStep
+      | some tcb =>
+        simp only [hLookup] at hStep
+        split at hStep
+        · simp at hStep
+        · split at hStep
+          · simp at hStep
+          · revert hStep
+            cases (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              cases hStore : storeObject endpointId _ st with
+              | error e => simp
+              | ok pair =>
+                obtain ⟨_, s1⟩ := pair
+                simp only []
+                intro hStep
+                have e1 := storeTcbQueueLinks_cdt_eq hStep
+                exact ⟨e1.1.trans (storeObject_cdt_eq _ _ _ _ hStore),
+                  e1.2.trans (storeObject_cdtNodeSlot_eq _ _ _ _ hStore)⟩
+            | some tailTid =>
+              cases hLookupT : lookupTcb st tailTid
+              · simp [hLookupT]
+              · rename_i tailTcb
+                simp only [hLookupT]
+                cases hStore : storeObject endpointId _ st
+                · simp
+                · rename_i pair
+                  obtain ⟨_, s1⟩ := pair
+                  simp only []
+                  cases hLink1 : storeTcbQueueLinks s1 tailTid _ _ (some tid)
+                  · simp
+                  · rename_i st2
+                    simp only []
+                    intro hStep
+                    have e1 := storeTcbQueueLinks_cdt_eq hLink1
+                    have e2 := storeTcbQueueLinks_cdt_eq hStep
+                    exact ⟨(e2.1.trans e1.1).trans (storeObject_cdt_eq _ _ _ _ hStore),
+                      (e2.2.trans e1.2).trans (storeObject_cdtNodeSlot_eq _ _ _ _ hStore)⟩
 
 -- ============================================================================
 -- Z6-D: Mid-queue thread removal for timeout unblocking

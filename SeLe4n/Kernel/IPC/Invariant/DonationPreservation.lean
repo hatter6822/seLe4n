@@ -1244,6 +1244,77 @@ theorem donateSchedContext_preserves_objects_invExt
   rw [show st'.objects = s4.objects by rw [hEq]]
   exact hInv4
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the donation push is a `kindPreservingWrite`
+— a SchedContext for a SchedContext, the frame push's Reply writes, then two
+TCBs for two TCBs, with the closing `scThreadIndex` rewrite touching no object.
+
+The `.call` chain's counterpart of `returnDonatedSchedContext_kindPreservingWrite`,
+composed by `.trans` off the same `_ok_storeChain` its `invExt` proof runs, so
+the two cannot disagree about which stores fire. -/
+theorem donateSchedContext_kindPreservingWrite
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId) (hObjInv : st.objects.invExt)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨sc, donorTcb, clientTcb, serverTcb, pushRid, pushReply, s1, s2, s3, s4,
+    hSc, _, _, hFrame, hS1, hS2, hL1, hS3, hL2, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  -- Step 1: the SchedContext rewrite.
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1
+      ((SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc) rfl
+      (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  -- Step 2: the frame push, a Reply for a Reply at each key it writes.  The
+  -- pushed frame's pre-state record comes from the push-frame resolver, read on
+  -- `st`, and step 1 writes a SchedContext key, so it survives.
+  obtain ⟨_, hRepPre, _, _, _⟩ := donationPushFrame?_ok st donorTcb pushRid pushReply hFrame
+  have hRep1 : s1.getReply? pushRid = some pushReply := by
+    have hNe : pushRid.toObjId ≠ clientScId.toObjId := by
+      intro hk
+      have := (SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hRepPre
+      rw [hk, (SystemState.getSchedContext?_eq_some_iff st clientScId sc).mp hSc] at this
+      cases this
+    unfold SystemState.getReply? at hRepPre ⊢
+    rw [storeObject_objects_ne st s1 clientScId.toObjId pushRid.toObjId _ hNe
+      hObjInv hS1]
+    exact hRepPre
+  have hW2 : kindPreservingWrite s1 s2 :=
+    storeDonationFramePush_kindPreservingWrite hInv1 hRep1 hS2
+  have hInv2 := storeDonationFramePush_preserves_objects_invExt hInv1 hS2
+  -- Step 3: the donor's TCB.
+  have hW3 : kindPreservingWrite s2 s3 :=
+    storeObject_kindPreservingWrite hInv2 hS3 (lookupTcb_some_objects s2 clientTid clientTcb hL1)
+      rfl (by simp [KernelObject.objectType])
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- Step 4: the donee's TCB.
+  have hW4 : kindPreservingWrite s3 s4 :=
+    storeObject_kindPreservingWrite hInv3 hS4 (lookupTcb_some_objects s3 serverTid serverTcb hL2)
+      rfl (by simp [KernelObject.objectType])
+  have hLast : kindPreservingWrite s4 st' :=
+    kindPreservingWrite.of_objects_eq (by rw [hEq])
+  exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the donation push writes no CDT
+table. -/
+theorem donateSchedContext_cdt_eq
+    (st st' : SystemState) (clientTid serverTid : SeLe4n.ThreadId)
+    (clientScId : SeLe4n.SchedContextId)
+    (h : donateSchedContext st clientTid serverTid clientScId = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨_, _, _, _, _, _, s1, s2, s3, s4, _, _, _, _, hS1, hS2, _, hS3, _, hS4, hEq⟩ :=
+    donateSchedContext_ok_storeChain st st' clientTid serverTid clientScId h
+  have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
+    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+  have e2 := storeDonationFramePush_cdt_eq hS2
+  have e3 : s3.cdt = s2.cdt ∧ s3.cdtNodeSlot = s2.cdtNodeSlot :=
+    ⟨storeObject_cdt_eq _ _ _ _ hS3, storeObject_cdtNodeSlot_eq _ _ _ _ hS3⟩
+  have e4 : s4.cdt = s3.cdt ∧ s4.cdtNodeSlot = s3.cdtNodeSlot :=
+    ⟨storeObject_cdt_eq _ _ _ _ hS4, storeObject_cdtNodeSlot_eq _ _ _ _ hS4⟩
+  refine ⟨?_, ?_⟩
+  · rw [show st'.cdt = s4.cdt by rw [hEq], e4.1, e3.1, e2.1, e1.1]
+  · rw [show st'.cdtNodeSlot = s4.cdtNodeSlot by rw [hEq], e4.2, e3.2, e2.2, e1.2]
+
 /-- WS-RR RR2.6: `applyCallDonation` preserves the object store's extended
 invariant — the no-op arm trivially, the donating arm through
 `donateSchedContext`. -/
@@ -1280,6 +1351,65 @@ theorem applyCallDonationOnCore_preserves_objects_invExt
   rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> rw [hEq]
   · exact hInv1
   · rw [migrateSchedContextReplenishment_objects]; exact hInv1
+
+/-- **WS-RR RR8.16** (`v0.35.200`): `applyCallDonation` is a
+`kindPreservingWrite` — the no-op arm reflexively, the donating arm through
+`donateSchedContext`. -/
+theorem applyCallDonation_kindPreservingWrite
+    (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
+    kindPreservingWrite st st' := by
+  cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+  | none =>
+      rw [applyCallDonation_characterisation, hSc] at h; cases h
+      exact kindPreservingWrite.refl st
+  | some scId =>
+      rw [applyCallDonation_characterisation, hSc] at h
+      exact donateSchedContext_kindPreservingWrite st st' callerVtid.val receiverVtid.val scId
+        hObjInv h
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it writes no CDT table. -/
+theorem applyCallDonation_cdt_eq
+    (st st' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (h : applyCallDonation st callerVtid receiverVtid = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  cases hSc : callDonationSchedContext? st callerVtid.val receiverVtid.val with
+  | none => rw [applyCallDonation_characterisation, hSc] at h; cases h; exact ⟨rfl, rfl⟩
+  | some scId =>
+      rw [applyCallDonation_characterisation, hSc] at h
+      exact donateSchedContext_cdt_eq st st' callerVtid.val receiverVtid.val scId h
+
+/-- **WS-RR RR8.16** (`v0.35.200`): and the cross-core form — the SM5.H
+replenishment migration writes replenish-queue slots only, so the object relation
+and both CDT frames are the single-core facts. -/
+theorem applyCallDonationOnCore_kindPreservingWrite
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    kindPreservingWrite st st'' := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have hW1 := applyCallDonation_kindPreservingWrite st st1 callerVtid receiverVtid hObjInv hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact hW1
+  · exact hW1.trans (kindPreservingWrite.of_objects_eq
+      (migrateSchedContextReplenishment_objects _ _ _ _))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and neither CDT table. -/
+theorem applyCallDonationOnCore_cdt_eq
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.cdt = st.cdt ∧ st''.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome h
+  have e1 := applyCallDonation_cdt_eq st st1 callerVtid receiverVtid hDon
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact e1
+  · exact ⟨(migrateSchedContextReplenishment_cdt _ _ _ _).trans e1.1,
+      (migrateSchedContextReplenishment_cdtNodeSlot _ _ _ _).trans e1.2⟩
 
 /-- WS-RR RR2.5: `applyCallDonation` establishes the read agreement — the no-op
 arm reflexively, the donating arm through `donateSchedContext`. -/

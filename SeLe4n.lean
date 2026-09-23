@@ -206,6 +206,15 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 -- `lean_classify_synchronous_exception`).  One import: the entry's transitive
 -- closure is the whole production fault surface.
 import SeLe4n.Kernel.FaultEntry
+-- **WS-RR RR8.16** (`v0.35.200`): the fault path's *cross-subsystem* bundles —
+-- `faultDeliverOnCore` and `faultReplyOnCore` preserve the base SMP scheduler
+-- invariant and the capability invariant bundle, composed from the live `.call`
+-- and `.reply` chains' own lifts.  Separate from the staged
+-- `IPC.Invariant.FaultPreservation`, which holds the same path's
+-- `ipcInvariantFull` surface and is staged for the call chain's staged
+-- `ipcInvariantFull` bundle: every theorem here reads production facts only, so
+-- staging it would put it out of reach of the production consumers that need it.
+import SeLe4n.Kernel.IPC.Invariant.FaultBundlePreservation
 -- **The frozen execution surface is production** (`v0.35.60`).  It was outside
 -- both library roots and in no staged allowlist, built only by its own
 -- `lean_exe` — which put it outside the *derived* domain of five of the six

@@ -75,15 +75,6 @@ theorem recordPendingFault_preserves_ipcInvariantFull
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- WS-RR RR4.17: `recordPendingFault` preserves the object-store invariant —
-one `insert` of a well-typed TCB. -/
-theorem recordPendingFault_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)
-    (hObjInv : st.objects.invExt) :
-    (recordPendingFault st tid tf).objects.invExt := by
-  unfold recordPendingFault
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.9/RR4.17: the deschedule half of the fail-closed dispositions
 preserves the bundle.
 
@@ -154,14 +145,6 @@ theorem faultSuspendOnCore_preserves_ipcInvariantFull_of_ready
   faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv
     (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
 
-/-- WS-RR RR4.9: and it preserves the object-store invariant. -/
-theorem faultSuspendOnCore_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt) :
-    (faultSuspendOnCore st tid c).objects.invExt := by
-  unfold faultSuspendOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.18: the reply-declined disposition preserves the bundle — it
 adds only the `pendingFault` clear to the suspend's writes, and that field is
 read by no conjunct either. -/
@@ -197,14 +180,6 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull_of_ready
   faultAbandonOnCore_preserves_ipcInvariantFull st tid c hObjInv
     (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
 
-/-- WS-RR RR4.18: and it preserves the object-store invariant. -/
-theorem faultAbandonOnCore_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt) :
-    (faultAbandonOnCore st tid c).objects.invExt := by
-  unfold faultAbandonOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.16/RR4.18: **installing a restart frame preserves the bundle.**
 
 The restart writes `registerContext` (the RR4.16 writeback) and clears
@@ -226,91 +201,30 @@ theorem applyFaultRestart_preserves_ipcInvariantFull
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- WS-RR RR4.16: and it preserves the object-store invariant. -/
-theorem applyFaultRestart_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
-    (hObjInv : st.objects.invExt) :
-    (applyFaultRestart st tid frame).objects.invExt := by
-  unfold applyFaultRestart
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+-- **WS-RR RR8.16 (`v0.35.200`) — RELOCATED**: the four fault-path
+-- `_preserves_objects_invExt` frames (`recordPendingFault`, `applyFaultRestart`,
+-- `faultSuspendOnCore`, `faultAbandonOnCore`) now live beside the operations they
+-- frame, in `IPC/Operations/Fault.lean` and `IPC/CrossCore/Fault.lean`.  Each is
+-- one citation of `SystemState.updateTcb_preserves_objects_invExt` and reads no
+-- staged surface, so keeping them in *this* module — staged for the
+-- `ipcInvariantFull` call-chain surface — put them out of reach of the production
+-- bundle lifts in `IPC/Invariant/FaultBundlePreservation.lean`, which is the
+-- RR2-closure rule (*a theorem that reads no staged surface is production*)
+-- arriving at four frames nobody had asked of it before.
+
+-- **WS-RR RR8.16 (`v0.35.200`) — RELOCATED**: the two chain
+-- `_preserves_objects_invExt` frames now live beside the chains they frame, in
+-- the production `IPC/CrossCore/EndpointCallDispatch.lean` and
+-- `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`.  Same reason as the four
+-- fault-path frames above: neither reads a staged surface, and the production
+-- bundle lifts in `IPC/Invariant/FaultBundlePreservation.lean` must be able to
+-- cite them.
 
 -- ============================================================================
 -- §2 The Call and Reply chains preserve the object-store invariant
 -- ============================================================================
 
-/-- The `.call` chain preserves `objects.invExt` — the rendezvous-plus-transfer
-leg, the donation, and the priority-inheritance walk each do, and the chain is
-their composition. Needed because the fault delivery writes the fault record
-onto the chain's post-state, and that write is an `insert`. -/
-theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
-      receiverSlotBase executingCore st).1.objects.invExt := by
-  have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
-  unfold endpointCallCrossCoreDispatch
-  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
-      receiverSlotBase executingCore st with
-  | mk stW resW =>
-      rw [hWcEq] at hWc
-      simp only at hWc ⊢
-      cases resW with
-      | error e => exact hWc
-      | ok r =>
-          obtain ⟨summaryW, sgiW⟩ := r
-          simp only
-          split
-          · split
-            · split
-              · exact hWc
-              · rename_i stD hDon
-                exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _
-                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc hDon)
-            · exact hWc
-          · exact hWc
 
-/-- The `.reply` chain preserves `objects.invExt` — same shape, over the reply
-delivery, the donation return and the priority-inheritance reversion. -/
-theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
-    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    (endpointReplyCrossCoreDispatch replier target msg executingCore st).1.objects.invExt := by
-  have hRep := endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore
-    st hObjInv
-  unfold endpointReplyCrossCoreDispatch
-  cases hRepEq : endpointReplyOnCore replier target msg executingCore st with
-  | mk st1 res1 =>
-      rw [hRepEq] at hRep
-      simp only at hRep ⊢
-      cases res1 with
-      | error e => exact hObjInv
-      | ok replySgi? =>
-          simp only
-          -- **WS-HP HP4.4**: two more splits than before the trigger flip — the
-          -- answered frame's resolution and the answered caller's validation.
-          split
-          · split
-            · split
-              · exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _ hRep
-              · split
-                · exact hObjInv
-                · split
-                  · exact hObjInv
-                  · rename_i st2 hRet
-                    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                      _ _ _ _
-                      (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRep hRet)
-            · exact hObjInv
-          · exact hObjInv
-
--- ============================================================================
--- §3 RR4.17 — fault delivery preserves the bundle
--- ============================================================================
 
 /-- WS-RR RR4.17 (**the delivery payoff**): `faultDeliverOnCore` preserves
 `ipcInvariantFull`, on both dispositions.

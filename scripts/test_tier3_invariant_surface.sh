@@ -20882,4 +20882,121 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyOnCore_
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : st\.scheduler\.currentOnCore \(determineTargetCore st target\) . some target" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReplyCrossCoreDispatch_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hNotCur" SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean'
 
+# ============================================================================
+# WS-RR RR8.16 (`v0.35.200`) — the CALL chain and the FAULT composition
+# ============================================================================
+#
+# Register row 85's closure.  `v0.35.197` stated the two read sets as frames,
+# `v0.35.199` gave the relation a name and composed the reply chain out of
+# citations; this cut does the same for the `.call` chain and then joins both at
+# the fault path, which is what the row is named for.
+#
+# ONE OWNER for "a typed TCB rewrite keeps every key's kind".  Every fault-path
+# write and every register-context writer is `updateTcb`, so each reaches both
+# bundles through this rather than re-deriving the rewrite's admissibility.  It
+# needs NO side condition, for the same reason `rewriteObject`'s does not.
+run_check "INVARIANT" rg -n '^theorem updateTcb_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem updateTcb_kindPreservingWrite[^\n]*(\n([ \t][^\n]*)?)*hNotCnode" SeLe4n/Model/State.lean'
+run_check "INVARIANT" rg -n '^theorem updateTcb_cdt($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem updateTcb_cdtNodeSlot($|[ ({:\[\]])' SeLe4n/Model/State.lean
+# The call chain's five store primitives, each with the pair the reply side has.
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem linkServerStashedReply_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationFramePush_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_cdt_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+# The donation push, at all three units.
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonation_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+# The CALL leg and the two chain levels above it.  The ASYMMETRY is the claim,
+# exactly as on the reply side: the scheduler bundle reads `currentOnCore`, so
+# the wake's own precondition survives into every level of the chain; the
+# capability bundle reads the object store and the two CDT tables, so the bare
+# leg's lift is unconditional.  A mutation that adds `hNotCur` to a capability
+# lift -- or drops it from a scheduler one -- keeps every other token.
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : . ep, st\.getEndpoint\? endpointId = some ep" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hNotCur" SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : . ep, st\.getEndpoint\? endpointId = some ep" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : . ep, st\.getEndpoint\? endpointId = some ep" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# ...and the capability lifts of the two levels that reach `ipcUnwrapCaps` REDUCE
+# to that one step rather than taking its own externalised premises.  Those
+# premises are REFUTED, not merely unproved: `hSlotCap` asks that inserting any
+# capability at any slot of any CNode of any bundle-satisfying state keep
+# `slotCountBounded`, `cspaceSlotCountBounded` is `<=`, and `CNode.insert` at a
+# fresh slot grows the table -- so a lift that took them would be vacuous while
+# its name read as coverage.  A negative refuses the retired pack tree-wide.
+run_check "INVARIANT" rg -n '^def ipcUnwrapCapsPreservesCapabilityBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_negative_check "INVARIANT" rg -n 'CapTransferBundlePremises' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean
+# The hypothesis is EXHIBITED, which is what stops it being the pack one name
+# over: at `grantRight = false` the transfer is the identity and the reduction
+# holds outright.  A hypothesis nothing exhibits is indistinguishable from one
+# that cannot hold.
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCapsPreservesCapabilityBundle_of_noGrant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*hTransfer : ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean'
+# ...and where the message carries NO capabilities the step is not reached at
+# all, which is the form the fault delivery composes.
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^@\[simp\] theorem faultMessage_caps_empty($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+# The state-level reading of `hNotCur`, which the fault delivery takes because it
+# resolves its own handler endpoint.  The per-endpoint form stays at the leg: it
+# is what that lift needs, and a caller who knows the endpoint discharges it.
+run_check "INVARIANT" rg -n '^def endpointReceiveHeadsNotCurrent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveHeadsNotCurrent_at($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+# The fault composition: the fail-closed dispositions, the decoded outcome, and
+# the two transitions the row is named for.
+run_check "INVARIANT" rg -n '^theorem faultSuspendOnCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultAbandonOnCore_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem recordPendingFault_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem applyFaultRestart_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_kindPreservingWrite($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyApplyOnCore_preserves_schedulerInvariantBase_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyApplyOnCore_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hHeads : endpointReceiveHeadsNotCurrent st" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_preserves_schedulerInvariantBase_smp[^\n]*(\n([ \t][^\n]*)?)*hNotCur : st\.scheduler\.currentOnCore \(determineTargetCore st faulted\) . some faulted" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+# NEITHER fault transition takes a transfer hypothesis, and each for its own
+# reason: the delivery composes the `_of_no_caps` form because `faultMessage`
+# carries none, the reply never reaches a transfer at all.  The positive is on
+# the delivery's CITATION of the no-caps form -- a negative on the hypothesis
+# alone would be satisfied by a lift that took it under another name.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*faultMessage_caps_empty" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultDeliverOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem faultReplyOnCore_preserves_capabilityInvariantBundle[^\n]*(\n([ \t][^\n]*)?)*ipcUnwrapCapsPreservesCapabilityBundle" SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean'
+# RELOCATIONS.  Each moved frame reads no staged surface and frames a production
+# transition, so leaving it where it was put it out of reach of the production
+# consumer that needed it -- the RR2-closure rule, arriving at eight frames.
+# `ipcUnwrapCaps_getTcb?_eq` was `private` in a cross-core REPLY module while
+# framing a model-layer primitive the `.call` leg asks the same question of.
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_getTcb\?_eq' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_negative_check "INVARIANT" rg -n 'theorem ipcUnwrapCaps_getTcb\?_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_negative_check "INVARIANT" rg -n 'private theorem ipcUnwrapCaps_getTcb\?_eq' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" rg -n '^theorem recordPendingFault_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem applyFaultRestart_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultSuspendOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultAbandonOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_negative_check "INVARIANT" rg -n 'theorem recordPendingFault_preserves_objects_invExt|theorem applyFaultRestart_preserves_objects_invExt|theorem faultSuspendOnCore_preserves_objects_invExt|theorem faultAbandonOnCore_preserves_objects_invExt|theorem endpointCallCrossCoreDispatch_preserves_objects_invExt|theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+# ...and the two reply-link `invExt` frames moved down to the model, beside the
+# primitives they frame, so `linkReply_kindPreservingWrite` can consume them.
+run_check "INVARIANT" rg -n '^theorem _root_\.SeLe4n\.Model\.linkCallerReply_preserves_objects_invExt' SeLe4n/Model/State.lean
+run_negative_check "INVARIANT" rg -n 'theorem linkCallerReply_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+# ...and the private duplicate of the store's CDT frame is DELETED rather than
+# kept beside the public one: two answers to "does this store write a derivation
+# table" is the shape this project spends its length retiring.
+run_negative_check "INVARIANT" rg -n 'theorem storeTcbIpcStateAndMessage_cdt_eq' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_cdt_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+
 finalize_report

@@ -403,6 +403,46 @@ def recordPendingFault (st : SystemState) (tid : SeLe4n.ThreadId)
     (tf : ThreadFault) : SystemState :=
   st.updateTcb tid fun tcb => { tcb with pendingFault := some tf }
 
+-- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
+-- `IPC/Invariant/FaultPreservation.lean` — a frame over a production transition
+-- that reads no staged surface belongs beside that transition, where the
+-- production bundle lifts can cite it.
+
+/-- WS-RR RR4.17: `recordPendingFault` preserves the object-store invariant —
+one `insert` of a well-typed TCB. -/
+theorem recordPendingFault_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)
+    (hObjInv : st.objects.invExt) :
+    (recordPendingFault st tid tf).objects.invExt := by
+  unfold recordPendingFault
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+/-- **WS-RR RR8.16** (`v0.35.200`): **a fault message carries no capabilities.**
+
+Stated because the fault delivery's capability-bundle lift rests on it: the
+`.call` leg short-circuits on `msg.caps.isEmpty` before it resolves the
+receiver's CSpace root, so a fault delivery never reaches `ipcUnwrapCaps` and its
+lift needs no transfer hypothesis.  A fault's payload is *registers*, encoded
+into `registers`; there is no capability to hand a handler. -/
+@[simp] theorem faultMessage_caps_empty (f : Fault) (ctx : FaultContext)
+    (badge : Option SeLe4n.Badge) :
+    (faultMessage f ctx badge).caps.isEmpty = true := by
+  unfold faultMessage
+  rfl
+
+/-- **WS-RR RR8.16** (`v0.35.200`): recording a fault is a `kindPreservingWrite`
+and writes neither derivation table — `updateTcb`'s own facts. -/
+theorem recordPendingFault_kindPreservingWrite (st : SystemState)
+    (tid : SeLe4n.ThreadId) (tf : ThreadFault) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (recordPendingFault st tid tf) :=
+  SystemState.updateTcb_kindPreservingWrite st tid _ hObjInv
+
+theorem recordPendingFault_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tf : ThreadFault) :
+    (recordPendingFault st tid tf).cdt = st.cdt
+    ∧ (recordPendingFault st tid tf).cdtNodeSlot = st.cdtNodeSlot :=
+  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
+
 /-- WS-RR RR4.17 (frame): recording a fault is a single TCB write — the
 scheduler is untouched, so a delivery's runnability statement reads through
 it. -/
@@ -556,6 +596,28 @@ convenient.  The store is the typed in-place rewrite `SystemState.updateTcb`
 def applyFaultRestart (st : SystemState) (faulted : SeLe4n.ThreadId)
     (frame : Architecture.FaultRestartFrame) : SystemState :=
   st.updateTcb faulted fun tcb => { tcb.withRestartFrame frame with pendingFault := none }
+
+/-- WS-RR RR4.16: and it preserves the object-store invariant. -/
+theorem applyFaultRestart_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : Architecture.FaultRestartFrame)
+    (hObjInv : st.objects.invExt) :
+    (applyFaultRestart st tid frame).objects.invExt := by
+  unfold applyFaultRestart
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+/-- **WS-RR RR8.16** (`v0.35.200`): installing a restart frame is a
+`kindPreservingWrite` and writes neither derivation table. -/
+theorem applyFaultRestart_kindPreservingWrite (st : SystemState)
+    (faulted : SeLe4n.ThreadId) (frame : Architecture.FaultRestartFrame)
+    (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (applyFaultRestart st faulted frame) :=
+  SystemState.updateTcb_kindPreservingWrite st faulted _ hObjInv
+
+theorem applyFaultRestart_cdt_eq (st : SystemState) (faulted : SeLe4n.ThreadId)
+    (frame : Architecture.FaultRestartFrame) :
+    (applyFaultRestart st faulted frame).cdt = st.cdt
+    ∧ (applyFaultRestart st faulted frame).cdtNodeSlot = st.cdtNodeSlot :=
+  ⟨SystemState.updateTcb_cdt st faulted _, SystemState.updateTcb_cdtNodeSlot st faulted _⟩
 
 /-- WS-RR RR4.15 (frame): installing a restart frame never touches the
 scheduler — it decides *where the thread resumes*, not *whether* it is

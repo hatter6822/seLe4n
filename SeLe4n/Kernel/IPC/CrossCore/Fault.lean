@@ -123,6 +123,56 @@ theorem faultAbandonOnCore_scheduler_eq (st : SystemState) (tid : SeLe4n.ThreadI
   unfold faultAbandonOnCore
   exact SystemState.updateTcb_scheduler _ _ _
 
+-- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
+-- `IPC/Invariant/FaultPreservation.lean` — a frame over a production transition
+-- that reads no staged surface belongs beside that transition, where the
+-- production bundle lifts can cite it.
+
+/-- WS-RR RR4.9: and it preserves the object-store invariant. -/
+theorem faultSuspendOnCore_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt) :
+    (faultSuspendOnCore st tid c).objects.invExt := by
+  unfold faultSuspendOnCore
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+/-- WS-RR RR4.18: and it preserves the object-store invariant. -/
+theorem faultAbandonOnCore_preserves_objects_invExt
+    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
+    (hObjInv : st.objects.invExt) :
+    (faultAbandonOnCore st tid c).objects.invExt := by
+  unfold faultAbandonOnCore
+  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+
+/-- **WS-RR RR8.16** (`v0.35.200`): both fail-closed dispositions are
+`kindPreservingWrite`s — the deschedule writes no object at all and the
+`.Inactive` store is `updateTcb` — and neither touches a derivation table. -/
+theorem faultSuspendOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (faultSuspendOnCore st tid c) := by
+  unfold faultSuspendOnCore
+  exact SystemState.updateTcb_kindPreservingWrite _ tid _ hObjInv
+
+theorem faultSuspendOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (faultSuspendOnCore st tid c).cdt = st.cdt
+    ∧ (faultSuspendOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold faultSuspendOnCore
+  exact ⟨(SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c).1,
+    (SystemState.updateTcb_cdtNodeSlot _ tid _).trans (removeRunnableOnCore_cdt st tid c).2⟩
+
+theorem faultAbandonOnCore_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
+    (c : CoreId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (faultAbandonOnCore st tid c) := by
+  unfold faultAbandonOnCore
+  exact SystemState.updateTcb_kindPreservingWrite _ tid _ hObjInv
+
+theorem faultAbandonOnCore_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (faultAbandonOnCore st tid c).cdt = st.cdt
+    ∧ (faultAbandonOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold faultAbandonOnCore
+  exact ⟨(SystemState.updateTcb_cdt _ tid _).trans (removeRunnableOnCore_cdt st tid c).1,
+    (SystemState.updateTcb_cdtNodeSlot _ tid _).trans (removeRunnableOnCore_cdt st tid c).2⟩
+
 /-- **WS-RR RR8.12 Cut C6d** (frame): and the machine mirror is the deschedule's
 — the `.Inactive`/`pendingFault := none` store writes the thread's TCB, never
 the executing core's register bank. -/

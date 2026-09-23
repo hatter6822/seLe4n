@@ -4568,50 +4568,13 @@ theorem endpointReceiveDualOnCore_not_dequeuedCall_of_blockedOnSend
                   rw [hFrame]
                   exact hTW
 
-/-- **WS-RR RR8.12 (PR #897 Codex review)**: `ipcUnwrapCaps` fixes the whole
-`getTcb?` projection -- forward by `ipcUnwrapCaps_preserves_tcb_objects`, back by
-`ipcUnwrapCaps_tcb_backward`, so the two directions join into an equality.
-
-Cap transfer writes only `receiverRoot`, and only as a CNode, so no TCB is
-created, destroyed or altered.  The `determineTargetCore` family reaches the same
-conclusion one field down; this is the whole record, because the donation guard
-reads `ipcState` rather than `cpuAffinity`. -/
-private theorem ipcUnwrapCaps_getTcb?_eq (msg : IpcMessage) (receiverRoot : SeLe4n.ObjId)
-    (slotBase : SeLe4n.Slot) (grantRight : Bool) (st st' : SystemState)
-    (summary : CapTransferSummary) (x : SeLe4n.ThreadId)
-    (hObjInv : st.objects.invExt)
-    (hStep : ipcUnwrapCaps msg receiverRoot slotBase grantRight st = .ok (summary, st')) :
-    st'.getTcb? x = st.getTcb? x := by
-  simp only [SystemState.getTcb?]
-  cases hT : st.objects[x.toObjId]? with
-  | none =>
-      cases hT' : st'.objects[x.toObjId]? with
-      | none => rfl
-      | some obj =>
-          cases obj with
-          | tcb tcb =>
-              rw [ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st' summary
-                x.toObjId tcb hObjInv hStep hT'] at hT
-              exact absurd hT (by simp)
-          | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-          | reply _ => rfl
-  | some obj =>
-      cases obj with
-      | tcb tcb =>
-          rw [ipcUnwrapCaps_preserves_tcb_objects msg receiverRoot slotBase grantRight st st'
-            summary x.toObjId tcb hT hObjInv hStep]
-      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
-      | reply _ =>
-          cases hT' : st'.objects[x.toObjId]? with
-          | none => rfl
-          | some obj' =>
-              cases obj' with
-              | tcb tcb' =>
-                  rw [ipcUnwrapCaps_tcb_backward msg receiverRoot slotBase grantRight st st'
-                    summary x.toObjId tcb' hObjInv hStep hT'] at hT
-                  exact absurd hT (by simp)
-              | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-              | schedContext _ | reply _ => rfl
+-- **WS-RR RR8.16 (`v0.35.200`) — RELOCATED**: `ipcUnwrapCaps_getTcb?_eq` now
+-- lives beside the operation it frames, in `IPC/Operations/CapTransfer.lean`,
+-- and is public.  It was `private` here, which is a frame over a *model-layer*
+-- primitive declared in a cross-core *reply* module — so the cross-core `.call`
+-- leg's scheduler-bundle lift, which asks the same question of the same step,
+-- could not see it and would have grown a second copy.  *When a question has one
+-- owner and an asker that cannot see it, the owner is in the wrong layer.*
 
 /-- **WS-RR RR8.12 (PR #897 Codex review)**: and installing the parked send's
 capabilities does not revive the guard, so the leg's verdict is the whole arm's.

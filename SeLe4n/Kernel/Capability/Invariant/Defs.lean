@@ -842,25 +842,13 @@ private theorem storeTcbIpcState_cdt_eq
              (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).1,
              (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).2⟩
 
-/-- WS-H4: storeTcbIpcStateAndMessage preserves CDT fields. -/
-private theorem storeTcbIpcStateAndMessage_cdt_eq
-    (st st' : SystemState) (tid : SeLe4n.ThreadId) (ipc : ThreadIpcState)
-    (msg : Option IpcMessage)
-    (hStep : storeTcbIpcStateAndMessage st tid ipc msg = .ok st') :
-    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot ∧ st'.cdtSlotNode = st.cdtSlotNode := by
-  unfold storeTcbIpcStateAndMessage at hStep
-  cases hTcb : lookupTcb st tid with
-  | none => simp [hTcb] at hStep
-  | some tcb =>
-    simp only [hTcb] at hStep
-    cases hStore : storeObject tid.toObjId (.tcb { tcb with ipcState := ipc, pendingMessage := msg }) st with
-    | error e => simp [hStore] at hStep
-    | ok pair =>
-      simp only [hStore] at hStep
-      have hEq := Except.ok.inj hStep; subst hEq
-      exact ⟨storeObject_cdt_eq st pair.2 tid.toObjId _ hStore,
-             (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).1,
-             (storeObject_cdtNodeSlot_eq st pair.2 tid.toObjId _ hStore).2⟩
+-- **WS-RR RR8.16 (`v0.35.200`)**: the private `storeTcbIpcStateAndMessage_cdt_eq`
+-- is **deleted**.  It answered "does the delivery store write a CDT table" here,
+-- in a capability-invariant module, while the same question is now answered
+-- beside the primitive (`IPC/Operations/Endpoint.lean`), where the `.call` and
+-- `.reply` chains' bundle lifts read it.  Two answers to one question is what
+-- this project retires; the survivor is the one at the transition, and it drops
+-- the `cdtSlotNode` component this module's one consumer discarded anyway.
 
 /-- WS-H4: Transfer all three new predicates through a storeObject that is
 not a CNode. Combines cspaceSlotCountBounded + cdtCompleteness + cdtAcyclicity. -/
@@ -1212,7 +1200,7 @@ theorem cdtPredicates_through_reply_path
     cspaceSlotCountBounded (ensureRunnable st1 target) ∧
     cdtCompleteness (ensureRunnable st1 target) ∧
     cdtAcyclicity (ensureRunnable st1 target) := by
-  have ⟨hCdt1, hNS1, _⟩ := storeTcbIpcStateAndMessage_cdt_eq st st1 target ipc msg hTcb
+  have ⟨hCdt1, hNS1⟩ := storeTcbIpcStateAndMessage_cdt_eq hTcb
   have hBnd1 : cspaceSlotCountBounded st1 := by
     unfold storeTcbIpcStateAndMessage at hTcb
     cases hL : lookupTcb st target with

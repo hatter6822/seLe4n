@@ -1068,6 +1068,50 @@ theorem applyReplyDonationOnCore_preserves_capabilityInvariantBundle
     · rw [descheduleAtPlacement_cdtNodeSlot, migrateSchedContextReplenishment_cdtNodeSlot]
     · rw [descheduleAtPlacement_cdt, migrateSchedContextReplenishment_cdt]
 
+-- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
+-- `IPC/Invariant/FaultPreservation.lean`, so the production fault-path bundle
+-- lifts can cite it — it reads no staged surface, being a composition of each
+-- step's own `invExt` frame.
+
+/-- The `.reply` chain preserves `objects.invExt` — same shape, over the reply
+delivery, the donation return and the priority-inheritance reversion. -/
+theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt) :
+    (endpointReplyCrossCoreDispatch replier target msg executingCore st).1.objects.invExt := by
+  have hRep := endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore
+    st hObjInv
+  unfold endpointReplyCrossCoreDispatch
+  cases hRepEq : endpointReplyOnCore replier target msg executingCore st with
+  | mk st1 res1 =>
+      rw [hRepEq] at hRep
+      simp only at hRep ⊢
+      cases res1 with
+      | error e => exact hObjInv
+      | ok replySgi? =>
+          simp only
+          -- **WS-HP HP4.4**: two more splits than before the trigger flip — the
+          -- answered frame's resolution and the answered caller's validation.
+          split
+          · split
+            · split
+              · exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                  _ _ _ _ hRep
+              · split
+                · exact hObjInv
+                · split
+                  · exact hObjInv
+                  · rename_i st2 hRet
+                    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                      _ _ _ _
+                      (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRep hRet)
+            · exact hObjInv
+          · exact hObjInv
+
+-- ============================================================================
+-- §3 RR4.17 — fault delivery preserves the bundle
+-- ============================================================================
+
 /-- **WS-RR RR8.16** (`v0.35.199`): **the live `.reply` chain preserves the base
 SMP scheduler invariant.**
 

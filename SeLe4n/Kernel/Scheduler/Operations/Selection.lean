@@ -1674,6 +1674,15 @@ theorem removeRunnableOnCore_preserves_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : CoreId) :
     (removeRunnableOnCore st tid c).objects = st.objects := rfl
 
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and neither CDT table, for the same
+reason.  Stated beside the object frame because the capability bundle reads
+`cdtNodeSlot` and `cdt` exactly as it reads the store, and both IPC spines end in
+this removal. -/
+@[simp] theorem removeRunnableOnCore_cdt (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : CoreId) :
+    (removeRunnableOnCore st tid c).cdt = st.cdt
+      ∧ (removeRunnableOnCore st tid c).cdtNodeSlot = st.cdtNodeSlot := ⟨rfl, rfl⟩
+
 /-- The step writes no object, at either branch. -/
 @[simp] theorem descheduleAtPlacement_preserves_objects (st : SystemState)
     (tid : SeLe4n.ThreadId) : (descheduleAtPlacement st tid).objects = st.objects := by

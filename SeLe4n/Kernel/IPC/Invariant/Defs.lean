@@ -1642,28 +1642,13 @@ theorem storeObject_preserves_ipcInvariant_of_ne_notification
     exact absurd (Option.some.inj hObj) (hNotNtfn ntfn)
   · exact hInv oid ntfn (by rwa [storeObject_objects_ne st st' id oid obj hNe hObjInv hStore] at hObj)
 
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
-stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
-preserve the object-store extensional invariant. -/
-theorem linkCallerReply_preserves_objects_invExt (st st' : SystemState)
-    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
-    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
-    st'.objects.invExt := by
-  unfold linkCallerReply at hStep
-  cases hLink : linkReply rid caller st with
-  | error e => simp [hLink] at hStep
-  | ok p1 =>
-    obtain ⟨_, st1⟩ := p1
-    simp only [hLink] at hStep
-    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
-    cases hT : st1.getTcb? caller with
-    | none => simp [hT] at hStep
-    | some tcb =>
-      simp only [hT] at hStep
-      split at hStep
-      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
-      · simp at hStep
+-- **WS-RR RR8.16 (`v0.35.200`)**: `linkCallerReply_preserves_objects_invExt`
+-- moved to `Model/State.lean`, beside the primitive it frames.  It is built from
+-- `linkReply_preserves_objects_invExt` and `storeObject_preserves_objects_invExt`
+-- and mentions nothing of this layer, and `linkCallerReply_kindPreservingWrite`
+-- -- which lives at the model, where the relation does -- needs it: *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  Consumers here read it unchanged; the name did not move.
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves the notification
@@ -1763,31 +1748,9 @@ theorem linkCallerReply_machine_eq (st st' : SystemState)
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
-it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
-TCB store (which preserves it). -/
-theorem linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
-    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
-    st'.objects.invExt := by
-  unfold linkServerStashedReply at hStep
-  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
-  | none => simp [hStash] at hStep
-  | some rid =>
-    simp only [hStash] at hStep
-    cases hLink : linkCallerReply caller rid st with
-    | error e => simp [hLink] at hStep
-    | ok p1 =>
-      obtain ⟨_, st1⟩ := p1
-      simp only [hLink] at hStep
-      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
-      cases hT : st1.getTcb? server with
-      | none =>
-        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
-      | some sTcb =>
-        simp only [hT] at hStep
-        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+-- **WS-RR RR8.16 (`v0.35.200`)**: `linkServerStashedReply_preserves_objects_invExt`
+-- moved to `Model/State.lean` with its `linkCallerReply` sibling, and for the
+-- same reason.  Consumers here read it unchanged.
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `ipcInvariant` — both

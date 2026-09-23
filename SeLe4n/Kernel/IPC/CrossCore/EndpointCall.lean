@@ -2020,6 +2020,156 @@ theorem endpointCallOnCore_preserves_objects_invExt
               show (removeRunnableOnCore st5 caller executingCore).objects.invExt
               rw [removeRunnableOnCore_preserves_objects]; exact h5
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the cross-core Call leg is a
+`kindPreservingWrite`.
+
+Every store on either branch keeps its key's kind: the queue enqueue or pop
+writes an endpoint for an endpoint and TCBs for TCBs, the two delivery stores
+write TCBs, the wake rewrites the woken thread in place, the server-first link
+writes a Reply and two TCBs, and the run-queue removal writes no object at all.
+Composed by `.trans` off the same case analysis the leg's `invExt` proof runs, so
+the two cannot disagree about which stores fire. -/
+theorem endpointCallOnCore_kindPreservingWrite
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact kindPreservingWrite.refl st
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact kindPreservingWrite.refl st
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact kindPreservingWrite.refl st
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact kindPreservingWrite.refl st
+      | ok st' =>
+        simp only
+        have w1 := endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq
+        have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
+          hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact kindPreservingWrite.refl st
+        | ok st'' =>
+          simp only
+          have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
+          show kindPreservingWrite st (removeRunnableOnCore st'' caller executingCore)
+          exact (w1.trans w2).trans
+            (kindPreservingWrite.of_objects_eq (removeRunnableOnCore_preserves_objects _ _ _))
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact kindPreservingWrite.refl st
+      | ok pair =>
+        simp only
+        have w1 := endpointQueuePopHead_kindPreservingWrite hObjInv
+          (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
+            rw [hPop])
+        have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+          pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact kindPreservingWrite.refl st
+        | ok st2 =>
+          simp only
+          have w2 := storeTcbIpcStateAndMessage_kindPreservingWrite h1 hMsg
+          have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _
+            h1 hMsg
+          have w3 := wakeThread_kindPreservingWrite st2 pair.1 executingCore h2
+          have hW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore h2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact kindPreservingWrite.refl st
+          | ok st4 =>
+            simp only
+            have w4 := storeTcbIpcStateAndMessage_kindPreservingWrite hW hCS
+            have h4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
+              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact kindPreservingWrite.refl st
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have w5 := SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller
+                pair.1 h4 hLink
+              show kindPreservingWrite st (removeRunnableOnCore st5 caller executingCore)
+              exact ((((w1.trans w2).trans w3).trans w4).trans w5).trans
+                (kindPreservingWrite.of_objects_eq (removeRunnableOnCore_preserves_objects _ _ _))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the Call leg writes neither CDT table
+on any path. -/
+theorem endpointCallOnCore_cdt_eq
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointCallOnCore endpointId caller msg executingCore st).1.cdt = st.cdt
+      ∧ (endpointCallOnCore endpointId caller msg executingCore st).1.cdtNodeSlot
+          = st.cdtNodeSlot := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; constructor <;> first | rfl | trivial
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; constructor <;> first | rfl | trivial
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> constructor <;> first | rfl | trivial
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; constructor <;> first | rfl | trivial
+      | ok st' =>
+        simp only
+        have e1 := endpointQueueEnqueue_cdt_eq hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; constructor <;> first | rfl | trivial
+        | ok st'' =>
+          simp only
+          have e2 := storeTcbIpcStateAndMessage_cdt_eq hMsg
+          exact ⟨(removeRunnableOnCore_cdt st'' caller executingCore).1.trans (e2.1.trans e1.1),
+            (removeRunnableOnCore_cdt st'' caller executingCore).2.trans (e2.2.trans e1.2)⟩
+    | some _ =>
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; constructor <;> first | rfl | trivial
+      | ok pair =>
+        simp only
+        have e1 := endpointQueuePopHead_cdt_eq
+          (show endpointQueuePopHead endpointId true st = .ok (pair.1, pair.2.1, pair.2.2) by
+            rw [hPop])
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; constructor <;> first | rfl | trivial
+        | ok st2 =>
+          simp only
+          have e2 := storeTcbIpcStateAndMessage_cdt_eq hMsg
+          have e3 := enqueueRunnableOnCore_cdt st2 (determineTargetCore st2 pair.1) pair.1
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; constructor <;> first | rfl | trivial
+          | ok st4 =>
+            simp only
+            have e4 := storeTcbIpcStateAndMessage_cdt_eq hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; constructor <;> first | rfl | trivial
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have e5 := SystemState.linkServerStashedReply_cdt_eq st4 st5 caller pair.1 hLink
+              have eW : (wakeThread st2 pair.1 executingCore).1.cdt = st2.cdt
+                  ∧ (wakeThread st2 pair.1 executingCore).1.cdtNodeSlot = st2.cdtNodeSlot := by
+                rw [wakeThread_state_eq_enqueue]; exact e3
+              refine ⟨?_, ?_⟩
+              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).1, e5.1, e4.1, eW.1,
+                  e2.1, e1.1]
+              · rw [(removeRunnableOnCore_cdt st5 caller executingCore).2, e5.2, e4.2, eW.2,
+                  e2.2, e1.2]
+
 open SeLe4n.Model.SystemState in
 /-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
 effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
@@ -2376,5 +2526,189 @@ theorem endpointCallCrossCoreDispatchSchedLockSet_covers_donation
     ∀ p ∈ applyCallDonationOnCoreSchedLockSet donorHome doneeHome,
       p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore receiverHome donorHome doneeHome :=
   schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
+
+
+-- ============================================================================
+-- WS-RR RR8.16 (`v0.35.200`) — the Call leg's two cross-subsystem bundles
+-- ============================================================================
+--
+-- Register row 85's call half.  `v0.35.197` stated the two read sets as frames
+-- and `v0.35.199` gave the store primitives the relation those frames consume;
+-- here the Call leg composes them, as the reply leg does, and the asymmetry
+-- between the two lifts is the same: the capability bundle reads the object
+-- store and the two CDT tables, all of which the leg frames or writes
+-- kind-preservingly, so it is **unconditional**; the scheduler bundle reads
+-- `currentOnCore`, so it carries the wake's precondition.
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the cross-core Call leg preserves the **base
+SMP scheduler invariant**.
+
+`hNotCur` is stated on the **pre**-state and about the endpoint's *receive-queue
+head*, which is the one thread this leg wakes
+(`endpointQueuePopHead_popped_eq_head`): the pop and the delivery store frame
+both the scheduler and every thread's `cpuAffinity`, so the core the wake
+enqueues on and the slot it reads are the pre-state's.
+
+Like the reply leg's, it is **stated rather than derived** — what turns the
+queued receiver's `.blockedOnReceive` into "not current" is a per-core
+current-thread-IPC-readiness discipline this tree states at the boot core alone
+(`currentThreadIpcReady`), and `queueCurrentConsistentOnCore` makes a thread's
+absence from every run queue compatible with its being current. -/
+theorem endpointCallOnCore_preserves_schedulerInvariantBase_smp
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
+      ∀ r, ep.receiveQ.head = some r →
+        st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  unfold endpointCallOnCore
+  by_cases hSz1 : msg.registers.size > maxMessageRegisters
+  · simp only [if_pos hSz1]; exact h
+  by_cases hSz2 : msg.caps.size > maxExtraCaps
+  · simp only [if_neg hSz1, if_pos hSz2]; exact h
+  simp only [if_neg hSz1, if_neg hSz2]
+  cases hEp : st.getEndpoint? endpointId with
+  | none => simp only; split <;> exact h
+  | some ep =>
+    simp only
+    cases hHead : ep.receiveQ.head with
+    | none =>
+      -- The blocking branch: the caller is enqueued and descheduled, nothing woken.
+      simp only
+      cases hEnq : endpointQueueEnqueue endpointId false caller st with
+      | error e => simp only; exact h
+      | ok st' =>
+        simp only
+        have h1 : schedulerInvariantBase_smp st' :=
+          schedulerInvariantBase_smp_of_kindPreserving h
+            (endpointQueueEnqueue_scheduler_eq endpointId false caller st st' hEnq)
+            (endpointQueueEnqueue_kindPreservingWrite hObjInv hEnq)
+        have hInv1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st'
+          hObjInv hEnq
+        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
+        | error e => simp only; exact h
+        | ok st'' =>
+          simp only
+          have h2 : schedulerInvariantBase_smp st'' :=
+            schedulerInvariantBase_smp_of_kindPreserving h1
+              (storeTcbIpcStateAndMessage_scheduler_eq st' st'' caller _ _ hMsg)
+              (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
+          show schedulerInvariantBase_smp (removeRunnableOnCore st'' caller executingCore)
+          exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
+            executingCore h2
+    | some headTid =>
+      -- The rendezvous branch: the queued receiver is popped, delivered and woken.
+      simp only
+      cases hPop : endpointQueuePopHead endpointId true st with
+      | error e => simp only; exact h
+      | ok pair =>
+        simp only
+        have hPop' : endpointQueuePopHead endpointId true st
+            = .ok (pair.1, pair.2.1, pair.2.2) := by rw [hPop]
+        have hIsHead : pair.1 = headTid :=
+          endpointQueuePopHead_popped_eq_head endpointId true st pair.2.2 ep pair.1 headTid
+            pair.2.1 ((SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp)
+            (by simpa using hHead) hPop'
+        have h1 : schedulerInvariantBase_smp pair.2.2 :=
+          schedulerInvariantBase_smp_of_kindPreserving h
+            (endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop')
+            (endpointQueuePopHead_kindPreservingWrite hObjInv hPop')
+        have hInv1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2
+          pair.1 _ hObjInv hPop
+        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
+        | error e => simp only; exact h
+        | ok st2 =>
+          simp only
+          have h2 : schedulerInvariantBase_smp st2 :=
+            schedulerInvariantBase_smp_of_kindPreserving h1
+              (storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 _ _ hMsg)
+              (storeTcbIpcStateAndMessage_kindPreservingWrite hInv1 hMsg)
+          have hInv2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1
+            _ _ hInv1 hMsg
+          -- The wake's precondition, transported from the pre-state: neither step
+          -- above writes the scheduler or any `cpuAffinity`.
+          have hNotCur2 :
+              st2.scheduler.currentOnCore (determineTargetCore st2 pair.1) ≠ some pair.1 := by
+            rw [storeTcbIpcStateAndMessage_determineTargetCore_eq pair.2.2 st2 pair.1 _ _ pair.1
+              hInv1 hMsg,
+              endpointQueuePopHead_determineTargetCore_eq endpointId true st pair.2.2 pair.1
+                pair.2.1 pair.1 hObjInv hPop',
+              storeTcbIpcStateAndMessage_scheduler_eq pair.2.2 st2 pair.1 _ _ hMsg,
+              endpointQueuePopHead_scheduler_eq endpointId true st pair.2.2 pair.1 hPop',
+              hIsHead]
+            exact hNotCur ep hEp headTid hHead
+          have h3 : schedulerInvariantBase_smp (wakeThread st2 pair.1 executingCore).1 :=
+            wakeThread_preserves_schedulerInvariantBase_smp st2 pair.1 executingCore hInv2
+              hNotCur2 h2
+          have hW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hInv2
+          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
+              (.blockedOnReply endpointId (some pair.1)) none with
+          | error e => simp only; exact h
+          | ok st4 =>
+            simp only
+            have h4 : schedulerInvariantBase_smp st4 :=
+              schedulerInvariantBase_smp_of_kindPreserving h3
+                (storeTcbIpcStateAndMessage_scheduler_eq _ st4 caller _ _ hCS)
+                (storeTcbIpcStateAndMessage_kindPreservingWrite hW hCS)
+            have hInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt _ st4 caller _ _
+              hW hCS
+            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
+            | error e => simp only; exact h
+            | ok pL =>
+              obtain ⟨_, st5⟩ := pL
+              simp only
+              have h5 : schedulerInvariantBase_smp st5 :=
+                schedulerInvariantBase_smp_of_kindPreserving h4
+                  (linkServerStashedReply_scheduler_eq st4 st5 caller pair.1 hLink)
+                  (SystemState.linkServerStashedReply_kindPreservingWrite st4 st5 caller pair.1
+                    hInv4 hLink)
+              show schedulerInvariantBase_smp (removeRunnableOnCore st5 caller executingCore)
+              exact removeRunnableOnCore_preserves_schedulerInvariantBase_smp caller
+                executingCore h5
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the **state-level** reading of the wake's
+`hNotCur` — *no endpoint's receive-queue head is current on the core its own
+affinity names*.
+
+The per-endpoint form is what each rendezvous lift takes, because it is exactly
+what that lift needs and a caller who knows the endpoint can discharge it
+there.  A composition that resolves its own endpoint — the fault delivery, whose
+handler endpoint comes from `resolveFaultHandler` — cannot name one, so it takes
+this form and projects.
+
+It is **stated rather than derived**, and the gap is the one WS-RR RR8.16 named
+at `v0.35.199`: what would turn "the head is blocked in receive" into "the head is
+not current" is a *per-core* current-thread-IPC-readiness discipline, and this
+tree states `currentThreadIpcReady` at the boot core alone.  A per-core form
+retires this predicate outright. -/
+def endpointReceiveHeadsNotCurrent (st : SystemState) : Prop :=
+  ∀ (epId : SeLe4n.ObjId) (ep : Endpoint), st.getEndpoint? epId = some ep →
+    ∀ r, ep.receiveQ.head = some r →
+      st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and its projection at one endpoint, which
+is the shape every rendezvous lift takes. -/
+theorem endpointReceiveHeadsNotCurrent_at {st : SystemState}
+    (h : endpointReceiveHeadsNotCurrent st) (epId : SeLe4n.ObjId) :
+    ∀ ep, st.getEndpoint? epId = some ep →
+      ∀ r, ep.receiveQ.head = some r →
+        st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r := h epId
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,
+with no precondition beyond object-store integrity: the leg writes no CNode and
+neither CDT table, and every one of its object writes keeps its key's kind. -/
+theorem endpointCallOnCore_preserves_capabilityInvariantBundle
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (executingCore : CoreId) (st : SystemState)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (endpointCallOnCore endpointId caller msg executingCore st).1 := by
+  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  exact capabilityInvariantBundle_of_kindPreserving h
+    (endpointCallOnCore_cdt_eq endpointId caller msg executingCore st).2
+    (endpointCallOnCore_cdt_eq endpointId caller msg executingCore st).1
+    (endpointCallOnCore_preserves_objects_invExt endpointId caller msg executingCore st hObjInv)
+    (endpointCallOnCore_kindPreservingWrite endpointId caller msg executingCore st hObjInv)
 
 end SeLe4n.Kernel

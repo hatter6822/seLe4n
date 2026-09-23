@@ -1,3 +1,114 @@
+## v0.35.200 — WS-RR RR8.16: the call chain and the fault composition close register row 85
+
+The row is named for the fault path, and the fault path could not compose what
+its substrate lacked: `faultDeliverOnCore` runs the live cross-core `.call`
+chain and `faultReplyOnCore` the live `.reply` chain.  `v0.35.197` built the two
+read sets as frames, `v0.35.199` gave the relation they read a name and composed
+the reply chain out of citations; this cut does the same for the `.call` chain
+and joins both at the fault path.  **Register row 85 is CLOSED.**
+
+**The one owner for a typed TCB rewrite.**
+`SystemState.updateTcb_kindPreservingWrite` needs **no** side condition, for the
+reason `rewriteObject`'s does not — `rewriteAdmissible` carries the kind
+equality *and* `rewriteNeutral`, which is `false` at `.cnode`.  Every write on
+the fault path is `updateTcb` (the fault record, the restart frame, the
+`.Inactive` store, the four register-context writers, the delivered-message
+staging), so each reaches both bundles through it.  `updateTcb_cdt` /
+`_cdtNodeSlot` sit beside it, and a Tier 3 negative refuses a `cnode` side
+condition coming back.
+
+**The call chain is citations.**  `endpointQueueEnqueue`, `endpointQueuePopHead`,
+`storeTcbQueueLinks`, `linkReply` / `linkCallerReply` /
+`linkServerStashedReply`, `storeTcbIpcStateAndMessage` and
+`storeDonationFramePush` each got the `kindPreservingWrite` / CDT pair beside
+itself; then `endpointCallOnCore`, `endpointCallWithCapsOnCore`,
+`applyCallDonationOnCore` and `endpointCallCrossCoreDispatch` carry both
+bundles, and `faultSuspendOnCore`, `faultAbandonOnCore`,
+`faultReplyApplyOnCore`, `faultDeliverOnCore` and `faultReplyOnCore` follow.
+
+**The capability half reduces rather than discharges, and asking why found a
+defect.**  The `.call` chain's capability lift is unconditional at the bare leg
+and takes `ipcUnwrapCapsPreservesCapabilityBundle` from
+`endpointCallWithCapsOnCore` up — that is where `ipcUnwrapCaps` enters, the one
+IPC step that writes a CNode *and* mints CDT derivations, which
+`kindPreservingWrite` excludes by construction.  The obvious hypothesis, that
+step's own externalised premises, is **refuted** rather than merely unproved:
+`hSlotCap` asks that inserting any capability at any slot of any CNode of any
+bundle-satisfying state keep `slotCountBounded`, `cspaceSlotCountBounded` is `≤`
+so a bundle state may hold a CNode at capacity, and `CNode.insert` at a fresh
+slot grows the table — a lift taking it would be vacuous while its name read as
+coverage, and that lemma having had no consumer since it was written is the
+corroborating measurement.  The reduction hypothesis is *exhibited* instead
+(`ipcUnwrapCapsPreservesCapabilityBundle_of_noGrant`), so the chain's content is
+*everything else is kind-preserving; the bundle reduces to this one step*.
+
+**Neither fault transition owes anything**: `faultMessage` carries `caps := #[]`
+(`faultMessage_caps_empty`) and `endpointCallWithCapsOnCore` short-circuits on
+`msg.caps.isEmpty` *before* it resolves the receiver's CSpace root, so the
+delivery composes the new `…_of_no_caps` forms; the reply's payload is registers.
+
+**And the donation's lifts** sit with the chain rather than with the bundles,
+because `applyCallDonationOnCore` is declared *above* the scheduler-invariant
+layer while `returnDonatedSchedContext` is below it — the import graph's
+asymmetry, stated at the declaration rather than left as a convention.
+
+**A live High-severity defect, registered with its measurement.**  Pulling on
+*what discharges the reduction hypothesis* found that **no CSpace destination
+slot is validated against the target CNode's radix width, at any of the four
+capability-insert paths.**  `cspaceInsertSlot` — the one primitive every install
+passes through — checks only that the slot is unoccupied; `cspaceCopy`,
+`cspaceMintWithCdt` and `cspaceMove` take `dstSlot` verbatim from a message
+register; and `ipcTransferSingleCap` uses the **unchecked**
+`CNode.findFirstEmptySlot`, while the radix-bounded `findFirstEmptySlotChecked`
+AK8-F wrote for exactly this hazard has **no production consumer**.  Measured end
+to end by `#eval`: on a CNode with `radixWidth = 1` (`slotCount = 2`) holding one
+capability, `cspaceCopy` from slot 0 to slot **99** succeeds, and forty such
+copies leave `slots.size = 41` against `slotCount = 2` — at which
+`cspaceSlotCountBounded`, a conjunct of `capabilityInvariantBundle`, is **false**.
+A holder of a copy- or mint-bearing capability can therefore grow a fixed-size
+kernel object without bound, which is a memory-accounting and availability defect
+on a kernel whose stated property is that all kernel memory is explicitly
+accounted by userspace.  No authority escalation: the capabilities are ones the
+caller already held and the radix walk cannot address a slot outside the range.
+Deferred to its own fix cut — it changes four live transitions' refusal sets and
+owes its own witnesses — and registered in `docs/REGISTERED_DEBT.md` table A with
+that closure target and the central remedy (the check belongs in
+`cspaceInsertSlot`).
+
+**A composition that resolves its own endpoint takes the state-level
+precondition.**  `endpointReceiveHeadsNotCurrent` — *no endpoint's receive-queue
+head is current on the core its own affinity names* — is what the fault delivery
+takes, its handler endpoint coming from `resolveFaultHandler`;
+`endpointReceiveHeadsNotCurrent_at` projects it at one endpoint, which is the
+form every rendezvous lift keeps.  Both are *stated rather than derived*, and
+the per-core `currentThreadIpcReady` discipline `v0.35.199` named retires them
+together.  That is the one gap this row leaves behind.
+
+**Eight frames moved to production, and one duplicate was deleted.**  The four
+fault-path and two chain-level `_preserves_objects_invExt` lemmas lived in the
+staged `IPC/Invariant/FaultPreservation.lean` — staged for the call chain's
+staged `ipcInvariantFull` bundle — so each was out of reach of the production
+consumer that needed it, which is row 85's own complaint one level up.
+`ipcUnwrapCaps_getTcb?_eq` was `private` in a cross-core *reply* module while
+framing a model-layer primitive the `.call` leg asks the same question of, and
+the two reply-link `invExt` frames sat above the model primitives they frame.  A
+`private` duplicate of `storeTcbIpcStateAndMessage`'s CDT frame in
+`Capability/Invariant/Defs.lean` was **deleted** rather than kept beside the
+public one.  The fault path's two cross-subsystem bundles live in the new
+**production** `SeLe4n/Kernel/IPC/Invariant/FaultBundlePreservation.lean`,
+imported by the library root.
+
+Ninety-two Tier 3 anchors over the two blocks; thirteen token-preserving
+mutations decide them — the `cnode` side condition returning, the `getTcb?`
+frame going back behind `private`, `hNotCur` appearing on a capability lift or
+vanishing from a scheduler one, a transfer hypothesis appearing on either fault
+lift, the delivery abandoning the no-caps form, the retired premise pack coming
+back, the reduction hypothesis losing its inhabitation witness, the state-level
+predicate renamed, `faultMessage_caps_empty` renamed, and either relocation
+reverting.
+
+No `sorry`, no `axiom`, no `native_decide`, no `partial def`.
+
 ## v0.35.199 — WS-RR RR8.16: the reply chain carries both cross-subsystem bundles
 
 Register row 85's store-chain arithmetic, reply half.  `v0.35.197` gave

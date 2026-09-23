@@ -3938,6 +3938,196 @@ theorem consumeCallerReply_tcb_caller (st st' : SystemState)
     simp only [hT] at hStep
     exact storeObject_objects_eq st1 st' caller.toObjId _ hInv1 hStep
 
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
+stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
+preserve the object-store extensional invariant.
+
+**Relocated from `IPC/Invariant/Defs.lean` at WS-RR RR8.16 (`v0.35.200`)**: it is
+built from `linkReply_preserves_objects_invExt` and
+`storeObject_preserves_objects_invExt` and mentions nothing of that layer, and
+`linkCallerReply_kindPreservingWrite` below — which belongs at the model, where
+the relation does — needs it. -/
+theorem _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
+      · simp at hStep
+
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
+it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
+TCB store (which preserves it). -/
+theorem _root_.SeLe4n.Model.linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): `linkReply` is a `kindPreservingWrite` — its
+one store replaces a Reply with that Reply carrying a caller. -/
+theorem linkReply_kindPreservingWrite (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkReply rid caller st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; simp at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    cases hCond : r.isFree with
+    | true =>
+      rw [if_pos hCond] at hStep
+      exact storeObject_kindPreservingWrite hObjInv hStep
+        ((getReply?_eq_some_iff st rid r).mp hGet) rfl (by simp [KernelObject.objectType])
+    | false =>
+      rw [if_neg (by simp [hCond])] at hStep
+      simp at hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and so is `linkCallerReply` — the Reply
+store above, then a TCB store at the caller's own key.
+
+The `.call` chain's counterpart of `consumeCallerReply_kindPreservingWrite`, and
+what carries register row 85's two bundles across the server-first rendezvous. -/
+theorem linkCallerReply_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hW1 := linkReply_kindPreservingWrite st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact hW1.trans (storeObject_kindPreservingWrite hInv1 hStep
+          ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl (by simp [KernelObject.objectType]))
+      · simp at hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): and `linkServerStashedReply` — the link above
+plus the server's stash clear, another TCB for a TCB. -/
+theorem linkServerStashedReply_kindPreservingWrite (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hW1 := linkCallerReply_kindPreservingWrite st st1 caller rid hObjInv hLink
+      have hInv1 := _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [← hStep]; exact hW1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact hW1.trans (storeObject_kindPreservingWrite hInv1 hStep
+          ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl (by simp [KernelObject.objectType]))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): none of the three link steps writes a CDT
+table — every one of their stores is a `storeObject`. -/
+theorem linkReply_cdt_eq (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
+    (hStep : linkReply rid caller st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; simp at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    cases hCond : r.isFree with
+    | true =>
+      rw [if_pos hCond] at hStep
+      exact ⟨storeObject_cdt_eq _ _ _ _ hStep, storeObject_cdtNodeSlot_eq _ _ _ _ hStep⟩
+    | false =>
+      rw [if_neg (by simp [hCond])] at hStep
+      simp at hStep
+
+theorem linkCallerReply_cdt_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have e1 := linkReply_cdt_eq st st1 rid caller hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
+          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+      · simp at hStep
+
+theorem linkServerStashedReply_cdt_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have e1 := linkCallerReply_cdt_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [← hStep]; exact e1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
+          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+
 /-- **WS-RR RR8.16** (`v0.35.199`): `consumeReply` is a `kindPreservingWrite` —
 its one store replaces a Reply with that Reply's own consumed record. -/
 theorem consumeReply_kindPreservingWrite (st st' : SystemState) (rid : SeLe4n.ReplyId)
@@ -5394,6 +5584,35 @@ theorem updateTcb_serviceRegistry (st : SystemState) (tid : SeLe4n.ThreadId) (f 
 theorem updateTcb_scThreadIndex (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     (st.updateTcb tid f).scThreadIndex = st.scThreadIndex := by
   unfold updateTcb; split <;> rfl
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the typed read-modify-write never touches
+either derivation table — it is `rewriteObject` at one key, and a rewrite writes
+the object store and nothing else. -/
+theorem updateTcb_cdt (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).cdt = st.cdt := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_cdtNodeSlot (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold updateTcb; split <;> rfl
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it is a `kindPreservingWrite`, with no
+side condition — the `none` arm is the identity, and the `some` arm is
+`rewriteObject` under `rewriteAdmissible_tcb`, which carries the kind equality
+*and* `rewriteNeutral`, false at `.cnode`.
+
+This is the one owner for "a typed TCB rewrite keeps every key's kind".  Every
+transition on the IPC and fault paths that edits one thread's record — the four
+register-context writers, the fault record, the restart frame, the `.Inactive`
+store — is `updateTcb`, so each reaches both invariant bundles through this
+lemma rather than re-deriving the rewrite's admissibility at its own site. -/
+theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.updateTcb tid f) := by
+  unfold updateTcb
+  split
+  · exact rewriteObject_kindPreservingWrite _ _ _ _ hInv
+  · exact kindPreservingWrite.refl st
 
 theorem updateTcb_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : TCB → TCB) (hInv : st.objects.invExt) :
