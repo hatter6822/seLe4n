@@ -1064,6 +1064,104 @@ def report(both, positive, negative, total_pos, total_neg, filtered, ambiguous=(
     return 1
 
 
+# ---------------------------------------------------------------------------
+# WS-RR RR8.16 (`v0.35.197b`) — a bare-name positive anchor pins nothing
+# ---------------------------------------------------------------------------
+#
+# `rg '^theorem foo'` matches `theorem fooX`, so an anchor over a declaration
+# with no other consumer -- which is exactly what these anchors exist for --
+# goes on reporting PASS after the name it watches is renamed.  That is
+# `v0.35.29`'s tautological pin reached by a *rename* rather than by a deletion,
+# and it is a rule `CLAUDE.md` has stated since Cut C3b-iv (`v0.35.170`) and
+# swept at one site.  Restating it a third time is the move that had already
+# failed twice, so it is a check.
+#
+# NEGATIVES are deliberately out of scope: bounding a negative can stop it
+# firing on a name it was catching, which is fail-open, so each of the tree's
+# 27 negative bare-name anchors is a judgement rather than a sweep.
+#
+# The check is a FLOOR over the exact shape the sweep retired -- a pattern that
+# is a declaration keyword, a name, and nothing else.  A pattern whose remainder
+# begins with something that could still admit an identifier character is not
+# reported, and this docstring says so rather than implying the check is
+# complete.
+_DECL_KEYWORDS = (
+    "theorem", "def", "private def", "protected def", "abbrev", "structure",
+    "inductive", "instance", "macro", "opaque", "axiom", "noncomputable def",
+)
+_BARE_DECL_ANCHOR = re.compile(
+    r"^(?:" + "|".join(k.replace(" ", r"\s+") for k in _DECL_KEYWORDS) + r")"
+    r"\s+[A-Za-z0-9_'?!.]+$"
+)
+
+# Positive anchors whose pattern is deliberately a FAMILY prefix: the anchor
+# counts the members of a family against a threshold, so the prefix IS the
+# question and bounding it to one declaration would ask something else.
+# Reconciled in both directions -- an entry the tree no longer carries is a
+# stale exemption reading as coverage.
+FAMILY_PREFIX_ANCHORS = frozenset({
+    "theorem queueOwnership_respected_by_",
+})
+
+
+def unbounded_declaration_anchors(paths) -> tuple[list[str], list[str]]:
+    """Positive anchors that name a declaration and stop, and stale exemptions.
+
+    Returns `(violations, stale)`.  A violation is a positive anchor whose
+    pattern is `^<declaration keyword> <name>` with nothing after the name, so a
+    suffix rename of that declaration leaves the anchor green.
+    """
+    violations: list[str] = []
+    seen_family: set[str] = set()
+    for path in paths:
+        text = pathlib.Path(path).read_text(encoding="utf-8", errors="surrogateescape")
+        for line_no, kind, is_neg, pattern, target, mode in parse_anchors(text):
+            if kind != "anchor" or is_neg or pattern is None:
+                continue
+            if "F" in mode:
+                # A fixed-string anchor has no regex to bound; it is a literal
+                # substring search and its own shape is the question.
+                continue
+            if pattern in FAMILY_PREFIX_ANCHORS:
+                seen_family.add(pattern)
+                continue
+            if _BARE_DECL_ANCHOR.match(pattern):
+                violations.append(f"{path}:{line_no}: {pattern!r} (target {target})")
+    stale = sorted(FAMILY_PREFIX_ANCHORS - seen_family)
+    return violations, stale
+
+
+def report_unbounded(violations: list[str], stale: list[str]) -> int:
+    if not violations and not stale:
+        return 0
+    if violations:
+        print(
+            f"FAIL: {len(violations)} positive anchor(s) name a declaration and "
+            f"stop, so a SUFFIX rename leaves them green:",
+            file=sys.stderr,
+        )
+        for v in violations[:40]:
+            print(f"  {v}", file=sys.stderr)
+        if len(violations) > 40:
+            print(f"  ... and {len(violations) - 40} more", file=sys.stderr)
+        print(
+            "\nBound the name with `($|[ ({:\\[\\]])` -- the delimiters a Lean "
+            "declaration name can be followed by, which both `rg` and the PCRE "
+            "`grep` shim accept and which contains no alphanumeric, so the "
+            "identifier-naming gate does not read a workstream code in it.  A "
+            "deliberate FAMILY count belongs in `FAMILY_PREFIX_ANCHORS` with "
+            "its reason.",
+            file=sys.stderr,
+        )
+    for pat in stale:
+        print(
+            f"FAIL: stale exemption — `FAMILY_PREFIX_ANCHORS` names {pat!r}, "
+            f"which no anchor carries any more.",
+            file=sys.stderr,
+        )
+    return 1
+
+
 def self_test() -> int:
     """Pin the mechanism: a gate that stops detecting fails silently.
 
@@ -1788,6 +1886,71 @@ def self_test() -> int:
             )
             return 1
 
+        # ------------------------------------------------------------------
+        # WS-RR RR8.16 (`v0.35.198`): the bare-name check, in BOTH directions.
+        #
+        # The mutation that decides is NOT a deletion -- every presence check
+        # survives one -- but a SUFFIX rename that keeps the token: `theorem
+        # foo` becomes `theorem fooX` and a bare `^theorem foo` anchor stays
+        # green.  So the witnesses are a bare anchor (must be reported), the
+        # same anchor bounded (must not), a negative bare anchor (must not,
+        # since bounding a negative is not the safe direction), and a script
+        # carrying none of the family-prefix exemptions (must report them
+        # stale, because an exemption nobody reconciles reads as coverage).
+        # ------------------------------------------------------------------
+        bare_p = d / "bare.sh"
+        bare_p.write_text(
+            "run_check \"INVARIANT\" rg -n '^theorem gamma_pinned' Some/File.lean\n"
+        )
+        v, _stale = unbounded_declaration_anchors([str(bare_p)])
+        if len(v) != 1:
+            print(
+                f"FAIL: --self-test — a bare-name positive anchor was not "
+                f"reported ({v}); a suffix rename of the declaration it names "
+                f"would leave it green.",
+                file=sys.stderr,
+            )
+            return 1
+
+        bounded_p = d / "bounded.sh"
+        bounded_p.write_text(
+            "run_check \"INVARIANT\" rg -n "
+            "'^theorem gamma_pinned($|[ ({:\\[\\]])' Some/File.lean\n"
+        )
+        v, _stale = unbounded_declaration_anchors([str(bounded_p)])
+        if v:
+            print(
+                f"FAIL: --self-test — a BOUNDED anchor was reported as bare "
+                f"({v}); the check would refuse the fix it demands.",
+                file=sys.stderr,
+            )
+            return 1
+
+        neg_p = d / "negbare.sh"
+        neg_p.write_text(
+            "run_negative_check \"INVARIANT\" rg -n '^theorem delta_gone' Some/File.lean\n"
+        )
+        v, _stale = unbounded_declaration_anchors([str(neg_p)])
+        if v:
+            print(
+                f"FAIL: --self-test — a NEGATIVE bare-name anchor was reported "
+                f"({v}); bounding a negative can stop it firing on a name it "
+                f"was catching, so negatives are a judgement rather than a "
+                f"sweep.",
+                file=sys.stderr,
+            )
+            return 1
+
+        _v, stale = unbounded_declaration_anchors([str(bounded_p)])
+        if sorted(FAMILY_PREFIX_ANCHORS) != stale:
+            print(
+                f"FAIL: --self-test — a script carrying none of the "
+                f"family-prefix exemptions did not report them stale "
+                f"({stale}); a stale exemption reads exactly like coverage.",
+                file=sys.stderr,
+            )
+            return 1
+
     print(
         "PASS: --self-test — planted contradictions were detected in both "
         "quoting styles, in both shell-wrapped spellings, on a second search "
@@ -1811,8 +1974,10 @@ def self_test() -> int:
         "while the same prefix ahead of locale-sensitive `grep` was refused, "
         "an unmodelled assignment and an unreducible non-search head "
         "each failed rather than falling into `filtered`, the `! rg` "
-        "absence wrapper was not shadowed, the clean "
-        "set passed, and a commented-out anchor was not counted."
+        "absence wrapper was not shadowed, a bare-name positive anchor was "
+        "reported while its bounded form and a bare NEGATIVE were not, a "
+        "family-prefix exemption no script carries was reported stale, the "
+        "clean set passed, and a commented-out anchor was not counted."
     )
     return 0
 
@@ -1839,11 +2004,21 @@ def main() -> int:
     if args.self_test:
         return self_test()
 
-    result = find_contradictions(args.scripts or discover_anchor_scripts())
+    paths = args.scripts or discover_anchor_scripts()
+    result = find_contradictions(paths)
     if args.list:
         for where in result[5]:
             print(f"  filtered (not compared): {where}")
-    return report(*result)
+    rc = report(*result)
+    violations, stale = unbounded_declaration_anchors(paths)
+    rc |= report_unbounded(violations, stale)
+    if not violations and not stale:
+        print(
+            "PASS: no positive anchor names a declaration and stops "
+            f"({len(FAMILY_PREFIX_ANCHORS)} family-prefix exemption(s), "
+            "reconciled)."
+        )
+    return rc
 
 
 if __name__ == "__main__":

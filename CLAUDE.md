@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.197.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.198.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -3336,6 +3336,32 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   (`frozenBranchOperationFrontier`) rather than implied, because a claim that
   stops at "checked" implies an authority over the whole arm it does not have.
 
+  **And a bare NAME is not a declaration either — a suffix rename defeats it**
+  (WS-RR RR8.16, `v0.35.197`–`v0.35.198`).  The same substitution at the
+  smallest unit an anchor has: `rg '^theorem foo'` matches `theorem fooX`, so an
+  anchor over a declaration with **no other consumer** — which is exactly what
+  these anchors exist for — goes on reporting PASS once the name it pins is
+  gone.  That is the tautological pin this file already retires, reached by a
+  *rename* rather than by a deletion.  Cut C3b-iv (`v0.35.170`) recorded the
+  rule, fixed the one anchor it was written for, and left the class; measured
+  at **2543** of the tree's positive anchors.  Three things follow.  **Bound the
+  name** with the delimiters a declaration name can be followed by — a class
+  containing no alphanumeric, so the identifier-naming gate does not read a
+  workstream code in it, and one both `rg` and the PCRE `grep` shim accept.
+  **Negatives are out of scope**, and that is a decision rather than an
+  omission: bounding a positive is strictly stricter, while bounding a negative
+  can stop it firing on a name it was catching, so each of the tree's 27 is a
+  judgement.  And **the sweep is driven by the gate's own anchor parser, not by
+  a second regex** — a hand-rolled pattern is a recognised set and the parser is
+  the derived one, which is what found the last 41 sites the hand-rolled sweep
+  missed.  `unbounded_declaration_anchors`
+  (`scripts/check_anchor_consistency.py`, Tier 0) refuses a new bare positive,
+  with a deliberate FAMILY count — an `rg -c` against a threshold, where the
+  prefix **is** the question — registered and reconciled both ways.  The sweep's
+  own measurement is the argument for it: **eight anchors pinned nothing they
+  name**, six naming the prefix `_preserves_ipcInvariant` where the declaration
+  is `_preserves_ipcInvariantFull`, and one naming a file whose bare match was a
+  different declaration entirely.
   **And an unbounded gap is not a region** (WS-OD OD3).  The region-scoped rule
   above assumes the scanner *has* a region; the cheapest way to write an anchor
   of the form "declaration `X` has property `Y`" is `X(.|\n)*Y`, and that gap runs

@@ -133,120 +133,120 @@ ensure_lake_available
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake build SeLe4n.Platform.Staged'
 
 # WS-B1 closure anchors: VSpace transitions, invariants, and ADR publication.
-run_check "INVARIANT" rg -n '^structure VSpaceRoot' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def resolveAsidRoot' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^structure VSpaceRoot($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def resolveAsidRoot($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
 # WS-G3/F-P06: resolveAsidRoot now uses asidTable O(1) lookup, NOT objectIndex.findSome? O(n) scan.
 run_check "INVARIANT" bash -lc "! rg -n '^\s*st.objectIndex.findSome\?' SeLe4n/Kernel/Architecture/VSpace.lean"
 run_check "INVARIANT" rg -n 'st.asidTable' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^def vspaceMapPage' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^def vspaceUnmapPage' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^def vspaceLookup' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" bash -lc "! rg -n '^theorem vspaceLookup_deterministic' SeLe4n/Kernel/Architecture/VSpace.lean"
+run_check "INVARIANT" rg -n '^def vspaceMapPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceUnmapPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceLookup($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" bash -lc "! rg -n '^theorem vspaceLookup_deterministic($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean"
 run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic' SeLe4n/Kernel/InformationFlow/Projection.lean"
+run_check "INVARIANT" bash -lc "! rg -n '^theorem projectState_deterministic($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean"
 run_prose_check "INVARIANT" rg -n 'WS-C3 proof-surface note:' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^def vspaceInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 # WS-B4 closure anchors: wrapper structures must remain explicit.
-run_check "INVARIANT" rg -n '^structure DomainId' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure Priority' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure Irq' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure Badge' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure ASID' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure VAddr' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure PAddr' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^structure ServiceId' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure DomainId($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Priority($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Irq($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure Badge($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure ASID($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure VAddr($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure PAddr($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^structure ServiceId($|[ ({:\[\]])' SeLe4n/Prelude.lean
 # WS-B5 closure anchors: CSpace guard/radix path resolution surface.
-run_check "INVARIANT" rg -n '^inductive ResolveError' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def resolveSlot' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def cspaceResolvePath' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceLookupPath' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^inductive ResolveError($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def resolveSlot($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def cspaceResolvePath($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceLookupPath($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 
 # WS-B6 closure anchors: notification IPC object model and transition surface.
-run_check "INVARIANT" rg -n '^inductive NotificationState' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^structure Notification' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def notificationSignal' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def notificationWait' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def notificationInvariant' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^inductive NotificationState($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^structure Notification($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def notificationSignal($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def notificationWait($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def notificationInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
 # WS-B7 closure anchors: information-flow policy/projection baseline and milestone docs.
-run_check "INVARIANT" rg -n '^inductive Confidentiality' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^structure SecurityLabel' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem securityFlowsTo_trans' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def projectState' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def lowEquivalent' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def runInformationFlowChecks' tests/InformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^inductive Confidentiality($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^structure SecurityLabel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem securityFlowsTo_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def projectState($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def runInformationFlowChecks($|[ ({:\[\]])' tests/InformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe information_flow_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^ELAN_INSTALLER_SHA256=' scripts/setup_lean_env.sh
 run_check "INVARIANT" rg -n '^compute_sha256\(\)' scripts/setup_lean_env.sh
 # shellcheck disable=SC2016
 
 # WS-B2 closure anchors: bootstrap DSL, negative suite, and nightly replay artifacts.
-run_check "INVARIANT" rg -n '^structure BootstrapBuilder' SeLe4n/Testing/StateBuilder.lean
+run_check "INVARIANT" rg -n '^structure BootstrapBuilder($|[ ({:\[\]])' SeLe4n/Testing/StateBuilder.lean
 run_check "INVARIANT" rg -n '^def build \(builder : BootstrapBuilder\)' SeLe4n/Testing/StateBuilder.lean
-run_check "INVARIANT" rg -n '^private def runNegativeChecks' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^private def runNegativeChecks($|[ ({:\[\]])' tests/NegativeStateSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe negative_state_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n 'trace_sequence_probe_manifest\.csv' scripts/test_tier4_nightly_candidates.sh
-run_check "INVARIANT" rg -n '^def runMainTrace' SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n '^def bootstrapState' SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n "^private def runCapabilityAndArchitectureTrace" SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n "^private def runServiceAndStressTrace" SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n "^private def runLifecycleAndEndpointTrace" SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^def runMainTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^def bootstrapState($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runCapabilityAndArchitectureTrace($|[ ({:\[\]])" SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runServiceAndStressTrace($|[ ({:\[\]])" SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n "^private def runLifecycleAndEndpointTrace($|[ ({:\[\]])" SeLe4n/Testing/MainTraceHarness.lean
 
 
 # M6 WS-M6-B adapter API anchors.
-run_check "INVARIANT" rg -n '^inductive AdapterErrorKind' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^def mapAdapterError' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^def adapterAdvanceTimer' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^def adapterWriteRegister' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^def adapterReadMemory' SeLe4n/Kernel/Architecture/Adapter.lean
-run_check "INVARIANT" rg -n '^def proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^structure AdapterProofHooks' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterWriteRegister_ok_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterReadMemory_ok_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^inductive AdapterErrorKind($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def mapAdapterError($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterAdvanceTimer($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterWriteRegister($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def adapterReadMemory($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Adapter.lean
+run_check "INVARIANT" rg -n '^def proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^structure AdapterProofHooks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_ok_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterWriteRegister_ok_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterReadMemory_ok_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_error_invalidContext_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterAdvanceTimer_error_unsupportedBinding_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterWriteRegister_error_unsupportedBinding_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem adapterReadMemory_error_unsupportedBinding_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.Invariant$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc "if rg -n '^import SeLe4n\\.Kernel\\.Architecture\\.Invariant$' SeLe4n.lean; then exit 1; fi"
 
-run_check "INVARIANT" rg -n '^inductive ArchAssumption' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^structure BootBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^structure RuntimeBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^inductive ArchAssumption($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure BootBoundaryContract($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure RuntimeBoundaryContract($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n "^\s*timerMonotonicDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n "^\s*registerContextStableDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n "^\s*memoryAccessAllowedDecidable\s*:" SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^structure InterruptBoundaryContract' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^structure InterruptBoundaryContract($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
 
 # WS-H15a: InterruptBoundaryContract decidability fields
 run_check "INVARIANT" rg -n '^\s*irqLineSupportedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
 run_check "INVARIANT" rg -n '^\s*irqHandlerMappedDecidable' SeLe4n/Kernel/Architecture/Assumptions.lean
 
 # WS-H15a: Decidability consistency theorems
-run_check "INVARIANT" rg -n '^theorem irqLineSupported_decidable_consistent' SeLe4n/Kernel/Architecture/Assumptions.lean
-run_check "INVARIANT" rg -n '^theorem irqHandlerMapped_decidable_consistent' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem irqLineSupported_decidable_consistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
+run_check "INVARIANT" rg -n '^theorem irqHandlerMapped_decidable_consistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Assumptions.lean
 
 # WS-H15b: RPi5 platform hardening anchors
-run_check "INVARIANT" rg -n '^def mmioRegions' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^def mmioRegionDisjointCheck' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^theorem mmioRegionDisjoint_holds' SeLe4n/Platform/RPi5/Board.lean
-run_check "INVARIANT" rg -n '^theorem rpi5MachineConfig_wellFormed' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def mmioRegions($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^def mmioRegionDisjointCheck($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem mmioRegionDisjoint_holds($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^theorem rpi5MachineConfig_wellFormed($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
 
 # WS-H15c: Syscall capability-checking wrappers
-run_check "INVARIANT" rg -n '^structure SyscallGate' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallLookupCap' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallInvoke' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^structure SyscallGate($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallLookupCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallInvoke($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_implies_capability_held($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # W3: syscallLookupCap_state_unchanged removed as dead code (trivially follows from
 # syscallLookupCap_implies_capability_held which provides the same state-unchanged guarantee).
-run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallInvoke_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # S5-A: Deprecated api* wrappers removed in v0.19.4. Verify removal and
 # presence of production syscall dispatch path.
-run_check "INVARIANT" rg -n '^def dispatchSyscall' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallEntry' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def dispatchSyscall($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallEntry($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # WS-RR RR3.24 + the RR3 closing audit de-privatized dispatchWithCap and
 # dispatchWithCapChecked: the dispatch payoff theorems
 # (IPC/Invariant/DispatchPayoff.lean) must name both tiers from outside the
@@ -256,31 +256,31 @@ run_check "INVARIANT" rg -n '^def syscallEntry' SeLe4n/Kernel/API.lean
 # satisfied by the Checked twin's line alone since the first
 # de-privatization: a presence check standing in for the wrong relation.)
 run_check "INVARIANT" rg -n '^def dispatchWithCap ' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def dispatchWithCapChecked' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def dispatchWithCapChecked($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # S5-G: Page-alignment check in retypeFromUntyped
-run_check "INVARIANT" rg -n '^def requiresPageAlignment' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^def allocationBasePageAligned' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def requiresPageAlignment($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def allocationBasePageAligned($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # WS-H15d: AdapterProofHooks concrete instantiation (Sim + RPi5)
-run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^def simRestrictiveAdapterProofHooks' SeLe4n/Platform/Sim/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterWriteRegister_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterReadMemory_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^def simRestrictiveAdapterProofHooks($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterAdvanceTimer_preserves($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterWriteRegister_preserves($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simRestrictive_adapterReadMemory_preserves($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
 # S5-D: Substantive simulation proof hooks
-run_check "INVARIANT" rg -n '^def simSubstantiveAdapterProofHooks' SeLe4n/Platform/Sim/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem simSubstantive_adapterAdvanceTimer_preserves' SeLe4n/Platform/Sim/ProofHooks.lean
-run_check "INVARIANT" rg -n '^def rpi5RestrictiveAdapterProofHooks' SeLe4n/Platform/RPi5/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterAdvanceTimer_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterWriteRegister_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
-run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterReadMemory_preserves' SeLe4n/Platform/RPi5/ProofHooks.lean
-run_check "INVARIANT" rg -n '^def rpi5RuntimeContractRestrictive' SeLe4n/Platform/RPi5/RuntimeContract.lean
+run_check "INVARIANT" rg -n '^def simSubstantiveAdapterProofHooks($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem simSubstantive_adapterAdvanceTimer_preserves($|[ ({:\[\]])' SeLe4n/Platform/Sim/ProofHooks.lean
+run_check "INVARIANT" rg -n '^def rpi5RestrictiveAdapterProofHooks($|[ ({:\[\]])' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterAdvanceTimer_preserves($|[ ({:\[\]])' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterWriteRegister_preserves($|[ ({:\[\]])' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^theorem rpi5Restrictive_adapterReadMemory_preserves($|[ ({:\[\]])' SeLe4n/Platform/RPi5/ProofHooks.lean
+run_check "INVARIANT" rg -n '^def rpi5RuntimeContractRestrictive($|[ ({:\[\]])' SeLe4n/Platform/RPi5/RuntimeContract.lean
 
 # WS-A5 closure anchors: test-only contract fixture separation + policy visibility.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.MainTraceHarness$' Main.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Testing\.RuntimeContractFixtures$' SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n '^def runtimeContractAcceptAll' SeLe4n/Testing/RuntimeContractFixtures.lean
-run_check "INVARIANT" rg -n '^def runtimeContractDenyAll' SeLe4n/Testing/RuntimeContractFixtures.lean
+run_check "INVARIANT" rg -n '^def runtimeContractAcceptAll($|[ ({:\[\]])' SeLe4n/Testing/RuntimeContractFixtures.lean
+run_check "INVARIANT" rg -n '^def runtimeContractDenyAll($|[ ({:\[\]])' SeLe4n/Testing/RuntimeContractFixtures.lean
 
 # WS-A3 boundary hardening anchors must remain explicit.
 run_check "INVARIANT" rg -n '^@\[inline\] def toObjId' SeLe4n/Prelude.lean
@@ -288,85 +288,85 @@ run_check "INVARIANT" bash -lc "if rg -n '^instance : Coe ThreadId ObjId where' 
 
 # Invariant bundle surface anchors (M1/M2/M3 composed entrypoints).
 run_check "INVARIANT" rg -n '^(def|abbrev) schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^def capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def coreIpcInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # M1 closure anchors: scheduler transition APIs + preservation theorem entrypoints.
-run_check "INVARIANT" rg -n '^def chooseThread' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^def schedule' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^def handleYield' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^theorem chooseThread_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem schedule_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem handleYield_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^def chooseThread($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^def schedule($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^def handleYield($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem chooseThread_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem schedule_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem handleYield_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 
 # M2 closure anchors: CSpace transition APIs + capability-bundle preservation theorem entrypoints.
-run_check "INVARIANT" rg -n '^def cspaceLookupSlot' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceInsertSlot' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceMint' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceDeleteSlot' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
+run_check "INVARIANT" rg -n '^def cspaceLookupSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceInsertSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceMint($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceDeleteSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Insert.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Delete.lean
 
 # C-01 remediation: non-tautological slot-uniqueness infrastructure at CNode level.
-run_check "INVARIANT" rg -n '^def slotsUnique' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem insert_slotsUnique' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem remove_slotsUnique' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_slotsUnique' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem insert_slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem remove_slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem revokeTargetLocal_slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem lookup_mem_of_some($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem mem_lookup_of_slotsUnique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 # C-01/H-01 remediation: reformulated invariant definitions (non-tautological).
 run_check "INVARIANT" rg -n 'cn.slotsUnique' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 # WS-RC R4.A close-out: `cspaceLookupSound_of_cspaceSlotUnique` was renamed
 # to `cspaceLookupSound_holds` (no preconditions; the historical
 # `cspaceSlotUnique` precondition was deleted as a vestigial alias).
-run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSound_holds($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 # WS-RC R4.A close-out: `capabilityInvariantBundle_of_slotUnique` was renamed
 # to `capabilityInvariantBundle_of_components` after the vestigial
 # `cspaceSlotUnique` parameter was deleted.
-run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_components' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem capabilityInvariantBundle_of_components($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 # WS-RC R4.A close-out: the historical
 # `cspaceSlotUnique_of_storeObject_{nonCNode,cnode}` transfer theorems were
 # deleted along with the `cspaceSlotUnique` predicate.  Per-CNode discharge
 # is direct via `slotsUnique_holds`.
-run_check "INVARIANT" rg -n '^theorem slotsUnique_holds' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem cnode_slots_unique' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem slotsUnique_holds($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem cnode_slots_unique($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 # H-03 remediation: badge/notification routing consistency chain.
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_badge_propagated($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_badge_stored_fresh($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_recovers_pending_badge($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem badge_notification_routing_consistent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem badge_merge_idempotent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 
 # WS-H12a: Legacy M3 seed/M3.5 step-2 anchors removed — replaced by dual-queue operations.
 # Dual-queue transition definition anchors:
-run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointReceiveDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointSendDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 
 # M3.5 step-3 scheduler-contract predicate anchors must remain present.
-run_check "INVARIANT" rg -n '^def runnableThreadIpcReady' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def runnableThreadIpcReady($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def blockedOnSendNotRunnable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def blockedOnReceiveNotRunnable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-H12a: Legacy per-operation ipcSchedulerContractPredicates anchors removed.
 # Dual-queue equivalents are in IPC/Invariant.lean (endpointSendDual/ReceiveDual/Call/Reply/ReplyRecv).
 
 # M3.5 step-4 composed bundle anchors must remain present.
-run_check "INVARIANT" rg -n '^def ipcSchedulerRunnableReadyComponent' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedSendComponent' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^def ipcSchedulerCouplingInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerRunnableReadyComponent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedSendComponent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedReceiveComponent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerCoherenceComponent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem ipcSchedulerCoherenceComponent_iff_contractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerCouplingInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 # WS-H12a: Legacy coupling/local-first preservation anchors removed.
 # Dual-queue preservation is verified via dualQueueSystemInvariant anchors below.
 
 # M3.5 step-5 helper-lemma anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem tcb_lookup_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem not_runnable_membership_of_endpoint_store' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem tcb_lookup_of_endpoint_store($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem runnable_membership_of_endpoint_store($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_runnable_membership_of_endpoint_store($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
 # Bundle composition guard: M3 seed bundle must compose scheduler + capability + full IPC invariants.
 # WS-H12e: Updated from ipcInvariant to ipcInvariantFull (includes dualQueueSystemInvariant + allPendingMessagesBounded).
@@ -375,7 +375,7 @@ run_check "INVARIANT" rg -n '^\s*schedulerInvariantBundle st ∧ capabilityInvar
 # M3.5 step-1 state-model anchors must remain present.
 # WS-H12a: waitingReceiver removed from Endpoint (dual-queue uses sendQ/receiveQ).
 # WS-H12a: endpointQueueWellFormed/endpointObjectValid removed (subsumed by dualQueueSystemInvariant).
-run_check "INVARIANT" rg -n '^inductive ThreadIpcState' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^inductive ThreadIpcState($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^\s*ipcState\s*:\s*ThreadIpcState' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^\s*sendQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n '^\s*receiveQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Object/Types.lean
@@ -386,169 +386,169 @@ run_check "INVARIANT" rg -n '^\s*receiveQ\s*:\s*IntrusiveQueue' SeLe4n/Model/Obj
 # `objectTypeMetadataConsistent`; the bundle-of-two `lifecycleMetadataConsistent`
 # and the table it bundled are retired (see the v0.35.78 block below).
 run_check "INVARIANT" rg -U -n '^structure LifecycleMetadata where\n  objectTypes : RHTable SeLe4n\.ObjId KernelObjectType\n$' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def objectTypeMetadataConsistent' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def cspaceRevoke' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^def objectTypeMetadataConsistent($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_local_target_reduction($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 
 # M4-A step-3 lifecycle invariant layering anchors must remain present.
 # AN4-B (H-03): `lifecycleIdentityAliasingInvariant` was collapsed to an
 # `abbrev` aliasing `lifecycleIdentityTypeExact` (the redundant
 # `lifecycleIdentityNoTypeAliasConflict` conjunct is derivable in one step
 # from exactness and was removed).
-run_check "INVARIANT" rg -n '^abbrev lifecycleIdentityAliasingInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^abbrev lifecycleIdentityAliasingInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
 # v0.35.78: the bundle IS the identity/aliasing layer -- the capability-reference
 # layer it was conjoined with was a family of tautologies over a reader that read
 # the object store, retired with that reader (see the v0.35.78 block below).
 run_check "INVARIANT" rg -U -n '^def lifecycleInvariantBundle \(st : SystemState\) : Prop :=\n  lifecycleIdentityAliasingInvariant st$' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
 
 # M4-A step-5 lifecycle preservation entrypoint anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^def lifecycleCompositionInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^def lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_coreIpcInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_preserves_lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # M4-B WS-C preservation theorem expansion anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_staged_steps($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_preserves_lifecycleCompositionInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # M4-B WS-A composition transition anchors must remain present.
-run_check "INVARIANT" rg -n '^def lifecycleRevokeDeleteRetype' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def lifecycleRevokeDeleteRetype($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_error_authority_cleanup_alias($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_ok_implies_authority_ne_cleanup($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M4-A step-4 lifecycle local-helper anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_eq' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_ne' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_scheduler_eq' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_as_storeObject' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_lookup_preserved_ne' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_runnable_membership' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_not_runnable_membership' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_objects_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycle_storeObject_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_as_storeObject($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_lookup_preserved_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_runnable_membership($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_ok_not_runnable_membership($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M4-A step-2 lifecycle transition anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| illegalState' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| illegalAuthority' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| invalidTypeTag' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeObject' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_object' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeObject($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalState($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_error_illegalAuthority($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_success_updates_object($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
 
 # M5-B/Q1: Service registry transition anchors (lifecycle ops removed in Q1).
-run_check "INVARIANT" rg -n '^def storeServiceEntry' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def storeServiceEntry($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceHasPathTo($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceRegisterDependency($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^\s*\| policyDenied' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| dependencyViolation' SeLe4n/Model/KernelError.lean
 
 # M5-C policy-surface anchors must remain present.
-run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^def policyBackingObjectTyped' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^abbrev ServicePolicyPredicate($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^def policyBackingObjectTyped($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
 # v0.35.78: the surface is the typing component alone -- its second component
 # was an implication whose antecedent read `lookupSlotCap` through the retired
 # `lookupCapabilityRefMeta`, i.e. a tautology (see the v0.35.78 block below).
 run_check "INVARIANT" rg -U -n '^def servicePolicySurfaceInvariant \(st : SystemState\) : Prop :=\n  ∀ sid svc,\n    lookupService st sid = some svc →\n      policyBackingObjectTyped st svc$' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem policyBackingObjectTyped_of_lifecycleInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem servicePolicySurfaceInvariant_of_lifecycleInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
 # M5-D/Q1: proof-package anchors (lifecycle preservation theorems removed in Q1).
-run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_servicePolicySurfaceInvariant' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
-run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^def serviceLifecycleCapabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem serviceLifecycleCapabilityInvariantBundle_of_components($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_servicePolicySurfaceInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
+run_check "INVARIANT" rg -n '^theorem storeServiceState_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Policy.lean
 
 # WS-D3 F-06/TPI-D04 badge-override safety anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem mintDerivedCap_target_preserved_with_badge_override' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_safe' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_rights_attenuated_with_badge_override($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem mintDerivedCap_target_preserved_with_badge_override($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_badge_override_safe($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 
 # WS-D3 F-08/TPI-D05 VSpace success preservation + TPI-001 round-trip anchors must remain present.
-run_check "INVARIANT" rg -n '^theorem vspaceMapPage_success_preserves_vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_map' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_map_other' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_unmap' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_unmap_other' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPage_success_preserves_vspaceInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_success_preserves_vspaceInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_map($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_map_other($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_after_unmap($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_unmap_other($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
 # WS-D3/WS-G3 F-08 VSpace resolveAsidRoot extraction/characterization lemmas.
 # WS-G3: resolveAsidRoot_some_implies replaced by resolveAsidRoot_some_implies_obj (asidTable-based).
 # WS-G3: resolveAsidRoot_of_unique_root replaced by resolveAsidRoot_of_asidTable_entry (no uniqueness needed).
-run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_some_implies_obj' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_of_asidTable_entry' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^def vspaceAsidRootsUnique' SeLe4n/Kernel/Architecture/VSpace.lean
-run_check "INVARIANT" rg -n '^def asidTableConsistent' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_some_implies_obj($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^theorem resolveAsidRoot_of_asidTable_entry($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def vspaceAsidRootsUnique($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpace.lean
+run_check "INVARIANT" rg -n '^def asidTableConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
 # WS-D4 F-07 service dependency cycle detection anchors must remain present.
-run_check "INVARIANT" rg -n '^def serviceBfsFuel' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceHasPathTo' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^def serviceRegisterDependency' SeLe4n/Kernel/Service/Operations.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceBfsFuel($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceHasPathTo($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^def serviceRegisterDependency($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_error_self_loop($|[ ({:\[\]])' SeLe4n/Kernel/Service/Operations.lean
 run_check "INVARIANT" rg -n '^\s*\| cyclicDependency' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^def serviceDependencyAcyclic($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_acyclicity($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-D4 F-11/Q1: serviceRestart failure anchors removed in Q1; replaced with graph invariant anchors.
-run_check "INVARIANT" rg -n 'theorem serviceGraphInvariant_of_storeServiceState_sameDeps' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_serviceGraphInvariant' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n 'theorem serviceGraphInvariant_of_storeServiceState_sameDeps($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegisterDependency_preserves_serviceGraphInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-D4 F-12 double-wait prevention + uniqueness invariant anchors must remain present.
 run_check "INVARIANT" rg -n '^\s*\| alreadyWaiting' SeLe4n/Model/KernelError.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_error_alreadyWaiting($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_badge_path_notification($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_wait_path_notification($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # WS-RC R4.C close-out: the state-level `uniqueWaiters` predicate and its
 # `notificationWait_preserves_uniqueWaiters` companion were deleted as part
 # of the structural promotion to `NoDupList.hNodup`.  The plan-named
 # canonical witness `notification_waiters_nodup` now discharges directly.
-run_check "INVARIANT" rg -n '^theorem notification_waiters_nodup' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_runtime_check_implied_by_nodup' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
+run_check "INVARIANT" rg -n '^theorem notification_waiters_nodup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_runtime_check_implied_by_nodup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean
 
 # WS-E4/WS-F1 dual-queue IPC definition and theorem anchors must remain present.
-run_check "INVARIANT" rg -n '^def endpointSendDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointReceiveDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointCall' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointReply' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointReplyRecv' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def endpointQueuePopHead' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^def endpointQueueEnqueue' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^def endpointQueueRemoveDual' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_scheduler_eq' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_ipcState_backward' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointSendDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointCall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointReplyRecv($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def endpointQueuePopHead($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^def endpointQueueEnqueue($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^def endpointQueueRemoveDual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_ipcState_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 
 # WS-F1 dual-queue preservation theorem anchors (all three invariant families).
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CallReplyRecv/
 
 # WS-F2 untyped memory invariant preservation anchors.
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenWithinWatermark' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenNonOverlap' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenUniqueIds' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_untypedMemoryInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenWithinWatermark($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenNonOverlap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem allocate_preserves_childrenUniqueIds($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 
 # WS-D3 F-16 module docstring classification anchors must remain present.
 run_prose_check "INVARIANT" rg -n '^/-!' SeLe4n/Kernel/Scheduler/Invariant.lean
@@ -610,8 +610,8 @@ run_check "TRACE" rg -n 'post-delete lookup \(expected error\): SeLe4n.Model.Ker
 
 
 run_check "INVARIANT" rg -n '^\s*"schema_version": "1\.0\.0"' tests/scenarios/scenario_catalog.json
-run_check "INVARIANT" rg -n '^def validate_catalog' scripts/scenario_catalog.py
-run_check "INVARIANT" rg -n '^def nightly_seeds' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def validate_catalog($|[ ({:\[\]])' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def nightly_seeds($|[ ({:\[\]])' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^run_check "META" python3 "\$\{SCRIPT_DIR\}/scenario_catalog.py" validate' scripts/test_smoke.sh
 
 
@@ -645,17 +645,17 @@ run_check "TRACE" rg -n 'parameterized topology ok' tests/fixtures/main_trace_sm
 run_check "HYGIENE" rg -n 'L-08.*theorem-body spot-check' scripts/test_tier0_hygiene.sh
 
 # WS-F2 untyped memory model anchors must remain present.
-run_check "INVARIANT" rg -n '^structure UntypedChild' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^structure UntypedObject' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def retypeFromUntyped' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_decompose' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_typeMismatch' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_allocSizeTooSmall' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_regionExhausted' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^def untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent' SeLe4n/Kernel/Lifecycle/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvariantBundle' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^structure UntypedChild($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^structure UntypedObject($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def retypeFromUntyped($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_typeMismatch($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_allocSizeTooSmall($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_error_regionExhausted($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^def untypedMemoryInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_systemState_untypedMemoryInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_objectTypeMetadataConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem retypeFromUntyped_preserves_lifecycleInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedRegionExhausted' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedTypeMismatch' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| untypedDeviceRestriction' SeLe4n/Model/KernelError.lean
@@ -675,29 +675,29 @@ run_check "INVARIANT" rg -n 'F2.*retype' tests/NegativeStateSuite.lean
 
 # WS-F3 information-flow completeness anchors must remain present.
 # Projection extensions (CRIT-02):
-run_check "INVARIANT" rg -n '^def projectKernelObject' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def capTargetObservable' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def projectActiveDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def projectIrqHandlers' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^def projectObjectIndex' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectKernelObject($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def capTargetObservable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectActiveDomain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectIrqHandlers($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^def projectObjectIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" rg -n '^\s*activeDomain' SeLe4n/Kernel/InformationFlow/Projection.lean
 # CNode slot filtering safety theorems (F-22):
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_idempotent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_objectType($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # WS-SM SM5.B (PR #805 review P2-4): cpuAffinity must be stripped by the NI projection.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_erases_cpuAffinity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # NI theorems (CRIT-03/F-21):
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 # Enforcement-NI bridge (F-20/Q1: serviceRestartChecked removed):
-run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMintChecked_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # Composed NI framework (H-05):
-run_check "INVARIANT" rg -n '^inductive NonInterferenceStep' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^inductive NonInterferenceStep($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem composedNonInterference_trace($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # Information-flow test suite coverage anchors.
 run_check "TRACE" rg -n 'activeDomain visible' tests/InformationFlowSuite.lean
 run_check "TRACE" rg -n 'IRQ handler' tests/InformationFlowSuite.lean
@@ -706,50 +706,50 @@ run_prose_check "TRACE" rg -n 'Service registry projection' tests/InformationFlo
 run_check "TRACE" rg -n '7-field low-equivalence' tests/InformationFlowSuite.lean
 
 # WS-F4 proof gap closure anchors — timerTick, cspaceMutate, cspaceRevoke, notification preservation.
-run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMutate_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_schedulerInvariantBundle' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcSchedulerContractPredicates' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
+run_check "INVARIANT" rg -n '^theorem timerTick_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMutate_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/CopyMoveMutate.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_schedulerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcSchedulerContractPredicates($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/
 
 # WS-H5 dual-queue structural invariant anchors — predicate definitions + preservation theorems.
-run_check "INVARIANT" rg -n '^def intrusiveQueueWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def tcbQueueLinkIntegrity' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def dualQueueEndpointWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def intrusiveQueueWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def tcbQueueLinkIntegrity($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def dualQueueEndpointWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-SM SM6.D per-core IPC invariant bundle anchors — the four named per-core
 # conjuncts (D.3-D.6), the twenty-field aggregate (D.1) + SMP form + exact
 # decomposition, the home-core restriction, and the six per-operation
 # preservation theorems (D.2) + the cross-core call flagship (staged).
-run_check "INVARIANT" rg -n '^def threadHomeCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^def ipcStateQueueMembershipConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^def endpointQueueNoDup_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^def queueNextBlockingConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^def queueHeadBlockedConsistent_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^structure ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^def ipcInvariantFull_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_smp_iff_full_and_passive_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem ipcStateQueueMembershipConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem queueNextBlockingConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem queueHeadBlockedConsistent_smp_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^theorem default_ipcInvariantFull_smp' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
-run_check "INVARIANT" rg -n '^structure passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem determineTargetCore_eq_threadHomeCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
+run_check "INVARIANT" rg -n '^def threadHomeCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def ipcStateQueueMembershipConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def endpointQueueNoDup_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def queueNextBlockingConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def queueHeadBlockedConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^structure ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFull_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_smp_iff_full_and_passive_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem ipcStateQueueMembershipConsistent_smp_iff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_smp_iff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem queueNextBlockingConsistent_smp_iff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem queueHeadBlockedConsistent_smp_iff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^theorem default_ipcInvariantFull_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundle.lean
+run_check "INVARIANT" rg -n '^structure passiveServerIdleFrameOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem determineTargetCore_eq_threadHomeCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
 
 # WS-RR RR7.7: the capability-carrying `.call` footprint IS the base footprint
 # at `some destCnode`, not a second definition beside it.  Two relations:
@@ -772,14 +772,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "lockSet_endpointCallWithCaps[
 # exactness, the cross-core (OnCore) whole-bundle closures + per-core
 # flagships for notification/reply/receive/replyRecv (production), and the
 # capability-carrying (WithCaps) trio behind the live `.send` dispatch.
-run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_getElem_eq' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^structure OffSchedulerAgrees' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem wakeThread_offSchedulerAgrees_of_ready' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem consumeCallerReply_offSchedulerAgrees' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem passiveServerIdleFrameOnCore_boot_iff' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
-run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_getElem_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^structure OffSchedulerAgrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_offSchedulerAgrees_of_ready($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_offSchedulerAgrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
+run_check "INVARIANT" rg -n '^theorem passiveServerIdleFrameOnCore_boot_iff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_post_agrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationInvariant.lean
 # The bound-notification delivery path's non-interference: the endpoint-splice
 # projection engine (proved together with the object-store external invariant,
 # because each projection step's hypothesis is the previous state's invExt),
@@ -790,31 +790,31 @@ run_check "INVARIANT" rg -n '^theorem notificationWaitOnCore_preserves_ipcInvari
 # cancellation reclaim's abort could reach it too, and the anchor moved with it --
 # this positive would otherwise have contradicted the negative that pins the
 # single owner, which `check_anchor_consistency.py` refused.
-run_check "INVARIANT" rg -n '^def endpointSpliceHigh' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection_and_invExt' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^def endpointSpliceHigh($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection_and_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projection\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_preserves_projectionOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI\b' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI_smp' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_bound_path_NI_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignalNI.lean
 # The mid-queue endpoint splice, decomposed once and carried across every
 # conjunct of the IPC bundle.  The decomposition is the point: eighteen conjunct
 # proofs were each re-deriving the same four-branch case analysis, which is a
 # property of the operation and not of the conjunct.
-run_check "INVARIANT" rg -n '^inductive SpliceShape' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_shape' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_carry' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_of_dualQueue_of_headBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem spliceSideBlocked_along_path' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^def splicePredecessorBlocked' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_head' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_path' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^inductive SpliceShape($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_shape($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_carry($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueNextTargetBlocked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_queueHeadBlockedConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_endpointQueueTailBlockedConsistent($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_preserves_ipcStateQueueMembershipConsistent_except($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueNoDup_of_dualQueue_of_headBlocked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceSideBlocked_along_path($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def splicePredecessorBlocked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_head($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem splicePredecessorBlocked_of_path($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptMembership($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_establishes_ipcInvariantFullExceptMembership($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # Relation, not presence: the relaxed bundle must relax the *membership* conjunct
 # and the capstone must conclude the relaxed bundle at the *removed* thread — a
 # capstone concluding the full bundle would be false of the state the operation
@@ -828,12 +828,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemoveDual_preser
 # conjunct and the receive-completing store restores it, so the two compose back
 # to the full bundle — and the three detachment facts the store asks for are the
 # ones the splice has just established.
-run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_closes_exceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem spliceFinalEndpoint' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_links_cleared' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_no_incoming' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_not_boundary' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_detached' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_closes_exceptMembership($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceFinalEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_links_cleared($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_no_incoming($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_not_boundary($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_removed_detached($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # Relation, not presence: the keystone must conclude the **full** bundle from the
 # **relaxed** one, and must take the store as its own step.  A keystone stated
 # from the full bundle would be vacuous on the state the splice produces.
@@ -845,20 +845,20 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem storeTcbReceiveComple
 # The live bound-delivery arm's payoff: the whole bundle, per core, and at the
 # flow-checked dispatch the SM9 arm actually runs.
 run_check "INVARIANT" rg -n '^theorem boundDeliveryTarget\?_some' SeLe4n/Kernel/IPC/Operations/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_passiveServerIdleFrameOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull\b' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_passiveServerIdleFrameOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundCrossCoreDispatchChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationBindDispatch.lean
 # **WS-RR RR7.22 (residual, second consumer)**: the cancellation arm's sweep is a
 # fold over the whole object store, so its payoff is a *pointwise* fact — false
 # of the accumulator at every key not yet visited, hence not a fold invariant.
-run_check "INVARIANT" rg -n '^theorem RHTable.fold_pointwise' SeLe4n/Kernel/RobinHood/Bridge.lean
-run_check "INVARIANT" rg -n '^def endpointSweepBody' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_eq_fold' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_off_boundary' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem RHTable.fold_pointwise($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Bridge.lean
+run_check "INVARIANT" rg -n '^def endpointSweepBody($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_eq_fold($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_off_boundary($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # Relation, not presence: the named body must be pinned to the operation by a
 # definitional equation, and the pointwise lemma must carry the `Pre` that lets a
 # declining guard prove something.  Without `Pre` the lemma is `fold_preserves`
@@ -866,15 +866,15 @@ run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_off_boundary' 
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllEndpointQueues_eq_fold[^\n]*(\n([ \t][^\n]*)?)*endpointSweepBody \(spliceOutMidQueueNode st tid\) tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem RHTable.fold_pointwise[^\n]*(\n([ \t][^\n]*)?)*hEstablish : ∀ acc k v, t.get\? k = some v → Pre k acc → Q k \(f acc k v\)" SeLe4n/Kernel/RobinHood/Bridge.lean'
 # The splice's per-key readings, and the queue shape across sweep-then-restore.
-run_check "INVARIANT" rg -n '^def queueNeighbourPatch' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_eq_patches' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_victim_tcb' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_endpoint_value' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^def sweptThreadBoundaryCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem sweptQueue_wellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueLinkIntegrity' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueChainAcyclic' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem sweptAndRestored_dualQueueSystemInvariant' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^def queueNeighbourPatch($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_eq_patches($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_victim_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_endpoint_value($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def sweptThreadBoundaryCoherent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptQueue_wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueLinkIntegrity($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_tcbQueueChainAcyclic($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # Relation, not presence: the missing queue-shape fact must be a **hypothesis** of
 # the dual-queue theorem, not derived inside it — the bundle does not entail it, and
 # a version that quietly assumed it would be unsound rather than merely weak.
@@ -886,10 +886,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_tcbQueueLinkI
 run_negative_check "INVARIANT" rg -n 'tcbQueueLinkIntegrity \(removeFromAllEndpointQueues' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # WS-RR RR7.22 (residual, whole bundle): all three coherence clauses are stated
 # as one hypothesis, and the keystone takes it.
-run_check "INVARIANT" rg -n '^def sweptPredecessorBlocked' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^def sweptSuccessorAnchored' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^structure sweptThreadQueueCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
-run_check "INVARIANT" rg -n '^theorem sweptAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^def sweptPredecessorBlocked($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^def sweptSuccessorAnchored($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^structure sweptThreadQueueCoherent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem sweptAndRestored_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # Relation, not presence: the keystone must take the coherence bundle as a
 # **hypothesis**, exactly as the dual-queue result takes its boundary clause.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hCoh : sweptThreadQueueCoherent st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
@@ -897,35 +897,35 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipc
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem sweptAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(sweptAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
 # The live arm is reached by an equation the compiler checks, not by a restatement.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpoint_arm_eq[^\n]*(\n([ \t][^\n]*)?)*sweptAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 # NEGATIVE: the swept thread's non-reply state is *derived* where the bundle is
 # available, never taken as a further hypothesis of the live arm.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_endpointArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean'
-run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyObject_none_of_not_blockedOnReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-RR RR7.22 (residual), the notification arm: its own purge description, its
 # own coherence hypothesis, its keystone and the live arm.
-run_check "INVARIANT" rg -n '^def notificationPurgeBody' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def notificationPurgeBody($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem removeFromAllNotificationWaitLists_eq_fold[^\n]*(\n([ \t][^\n]*)?)*st.objects.fold st \(notificationPurgeBody tid\) := rfl" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_check "INVARIANT" rg -n '^def sweptThreadOffQueueChains' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-run_check "INVARIANT" rg -n '^theorem purgedAndRestored_dualQueueSystemInvariant' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^def sweptThreadOffQueueChains($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # Relation, not presence: the keystone takes the coherence fact as a hypothesis
 # and states the whole bundle on the composite.
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hOff : sweptThreadOffQueueChains st v" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem purgedAndRestored_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*ipcInvariantFull \(purgedAndRestored st v frame\)" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notification_arm_eq[^\n]*(\n([ \t][^\n]*)?)*purgedAndRestored st tid \(some Architecture.cancelledIpcFrame\) := by" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # NEGATIVE: the two derivable facts stay derived — the notification arm takes
 # neither a "not blocked on reply" nor an "off every endpoint boundary" premise.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlocking_notificationArm_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hNotReply" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
-run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem purgedAndRestored_victim_off_endpoint_boundaries($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
 # WS-RR RR8.7, the reply arm -- the third and last of the three, and the only one
 # whose arm is a four-step composition rather than one sweep.
-run_check "INVARIANT" rg -n '^structure abortHolderQueueCoherent' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^structure abortHolderQueueCoherent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # Relation, not presence: the keystone must take BOTH directions of the local
 # coherence fact.  Neither entails the other and `ipcInvariantFull` entails
 # neither, so a cut that drops either has weakened the statement rather than
@@ -962,10 +962,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCalle
 # receive leg writes raised `maxLockSetSize` to 14 and cost
 # `admissibleCriticalSection` two microseconds on the 1 ms tick.  It is the same
 # arm WS-HP HP3.2 moved the ceiling to 23 for.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_receive_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # Both receive-side footprints resolve the member through the shared resolver,
 # not through a second reading of the endpoint.
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*receiveSideQueueStructureNeighbor\? st endpointId" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
@@ -987,10 +987,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem admissibleCriticalSec
 run_check "INVARIANT" rg -n '^def endpointQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n '^def receiveSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n '^def sendSideQueueStructureNeighbor\?' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_covers_queueNeighbour' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_send_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_call_covers_queueNeighbour' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_send_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_call_covers_queueNeighbour($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # The arm question -- pop or block -- is answered by the *same* resolver the
 # arm's receiver/sender member already comes from, so the footprint and the
 # transition cannot disagree about which branch this call takes.  A relation:
@@ -1007,9 +1007,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def sendSideQueueStructureNei
 # a `.notificationSignal` on one core and a `.tcbSuspend` of a queue-mate on
 # another had provably disjoint footprints while both writing the same TCB.
 run_check "INVARIANT" rg -n '^def notificationSignalSpliceNeighbors\?' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_prev_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_next_write_mem' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_prev_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_notificationSignalOnCore_splice_next_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/NotificationSignal.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_notificationSignal_covers_spliceNeighbors($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # The resolver is *derived* from the two the arm already asks -- the arm gate
 # from `boundDeliveryTarget?`, the neighbour identities from the neutral
 # `queueSpliceNeighbors?` the cancellation arms use -- so the footprint and the
@@ -1034,8 +1034,8 @@ run_negative_check "INVARIANT" rg -n '^def cancelSpliceNeighbors\?' SeLe4n/Kerne
 # `endpointQueueRemove` and asserted the dual was "the removal every other
 # kernel path uses"; `spliceOutMidQueueNode` -- the removal `.tcbSuspend` and
 # thread destruction run -- was a third, and kept the defect for eight cuts.
-run_check "INVARIANT" rg -n '^def queueUnlinkPredecessor' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def queueUnlinkSuccessor' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueUnlinkPredecessor($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueUnlinkSuccessor($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 # A *relation*, not a presence: the successor update writes both link fields.
 run_check "INVARIANT" bash -lc 'rg -U -n "def queueUnlinkSuccessor[^\n]*(\n([ \t][^\n]*)?)*queuePrev := removed\.queuePrev, queuePPrev := removed\.queuePPrev" SeLe4n/Model/Object/Types.lean'
 # The two removals that spell their patches inline call the shared updates ...
@@ -1046,9 +1046,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def spliceOutMidQueueNode[^\n]*(\n([ \
 # ... and the third, which spells its write through `storeTcbQueueLinks`, is
 # tied to the same definition by a theorem about the object it stores -- a name
 # is not a definition, so the tie is proved rather than asserted.
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkSuccessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkPredecessor' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkSuccessor($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_stores_queueUnlinkPredecessor($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_next_queuePPrev($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 # NEGATIVE: the stranding form -- a successor patch naming `queuePrev` alone --
 # must not come back, in the shared definition or in any removal that inlines
 # one again.  Mutating by *removing* a patch would be caught by the positives
@@ -1062,7 +1062,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "with queuePrev := (tcb|tcbV|r
 # carries exactly one bit beyond `queuePrev` -- whether the node is linked -- and
 # every other bit of it must agree.
 run_check "INVARIANT" rg -n '^def TCB\.queuePPrevAgreesWithPrev' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrev' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # A relation, not a presence: it is the FOURTH conjunct of the dual-queue bundle,
 # so every transition in the tree must carry it.  The gap is line-bounded, so it
 # cannot leave the declaration it started in.
@@ -1080,7 +1080,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds_of_
 # kernel module -- so a guard homed in the IPC layer is one the mirror provably
 # cannot ask, which is how it came to refuse one condition where the kernel
 # refuses three.  Its DISCHARGES stay in the kernel layer, where the invariants are.
-run_check "INVARIANT" rg -n '^def dualQueueRemovalGuard' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def dualQueueRemovalGuard($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 # `v0.35.59`: the transition reads `dualQueueRemovalEnabled`, which *is* the guard
 # conjoined with the boundary check -- the guard alone was a subset of what the
 # removal refuses, and the frozen mirror carrying only it still succeeded where the
@@ -1095,9 +1095,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "let pprevConsistent[^\n]*(\n(
 # is what the invariant discharges system-wide.  This equality is what makes the
 # factorisation immutable: mutating either arm of `dualQueueRemovalGuard` or of
 # `queuePPrevHeadPositionAgrees` fails to elaborate.
-run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuard_eq_position_and_pair' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def queuePPrevHeadPositionAgrees' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuardHolds' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuard_eq_position_and_pair($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queuePPrevHeadPositionAgrees($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem dualQueueRemovalGuardHolds($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The two unlink updates keep the pair together, and the third removal composes
 # them -- which is the machine-checked form of the OD1.1/OD3.9 finding.  Pinned at
 # the read, not at the definition: the composite consumes the splice's result, and
@@ -1116,7 +1116,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem dualQueueRemovalGuardHolds[^\n
 # proved.  Its witness is decisive in both directions -- the live queue satisfies
 # it, and a corrupted back-pointer fails it with every queue and every `queueNext`
 # chain unmoved (`tests/NegativeStateSuite.lean`).
-run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrevChecks' SeLe4n/Testing/InvariantChecks.lean
+run_check "INVARIANT" rg -n '^def queuePPrevAgreesWithPrevChecks($|[ ({:\[\]])' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def stateInvariantChecksFor[^\n]*(\n([ \t][^\n]*)?)*queuePPrevAgreesWithPrevChecks objectIds st" SeLe4n/Testing/InvariantChecks.lean'
 # PR #897 review (`v0.35.108`): and the FIFTH conjunct's check, which `v0.35.106`
 # did not add -- one cut after RR8.3 recorded the rule that a conjunct is checked at
@@ -1143,7 +1143,7 @@ run_check "INVARIANT" rg -n '^private def runEndpointQueueHeadDisjointChecks : I
 run_check "INVARIANT" bash -lc 'rg -U -n "def runNegativeChecks[^\n]*(\n([ \t][^\n]*)?)*runEndpointQueueHeadDisjointChecks" tests/NegativeStateSuite.lean'
 
 run_check "INVARIANT" rg -n '^private def corruptEndpointQueueHeads$' tests/NegativeStateSuite.lean
-run_check "INVARIANT" rg -n '^private def runDualQueuePPrevPairingChecks' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^private def runDualQueuePPrevPairingChecks($|[ ({:\[\]])' tests/NegativeStateSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "private def runNegativeChecks[^\n]*(\n([ \t][^\n]*)?)*runDualQueuePPrevPairingChecks" tests/NegativeStateSuite.lean'
 # The retype replacement is pristine in `queuePPrev` too, and that is not
 # derivable from `queuePrev = none` beside it: a replacement carrying `.tcbNext p`
@@ -1154,9 +1154,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def retypeReplacementFresh[^\n]*(\n([ 
 # writes (the wake and the priority-inheritance revert) left to the caller,
 # so the cancellation reclaim can reuse it without touching the run queues —
 # `cancelIpcBlocking_scheduler_eq` has four consumers and must stay true.
-run_check "INVARIANT" rg -n '^def abortPendingIpcOnEndpoint' SeLe4n/Kernel/IPC/Operations/Timeout.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objects_invExt' SeLe4n/Kernel/IPC/Operations/Timeout.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_scheduler_eq' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^def abortPendingIpcOnEndpoint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Timeout.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Timeout.lean
 # Relation, not presence: `timeoutThread` must be the prefix *composed with*
 # the two scheduler writes, not an independent copy of the splice — a second
 # copy is the one-question-two-answers shape, and the reclaim would then
@@ -1178,11 +1178,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "let maybeBlockingServer := ti
 # store, not literal store equality: the store is a Robin Hood table whose value
 # records probe displacement, and the head branches write the endpoint a
 # different number of times in a different order.
-run_check "INVARIANT" rg -n '^def objectStoreAgrees' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_agrees_with_dual' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_agrees_insert' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_agrees_insert' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def objectStoreAgrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_agrees_with_dual($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_agrees_insert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_agrees_insert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # NEGATIVE: the agreement must not be stated as literal store equality.  That
 # form is unprovable here and would read as a stronger, checked claim; the
 # mutation that finds this keeps the theorem and strengthens its conclusion.
@@ -1193,8 +1193,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_a
 # (`queueNext = none`), the guard's first factor requires the two to agree, and
 # every consumer is conditioned on the dual succeeding — so the obligation moved
 # from the proofs to `dualQueueRemovalGuardHolds`'s caller.
-run_check "INVARIANT" rg -n '^def queueTailPairAgrees' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def dualRemovalEnabled' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^def queueTailPairAgrees($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def dualRemovalEnabled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem endpointQueueRemove_establishes_ipcInvariantFullExceptMembership[^\n]*(\n([ \t][^\n]*)?)*hEnabled : dualRemovalEnabled" SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean'
 # NEGATIVE: `spliceRemovedIsTailWhenLast` must not come back.  It had one job —
 # supply what the removal now refuses — and a hypothesis restated beside a check
@@ -1215,8 +1215,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| midLast[^\n]*(\n([ \t][^\n]*)?)*hTa
 # branch and fail if the boundary changes (measured: a no-op mutation of Step 3
 # fails four of them).  The negative keeps the *sharing*: an inlined boundary
 # record in either body would pass every one of those.
-run_check "INVARIANT" rg -n '^def queueRemoveBoundary' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_writes_queueRemoveBoundary' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^def queueRemoveBoundary($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_writes_queueRemoveBoundary($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n 'let q. : IntrusiveQueue := queueRemoveBoundary q tid tcb' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
 run_negative_check "INVARIANT" rg -n 'head := if q\.head = some tid' SeLe4n/Kernel/IPC/DualQueue/Core.lean SeLe4n/Kernel/IPC/DualQueue/Transport.lean
@@ -1226,7 +1226,7 @@ run_negative_check "INVARIANT" rg -n 'head := if q\.head = some tid' SeLe4n/Kern
 # `removeThreadFromQueue` rather than in `spliceOutMidQueueNode`, which writes
 # only the two neighbour TCBs.  Unifying two of four would read as closed.
 run_check "INVARIANT" rg -n 'some tcb => queueRemoveBoundary q tid tcb' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_eq_queueRemoveBoundary' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem removeThreadFromQueue_eq_queueRemoveBoundary($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "def removeThreadFromQueue[^\n]*(\n([ \t][^\n]*)?)*some tcb => \(tcb\.queueNext, tcb\.queuePrev\)" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # ...and the **fifth**: the frozen mirror, which a kernel-tree sweep misses
 # structurally — `SeLe4n/Kernel/FrozenOps/` is reached by neither library root and
@@ -1249,9 +1249,9 @@ run_negative_check "INVARIANT" rg -n 'head := if q\.head == some tid' SeLe4n/Ker
 #
 # A relation, not a presence: each call must sit inside the declaration that owns
 # it, and the gap is line-bounded so it cannot leave that declaration.
-run_check "INVARIANT" rg -n '^def dualQueueRemovalEnabled' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def queueBoundariesEmpty' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def queuePredecessorNamesSuccessor' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def dualQueueRemovalEnabled($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queueBoundariesEmpty($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def queuePredecessorNamesSuccessor($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def frozenQueueRemove[^\n]*(\n([ \t][^\n]*)?)*if !dualQueueRemovalEnabled q tid tcb pprev then" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointQueueRemoveDual[^\n]*(\n([ \t][^\n]*)?)*if !dualQueueRemovalEnabled q tid tcb pprev then" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 # NEGATIVE: the *guard alone* must not come back as either removal's condition --
@@ -1274,12 +1274,12 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "match tcb\.queuePPrev with[^\
 # The witness is decisive because the retired reading is COMPUTED beside the live
 # one: a suite that merely asserts the refusal cannot show the refusal is new.  The
 # retired spelling lives in the witness that refutes it and nowhere else.
-run_check "INVARIANT" rg -n '^private def isNoneOnlyFrozenRemovalGuard' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^private def differentialRemovalGuardRefusalsAgree' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def isNoneOnlyFrozenRemovalGuard($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialRemovalGuardRefusalsAgree($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 # ...and FO-046, which covers the three refusals FO-045 structurally cannot: each
 # of its halves sits on a state that passes everything the previous half checks and
 # is refused by exactly one more thing, so the refusal is attributable.
-run_check "INVARIANT" rg -n '^private def differentialRemovalRefusalSetAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialRemovalRefusalSetAgrees($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def main[^\n]*(\n([ \t][^\n]*)?)*differentialRemovalRefusalSetAgrees" tests/FrozenOpsSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "private def differentialRemovalGuardRefusalsAgree[^\n]*(\n([ \t][^\n]*)?)*isNoneOnlyFrozenRemovalGuard tcbA == true" tests/FrozenOpsSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "private def differentialRemovalGuardRefusalsAgree[^\n]*(\n([ \t][^\n]*)?)*SeLe4n\.Kernel\.endpointQueueRemoveDual diffEpId false diffA" tests/FrozenOpsSuite.lean'
@@ -1292,15 +1292,15 @@ run_negative_check "INVARIANT" rg -n 'isNoneOnlyFrozenRemovalGuard' SeLe4n/Kerne
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "let newTail[^\n]*(\n([ \t][^\n]*)?)*endpointHead => none" SeLe4n/Kernel/IPC/DualQueue/Transport.lean'
 # The converse direction is derived, never assumed: a tail has no successor, so
 # a thread that has one is not the tail.
-run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceTail_ne_of_hasNext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # `passiveServerIdle` is the one bundle conjunct an object-store frame cannot
 # carry — it reads the boot core's run queue too — so the bundle frame names the
 # scheduler in its own name.  A frame that claimed the store alone would be
 # unsound for any scheduler-writing step.
-run_check "INVARIANT" rg -n '^theorem passiveServerIdle_of_storeAgrees' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem passiveServerIdle_of_storeAgrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdle_of_storeAgrees[^\n]*(\n([ \t][^\n]*)?)*hSched : st.\.scheduler = st\.scheduler" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees_of_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptMembership_of_storeAgrees_of_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
 # NEGATIVE: no store-only bundle frame.  Nineteen conjuncts read the store alone
 # and the twentieth does not; a name promising the weaker hypothesis would be
 # the presence-check shape this project keeps finding.
@@ -1309,11 +1309,11 @@ run_negative_check "INVARIANT" rg -n '^theorem ipcInvariantFull_of_storeAgrees\b
 # not a second twenty-conjunct proof.  Its TCB rewrite is the receive-completing
 # store with a four-field timeout increment staged on top, and only
 # `blockedThreadTimeoutConsistent` reads any of the four.
-run_check "INVARIANT" rg -n '^def timeoutStagedTcb' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortStagedTcb_eq' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem timeoutStaging_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_shape' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^def timeoutStagedTcb($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortStagedTcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem timeoutStaging_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/QueueSplicePreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_shape($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
 # The increment is a *reading* of one record update, not a second store: the
 # operation still commits exactly one object.  The positive pins that single
 # store; the negative refuses the shape a "helpful" refactor would produce —
@@ -1327,7 +1327,7 @@ run_negative_check "INVARIANT" rg -n 'storeTcbReceiveComplete' SeLe4n/Kernel/IPC
 # The detachment obligation is stated, not assumed away: `ipcInvariantFull`
 # constrains a queue only at its boundaries and says nothing about the thread's
 # membership in *other* endpoints' queues.
-run_check "INVARIANT" rg -n '^def spliceLeavesThreadDetached' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^def spliceLeavesThreadDetached($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortPendingIpcOnEndpoint_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*hDetached : ∀ st1" SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean'
 # Relation, not presence: the composite must consume the *transferred* keystone
 # and the staging frame — the two halves — rather than re-deriving either.
@@ -1337,7 +1337,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "abortPendingIpcOnEndpoint_preserves_ip
 # SchedContext goes back — seL4-MCS's `reply_remove` — with the fact that makes
 # the return well defined stated rather than assumed.
 run_check "INVARIANT" rg -n '^def cancelledCallerDonation\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def returnDonationToCancelledCaller' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def returnDonationToCancelledCaller($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # WS-HP HP5.2: the coherence fact is re-keyed with the resolver -- the head
 # reading's, not the recorded reply target's -- and the retired one is deleted
 # rather than left beside it, since a stated fact with no consumer is the shape
@@ -1348,11 +1348,11 @@ run_check "INVARIANT" rg -n '^def returnDonationToCancelledCaller' SeLe4n/Kernel
 # cancellation form is a corollary through HP5.1's bridge rather than a second
 # definition -- a positive on the corollary, a negative on the retired copy.
 run_check "INVARIANT" rg -n '^def donatedContextIsOwnerFrameHead ' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem donatedContextIsOwnerFrameHead_cancelledCallerDonation\?' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_negative_check "INVARIANT" rg -n '^def donatedContextIsOwnerFrameHead' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_negative_check "INVARIANT" rg -n 'donationHolderIsReplyTarget' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean SeLe4n/Kernel/Lifecycle/Suspend.lean tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_victim' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_no_donation_to_victim($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # Relation, not presence: the reply arm must call the return, and call it
 # **before** the restore — the return reads the caller's `.blockedOnReply` state,
 # which the restore clears.  `v0.35.4` interposes the frame splice between them:
@@ -1369,8 +1369,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink \(restoreToR
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "consumeReplyLink\n      \(restoreToReadyCancelled \(returnDonationToCancelledCaller st tid tcb\) tid\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # ...and the removal itself is O(1) on the frame ABOVE the cancelled one, which is
 # what the upward link makes possible: a single-linked stack cannot find it.
-run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^def spliceReplyFrameOut' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def spliceThreadReplyFrameOut($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def spliceReplyFrameOut($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # WS-HP HP6.3: the body is the composed store step, and the step is THREE stores
 # in a fixed order -- the frame above takes the frame below, the frame below takes
 # the frame above, and the cut frame loses its own downward link (seL4's
@@ -1391,7 +1391,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameStores[^
 # the removal's refusal set exactly the pre-WS-HP one.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*if below == above then none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*if b\.next != some \(\.frame rid\) then none else some \(below, b\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_eq_sever_of_no_frame_below' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_eq_sever_of_no_frame_below($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The containment the four footprint coverage theorems rest on: the object the
 # splice writes below the cut is the one the footprint declares, and the
 # declaration is strictly wider because it is unvalidated.
@@ -1404,27 +1404,27 @@ run_check "INVARIANT" rg -n '^theorem spliceFrameBelow\?_mem_cancelSplicedFrameB
 run_check "INVARIANT" bash -lc 'rg -U -n "^def spliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The declared footprint covers the return's two writes, and the migration is at
 # the cross-core layer where the home cores are resolved.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def cancelIpcBlockingMigrated' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_returned_donation_sc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_donation_holder_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelIpcBlockingMigrated($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # One derivation, not three copies: the donation return's field frames read the
 # store chain rather than re-running its case analysis.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_storeChain' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_projectionStable_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_storeChain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_projectionStable_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 # The return is invisible to *every* observer, not only a high one — the two
 # fields it writes are projection-stripped.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_tcb_schedContextBinding_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_boundThread_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_projection' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_tcb_schedContextBinding_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_boundThread_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 # WS-OD OD1.4: the reclaim ends the holder's outstanding send/call, which is
 # what makes `passiveServerIdle` true of the state the reclaim leaves — a
 # `.unbound` holder still blocked on a call is exactly what that conjunct
 # forbids.
-run_check "INVARIANT" rg -n '^def abortHolderPendingIpc' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_donationOwnerValid' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_eq_self_of_allowed' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^def abortHolderPendingIpc($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_donationOwnerValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_donationOwnerValid($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_eq_self_of_allowed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 # Relation, not presence: the abort must run **before** the hand-back, on the
 # state the hand-back is applied to.  With the return first the intermediate
 # state has the holder `.unbound` while still blocked on a call — the very
@@ -1445,8 +1445,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.error _ => abortHolderPe
 # survive `projectKernelObject` — so the donation return's information-flow
 # result states that obligation rather than inheriting the erasure argument,
 # and discharges it outright wherever the abort is inert.
-run_check "INVARIANT" rg -n '^def abortHolderProjectionStable' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_allowed' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^def abortHolderProjectionStable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_allowed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 # The obligation is pinned **adjacent to the conclusion it guards**, not by a
 # `(.|\n)*` body scan from the theorem's name: three theorems in this file carry
 # `hAbortProj`, so a wildcard from one name runs into the next one's signature
@@ -1458,18 +1458,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionSt
 run_check "INVARIANT" bash -lc 'rg -U -n "\(hAbortProj : abortHolderProjectionStable ctx observer st victim tcb\)\n    \(hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\) :\n    projectState ctx observer\n        \(cancelIpcBlockingOnCore victim tcb executingCore st\)\.1" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # The splice creates no key, which is what carries the identity registry across
 # an operation that writes `objects` directly rather than through `storeObject`.
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_present_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_objectIndexSetComplete($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_objectIndexSetComplete($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
 # WS-OD OD1.5: the payoff — `passiveServerIdle` is preserved by
 # `cancelIpcBlocking` on **every** arm, which is what OD1 exists to prove and
 # what the reply arm made false before OD1.4's abort prefix.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_passiveServerIdle' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_passiveServerIdleFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_passiveServerIdleFrame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_aborted_ipcState' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_holder_ipcState_allowed' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_passiveServerIdle($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_passiveServerIdleFrame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_passiveServerIdleFrame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_passiveServerIdleFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_aborted_ipcState($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_holder_ipcState_allowed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 # Relation, not presence: the reply-arm frame must *consume* the abort's frame
 # and the holder-allowed fact, not merely mention the operation.  The abort is
 # what moves a `.blockedOnCall` holder into the half `passiveServerIdle` permits,
@@ -1477,7 +1477,7 @@ run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_holder_ipcState_allo
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem returnDonationToCancelledCaller_passiveServerIdleFrame[^\n]*(\n([ \t][^\n]*)?)*abortHolderPendingIpc_passiveServerIdleFrame[^\n]*(\n([ \t][^\n]*)?)*abortHolderPendingIpc_holder_ipcState_allowed" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
 # The abort's success is *derived* from the endpoint conjunct, not assumed: a
 # refused abort leaves the holder blocked, which is the state OD1 removes.
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_ok' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/TimeoutAbortPreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem abortHolderPendingIpc_holder_ipcState_allowed[^\n]*(\n([ \t][^\n]*)?)*hMem : ipcStateQueueMembershipConsistent st" SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean'
 # NEGATIVE: the frame primitive must hand the backward obligation the structure's
 # own discriminating hypotheses.  Without them the reply arm cannot be proved at
@@ -1490,9 +1490,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "theorem passiveServerIdleFrame_of_back
 # the one arm where the abort runs.
 run_check "INVARIANT" rg -n '^def cancelHolderBlockedEndpoint\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def cancelHolderSpliceNeighbors\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_endpoint_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_prev_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_holder_splice_next_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The resolvers are gated on the abort's own guard, so a holder the abort leaves
 # alone contributes no member.  The mutation that finds a dropped gate keeps the
 # resolver and returns the links unconditionally.
@@ -1500,8 +1500,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def cancelHolderSpliceNeighbors\?[^\n]
 # The bound is a *case analysis*, not a summed arity: eleven members summed is
 # over the ceiling, and it holds only because the donation-derived members and
 # the victim's own blocked-object members key on the same field.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_reply_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_noDonation_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_reply_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_noDonation_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem lockSet_cancelIpcBlockingOnCore_size_le_of_donation[^\n]*(\n([ \t][^\n]*)?)*cancelledCallerDonation\?_some_blockedOnReply" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # WS-OD OD1.6: the reclaim is witnessed by an **executed run**, not only by a
 # theorem — the fixture pins what the live operation does, and the second check
@@ -1521,8 +1521,8 @@ run_prose_check "TRACE" rg -n 'SCO-020d. reclaim blocked_holder_parked=true hold
 run_prose_check "TRACE" rg -n 'SCO-020e. reclaim queued_holder queued_before=true queued_after=false holder_unplaced=true holder_core_named=true' tests/fixtures/main_trace_smoke.expected
 run_check "INVARIANT" rg -n '^def cancelUnboundHolder\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n '^def cancelUnboundHolderCore\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def descheduleUnboundHolder' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_holder_unplaced' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def descheduleUnboundHolder($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_holder_unplaced($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # Relation, not presence: the reclaim-complete teardown must *contain* the
 # deschedule, over the migrated teardown.  Keeping the step defined while the
 # transition stops calling it is exactly the mutation a presence check misses,
@@ -1555,23 +1555,23 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def descheduleUnboundHolder[^
 # keeps everything else.
 run_check "INVARIANT" bash -lc 'rg -U -n "def cancelUnboundHolderCore\?[^\n]*(\n([ \t][^\n]*)?)*\.bind \(placedCoreOf\? stPost\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def cancelIpcBlockingOnCoreSchedLockSet \(placed holderPlaced : Option CoreId\)[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\)" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_contains_holder_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_holder_deschedule($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The deschedule is a SCHEDULER write and nothing else -- that is what keeps every
 # object-level and information-flow result about the composite true verbatim.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleUnboundHolder_objects' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_currentOnCore_ne' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_currentOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem descheduleUnboundHolder_runQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # ...and its information-flow obligation is carried, not assumed away: a
 # run-queue removal is filtered by the removed thread's own observability, and
 # the holder's label is not determined by the victim's.
-run_check "INVARIANT" rg -n '^def descheduledHolderHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
-run_check "INVARIANT" rg -n '^theorem descheduledHolderHigh_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^def descheduledHolderHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem descheduledHolderHigh_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem cancelIpcBlockingOnCore_reply_cancellation_NI[^\n]*(\n([ \t][^\n]*)?)*hHolderHigh : descheduledHolderHigh ctx observer st victim tcb\) :\n    projectState" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # ...and the bundle frame the removal owes -- a wake, being an insert, owed none
 # -- is discharged from the abort that runs first, under the reply arm's own
 # `owed` premise, never taken as a new hypothesis on the composite.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_unboundHolder_binding_or_allowed' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_unboundHolder_binding_or_allowed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*descheduleUnboundHolder_passiveServerIdleFrame st _ victim tcb hHolder" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
 # The wake and its family must not come back -- in code; the tombstones that
 # name them are prose, which the code view strips.
@@ -1602,15 +1602,15 @@ run_check "INVARIANT" bash -lc 'rg -U -n "scReply\.any \(fun rid => SeLe4n\.Kern
 # OD2.2: the head is erased by the NI projection, in the same class as
 # `boundThread` — and erased in the SAME cut as the field, or the OD4 push would
 # be observable in the interval.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_scReply_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_scReply_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # ...and the sibling sweep: the `.reply` arm has erased all three reply-stack
 # fields since SM6.D, but only `caller` had a theorem, so the question "is the
 # donation push observable?" was answered for one field of three.  `v0.35.4`
 # replaced `donatedSc` with the upward link `next`, so the sweep names that.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_next_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_next_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_prev_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 # ...and the pair read as one projection, which is what the chain frame consumes.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "\.schedContext \{ sc with boundThread := none, scReply := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
 # NEGATIVE: the pre-OD2.2 arm, which erased `boundThread` alone.  The mutation
 # that finds this keeps the arm and the erasure it already had, and drops the
@@ -1639,8 +1639,8 @@ run_check "INVARIANT" rg -n '^theorem donationChainWellFormed\.replyWellFormedAt
 # read set rather than an over-approximation of it.
 run_check "INVARIANT" rg -n '^def replyStackLinks\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^def schedContextStackHead\?' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def donationChainFrom' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^structure donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def donationChainFrom($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^structure donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # Relation, not presence: a link is followed only AFTER the target's own
 # UPWARD link has been checked against the frame that reached it — `.head scId`
 # for the first frame, `.frame` of the previous one thereafter.  Reply objects
@@ -1666,25 +1666,25 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "some \(\.reply r\) => some \(
 # corollary the OD4 push consumes: a Reply carrying no upward link is on no
 # chain — the `v0.35.4` spelling of "carries no donation", and the exact clause
 # `donationPushFrame?` checks before minting a frame.
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_mem' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem not_mem_donationChainFrom_of_unlinked' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_mem_donationChainFrom_of_unlinked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The predicate is inhabited, and inhabited by evaluation rather than by there
 # being nothing to evaluate — the shape every current transition discharges it
 # through, and the one that stops being available when the push lands.
-run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_reply_or_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_donations' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_reply_or_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_no_donations($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # OD2.5: the frame family — the objects-equality frame, the no-chain-object-write
 # frame, the walk's own congruence (the no-Reply-write frame), the single-store
 # primitive and its three per-kind instances, and the preservation payoff.
-run_check "INVARIANT" rg -n '^structure donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem of_no_chain_object_write' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^structure donationChainFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem of_no_chain_object_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject$' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_tcb' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_schedContext' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_reply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_tcb($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_storeObject_reply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWellFormed_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # OD2.6: the chain joins `ipcReachable`, not `ipcInvariantFull` — that bundle has
 # exactly twenty conjuncts and a theorem family whose size a Tier-0 gate holds
 # equal to the prose quoting it.  Relation, not presence: the conjunct must be in
@@ -1706,9 +1706,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "match replyStackLinksAt\? st rid with"
 # Written before either transition existed, so that the conjunct was never only
 # ever discharged vacuously; an over-strong one would look identical from that
 # side.  An acceptance case, deliberately.
-run_check "INVARIANT" rg -n '^def donationChainWitness' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
-run_check "INVARIANT" rg -n '^theorem donationChainWitness_chain' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
-run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^def donationChainWitness($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_chain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Reachability.lean
 # OD2.7 / OD3.1 / OD6.3: the structural checks, the pop checks and the push
 # checks are RUN, not merely defined — the relation a presence check on any
 # section's name would miss.  Stated as the contiguous run so a section deleted
@@ -1786,14 +1786,14 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "if r\.next != some \(\.head s
 run_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def donationReturnSchedContext[^\n]*(\n([ \t][^\n]*)?)*boundThread := some originalOwner,\n\s*scReply := nextHead\?,\n\s*donationOrigin :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The head clear is its own step with its own frames, so a downstream frame
 # extends by one rewrite rather than by a second arm through the whole proof.
-run_check "INVARIANT" rg -n '^def storeDonationHeadClear' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_cases' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_tcb_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
+run_check "INVARIANT" rg -n '^def storeDonationHeadClear($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_cases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Helpers.lean
 # OD3.3: the phase is INERT — at `newOwner? = none` over a context heading no
 # stack the new definition *is* the old one.  This is the acceptance case, and it
 # names the pre-OD3 body in full rather than asserting a property of it.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_eq_legacy_of_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_eq_legacy_of_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "returnDonatedSchedContext st serverTid scId originalOwner none =\n      \(if sc\.boundThread != some serverTid then \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # OD3.1: the depth-≥ 2 arm is EXERCISED, not merely reachable.  Relation, not
 # presence: a suite that only ever calls the pop at the bottom of the stack would
@@ -1818,40 +1818,40 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def storeReplyReHead[^\n]*(\n([ \t][^
 # weaker answer.  It is retired; a re-introduction is the drift this refuses.
 run_negative_check "INVARIANT" rg -n 'theorem returnDonatedSchedContext_walk' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The shared frames the sixteen retired copies became.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_backward_of_kind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_forward_of_kind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite_backward' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_binding_cases' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_schedContext' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_scReply' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_backward_of_kind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_objects_forward_of_kind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_rewrite_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_tcb_binding_cases($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_post_scReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The kind set the frames are stated over is NAMED, so a store of a fifth kind is
 # one edit here and a failing proof at every frame, rather than a silent hole in
 # each copy of the same three inequalities.
-run_check "INVARIANT" rg -n '^def donationReturnWritesKind' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def donationReturnWritesKind($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The pop writes a Reply, so exact Reply preservation became a Reply FRAME.  The
 # `caller` the reply-freshness and stash invariants read still agrees exactly.
-run_check "INVARIANT" rg -n '^def replyStackRewrite' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def replyStackRewrite($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem replyStackRewrite\.caller_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_reply_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_reply_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_negative_check "INVARIANT" rg -n 'theorem returnDonatedSchedContext_preserves_reply' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # ...and the two reusable frames dropped to the field they are about, because
 # both asserted whole-object Reply identity while the conjunct they serve
 # (`replyCallerLinkageReciprocal`) reads only `caller`.
 run_check "INVARIANT" rg -n '^  replyCallerAgree : ∀ \(rid : SeLe4n\.ReplyId\)' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem callerAgree_of_objectAgree' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem replyCallerAgree_of_objectAgree' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem callerAgree_of_objectAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyCallerAgree_of_objectAgree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The head validation's own obligation is NAMED and has both discharges: the
 # chain invariant itself, and any step writing no chain object.
-run_check "INVARIANT" rg -n '^def donationHeadResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_donationChainFrame' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^def donationHeadResolves($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_chainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadResolves_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_donationChainFrame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 # The depth-≥ 2 obligation is stated in the row that widens the binding, not in
 # the row that first produces a `some` — a live transition whose preservation is
 # conditioned on an arm it can take is the shape the plan's numbering rule names.
-run_check "INVARIANT" rg -n '^structure donationReturnOuterValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_donationOwnerValid_at_target' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^structure donationReturnOuterValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_donationOwnerValid_at_target($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # OD3.4: the pre-state resolver, and the three answers it distinguishes.  A
 # resolver that conflated "no link" with "a link that does not validate" would
 # read a corrupt stack as an empty one and settle a context still owed outward,
@@ -1875,9 +1875,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyStackOuterCaller\?[^\n]*(\n([ \t][^\n]*)?)*if b\.next != some \(\.head scId\) then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The resolution obligation is named, discharged from the chain invariant, and
 # framed — the same pair the head validation has, for the same reason.
-run_check "INVARIANT" rg -n '^def replyStackOuterCallerResolves' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWellFormed' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def replyStackOuterCallerResolves($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_chainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerResolves_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The fourth state the resolver can meet -- a validated frame below the head
 # whose caller has been consumed -- is answered by a THEOREM and a runtime
 # witness.  Since `v0.35.4` that answer is a REFUSAL: the splice takes a
@@ -1918,7 +1918,7 @@ run_check "INVARIANT" rg -n 'so the caller below a cut can still be cancelled, a
 # donating operation checks its donor side; the pop mints `.donated scId outer`
 # and checked nothing, which is why the depth-≥ 2 obligation was undischargeable
 # on the reply path.  The guard is O(1) and fail-closed.
-run_check "INVARIANT" rg -n '^def outerCallerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def outerCallerAcceptable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "if !outerCallerAcceptable st serverTid originalOwner newOwner\? then\n      \.error \.invalidArgument" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # All three clauses, each load-bearing: the donor shape, and the two threads the
 # pop rewrites (a claim about their pre-state shape would not survive the step).
@@ -1929,7 +1929,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "outerTcb\.schedContextBinding == \.unb
 # store, so it is "what a successful pop tells you" and an incomplete one would
 # license conclusions the operation does not earn.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_ok_storeChain[^\n]*(\n([ \t][^\n]*)?)*outerCallerAcceptable st serverTid originalOwner newOwner\? = true ∧" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_outerAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_outerAcceptable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # ...and it is free at the bottom of the stack, which is what keeps every call
 # site in the tree passing `none` without a new hypothesis.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem outerCallerAcceptable_none' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -1965,24 +1965,24 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "\(\(queueSpliceNeighbors\? tc
 # member (as an equation, since a `∉` would be false for the accidental reason
 # that a neighbour may *be* the donation holder), and the arm that splices keeps
 # both.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_replyArm_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_prev($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_endpointArm_covers_next($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 # ...and the frames that license the narrowing — an arm that declares no
 # neighbour must write none, and that is checked rather than read off the shape.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem consumeReplyLink_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_notificationArm_tcb_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_other_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # ...and the general form, with the reclaim live: the four frames that state a
 # step's effect OUTSIDE its write set, and the composite over them.  A frame that
 # says only "some TCB is still there" (`_tcb_lookup`, `_tcb_rewrite`) does not
 # license a footprint narrowing, which is why these are separate statements.
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_ne' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_other_tcb_eq' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_other_tcb_eq' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_tcb_frame' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_objects_ne($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_other_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_other_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_other_tcb_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_replyArm_tcb_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # The removal's two link patches ARE `queueNeighbourPatch`, so the third inlined
 # copy of that shape cannot come back silently.  Stated on the splicing arm --
 # the endpoint resolved, the thread resolved -- and reading the store through
@@ -2026,17 +2026,17 @@ run_check "INVARIANT" rg -n '^def receiveRendezvousDonatedSc\?' SeLe4n/Kernel/IP
 run_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousCallSender\? st endpointObjId\)\.bind fun sender =>\n *callDonationSchedContext\? st sender receiver" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def receiveRendezvousDonatedSc\?[^\n]*(\n([ \t][^\n]*)?)*sendQ\.head" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointObjId replier\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_redonated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_redonation' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_redonated_sc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_covers_redonation($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # ...and the recorded server's own TCB, which is what the delegated case needs.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(recordedReplyServer\? st target\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donation_server_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donation_server_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The entry resolver no longer REFUSES a delegated reply — it declares one.  A
 # negative on the retired refusal, because a theorem concluding `none` there
 # would now be false, and a positive on what replaced it.
 run_negative_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated\b' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_declares' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
-run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_covers_server' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_declares($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
+run_check "INVARIANT" rg -n '^theorem lockSetForSyscall_replyRecv_delegated_covers_server($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv =>[^\n]*(\n([ \t][^\n]*)?)*if \(recordedReplyServer\? st prevCaller\)\.getD ops\.caller = ops\.caller then" SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean'
 
 # OD3.5: **`scThreadIndex` is an `RHTable`, so a donation takes the state-level
@@ -2090,9 +2090,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSuspend =>\n      \[\.tcb, \.c
 #
 # The step is ONE definition, shared by both receiving arms -- the fix for the
 # asymmetry cannot itself be a second copy.
-run_check "INVARIANT" rg -n '^def applyRendezvousCallDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^def rendezvousDequeuedCall' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyRendezvousCallDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def rendezvousDequeuedCall($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 # Both `.receive` dispatch arms run it -- the unchecked one and the
 # flow-checked one, with the same definition and behind no extra gate.  Anchored
 # on each arm's own call rather than on a count of occurrences: a cardinality
@@ -2124,7 +2124,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDona
 # -- it is conditioned on the thread already being descheduled -- so the anchor
 # is what pins it.  The negative is the PRE-FIX spelling: it keeps the donation
 # call and passes the undescheduled state, which is exactly the defect.
-run_check "INVARIANT" rg -n '^def replyRecvHolderDeschedule' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def replyRecvHolderDeschedule($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # ...at the core the server is ACTUALLY placed on, resolved by the step itself.
 # Round 9 took the caller's `serverCore`, which is `determineExecutingCore` -- a
 # core the server is CURRENT on, else `bootCoreId` -- so a preempted server was
@@ -2146,7 +2146,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacement[^\n]*(\n([ 
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonation[^\n]*(\n([ \t][^\n]*)?)*applyRendezvousCallDonation st tid nextThread" SeLe4n/Kernel/API.lean'
 # ...and the write set names the cores that deschedule writes, or it is false of
 # exactly that arm.
-run_check "INVARIANT" rg -n '^def replyRecvHolderDescheduleWriteSet' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def replyRecvHolderDescheduleWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvPostReceiveDonationWriteSet[^\n]*(\n([ \t][^\n]*)?)*replyRecvHolderDescheduleWriteSet tid holder st" SeLe4n/Kernel/API.lean'
 # ...and the footprint reads the SAME resolver the transition does, so the two
 # cannot name different cores -- which is how round 9's cut went wrong.  Both
@@ -2158,13 +2158,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def descheduleAtPlacementCores[^\n]*(
 # The guard IS the donation's caller-blocked obligation, not a second reading
 # of it: a receiving arm discharges the hypothesis from the predicate it
 # branches on, so the two cannot disagree about which states donate.
-run_check "INVARIANT" rg -n '^theorem rendezvousDequeuedCall_blockedOnReply' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem rendezvousDequeuedCall_blockedOnReply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem applyReceiveRendezvousDonation_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*rendezvousDequeuedCall_blockedOnReply st dequeued hCall" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 # The step's own lifted obligations, so no arm re-derives the `toValid?` split.
-run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_replenishQueueAffinityConsistent_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The footprint declares what the arm now writes: the donated SchedContext, and
 # the state-level lock `SystemState.scThreadIndex` needs.  The state-level
 # member is a DISJUNCTION -- conditioning it on `installsCaps` alone would omit
@@ -2184,12 +2184,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceive[^\n]*(\n(
 # retired the refusal that used to keep the delegated shape out of the declared
 # set.  Two threads cannot be bound to one scheduling context, so the recorded
 # server's members provably never alias these five.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_preReturn' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_head_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_belowHead_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_preReturn($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_sc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_owner_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_head_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_belowHead_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_preReturn_stateLevel_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The five members are resolved on `replier`, NOT on `target`: resolving them on
 # the reply's target would name the recorded server's objects, which the arm
 # already declares, and would leave the invoker's own pop undeclared on exactly
@@ -2226,9 +2226,9 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem receivePreReturnStack\?_of_sende
 # already-`.bound` receiver, which still gains the waiter.
 #
 # The action is ONE definition; the guarded pair reads its guard ONCE.
-run_check "INVARIANT" rg -n '^def applyReceiverPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^def applyReceiveRendezvousHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^def applyReceiveLegPipHandoff' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiverPipHandoff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveRendezvousHandoff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^def applyReceiveLegPipHandoff($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 # The guard is read from the PRE-state, inside the hand-off, so the donation and
 # the boost provably fire on the same states.  Region-bounded to the definition:
 # a Lean declaration header sits at column 0, so the gap cannot leave it.
@@ -2251,13 +2251,13 @@ run_negative_check "INVARIANT" rg -n 'applyReceiveLegPipHandoff st3 tid nextThre
 run_negative_check "INVARIANT" rg -n 'PriorityInheritance.propagatePipChainCrossCore st3' SeLe4n/Kernel/API.lean
 # The obligation set the live transition owes, composed from the donation's and
 # the walk's rather than re-derived.
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_ok_decompose' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_objects_invExt' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Operations/Donation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_preserves_replenishQueueAffinityConsistent_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveLegPipHandoff_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The walk is not per-core silent, so `.replyRecv`'s declared write set gains a
 # FOURTH leg, read at the state that leg runs at -- the discipline the module
 # states for the other three.
@@ -2275,10 +2275,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def pipChainStar
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSetTheorems_chainStart_count[^\n]*(\n([ \t][^\n]*)?)*\.chainStart\)\)\.length = 6" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
 
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReceiveOnCore[^\n]*(\n([ \t][^\n]*)?)*\(receiveRendezvousDonatedSc\? st endpointId receiver\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donated_sc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donatedSc' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donationIndex' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donated_sc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_donation_stateLevel_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donatedSc($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceiveOnCore_covers_donationIndex($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # `.receive` reaches the donation primitive, so `.schedContext` joins its kinds.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.receive =>\n      \[\.tcb, \.cnode, \.endpoint, \.schedContext, \.reply, \.objStore\]" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 # ...and the size bound is restated at the NEW arity.  A bound left at the old
@@ -2322,8 +2322,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "admissibleCriticalSection rpi
 # intended.  A region-scoped presence check is still a presence check, and an
 # unscoped one is not even that.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^private theorem returnDonatedSchedContext_preserves_projection( *\n +[^\n]*)*hReceiverObjHigh : objectObservable" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationWrite_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_reply_stackLinks_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationWrite_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 
 # ============================================================================
 # WS-OD OD4 -- the donation PUSH, and the resolver threaded through
@@ -2368,9 +2368,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def storeDonationFramePush[^\n]*(\n([
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def storeDonationFramePush[^\n]*(\n([ \t][^\n]*)?)*prev := none, next := some \(\.head scId\) \}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The store chain is the ONE description of the operation; every field frame is
 # a corollary of it.  Four stores, named in order.
-run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_storeChain' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_pushFrame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_pushedHead' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_storeChain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_pushFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_ok_pushedHead($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 
 # OD4.2: the guard is the caller's EFFECTIVE context, so the chain is transitive
 # at the resolver.  Both the transition's resolver and the footprint's read the
@@ -2388,11 +2388,11 @@ run_check "INVARIANT" rg -n '^theorem endpointCallDonatedSc\?_of_donated' SeLe4n
 # OD4.4: the resolved pop, and the SIX call sites that thread it.  One shared
 # definition -- a second resolution of the same question is the divergence this
 # workstream has already paid for once.
-run_check "INVARIANT" rg -n '^def returnDonatedSchedContextResolved' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_ok_decompose' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_lift' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_of_resolved' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def returnDonatedSchedContextResolved($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_lift($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_of_resolved($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # Each site names the resolver, and none of them passes a literal `none` any
 # more.  These are the six the plan's row enumerates.  The claim is the
 # RESOLVER's name at the site: the `…Resolved` wrapper is what computes the outer
@@ -2426,13 +2426,13 @@ run_negative_check "INVARIANT" rg -n 'returnDonatedSchedContext \(abortHolderPen
 # The obligation the resolution carries, in the three shapes its consumers hold
 # it in: at a named context, at a receiver whose donation is discovered inside
 # the cleanup, and at a victim whose donation is discovered inside the reclaim.
-run_check "INVARIANT" rg -n '^def replyStackOuterCallerValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def cleanupDonationStackValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^def cancelDonationStackValid' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerValid_of_no_stacks' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonationStackValid_of_no_stacks' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationStackValid_of_no_stacks' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_of_stackValid' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def replyStackOuterCallerValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def cleanupDonationStackValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def cancelDonationStackValid($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem replyStackOuterCallerValid_of_no_stacks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem cleanupDonationStackValid_of_no_stacks($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationStackValid_of_no_stacks($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem donationReturnOuterValid_of_stackValid($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # ...and the composite that used to be `hBottom`-conditioned is general in the
 # resolved owner.  NEGATIVE: the retired hypothesis, refused by name.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except[^\n]*(\n([ \t][^\n]*)?)*hBottom : newOwner\? = none" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
@@ -2440,8 +2440,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedCo
 # OD4.5: the push preserves the chain -- the other half of OD3.8, and the row
 # that closes the loop OD2.4 opened.  With both, EVERY transition preserves
 # `donationChainWellFormed` rather than every transition but one.
-run_check "INVARIANT" rg -n '^theorem donationHeadPush_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem donateSchedContext_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadPush_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The freshness the push's own guard establishes is what the walk consumes: a
 # frame that donates nothing is on NO context's chain, so prepending it cannot
 # revisit a member.  Relation, not presence -- the mutation keeps the lemma and
@@ -2462,8 +2462,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationHeadPush_pre
 # OD4.6: at depth >= 2 the migration's source core is the INTERMEDIATE donor's
 # home -- the thread the context is bound to at the moment of the push, which is
 # the core `replenishQueueAffinityConsistentOnCore` puts its replenishments on.
-run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_migrates_from_bound_home' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_migrates_from_bound_home($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonationOnCore_donated_caller_migrates_and_preserves_affinity($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # ...and the live dispatch resolves both endpoints from its own pre-state, which
 # is what makes the theorem above a statement about the arm rather than about an
 # arbitrary pair of cores.
@@ -2471,11 +2471,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "match applyCallDonationOnCore st. call
 
 # OD4.7: the `.call` footprint does NOT grow.  The push's whole write set is
 # four keys, and every one is already a declared write member.
-run_check "INVARIANT" rg -n '^theorem donateSchedContext_objects_ne' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_donatedSc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_reply_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_receiver_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donationPush' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem donateSchedContext_objects_ne($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_donatedSc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_reply_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCall_receiver_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_covers_donationPush($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 
 # OD4.8: the push is invisible to EVERY observer, not merely a high one -- every
 # field it writes is stripped by `projectKernelObject`, the two added stores
@@ -2520,7 +2520,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def consumeReply[^\n]*(\n([ 
 # constant has three consumers and each would have to change if the choice did.
 # `severAtCut` is KEPT as a constructor after HP6.8 rather than deleted: it names
 # the behaviour this kernel diverged from and that seL4-MCS still has.
-run_check "INVARIANT" rg -n '^inductive CancelledMiddleCallerPolicy' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^inductive CancelledMiddleCallerPolicy($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| severAtCut" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| spliceOutTheCut" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^inductive CancelledMiddleCallerPolicy[^\n]*(\n([ \t][^\n]*)?)*\| reclaimToCancelledThread" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
@@ -2532,7 +2532,7 @@ run_check "INVARIANT" rg -n '^theorem replyStackOuterCaller\?_follows_policy' Se
 # The resolver's answer under the live policy is the caller waiting BELOW the cut,
 # not `none`: a policy consumer concluding `.ok none` is the sever's.
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyStackOuterCaller\?_follows_policy[^\n]*(\n([ \t][^\n]*)?)*replyStackOuterCaller\? st scId = \.ok \(some outer\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_splices_at_cut' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelledMiddleCaller_splices_at_cut($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The decisive clauses: the reservation leaves the cut owed OUTWARD, and no thread
 # below the cut is touched.  A statement that only exhibited the target's new
 # binding would be true of both policies; one that exhibited `.bound scId` would be
@@ -2543,9 +2543,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelledMiddleCaller_splices
 # state -- the removal leaves the stack CONNECTED across the cut, and the pop that
 # follows therefore delivers the reservation to the caller the surviving stack
 # names rather than stopping it inside the chain.
-run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_splices_reciprocally' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_splices_reciprocally($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_getSchedContext\?_eq' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
-run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthThree' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthThree($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # **WS-HP HP9.1**: and the DEPTH-FOUR witness, which measures what depth three
 # structurally cannot.  The splice writes `above.prev := some below` and leaves
 # `below`'s own `prev` alone; at depth 3 the frame below a cut IS the bottom, so
@@ -2553,7 +2553,7 @@ run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthThr
 # statement.  Four frames is the shallowest stack with TWO below a cut, which makes
 # the transitivity measurable -- and the reservation then reaches its owner through
 # THREE pops, where §3.22 needs two.
-run_check "INVARIANT" rg -n '^private def runMiddleRemovalDepthFourChecks' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runMiddleRemovalDepthFourChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: \.\.\.while the frame BELOW it is untouched" tests/SmpIpcSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -n "PAYOFF: pop three delivers it HOME .[.]bound. to its owner" tests/SmpIpcSuite.lean'
 # ...and it RUNS -- a witness defined and never called is the tautology this project
@@ -2570,7 +2570,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPreserved_a
 run_check "INVARIANT" rg -n '^  donationOrigin : Option SeLe4n.ThreadId := none' SeLe4n/Kernel/SchedContext/Types.lean
 # It is ERASED by the projection, in the cut that added it -- a `ThreadId` naming a
 # possibly-high caller is the linkage `boundThread` and `Reply.caller` are erased for.
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant' SeLe4n/Kernel/InformationFlow/Projection.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_schedContext_donationOrigin_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Projection.lean
 run_check "INVARIANT" bash -lc 'rg -n "donationOrigin := none," SeLe4n/Kernel/InformationFlow/Projection.lean'
 # ...and REFUSED on a boot SchedContext: a boot state has made no loan.
 run_check "INVARIANT" bash -lc 'rg -n "sc.donationOrigin.isNone" SeLe4n/Platform/Boot.lean'
@@ -2585,7 +2585,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "donationOrigin" SeLe4n/Kernel/IP
 # The id-reuse closure, and that it runs on the destroy path rather than beside the
 # donation return: a stale origin is a dangling reference to a destroyed thread,
 # which is what the reference scrub is for.
-run_check "INVARIANT" rg -n '^def clearDonationOriginReferences' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def clearDonationOriginReferences($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cleanupTcbReferences[^\n]*(\n([ \t][^\n]*)?)*clearDonationOriginReferences st tid" SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean'
 # ...and the detachment pack carries the obligation the scrub makes safe.  NOT
 # implied by its neighbours: a thread that lent its reservation and had its frame
@@ -2608,10 +2608,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyOnCore[^\n]*(
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_endpointReplyRecvOnCore[^\n]*(\n([ \t][^\n]*)?)*\(\(\(answeredFrameHeadContext\? st target\)\.map \(·\.1\)\)\.bind\n[ \t]*\(donationOriginRecipient\? st\)\)" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
 # ...and declaring is not proving the transition writes it.  These are the
 # relations, at full arity, and the resolved coverage on both arms.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_originRecipient_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_originRecipient_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_originRecipient' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_originRecipient_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_originRecipient_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_originRecipient($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_originRecipient($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # The member is declared in WRITE mode -- the pop rebinds that TCB.  NEGATIVE,
 # token-preserving: it keeps the member and downgrades the mode, which a
 # membership proof over `.read` would not catch on its own.
@@ -2652,7 +2652,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\
 run_check "INVARIANT" bash -lc 'rg -U -n "^def donationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*match lookupTcb st origin with\n[ \t]*\| none => none" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDonationOriginRecipient\?[^\n]*(\n([ \t][^\n]*)?)*match frozenLookupTcb st origin with\n[ \t]*\| none => none" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" rg -n '^theorem donationOriginRecipient\?_resolves' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_resolves' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_resolves($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # NEGATIVE: the guards must not be consulted straight off the origin arm again.
 # The code view blanks comments, so only a run of blank lines may separate the
 # arm from what follows it; a guard there is the pre-`v0.35.61` shape.
@@ -2672,13 +2672,13 @@ run_check "INVARIANT" rg -n '^def replyDonationRecipient ' SeLe4n/Kernel/IPC/Ope
 run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_eq_of_no_origin|^@\[simp\] theorem replyDonationRecipient_eq_of_no_origin' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The no-regression fact the phase owes: the redirect never introduces a refusal,
 # which is WHY HP10.6 applied the guard to the candidate rather than the argument.
-run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_acceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipient_acceptable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The second guard, and the theorem that says what it buys.  A thread can be
 # `.unbound` -- so pass `donationRecipientAcceptable` -- while another thread's
 # `.donated` binding names it as the owner it waits on; binding it `.bound scId`
 # falsifies that binding's owner clause, so this is soundness, not depth.
 run_check "INVARIANT" rg -n '^def donationOriginRebindable ' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_no_owner' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_no_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # `v0.35.157` (PR #897's review, closed): the guard IS the bind's own
 # admissibility -- the origin's reply frame is on no LIVE stack
 # (`replyFrameOnLiveStack`, one-step reciprocity, the question
@@ -2695,9 +2695,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenDonationOriginRebi
 # The two readings of the guard's verdict, and the derivation the soundness fact
 # now rests on: `_no_owner` derives "named by no live binding" from the guard
 # UNDER the binding -> head coherence fact, which is why that fact moved upstream.
-run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_not_onLiveStack' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_of_no_reply' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem replyFrameOnLiveStack_of_head' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_not_onLiveStack($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem donationOriginRebindable_of_no_reply($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem replyFrameOnLiveStack_of_head($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationOriginRebindable_no_owner[^\n]*(\n([ \t][^\n]*)?)*\(hCoh : donatedContextIsOwnerFrameHead st origin\)" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_negative_check "INVARIANT" rg -n 'donationOriginRebindable_not_blockedOnReply' SeLe4n/Kernel/IPC/Operations/Endpoint.lean SeLe4n/Kernel/IPC/Invariant/Defs.lean SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean SeLe4n/Kernel/FrozenOps/Core.lean
 # The reply path carries the fact GATED -- on the trigger, the resolver and the
@@ -2712,14 +2712,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^structure syscallDispatchQuiescence[^
 run_check "INVARIANT" bash -lc 'rg -U -n "^structure syscallDispatchQuiescence[^\n]*(\n([ \t][^\n]*)?)*replyRecvStage :[^\n]*(\n([ \t][^\n]*)?)*redirectedOriginFrameCoherent \(endpointReplyOnCore tid prevCaller" SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean'
 # The bundle generalisation the redirect needs: the recipient split from the
 # binding's recorded owner, with `hNoOwner` the load-bearing new hypothesis.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_donationOwnerValid_of_except_redirected($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_establishes_ipcInvariantFull_of_except_redirected($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The migration's DESTINATION follows the redirect.  Redirecting the reservation
 # without redirecting the replenish queue leaves
 # `replenishQueueAffinityConsistentOnCore` false from the instant it commits --
 # the standing constraint every SchedContext hand-off in this tree is held to.
 run_check "INVARIANT" rg -n '^def replyDonationRecipientHome ' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
-run_check "INVARIANT" rg -n '^theorem replyDonationRecipientHome_of_head' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem replyDonationRecipientHome_of_head($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 # NEGATIVE: and the live dispatch must not pass the ANSWERED CALLER's home there.
 # Token-preserving: `determineTargetCore` stays in the tree and stays the source
 # resolver's own body -- what it may no longer be is the dispatch's destination.
@@ -2774,7 +2774,7 @@ run_check "INVARIANT" rg -n 'differentialEndpointReplyRedirectsToOrigin\) \]' te
 # stack IS the stack's bottom, so nothing sits below it to reconnect and
 # `cancelledMiddleCallerPolicy` writes the same `none` into the frame above
 # whichever value it holds.
-run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthTwo' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationAccountingPreserved_atCallDepthTwo($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # ...and its conclusion is `.bound scId` at the recorded ORIGIN, which is the
 # whole content: the reservation reaches the thread that owned it rather than the
 # thread reachability names.  Bounded to the declaration, since the depth-three
@@ -2808,7 +2808,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationAccountingPr
 # frame above it, so that frame becomes the bottom of what is left.  The
 # sever-direction sibling of `removeCallerReplyFrame_splices_reciprocally`, and
 # the reason the two policies are indistinguishable here.
-run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_clears_prev_of_bottom_frame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_clears_prev_of_bottom_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 # ...whose `above ≠ rid` is DERIVED from bottom-ness rather than assumed: a frame
 # that were its own frame above would carry `prev = some rid`, and a bottom frame
 # carries no `prev` at all.  NEGATIVE, because adding it as a hypothesis is the
@@ -2866,7 +2866,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -n "^theorem cancelledMiddleCaller_s
 # one pins that OD5.2's policy claim still has both directions named.
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_some_of_frame_head' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_none_below_the_cut' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_reply_arm_below_the_cut($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 
 # OD5.3: the suspend pipeline pops TWICE at depth >= 2, so its scheduler-domain
 # replenish segment names THREE cores.  Relation, not presence: the mutation
@@ -2888,8 +2888,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "holderPlaced\.toList\)\n[ \t]
 # The two theorems that make the third core a consequence rather than a guess:
 # the reclaim can leave the victim `.donated`, and the second pop migrates to
 # whatever thread that binding records.
-run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem returnDonationToCancelledCaller_leaves_donated_at_depth_two($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonatedDonationOnCore_migrates_to_recorded_owner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # ...and the arm selector really does re-read the POST-teardown binding, which is
 # what makes the double pop reachable at all.
 run_check "INVARIANT" bash -lc 'rg -U -n "let tcb. := \(st\.getTcb\? tid\)\.getD tcb\n[ \t]*match \(match tcb.\.schedContextBinding with" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
@@ -2897,17 +2897,17 @@ run_check "INVARIANT" bash -lc 'rg -U -n "let tcb. := \(st\.getTcb\? tid\)\.getD
 # OD5.4: retype refuses both halves of a live stack -- the frame and the head.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if !r\.isFree \|\| st\.replyIsStashed" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lifecyclePreRetypeCleanup[^\n]*(\n([ \t][^\n]*)?)*if sc\.scReply\.isSome then \.error \.revocationRequired" SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean'
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_schedContext_refuses_stack_head' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_reply_refuses_live_stack_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_schedContext_refuses_stack_head($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 
 # OD5.5: `.replyRecv`'s re-donation is a PUSH at every depth -- the third live
 # push site, sharing `.call`'s widened guard.
-run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_donated_donor_pushes' SeLe4n/Kernel/IPC/Operations/Donation.lean
+run_check "INVARIANT" rg -n '^theorem applyRendezvousCallDonation_donated_donor_pushes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Donation.lean
 
 # OD5.6: the teardown paths frame the donation chain, so every transition in the
 # tree either frames it or carries its own preservation (the push and the pop).
-run_check "INVARIANT" rg -n '^theorem linkReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem linkCallerReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem linkReply_donationChainFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_donationChainFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # WS-RR RR8.5 (`v0.35.63`): the cancellation path's raw-insert teardown twins —
 # `clearTcbReplyObject` and `clearReplyObjectCaller`, and every theorem stated
 # over them (`clearTcbReplyObject_donationChainFrame`,
@@ -2936,9 +2936,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def consumeReplyLink \(st : 
 # two corollaries of the first.  The splice is on the same division.
 run_check "INVARIANT" rg -n '^theorem consumeCallerReplyLink_preserves_donationChainWellFormed\b' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" rg -n '^theorem consumeCallerReplyLink_head_preserves_donationChainWellFormedExcept\b' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem consumeReplyLink_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem spliceThreadReplyFrameOut_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # NEGATIVE: the retired frames.  A consume that writes stack links cannot frame
 # the chain, and re-introducing either name is the drift this refuses.
 run_negative_check "INVARIANT" rg -n '^theorem consumeReply_donationChainFrame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
@@ -2948,7 +2948,7 @@ run_negative_check "INVARIANT" rg -n '^theorem consumeCallerReply_donationChainF
 # WS-RM (`v0.35.6`) re-homed it beside that sibling and made it public: the
 # fault-reply path needs the same fact and does not import the cancellation shape
 # module, so a second copy would have been one question with two answers.
-run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_objects_insert' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrame_of_objects_insert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # NEGATIVE: and it must not come back as a module-private copy.  Scoped to a
 # DECLARATION, because the module still *uses* it -- which is the point: the
 # token-preserving mutation is re-declaring the name beside the use.
@@ -3632,8 +3632,8 @@ run_negative_check "INVARIANT" rg -n 'lifecycleInvariantBundle_of_metadata_consi
 # OD6.1: the theorem the workstream exists to make true.  Both halves, because a
 # passive server needs both to run: its binding names the context, and the
 # context's `boundThread` names it back.
-run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_atCallDepthTwo' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_onCore' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_atCallDepthTwo($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem passiveServerHoldsDonatedContext_onCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem passiveServerHoldsDonatedContext_atCallDepthTwo[^\n]*(\n([ \t][^\n]*)?)*sc\.boundThread = some receiverVtid\.val" SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean'
 
 # ---------------------------------------------------------------------------
@@ -3668,7 +3668,7 @@ run_check "INVARIANT" rg -n '^theorem ownScId\?_eq_scId\?_of_isSome' SeLe4n/Kern
 # block is about -- so only the reader's anchors move.
 run_check "INVARIANT" rg -F -n 'def threadBasePriority (_st : SystemState) (tcb : TCB) : SeLe4n.Priority :=' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem threadBasePriority_eq' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem threadBasePriority_congr' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem threadBasePriority_congr($|[ ({:\[\]])' SeLe4n/Model/State.lean
 
 # THE WRITE.  `updatePrioritySource` selects its target through the classifier,
 # so a donee's priority lands in its own TCB and the donor's reservation is not
@@ -3680,7 +3680,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def updatePrioritySource[^\n
 # inequality about the SchedContext alone would be satisfied by an operation
 # that wrote some third object instead.
 run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated ' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
-run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated_preserves_donor_schedContext' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_check "INVARIANT" rg -n '^theorem updatePrioritySource_donated_preserves_donor_schedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
 
 # THE READS.  Each site's `.donated` arm takes the donor's deadline (and, where
 # it resolves one, domain) and the donee's OWN priority.  Bounded gaps: a
@@ -3711,7 +3711,7 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem getCurrentPriorityChecked_donate
 # The pins that keep the four readers from answering differently.  Without these
 # the split would be four independent edits that a later cut could unpick one at
 # a time -- one question, four answers.
-run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_threadBasePriority($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 # WS-RR (v0.35.133): the `.donated`-specific pin is gone with its two siblings --
 # the resolver's first component is `TCB.boostedPriority` at EVERY binding now, so
 # the one unconditional theorem is the pin for all three cases.  Both the positive
@@ -3722,9 +3722,9 @@ run_check "INVARIANT" rg -n '^theorem resolveEffectivePrioDeadline_fst_eq_booste
 run_negative_check "INVARIANT" rg -n 'resolveEffectivePrioDeadline_fst_eq_boostedPriority_of_agree' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n 'resolveEffectivePrioDeadline_fst_of_donated' SeLe4n/ tests/
 run_negative_check "INVARIANT" rg -n 'boostedPriority_eq_resolve_unbound' SeLe4n/ tests/
-run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_resolve' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
-run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
-run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_check "INVARIANT" rg -n '^theorem effectiveSchedParams_priority_deadline_eq_resolve($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem effectiveBucketPriority_eq_resolveEffective($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem getCurrentPriority_eq_threadBasePriority($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
 # v0.35.156 (the post-merge audit): the priority-management reader's own pin is
 # unconditional too.  `getCurrentPriority_donated` took a `.donated` binding as a
 # hypothesis that, since the one-home collapse, narrowed nothing -- the compiler
@@ -3801,7 +3801,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropaga
 # class stays open while reading closed.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if boundTcb\.priority\.val = priority then\n      stStored" SeLe4n/Kernel/SchedContext/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextConfigureBoundPropagate[^\n]*(\n([ \t][^\n]*)?)*if currentTcb\.domain\.val = domain then stProp" SeLe4n/Kernel/SchedContext/Operations.lean'
-run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigureBoundPropagate_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 # ...and the reading side follows: `effectiveSchedParams` reports a donee's OWN
 # domain, because every live domain filter reads `tcb.domain`, so reporting
 # `sc.domain` described a partition the scheduler never puts the donee in.
@@ -3882,52 +3882,52 @@ run_negative_check "INVARIANT" rg -n 'let rounds = fifo_acquisitions\(\) / THREA
 # rather than over the endpoint and the thread alone.
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*queuePPrev = some \(\.tcbNext p\)" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def endpointSpliceHigh[^\n]*(\n([ \t][^\n]*)?)*tcb\.queueNext = some n" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
-run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_reuse_freshens' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
-run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_post_agrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_post_agrees($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_reuse_freshens($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_passiveServerIdleFrameOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualWithCaps_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCaps_preserves_ipcInvariantFull_perCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/PerCoreBundlePreservation.lean
 # WS-SM SM6.E cancellation across cores — the per-core deschedule primitive
 # (the wakeThread dual), the cross-core cancellation composite + its SGI
 # family, the per-core donation-cancellation arms + home-core replenish
 # purge, the lockSet_cancelIpcBlocking / lockSet_cancelDonation footprints
 # (+ suspend-footprint coverage incl. the SM6.E consumed-Reply extension),
 # the 2PL atomicity theorems, invExt preservation, and the flagship.
-run_check "INVARIANT" rg -n '^def descheduleThread' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def descheduleThread($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def cancelIpcBlockingOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # `v0.35.164`: the arm lives beside the cleanup it completes -- see the block below.
-run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^def cancelDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^def lockSet_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^def cancelBoundDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def lockSet_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_emits_sgi_if_remote_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_no_sgi_if_not_current($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelIpcBlocking($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_cancelDonation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem mem_insertOrMerge_write_of_mem_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # **WS-OD (`v0.35.4`)**: the parametric suspend coverage family is one lift now --
 # the syscall footprint is *defined over* the cancellation footprint, so every
 # write that one declares is a write it declares, and a member added to the
 # teardown reaches the syscall without being added twice.
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^def runSmpCancellationChecks' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_covers_cancelIpcBlockingOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_consumed_reply_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_atomic_under_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelBoundDonationOnCore_replenishQueue_purged($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancellation_cross_core_correct($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonation_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^def runSmpCancellationChecks($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cancellation_suite' scripts/test_tier2_negative.sh
 
 # WS-SM SM6.F tests + fixtures — the aggregate cross-core IPC / notification
@@ -3936,12 +3936,12 @@ run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_can
 # (+ sha256 companion) they verify byte-for-byte, the multi-step round-trip
 # pipeline + trace emitters inside the IPC suite, the lakefile exe
 # registrations, and the Tier-4 QEMU cross-core IPC handshake exerciser.
-run_check "INVARIANT" rg -n '^def runSmpIpcChecks' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^def runSmpIpcChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_ipc_suite' scripts/test_tier2_negative.sh
-run_check "INVARIANT" rg -n '^def runSmpNotificationChecks' tests/SmpNotificationSuite.lean
+run_check "INVARIANT" rg -n '^def runSmpNotificationChecks($|[ ({:\[\]])' tests/SmpNotificationSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_notification_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^private def roundTrip\?' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def ipcFourCoreTraceLines' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def ipcFourCoreTraceLines($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^private def ntfnRoundTrip\?' tests/SmpNotificationSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-ipc-4core\]' tests/fixtures/smp_ipc_4core.expected
 run_check "INVARIANT" rg -n 'smp_ipc_4core\.expected' tests/fixtures/smp_ipc_4core.expected.sha256
@@ -3952,32 +3952,32 @@ run_check "INVARIANT" rg -n '^name = "smp_notification_suite"' lakefile.toml
 # golden fault trace (+ sha256 companion) it verifies byte-for-byte, the
 # delivery pipeline and trace emitter inside the suite, and the lakefile exe
 # registration.
-run_check "INVARIANT" rg -n '^def runFaultHandlingChecks' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^def runFaultHandlingChecks($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe fault_handling_suite' scripts/test_tier2_negative.sh
-run_check "INVARIANT" rg -n '^private def deliveryE' tests/FaultHandlingSuite.lean
-run_check "INVARIANT" rg -n '^private def faultTraceLines' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^private def deliveryE($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
+run_check "INVARIANT" rg -n '^private def faultTraceLines($|[ ({:\[\]])' tests/FaultHandlingSuite.lean
 run_check "INVARIANT" rg -n '^\[fault-4core\]' tests/fixtures/fault_handling_4core.expected
 run_check "INVARIANT" rg -n 'fault_handling_4core\.expected' tests/fixtures/fault_handling_4core.expected.sha256
 run_check "INVARIANT" rg -n '^name = "fault_handling_suite"' lakefile.toml
 # WS-RR RR4 surface: the fault type and wire format, the transitions, the
 # preservation / progress / non-interference payoffs, and the live seams.
 run_check "INVARIANT" rg -n '^inductive Fault where' SeLe4n/Model/Fault.lean
-run_check "INVARIANT" rg -n '^def encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^theorem decodeFault_encodeFault' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^def resolveFaultHandler' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^def faultDeliverOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^def faultReplyOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
-run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^def encodeFault($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem decodeFault_encodeFault($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^def resolveFaultHandler($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def faultDeliverOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def faultReplyOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCore_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
 # RR4.20: the flow gate is **production** (it is the arm the live entry calls;
 # a gate reachable only from a staged module is a gate the kernel does not
 # apply), and it carries RR4.19's progress guarantee through the denial.
-run_check "INVARIANT" rg -n '^def faultDeliverOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_flow_denied' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_not_dispatchable' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
-run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
-run_check "INVARIANT" rg -n '^theorem faultMessage_transfers_no_authority' SeLe4n/Kernel/InformationFlow/FaultFlow.lean
+run_check "INVARIANT" rg -n '^def faultDeliverOnCoreChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_flow_denied($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultProgress.lean
+run_check "INVARIANT" rg -n '^theorem faultDeliverOnCoreChecked_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem faultMessage_transfers_no_authority($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FaultFlow.lean
 run_check "INVARIANT" rg -n '@\[export lean_handle_fault\]' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '@\[export lean_classify_synchronous_exception\]' SeLe4n/Kernel/FaultEntry.lean
 # PR #887 review round 2: the fault tags are the MCS layout of seL4's
@@ -3987,8 +3987,8 @@ run_check "INVARIANT" rg -n '@\[export lean_classify_synchronous_exception\]' Se
 run_check "INVARIANT" rg -n '^def debugException : Nat := 4' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^def timeout : Nat := 5' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^def vmFault : Nat := 6' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultLabel_ne_timeout' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultLabel_ne_debugException' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_timeout($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_ne_debugException($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
 # PR #887 review round 2: the classifier upcall is a Lean-emitted symbol like
 # every other, so it sits behind the readiness gate — the declaration and the
 # call follow `lean_ready(` in the hardware classifier's body, the pinned Rust
@@ -4030,18 +4030,18 @@ run_check "INVARIANT" rg -n '^fn handler_routing_status\(' rust/sele4n-hal/build
 run_check "INVARIANT" rg -n '^fn verify_handler_routing_scanner\(\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    verify_handler_routing_scanner\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n -U 'elr: frame\.elr_el1,\n\s+spsr: frame\.spsr_el1,\n\s+sp_el0: frame\.sp_el0,\n\s+x30: frame\.gprs\[30\],' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^def syscallCapFaultOf' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def syscallCapFaultOf($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def capFaultReceivePhase\?' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem capFaultReceivePhase\?_none_iff_records' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def deliverSyscallCapFault' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def deliverSyscallCapFault($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^def svcFaultIP \(elr : UInt64\) : UInt64 := elr - 4' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_faulted($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # PR #887 review round 5: a delivered syscall fault is a DISTINCT outcome
 # (tag 2) on which the trap layer halts — never the blocked-resume sentinel,
 # which would `eret` the caller past the `SVC` its handler restarts it at.
 run_check "INVARIANT" rg -n '^  \| faulted$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^  \| \.faulted   => 2$' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem tagWord_faulted_ne_blocks($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^                \.ok \(\.faulted,$' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n '^                \.ok \(\.blocks,$' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^        2 => Ok\(SvcOutcome::Faulted\),' rust/sele4n-hal/src/svc_dispatch.rs
@@ -4052,8 +4052,8 @@ run_check "INVARIANT" rg -n '^fn faulted_outcome_status\(' rust/sele4n-hal/build
 run_check "INVARIANT" rg -n '^fn verify_faulted_outcome_scanner\(\)' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    scan_trap_rs_faulted_outcome_halts\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^    verify_faulted_outcome_scanner\(\);' rust/sele4n-hal/build.rs
-run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallCapFault_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_capFault_not_dispatchable($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 # Relation, not presence: the producer decides on the RESOLUTION half of the
 # lookup — a resolved capability refused on rights is the invocation's error
 # (seL4's `decodeInvocation`), never the lookup's fault — and hands the fault
@@ -4080,8 +4080,8 @@ run_check "INVARIANT" rg -n '^    scan_trap_rs_abort_fallback_halts\(\);' rust/s
 run_check "INVARIANT" rg -n '^    verify_abort_fallback_scanner\(\);' rust/sele4n-hal/build.rs
 run_check "INVARIANT" rg -n '^def faultHandlerRequiredRights : List \(List AccessRight\) := \[\[\.write\], \[\.grant, \.grantReply\]\]' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n '^def faultHandlerRights : List AccessRight := faultHandlerRequiredRights\.flatten' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerRights_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultHandlerCapAuthorized_depends_only_on_faultHandlerRights($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_negative_check "INVARIANT" rg -n 'r ∈ faultHandlerRights → r ∈ faultHandlerRights' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'handlerEndpointObjId\.map \(fun ep => \(endpointLock ep, \.read\)\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # WS-RR RR7.38: `.notification` joins the arm, because the target of a
@@ -4095,10 +4095,10 @@ run_check "INVARIANT" rg -n -U '\| \.tcbSetFaultHandler =>\n\s+\[\.tcb, \.cnode,
 # read-lock footprint over it, and the conflict a `cspaceDelete` on the path now
 # has — plus a negative refusing the entry's return.
 run_negative_check "INVARIANT" rg -n '\| cspaceWalkInteriorCnodes' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def cspaceWalkPath' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^def cspaceWalkLockSet' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cspaceWalk_conflicts_with_delete' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def cspaceWalkPath($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^def cspaceWalkLockSet($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalk_conflicts_with_delete($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cspaceDelete_target_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The walk's footprint is acquired through RR7.12's bracket, not a private
 # coupling walk: coupling would abandon the SM0.I total order.
 run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceWalk' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
@@ -4106,8 +4106,8 @@ run_check "INVARIANT" rg -n 'runUnderDeclaredLockSet \(declaredLockSetForCSpaceW
 # `abiEntryGate` admits only a resolution whose root consumes every address bit,
 # and such a walk reads exactly its root.  Without these two the root-only
 # declaration would rest on an argument in prose.
-run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_single_level($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # PR #892 review round 4: the walk's footprint is REFUSED above the ceiling
 # rather than declared past it.  `maxLockSetSize` is the premise every bounded-
 # wait and WCRT result is stated at, and a walk reads one key per level, so a
@@ -4115,8 +4115,8 @@ run_check "INVARIANT" rg -n '^theorem cspaceWalkLockSet_single_level' SeLe4n/Ker
 # back to the pre-footprint seam.  The relation: the size test decides the
 # declaration, and the two theorems say what each verdict entails.
 run_check "INVARIANT" rg -n -U 'let S := cspaceWalkLockSet rootId addr bitsRemaining st\n\s+if S\.size ≤ Concurrency\.maxLockSetSize then some S else none' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_some_size_le' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_none_of_gt' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_some_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForCSpaceWalk_none_of_gt($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # NEGATIVE: the unconditional declaration.
 run_negative_check "INVARIANT" rg -n 'fun st => some \(cspaceWalkLockSet' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # ...and a FAILED lookup is a read the footprint names: the `none` arm records
@@ -4126,8 +4126,8 @@ run_negative_check "INVARIANT" rg -n 'fun st => some \(cspaceWalkLockSet' SeLe4n
 # member.  The relation is the arm's value and the classification's two arms.
 run_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[rootId\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 run_check "INVARIANT" rg -n -U 'def cspaceWalkKeyLock \(st : SystemState\) \(oid : SeLe4n\.ObjId\) : LockId × AccessMode :=\n  match st\.getCNode\? oid with\n  \| some _ => \(cnodeLock oid, AccessMode\.read\)\n  \| none => \(Concurrency\.stateLevelLock, AccessMode\.read\)' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_dropLast_cnode' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
-run_check "INVARIANT" rg -n '^theorem mem_cspaceWalkLockSet_missing' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cspaceWalkPath_dropLast_cnode($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_cspaceWalkLockSet_missing($|[ ({:\[\]])' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # NEGATIVE: the first cut's arm, which declared nothing for the read.
 run_negative_check "INVARIANT" rg -n -U 'match st\.getCNode\? rootId with\n\s+\| none => \[\]' SeLe4n/Kernel/Capability/CSpaceWalkFootprint.lean
 # PR #892 review round 5: the scheduler bracket domain acquires a footprint in
@@ -4271,10 +4271,10 @@ EOF'
 run_negative_check "INVARIANT" rg -n 'Adopting it here is' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # **WS-RR RR7.40**: the PIP chain's footprint names the home-core run queue the
 # object domain could not, and the walk's writes are proved inside it.
-run_check "INVARIANT" rg -n '^def pipChainSchedFootprint' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
-run_check "INVARIANT" rg -n '^theorem mem_pipChainSchedFootprint_runQueue' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_coversWrites' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
-run_check "INVARIANT" rg -n '^def runChainExtension' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+run_check "INVARIANT" rg -n '^def pipChainSchedFootprint($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_pipChainSchedFootprint_runQueue($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^def runChainExtension($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
 # NEGATIVE: the object-domain chain walk must not re-spell acquire/act/unwind.
 run_negative_check "INVARIANT" rg -n 'let acquired := acquireAll caller chainLocks' SeLe4n/Kernel/Concurrency/Locks/DynamicChainExtension.lean
 # PR #892 review round 2: the chain extension acts only once the footprint is
@@ -4349,10 +4349,10 @@ run_negative_check "INVARIANT" rg -n 'let needle = format!\("\{symbol\}\("\);' r
 # live dispatch arms that must go through it.  Without the branch the fault
 # reply is verified and unreachable: a handler's ordinary `seL4_Reply` would
 # wake the faulted thread `.ready` at the instruction that faulted.
-run_check "INVARIANT" rg -n '^def replyTransferOnCore' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^def replyTransferOnCoreChecked' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_no_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
-run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_fault' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def replyTransferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^def replyTransferOnCoreChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_no_fault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_of_fault($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 # Relation, not presence: the arms must *call* the seam.  A check for the
 # seam's mere existence in `API.lean` would pass on a file that defines it and
 # never dispatches through it, which is the defect this closed.
@@ -4374,8 +4374,8 @@ run_negative_check "INVARIANT" rg -n 'faultDeliverOnCore [a-z]' SeLe4n/Kernel/Fa
 run_check "INVARIANT" rg -n 'let stRegs := writeFaultRegistersToTcb st tid w' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n 'faultContextOfThread stRegs tid ectx\.elr ectx\.spsr' SeLe4n/Kernel/FaultEntry.lean
 run_negative_check "INVARIANT" rg -n 'faultContextOfThread st tid' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill' SeLe4n/Model/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultContextOfThread_writeFaultRegistersToTcb($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem ofRegisterFile_spill($|[ ({:\[\]])' SeLe4n/Model/Fault.lean
 # …and the cross-core pokes are derived from the state diff, as the syscall
 # seam derives them, not read off the single SGI the Call chain surfaces.
 run_check "INVARIANT" rg -n 'PriorityInheritance\.computeCrossCoreSgis st st.. c' SeLe4n/Kernel/FaultEntry.lean
@@ -4391,9 +4391,9 @@ run_check "INVARIANT" rg -n 'let g = frame\.gprs;' rust/sele4n-hal/src/trap.rs
 #     Rust handler halts on both before it routes;
 run_check "INVARIANT" rg -n '^  \| kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n '^def ExceptionContext\.takenFromEl0' SeLe4n/Kernel/Architecture/Fault.lean
-run_check "INVARIANT" rg -n '^theorem faultOfExceptionContext_kernelAbort' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem faultOfExceptionContext_kernelAbort($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
 run_check "INVARIANT" rg -n 'if ectx\.takenFromEl0 then' SeLe4n/Kernel/FaultEntry.lean
-run_check "INVARIANT" rg -n '^theorem faultEntryStep_kernel_origin_inert' SeLe4n/Kernel/FaultEntry.lean
+run_check "INVARIANT" rg -n '^theorem faultEntryStep_kernel_origin_inert($|[ ({:\[\]])' SeLe4n/Kernel/FaultEntry.lean
 run_check "INVARIANT" rg -n '^    halt_if_kernel_origin\(frame, esr\);' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'if !exception_taken_from_el0\(frame\.spsr_el1\)' rust/sele4n-hal/src/trap.rs
 run_check "INVARIANT" rg -n 'sync_class::KERNEL_ABORT => \{' rust/sele4n-hal/src/trap.rs
@@ -4403,10 +4403,10 @@ run_check "INVARIANT" rg -n 'sync_class::KERNEL_ABORT => \{' rust/sele4n-hal/src
 run_check "INVARIANT" rg -n 'Architecture\.stageWokenDelivery st. wokenReceiver\? summary\.installedCount' SeLe4n/Kernel/IPC/CrossCore/Fault.lean
 # (3) resuming a thread retires the fault it carries, and the arm runs the
 #     resume on the retired state;
-run_check "INVARIANT" rg -n '^def retirePendingFaultForResume' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def retirePendingFaultForResume($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'resumeThreadOnCoreLive$' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '\(retirePendingFaultForResume st vtid\.val\) vtid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem retirePendingFaultForResume_pendingFault_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 # (4) the unknown-syscall fault has a live producer: the SVC arm routes an
 #     invalid syscall id to the seam instead of publishing an error frame;
 run_check "INVARIANT" rg -n '@\[export lean_handle_unknown_syscall\]' SeLe4n/Kernel/FaultEntry.lean
@@ -4414,12 +4414,12 @@ run_check "INVARIANT" rg -n 'Err\(crate::svc_dispatch::DispatchError::InvalidSys
 run_check "INVARIANT" rg -n -U '"deliver_unknown_syscall",\s*"lean_handle_unknown_syscall"' rust/sele4n-hal/build.rs
 # (5) `TCB.faultHandler` has a live writer, validated by the same resolution
 #     the fault path runs.
-run_check "INVARIANT" rg -n '^def setThreadFaultHandlerOp' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^def setThreadFaultHandlerOp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'match resolveFaultHandlerCPtr st tcb cptr with' SeLe4n/Kernel/IPC/Operations/Fault.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated' SeLe4n/Kernel/IPC/Operations/Fault.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_validated($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Fault.lean
 run_check "INVARIANT" rg -n 'match setThreadFaultHandlerOp st vtid args\.handlerCPtr with' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem setThreadFaultHandlerOp_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 run_check "INVARIANT" rg -n 'TcbSetFaultHandler = 34' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n 'pub fn tcb_set_fault_handler' rust/sele4n-sys/src/tcb.rs
 # …and the labeling-context read that makes the gate meaningful: without it the
@@ -4438,27 +4438,27 @@ run_check "INVARIANT" rg -n 'cross-core-ipc: reply delivered across cores' scrip
 # The new aggregate scenario groups (donation / caps / info-flow / live-API /
 # cancellation×IPC / contention in the IPC suite; three-waiter drain + checked
 # dispatch in the notification suite) — anchored so a rename breaks Tier-3.
-run_check "INVARIANT" rg -n '^private def runDonationChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runCapTransferChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runFlowCheckedChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runLiveApiChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runCancellationCompositionChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runHandlerContentionChecks' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^private def runThreeWaiterDrainChecks' tests/SmpNotificationSuite.lean
-run_check "INVARIANT" rg -n '^private def runCheckedDispatchChecks' tests/SmpNotificationSuite.lean
-run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_sender_exists' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_link_safe' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_sender_exists' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_dualQueueSystemInvariant' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^private def runDonationChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runCapTransferChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runFlowCheckedChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runLiveApiChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runCancellationCompositionChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runHandlerContentionChecks($|[ ({:\[\]])' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def runThreeWaiterDrainChecks($|[ ({:\[\]])' tests/SmpNotificationSuite.lean
+run_check "INVARIANT" rg -n '^private def runCheckedDispatchChecks($|[ ({:\[\]])' tests/SmpNotificationSuite.lean
+run_check "INVARIANT" rg -n '^theorem intrusiveQueueWellFormed_empty($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem tcbQueueLink_forward_safe($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem tcbQueueLink_reverse_safe($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_sender_exists($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_link_safe($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_sender_exists($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 
 # WS-SM SM7.A — TLB shootdown descriptor + per-core pending/ack state: the
 # staged state module (descriptor, state, path-a accessors, enqueue / drain /
@@ -4467,18 +4467,18 @@ run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_dualQueueSyste
 # anchor), the staged-partition registration, the Rust SHOOTDOWN_ACK per-core
 # AtomicBool realisation, the SmpTlbShootdownSuite runner + its Tier-2 wiring
 # + lakefile registration.
-run_check "INVARIANT" rg -n '^structure TlbShootdownDescriptor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^structure TlbShootdownState' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^structure TlbShootdownDescriptor($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^structure TlbShootdownState($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^def maxPendingPerCore : Nat := 16' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def enqueueShootdown' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def drainShootdowns' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def acknowledgeShootdown' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def beginShootdownRound' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem enqueueShootdown_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem drainShootdowns_after_enqueue' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem allCores_foldl_acknowledgeShootdown_allAcked' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem beginShootdownRound_ackOnCore_iff' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def enqueueShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def drainShootdowns($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def acknowledgeShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def beginShootdownRound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem enqueueShootdown_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem drainShootdowns_after_enqueue($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem allCores_foldl_acknowledgeShootdown_allAcked($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem beginShootdownRound_ackOnCore_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # (v0.32.73: TlbShootdown was PROMOTED to production — Model/State.lean
 # mounts it — so it must NOT reappear in the staged allowlist.
 # SM7.B: TlbiForSharing was ALSO promoted — the live
@@ -4491,7 +4491,7 @@ run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdown'
 run_check "INVARIANT" rg -n '^pub static SHOOTDOWN_ACK' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn ack_round' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub mod shootdown;' rust/sele4n-hal/src/lib.rs
-run_check "INVARIANT" rg -n '^def runSmpTlbShootdownChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^def runSmpTlbShootdownChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_tlb_shootdown_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "smp_tlb_shootdown_suite"' lakefile.toml
 # WS-SM SM7.B — the shootdown protocol surface: the three production
@@ -4506,28 +4506,28 @@ run_check "INVARIANT" rg -n '^name = "smp_tlb_shootdown_suite"' lakefile.toml
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdownProtocol' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdownWait' SeLe4n.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdownLockSet' SeLe4n.lean
-run_check "INVARIANT" rg -n '^def tlbShootdownLocal' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def tlbShootdownBroadcast' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCore' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem tlbShootdownBroadcast_invalidatesAllCores' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem tlbShootdownBroadcast_posts_singleton' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRound_quiescent' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRound_tlb_no_matching_entry' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdown' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def asidAllocateWithShootdown' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def tlbShootdownLocal($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def tlbShootdownBroadcast($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdownBroadcast_invalidatesAllCores($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdownBroadcast_posts_singleton($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRound_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRound_tlb_no_matching_entry($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def asidAllocateWithShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdown' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromState' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdown' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdown' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem shootdown_wait_loop_terminates' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem shootdown_timeout_handling' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^inductive TlbShootdownLockId' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tlbShootdown_correct' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tlbShootdown_covers_commit' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
-run_check "INVARIANT" rg -n '^def completeShootdownRounds' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^def acquireShootdownRoundLockServicingSelf' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdown_wait_loop_terminates($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdown_timeout_handling($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^inductive TlbShootdownLockId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tlbShootdown_correct($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tlbShootdown_covers_commit($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownLockSet.lean
+run_check "INVARIANT" rg -n '^def completeShootdownRounds($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def acquireShootdownRoundLockServicingSelf($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'completeShootdownRounds result' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n '^pub static SHOOTDOWN_ROUND_LOCK' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn wait_all_acked_bounded' rust/sele4n-hal/src/shootdown.rs
@@ -4535,37 +4535,37 @@ run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler' rust/sele4n-hal/
 run_check "INVARIANT" rg -n 'register_tlb_shootdown_handler' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^pub fn dispatch_irq_with_iar' rust/sele4n-hal/src/gic.rs
 run_check "INVARIANT" rg -n 'dispatch_sgi\(intid as u8, source_cpu\)' rust/sele4n-hal/src/trap.rs
-run_check "INVARIANT" rg -n '^private def runProtocolRoundChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runCallerWrapperChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runProtocolRoundChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCallerWrapperChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # SM7.A completion cut — the pure operand module (extracted from the staged
 # TlbiForSharing so Model/State can mount the shootdown state), the
 # SystemState mount + default-state theorems, the capacity-sufficiency +
 # coalescing + round-quiescence surface, the pending-queue lock identifier,
 # and the ack-flag FFI seam (Rust exports + Lean externs + typed wrappers).
-run_check "INVARIANT" rg -n '^inductive TlbInvalidation' SeLe4n/Kernel/Architecture/TlbInvalidation.lean
+run_check "INVARIANT" rg -n '^inductive TlbInvalidation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbInvalidation.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.Architecture\.TlbShootdown' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^  tlbShootdown : SeLe4n\.Kernel\.Architecture\.TlbShootdownState' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_initial' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_quiescent' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem foldlM_enqueueShootdown_isSome' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def enqueueShootdownOrCoalesce' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def completeShootdownOnCore' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRound_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^structure ShootdownQueueLockId' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_initial($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_tlbShootdown_quiescent($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem foldlM_enqueueShootdown_isSome($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def enqueueShootdownOrCoalesce($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def completeShootdownOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRound_restores_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^structure ShootdownQueueLockId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # SM7.A audit cut — the global round-lock seam (round-serialisation contract)
 # and the full-queue coverage theorem for the coalescing enqueue.
-run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^structure ShootdownRoundLockId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^theorem ShootdownRoundLockId\.singleton' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem enqueueShootdownOrCoalesce_pending_covered($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_prose_check "INVARIANT" rg -n 'Round serialisation contract' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # SM7.A PR #838 review P1 — offline-core-aware round open: the Rust
 # online-masked WAIT (SM7.F.3 turned the masked reset into a masked wait, which
 # is where the mask belongs once acknowledgments carry the round generation)
 # + the Lean target-masked round-open and its hcov-free capstone.
 run_check "INVARIANT" rg -n '^pub fn all_acked_for_round_in_slice' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n '^def beginShootdownRoundFor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def beginShootdownRoundFor($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 # WS-SM SM7.B completion cut — invariant-bundle carriage (pendingBounded as
 # the 12th proofLayerInvariantBundle conjunct + preservation across every live
 # shootdown-aware transition and the boot bridge), handler commutativity, the
@@ -4576,29 +4576,29 @@ run_check "INVARIANT" rg -n '^theorem beginShootdownRoundFor_allCores_eq' SeLe4n
 # Rust test-hardening (_in handler form + genuine-transition tests + the
 # multithreaded CAS mutex stress).
 run_check "INVARIANT" rg -n 'pendingBounded st\.tlbShootdown' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_comm' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem withShootdownRound_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_preserves_pendingBounded' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCore_comm' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem coalescingRound_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem shootdownChangedTargets_coalescing_of_quiescent' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_remote_retire_removes' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def vspaceHasTranslation' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def collapseShootdownOps' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem collapseShootdownOps_effect_eq' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem waitAllAckedBounded_least' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem roundLockTryAcquire_mutex' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRoundLock_release_acquire' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire_multi_pair_witness' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_tlbShootdown_eq' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_tlbShootdown_eq' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdown' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem completeShootdownRounds_nil' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem shootdownSharingDomain_rpi5' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownOnCore_comm($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem withShootdownRound_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCore_comm($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem coalescingRound_restores_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem shootdownChangedTargets_coalescing_of_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdown_remote_retire_removes($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def vspaceHasTranslation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithFlushFromState_ok_fresh($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def collapseShootdownOps($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem collapseShootdownOps_effect_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem waitAllAckedBounded_least($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem roundLockTryAcquire_mutex($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundLock_release_acquire($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem shootdownAck_release_acquire_multi_pair_witness($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownWait.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_tlbShootdown_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_tlbShootdown_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdown($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdown_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem completeShootdownRounds_nil($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def shootdownRoundLockAcquireFuel($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem shootdownSharingDomain_rpi5($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # PR #892 review round 2: the per-core stats snapshot reads the subtype
 # counters BEFORE the total the handler increments first, so a tick or an SGI
 # landing mid-snapshot can never make `timerTicks + sgis > irqs` on a coherent
@@ -4620,24 +4620,24 @@ run_check "INVARIANT" rg -n -U 'pub fn timer_tick_count_for\(core_id: usize\) ->
 run_check "INVARIANT" rg -n -U 'pub fn sgi_count_for\(core_id: usize\) -> u64 \{[^\n]*(\n([ \t][^\n]*)?)*?\.sgi_count\.load\(Ordering::Acquire\)' rust/sele4n-hal/src/per_cpu_stats.rs
 # NEGATIVE: a subtype increment that publishes nothing.
 run_negative_check "INVARIANT" rg -n -U '\.(timer_tick_count|sgi_count)\n\s+\.fetch_add\(1, Ordering::Relaxed\)' rust/sele4n-hal/src/per_cpu_stats.rs
-run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush' SeLe4n/Kernel/Concurrency/Runtime.lean
-run_check "INVARIANT" rg -n '^def coreOnlineInMask' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def tlbiLocalFullFlush($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def coreOnlineInMask($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
 run_check "INVARIANT" rg -n '^pub fn tlb_shootdown_req_handler_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n '^pub fn round_lock_try_acquire_in' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'fn round_lock_mutex_stress' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'fn handler_in_genuine_ack_transition_own_slot_only' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n '^private def runCompletionCutChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runLiveDispatchChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCompletionCutChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runLiveDispatchChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" bash -c "test -x scripts/test_qemu_smp_shootdown.sh"
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown\.sh' scripts/test_tier4_smp_bootcheck.sh
-run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundFor_restores_quiescent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^private def runMaskedRoundChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_ack_round' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_all_acked_for_round' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_self_service_round' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'extern "ffi_shootdown_ack_round"' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def shootdownAckRound' SeLe4n/Kernel/Concurrency/Runtime.lean
-run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def shootdownAckRound($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^theorem shootdownAck_ffi_core_in_range($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
 # WS-SM SM7.B debt-closure cut — per-descriptor handler operand mailbox
 # (debt (1)): the Rust seqlock mailbox + publish/snapshot/retire primitives,
 # the local per-operand TLBI dispatcher + shared op-tag decode, the FFI
@@ -4654,25 +4654,25 @@ run_check "INVARIANT" rg -n '^pub extern "C" fn ffi_shootdown_publish_slot' rust
 run_check "INVARIANT" rg -n 'fn retire_per_descriptor_counts_operands' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'fn retire_torn_read_falls_back_to_full_flush' rust/sele4n-hal/src/shootdown.rs
 run_check "INVARIANT" rg -n 'fn op_tag_decode_conformance' rust/sele4n-hal/src/shootdown.rs
-run_check "INVARIANT" rg -n '^opaque ffiShootdownPublishSlot' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def shootdownPublishSlot' SeLe4n/Kernel/Concurrency/Runtime.lean
-run_check "INVARIANT" rg -n '^def publishShootdownOps' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^opaque ffiShootdownPublishSlot($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def shootdownPublishSlot($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Runtime.lean
+run_check "INVARIANT" rg -n '^def publishShootdownOps($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'publishShootdownOps collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_pendingBounded' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_tlbShootdown_eq' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^private def runDebtClosureChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_tlbShootdown_eq($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^private def runDebtClosureChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 
 # WS-SM SM7.C per-core TLB model — the mounted per-core view, its ops, the
 # 13th proofLayerInvariantBundle conjunct, the operational round the live
 # seam runs (with its bridge to the SM7.B single-view round + operative
 # Theorem 3.3.1), and the live-seam per-core-drain wiring.
-run_check "INVARIANT" rg -n '^def tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem tlbShootdown_invalidates_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem tlbConsistency_cross_subsystem' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCorePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_invalidates_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_tlb_eq' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem tlbInvalidationConsistentCheck_perCore_iff' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^def tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_invalidates_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbConsistency_cross_subsystem($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCorePerCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_invalidates_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownRoundPerCore_tlb_eq($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbInvalidationConsistentCheck_perCore_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'tlbInvalidationConsistent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
 # Round 43: this pinned `handleTlbShootdownReqOnCorePerCore`, which has
 # appeared in this file only inside comments since the live catch-up was
@@ -4681,33 +4681,33 @@ run_check "INVARIANT" rg -n 'tlbInvalidationConsistent_perCore st' SeLe4n/Kernel
 # actually makes; the code view is what exposed it.
 run_check "INVARIANT" rg -n 'Architecture.shootdownCatchUpPerCoreInWindow' \
   SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbOperationalChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.4: live fill + initiator-atomic VSpace seams (the live `.vspaceMap`
 # / `.vspaceUnmap` dispatch routes through the per-core wrappers).
-run_check "INVARIANT" rg -n '^def vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^def vspaceMapPageCheckedWithShootdownFromStatePerCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPageCheckedWithShootdownFromStatePerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownPerCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n 'vspaceMapPageCheckedWithShootdownFromStatePerCore' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbLiveLifecycleChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # WS-SM SM7.F.5: the ACCESS-time fill — a core caches translations it did not
 # map (the IPC-buffer walk), live on the per-core syscall entry.
-run_check "INVARIANT" rg -n '^def tlbFillIpcBufferOnCore' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_caches_read_translation' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^def tlbFillIpcBufferOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_caches_read_translation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 run_check "INVARIANT" rg -n 'tlbFillIpcBufferOnCore' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runPerCoreTlbAccessFillChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The page-granular IPC-buffer translation the fill rests on: the read and the
 # fill must resolve through ONE page computation, not two copies.
-run_check "INVARIANT" rg -n '^def VAddr.pageBase' SeLe4n/Prelude.lean
-run_check "INVARIANT" rg -n '^def ipcBufferSlotPage' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
+run_check "INVARIANT" rg -n '^def VAddr.pageBase($|[ ({:\[\]])' SeLe4n/Prelude.lean
+run_check "INVARIANT" rg -n '^def ipcBufferSlotPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 run_check "INVARIANT" rg -n 'ipcBufferSlotPage tcb.ipcBuffer idx' SeLe4n/Kernel/Architecture/IpcBufferRead.lean
 # WS-SM SM7.F.5: whole-bundle carriage across a `perCoreTlb` write — the
 # reusable layer, and the fill's discharge of its single obligation.
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setPerCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem tlbFillIpcBufferOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/IpcBufferTlbFill.lean
 # WS-SM SM7.F.4(b)(iii): the retype seam drains the initiator's per-core view.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_initiator_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' SeLe4n/Kernel/API.lean
 # WS-SM SM7.F.3 — round-generation-tagged descriptors: a commit's catch-up
 # drains ONLY the rounds its own commit opened, so a concurrently-committed
@@ -4720,29 +4720,29 @@ run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCore' S
 # `.tlbShootdownReq` SGI cannot satisfy a later round's wait).
 run_check "INVARIANT" rg -n '^  generation : Nat' SeLe4n/Kernel/Architecture/TlbShootdown.lean
 run_check "INVARIANT" rg -n '^  roundGeneration : Nat' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def roundDescriptor' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def inRoundWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def drainShootdownsInWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_preserves_foreign' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_eq_drainShootdowns' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def completeShootdownOnCoreInWindow' SeLe4n/Kernel/Architecture/TlbShootdown.lean
-run_check "INVARIANT" rg -n '^def shootdownRoundWindow' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCoreInWindow' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCoreInWindow_eq_handle' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^theorem mem_shootdownPostedOps_iff' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^def roundDescriptor($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def inRoundWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def drainShootdownsInWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_preserves_foreign($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^theorem drainShootdownsInWindow_eq_drainShootdowns($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def completeShootdownOnCoreInWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdown.lean
+run_check "INVARIANT" rg -n '^def shootdownRoundWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def handleTlbShootdownReqOnCoreInWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCoreInWindow_eq_handle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^theorem mem_shootdownPostedOps_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^def shootdownCatchUpPerCoreInWindow($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_foreign($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_eq_catchUp($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 run_check "INVARIANT" rg -n 'shootdownCatchUpPerCoreInWindow st execCore collapsed' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'Architecture.shootdownRoundWindow st st' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runRoundGenerationChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 # The 12th `proofLayerInvariantBundle` conjunct (`pendingBounded`) carried across
 # the transition the live catch-up seam runs.  A window drain deliberately leaves
 # foreign descriptors queued, so — unlike a whole-queue drain — it does not empty
 # the queues and the bound has to be carried rather than fall out.
-run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_pendingBounded' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCoreInWindow_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem shootdownCatchUpPerCoreInWindow_preserves_pendingBounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
 # The generation-carrying acknowledgment channel (Rust mirror).  The reset is
 # GONE by design — a negative anchor keeps it from coming back, since a reset
 # would erase the monotonicity the whole mechanism rests on.
@@ -4762,18 +4762,18 @@ run_check "INVARIANT" bash -c "! rg -q 'shootdownResetForRound' SeLe4n/Kernel/Sy
 # only for the single-view handler, but the live seam folds the per-core one),
 # the `.outer` portability seam, the deterministic golden trace fixture (+ its
 # sha256 companion), and the Tier-4 concurrent-unmap stress exerciser.
-run_check "INVARIANT" rg -n '^theorem setTlbOnCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCore_comm' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCore_swap' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
-run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
-run_check "INVARIANT" rg -n '^private def runConcurrentUnmapStressChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runConcurrentUnmapDrainChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runShootdownBackpressureChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runCrossClusterMockChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runCrossClusterHazardChecks' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runCrossClusterReachChecks' tests/SmpCacheMaintenanceSuite.lean
-run_check "INVARIANT" rg -n '^private def shootdownTraceLines' tests/SmpTlbShootdownSuite.lean
-run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^theorem setTlbOnCore_comm($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem handleTlbShootdownReqOnCorePerCore_comm($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem foldl_handleTlbShootdownReqOnCorePerCore_swap($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean
+run_check "INVARIANT" rg -n '^theorem tlbShootdown_outer_correct($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapStressChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runConcurrentUnmapDrainChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runShootdownBackpressureChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterMockChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterHazardChecks($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runCrossClusterReachChecks($|[ ({:\[\]])' tests/SmpCacheMaintenanceSuite.lean
+run_check "INVARIANT" rg -n '^private def shootdownTraceLines($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
+run_check "INVARIANT" rg -n '^private def runTraceFixtureCheck($|[ ({:\[\]])' tests/SmpTlbShootdownSuite.lean
 run_check "INVARIANT" rg -n '^\[smp-tlb-shootdown\]' tests/fixtures/smp_tlb_shootdown.expected
 run_check "INVARIANT" rg -n 'smp_tlb_shootdown\.expected' tests/fixtures/smp_tlb_shootdown.expected.sha256
 run_check "INVARIANT" rg -n 'test_qemu_smp_shootdown_stress\.sh' scripts/test_tier4_smp_bootcheck.sh
@@ -4797,43 +4797,43 @@ run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.CacheMode
 run_check "INVARIANT" bash -c "! rg -q '^SeLe4n\.Kernel\.Architecture\.TlbCacheComposition' scripts/staged_module_allowlist.txt"
 run_check "INVARIANT" bash -c "! rg -q 'STATUS: staged' SeLe4n/Kernel/Architecture/CacheModel.lean"
 # SM7.D.1 granularity contract: the page operand vs the line-granular IC IVAU.
-run_check "INVARIANT" rg -n '^theorem icacheLinesPerPage_covers_page' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem icacheLinesPerPage_covers_page($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^pub fn ic_invalidate_page_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub const ICACHE_LINES_PER_PAGE' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_ic_invalidate_page_line_count' rust/sele4n-hal/src/cache.rs
 # SM7.D.1 emission ledger: the runtime gets the model's exact operand.
 run_check "INVARIANT" rg -n '  pendingIcacheMaintenance :' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def recordIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def clearIcacheMaintenance' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_of_nil' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_covered' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def recordIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def clearIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_of_nil($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n 'theorem recordIcacheMaintenance_covered($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D ledger soundness: `iallu` is NOT a top element (it issues no DC CVAU),
 # so the ledger is a list under a coverage preorder, never a lossy join.
-run_check "INVARIANT" rg -n '^def ICacheInvalidation.covers' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_unifyPage' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.covers_trans' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^def recordIcacheMaintenanceList' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_covered' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_mem_of_mem' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def ICacheInvalidation.covers($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_unifyPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.covers_trans($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def recordIcacheMaintenanceList($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_covered($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem recordIcacheMaintenanceList_mem_of_mem($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" bash -c "! rg -q 'ICacheInvalidation.join' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
 # SM7.D re-type clean-to-PoU: the scrub's zeroing stores must reach the Point of
 # Unification BEFORE the instruction caches are invalidated, or the next fetch
 # re-fills from the previous owner's content.  `iallu` cannot discharge that.
 run_check "INVARIANT" rg -n '  \| cleanRangeIallu \(base : SeLe4n\.PAddr\) \(size : Nat\)' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^def byteRangeContains' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem byteRangeContains_trans' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_cleanRangeIallu' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def byteRangeContains($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem byteRangeContains_trans($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.iallu_not_covers_cleanRangeIallu($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^theorem ICacheInvalidation.unifyPage_not_covers_cleanRangeIallu($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.isDomainWide' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def ICacheInvalidation.toSize' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n '^def getObjectType\?' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def retypeIcacheOp' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_cleans_scrub_extent' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_discharges_scrub_obligation' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^def dischargesPoUClean' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem dischargesPoUClean_isDomainWide' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def kernelCodeWriteEmitted' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_emission_pending' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def retypeIcacheOp($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_cleans_scrub_extent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeIcacheOp_discharges_scrub_obligation($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def dischargesPoUClean($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem dischargesPoUClean_isDomainWide($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def kernelCodeWriteEmitted($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_emission_pending($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^pub fn clean_range_pou_then_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'CleanRangeIallu\(u64, u64\)' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n 'fn test_clean_range_pou_line_coverage' rust/sele4n-hal/src/cache.rs
@@ -4842,9 +4842,9 @@ run_check "INVARIANT" bash -c "! rg -q '^  some \\.iallu' SeLe4n/Kernel/Lifecycl
 # The scrubbed extent has exactly ONE definition, and both the scrub and the
 # cache-maintenance operand read it.  A second copy of the arithmetic would let
 # the clean silently name a range the scrub does not zero (PR #845 review 4).
-run_check "INVARIANT" rg -n '^def scrubExtent' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_zeroes_scrubExtent' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
-run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_cleaned_by_retype' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def scrubExtent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_zeroes_scrubExtent($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean
+run_check "INVARIANT" rg -n '^theorem scrubObjectMemory_cleaned_by_retype($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'scrubExtent target objType' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 # Neither consumer may re-derive the extent from `objectTypeAllocSize` itself.
 run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def retypeIcacheOp /,/^\$/p' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean)"
@@ -4855,59 +4855,59 @@ run_check "INVARIANT" bash -c "! rg -q 'objectTypeAllocSize' <(sed -n '/^def scr
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := 4096' SeLe4n/Prelude.lean
 run_check "INVARIANT" rg -n '^def pageBytes : Nat := SeLe4n.pageBytes' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % SeLe4n.pageBytes != 0 then none' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^theorem mapPage_pageAligned($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '_hAligned : paddr.toNat % SeLe4n.pageBytes = 0' SeLe4n/Model/Builder.lean
 run_check "INVARIANT" rg -n 'paddr.toNat % pageBytes != 0 then .error .alignmentError' SeLe4n/Kernel/Architecture/VSpace.lean
 # The Architecture granule must not drift back to a second literal.
 run_check "INVARIANT" bash -c "! rg -q '^def pageBytes : Nat := 4096' SeLe4n/Kernel/Architecture/CacheInvalidation.lean"
 run_check "INVARIANT" rg -n 'clearIcacheMaintenance st' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem pendingIcacheMaintenance_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 the data-side clean-to-PoU obligation + its tripwire.
-run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_complete' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_owe_pou_clean' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_complete($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem kernelCodeWriteSites_owe_pou_clean($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.1 typed operand + effect algebra + per-core model ops.
-run_check "INVARIANT" rg -n '^inductive ICacheInvalidation' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
-run_check "INVARIANT" rg -n '^def applyICacheInvalidation' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def icFetchOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def icInvalidateOnCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_icacheOnCore_ne' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def icInvalidateBroadcast' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem icInvalidateBroadcast_reaches_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem icBroadcastReach_cover' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^inductive ICacheInvalidation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/CacheInvalidation.lean
+run_check "INVARIANT" rg -n '^def applyICacheInvalidation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icFetchOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icInvalidateOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_icacheOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icInvalidateBroadcast($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateBroadcast_reaches_all_cores($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icBroadcastReach_cover($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.1 mounted per-core state + its carriage.
 run_check "INVARIANT" rg -n '  perCoreICache : Vector ICacheState numCores' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem default_perCoreICache' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem default_perCoreICache($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '  perCoreICache     : _root_\.Vector ICacheState numCores' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem freeze_preserves_perCoreICache' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_perCoreICache($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '  perCoreICache : s2\.perCoreICache = s1\.perCoreICache' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_perCoreICache_eq' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem perCoreICache_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_perCoreICache_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem perCoreICache_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # SM7.D.2 data-cache at the Point of Coherency (system-wide, no target set).
-run_check "INVARIANT" rg -n '^def dcMaintenanceAllCores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem dcMaintenanceByVA_reaches_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_vs_dcMaintenance_reach' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def dcMaintenanceAllCores($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem dcMaintenanceByVA_reaches_all_cores($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icInvalidateOnCore_vs_dcMaintenance_reach($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.3 the DMA scope tripwire.
-run_check "INVARIANT" rg -n '^def modeledCoherentAgents' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem modeledCoherentAgents_no_dma_master' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def modeledCoherentAgents($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem modeledCoherentAgents_no_dma_master($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.4 the 14th proofLayerInvariantBundle conjunct + capstone + checker.
-run_check "INVARIANT" rg -n '^def icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def icacheCoherent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n 'icacheCoherent_perCore st' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem cacheCoherency_cross_subsystem' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem icacheCoherentCheck_perCore_iff' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem default_icacheCoherent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem cacheCoherency_cross_subsystem($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem icacheCoherentCheck_perCore_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 # SM7.D.1 live wiring: the two production destroy paths + the runtime seam.
-run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def vspaceUnmapPageWithShootdownAndIcacheBroadcast($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPageWithShootdownAndIcacheBroadcast_preserves_icacheCoherent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCoreIcache($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_check "INVARIANT" rg -n 'vspaceUnmapPageWithShootdownAndIcacheBroadcast' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def completeIcacheMaintenance' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^def completeIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'completeIcacheMaintenance result' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM7.D FFI + Rust HAL realisation (broadcast primitives + fail-closed decode).
-run_check "INVARIANT" rg -n '^opaque ffiIcIalluIs' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^opaque ffiIcMaintenance' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def icMaintenanceBroadcast' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^opaque ffiIcIalluIs($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^opaque ffiIcMaintenance($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def icMaintenanceBroadcast($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^pub fn ic_ivau' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub fn ic_invalidate_all_inner_shareable' rust/sele4n-hal/src/cache.rs
 run_check "INVARIANT" rg -n '^pub const fn decode_icache_invalidation' rust/sele4n-hal/src/cache.rs
@@ -4915,25 +4915,25 @@ run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_ialluis' rust/sele4n-ha
 run_check "INVARIANT" rg -n '^pub extern "C" fn cache_ic_maintenance\(op_tag: u32, addr: u64, size: u64\)' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^opaque ffiIcMaintenance : UInt32 → UInt64 → UInt64 → BaseIO Unit' SeLe4n/Platform/FFI.lean
 # SM7.D suite registration (Tier-2 runner + lakefile executable).
-run_check "INVARIANT" rg -n '^def runSmpCacheMaintenanceChecks' tests/SmpCacheMaintenanceSuite.lean
+run_check "INVARIANT" rg -n '^def runSmpCacheMaintenanceChecks($|[ ({:\[\]])' tests/SmpCacheMaintenanceSuite.lean
 run_check "INVARIANT" rg -n '^run_check(_with_timeout)? "TRACE" lake exe smp_cache_maintenance_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "smp_cache_maintenance_suite"' lakefile.toml
 # SM7.D code-publication syscall `.vspaceUnifyInstruction` (unify point-of-unification):
 # the transition, its fail-closed arms, the reach theorem, the ABI mirrors, the
 # lock set, the information-flow enforcement entry, and the live dispatch arm.
-run_check "INVARIANT" rg -n '^def unifyTargetPaddr' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^def vspaceUnifyInstructionPage' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_asid_unbound' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_unmapped' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_frame' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_records_unify' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_invalidates_all_cores' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def unifyTargetPaddr($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^def vspaceUnifyInstructionPage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_asid_unbound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_unmapped($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_records_unify($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_invalidates_all_cores($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnifyInstructionPage_preserves_icacheCoherent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean
 run_check "INVARIANT" rg -n '^  \| vspaceUnifyInstruction' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def lockSet_vspaceUnifyInstruction' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_vspaceUnifyInstruction' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def lockSet_vspaceUnifyInstruction($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_vspaceUnifyInstruction($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'vspaceUnifyInstructionPage' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-types/src/syscall.rs
 run_check "INVARIANT" rg -n '    VSpaceUnifyInstruction = 29,' rust/sele4n-hal/src/svc_dispatch.rs
 run_check "INVARIANT" rg -n 'fn vspace_unify_instruction_roundtrip' rust/sele4n-abi/tests/conformance.rs
@@ -4950,21 +4950,21 @@ run_check "INVARIANT" rg -n '^pub fn dc_cvau' rust/sele4n-hal/src/cache.rs
 # the predicate, its fail-closed theorems, the three rejection duals, and the
 # regression suite.
 # ============================================================================
-run_check "INVARIANT" rg -n '^def vspaceCapAuthorizesAsid' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_iff' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_ne' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_unbound' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_object' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_unauthorized' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnmap_unauthorized' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def vspaceCapAuthorizesAsid($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_iff($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_ne($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_unbound($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem vspaceCapAuthorizesAsid_false_of_not_object($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceMap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnmap_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_vspaceUnifyInstruction_unauthorized($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate must be present in all three live arms.  That is guaranteed by the
 # three `…_unauthorized` theorems anchored above rather than by a grep: each
 # asserts that its arm returns `.illegalAuthority` when authorization fails, so
 # deleting the gate from an arm makes the corresponding theorem unprovable and
 # breaks the build.  A textual occurrence count would be both weaker (it cannot
 # tell which arm a match came from) and fragile across shells.
-run_check "INVARIANT" rg -n '^def runVSpaceCapabilityBindingChecks' tests/VSpaceCapabilityBindingSuite.lean
+run_check "INVARIANT" rg -n '^def runVSpaceCapabilityBindingChecks($|[ ({:\[\]])' tests/VSpaceCapabilityBindingSuite.lean
 run_check "INVARIANT" rg -n '^run_check_with_timeout "TRACE" lake exe vspace_capability_binding_suite' scripts/test_tier2_negative.sh
 run_check "INVARIANT" rg -n '^name = "vspace_capability_binding_suite"' lakefile.toml
 # PR #845 review (P2) — physical-address page alignment.  Both the production
@@ -4985,12 +4985,12 @@ run_check "INVARIANT" rg -n '^pub type VSpaceUnifyInstructionArgs' rust/sele4n-a
 run_check "INVARIANT" bash -c "! rg -q 'VspaceUnifyInstruction' rust/sele4n-types/src/syscall.rs rust/sele4n-hal/src/svc_dispatch.rs"
 
 # WS-SM SM7.F.4(b)(iii): shared initiator drain + the CSpaceAddr retype sibling.
-run_check "INVARIANT" rg -n '^def retypeInitiatorDrain' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def retypeInitiatorDrain($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWithCleanupShootdownPerCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem retypeInitiatorDrain_drained($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 # WS-SM SM7.F.4(b)(iii) residual CLOSED: whole-invariant retype preservation.
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore_preserves_tlbInvalidationConsistent_perCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 
 # ============================================================================
 # WS-SM SM8.A — Per-core observable state
@@ -5004,36 +5004,36 @@ run_check "INVARIANT" rg -n '^theorem lifecycleRetypeWithCleanupShootdownPerCore
 # characterisation SM8.A.5 completed, and the suite / staged registrations.
 # ============================================================================
 # SM8.A.1 the observer + its view + the boot-core bridge to the live surface.
-run_check "INVARIANT" rg -n '^def IfObserver.ofLabel' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^structure PerCoreObserver' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.onCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_eq_projectStateOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_bootCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def lowEquivalentForObserver' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def PerCoreObserver.toIfObserver' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def PerCoreObserver.onBootCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def PerCoreObserver.view' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_iff_lowEquivalentOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_bootCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_symm' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.sharedFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.perCoreFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.perCoreSlice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.sliceOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem visibilityLe_smp_at' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem machineRegs_beq_self' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def projectCNode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_iff_forall_observer' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def IfObserver.ofLabel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure PerCoreObserver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_eq_projectStateOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_bootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def lowEquivalentForObserver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def PerCoreObserver.toIfObserver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def PerCoreObserver.onBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def PerCoreObserver.view($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_iff_lowEquivalentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_bootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_symm($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentForObserver_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.sharedFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.perCoreFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.perCoreSlice($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.sliceOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem visibilityLe_smp_at($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem machineRegs_beq_self($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def projectCNode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_iff_forall_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.2 the field partition + its totality tripwire + the headline projection.
-run_check "INVARIANT" rg -n '^structure SharedObservableFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^structure PerCoreObservableFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.ext_fragments' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def ObservableState.ofFragments' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure SharedObservableFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure PerCoreObservableFragment($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.ext_fragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def ObservableState.ofFragments($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # The `@[simp]` layer: the fragment round-trip and the thirteen component
 # accessors.  Each is `rfl`, so they are the definition-pinning anchors —
 # re-pointing a component at a different projection breaks its `rfl`, and a
@@ -5059,78 +5059,78 @@ run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_runnable' SeLe4n/Kernel/I
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_serviceRegistry' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_services' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem onCore_sharedFragment' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.fragments_injective' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_eq_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_determined_by_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_core_independent' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def observableFactorOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_isProjection_of_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_congr_of_globalProjection' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.fragments_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_eq_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_determined_by_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_sharedFragment_core_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def observableFactorOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_isProjection_of_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_congr_of_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.3 the decidable slice — the instance AND both strictness witnesses.
 # The witnesses are load-bearing: without them a reader could take the decision
 # procedure for a decision about observable-state equality, which it is not
 # (five ObservableState components are functions over unbounded domains).
-run_check "INVARIANT" rg -n '^structure PerCoreObservableSlice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^instance onCore_decidable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCore_of_lowEquivalentOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_register_content' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_shared_content' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCoreCheckWithRegs' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_le_slice' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem machineRegs_beq_not_injective' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure PerCoreObservableSlice($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^instance onCore_decidable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCore_of_lowEquivalentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_register_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreSlice_erases_shared_content($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def lowEquivalentSliceOnCoreCheckWithRegs($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_of_lowEquivalentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalentSliceOnCoreCheckWithRegs_le_slice($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem machineRegs_beq_not_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.4 the read-set characterisation + the cross-core frames + the excluded
 # fields (the machine timer's exclusion restated per core).
-run_check "INVARIANT" rg -n '^theorem onCore_perCore_independence' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setCurrentOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setRunQueueOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setActiveDomainOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setDomainTimeRemainingOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setDomainScheduleIndexOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setRegsOnCore_ne' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setReplenishQueueOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_setLastTimeoutErrorsOnCore' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_scThreadIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_machineTimer' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_perCoreTlb' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_perCoreICache' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_pendingIcacheMaintenance' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_tlbShootdown' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_perCore_independence($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setCurrentOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setRunQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setActiveDomainOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setDomainTimeRemainingOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setDomainScheduleIndexOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setRegsOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setReplenishQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_setLastTimeoutErrorsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_scThreadIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_machineTimer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_perCoreTlb($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_perCoreICache($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_pendingIcacheMaintenance($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_tlbShootdown($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^theorem onCore_tlb ' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.5 gate monotonicity + the visibility order + the CC-1 restatement.
-run_check "INVARIANT" rg -n '^theorem objectObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem threadObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem serviceObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem capTargetObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem memoryAddressObservable_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_observer_independent_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_objects_label_invariant_off_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem filter_sublist_filter_of_imp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem threadObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem serviceObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem capTargetObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem memoryAddressObservable_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectCNode_lookup_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_observer_independent_off_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_objects_label_invariant_off_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem filter_sublist_filter_of_imp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.5 object-content refinement.  The `objects` clause must compare CONTENT,
 # not presence: an `isSome`-only clause lets a wider clearance substitute an
 # unrelated object at an id it had already shown.
-run_check "INVARIANT" rg -n '^structure cnodeVisibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem eq_of_cnodeVisibilityLe_of_slots_eq' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def objectVisibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_refl' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_trans' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem eq_of_objectVisibilityLe_of_not_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectCNode_visibilityLe_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_visibilityLe_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^structure ObservableState.visibilityLe' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_runnable' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_objectIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_isSome' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_eq_of_not_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_cnode_lookup' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure cnodeVisibilityLe($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cnodeVisibilityLe_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem eq_of_cnodeVisibilityLe_of_slots_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def objectVisibilityLe($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem eq_of_objectVisibilityLe_of_not_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem objectVisibilityLe_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectCNode_visibilityLe_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_visibilityLe_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^structure ObservableState.visibilityLe($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_runnable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_mem_objectIndex($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_isSome($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_objects_eq_of_not_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.visibilityLe_cnode_lookup($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # The completeness check on the clause list: a fourteenth `ObservableState`
 # component with no clause leaves this proof a goal nothing can close.
-run_check "INVARIANT" rg -n '^theorem ObservableState.eq_of_visibilityLe_antisymm' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ObservableState.eq_of_visibilityLe_antisymm($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # The two list clauses must stay `Sublist` (order-preserving), not membership:
 # a run queue's order is its dispatch order.
 run_check "INVARIANT" rg -n 'runnable.Sublist' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
@@ -5142,25 +5142,25 @@ run_check "INVARIANT" rg -n '^  activeDomain : v₁.activeDomain = v₂.activeDo
 run_check "INVARIANT" rg -n '^  domainTimeRemaining : v₁.domainTimeRemaining = v₂.domainTimeRemaining' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^  domainSchedule : v₁.domainSchedule = v₂.domainSchedule' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n '^  domainScheduleIndex : v₁.domainScheduleIndex = v₂.domainScheduleIndex' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_label_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^def visibilityLe_smp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_smp' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_objects_cnode' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_objects_cnode_slot_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observerView_label_monotone' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_label_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^def visibilityLe_smp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_smp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_objects_cnode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_objects_cnode_slot_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observerView_label_monotone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # CC-1 must stay stated against the RAW scheduler reads (content), not merely as
 # an equality between two clearances (which any constant function satisfies).
-run_check "INVARIANT" rg -n '^theorem onCore_schedulingTransparency' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_schedulingTransparency($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 run_check "INVARIANT" rg -n 'activeDomainOnCore c' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_schedulingTransparency_label_invariant' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
-run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_strict' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_schedulingTransparency_label_invariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem onCore_label_monotone_strict($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 # SM8.A.5 substrate: the RobinHood filter-lookup characterisation completed.
 # `filter_get_subset` + `filter_get_pred` gave only one direction, so a monotone
 # predicate change could not be transported through a CNode's slot filter.
 run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_of_pred' SeLe4n/Kernel/RobinHood/Bridge.lean
 run_check "INVARIANT" rg -n '^theorem RHTable.filter_getElem\?_iff' SeLe4n/Kernel/RobinHood/Bridge.lean
 # SM8.A.6 suite + module registrations (Tier-2 runner, lakefile, staged anchor).
-run_check "INVARIANT" rg -n '^def runSmpInformationFlowChecks' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^def runSmpInformationFlowChecks($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runObjectContentOrderChecks' tests/SmpInformationFlowSuite.lean
 # The fixture must build the roots its TCBs declare: a TCB whose cspaceRoot /
 # vspaceRoot do not resolve fails `KernelObject.wellFormed`, so the evidence
@@ -5181,167 +5181,167 @@ run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.ObservableStatePe
 # Every public symbol of the two SM8.B modules is pinned, verified by set
 # difference against the module sources, so a rename or a silent deletion fails
 # Tier 3 even if the dedicated suite still compiles.
-run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_refl' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_regs_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^structure sharedViewUnchanged' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_refl' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_globalProjection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_state_frames' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_scheduler_regs_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCore_of_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure sharedViewUnchanged($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_refl($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_state_frames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem projectStateOnCore_sharedFragment' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem projectStateOnCore_perCoreFragment' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_onCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_state_frames' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projection_and_confinement' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem composedNonInterference_step_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_to_singleCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem trace_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem linkCallerReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem linkServerStashedReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem consumeCallerReply_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonation_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ensureRunnable_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem removeRunnable_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem setCurrentThread_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem saveOutgoingContext_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem restoreIncomingContext_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem machineTick_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem setRunQueueBootCore_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem chooseThread_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedule_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem handleYield_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem timerTick_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_fromTcb_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignal_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem notificationWait_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCall_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReply_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_confinedToBootCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem attachSlotToCdtNode_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem detachSlotFromCdt_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem ensureCdtNodeForSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cdtEdge_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceLookupSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotCore_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceCopy_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMove_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMint_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cspaceMutate_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem vspaceMapPage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem vspaceLookup_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem registerService_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem registerServiceChecked_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_chooseThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointSendDual' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMint' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceRevoke' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRetype' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRevokeDeleteRetype' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationSignal' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationWait' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceInsertSlot' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_schedule' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceMapPage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceUnmapPage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceLookup' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceCopy' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMove' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceDeleteSlot' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReply' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReceiveDual' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCall' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyRecv' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeObject' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_setCurrentThread' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_ensureRunnable' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_removeRunnable' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbIpcStateAndMessage' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbQueueLinks' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMutate' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleYield' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_timerTick' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDecodeError' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_registerServiceChecked' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDispatch' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCallWithDonation' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyWithReversion' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleInterrupt' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^def kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_injective' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^def perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem perCoreConfinementDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_state_frames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projection_and_confinement($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem composedNonInterference_step_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_to_singleCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem trace_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueEnqueue_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem linkCallerReply_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem linkServerStashedReply_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem consumeCallerReply_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonation_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ensureRunnable_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnable_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem setCurrentThread_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem saveOutgoingContext_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem restoreIncomingContext_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem machineTick_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem setRunQueueBootCore_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem chooseThread_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedule_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem handleYield_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem timerTick_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_fromTcb_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_fromTcb_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignal_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationWait_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupPreReceiveDonationChecked_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_confinedToBootCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem attachSlotToCdtNode_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem detachSlotFromCdt_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem ensureCdtNodeForSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cdtEdge_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceLookupSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceInsertSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlotCore_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceCopy_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMove_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMint_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cspaceMutate_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRevokeDeleteRetype_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceMapPage_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceUnmapPage_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem vspaceLookup_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem registerService_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem registerServiceChecked_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_chooseThread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointSendDual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceRevoke($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRetype($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_lifecycleRevokeDeleteRetype($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationSignal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_notificationWait($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceInsertSlot($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_schedule($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceMapPage($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceUnmapPage($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_vspaceLookup($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceCopy($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMove($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceDeleteSlot($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReply($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReceiveDual($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCall($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyRecv($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeObject($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_setCurrentThread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_ensureRunnable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_removeRunnable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbIpcStateAndMessage($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_storeTcbQueueLinks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_cspaceMutate($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleYield($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_timerTick($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDecodeError($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_syscallDispatch($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointCallWithDonation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_endpointReplyWithReversion($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_handleInterrupt($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def kernelOperationPerCoreNiTheorem($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def perCoreConfinementDerived($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreConfinementDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem niStepCoverage_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem projectKernelObject_updateLock' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_projectObjects' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem projectState_eq_of_objects_projection_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem unwindAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem releaseAll_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_projection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem withLockSet_confinedToCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_underLockSet' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_disjoint_lockSet' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_reconstruction' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjection' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_projectObjects($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem projectState_eq_of_objects_projection_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_objectIndex_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_services_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_irqHandlers_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectAt_updateLock_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_scheduler_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem updateObjectLockAt_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireLockOnObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseLockOnObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelLockOnObject_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelAll_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem unwindAll_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem acquireAll_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem releaseAll_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_confinedToCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_perCore_underLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_disjoint_lockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_reconstruction($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLeakage_bounded_by_globalProjection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreTransition_invisible_to_every_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # Round 38: the docstring above that theorem restated its number and went stale
 # one commit after the theorem moved — the third time in this PR that prose
 # repeating a `decide` drifted from it.  Anchoring the PAIR couples them: bump
@@ -5349,60 +5349,60 @@ run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_count' SeLe4n/K
 # that has actually held.
 run_prose_check "INVARIANT" rg -n 'per-core boundary has 59 entries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore\.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_extends_canonical($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def enforcementBoundaryPerCoreComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # WS-SM SM8.E.3 retired `enforcementBoundaryPerCore_entry_is_new` (it asserted
 # the canonical list did NOT carry the bracket, true only until the promotion)
 # in favour of the three theorems that survive it: the canonical list classifies
 # the bracket capability-only, it is classified exactly once across the per-core
 # list, and the wrappers do not carry a second copy.  The negative anchor is
 # what stops the retired form coming back beside them.
-run_check "INVARIANT" rg -n '^theorem enforcementBoundary_classifies_withLockSet' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_classifies_withLockSet_once' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreEnforcementEntries_omits_withLockSet' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundary_classifies_withLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_classifies_withLockSet_once($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreEnforcementEntries_omits_withLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_negative_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_entry_is_new' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # …and the per-core list must not re-append the bracket it now inherits.
 run_negative_check "INVARIANT" rg -n 'enforcementBoundaryExtended \+\+ \[\.capabilityOnly "withLockSet"\]' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^inductive CovertChannelSeverity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^structure CovertChannel' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_scheduling_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_machineTimer' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tcbMetadata' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_objectStoreMetadata' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_lockContention' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tlbResidency' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_icacheResidency' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def acceptedCovertChannelsPerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreCount' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCore_ids' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_modelVisible_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreInstance_count' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_hardwareChannels_are_not_modelVisible' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_smp_additions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_is_timing_only' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_residency_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_scheduling_is_model_visible' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def endpointPolicyRestricted_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_iff' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_at' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_no_overrides' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def endpointFlowCheckAtCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_depends_only_on_subject' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_stable_under_confined_transition' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_is_not_constant' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^inductive CovertChannelSeverity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^structure CovertChannel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_scheduling_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_machineTimer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tcbMetadata($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_objectStoreMetadata($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_lockContention($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_tlbResidency($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_icacheResidency($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannelsPerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreCount($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCore_ids($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_modelVisible_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_perCoreInstance_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_hardwareChannels_are_not_modelVisible($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_smp_additions($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_is_timing_only($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_residency_excluded_from_view($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_scheduling_is_model_visible($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def endpointPolicyRestricted_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_at($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_no_overrides($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def endpointFlowCheckAtCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_depends_only_on_subject($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_stable_under_confined_transition($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheckAtCore_is_not_constant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # NEGATIVE: `endpointFlowCheck_state_independent` was a tautology (`X = X` by
 # `rfl`, with unused state/core binders) cited in five prose sites as evidence.
 # It must not return: a claim about `endpointFlowCheck` itself can only ever be
 # reflexivity, since that function takes neither a state nor a core.
 run_negative_check "INVARIANT" rg -n 'endpointFlowCheck_state_independent' SeLe4n/ tests/
-run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_restricted_subset_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_is_necessary' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_success_perCore_NI' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_perCore_NI' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore_observer' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowCheck_restricted_subset_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointPolicyRestricted_perCore_is_necessary($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_success_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem nonInterference_release_of_perCore_observer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # The confinement premise of the four catch-all NI constructors must stay an
 # explicit argument: deriving it would be *false* (the live cross-core dispatch
 # writes a remote core), so these two pins guard the split.
@@ -5436,13 +5436,13 @@ run_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.CovertChannelPerC
 # WS-SM SM8.B (v0.33.5) — non-interference at the genuinely cross-core
 # transitions.  The set-of-cores confinement algebra, the home-core frame layer,
 # the six write sets and their NI instantiations.
-run_check "INVARIANT" rg -n '^structure observableSlotsAgreeOn' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_agreeOn' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_ofCores' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_singleton_iff' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_mono' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure observableSlotsAgreeOn($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^structure observableSlotsConfinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_of_agreeOn($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreNonInterference_ofCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_singleton_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_mono($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # `v0.35.104`: the five anchors above were repointed from
 # `InformationFlow/NonInterferenceCrossCore.lean` to
 # `IPC/CrossCore/EndpointCall.lean` when the home-core frame layer moved into
@@ -5453,8 +5453,8 @@ run_check "INVARIANT" rg -n '^theorem observableSlotsConfinedToCores_trans' SeLe
 # negative added in the same cut (below) forbade exactly what these five required,
 # so the tree briefly held two answers to *where does this family live* that
 # contradicted each other.
-run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_tcb_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 # WS-RR RR8.12 (seventh cut): `notificationSignalWriteSet` is declared in
 # production now, beside the transition it is about, so the production
 # scheduler-domain footprint can read it; the anchor is repointed rather than
@@ -5464,10 +5464,10 @@ run_check "INVARIANT" rg -n '^def notificationSignalWriteSet \(' SeLe4n/Kernel/I
 # WS-RR RR8.12 Cut C3a (`v0.35.163`): `endpointCallWriteSet` is declared in production
 # now, beside the resolver it reads, so the `.call` scheduler footprint can read it.
 run_check "INVARIANT" rg -n '^def endpointCallWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_waiter' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalWriteSet_eq_lockSet_waiter($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_crossCoreNonInterference_of_visible_thread($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # SM9.A.4b took the inventory 26 -> 28 with the two audit readers, both of
 # which take an executing core and carry an EMPTY write set.
 run_check "INVARIANT" rg -n 'CrossCoreTransition.all.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -5491,7 +5491,7 @@ run_negative_check "INVARIANT" rg -n 'else \.ok \(st3, none\)' \
 # these anchors keep it cited where the argument is made: a docstring that
 # argues from a proof must name it, or the next reader is back to taking the
 # prose's word for it.
-run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected' \
+run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected($|[ ({:\[\]])' \
   SeLe4n/Kernel/SyscallDispatchEntry.lean
 # The citation lives in a docstring, so this one genuinely reads prose and says
 # so — it is the exception `run_prose_check` exists for, and round 43's whole
@@ -5500,33 +5500,33 @@ run_check "INVARIANT" rg -n '^theorem vacatedCore_next_syscall_rejected' \
 run_prose_check "INVARIANT" rg -n 'vacatedCore_next_syscall_rejected' \
   SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 # ... and the wrappers that replaced it must exist.
-run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleOnCoreLive' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
-run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^def resumeThreadOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def resumeThreadEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def priorityRescheduleOnCoreLive($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^def priorityRescheduleEnqueueOnly($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
 # Review round 5: a LIVE inventory entry must name the function the syscall
 # dispatch calls.  Three entries named a below-API transition their wrapper does
 # strictly more than, so the wrappers get entries — and bounds — of their own.
 # WS-RR RR8.12 Cut C3a (`v0.35.163`): the `.reply` write set is production now, beside
 # the dispatch it mirrors; the confinement theorem below stays staged.
 run_check "INVARIANT" rg -n '^def endpointReplyDispatchWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvBody_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvBody_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def replyRecvBodyWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvBody_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvBody_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # `v0.35.170` (WS-RR RR8.12 Cut C3b-iv): repointed -- production now, beside the
 # resolved footprint that reads it, as its four siblings were at C3b-i..iii.
-run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def suspendThreadOnCoreWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The leaf frames those bounds rest on: per-core confinement reads the domain
 # slots and the register banks, and the ARM64 context switch had frames for
 # neither.
-run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^theorem switchToThreadOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem handleRescheduleSgiOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupDonatedSchedContext_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 # The CC-3 witness must depend on the metadata it witnesses: a component
 # identity on `objects` stays green if `priority` is erased from the TCB
 # projection.  Pin the fields by name.
@@ -5534,7 +5534,7 @@ run_check "INVARIANT" rg -n 'projected.priority = tcb.priority' SeLe4n/Kernel/In
 run_check "INVARIANT" rg -n 'projected.ipcState = tcb.ipcState' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # The confinement checker must compare the WHOLE run queue: `toList` is `flat`,
 # which a re-bucketing write leaves untouched.
-run_check "INVARIANT" rg -n '^private def runQueueAgreeOn' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def runQueueAgreeOn($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runRunQueueComparisonChecks' tests/SmpInformationFlowSuite.lean
 # confinedCheck must not decide the run-queue clause on `toList` alone.
 run_negative_check "INVARIANT" rg -n 'decide \(\(st..scheduler.runQueueOnCore c\).toList' tests/SmpInformationFlowSuite.lean
@@ -5542,21 +5542,21 @@ run_negative_check "INVARIANT" rg -n 'decide \(\(st..scheduler.runQueueOnCore c\
 # — it also runs the donation and the PIP chain walk, and the chain walk
 # re-buckets on each boosted server's HOME core.  Bounding the live arm needs
 # the chain walk's own write set, so these pin it and the union.
-run_check "INVARIANT" rg -n '^def pipChainWriteSet' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def endpointCallLiveWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallWriteSet_subset_live' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem applyCallDonation_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def pipChainWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointCallLiveWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWriteSet_subset_live($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem applyCallDonation_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # v0.33.8: the composed SM6.E cancellation.  Its blocker was that only a
 # `scheduler` frame existed for the teardown — per-core confinement reads the
 # register banks too, so `cancelIpcBlocking_machine_eq` is what unblocks it.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_machine_eq' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
-run_check "INVARIANT" rg -n '^theorem restoreToReady_machine_eq' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem consumeReplyLink_machine_eq' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReady_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllEndpointQueues_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeFromAllNotificationWaitLists_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runComposedCancellationChecks' tests/SmpInformationFlowSuite.lean
 # The victim must really occupy the home core's run queue, or §5.2b's negative
 # would be testing a transition that wrote nothing.
@@ -5594,12 +5594,12 @@ run_check "INVARIANT" bash -lc 'source ~/.elan/env && ./scripts/check_module_axi
 # Pin the mechanism, negatively: the sweep must not go back to reading the map
 # as its declaration source.  `env.constants` is the enumeration; the map may be
 # read only for the contrast line.
-run_check "INVARIANT" rg -n '^theorem schedulingChannel_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_alphabet_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingObservationCode_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # The bound must cover the WHOLE observation: omitting `activeDomain` is licensed
 # by `domainConsistentOnCore`, not by the index-bounds invariant (round 7).
-run_check "INVARIANT" rg -n '^theorem schedulingObservation_activeDomain_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedulingChannel_full_observation_determined' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingObservation_activeDomain_determined($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_full_observation_determined($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'domainConsistentOnCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # The OPERATOR-FACING documents must carry the Q factor.  Round 8 found the
 # advisory and the deployment guide still quoting the Q-free figure the kernel
@@ -5615,8 +5615,8 @@ run_negative_check "INVARIANT" rg -n 'No bits-per-switch figure is' docs/SECURIT
 run_check "INVARIANT" rg -n '^theorem crossCoreTransitionIsLiveArm_count :' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 9.  (a) The capacity premises are one citable bundle, not three theorem
 # signatures an operator must reconstruct.
-run_check "INVARIANT" rg -n '^def schedulingCapacityPreconditions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def schedulingCapacityComparable' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def schedulingCapacityPreconditions($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def schedulingCapacityComparable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'schedulingCapacityPreconditions' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
 # (b) The unsupported "sub-bit-per-second" figure must not come back: it
 # contradicted the upper bound by three orders of magnitude for one config.
@@ -5629,22 +5629,22 @@ run_prose_negative_check "INVARIANT" rg -n 'Sub-bit-per-second' docs/SECURITY_AD
 # on its own justification (this is the third time in this PR).
 run_negative_check "INVARIANT" rg -n 'def setDomainSchedule\b' SeLe4n/
 # (d) `CovertChannelId.all` cannot silently omit a constructor.
-run_check "INVARIANT" rg -n '^theorem CovertChannelId.mem_all' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem CovertChannelId.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # (e) ARCHITECTURAL: a live-arm claim is either backed by a delegation theorem
 # in API.lean or explicitly counted as read-off-the-arm.  The eight arms that
 # had such a theorem never drifted across nine review rounds; the seven that did
 # not drifted three times.  The counts make the residual a tracked quantity.
-run_check "INVARIANT" rg -n '^inductive LiveArmEvidence' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmDelegationBacked_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreLiveArm_readOffTheArm_count' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSuspend_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_receive_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^inductive LiveArmEvidence($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmDelegationBacked_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArm_readOffTheArm_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSuspend_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_receive_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # Round 11: the evidence must carry a PROOF indexed by the syscall, not a name.
 # A name check says a declaration exists; it does not say the declaration is
 # about the arm citing it.  `syscallDelegates` makes the obligation a Prop
 # computed from the syscall, so a proof cannot be borrowed between arms, and
 # undelegated syscalls map to `False` so evidence cannot be fabricated.
-run_check "INVARIANT" rg -n '^def syscallDelegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallDelegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : syscallDelegates sid\)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # (f) Round 35: the three entries that emptied the per-core routing allowlist.
 # Two of them exist to say "this live arm takes a core and writes NONE", which
@@ -5652,23 +5652,23 @@ run_check "INVARIANT" rg -n 'delegationProof \(sid : SyscallId\) \(proof : sysca
 # occupancy bound.  All three arrive delegation-backed.
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def threadOccupiedCores' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem removeRunnableFromAllCores_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def threadOccupiedCores($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem removeRunnableFromAllCores_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem cleanupTcbReferences_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # `v0.35.169` (WS-RR RR8.12 Cut C3b-iii): repointed -- production now, beside
 # the footprint that reads it; the SM8.B claim is unchanged.
-run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_lifecycleRetype' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def lifecycleRetypeWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem lifecyclePreRetypeCleanup_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_lifecycleRetype($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # Round 39 (SECURITY): the destroy path refuses to destroy a RUNNING thread.
 # Without it the all-cores sweep clears the current slot of whichever core runs
 # the target — the executing core included — and nothing schedules a successor,
 # so a thread holding a `.retype` capability to its own TCB wedges its core.
 # Anchored positively (the guard exists, and the pipeline calls it) and
 # negatively (the rejection cannot be softened to a warning or dropped).
-run_check "INVARIANT" rg -n '^def threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def threadCurrentOnSomeCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 # Rounds 39/40: the unbind's preemption guard and its scheduling point must read
 # the SAME core.  The guard was keyed on the affinity home while
 # `schedContextUnbindOnCore` reschedules at `runningCoreOf?`; those diverge for
@@ -5680,26 +5680,26 @@ run_negative_check "INVARIANT" rg -n 'let wasCurrent := \(st\.scheduler\.current
 # production now, beside the footprint whose run segment it is; the SM8.B
 # claim this anchor carries (the unbind declares the running core as well as
 # the home core) is unchanged and is what the definition still says.
-run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def schedContextUnbindWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # `runningCoreOf?` moved down so the unbind path can see it; the `export` keeps
 # `Lifecycle.Suspend.runningCoreOf?` resolving for every existing reference.
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" rg -n '^export SeLe4n\.Kernel \(runningCoreOf\?\)' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def retypeRunningTargetRejected' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def retypeRunningTargetRejected($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n 'if threadCurrentOnSomeCore st tcb\.tid then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 run_negative_check "INVARIANT" bash -c "rg -q 'threadCurrentOnSomeCore' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean && ! rg -q 'revocationRequired' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean"
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceMap' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceUnmap' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceMap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_vspaceUnmap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The gate's whole point is that its exception list empties.  Pinned NEGATIVELY:
 # any allowlist row at all — the file is a JSON array, so a `"syscall"` key is
 # exactly one waiver — fails this check.  A gate whose waiver list can quietly
 # regrow has stopped being a gate, which is the argument the three entries above
 # were written to settle.
 run_negative_check "INVARIANT" rg -n '"syscall"' scripts/per_core_routing_allowlist.json
-run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmEvidence_syscall_matches' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreLiveArmEvidence_syscall_matches($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'delegationTheorem \(theoremName : String\)' SeLe4n/
 # The sibling enumeration fail-open, fixed alongside CovertChannelId.all.
-run_check "INVARIANT" rg -n '^theorem CrossCoreTransition.mem_all' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem CrossCoreTransition.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # CC-1's mitigation must state the PROVEN bound, not disclaim one: retracting a
 # claim to match weaker code is the direction the project forbids.
 run_prose_negative_check "INVARIANT" rg -n 'No capacity bound is claimed' SeLe4n/
@@ -5716,18 +5716,18 @@ run_negative_check "INVARIANT" rg -n 'print axioms' scripts/check_module_axioms.
 # theorem names it) and negatively (the boot-pinned call site is gone from the
 # arm).  The negatives match the CALL SITE, not the mention: the single-core
 # operations remain in the tree as the pre-SMP surface and are named in prose.
-run_check "INVARIANT" rg -n '^def endpointSendDualOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
-run_check "INVARIANT" rg -n '^def endpointSendDualWithCapsOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
-run_check "INVARIANT" rg -n '^def endpointSendCrossCoreDispatchChecked' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_send_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def endpointSendDualOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^def endpointSendDualWithCapsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^def endpointSendCrossCoreDispatchChecked($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_send_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'match endpointSendDualWithCaps epId' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'match endpointSendDualChecked ctx epId' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def migrateRunQueueBucketOnCore' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
-run_check "INVARIANT" rg -n '^def setPriorityOnCore' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
-run_check "INVARIANT" rg -n '^def setMCPriorityOnCore' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetPriority_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetMCPriority_delegates' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def migrateRunQueueBucketOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagement.lean
+run_check "INVARIANT" rg -n '^def setPriorityOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^def setMCPriorityOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/PriorityManagementPerCore.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetPriority_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_tcbSetMCPriority_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'PriorityManagement.setPriorityOp st$' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n 'PriorityManagement.setMCPriorityOp st$' SeLe4n/Kernel/API.lean
 # The bucket migration must not go back to reading only the boot core's queue.
@@ -5735,14 +5735,14 @@ run_negative_check "INVARIANT" rg -n 'runQueueOnCore bootCoreId' SeLe4n/Kernel/S
 # CC-1: the rate factor is the TICK rate.  The pacing theorem is what stops the
 # guidance drifting back to the domain-switch frequency, and the run-length
 # capacity is stated per observation so the two factors travel together.
-run_check "INVARIANT" rg -n '^theorem schedulingObservation_changes_on_domain_tick' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_capacity' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem boundedCodeTraces_length' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingObservation_changes_on_domain_tick($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem boundedCodeTraces_length($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # Round 13: the trace bound quantifies the RUN preconditions, whose schedule
 # clause is what turns the code count into a capacity claim.  The negative
 # forbids the weaker pointwise premise returning to the theorem's signature.
-run_check "INVARIANT" rg -n '^def schedulingCapacityRun' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_determines_observations' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def schedulingCapacityRun($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_trace_determines_observations($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_negative_check "INVARIANT" rg -n 'hPre : ∀ s ∈ run, schedulingCapacityPreconditions' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'tickFreq' docs/SECURITY_ADVISORY.md
 run_negative_check "INVARIANT" rg -n 'switchFreq bits/second' docs/SECURITY_ADVISORY.md docs/DEPLOYMENT_GUIDE.md
@@ -5758,11 +5758,11 @@ run_check "INVARIANT" rg -n 'proc.returncode != 0' scripts/check_module_axioms.p
 # dispatch they mirror; the confinement theorems below stay staged.
 run_check "INVARIANT" rg -n '^def endpointCallDispatchChainWriteSet$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_check "INVARIANT" rg -n '^def endpointCallDispatchWriteSet$' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallDispatchWriteSet_eq_live_of_rendezvous($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallCrossCoreDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
 
 # PR #861 review round 4 (P1): the three live cross-core arms the inventory used
 # to omit — a bound-delivery signal, a receive rendezvousing with a blocked
@@ -5771,43 +5771,43 @@ run_check "INVARIANT" rg -n '^theorem ipcUnwrapCaps_preserves_machine' SeLe4n/Ke
 # WS-RR RR8.12 (seventh cut): repointed with its sibling — declared in production
 # beside `notificationSignalBoundOnCore`.
 run_check "INVARIANT" rg -n '^def notificationSignalBoundWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/NotificationBind.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalBoundOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # WS-RR RR8.12 (Cut 8a-ii): repointed with its siblings above — declared in
 # production beside `endpointReceiveDualOnCore`, so the `.receive` scheduler
 # footprint can read it.  The confinement theorem below stays staged.
 run_check "INVARIANT" rg -n '^def endpointReceiveDualWriteSet \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def endpointReplyRecvWriteSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^theorem crossCoreNiTheorem_count : CrossCoreTransition\.all\.length = 30' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # Round 14: all three SchedContext arms this cut made remote writers are audited.
 # The negative is the point — `crossCoreRemoteWriterPendingAudit` was the counted
 # gap while two were unproven, and it must not come back as an empty list, which
 # would read as coverage.
-run_check "INVARIANT" rg -n '^theorem schedContextBind_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigure_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem schedContextBind_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem schedContextConfigure_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_schedContext_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem schedContextConfigure_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_schedContext_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 run_negative_check "INVARIANT" rg -n 'def crossCoreRemoteWriterPendingAudit' SeLe4n/
-run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def crossCoreTransitionIsLiveArm($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '^  runLiveCrossCoreArmChecks' tests/SmpInformationFlowSuite.lean
 # The home-core frames those confinement proofs rest on: a dequeue and a badge
 # store must be proven non-migrations, or the write sets could not name a
 # pre-state home core at all.
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_tcb_cpuAffinity_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueueRemoveDual_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem storeTcbReceiveComplete_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
 
 # PR #861 review round 4 (P2): every covert-channel entry is tied to a projection
 # theorem through a total, compile-time-validated table, so a new channel cannot
 # be filed without deciding what proves its classification.
-run_check "INVARIANT" rg -n '^inductive CovertChannelId' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def covertChannelEvidenceName' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^inductive CovertChannelId($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def covertChannelEvidenceName($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem covertChannelEntry_eq_inventory($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded_from_view' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # PR #861 review round 18: the model's context switches have no hardware
@@ -5816,9 +5816,9 @@ run_check "INVARIANT" rg -n 'niName! acceptedCovertChannel_machineTimer_excluded
 # Registered as a checked partition so SM10.1 cannot wire the first restore
 # without updating it.  The `_restore_pending` theorem is the load-bearing one:
 # it says the gap is TOTAL, so any wiring breaks it.
-run_check "INVARIANT" rg -n '^inductive ContextSwitchSite' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^inductive ContextSwitchSite($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem contextSwitchSites_restore_pending($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 
 # PR #861 review round 17: the citation table above validates only that a name
 # resolves, so it accepted a witness filed against the wrong channel.  The
@@ -5826,7 +5826,7 @@ run_check "INVARIANT" rg -n '^theorem contextSwitchSites_complete' SeLe4n/Kernel
 # against `covertChannelEntry id`.  Pinned as a *dependent* signature — the
 # `(id : CovertChannelId) → id.evidenceProp` shape is what makes a misattributed
 # proof a type error, so a revert to `CovertChannelId → String` fails here.
-run_check "INVARIANT" rg -n '^def CovertChannelId.evidenceProp' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def CovertChannelId.evidenceProp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_check "INVARIANT" rg -n '^def covertChannelEvidence : \(id : CovertChannelId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # Each `evidenceProp` arm must read the entry through `covertChannelEntry id`
 # rather than naming a constant: that indirection is what ties the arm to the id.
@@ -5835,8 +5835,8 @@ run_check "INVARIANT" rg -n '\(covertChannelEntry \.machineTimer\)\.modelVisible
 # PR #861 review round 4 (P2): CC-1's mitigation no longer claims a capacity
 # figure no theorem supports.  NEGATIVE: the log2 bits-per-switch claim must not
 # come back — `schedulingCovertChannel_bounded_width` proves transparency only.
-run_check "INVARIANT" rg -n '^theorem schedulingChannelIndex_alphabet_bounded' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem schedulingChannel_not_bounded_by_scheduleLength' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannelIndex_alphabet_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem schedulingChannel_not_bounded_by_scheduleLength($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 run_prose_negative_check "INVARIANT" rg -n 'bits per domain switch' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 # Round 42: the CC-1 docstring quoted the retracted rate as "at switch
 # frequency", which the single-spelling ban above did not cover.  Both
@@ -5846,11 +5846,11 @@ run_prose_negative_check "INVARIANT" rg -n 'at switch frequency' \
 
 # PR #861 review round 2 (P2) / round 4 (P2): the per-core enforcement boundary
 # audits the LIVE cross-core wrappers, not only the single-core table.
-run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def crossCoreEnforcementEntries($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^def syscallIdToEnforcementNamePerCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_is_complete_crossCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem enforcementBoundaryPerCore_crossCore_classes_match($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_at_fifteen($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
 
 # ---------------------------------------------------------------------------
 # WS-SM SM8.C — the per-core declassification audit
@@ -5862,57 +5862,57 @@ run_check "INVARIANT" rg -n '^theorem syscallIdToEnforcementNamePerCore_differs_
 # `String` would take `authorizationBasis_perCore` with it.
 run_check "INVARIANT" rg -n '^  originatingCore : Concurrency.CoreId' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^  authorizationBasis : DeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^inductive DeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^inductive DeclassificationBasis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_negative_check "INVARIANT" rg -n 'originatingCore : Concurrency.CoreId :=' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_negative_check "INVARIANT" rg -n 'authorizationBasis : String' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # The external rendering must stay byte-identical to the pre-SM8.C string field.
 run_check "INVARIANT" rg -n 'DeclassificationPolicy.canDeclassify"' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem declassificationEvent_originatingCore_valid' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_originatingCores_valid' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem declassificationEvent_originatingCore_valid($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_originatingCores_valid($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # SM8.C.1: the producer.  Before this cut `DeclassificationEvent` had no writer
 # at all, so the audit trail was a type nothing constructed.
-run_check "INVARIANT" rg -n '^def declassifyStoreOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_records_one' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_denied_no_audit_entry' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassifyStoreOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_records_one($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_denied_no_audit_entry($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.3: attribution — the source domain is READ from the executing core's
 # running subject.  The negative witness is what makes the wrapper load-bearing.
-run_check "INVARIANT" rg -n '^def declassifyStoreFromCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreFromCore_event_attributable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_admits_unattributable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassifyStoreFromCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreFromCore_event_attributable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_admits_unattributable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.4: the per-core views partition the log exactly.
-run_check "INVARIANT" rg -n '^def auditLogOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_partitions_by_core' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem DeclassificationEvent_perCore_audit' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def auditLogOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_partitions_by_core($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem DeclassificationEvent_perCore_audit($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.2: the cross-core chain, and the theorem that decides the design — a
 # per-core log would have lost it.
-run_check "INVARIANT" rg -n '^theorem crossCoreChain_not_within_one_view' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationChain_recorded_across_cores' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreChain_not_within_one_view($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChain_recorded_across_cores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM9.A.1a moved the timestamp layer DOWN to `AuditRecord.lean`, below
 # `Model/State`, so the production drain can state its preservation — the same
 # extraction SM7.A performed for `TlbInvalidation`.  The per-core consumer is
 # `auditLogOnCore_timestamp_identifies_event`, which is `start`-parameterised
 # because a drained trail no longer begins at 0.
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem auditLogOnCore_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem auditLogOnCore_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.6: the rules, including the SM8.B consumer.  The endpoint rule must be
 # stated against the STATE-RESOLVED gate: `endpointFlowCheck` takes neither a
 # state nor a core, so a per-core claim about it would carry a decorative `c`.
-run_check "INVARIANT" rg -n '^theorem endpointOverride_is_not_a_declassification_basis' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointOverride_is_not_a_declassification_basis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'endpointFlowCheckAtCore ctx epPolicy endpointId st c = true' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'endpointFlowCheck_restricted_subset_perCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationChain_hop_authorization_does_not_compose' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^def chainLaunders' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChain_hop_authorization_does_not_compose($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def chainLaunders($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.5: `authorizationBasis_perCore`, and the dependently-typed rule evidence
 # that makes a misattributed proof a type error rather than a stale string.
-run_check "INVARIANT" rg -n '^theorem authorizationBasis_perCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^def DeclassificationRuleId.evidenceProp' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem authorizationBasis_perCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def DeclassificationRuleId.evidenceProp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^def declassificationRuleEvidence : \(id : DeclassificationRuleId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'niName! chainCompositionAuthorized_sound' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationRules_count' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRules_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # The declassification's own per-core non-interference, plus the statement that
 # auditing adds no observable state.
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_trail_independent' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_trail_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.7: the runtime scenarios and their load-bearing negatives.
 run_check "INVARIANT" rg -n '^  runDeclassificationProducerChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassificationAttributionChecks' tests/SmpInformationFlowSuite.lean
@@ -5935,11 +5935,11 @@ run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.DeclassificationPe
 # `endpointPolicyRestricted` structural — pinned positively (the definition) and
 # negatively (no gate site may go back to a bare `securityFlowsTo`).
 run_check "INVARIANT" rg -n '^  endpointPolicy : EndpointFlowPolicy' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def endpointOverrideAllows' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def endpointFlowGate' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def endpointOverrideAllows($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def endpointFlowGate($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n 'securityFlowsTo srcLabel dstLabel && endpointOverrideAllows' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem endpointFlowGate_is_not_securityFlowsTo' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_implies_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointFlowGate_is_not_securityFlowsTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId senderLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId endpointLabel receiverLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId callerLabel endpointLabel' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
@@ -5947,7 +5947,7 @@ run_check "INVARIANT" rg -n 'endpointFlowGate ctx epId' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointSend.lean
 run_check "INVARIANT" rg -n 'endpointFlowGate ctx endpointId' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_negative_check "INVARIANT" rg -n 'if !securityFlowsTo \(ctx\.endpointLabelOf epId\)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassification_basis' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassification_basis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 
 # ---------------------------------------------------------------------------
 # WS-SM SM8.C.8 / SM8.C.9 — the mounted audit trail and the live `.declassify`
@@ -5960,14 +5960,14 @@ run_check "INVARIANT" rg -n '^theorem liveEndpointOverride_is_not_a_declassifica
 # arm that returns a truncated log.
 run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^  declassificationAuditLog : SeLe4n.Kernel.DeclassificationAuditLog$' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^def maxDeclassificationAuditEntries' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^def auditLogBounded' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^def recordDeclassificationChecked' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def maxDeclassificationAuditEntries($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def auditLogBounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def recordDeclassificationChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n 'auditLogBounded st.declassificationAuditLog' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationAuditLog' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationAuditLog' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationAuditLog($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem declassificationAuditLog_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationAuditLog($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # Scoped to the PRODUCER surface (PR #870 round 6): the forbidden arm is a
 # recorder that truncates instead of failing closed, and it can only live in
 # the record/producer modules.  The authorized remover (`AuditRead.lean`'s
@@ -5977,34 +5977,34 @@ run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationAuditLog_
 # operation the phase ships.
 run_negative_check "INVARIANT" rg -n 'declassificationAuditLog := log.drop|declassificationAuditLog := log.tail' SeLe4n/Kernel/InformationFlow/AuditRecord.lean SeLe4n/Kernel/InformationFlow/Declassification.lean SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C.5: the flat rendering is NOT injective, so the trust bit ships as data.
-run_check "INVARIANT" rg -n '^structure RenderedDeclassificationBasis' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem render_not_injective' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem renderTagged_injective' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^structure RenderedDeclassificationBasis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem render_not_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem renderTagged_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # SM8.C.9: the live syscall.  The unchecked dispatch must FAIL CLOSED — there is
 # no unchecked declassification, because "unchecked" would authorize every
 # downgrade — and the default policy must deny.
 run_check "INVARIANT" rg -n '^  \| declassify' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def declassificationDecision' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStore_eq_decision_bind' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^def authorizeDeclassificationOnCore' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_frame' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_never_unaudited' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^def declassificationDecision($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStore_eq_decision_bind($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^def authorizeDeclassificationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_never_unaudited($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 # The decision runs BEFORE the capacity check, so a caller the policy refuses
 # learns nothing about trail occupancy — which is a function of how many
 # authorized downgrades other subjects performed.  Checking capacity first would
 # make that a channel from every declassifying subject to every caller.
-run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_before_capacity' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_before_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a policy-refused caller learns nothing about trail occupancy' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^def declassifyObjectFromCore' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_destination_is_target_domain' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^def declassifyObjectFromCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_destination_is_target_domain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n '\| \.declassify => fun _ => \.error \.declassificationDenied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_declassify_denied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassify_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassify' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_declassify_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassify_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassify($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'declassificationPolicy : DeclassificationPolicy := \{ canDeclassify := fun _ _ => false \}' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def lockSet_declassify' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassify_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^def lockSet_declassify($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n 'policyGated "declassifyObjectFromCore"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n '\| declassifyDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'Declassify = 30' rust/sele4n-types/src/syscall.rs
@@ -6020,24 +6020,24 @@ run_check "INVARIANT" rg -n '^pub fn declassify' rust/sele4n-sys/src/declassify.
 run_negative_check "INVARIANT" rg -n 'declassifyStoreOnCore|authorizeDeclassificationOnCore' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'declassifyObjectFromCore \(liftLegacyContext ctx\)' SeLe4n/Kernel/API.lean
 # SM8.C §11/§12: scope witnesses and run-level completeness.
-run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem recordDeclassification_admits_ill_formed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # (SM8.C's `declassificationChainLinked_is_syntactic` was retired by SM9.D,
 # which makes it genuinely false; its successor is anchored — with the
 # retirement negative — in the SM9.D block below.)
-run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_refusal_has_no_post_state' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^def declassifyRun' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyRun_records_each' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifyRun_frame' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationSubjectDomain_is_core_selected($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_refusal_has_no_post_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassifyRun($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyRun_records_each($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifyRun_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM8.C: V6-G at the label level — the gate is restricted for EVERY context.
-run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_always' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_survives_widening_override' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_always($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem endpointGateRestricted_survives_widening_override($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 # SM8.C: the gates the endpoint policy deliberately does NOT govern, as checked
 # facts rather than prose.
-run_check "INVARIANT" rg -n '^theorem notificationSignalChecked_endpointPolicy_independent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_endpointPolicy_independent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_endpointPolicy_dependent' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalChecked_endpointPolicy_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_endpointPolicy_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDualChecked_endpointPolicy_dependent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 # SM8.C.7: the new runtime scenario groups and the golden fixture.
 run_check "INVARIANT" rg -n '^  runLiveDeclassifyChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runDeclassifyCapacityChecks' tests/SmpInformationFlowSuite.lean
@@ -6059,26 +6059,26 @@ run_negative_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.(AuditRec
 # four IPC/notification wrappers that landed after the families were written
 # now belong to them, as does the declassification.  Anchored per member,
 # because a count alone cannot say WHICH entry lost its theorem.
-run_check "INVARIANT" rg -n '^theorem endpointCallChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointCall' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReply' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem notificationWaitChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_notificationWait' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecvChecked_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReplyRecv' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassify' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallChecked_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointCall($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyChecked_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReply($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem notificationWaitChecked_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_notificationWait($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecvChecked_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_endpointReplyRecv($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem declassifyObjectFromCore_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem authorizeDeclassificationOnCore_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassify($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 
 # SM8.C (PR #863 review): `liftLegacyContext` must lift the legacy lattice
 # FAITHFULLY, not as the `linearOrder` over-approximation it used to carry.  The
 # equality is the property; the counterexample is what stops a regression to the
 # linear order from building; and the NEGATIVE anchor forbids the old wiring.
-run_check "INVARIANT" rg -n '^def DomainFlowPolicy.legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def DomainFlowPolicy.legacyLattice($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem legacyLattice_canFlow_embed' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem linearOrder_is_not_faithful_to_legacy' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem DomainFlowPolicy.legacyLattice_wellFormed' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem linearOrder_is_not_faithful_to_legacy($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^theorem DomainFlowPolicy.legacyLattice_wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n 'policy := .legacyLattice' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_negative_check "INVARIANT" rg -n 'policy := .linearOrder' SeLe4n/Kernel/InformationFlow/Policy.lean
 run_check "INVARIANT" rg -n '^  runFaithfulLegacyLiftChecks' tests/SmpInformationFlowSuite.lean
@@ -6107,89 +6107,89 @@ run_check "INVARIANT" rg -n 'NEGATIVE: a widening override cannot open a flow th
 # getter, not in the staged information-flow module: they are model vocabulary,
 # and a `KernelObject` setter reachable only through a staged module would be
 # the wrong layering.  Pinned in both directions.
-run_check "INVARIANT" rg -n '^def setLock' SeLe4n/Model/Object/Structures.lean
-run_check "INVARIANT" rg -n '^def eraseLock' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def setLock($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
+run_check "INVARIANT" rg -n '^def eraseLock($|[ ({:\[\]])' SeLe4n/Model/Object/Structures.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem eraseLock_wellFormed' SeLe4n/Model/Object/Structures.lean
 run_negative_check "INVARIANT" rg -n '^def KernelObject.setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem projectKernelObject_setLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem projectKernelObject_eq_eraseLock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem onCore_lock_invisible' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem onCore_lock_indistinguishable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def lockWritesOnly' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockWritesOnly_preserves_onCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem withLockSet_lockWritesOnly' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem projectKernelObject_eq_eraseLock($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem onCore_lock_invisible($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem onCore_lock_indistinguishable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def lockWritesOnly($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWritesOnly_preserves_onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_lockWritesOnly($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The non-vacuity witness: a lock write is a REAL write, so `eraseLock` is an
 # abstraction over content that moves.  Without it every §1..§5 result would be
 # indistinguishable from "the bracket does nothing".
-run_check "INVARIANT" rg -n '^theorem KernelObject.updateLock_not_identity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem KernelObject.updateLock_not_identity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.2 / SM8.D.3 (model half): reader multiplicity and writer exclusion, the
 # latter stated for the BLOCKED acquirer itself — which is the plan D.3 row's
 # refutation rather than a restatement of it.
-run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable_at_reachable_witness' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem writerExclusion_not_observable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem blockedAcquirer_observes_nothing' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem readerMultiplicity_not_observable_at_reachable_witness($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writerExclusion_not_observable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem blockedAcquirer_observes_nothing($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.3 (timing half): the CC-5 bound.  The alphabet must reserve a code for
 # the un-admitted case (`+ 2`, not `+ 1`) or a zero-step delay and "no sample"
 # collapse onto each other and `lockContentionCode_injective` stops holding.
-run_check "INVARIANT" rg -n '^theorem lockContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_alphabet_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_trace_capacity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_delay_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_alphabet_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_trace_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'lockContentionDelayBound maxDelay \+ 2' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionCode_injective' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_least_two' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionCode_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_least_two($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The observation is keyed to the acquisition it measures.  `admissionStep` is
 # the core's FIRST admission in the whole execution, so an observation built on
 # it truncates a repeat acquirer's genuine wait to zero; `admissionStepAfter` is
 # the enqueue-relative form the channel needs, and the negative anchor forbids a
 # regression to the first-admission reading.
-run_check "INVARIANT" rg -n '^def RwLockExecution.admissionStepAfter' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_writer_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.admissionStepAfter($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_admissionStepAfter_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n 'e.admissionStepAfter c enqueueStep' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionObservation_is_own_acquisition' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionObservation_is_own_acquisition($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_negative_check "INVARIANT" rg -n 'e\.admissionStep c\)\.map' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The CC-5 treatment has all three parts CC-1 has: alphabet, PACING, capacity.
 # Without the pacing bound the run capacity would count observations with no
 # wall-clock window attached, which is what an earlier cut did by modelling a
 # run as a list of unrelated executions.
-run_check "INVARIANT" rg -n '^theorem RwLockExecution.distinct_steps_length_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_observation_rate_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.distinct_steps_length_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_observation_rate_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'enqueueSteps : List Nat' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The fairness premise is load-bearing, and the RPi5 figure is split into the
 # grounded core count and SM2.C-defer D-3.7's PLACEHOLDER release budget.
-run_check "INVARIANT" rg -n '^theorem lockContention_unbounded_without_fairness' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem starvingExecution_writer_never_releases' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionDelayBound_rpi5_coreFactor' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_release_budget' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_unbounded_without_fairness($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem starvingExecution_writer_never_releases($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionDelayBound_rpi5_coreFactor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionAlphabet_at_release_budget($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # A prose check: the subject IS the docstring sentence that keeps the 3077
 # figure from being read as a measured deployment property.
 run_prose_check "INVARIANT" rg -n 'placeholder, not a measured deployment figure' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The blocked READER, which is the plan's D.3 row's own subject: the structural
 # depth cap, the operational admission fact, and — after SM2.C-defer D-3.10 —
 # the TEMPORAL bound, which the writer-only liveness chain could not supply.
-run_check "INVARIANT" rg -n '^theorem queueWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem readerWaitDepth_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem reader_at_head_admitted_by_writer_release' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem readerContentionDepth_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem blockedReader_admitted_by_writer_release' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem readerWaitDepth_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem reader_at_head_admitted_by_writer_release($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem readerContentionDepth_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem blockedReader_admitted_by_writer_release($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The mode-generic liveness chain: the keystone, its `.write` instance (which
 # checks the generalisation against the theorem it generalises), the mode-exact
 # admission that makes a reader's admission an admission AS A READER, and the
 # two bounds SM8.D consumes.
-run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release_write' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem queueWaitDepth_non_increase_step_queued' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem fair_progress_one_step_mode' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_queued_liveness' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_reader_liveness' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_queued_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_reader_admissionStepAfter_bounded' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem queued_reader_not_write_holder_after_step' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem queued_writer_not_reader_after_step' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem queued_persists_or_admitted_at_mode' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem blockedReaderContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem writerContention_delay_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_monotone_under_effective_release_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queueWaitDepth_non_increase_step_queued($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem fair_progress_one_step_mode($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_liveness($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_liveness($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_admissionStepAfter_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_admissionStepAfter_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_reader_not_write_holder_after_step($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_writer_not_reader_after_step($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem queued_persists_or_admitted_at_mode($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem blockedReaderContention_delay_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writerContention_delay_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The CC-5 bound and its two claim entries take the access mode as a parameter;
 # the NEGATIVE forbids a regression that re-pins the *claim* to a queued writer,
 # which would silently drop the blocked reader — the plan's D.3 subject — back
@@ -6197,55 +6197,55 @@ run_check "INVARIANT" rg -n '^theorem writerContention_delay_bounded' SeLe4n/Ker
 run_check "INVARIANT" rg -n '\(c : CoreId\) \(m : AccessMode\) \(kEnq : Nat\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_negative_check "INVARIANT" rg -n 'AccessMode.write\) ∈ \(e.stateAt kEnq\).waiters →' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The severity is a judgement; what it is a judgement *about* is pinned.
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_severity_basis' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_lockContention_severity_basis($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The declared-footprint entry CONSUMES the resolver, and fails closed for every
 # syscall SM3.C.9 has not declared.  The negative forbids a return to the form
 # whose resolution hypothesis was unused.
-run_check "INVARIANT" rg -n '^def syscallEntryUnderDeclaredLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderDeclaredLockSet_undeclared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderDeclaredLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderDeclaredLockSet_undeclared($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_negative_check "INVARIANT" rg -n '_hFootprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # ...and the footprint's inputs come from the entry's OWN decode, not from
 # arguments supplied alongside it.  The negative forbids the free-parameter
 # shape, under which a caller could bracket `.tcbSuspend`'s footprint around
 # whatever the caller's registers happened to decode to.
-run_check "INVARIANT" rg -n '^def entryDecode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def entryCapTarget' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def entryDecode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def entryCapTarget($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The resolved target passes the same AL7-A sentinel guard the live `.tcbSuspend`
 # arm applies, so no footprint is declared for a call the dispatch will reject.
-run_check "INVARIANT" rg -n '^theorem entryCapTarget_rejects_sentinel' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem entryCapTarget_rejects_sentinel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The footprint is resolved before its own CNode read lock is held, so the
 # revalidating bracket re-resolves after the growing phase and fails closed on a
 # change — the resolve/acquire race, closed rather than assumed away.
-run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_footprint_stable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_footprint_stable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The bracket's scope is the OBJECT domain; the two domains it cannot express are
 # registered as data with owners rather than left to a comment.
-run_check "INVARIANT" rg -n '^inductive UncoveredLockDomain' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem declaredFootprintUncoveredDomains_complete' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^inductive UncoveredLockDomain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredFootprintUncoveredDomains_complete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The declared-footprint witness carries the confinement core too.
-run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore_atCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'toValid\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 5.  The revalidation guard takes the observed post-acquire
 # state as an INPUT: derived from `s` alone it could only ever see the acquire,
 # which writes nothing the resolver reads, so the refusal branch was unreachable.
 run_check "INVARIANT" rg -n '\(s observed : SystemState\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSetModel' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem revalidationRefusalReachable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderRevalidatedLockSetModel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSetModel_refines($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem revalidationRefusalReachable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the guard must not go back to re-deriving the observed state from `s`,
 # which is what made its refusal unreachable.
 run_negative_check "INVARIANT" rg -n '\(lockSetAcquiredState S lockCore s\) = some S' \
   SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The resolution may not leave the CNode the footprint read-locks: a `LockSet` is
 # capped at `maxLockSetSize`, a CSpace path is not, so deeper paths fail closed.
-run_check "INVARIANT" rg -n '^theorem entryCapTarget_single_level' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem entryCapTarget_single_level($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'ref\.cnode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The splice's neighbour-TCB writes ride the endpoint write lock (the
 # queue-owning-object umbrella) — the seventh member of a coverage family that
 # stopped at six, exactly where the umbrella began.
-run_check "INVARIANT" rg -n '^theorem suspendFootprint_splice_neighbors_under_endpoint_lock' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendFootprint_splice_neighbors_under_endpoint_lock($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'queueSpliceNeighbors\?' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The suite exercises the declared path POSITIVELY and demonstrates the refusal;
 # before round 5 every declared-footprint result in the group was `none`.
@@ -6254,11 +6254,11 @@ run_check "INVARIANT" rg -n 'decode through a write cap resolves a real footprin
 # PR #864 review round 6.  The revalidated entry continues from `observed` — the
 # state the guard checked — not from `s`; running from `s` would discard exactly
 # the intervening commits the revalidation just accepted.
-run_check "INVARIANT" rg -n '^def continueFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem withLockSet_eq_continueFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def syscallEntryFromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_eq_fromAcquired' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def continueFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem withLockSet_eq_continueFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryFromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_eq_fromAcquired($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_not_refines_in_general($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: a general refinement against the plain bracket would re-assert the
 # defect — it held only while the action was being run from `s`.
 run_negative_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refines' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -6270,7 +6270,7 @@ run_check "INVARIANT" rg -n 'queueNext = some targetTid' SeLe4n/Kernel/Informati
 run_check "INVARIANT" rg -n 'queuePrev = some targetTid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The CC-5 non-closure witness holds the OBSERVING core fixed; `aheadCore` is
 # queued in front of it and is never the core read.
-run_check "INVARIANT" rg -n '^def aheadCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def aheadCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'the two reachable codes are read by the SAME core' tests/SmpInformationFlowSuite.lean
 # NEGATIVE: the witness must not go back to comparing two different waiters.
 run_negative_check "INVARIANT" rg -n 'lockContentionCode twoWaiterExecution aheadCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -6283,37 +6283,37 @@ run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_preserves_projecti
 run_check "INVARIANT" rg -n 'rootCn.depth . rootCn.guardWidth . rootCn.radixWidth' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The revalidated bracket distinguishes three outcomes, requires the observed
 # state to HOLD the footprint, and releases it on refusal.
-run_check "INVARIANT" rg -n '^inductive RevalidatedEntryOutcome' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^inductive RevalidatedEntryOutcome($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'lockSetHeld lockCore S observed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refused_unwinds($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the refusal branch must not go back to returning `none`, which is
 # what stranded the acquired footprint on the caller.
 run_negative_check "INVARIANT" rg -n 'observed = none := by' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # CC-5's bound is denominated in LOCK OPERATIONS; reading it as time needs an
 # explicit per-critical-section ceiling.
-run_check "INVARIANT" rg -n '^def elapsedBetween' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def elapsedBetween($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_wallClock_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 9.  The rate bound must be in elapsed time, not lock
 # operations; the domain inventory must quantify over constructors; and the
 # Biba predicate's lock erasure is a stated scope, not an unnoticed gap.
-run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem elapsedBetween_ge($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n '^  stepCost           : Nat . Nat' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^def RwLockExecution.elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^def RwLockExecution.BoundedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^def RwLockExecution.CostedCriticalSection' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_le' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_ge' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^def releaseBudgetCycles' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem releaseBudgetCycles_bounds_elapsed' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_writer_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_queued_admitted_within_cycle_budget' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem rwLock_writer_cycle_budget_at_unit_cost' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
-run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_bounded' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_at_unit_cost' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_execution_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.elapsed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.BoundedCriticalSection($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def RwLockExecution.CostedCriticalSection($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_ge($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem RwLockExecution.elapsed_unit_cost($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^def releaseBudgetCycles($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem releaseBudgetCycles_bounds_elapsed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_admitted_within_cycle_budget($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_queued_admitted_within_cycle_budget($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_writer_cycle_budget_at_unit_cost($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContention_elapsed_at_unit_cost($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_execution_time($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_rate_per_elapsed_time($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # PR #864 review round 10 (both P1).  The rate must be measured over the
 # execution's OWN window — `ops.length` intervals, not one more — and the
 # elapsed-time rate must be CONSUMED by the severity basis and the claim
@@ -6323,8 +6323,8 @@ run_check "INVARIANT" rg -n 'hPos : ∀ k ∈ steps, 1 ≤ k' SeLe4n/Kernel/Info
 # NEGATIVE: measuring through `ops.length + 1` sums an interval the execution
 # does not occupy, letting an observation be paid for after it ended.
 run_negative_check "INVARIANT" rg -n 'elapsedBetween cost 0 \(e.ops.length \+ 1\)' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem UncoveredLockDomain.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockAcquisition_modifies_trusted_object_and_is_not_counted($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # NEGATIVE: the completeness theorem must not go back to comparing the domain
 # list against a literal, which a third constructor would leave elaborating.
 run_negative_check "INVARIANT" rg -n 'Prod.fst\) = \[.taintTablePerKeyStore\]' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -6341,18 +6341,18 @@ run_negative_check "INVARIANT" rg -n 'syscallSeamSchedulerDomain' SeLe4n/Kernel/
 # constructor, the shared bracket, and the write-set containment for both live
 # steps.
 run_check "INVARIANT" rg -n '^  schedulerLocks : SchedulerLockState' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def schedAcquireLock' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
-run_check "INVARIANT" rg -n '^structure SchedLockSet' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
-run_check "INVARIANT" rg -n '^def schedulerLockBracketDomain' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
-run_check "INVARIANT" rg -n '^def runBracketed' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
-run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_coversWrites' SeLe4n/Kernel/SchedLockBracket.lean
-run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites' SeLe4n/Kernel/Scheduler/Operations/SchedLockTimerContainment.lean
+run_check "INVARIANT" rg -n '^def schedAcquireLock($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^structure SchedLockSet($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^def schedulerLockBracketDomain($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^def runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockBracket.lean
+run_check "INVARIANT" rg -n '^theorem perCoreRescheduleStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SchedLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem perCoreTimerTickStep_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockTimerContainment.lean
 # The object arm of every scheduler primitive **is** SM3.C's own primitive:
 # one answer to "what does acquiring an object lock do".
 run_check "INVARIANT" rg -n 'schedAcquireLock s core \(.object lid\) mode = acquireLockOnObject' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
 # RR7.12's bracket is now definitionally the object-domain instance of the
 # shared one — the derivation that stops the two from drifting.
-run_check "INVARIANT" rg -n '^theorem runUnderDeclaredLockSet_eq_runBracketed' SeLe4n/Kernel/SyscallLockBracket.lean
+run_check "INVARIANT" rg -n '^theorem runUnderDeclaredLockSet_eq_runBracketed($|[ ({:\[\]])' SeLe4n/Kernel/SyscallLockBracket.lean
 # NEGATIVE: the scheduler bracket must not be a second, privately spelled
 # revalidating bracket.  Both seams route through `runBracketed`, so neither
 # `timerTickUnderDeclaredLockSet` nor `rescheduleUnderDeclaredLockSet` may
@@ -6362,9 +6362,9 @@ run_negative_check "INVARIANT" rg -n 'let acquired := schedAcquireAll' SeLe4n/Ke
 # place via `determineTargetCore`, so a run-queue segment naming only the boot
 # core and the executing core was a false footprint.  The segment is now every
 # core's, derived from `allCores` rather than enumerated.
-run_check "INVARIANT" rg -n '^def allCoreRunQueueLockSegment' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
+run_check "INVARIANT" rg -n '^def allCoreRunQueueLockSegment($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
 run_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet :=\s*$' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
-run_check "INVARIANT" rg -n '^theorem timerTickOnCoreCompleteLockSet_serialises_pairwise' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
+run_check "INVARIANT" rg -n '^theorem timerTickOnCoreCompleteLockSet_serialises_pairwise($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
 # NEGATIVE: the dynamic extension must not go back to the single boot-core
 # run-queue lock, which the target-aware wakes made false.
 run_negative_check "INVARIANT" rg -n 'timerTickOnCoreTimeoutDynamicLockSet =\s*\[\(SchedLockId.runQueue ⟨bootCoreId⟩, .write\)\]' SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean
@@ -6375,13 +6375,17 @@ run_check "INVARIANT" rg -n 'NEGATIVE: an observed state that does not hold the 
 # queued TCB carry the owner's write lock as a declared member, resolved from
 # the pre-state by `queueOwnerAt`, and the kind is one of exactly two by
 # construction rather than by a permitted list admitting everything.
-run_check "INVARIANT" rg -n '^def queueOwnershipRespectedBy' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def queueOwnershipRespected' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem suspendFootprint_respects_queueOwnership' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem QueueOwner.lock_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def queueOwnershipRespectedBy($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def queueOwnershipRespected($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendFootprint_respects_queueOwnership($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem QueueOwner.lock_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def queueOwnerAt' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem queueOwnerMember_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem queueOwnership_respected_by_tcbSetPriority' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem queueOwnerMember_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem queueOwnership_respected_by_tcbSetPriority($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+# DELIBERATELY BARE (WS-RR RR8.16, `v0.35.197b`): this is a FAMILY count against
+# a threshold, so the prefix IS the question -- bounding it to one declaration
+# would ask something else.  The sweep that bounded the tree's 2502 other
+# bare-name anchors excludes it for that reason, stated rather than implied.
 run_check "INVARIANT" rg -c '^theorem queueOwnership_respected_by_' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'the eleven queued-TCB writers respect the queue-ownership protocol' tests/SmpInformationFlowSuite.lean
 # NEGATIVE, deletion-last (RR7.8's order): the gap's `¬` and its witness are
@@ -6402,21 +6406,21 @@ run_check "INVARIANT" rg -n 'contentionWitnesses_in_premises.1, contentionWitnes
 # The multi-reader witness carries REACHABILITY, not merely well-formedness: a
 # wf-only existential could be satisfied by a lock word no execution produces,
 # which is the opposite of the non-vacuity the theorem claims.
-run_check "INVARIANT" rg -n '^theorem rwLock_reader_multiplicity_reachable' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
+run_check "INVARIANT" rg -n '^theorem rwLock_reader_multiplicity_reachable($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/RwLock.lean
 run_check "INVARIANT" rg -n 'RwLockReachable shared' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def declaredLockSetForEntry' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_binds_decode' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_is_suspend_footprint' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem entryDecode_none_entry_error' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def declaredLockSetForEntry($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_binds_decode($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem declaredLockSetForEntry_is_suspend_footprint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem entryDecode_none_entry_error($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The anti-drift tie runs on BOTH sides.  The failing side alone stays true and
 # silent if the duplicated prefix diverges while the helper still succeeds, so
 # the success side pins the live entry to the helper's exact tid and decode.
-run_check "INVARIANT" rg -n '^theorem entryDecode_some_entry_dispatches' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem entryDecode_some_entry_dispatches($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'dispatchSyscallChecked ctx decoded tid' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The revalidation refusal is attributable to the resolution change rather than
 # to a lost grant, and the fixture witnessing it has genuine acquire lineage.
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n 'private def suspendAcquiredState' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderRevalidatedLockSet_refuses_on_change_while_held($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n 'private def suspendAcquiredState($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'the observed state still HOLDS the declared footprint' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the pre-acquire state does not hold the footprint' tests/SmpInformationFlowSuite.lean
 # NEGATIVE: the foreign-commit fixture must not go back to being built straight
@@ -6427,28 +6431,28 @@ run_negative_check "INVARIANT" rg -n 'syscallEntryUnderDeclaredLockSet ctx sid c
 # The 2PL bracket's grant condition is a checked fact in BOTH directions: the
 # growing phase grants an uncontended footprint and provably does not grant a
 # contended one, so the contract cannot silently claim mutual exclusion again.
-run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_grants_when_free' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_does_not_grant_when_contended' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_grants_when_free($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockSetAcquiredState_does_not_grant_when_contended($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_prose_negative_check "INVARIANT" rg -n 'state where every lock in .S. has been' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 # The CC-5 run requires DISTINCT enqueue steps, so the per-execution capacity
 # figure follows for every accepted run rather than for well-behaved ones.
 run_check "INVARIANT" rg -n 'enqueueSteps.Nodup' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_run_capacity' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_repeated_step' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_run_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_repeated_step($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # A run entry must be a genuine enqueue EDGE, not merely a step at which the core
 # happens to be queued — otherwise one acquisition contributes one entry per
 # waiting step and the capacity figure counts the same behaviour repeatedly.
-run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_still_queued_step' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockContentionRun_steps_are_edges' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_rejects_still_queued_step($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionRun_steps_are_edges($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The non-closure claim rests on REACHABLE codes, not on the allocated
 # alphabet's arithmetic floor: an accepted acquisition's code is at least two, so
 # the two codes the floor counts are exactly the two it cannot produce.
-run_check "INVARIANT" rg -n '^theorem lockContentionChannel_two_codes_reachable' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem acceptedContentionCode_ge_two' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem contentionWitnesses_fair' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem contentionWitnesses_in_premises' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockContentionChannel_two_codes_reachable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem acceptedContentionCode_ge_two($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem contentionWitnesses_fair($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem contentionWitnesses_in_premises($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The combined flow witness carries the executing core, not only the boot core.
-run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks_atCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # BOTH integrity orders are pinned by the dependent claim inventory: a single arm
 # would keep elaborating if the authority-order result were weakened.
 run_check "INVARIANT" rg -n 'authorityIntegrityUnderLocks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
@@ -6460,32 +6464,32 @@ run_check "INVARIANT" rg -n 'caller.cspaceRoot' SeLe4n/Kernel/Concurrency/Locks/
 run_negative_check "INVARIANT" rg -n 'lockSet_tcbSuspendOnCore st callerTid victim.cspaceRoot' SeLe4n/Kernel/Concurrency/Locks/LockSetForSyscall.lean
 # The bracket's non-interference is parameterized by the core it runs on; the
 # boot form is an instance, not the statement.
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projectionOnCore_and_confinement' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_projectionOnCore' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore_atCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_smp_of_projectionOnCore_and_confinement($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem sharedViewUnchanged_of_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 # The decidable refuter, and the non-degenerate witness context for the two
 # integrity write rules.
-run_check "INVARIANT" rg -n '^def lockWritesOnlyCheck' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockWritesOnly_lockWritesOnlyCheck' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem writeRulesWitnessContext_nontrivial' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def lockWritesOnlyCheck($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWritesOnly_lockWritesOnlyCheck($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writeRulesWitnessContext_nontrivial($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.4: BOTH integrity directions.  seLe4n's `integrityFlowsTo` deliberately
 # reverses standard BIBA, so a result about only one of them would say nothing
 # about a deployment configured with the other — and `writeRules_differ` is what
 # records that the two are not the same claim twice.
-run_check "INVARIANT" rg -n '^theorem bibaIntegrity_underLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem authorityIntegrity_underLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem writeRules_differ' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockWrite_carries_no_subject_data' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem lockPhases_integrity_clean_on_every_core' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem bibaIntegrity_underLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem authorityIntegrity_underLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem writeRules_differ($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockWrite_carries_no_subject_data($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem lockPhases_integrity_clean_on_every_core($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D.5: the witness, and the per-core live-entry preservation theorem SM8.B.12
 # lacked (`syscallEntry_preserves_projection` covers the boot-pinned entry; the
 # SMP dispatch seam calls the checked one).
-run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_projection' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^def syscallEntryUnderLockSet' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_failClosed' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def syscallEntryUnderLockSet($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryUnderLockSet_failClosed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem secureInformationFlow_underFineLocks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The fail-closed conclusion is `lockWritesOnly`, NOT state equality: under fine
 # locks the literal `st' = st` claim the unbracketed `…_denied_preserves_state`
 # family makes is false, and restoring it would be a claim the bracket cannot
@@ -6493,9 +6497,9 @@ run_check "INVARIANT" rg -n '^theorem suspendUnderDeclaredLockSet_preserves_proj
 run_negative_check "INVARIANT" rg -n 'syscallEntryUnderLockSet .*\)\.1 = s$' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # SM8.D: the claim inventory with dependently-typed evidence — a claim mapped at
 # the wrong theorem is a type error, not a stale string.
-run_check "INVARIANT" rg -n '^def FineLockClaimId.evidenceProp' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def FineLockClaimId.evidenceProp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n '^def fineLockClaimEvidence : \(id : FineLockClaimId\) → id\.evidenceProp' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem fineLockClaims_cover_subTasks' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockClaims_cover_subTasks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 run_check "INVARIANT" rg -n 'niName! syscallEntryUnderLockSet_failClosed_invisible' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 # The module is staged, and registered as such in both places.
 run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.FineLockFlow' SeLe4n/Platform/Staged.lean
@@ -6562,7 +6566,7 @@ run_check "INVARIANT" rg -n 'lockContentionChannel_trace_capacity' tests/SmpSurf
 # runtime group whose load-bearing negatives make the fixture meaningful.
 run_check "INVARIANT" rg -n '^  runPhaseSurfaceChecks' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n '^  runInformationFlowTraceFixtureCheck' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^private def informationFlowTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def informationFlowTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the same signal on a LOW notification IS visible' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: it IS visible at the core it landed on' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the remote wake is not confined to the EXECUTING core' tests/SmpInformationFlowSuite.lean
@@ -6582,12 +6586,12 @@ run_negative_check "INVARIANT" rg -n "a write to core 1's current slot is invisi
 # SM8.E.2 substrate: the operation taxonomy enumerated ONCE, and tied to the
 # type.  The counts that read it were 35-element literals, which could not
 # notice a thirty-sixth constructor however loudly their docstrings claimed to.
-run_check "INVARIANT" rg -n '^def KernelOperation.all' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem KernelOperation.mem_all' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
-run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^def KernelOperation.all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem KernelOperation.mem_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
+run_check "INVARIANT" rg -n '^theorem KernelOperation.all_nodup($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.length = 35' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.filter perCoreConfinementDerived' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
-run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
+run_check "INVARIANT" rg -n '^theorem perCoreConfinementNotDerived_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiTheorem' SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean
 
 
@@ -6607,29 +6611,29 @@ run_check "INVARIANT" rg -n 'KernelOperation.all.map kernelOperationPerCoreNiThe
 # allowlist.  Both directions are pinned.
 run_check "INVARIANT" rg -n '^import SeLe4n\.Kernel\.InformationFlow\.AuditRead' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.AuditRead\b' scripts/staged_module_allowlist.txt
-run_check "INVARIANT" rg -n '^def auditLogVisibleTo' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def auditLogVisibleTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.1: the visible view is a genuine sublist, and — the no-gap-leak
 # property — a function of the reader's clearance ALONE.  Under a sparse global
 # index a partial reader's indices would shift around a hidden entry, telling it
 # both that one exists and exactly where.
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_sublist' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hidden_insert' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_determined_by_clearance' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_sublist($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hidden_insert($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_determined_by_clearance($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.1a: the persistent timestamp epoch.  Sequenced BEFORE drain, because a
 # drain without it reuses timestamps: `timestamp := log.length` after removing a
 # prefix collides with a surviving entry, falsifying the identification theorem.
 run_check "INVARIANT" rg -n 'declassificationAuditEpoch : Nat := 0' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^def auditTimestampsFrom' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^def auditTimestampsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^def declassificationTrailWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 run_check "INVARIANT" rg -n 'timestamp := epoch \+ log\.length' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem declassificationTrail_timestamp_identifies_event($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationAuditEpoch_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 # The witness that the PRE-EPOCH producer is genuinely unsound once drain
 # exists.  Kept as a theorem so a regression to `timestamp := log.length` fails
 # to build rather than quietly reintroducing the collision.
-run_check "INVARIANT" rg -n '^theorem preEpochTimestamp_reused_after_drain' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^theorem preEpochTimestamp_reused_after_drain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # NEGATIVE: the producer must never stamp an entry from the log length alone.
 run_negative_check "INVARIANT" rg -n 'timestamp := log\.length' SeLe4n/Kernel/InformationFlow/Declassification.lean
 
@@ -6638,26 +6642,26 @@ run_negative_check "INVARIANT" rg -n 'timestamp := log\.length' SeLe4n/Kernel/In
 # point to `2^64`; the reader fails closed above the accepted width rather than
 # silently truncating, and the basis DESIGNATION ships too (exporting the trust
 # bit alone collapses every `integratorOverride` to one value).
-run_check "INVARIANT" rg -n '^def auditFieldChunk' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^def maxAuditFieldChunks' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditReadField_reconstructs' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditReadBasis_reconstructs_designation' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditFieldBound_unreachable_in_kernel' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def auditFieldChunk($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def maxAuditFieldChunks($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadField_reconstructs($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadBasis_reconstructs_designation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditFieldBound_unreachable_in_kernel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n 'auditFieldTooLarge' SeLe4n/Model/KernelError.lean
 # SM9.A.2: `status` is a SINGLE read.  Chunking it traded aliasing for tearing
 # on the first interleaved drain, which is what the negative witness records.
-run_check "INVARIANT" rg -n '^theorem auditReadStatus_atomic' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditStatusSplitRead_tears' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadStatus_atomic($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditStatusSplitRead_tears($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.2: the two reader classes.  A partial reader gets VIEW-LOCAL indices and
 # learns nothing of the global position; a fully-dominating monitor gets global
 # identities so it can correlate across drains.  The per-observer drain token
 # the first design specified is unbuildable — labels are an unbounded `Nat`, so
 # there is no finite family to key state by.
-run_check "INVARIANT" rg -n '^theorem auditReadIndex_is_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem dominatingReader_sees_global_identity' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditRead_hides_global_position' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem observerScopedGeneration_not_mountable' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadIndex_is_view_local($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem dominatingReader_sees_global_identity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_hides_global_position($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem observerScopedGeneration_not_mountable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.3: drain under the §3.4 dominance gate.  A partial-visibility prefix
 # drain reveals the POSITIONS of hidden entries and repeated drains enumerate
@@ -6667,18 +6671,18 @@ run_check "INVARIANT" rg -n '^theorem observerScopedGeneration_not_mountable' Se
 # CONFIGURATION, never from the rows the trail currently holds (drain a trail
 # to `[]` and a rows-derived predicate goes vacuously true exactly where it
 # matters).
-run_check "INVARIANT" rg -n '^def auditDrainVisiblePrefix' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_partial_reader_drains_nothing' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditMonitorGate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditMonitorGate_records_derived_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_wellFormed_at_epoch' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_next_timestamp_fresh' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def auditDrainVisiblePrefix($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_partial_reader_drains_nothing($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditMonitorGate_is_configuration_derived($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditMonitorGate_records_derived_unsound($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_wellFormed_at_epoch($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_next_timestamp_fresh($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The monitor clearance is CONFIGURATION on the labeling context, so an
 # unconfigured deployment has no reader at all and keeps the cliff.
 run_check "INVARIANT" rg -n 'auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # PR #870 round 2: the READ side is deny-by-default too — the configuration
 # gate refuses every caller when no validated monitor clearance is configured,
 # so a boot-provisioned `.auditTrail` capability opens nothing (capability
@@ -6687,9 +6691,9 @@ run_check "INVARIANT" rg -n '^theorem auditDrain_unconfigured_denied' SeLe4n/Ker
 # inventory is `auditRead_gates_are_five` (round 6 added the monitor gate at
 # the live entry); the undercounting three- and four-gate names must not
 # return.
-run_check "INVARIANT" rg -n '^theorem auditRead_unconfigured_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem misconfiguredDeployment_cannot_read' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_five' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_unconfigured_denied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem misconfiguredDeployment_cannot_read($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_gates_are_five($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_three' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_four' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # PR #870 round 3: visibility filters on EVERY disclosed domain — the filter's
@@ -6698,23 +6702,23 @@ run_negative_check "INVARIANT" rg -n 'auditRead_gates_are_four' SeLe4n/Kernel/In
 # entry's target object is one whose own domain flows to the reader (the same
 # discipline `capTargetObservable` applies in the projection).  The retired
 # source-only dominance bridge must not return.
-run_check "INVARIANT" rg -n '^def auditEntryVisibleTo' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_dst' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hides_undominated_destination' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem incomparableDowngrade_hidden_from_source_reader' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditVisibleEntry_target_domain_flows' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem validatedAuditMonitorClearance_dominates_objects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def auditEntryVisibleTo($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_dst($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_hides_undominated_destination($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem incomparableDowngrade_hidden_from_source_reader($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditVisibleEntry_target_domain_flows($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_requires_full_dominance_of_labeling($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem validatedAuditMonitorClearance_dominates_objects($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_negative_check "INVARIANT" rg -n 'auditDrain_requires_full_dominance_of_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.4a: the reader-visibility discipline.  The clause set is a TOTAL
 # FUNCTION on `ReadableStructure`, not a list — a `mem_all` over a
 # hand-maintained type cannot force a newly mounted readable field to add a
 # constructor, whereas a missing case in a total function is a build error.
-run_check "INVARIANT" rg -n '^def readableStructureAgrees' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^def auditObservationalEquivalence' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem auditReadOp_structure_total' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem readableStructure_list_gate_insufficient' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def readableStructureAgrees($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def auditObservationalEquivalence($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadOp_structure_total($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem readableStructure_list_gate_insufficient($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # NEGATIVE: the fusion's enforcement is the wildcard-free exhaustive match — the
 # `∃`-shaped totality theorems above hold of ANY total function, wildcard arms
 # included, so they cannot pin it.  These anchors are what does: a wildcard arm
@@ -6727,17 +6731,17 @@ run_negative_check "INVARIANT" rg -Un 'def readableStructureAgrees[^\n]*\n((    
 # The lemma `lowEquivalent` CANNOT supply: `ObservableState` does not contain
 # the trail, so "low-equivalent states give identical visible views" is false
 # and could not have been the flow argument.
-run_check "INVARIANT" rg -n '^theorem lowEquivalent_does_not_determine_visible_view' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem lowEquivalent_does_not_determine_visible_view($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # SM9.A.4b: the reader is a function of the visible view alone, so it opens no
 # channel — the not-CC-8 argument, stated once.
-run_check "INVARIANT" rg -n '^theorem auditRead_no_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_no_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_projectionOnCore' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_no_channel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_no_channel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_preserves_projectionOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 
 # SM9.A.5: the retry protocol — an append cannot move an index-keyed read.
-run_check "INVARIANT" rg -n '^theorem auditRead_stable_under_append' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditRead_bracketed_detects_drain' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_stable_under_append($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditRead_bracketed_detects_drain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 
 # SM9.A.6 / SM9.A.7: the ABI, both halves.  Two syscalls, count 31 -> 33, and
 # the Rust mirrors that must agree with them.
@@ -6764,9 +6768,9 @@ run_check "INVARIANT" rg -n '^pub mod audit;' rust/sele4n-sys/src/lib.rs
 # gate would repeat the v0.32.97 confused-deputy class exactly — a thread
 # holding a writable capability to its own TCB would drain the audit trail.
 run_check "INVARIANT" rg -n '^  \| auditTrail' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def extractAuditAuthority' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem extractAuditAuthority_rejects_non_audit_capability' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem auditTrailRead_cannot_drain' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def extractAuditAuthority($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem extractAuditAuthority_rejects_non_audit_capability($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem auditTrailRead_cannot_drain($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 # NEGATIVE: the audit arms must not be gated on the right alone.  A dispatch arm
 # that inspects `cap.rights` without first extracting the `.auditTrail` target
 # is the confused deputy this sub-task exists to close.
@@ -6779,38 +6783,38 @@ run_negative_check "INVARIANT" rg -n 'auditRead =>.*hasRight' SeLe4n/Kernel/API.
 # constructing a unit one.
 run_check "INVARIANT" rg -n '\.auditRead\s+=> \.word' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '\.auditDrain\s+=> \.word' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_auditRead_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_auditDrain_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditRead' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditDrain' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_toUInt64_lossless' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_auditRead_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_auditDrain_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_toUInt64_lossless($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # Fail-closed on the UNCHECKED path, and by default: there is no audit read
 # that bypasses the flow gate, and an unconfigured deployment has no reader.
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_auditRead_denied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_auditRead_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_has_no_audit_reader($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # PR #870 round 2: the arm-level read refusal and the universal half of the
 # acceptance witness — no capability whatsoever makes an audit syscall succeed
 # in an unconfigured deployment.
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_auditRead_default_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem unconfiguredDeployment_audit_never_succeeds($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # PR #870 round 5: the audit pair validates the capability's TARGET before its
 # rights — the checked dispatch routes them through the resolve-only lookup
 # (one shared resolution, so lookup and resolve cannot drift), and the arms
 # own both gates in the documented order.  The composed-path witnesses are the
 # two dispatchSyscallChecked-level theorems.
-run_check "INVARIANT" rg -n '^def syscallResolveCap' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallChecksTargetFirst' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallResolveCap($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallChecksTargetFirst($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'syscallChecksTargetFirst decoded.syscallId' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_target_first' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_right_checked_second' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_of_lookup($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_audit_insufficient_right_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_target_first($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_audit_right_checked_second($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # PR #870 round 4: the cross-core inventory's audit entries map to the
 # DISPATCH-level composition — transition plus WS-RA return-frame staging,
 # the state the checked dispatch actually commits.  The transition-only
 # mapping must not return.
-run_check "INVARIANT" rg -n '^theorem auditReadDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem auditDrainDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem auditDrainDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'niName! auditReadDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'niName! auditDrainDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n 'niName! auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -6826,10 +6830,10 @@ run_negative_check "INVARIANT" rg -n 'niName! auditDrainVisiblePrefix_crossCoreN
 # retracted round-2 sentence (partial readers live in configured deployments)
 # must not return.
 run_check "INVARIANT" rg -n 'if auditMonitorAuthorized ctx monitorClearance reader then' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_partial_reader_denied' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_ok_is_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_moves_partial_readers_status' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_observer_dominates_subjects' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_partial_reader_denied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_ok_is_monitor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_moves_partial_readers_status($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_observer_dominates_subjects($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '^  runAuditDrainSignalChecks' tests/SmpInformationFlowSuite.lean
 run_prose_negative_check "INVARIANT" rg -n 'Partial readers are unchanged where they belong' SeLe4n/
 
@@ -6842,8 +6846,8 @@ run_check "INVARIANT" rg -n 'capabilityOnly "auditReadFromCore"' SeLe4n/Kernel/I
 run_negative_check "INVARIANT" rg -n 'capabilityOnly "auditReadWord"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'capabilityOnly "auditDrainVisiblePrefix"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
 run_check "INVARIANT" rg -n 'enforcementBoundaryPerCore.length = 60' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^def lockSet_auditRead' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def lockSet_auditRead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def lockSet_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #870 round 6 (the lock domain): a declared footprint covers the COMMITTED
 # dispatch — both audit arms and `.serviceQuery` stage their returned word into
 # the caller's TCB via `writeReturnFrameToTcb`, so the caller lock is `.write`,
@@ -6851,11 +6855,11 @@ run_check "INVARIANT" rg -n '^def lockSet_auditDrain' SeLe4n/Kernel/Concurrency/
 # the §6c aggregate (which the plan's SM9.A.12 row claimed at landing).  The
 # retracted sentence arguing a caller write lock "would over-declare a
 # footprint" must not return.
-run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_serviceQuery_staging_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_staging_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_staging_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_serviceQuery_staging_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_prose_negative_check "INVARIANT" rg -n 'would over-declare a footprint' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'auditReadFromCore#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts/check_module_axioms.py
@@ -6864,7 +6868,7 @@ run_check "INVARIANT" rg -n 'SeLe4n\.Kernel\.InformationFlow\.AuditRead' scripts
 # subject it runs) and write no core's scheduler slots at all.
 run_check "INVARIANT" rg -n 'auditReadDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'auditDrainDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem auditReadFromCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem auditReadFromCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
 # PR #870 round 7: the trail's SINGLETON DISCIPLINE, both halves.
 # (P1) The occupancy channel is registered as CC-8 rather than patched a third
@@ -6872,12 +6876,12 @@ run_check "INVARIANT" rg -n '^theorem auditReadFromCore_crossCoreNonInterference
 # fill level an irreducible inter-domain observable — every policy-authorized
 # declassifier reads full/not-full off its own syscall outcome, and a
 # monitor-controlled drain flips lower-domain declassification results.
-run_check "INVARIANT" rg -n '^def acceptedCovertChannel_auditOccupancy' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_capacity_gates' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
-run_check "INVARIANT" rg -n '^theorem auditOccupancy_alphabet_bounded' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem declassify_capacity_refusal_of_full' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditDrain_flips_declassify_outcome' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_bounded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def acceptedCovertChannel_auditOccupancy($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_capacity_gates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditOccupancy_alphabet_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem declassify_capacity_refusal_of_full($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditDrain_flips_declassify_outcome($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem acceptedCovertChannel_auditOccupancy_bounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # The retracted round-6 sentence — the reader's authorization used to conclude
 # no eighth channel entry was owed — must not return in that docstring.
 run_prose_negative_check "INVARIANT" rg -n 'is \*\*not owed\*\*' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
@@ -6887,29 +6891,29 @@ run_prose_negative_check "INVARIANT" rg -n 'is \*\*not owed\*\*' SeLe4n/Kernel/I
 # claim that the service registry's writes serialise implicitly via the
 # table-level lock must not return; that gap is registered debt, not covered.
 run_check "INVARIANT" rg -n '^@\[inline\] def stateLevelLock' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassify_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_stateLevel_read_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem auditState_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_stateLevel_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditRead_stateLevel_read_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_auditDrain_stateLevel_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem auditState_footprints_share_serialization($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The service registry is a state-level map, so its writers must declare the
 # state-level lock: the register/revoke pair in write mode, the query in read
 # (it folds over the whole map), and the retype, whose pre-retype cleanup sweeps
 # the registry when the object it re-purposes is an endpoint.
-run_check "INVARIANT" rg -n '^theorem serviceRegistry_footprints_share_serialization' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem serviceRegistry_footprints_share_serialization($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The lock-refinement methodology hub: the block fold every bridge is built on,
 # defined once — and each bridge's own fold pinned to it, so the hub is the
 # shared engine rather than a fourth statement of the same method.
-run_check "INVARIANT" rg -n '^def foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" rg -n '^theorem foldBlock_stutter' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" rg -n '^theorem foldBlock_changes_state_needs_a_write' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" rg -n '^theorem ticketFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" rg -n '^theorem concreteFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
-run_check "INVARIANT" rg -n '^theorem queuedFoldBlock_eq_foldBlock' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^def foldBlock($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem foldBlock_stutter($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem foldBlock_changes_state_needs_a_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem ticketFoldBlock_eq_foldBlock($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem concreteFoldBlock_eq_foldBlock($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
+run_check "INVARIANT" rg -n '^theorem queuedFoldBlock_eq_foldBlock($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Refinement.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRegister[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceRevoke[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_serviceQuery[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .read" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "def lockSet_lifecycleRetype[^\n]*(\n([ \t][^\n]*)?)*stateLevelLock, .write" SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean'
-run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
+run_check "INVARIANT" rg -n '^theorem stateLevelLock_objId_irrelevant($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/WithLockSet.lean
 run_prose_negative_check "INVARIANT" rg -n 'serialise implicitly via the table-level' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
 # SM9.A tests: the anchors, the elaboration examples, the seven runtime groups
@@ -6927,7 +6931,7 @@ run_check "INVARIANT" rg -n '^  runAuditCapacityCliffChecks' tests/SmpInformatio
 run_check "INVARIANT" rg -n 'STEP 5: the downgrade refused at capacity now SUCCEEDS' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the PRE-EPOCH rule would have stamped this entry 0' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment still has the cliff' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^private def auditReaderTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def auditReaderTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'audit view: trail 3 entries' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36' tests/fixtures/smp_information_flow.expected
 # The end-to-end ABI witness: the returned word is the SELECTED one, not the
@@ -6954,11 +6958,11 @@ run_check "INVARIANT" rg -n 'audit drain of one entry .new visible length 1.' te
 # (the §6 mount checklist's step 1).  `KernelError` moved to its own
 # import-free leaf in the same cut so the record can name it typed rather than
 # storing a bare discriminant `Nat`.
-run_check "INVARIANT" rg -n '^structure DeclassificationRefusal' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^structure RefusalLedger' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^def recordRefusal' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^def refusalRingSize' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^def maxRefusalCount' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^structure DeclassificationRefusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^structure RefusalLedger($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def recordRefusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def refusalRingSize($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def maxRefusalCount($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^inductive KernelError where' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Model.KernelError' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord' SeLe4n/Model/State.lean
@@ -6974,41 +6978,41 @@ run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.RefusalRecord
 # is the field being READ as a conjunct: the `st.declassificationRefusals`
 # projection, and anything conjoined after the bundle's last conjunct — which is
 # how every conjunct from the 12th to the 16th was actually added.
-run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalCounter_bound_is_structural($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^    auditLogBounded st\.declassificationAuditLog$' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n 'auditLogBounded st\.declassificationAuditLog ' SeLe4n/Kernel/Architecture/Invariant.lean
 run_negative_check "INVARIANT" rg -n 'st\.declassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
 # Saturation, the counted eviction, and the retention window.
-run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem recordRefusal_ring_wraps_counted' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem recordRefusal_no_loss' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_saturates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_ring_wraps_counted($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_no_loss($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 # The ring's own limitation, stated rather than implied absent: a subject can
 # flood the ring, but the eviction is COUNTED, so a monitor knows its view is
 # incomplete rather than reading 32 rows and believing it saw everything.
-run_check "INVARIANT" rg -n '^theorem refusalLedger_eviction_is_counted' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem recordRefusal_never_refuses' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_eviction_is_counted($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem recordRefusal_never_refuses($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 # The version, and the bracket it exists for — the trail's own `status` token
 # does not move on a ledger write, so a monitor bracketing with it would
 # assemble a hybrid record and never detect it.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem refusalLedger_version_advances_on_record' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalRead_bracketed_detects_overwrite' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem auditStatus_does_not_detect_refusal_write' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalStatus_detects_refusal_write' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalRead_bracketed_detects_overwrite($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem auditStatus_does_not_detect_refusal_write($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalStatus_detects_refusal_write($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The seam-resolved source domain: not reconstructible from the rest of the
 # record, and not from the state either — the context is an argument.
-run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved_at_seam' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalRecord_domain_is_seam_resolved_at_seam($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 
 # SM9.B.9: the seam's filter is a TOTAL function over `SyscallId`, not a list.
 # The third taxonomy in this plan fixed the same way (after `ReadableStructure`
 # and `ContentFlowSite`): a theorem quantified over a hand-maintained list stays
 # true when SM9.C's second declassifying syscall joins neither.
-run_check "INVARIANT" rg -n '^inductive RefusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^def refusalSeamClass' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalSeamClass_total' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalSeam_list_gate_insufficient' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_iff' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^inductive RefusalSeamClass($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^def refusalSeamClass($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeamClass_total($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeam_list_gate_insufficient($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 # NEGATIVE: the seam must not filter on a hardcoded `.declassify` literal — that
 # is precisely the design SM9.C silently defeats.
 run_negative_check "INVARIANT" rg -n 'syscallId.*==.*SyscallId.declassify' SeLe4n/Platform/FFI.lean
@@ -7021,50 +7025,50 @@ run_negative_check "INVARIANT" rg -n 'syscallId.*==.*SyscallId.declassify' SeLe4
 run_negative_check "INVARIANT" rg -n '\|\s*_\s*=>' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
 # SM9.B.9: the write itself, and the three security theorems.
-run_check "INVARIANT" rg -n '^def recordSyscallRefusal' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def recordSyscallRefusal($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'recordSyscallRefusal ctx executingCore syscallId tid ke x0 stRegs' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_records_refusal' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_frame' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_readReturnFrame_eq' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_ledger_congr' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalWrite_declassificationAuditLog_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalWrite_cannot_exhaust_trail($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_write_is_caller_invisible($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_records_refusal($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_exempt_refusal_frames_ledger($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_readReturnFrame_eq($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_ledger_congr($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 
 # SM9.B.3 … SM9.B.8: the §6 mount checklist, run for the third time.  The
 # frozen field is REQUIRED (no default), so a silent drop is a compile error.
 run_check "INVARIANT" rg -n '^  declassificationRefusals : SeLe4n.Kernel.RefusalLedger' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n '^  declassificationRefusals : SeLe4n.Kernel.RefusalLedger$' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationRefusals' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationRefusals($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n 'sst.declassificationRefusals = fst.declassificationRefusals' SeLe4n/Model/FreezeProofs.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem default_declassificationRefusals' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_declassificationRefusals_eq' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationRefusals_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n 'declassificationRefusals :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem applyMachineConfig_declassificationRefusals_eq' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationRefusals_eq' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem declassificationRefusals_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem onCore_declassificationRefusals' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem applyMachineConfig_declassificationRefusals_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationRefusals_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRefusals_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem onCore_declassificationRefusals($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 
 # SM9.B.10: the reader joins the fused `ReadableStructure` taxonomy — a read
 # operation cannot exist without naming a structure, and a structure cannot
 # exist without a clause in a TOTAL clause function.
 run_check "INVARIANT" rg -n '\| declassificationRefusalLedger' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n '\| .declassificationRefusalLedger =>' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^inductive RefusalReadField' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^def refusalTagsWord' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalTagsWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalTagsWord_reason_is_abi_discriminant' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalStatusWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalCountersWord_roundtrip' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalSlotField_reconstructs' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^inductive RefusalReadField($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^def refusalTagsWord($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalTagsWord_reason_is_abi_discriminant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalStatusWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalCountersWord_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalSlotField_reconstructs($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The gate: full dominance, computed from the CONFIGURATION and never from the
 # ring's surviving rows — the ring evicts while the counters are cumulative.
-run_check "INVARIANT" rg -n '^theorem refusalLedger_requires_full_dominance' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalLedger_partial_reader_learns_nothing' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalLedger_gate_is_configuration_derived' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_requires_full_dominance($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_partial_reader_learns_nothing($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_gate_is_configuration_derived($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_records_gate_unsound($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem refusalRead_requires_monitor_at_entry($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The ABI mirror, both sides.  The count is the decoder's boundary in opcode
 # slots, not the number of `AuditReadOp` constructors — several carry an index
 # and a chunk — so it is pinned as a number against both sides rather than
@@ -7089,30 +7093,30 @@ run_check "INVARIANT" rg -n 'fn refusal_word_decoders_roundtrip' rust/sele4n-sys
 # the constructor is retired and replaced by the property that survives — and
 # the negative forbids its return, in the SM8.E pattern.
 run_check "INVARIANT" rg -n 'refusalsAreCountedAndAttributed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationRefusals_are_counted_and_attributed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRefusals_are_counted_and_attributed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n '\| refusalIsUnrecorded$' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n '^theorem declassification_refusal_is_unrecorded' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # …and the general congruence now frames EVERY readable structure, so its old
 # trail-only name must not come back.
-run_check "INVARIANT" rg -n '^theorem auditObservationalEquivalence_of_readableFramed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem auditObservationalEquivalence_of_readableFramed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_negative_check "INVARIANT" rg -n '^theorem auditObservationalEquivalence_of_trailFramed' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_auditObservationalEquivalence' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_perCore_NI' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_auditObservationalEquivalence($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_perCore_NI($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # The SM9.A round-7 note, discharged WITH the ledger rather than in a later
 # round: the serialization subject is the state-level lock the recording
 # syscall's footprint already declares (and the first conjunct is the tripwire
 # that forces SM9.C.8's second recording syscall to declare its own), and the
 # occupancy owes no ninth channel entry — a theorem, because each of CC-8's
 # four carriers is absent here.
-run_check "INVARIANT" rg -n '^theorem lockSet_refusalSeam_writer_declares_stateLevel_write' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem refusalLedger_occupancy_is_not_a_covert_channel' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem computeCrossCoreSgis_recordSyscallRefusal_eq' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_refusalSeam_writer_declares_stateLevel_write($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem refusalLedger_occupancy_is_not_a_covert_channel($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem computeCrossCoreSgis_recordSyscallRefusal_eq($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 # SM9.B.3: the bundle carriage the mount owes — unconditional, because the
 # ledger is bounded by its TYPE and no conjunct reads it.  Without this layer a
 # bundle proof for the committed dispatch is blocked exactly where the v0.32.151
 # diagnosis says it is (three conjuncts fail `isDefEq` for structural reasons).
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationRefusals' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_proofLayerInvariantBundle' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationRefusals($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem recordSyscallRefusal_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # …and the correction that made it necessary, kept on the record: a
 # conjunct-free mounted field still owes a carriage block, so the plan's step 8
 # must not drift back to "the 17th conjunct also costs the carriage block".
@@ -7145,7 +7149,7 @@ run_check "INVARIANT" rg -n 'LIVE ENTRY: the monitor.s core reads the refusal st
 run_check "INVARIANT" rg -n 'NEGATIVE: the live entry refuses a partial reader.s core for every refusal op' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an unconfigured deployment has no refusal reader either' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'END TO END: the committed refusal reads back live' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def refusalLedgerTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'refusal seam: recordingSyscalls=2' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal write: attempts=1 version=1 trailMoved=false' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'refusal read .partial.: status=SeLe4n.Model.KernelError.illegalAuthority' tests/fixtures/smp_information_flow.expected
@@ -7163,9 +7167,9 @@ run_check "INVARIANT" rg -n 'audit ABI: auditRead=31 auditDrain=32 syscalls=36 o
 
 # SM9.C.1: the transition, in a PRODUCTION module (the live arm calls it, so
 # staging it would break the production/staged partition gate).
-run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedOnCore' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedCrossCoreDispatch' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^def declassifiedSignalPlan' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedOnCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def notificationSignalDeclassifiedCrossCoreDispatch($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def declassifiedSignalPlan($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^def declassifiedSignalReceiver\?' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^import SeLe4n.Kernel.InformationFlow.DeclassifiedSignal' SeLe4n/Kernel/API.lean
 run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.DeclassifiedSignal$' scripts/staged_module_allowlist.txt
@@ -7173,9 +7177,9 @@ run_negative_check "INVARIANT" rg -n '^SeLe4n\.Kernel\.InformationFlow\.Declassi
 # SM9.C.1: the TWO hops, each with its own refusal discriminant.  The injectivity
 # is what keeps a monitor able to tell an unauthorized caller from an authorized
 # caller aimed at an unauthorized sink — the two call for opposite responses.
-run_check "INVARIANT" rg -n '^inductive DeclassifiedSignalHop' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^def DeclassifiedSignalHop.refusal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem DeclassifiedSignalHop.refusal_injective' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^inductive DeclassifiedSignalHop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def DeclassifiedSignalHop.refusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem DeclassifiedSignalHop.refusal_injective($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^  \| declassificationDeniedAtReceiver' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n 'declassificationDeniedAtReceiver *=> 56' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # NEGATIVE: the second hop must not collapse onto the first's discriminant —
@@ -7186,33 +7190,33 @@ run_negative_check "INVARIANT" rg -n 'notificationToReceiver => \.declassificati
 # receiver is gated; every authorized downgrade is recorded; and no entry names
 # an edge no policy authorized (which a single record for a two-hop delivery
 # could not have said).
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_delivers_badge' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_gates_resolved_receiver' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_never_unaudited' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_no_invented_edge' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_each_hop' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_actual_destination' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_ordinary_eq_signal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_denied_before_capacity' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_delivers_badge($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_gates_resolved_receiver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_never_unaudited($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_no_invented_edge($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_each_hop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_audits_actual_destination($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_ordinary_eq_signal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_denied_before_capacity($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 # The unconfigured deployment: NOT "the syscall fails" — a hop the base lattice
 # already permits is an ordinary signal — but "no downgrade happens", which is
 # the security claim the weaker phrasing would be mistaken for.
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_never_downgrades' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_eq_signal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_never_downgrades($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignal_default_policy_eq_signal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # SM9.C.1: the ACTOR — a two-hop delivery's second event has a source domain
 # that is nobody's subject domain, so attributability cannot read `srcDomain`.
-run_check "INVARIANT" rg -n '^structure DeclassificationActor' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^structure DeclassificationActor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 run_check "INVARIANT" rg -n '^  actor : DeclassificationActor' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^theorem attributionFromRunningSubject_over_actor' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem secondHop_actor_differs_from_flowSource' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem secondHopEvent_names_firstHop' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem attributionFromRunningSubject_over_actor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem secondHop_actor_differs_from_flowSource($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem secondHopEvent_names_firstHop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 # NEGATIVE: the actor field must stay REQUIRED — a default would attribute every
 # event to whatever it names while compiling everywhere.
 run_negative_check "INVARIANT" rg -n '^  actor : DeclassificationActor :=' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
 # The visibility filter reads every disclosed domain, the actor's included.
 run_check "INVARIANT" rg -n 'ctx.policy.canFlow e.actor.domain reader' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_actor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem auditLogVisibleTo_cleared_actor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # NEGATIVE: the retired trail invariant.  A two-hop delivery's second event has
 # a *thread* domain as its destination while its target is a TCB, so
 # `auditTrailDestinationsAreTargetDomains` is FALSE of it; the object-identity
@@ -7221,24 +7225,24 @@ run_negative_check "INVARIANT" rg -n 'auditTrailDestinationsAreTargetDomains' Se
 
 # SM9.C.3 / SM9.C.4: the invariant surface the delivery inherits, transferred
 # through the frame (post-state = SM6.B's with one field replaced).
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_frame' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_auditLogBounded' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_trailActors' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_auditLogBounded($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_transfer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_ipcInvariantFull_perCore_transfer($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_preserves_trailActors($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # SM9.C.5 / SM9.C.6: the effect footprint, defined ONCE and read by both the
 # non-interference theorem and the confinement proof, and the non-implication
 # that keeps it from being mistaken for a permission.
-run_check "INVARIANT" rg -n '^structure DeclassificationEffectFootprint' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^def declassifiedSignalEffectFootprint' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem footprint_does_not_authorize' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationRelativeNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^structure DeclassificationEffectFootprint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^def declassifiedSignalEffectFootprint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem footprint_does_not_authorize($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationRelativeNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalDispatch_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The footprint's cores ARE SM6.B's write set — one definition, not two that can
 # drift (the failure mode v0.32.101 and v0.33.16 both caught).
 run_check "INVARIANT" rg -n 'cores := notificationSignalBoundWriteSet st notificationId' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
@@ -7264,16 +7268,16 @@ run_check "INVARIANT" rg -n 'DeclassificationDeniedAtReceiver = 56' rust/sele4n-
 run_check "INVARIANT" rg -n '^pub fn declassify_signal' rust/sele4n-sys/src/declassify.rs
 run_check "INVARIANT" rg -n 'assert_clears\("declassify_signal", SyscallId::DeclassifySignal\)' rust/sele4n-abi/tests/conformance.rs
 run_check "INVARIANT" rg -n '\| \.declassify \| \.declassifySignal => \.records' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
-run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_count' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
+run_check "INVARIANT" rg -n '^theorem refusalSeamClass_records_count($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 
 # SM9.C.8: the lock set — the ordinary signal's, PLUS the state-level write its
 # trail append needs.  Composed rather than rewritten, so the notification half
 # cannot drift from the syscall it wraps.
-run_check "INVARIANT" rg -n '^def lockSet_declassifySignal' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_stateLevel_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_extends_notificationSignal' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_declassifySignal' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^def lockSet_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_stateLevel_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_extends_notificationSignal($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassifySignal_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n 'lockSet_declassifySignal a b c d e f' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n 'sid = \.declassify ∨ sid = \.declassifySignal' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # NEGATIVE: the footprint must be composed, not a fresh list — a rewritten one
@@ -7282,10 +7286,10 @@ run_negative_check "INVARIANT" rg -Un 'def lockSet_declassifySignal(.*\n){1,8}.*
 
 # SM9.C.9: the arm is tied to the dispatch by a THEOREM, and the per-core
 # routing gate passes with zero allowlisted exceptions.
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_delegates' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_declassifySignal_denied' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassifySignal' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_delegates($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_declassifySignal_denied($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCapChecked_declassifySignal_default_no_downgrade($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDelegates_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '\| declassifySignalDispatch' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n 'notificationSignalDeclassifiedCrossCoreDispatch#inert' scripts/per_core_routing_aliases.json
 run_check "INVARIANT" rg -n 'policyGated "notificationSignalDeclassifiedCrossCoreDispatch"' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
@@ -7309,7 +7313,7 @@ run_check "INVARIANT" rg -n 'NEGATIVE: this is NOT plain non-interference' tests
 run_check "INVARIANT" rg -n 'NEGATIVE: an unrecorded downgrade is refutable' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: an idle core cannot declassify' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: it does not share the ordinary signal.s boundary entry' tests/SmpInformationFlowSuite.lean
-run_check "INVARIANT" rg -n '^private def declassifiedSignalTraceLines' tests/SmpInformationFlowSuite.lean
+run_check "INVARIANT" rg -n '^private def declassifiedSignalTraceLines($|[ ({:\[\]])' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'declassifying signal: hops=2 actorDomain=2 notificationDomain=1 receiverDomain=0' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'declassifying signal footprint: notification=1016 receiver=1021 cores=\[2\]' tests/fixtures/smp_information_flow.expected
 run_check "INVARIANT" rg -n 'declassifying signal run: ok records=2' tests/fixtures/smp_information_flow.expected
@@ -7324,11 +7328,11 @@ run_check "INVARIANT" rg -n 'declassifying signal ABI: id=33' tests/fixtures/smp
 run_check "INVARIANT" rg -n 'refusedReceiver : Option SeLe4n.ThreadId' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
 run_check "INVARIANT" rg -n '^def refusedSignalReceiver\?' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^theorem refusedSignalReceiver\?_resolves' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def refusalReceiverFor' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalReceiverFor_other' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem refusalRecord_names_failed_hop' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_deniedAtReceiver_resolves' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalHopAuthorization_error_refusal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def refusalReceiverFor($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalReceiverFor_other($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem refusalRecord_names_failed_hop($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_deniedAtReceiver_resolves($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalHopAuthorization_error_refusal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n 'refusalReceiverChunkCount \(slot : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_check "INVARIANT" rg -n 'RefusalReceiverChunks = 25' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'RefusalReceiver = 26' rust/sele4n-sys/src/audit.rs
@@ -7341,8 +7345,8 @@ run_check "INVARIANT" rg -n 'declassifying signal failed hop: reason=56 recorded
 run_check "INVARIANT" rg -n 'sid = SyscallId.declassifySignal ∧ ke = KernelError.declassificationDeniedAtReceiver' SeLe4n/Platform/FFI.lean
 # The SM8.E defect class stays closed: the thirteenth policy-gated entry's
 # members of BOTH enforcement families exist.
-run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassifySignal' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denied_preserves_state' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem enforcement_sufficiency_declassifySignal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_denied_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 # The retired deferral premise must not return: the record's docstring no
 # longer claims the seam cannot see the resolved receiver.
 run_prose_negative_check "INVARIANT" rg -n 'so the seam cannot see it; .which. hop failed can ride' SeLe4n/Kernel/InformationFlow/RefusalRecord.lean
@@ -7352,8 +7356,8 @@ run_prose_negative_check "INVARIANT" rg -n 'so the seam cannot see it; .which. h
 # bound path only and trusts wait-time admission): provably a no-op on
 # checked-admitted waiters, and its one-bit refusal disclosure exhibited as a
 # theorem rather than hidden.
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_outcome_depends_on_receiver' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_admitted_receiver_error_is_first_hop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem declassifiedSignalPlan_outcome_depends_on_receiver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n 'a checked-admitted plain waiter never triggers the receiver refusal' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'DISCLOSURE: refusal-vs-success reveals the denied plain waiter' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the symmetric alternative delivers the badge to the denied receiver' tests/SmpInformationFlowSuite.lean
@@ -7362,9 +7366,9 @@ run_check "INVARIANT" rg -n 'NEGATIVE: the symmetric alternative delivers the ba
 # a live notification BEFORE any policy is consulted (the sibling
 # `.declassify` discipline), so an invalid capability is never a policy
 # oracle; wrong-kind/absent answer the ordinary signal's own errors.
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_wrong_kind' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_absent_target' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
-run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_invalid_target_policy_blind' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_wrong_kind($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_absent_target($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^theorem notificationSignalDeclassifiedOnCore_invalid_target_policy_blind($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n '^theorem declassifiedSignalReceiver\?_some_notification' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n 'a wrong-kind target answers invalidCapability under every policy' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a wrong-kind target no longer reports the caller' tests/SmpInformationFlowSuite.lean
@@ -7389,11 +7393,11 @@ run_check "INVARIANT" rg -n '^def maxTaintTags : Nat := 8' SeLe4n/Kernel/Informa
 # of recorded ones — which is why there is no seventeenth
 # `proofLayerInvariantBundle` conjunct (the shape SM9.B's ledger established).
 run_check "INVARIANT" rg -n 'tags_bounded : tags.length ≤ maxTaintTags' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem taint_bounded_structurally' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem taint_bounded_structurally($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 # Overflow saturates UPWARD: for a detector, over-approximation is the safe
 # direction — losing a real link is what must not happen.
-run_check "INVARIANT" rg -n '^theorem taintSaturate_over_approximates' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem taintSaturate_over_approximates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 # The side table is a KEYED association list under a total lookup, not an
 # `RHTable`: a hash table's lookup-after-insert law needs `invExt`, which would
 # force the bundle conjunct this design avoids.  The canonical form — at most one
@@ -7406,7 +7410,7 @@ run_check "INVARIANT" rg -n '^theorem join_saturated_covers_all' SeLe4n/Kernel/I
 run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
 run_check "INVARIANT" rg -n '^  canonical : TaintEntries\.Canonical entries' SeLe4n/Kernel/InformationFlow/Taint.lean
 run_check "INVARIANT" rg -n '^theorem TaintEntries\.canonical_erase' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem entries_live' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem entries_live($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 
 # SM9.D.2 – SM9.D.6: the §6 `SystemState` mount checklist, run for the fourth
 # time.  The frozen field is REQUIRED (a silent drop is a compile error) and the
@@ -7414,28 +7418,28 @@ run_check "INVARIANT" rg -n '^theorem entries_live' SeLe4n/Kernel/InformationFlo
 # by `rfl` across an arbitrary field write).
 run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/State.lean
 run_check "INVARIANT" rg -n 'declassificationTaint : SeLe4n.Kernel.TaintTable' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_declassificationTaint_eq' SeLe4n/Model/State.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationTaint_eq' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem freeze_preserves_declassificationTaint($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_declassificationTaint_eq($|[ ({:\[\]])' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatform_declassificationTaint_eq($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'declassificationTaint :$' SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean
-run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationTaint' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_setDeclassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 # Information flow: the table is OUTSIDE `ObservableState`.  Provenance names
 # `(object, declassification identity)` pairs, so projecting it would be a
 # content channel out of exactly the boundary the audit polices.
-run_check "INVARIANT" rg -n '^theorem declassificationTaint_write_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationTaint_write_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem onCore_declassificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/ObservableStatePerCore.lean
 
 # SM9.D.13a: the recorded snapshot on the audit event.  UNDEFAULTED, because a
 # default would attribute an empty history to every event while compiling
 # everywhere; and the tags are GLOBAL identities, so the field is read by the
 # detector and never exported through SM9.A's chunk protocol.
 run_check "INVARIANT" rg -n 'predecessorTags : DeclassificationTaint' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^def declassificationEventNames' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
-run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint' SeLe4n/Kernel/InformationFlow/Declassification.lean
-run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^def declassificationEventNames($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRecord.lean
+run_check "INVARIANT" rg -n '^abbrev declassificationActorTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
+run_check "INVARIANT" rg -n '^abbrev declassifyStoreEventWithTags($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Declassification.lean
 # The multi-hop recorder threads the snapshot, so hop 2 names hop 1 within one
 # transition — the property `recordDeclassifiedHops_two` now carries.
-run_check "INVARIANT" rg -n '^def recordDeclassifiedHopsFrom' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
+run_check "INVARIANT" rg -n '^def recordDeclassifiedHopsFrom($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean
 
 # SM9.D.7 – SM9.D.11: the propagation sites, as DATA with a total
@@ -7445,7 +7449,7 @@ run_check "INVARIANT" rg -n 'declassificationEventNames e₂ e₁ = true' SeLe4n
 # graph, not a theorem.
 run_check "INVARIANT" rg -n '^inductive ContentFlowClass where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^def contentFlowClass : SyscallId → ContentFlowClass' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem contentFlowClass_total' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem contentFlowClass_total($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # NEGATIVE: the classification must stay wildcard-free (same anchor shape as
 # the seam's — `contentFlowClass_total` is ∃-shaped and holds of a wildcarded
 # function too, so only this pins the mechanism).
@@ -7483,32 +7487,32 @@ run_check "BUILD" rg -n 'check_content_flow_coverage.py. --self-test' scripts/te
 # `sendQ.head` directly.  Keeping a positive anchor on a deleted theorem beside
 # the negative that forbids it makes the tier unsatisfiable, which is how this
 # pair was found.
-run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_reply_to_caller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_signal_to_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_wait_from_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintOrigination_target' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintOrigination_actor' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_send_to_receiver($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_reply_to_caller($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_signal_to_notification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_wait_from_notification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_target($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintOrigination_actor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # The diff recovery is characterised in both directions: a pure append IS the
 # appended suffix, and a commit that advanced the epoch (the drain) originates
 # nothing — so "recovered from the trail's own diff" is checked, not read off
 # `drop`'s behaviour on a shortened list.
-run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_append' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_append($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_drained($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # SM9.D.12: the retype CLEARS rather than frames — it commits `storeObject` at
 # the same id, so a framed retype would leave a destroyed object's tags on its
 # replacement.  The two imprecisions must not be conflated.
-run_check "INVARIANT" rg -n '^theorem retypeClearsTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem retypeClearsTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem retypedObject_taint_empty($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem staleTaint_is_not_saturation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # The live write sites: BOTH dispatchers, applied to the state each was given.
 # PR #873 round 6 moved the seam down from the two entries, because
 # `dispatchSyscall`'s docstring points integrators at `dispatchSyscallChecked`
 # for production entry and a seam above it was one an integrator never reached.
 run_check "INVARIANT" rg -n 'applySyscallTaint' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_applies_taint_plan' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_applies_taint_plan($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscall_applies_taint_plan($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # That the entries do NOT re-apply it is enforced where it can be enforced
 # exactly: `DECLARED_TAINT_CONSUMERS` in the Tier-1 content-flow gate names the
 # two dispatchers and fails on any other constant that reaches the taint API, so
@@ -7519,10 +7523,10 @@ run_check "INVARIANT" rg -n 'SeLe4n.Kernel.dispatchSyscallChecked' scripts/check
 # discipline is GATED on the uncovered-domain inventory being empty, so the
 # per-key taint store (and every other registered domain) is a precondition of
 # SM3.C.9's fine locks rather than work that may land alongside them.
-run_check "INVARIANT" rg -n '^def fineLockDisciplineComplete' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem fineLockDisciplineComplete_is_false' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem fineLockDiscipline_requires_every_domain_covered' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^def fineLockDisciplineComplete($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDisciplineComplete_is_false($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem fineLockDiscipline_requires_every_domain_covered($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 
 # PR #873 round 6: **a queued capability transfer installs, like a rendezvous
 # one.**  The `.receive` arm ran the bare per-core receive, which delivers a
@@ -7532,8 +7536,8 @@ run_check "INVARIANT" rg -n '^theorem taintPerKeyStore_blocks_fineLockDiscipline
 # SENDER's, carried on the message (`capsGranted`), because the sender's endpoint
 # capability is gone by the time a receiver dequeues a parked send.
 run_check "INVARIANT" rg -n '  capsGranted : Bool' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^def endpointReceiveDualWithCapsOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_no_caps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n 'endpointReceiveDualWithCapsOnCore epId tid replyIdOpt' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'capsGranted := cap.rights.mem .grant' SeLe4n/Kernel/API.lean
 # The enforcement inventory names the operation the arm REACHES, so it moved with
@@ -7566,21 +7570,21 @@ run_check "INVARIANT" rg -n 'replyRecvCapTransferArrivalOrder' tests/OperationCh
 # authority minted with no sender.  The gate is the endpoint's pre-state send
 # queue, which is what the bare transition itself branches on.
 run_check "INVARIANT" rg -n '^def receiveRendezvousSender\?' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^def receiveInstallsCaps' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_blocked_installs_nothing' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
+run_check "INVARIANT" rg -n '^def receiveInstallsCaps($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Transport.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_blocked_installs_nothing($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCaps_blocked_installs_nothing($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/WithCaps.lean
 run_check "INVARIANT" rg -n 'receiveWithoutSenderInstallsNothing' tests/OperationChainSuite.lean
 # And the install's declared footprint: `ipcTransferSingleCap` writes the
 # receiver's own CSpace root, which both receive-shaped footprints declared READ.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_capsInstall_write_mem' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReceive_capsInstall_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_capsInstall_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" rg -n 'receiveInstallsCaps st endpointObjId' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # The inventory must name the function the dispatch calls: both receive-shaped
 # live arms reach the WithCaps form now, so the bare transition is a below-API
 # entry and the live-arm claim sits on the new one.  The negative forbids the
 # claim drifting back onto the bare transition.
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_confinedToCores' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_confinedToCores($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDualWithCapsOnCore_crossCoreNonInterference($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_check "INVARIANT" rg -n '\| \.endpointReceiveDualWithCaps => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 run_negative_check "INVARIANT" rg -n '\| \.endpointReceiveDual => \.delegationProof \.receive' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 
@@ -7589,13 +7593,13 @@ run_negative_check "INVARIANT" rg -n '\| \.endpointReceiveDual => \.delegationPr
 # bounded only at the 256-entry cliff, and it ran on every successful syscall.
 # The skip is licensed by a total classifier whose set is a checked value, and
 # whose answer the Tier-1 content-flow gate verifies against the call graph.
-run_check "INVARIANT" rg -n '^def syscallRecordsDeclassification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_iff' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_independent_of_class' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^def planOriginationTags' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def syscallRecordsDeclassification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem syscallRecordsDeclassification_independent_of_class($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def planOriginationTags($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '  originates : Bool' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem planOriginationTags_eq_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem planOriginationTags_eq_of_no_events($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # The drain writes the trail and still originates nothing — the load-bearing
 # exemption behind `.auditDrain` answering `false`, and what the Tier-1 gate
 # requires to be present before it honours that exemption.  Both branches:
@@ -7604,11 +7608,11 @@ run_check "INVARIANT" rg -n 'theorem syscallTaintPlan_originates' SeLe4n/Kernel/
 # kind inventory admits every one — and the consistency theorem is stated over
 # EVERY `targetLock`, not only the default `none` it used to be provable at.
 # `lockSet_declassify_nonTarget_kinds` is what keeps the fixed part tight.
-run_check "INVARIANT" rg -n '^theorem permittedKinds_declassify_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_declassify_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem permittedKinds_declassify_admits_every_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_nonTarget_kinds($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'cnRoot : ObjId\) \(targetLock : Option LockId := none\)' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_of_drop' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_auditDrain' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_of_drop($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem newlyRecordedEvents_auditDrain($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'AUDIT_APPEND_EXEMPT' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'CF_AUDIT_ARM' scripts/check_content_flow_coverage.py
 # The gates must see private definitions: Lean mangles `private def` to
@@ -7622,24 +7626,24 @@ run_negative_check "INVARIANT" rg -n 'if n.isInternal' scripts/check_content_flo
 # as a REFUTED design, since re-evaluating a historical event against the
 # current table invents links a retype has cleared and loses links acquired
 # after the fact.
-run_check "INVARIANT" rg -n '^def declassificationChainCausal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^def chainCausalFromTable' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainCausal_is_history_local' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainCausal_not_table_derived' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainCausal_survives_subject_retype' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainLaunders_sound_under_causal_provenance' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem causalChain_residual_over_approximation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainLaunders_residual_is_saturation' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def declassificationChainCausal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^def chainCausalFromTable($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_is_history_local($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_not_table_derived($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainCausal_survives_subject_retype($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_sound_under_causal_provenance($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem causalChain_residual_over_approximation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainLinked_is_causal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainLaunders_residual_is_saturation($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # The verdict a monitor reads — one OPAQUE bit per adjacent pair, never the
 # recorded tags (global declassification identities, which the view-local entry
 # indices exist to hide).  Without it the causal detector would be an
 # improvement only the model can see.
 run_check "INVARIANT" rg -n 'chainNamesPredecessor \(index : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainVerdict_index_zero_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainVerdict_reconstructs_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_ok($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_index_zero_refused($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_view_local($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_reconstructs_causal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'ChainNamesPredecessor = 27' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'the causality verdict reaches a monitor' tests/SmpInformationFlowSuite.lean
 # PR #873 review: the GENERAL causality verdict.  `predecessorTags` may name any
@@ -7648,10 +7652,10 @@ run_check "INVARIANT" rg -n 'the causality verdict reaches a monitor' tests/SmpI
 # interleaved event split out of adjacency.  Opcode 28 is appended (never a
 # renumber — an ABI number is a contract) and reads two view-local indices.
 run_check "INVARIANT" rg -n 'chainNamesEntry \(later earlier : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_ok' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_refused' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_view_local' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_names_iff' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_ok($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_refused($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_view_local($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainEntryVerdict_names_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n 'ChainNamesEntry = 28' rust/sele4n-sys/src/audit.rs
 run_check "INVARIANT" rg -n 'NEGATIVE: the same domain-composing pair with no snapshot reads 0' tests/SmpInformationFlowSuite.lean
 run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_information_flow.expected
@@ -7661,16 +7665,16 @@ run_check "TRACE" rg -n 'causality verdict: monitorReads=' tests/fixtures/smp_in
 # specific unsaturated predecessor behind, which `staleTaint_is_not_saturation`
 # forbids.  It was also redundant: a transfer moves authority, and every content
 # flow the authority enables is declared where that content actually moves.
-run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem senderTaintEdges_content_only($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 
 # PR #873 round 9: the taint table is keyed, so it is bounded by the objects
 # that currently carry provenance rather than by how many writes have happened.
 # A function-backed table recorded history: the ordinary store/consume cycle is
 # value-changing in both directions, so the no-op write guards never covered it.
 run_check "INVARIANT" rg -n '^structure TaintTable where' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^def taintEntriesErase' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem storeThenClear_no_growth' SeLe4n/Kernel/InformationFlow/Taint.lean
-run_check "INVARIANT" rg -n '^theorem clearAt_set_entries' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^def taintEntriesErase($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem storeThenClear_no_growth($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem clearAt_set_entries($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 run_check "INVARIANT" rg -n 'five store/consume cycles leave the taint table with no entries at all' tests/SmpInformationFlowSuite.lean
 # NEGATIVE: the function representation must not come back — it is what made the
 # table a record of every write.
@@ -7682,9 +7686,9 @@ run_negative_check "INVARIANT" rg -n 'abbrev TaintTable := SeLe4n\.ObjId' SeLe4n
 # states with identical views but different hidden entries, which is a count of
 # what the reader cannot see.
 run_check "INVARIANT" rg -n '\| chainNamesArchived \(later timestamp : Nat\)' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_names_iff' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_denied_for_non_monitor' SeLe4n/Kernel/InformationFlow/AuditRead.lean
-run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_names_iff($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_denied_for_non_monitor($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # The count itself is pinned once, with the ABI mirror above; only this
 # opcode's own value belongs here.
 run_check "INVARIANT" rg -n 'ChainNamesArchived = 29' rust/sele4n-sys/src/audit.rs
@@ -7699,17 +7703,17 @@ run_negative_check "INVARIANT" rg -n '^theorem taintPropagation_cspace_provenanc
 # …and the clear path is elided like the join path: `contentFlowClears` fires on
 # every wait and every direct-to-waiter signal, so an unguarded clear would
 # rebuild the closure chain the join elision removed.
-run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem clearAt_eq_of_empty($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 # …and the disjoint-write-set claim APPLIES both plans rather than restating the
 # frame lemma (the tautology class this workstream has now hit three times).
-run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_order_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873: IPC capability transfer records its derivation edge from the slot the
 # capability was REALLY resolved from.  CDT nodes are keyed by the full SlotRef,
 # so the previous synthetic parent (slot 0 of the sender's root) put every
 # transferred copy under a node that revoking the true source never visits: the
 # copy survived a revoke meant to destroy it, and an unrelated capability at the
 # stand-in address was destroyed by a revoke that had nothing to do with it.
-run_check "INVARIANT" rg -n '^structure TransferCap' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^structure TransferCap($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'srcNode : CdtNodeId' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'caps : Array TransferCap' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" rg -n 'ipcTransferSingleCap tc.cap tc.srcNode' SeLe4n/Kernel/IPC/Operations/CapTransfer.lean
@@ -7732,13 +7736,13 @@ run_check "INVARIANT" rg -n 'chain12b: revoking an unrelated slot leaves the tra
 # target from a waiter — and disagreed three times in three rounds.
 run_check "INVARIANT" rg -n '^inductive SignalDelivery where' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^def signalDelivery ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^def signalBypassedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem signalDelivery_bound_leaves_notification_alone' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalBypassedNotification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_bound_leaves_notification_alone($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem signalDelivery_waiter_empties_notification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # A bypass is NOT a clear: the notification keeps a stored badge and its
 # provenance, but the fresh event is not originated onto it.
 run_check "INVARIANT" rg -n 'bypassed : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 round 7: a BARE downgrade releases nothing into an IDLE target, so it
 # originates nothing there.  `.declassify` carries no payload, and against an
 # empty notification the tag was fictitious — a later unrelated signal joined it,
@@ -7747,8 +7751,8 @@ run_check "INVARIANT" rg -n '^theorem bypassedObject_not_originated' SeLe4n/Kern
 # that keeps the skip from becoming an under-approximation.
 run_check "INVARIANT" rg -n '^def declassifyBypassedTarget ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^def declassifyBypassedTargets ' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem declassify_idle_notification_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypassed' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_idle_notification_bypassed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypassed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 round 9: and the ACTOR half.  Round 7 suppressed the target pair and
 # left `(sourceSubject, timestamp)` standing, so the subject kept an identity it
 # never released — and `declassificationActorTaint` snapshots the ACTOR, so its
@@ -7756,20 +7760,20 @@ run_check "INVARIANT" rg -n '^theorem declassify_pending_notification_not_bypass
 # contributes neither pair, dropped per event rather than filtered by key.
 run_check "INVARIANT" rg -n '  noRelease : List SeLe4n.ObjId' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem originationTags_cons_noRelease' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem originationTags_cons_release' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem originationTags_cons_release($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # PR #873 round 9: a non-archived timestamp is a malformed OPERAND, not an
 # authority failure — the gate is checked first, so an unauthorized caller still
 # learns nothing about the trail's extent.
-run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp' SeLe4n/Kernel/InformationFlow/AuditRead.lean
+run_check "INVARIANT" rg -n '^theorem chainArchivedVerdict_refuses_live_timestamp($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 run_negative_check "INVARIANT" rg -n '&& decide \(timestamp <' SeLe4n/Kernel/InformationFlow/AuditRead.lean
 # PR #873 round 10: four gate-soundness corrections.  Two stop the anchor gate
 # inventing failures (a search MODE and a search SCOPE are part of what an
 # anchor pins), and two stop the content-flow gate under-reading (a walk that
 # stops with an unexpanded frontier, and three dispatchers merged under one
 # syscall name so a healthy arm masked a broken sibling).
-run_check "INVARIANT" rg -n '^def _mode_allows' scripts/check_anchor_consistency.py
-run_check "INVARIANT" rg -n '^def _scope_contains' scripts/check_anchor_consistency.py
-run_check "INVARIANT" rg -n '^def arm_key' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n '^def _mode_allows($|[ ({:\[\]])' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def _scope_contains($|[ ({:\[\]])' scripts/check_anchor_consistency.py
+run_check "INVARIANT" rg -n '^def arm_key($|[ ({:\[\]])' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'FAIL_CLOSED_ARMS' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'CF_TRUNCATED' scripts/check_content_flow_coverage.py
 # PR #873 round 11: `pendingMessage` agrees with the blocking state in BOTH
@@ -7784,7 +7788,7 @@ run_check "INVARIANT" rg -n '\.blockedOnSend _ => tcb\.pendingMessage\.isSome' S
 run_check "INVARIANT" rg -n '\.blockedOnCall _ => tcb\.pendingMessage\.isSome' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n 'blockedThreadPendingMessageChecks' SeLe4n/Testing/InvariantChecks.lean
 run_check "INVARIANT" rg -n 'headTcb\.pendingMessage\.isNone' SeLe4n/Kernel/IPC/DualQueue/Core.lean
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_send_sender_carries_message($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n 'receiveRefusesMessagelessParkedSender' tests/OperationChainSuite.lean
 # PR #873 round 12: two defaults inverted, for the same reason each time -- a set
 # of remembered exceptions is a list of the cases someone thought of.  The
@@ -7793,9 +7797,9 @@ run_check "INVARIANT" rg -n 'receiveRefusesMessagelessParkedSender' tests/Operat
 # and the field-write detector no longer infers "this is an update" from a
 # projection being present, so no spelling of the rebuild can hide a second
 # writer.  The negatives pin that neither default comes back.
-run_check "INVARIANT" rg -n '^def declassifyTargetHoldsContent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem declassifyBypassedTarget_of_untracked_kind' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem declassifyTargetHoldsContent_covers_every_tracked_field' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def declassifyTargetHoldsContent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyBypassedTarget_of_untracked_kind($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem declassifyTargetHoldsContent_covers_every_tracked_field($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'cfPlantedRebuildTaintWriter' scripts/check_content_flow_coverage.py
 run_check "INVARIANT" rg -n 'STATE_CONSTRUCTORS' scripts/check_content_flow_coverage.py
 run_negative_check "INVARIANT" rg -n 'let isUpdate' scripts/check_content_flow_coverage.py
@@ -7815,25 +7819,25 @@ run_negative_check "INVARIANT" rg -n 'storeTcbIpcState st. receiver \(\.blockedO
 # revocation.  The fix is at the operation that defines the guarantee rather than
 # at a third reader of the pending-transfer predicate: both revoke wrappers end by
 # consuming the carried derivations, over the revoked root and its whole subtree.
-run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def revokePendingTransfersFrom($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_frame($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # PR #873 round 17: that consumption was an epilogue appended at each entry
 # point, and there were FOUR hand-written traversals to append it to.  Two got
 # it; a successful `cspaceRevokeCdtStrict` or `cspaceRevokeCdtTransactional`
 # returned its folded state with the derivation still parked, and the receiver's
 # later collect installed it.  The entry points are now one scaffold at four
 # traversals, so the prologue and the epilogue are not a variant's to write.
-run_check "INVARIANT" rg -n '^def revokeCdtScaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def revokeCdtScaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'revokePendingTransfersFrom out.state \(rootNode :: out.revokedNodes\)' SeLe4n/Kernel/Capability/Operations.lean
 # The tie is definitional -- four `rfl`s, so a variant that stopped being the
 # scaffold would fail to elaborate rather than fail to be listed.
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStreaming_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtStrict_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_routes_through_scaffold($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # Held over an arbitrary traversal, so it covers the four that exist and the ones
 # that do not exist yet.
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_consumed_or_nothing_derived' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_consumed_or_nothing_derived($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # The exact pre-fix return of both reporting variants: the fold's state handed
 # back with no consumption.  Load-bearing negative -- this is the shape that let
 # a revoke report success while the capability was still on its way.
@@ -7841,16 +7845,16 @@ run_negative_check "INVARIANT" rg -n 'ok \(\{ report with deletedSlots := report
 # Consuming from a TCB is a write to the object store, so the seven-conjunct
 # capability bundle has to survive it -- proved, not assumed, and in the Invariant
 # layer because Operations cannot name the bundle.
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 # The transactional variant had NO preservation theorem: the strict one restated
 # its fold inline instead of naming it, so there was nothing for a second variant
 # over the same fold to reuse.
-run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtReportingStep_preserves($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdtTransactional_preserves_capabilityInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 # And the regression names revocation rather than one function: it ran
 # `cspaceRevokeCdt` alone, which is why it could not see the other three.
 run_check "INVARIANT" rg -n 'revokeConsumesPendingTransfer' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n '^private def revocationEntryPoints' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^private def revocationEntryPoints($|[ ({:\[\]])' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'revocationEntryPoints.length == 4' tests/OperationChainSuite.lean
 # And the send-side half of round 6's ordering independence.  The wrappers took
 # the grant authority TWICE -- the `endpointRights` argument for the rendezvous
@@ -8131,8 +8135,8 @@ run_check "INVARIANT" rg -n 'the bracket takes the COMMITTED arm' tests/SmpCross
 # that it is wired, that both reconciliation directions exist, and that the
 # planted bare-commit witness is there.
 run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.ExportCommitDisciplineCensus' scripts/test_tier1_build.sh
-run_check "INVARIANT" rg -n '^def commitDisciplineRegistry' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
-run_check "INVARIANT" rg -n '^def reconciliationViolations' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n '^def commitDisciplineRegistry($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
+run_check "INVARIANT" rg -n '^def reconciliationViolations($|[ ({:\[\]])' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessBareCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 run_check "INVARIANT" rg -n 'censusWitnessIndirectCommit' SeLe4n/Testing/ExportCommitDisciplineCensus.lean
 # The registry is reconciled BOTH ways: an unrecorded seam overstates nothing
@@ -8151,11 +8155,11 @@ run_negative_check "INVARIANT" rg -n 'IO.FS.readFile|System.FilePath' SeLe4n/Tes
 # anchors pin the relation, not the presence of a token: a check that only asked
 # "does `errorFrame` appear in Timeout.lean" would pass with both paths staging
 # the same code, which is the defect this row exists to avoid.
-run_check "INVARIANT" rg -n '^def timeoutFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def cancelledIpcFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem timeout_and_cancelled_frames_differ' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem unblockFrames_ne_success' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem unblockFrames_decode' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def timeoutFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def cancelledIpcFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem timeout_and_cancelled_frames_differ($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem unblockFrames_ne_success($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem unblockFrames_decode($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # `.ipcCancelled` is a discriminant of its own, not a reuse of `.ipcTimeout`:
 # a userspace library retrying on timeout would also retry a cancellation,
 # against an endpoint that may no longer exist.
@@ -8166,13 +8170,13 @@ run_check "INVARIANT" rg -n 'IpcCancelled = 57' rust/sele4n-types/src/error.rs
 run_check "INVARIANT" rg -n 'Architecture.timeoutFrame' SeLe4n/Kernel/IPC/Operations/Timeout.lean
 # The CANCELLATION path stages the cancellation frame on all four blocked arms,
 # through one spelling of the field clear.
-run_check "INVARIANT" rg -n '^def restoreToReadyCancelled' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def restoreToReadyCancelled($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 run_check "INVARIANT" rg -n 'Architecture.cancelledIpcFrame' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_readReturnFrame' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # ...and it is the SAME field clear as the resume spelling, frame aside, so a
 # field added to one and not the other fails to elaborate.
-run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_tcb' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def restoreToReadyStaging' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyCancelled_tcb($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def restoreToReadyStaging($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
 # NEGATIVE: the RESUME spelling must not stage.  `.tcbResume` restarts a thread
 # where it was (RR4.11's `retirePendingFaultForResume` is the fault half of the
 # same posture), so overwriting `x0`-`x5` there would destroy the very window
@@ -8188,7 +8192,7 @@ run_check "INVARIANT" rg -n 'st.scheduler.currentOnCore c = some x . st.getTcb\?
 # The information-flow half: the frame is written into the victim's OWN TCB,
 # the one object the high-thread premise already covers.  Had it gone to the
 # machine register banks this would be false.
-run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_projection_high' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_projection_high($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 # Both halves are exercised live, against a victim carrying a RECOGNISABLE
 # stale window, so "the frame is right" and "the stale window is gone" are two
 # assertions rather than one.
@@ -8204,12 +8208,12 @@ run_check "INVARIANT" rg -n 'runTimeoutFrameStagingChecks' tests/SmpTimerSuite.l
 # restatement of the `if`; these pin the family that makes it a property —
 # both directions, id-independence, and the composition onto the exported seam,
 # which is where the trap layer reads it.
-run_check "INVARIANT" rg -n '^theorem blockingArm_returns_no_frame' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocks_iff' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_independent_of_id' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_ignores_staged_registers' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_ne_faulted' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_blocked_returns_no_frame' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem blockingArm_returns_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocks_iff($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_independent_of_id($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_blocked_ignores_staged_registers($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnOutcome_ne_faulted($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_blocked_returns_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # (b) the Rust `ReturnShape` mirror.  NEGATIVE first: the wildcard arm is what
 # made the mirror silently total, so a new syscall would have read `Unit` on the
 # Rust side while Lean refused to build until it was classified.
@@ -8226,8 +8230,8 @@ run_check "INVARIANT" rg -n 'return_shape_mirror_is_total_and_partitions_the_sur
 # silently and every consumer would still pass over a range with a hole at the
 # top.  The literal that used to sit at nine sites said `57` in a trace line for
 # a whole cut after RR7.14 widened the range.
-run_check "INVARIANT" rg -n '^def kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem kernelErrorCount_tight' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def kernelErrorCount($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorCount_tight($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # (b2) …and the mechanism that makes the negative above mean anything.  The
 # overlay linked `.rs` files whole while `test_lib.sh`'s classifier routed
@@ -8235,7 +8239,7 @@ run_check "INVARIANT" rg -n 'toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/
 # text — "gates read code, prose reads prose" held for Lean only.  The stripper
 # is `rust_code_view.code`, the one the Python gates already read, so the tree
 # has one Rust view rather than two that can disagree.
-run_check "INVARIANT" rg -n '^def _rust_code' scripts/lean_code_view.py
+run_check "INVARIANT" rg -n '^def _rust_code($|[ ({:\[\]])' scripts/lean_code_view.py
 run_check "INVARIANT" rg -n '_STRIPPERS = \{' scripts/lean_code_view.py
 run_check "INVARIANT" rg -n 'stripper = _STRIPPERS.get' scripts/lean_code_view.py
 # The wiring witness covers BOTH languages: a Lean-only witness is exactly what
@@ -8257,9 +8261,9 @@ run_prose_check "INVARIANT" rg -n 'the application IPC label' docs/planning/HIER
 # the citation.  The set is DERIVED from the elaborated environment; building
 # the module is the check, and Tier 1 builds it.
 run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.LockFootprintBoundCensus' scripts/test_tier1_build.sh
-run_check "INVARIANT" rg -n '^def isFootprintDecl' SeLe4n/Testing/LockFootprintBoundCensus.lean
-run_check "INVARIANT" rg -n '^def requiredBoundType' SeLe4n/Testing/LockFootprintBoundCensus.lean
-run_check "INVARIANT" rg -n '^def boundViolation' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n '^def isFootprintDecl($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n '^def requiredBoundType($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
+run_check "INVARIANT" rg -n '^def boundViolation($|[ ({:\[\]])' SeLe4n/Testing/LockFootprintBoundCensus.lean
 # The arity check is the load-bearing half: `requiredBoundType` builds the
 # statement from the DEFINITION's own telescope and compares by `isDefEq`, so a
 # bound stated at fewer binders is a different type rather than a near miss.
@@ -8269,8 +8273,8 @@ run_check "INVARIANT" rg -n 'isDefEq boundInfo.type required' SeLe4n/Testing/Loc
 # refuses an empty subject.
 run_check "INVARIANT" rg -n 'found NO footprints' SeLe4n/Testing/LockFootprintBoundCensus.lean
 # The four the hand-written conjunction had missed…
-run_check "INVARIANT" rg -n '^theorem lockSet_mintReplyCap_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_mintReplyCap_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbBindNotification_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 
 # WS-OD OD3.18: the module header's two hand-written inventories of which
 # footprints need a SchedContext member were a THIRD copy of `permittedKinds`,
@@ -8294,8 +8298,8 @@ run_prose_negative_check "INVARIANT" rg -Un 'SetMCPriority/SetIPCBuffer`\*\*:\n 
 # silent return to the prior text.
 run_prose_check "INVARIANT" rg -n 'The 5 affected syscalls and their donation extensions' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_prose_check "INVARIANT" rg -n 'These two lists are a reading aid' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbUnbindNotification_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSetAffinity_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # …and the fifth defect beneath them: the reply footprint's bound was stated at
 # five of its six arguments, so the shape the LIVE `.reply` dispatch resolves
 # had no bound.  The `Option ReplyId` binder is what says it does now.
@@ -8307,10 +8311,10 @@ run_check "INVARIANT" rg -n 'lockSet_endpointReply a b c d e f' SeLe4n/Kernel/Co
 # models no kernel image links, so stating them in the production IPC modules
 # would have pulled that closure into the image
 # (`check_production_staging_partition.sh` catches exactly that).
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointSendOnCore_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointCallOnCore_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 run_check "INVARIANT" rg -n 'ResolvedFootprintBounds' scripts/staged_module_allowlist.txt
 run_check "INVARIANT" rg -n 'import SeLe4n.Kernel.Concurrency.Locks.ResolvedFootprintBounds' SeLe4n/Platform/Staged.lean
 run_check "INVARIANT" rg -n 'runNewlyBoundedFootprintChecks' tests/DeadlockFreedomSuite.lean
@@ -8320,10 +8324,10 @@ run_check "INVARIANT" rg -n 'runNewlyBoundedFootprintChecks' tests/DeadlockFreed
 # so an operation could write a field its own list omits and no proof would
 # notice — which RR7.9 found by reading, and which this row found again the
 # moment the lists carried an obligation (`storeObject` writes `asidTable`).
-run_check "INVARIANT" rg -n '^def SystemState.fieldEq' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^def preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem revokeService_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^def SystemState.fieldEq($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^def preservesFieldsOutside($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_preservesFieldsOutside($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem revokeService_preservesFieldsOutside($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 # The correction itself: `.asidTable` is in the list, and the honesty theorem
 # above is FALSE without it — so this is a pin on a fact, not on a spelling.
 run_check "INVARIANT" rg -n '\.objectIndexSet, \.lifecycle, \.asidTable\]' SeLe4n/Kernel/CrossSubsystem.lean
@@ -8345,7 +8349,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def capabilityOp_modifiedFields : List
 # `SystemState.mk.injEq`, so a structure field with no constructor leaves a
 # conjunct nobody supplies.  The eleven constructors the enumeration lacked are
 # pinned by their two closing lines.
-run_check "INVARIANT" rg -n '^theorem SystemState.eq_of_fieldEq_all' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem SystemState.eq_of_fieldEq_all($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "theorem SystemState.eq_of_fieldEq_all \(st st. : SystemState\)\n    \(h : ∀ f : StateField, SystemState.fieldEq f st st.\) : st. = st := by\n  cases st; cases st.\n  simp only \[SystemState.mk.injEq\]" SeLe4n/Kernel/CrossSubsystem.lean'
 run_check "INVARIANT" rg -n '^  \| scThreadIndex \| tlb$' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n '^  \| declassificationRefusals \| declassificationTaint$' SeLe4n/Kernel/CrossSubsystem.lean
@@ -8365,7 +8369,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\(hStep : endpointReceiveDual endpoint
 # The composites are proved from the primitives, not by a second reading of the
 # operations: the receive theorem composes the donation return's lemma, which
 # is the one place `scThreadIndex` is written.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preservesFieldsOutside' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preservesFieldsOutside($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'cleanupPreReceiveDonationChecked_preservesFieldsOutside _ _ _ hClean' SeLe4n/Kernel/CrossSubsystem.lean
 # WS-OD OD4.4: the composition crosses the resolver rather than naming `none`.
 # OD3.1 pinned the literal here, which was the phase's inertness stated at the
@@ -8381,24 +8385,24 @@ run_check "INVARIANT" rg -n 'StateField enum has 27 variants' tests/InformationF
 # surface pinned none of them: a plan-named theorem the anchors do not read is
 # a claim a rename or a deletion would leave standing.  Presence anchors, on
 # purpose — each is a theorem whose EXISTENCE the plan row asserts.
-run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_requires_right' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_implies_capability_held' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_held' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem dispatchSyscallChecked_requires_right($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntryChecked_implies_capability_held($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_implies_capability_held($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declassifyStoreOnCore_state_log_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 run_check "INVARIANT" rg -n '^theorem donation_perCore_consistent \(st st. : SystemState\)' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem runBracketed_chainExtension_composes' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
+run_check "INVARIANT" rg -n '^theorem runBracketed_chainExtension_composes($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/ChainFootprint.lean
 run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_size_le \(a : ThreadId\) \(b : ObjId\) \(c : ThreadId\)' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 run_check "INVARIANT" rg -n '^theorem toDiscriminant_lt \(e : KernelError\) : toDiscriminant e < kernelErrorCount' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # The payoff: read-set disjoint from write-set means the operation cannot
 # disturb the predicate.  It consumes BOTH families, which is what makes an
 # under-declared write-set a soundness problem rather than stale documentation.
-run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem storeObject_preserves_registryDependencyConsistent' SeLe4n/Kernel/CrossSubsystem.lean
-run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem predicateFramedByDisjointWrites($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_registryDependencyConsistent($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem revokeService_preserves_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 # The load-bearing negative: the disjointness premise is not decoration.
 # `storeObject` writes `.objects` and the queue-reference invariant reads it, so
 # the frame must NOT apply to that pair.
-run_check "INVARIANT" rg -n '^theorem storeObject_not_framed_from_noStaleEndpointQueueReferences' SeLe4n/Kernel/CrossSubsystem.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_not_framed_from_noStaleEndpointQueueReferences($|[ ({:\[\]])' SeLe4n/Kernel/CrossSubsystem.lean
 run_check "INVARIANT" rg -n 'runModifiedFieldsChecks' tests/CrossSubsystemPerCoreSuite.lean
 # The fine-lock plan's status header says what actually landed.  It read
 # "2 of 12 PRs" and "Tracks B, C and D are entirely unstarted" for ten cuts
@@ -8435,30 +8439,30 @@ run_prose_check "INVARIANT" rg -n 'not of the harness' docs/planning/SMP_BOOT_PA
 # is how five separate divergences reached review rather than the build.  The
 # table was itself wrong: row 5 named `notificationSignal` while the operation
 # mirrors the bound-aware composition the live arm runs.
-run_check "INVARIANT" rg -n '^def frozenObjectAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^def frozenStateAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^def frozenRunAgrees' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenObjectAgrees($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenStateAgrees($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenRunAgrees($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # The interlock: `frozenOpCoverage` says a frozen operation EXISTS for a
 # syscall, which every divergence also satisfied.  Claiming it now obliges
 # either a differential scenario or a stated reason, decided over
 # `SyscallId.all` so a new constructor forces the choice.
-run_check "INVARIANT" rg -n '^def frozenOpDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenOpDifferentiallyChecked($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # PR #873 round 17: keyed by SYSCALL, one scenario satisfied a whole syscall --
 # `.send` read "checked" on a fixture with no receiver waiting while the
 # rendezvous branch had never been compared.  The unit of the claim is now the
 # unit of the transition, and the per-syscall view is derived from it rather
 # than asserted beside it.
-run_check "INVARIANT" rg -n '^inductive FrozenOpBranch' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^def frozenBranchDifferentiallyChecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^theorem frozenBranch_checked_or_reasoned' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^theorem frozenBranchUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^inductive FrozenOpBranch($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^def frozenBranchDifferentiallyChecked($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranch_checked_or_reasoned($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenBranchUncheckedReason_only_when_unchecked($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # The vacuity guard: without it a syscall with no branches listed satisfies the
 # `all` and claims to be checked.
 run_check "INVARIANT" rg -n 'FrozenOpBranch.all.any \(fun b => b.syscall == sid\)' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # A `.blockedOnCall` head is parked for its reply, not woken: the branch the
 # frozen receive could not previously express, since it took no reply id.
 run_check "INVARIANT" rg -n 'senderWasCall' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n '^def frozenLinkCallerReply' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenLinkCallerReply($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 run_check "INVARIANT" rg -n 'differentialReceiveFromBlockedCallerAgrees' tests/FrozenOpsSuite.lean
 # PR #873 round 17: on a rendezvous the message goes straight from the argument
 # into the receiver's TCB, so the live send never resolved `sender` -- a caller
@@ -8481,10 +8485,10 @@ run_check "INVARIANT" rg -n 'the live delivery clears the stash' tests/FrozenOps
 # The consuming waiter is the calling thread: it never blocked, so the live
 # `notificationWait` leaves the scheduler alone and the frozen mirror must too.
 run_negative_check "INVARIANT" rg -n 'fun stR => frozenEnsureRunnable stR waiter' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n '^theorem frozenOpCoverage_obliges_differential_check' SeLe4n/Kernel/FrozenOps/Agreement.lean
-run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_covered' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpCoverage_obliges_differential_check($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpDifferentiallyChecked_implies_covered($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # An excuse left behind after the scenario lands would re-open the escape hatch.
-run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecked' SeLe4n/Kernel/FrozenOps/Agreement.lean
+run_check "INVARIANT" rg -n '^theorem frozenOpUncheckedReason_only_when_unchecked($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Agreement.lean
 # The scenarios, and the negative that makes them evidence rather than
 # decoration: a comparison returning `true` for everything would pass all six.
 run_check "INVARIANT" rg -n 'differentialNotificationSignalAgrees' tests/FrozenOpsSuite.lean
@@ -8501,8 +8505,8 @@ run_prose_negative_check "INVARIANT" rg -n '\| 5 \| .frozenNotificationSignal.*\
 # `.revocationRequired` for a derivation the unwrap was always going to deny.
 # The contract is definitional -- the state is untouched, not merely the caps
 # denied -- so it is `rfl` rather than a scenario.
-run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveExtraCaps_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem resolveExtraCapsDetailed_ungranted($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # And each live arm passes the endpoint capability's own bit, which the
 # delegation theorems restate and therefore prove rather than assert.
 run_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapAddrs gate.capDepth \(cap.rights.mem .grant\)' SeLe4n/Kernel/API.lean
@@ -8515,18 +8519,18 @@ run_negative_check "INVARIANT" rg -n 'resolveExtraCaps gate.cspaceRoot extraCapA
 # contradiction even though the literal the positive demands is matched by the
 # negative's wildcard.
 run_check "BUILD" rg -n 'HELPER_NAME_RE' scripts/check_anchor_consistency.py
-run_check "BUILD" rg -n '^def _regex_matches_literal' scripts/check_anchor_consistency.py
+run_check "BUILD" rg -n '^def _regex_matches_literal($|[ ({:\[\]])' scripts/check_anchor_consistency.py
 # PR #873 round 15: **the frozen scheduler kept no run queue.**  No frozen
 # operation ever wrote `scheduler.byPriority`, which is the only field
 # `frozenChooseThread` selects from -- so a woken thread was `.ready` and
 # permanently unselectable, and a suspended one stayed in its bucket still
 # marked `.ready`.  The docstring asserted the opposite and named `membership`,
 # a `FrozenSet` whose keys cannot change and which selection never reads.
-run_check "INVARIANT" rg -n '^def frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenEnsureRunnable($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRemoveRunnable($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 # The builder could not express a runnable thread at all, which is why every
 # frozen test started from a state the live kernel cannot produce.
-run_check "INVARIANT" rg -n '^def markRunnable' SeLe4n/Model/Builder.lean
+run_check "INVARIANT" rg -n '^def markRunnable($|[ ({:\[\]])' SeLe4n/Model/Builder.lean
 # Every wake enqueues and every block dequeues -- the pairs the live transitions
 # maintain with `ensureRunnable` / `removeRunnable`.
 run_check "INVARIANT" rg -n 'frozenEnsureRunnable' SeLe4n/Kernel/FrozenOps/Operations.lean
@@ -8540,9 +8544,9 @@ run_check "INVARIANT" rg -n 'frozenRemoveRunnable' SeLe4n/Kernel/FrozenOps/Opera
 # a boost write does -- and `frozenUpdatePipBoost` had the fold spelled inline, so
 # only the boost half was ever answered.  One question, two places, and only one of
 # them answering.
-run_check "INVARIANT" rg -n '^def frozenQueuedAnywhere' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenRebucketRunnable' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenWriteTcbRebucketed' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenQueuedAnywhere($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRebucketRunnable($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenWriteTcbRebucketed($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 # The three askers, each by the reading it needs: the boost writer composes the
 # mechanics under its own `oldPrio != newPrio` guard (which is
 # `updatePipBoostOnCore`'s and which the base writers deliberately do not have),
@@ -8609,7 +8613,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextConfigure[^\n]*
 # and computes the RETIRED fused reading beside them.
 run_check "INVARIANT" rg -n 'FO-048 NEGATIVE: the RETIRED fused gate moves the bound thread to the tail' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'FO-048 control: a priority-only reconfigure re-buckets on the live side' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureDomainOnlyKeepsOrder' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialSchedContextConfigureDomainOnlyKeepsOrder($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n '^  differentialSchedContextConfigureDomainOnlyKeepsOrder$' tests/FrozenOpsSuite.lean
 # The bucket key is the LIVE accessor, so "which bucket does this thread belong
 # in" has no frozen-specific answer -- the rule `frozenEnsureRunnable` states and
@@ -8620,8 +8624,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbRebucketed[^\n]*(\n
 # priority witnesses queue the target on BOTH surfaces before measuring -- a
 # bucket comparison whose two sides start out different measures the fixture.
 run_check "INVARIANT" rg -n 'FO-047 DIFFERENTIAL: the two post-bind states agree, buckets included' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
-run_check "INVARIANT" rg -n '^private def pm_frozenCeilingRebucketsLikeTheLiveWrite' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -n '^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite($|[ ({:\[\]])' tests/PriorityManagementSuite.lean
+run_check "INVARIANT" rg -n '^private def pm_frozenCeilingRebucketsLikeTheLiveWrite($|[ ({:\[\]])' tests/PriorityManagementSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def pm_frozenBasePriorityRebucketsLikeTheLiveWrite[^\n]*(\n([ \t][^\n]*)?)*runnable := \[callerTid, targetTid\]" tests/PriorityManagementSuite.lean'
 
 # ---------------------------------------------------------------------------
@@ -8667,11 +8671,11 @@ run_check "INVARIANT" rg -n 'resultAgrees fa la' SeLe4n/Kernel/FrozenOps/Agreeme
 # it applies the provenance step inline, while the live kernel applies it after
 # the transition at the seam.  Comparing against a bare transition compared two
 # layers and passed only while every taint was empty.
-run_check "INVARIANT" rg -n '^private def liveWithTaint' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def liveWithTaint($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'differentialTaintedSignalAgrees' tests/FrozenOpsSuite.lean
 # …and the coverage claim is checked against the list the runner executes, in
 # both directions, so it can no longer be true of a scenario that does not exist.
-run_check "INVARIANT" rg -n '^private def differentialScenarios' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialScenarios($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" rg -n 'differentialRegistryMatchesClaim' tests/FrozenOpsSuite.lean
 # The anchor gate carries file filters into the comparison: `-g '"'"'*.md'"'"'` and
 # `-g '"'"'*.lean'"'"' search disjoint files and cannot contradict, while an unfiltered
@@ -8684,7 +8688,7 @@ run_check "BUILD" rg -n '_FILE_FILTER_OPTIONS' scripts/check_anchor_consistency.
 # by the dispatcher that spells them separately, so the grouped pair was never
 # verified fail-closed.  `recording_classification` in the same file already
 # expanded groups: two parsers over one syntax, one of them right.
-run_check "BUILD" rg -n '^def split_dispatch_arms' scripts/check_content_flow_coverage.py
+run_check "BUILD" rg -n '^def split_dispatch_arms($|[ ({:\[\]])' scripts/check_content_flow_coverage.py
 run_check "BUILD" rg -n 'the arm splitter dropped a grouped arm' scripts/check_content_flow_coverage.py
 # Sequence-coded test identifiers must not come back in the renamed scenarios.
 run_negative_check "INVARIANT" rg -n 'private def fo0(2[2-9]|3[0-3])_' tests/FrozenOpsSuite.lean
@@ -8696,9 +8700,9 @@ run_negative_check "INVARIANT" rg -n 'private def chain12[b-h][A-Z]' tests/Opera
 # A passive server blocked at freeze time is exactly that case.  The fixed key
 # set was a property of `set`, not of the representation: `data` is an `Array`
 # and `indexMap` an `RHTable`, and both grow.
-run_check "INVARIANT" rg -n '^def FrozenMap.insert' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^def FrozenMap.insert($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_get\?_self' SeLe4n/Model/FrozenState.lean
-run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_preserves_wellFormed' SeLe4n/Model/FrozenState.lean
+run_check "INVARIANT" rg -n '^theorem FrozenMap.insert_preserves_wellFormed($|[ ({:\[\]])' SeLe4n/Model/FrozenState.lean
 run_check "INVARIANT" rg -n 'st.scheduler.byPriority.insert prio' SeLe4n/Kernel/FrozenOps/Core.lean
 # The refusal must not come back.
 run_negative_check "INVARIANT" rg -n 'byPriority.set prio' SeLe4n/Kernel/FrozenOps/Core.lean
@@ -8721,9 +8725,9 @@ run_prose_negative_check "INVARIANT" rg -n 'run at .API.syscallEntryChecked' SeL
 # PR #873 round 7: a CLEAR is a taint write too, so the retype's cleared key
 # rides its own object lock — the third member of `taintWriteKeys` the key-local
 # declaration had skipped.  The fixed four stay pinned separately.
-run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_clearedKey_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_lifecycleRetype_nonTarget_kinds($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem permittedKinds_lifecycleRetype_admits_every_kind($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #873 round 7: a frozen parked sender must carry its message — the state
 # check alone let a `.blockedOnSend` head with no `pendingMessage` be dequeued,
 # after which the receiver got `none` and the sender's provenance anyway.
@@ -8749,17 +8753,17 @@ run_negative_check "INVARIANT" rg -n 'def parkedCarriesCaps' SeLe4n/Kernel/Infor
 # CDT child yet, so a children-only guard permitted the delete, the slot was
 # detached from its node, and the transferred copy landed under a parent no slot
 # pointed at — unreachable by any revoke.
-run_check "INVARIANT" rg -n '^def nodeHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def slotHasPendingTransfer' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def nodeHasPendingTransfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def slotHasPendingTransfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_pending_transfer($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceDeleteSlot_refuses_existing_children($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'hasCdtChildren st addr \|\| slotHasPendingTransfer st addr' SeLe4n/Kernel/Capability/Operations.lean
 
 # The derivation-parent predicate has two callers — the slot delete and the
 # CNode retype — and they must read the same one, so both the factored
 # predicate and each caller's use of it are pinned.
-run_check "INVARIANT" rg -n '^def slotIsDerivationParent' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^def cnodeHasDerivationParentSlot' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def slotIsDerivationParent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cnodeHasDerivationParentSlot($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'if slotIsDerivationParent st addr then' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 
@@ -8767,8 +8771,8 @@ run_check "INVARIANT" rg -n 'if cnodeHasDerivationParentSlot st target cn then' 
 # `.ipcTransfer` edge declines when the source node has no slot, so no
 # destroyer — present or future — can leave an unrevokable child behind.
 run_check "INVARIANT" rg -n '^  \| sourceRevoked$' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_live_source($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserves_state($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # PR #873 round 18: that check asked whether the node still MAPPED to a slot, on
 # the premise that every destroyer severs the mapping.  Delete, CNode retype and
 # the descendant sweep do; the LOCAL sibling sweep does not -- `revokeTargetLocal`
@@ -8776,19 +8780,19 @@ run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_sourceRevoked_preserv
 # stored without touching the CDT maps.  So the mapping outlived the capability, a
 # transfer parked against a swept sibling installed, and nothing could revoke the
 # copy afterwards: `cspaceRevokeCdt` on an empty slot fails at `cspaceLookupSlot`.
-run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^def cdtNodeIsRevocable($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n 'match cdtNodeIsRevocable st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_revocable_source' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_revocable_source($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # The condition is revocation's own precondition, not a second opinion about it:
 # a change to what revocation requires breaks these rather than widening the check.
-run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 # The mapping-only test must not come back at the install site.
 run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
 # The regression carries both load-bearing negatives: the mapping survives the
 # sweep (so the old check would have passed) and the in-flight consumption does
 # not reach a swept sibling (so this is a second hole, not the first restated).
-run_check "INVARIANT" rg -n '^private def revokeSweptSiblingBlocksPendingTransfer' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n '^private def revokeSweptSiblingBlocksPendingTransfer($|[ ({:\[\]])' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'the CDT mapping outlived the capability' tests/OperationChainSuite.lean
 run_check "INVARIANT" rg -n 'the consumption sweep did not reach it' tests/OperationChainSuite.lean
 # NEGATIVE: the CNode retype arm must not go back to branching on the
@@ -8815,13 +8819,13 @@ run_check "INVARIANT" rg -n 'EVERY taint write key is write-locked by the send f
 # …a clear is FINAL within its commit: the final origination pass skips cleared
 # keys, so a declassifying signal that delivers straight to a waiter cannot
 # re-tag the transport it just emptied.
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_cleared_empty' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_cleared_empty($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'a cleared object stays empty even when the commit recorded a downgrade' tests/SmpInformationFlowSuite.lean
 # …and a BOUND delivery clears NOTHING.  `boundDeliveryTarget?` ignores
 # `pendingBadge` and `notificationSignalBound` never writes the notification, so
 # an unconditional clear discarded the provenance of a badge the object still
 # holds — a MISSED chain, the direction a detector must never err in.
-run_check "INVARIANT" rg -n '^def signalClearedNotification' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def signalClearedNotification($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: a bound delivery clears no notification taint' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'a waiter delivery still empties the notification' tests/SmpInformationFlowSuite.lean
 # PR #873 review: the CONTENT-DERIVED transport model.  A transport's taint
@@ -8830,9 +8834,9 @@ run_check "INVARIANT" rg -n 'a waiter delivery still empties the notification' t
 # receiver reads the head sender directly), and a consumed notification is
 # cleared.  Without this a reused endpoint links causally-unrelated messages —
 # a false positive that is NOT saturation.
-run_check "INVARIANT" rg -n '^def contentFlowClears' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem waitClearsNotificationTaint' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def contentFlowClears($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem waitClearsNotificationTaint($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_receive_from_sender($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint is not among the declared sinks at all' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the endpoint itself carries no identity' tests/SmpInformationFlowSuite.lean
 run_check "TRACE" rg -n 'transportUntouched=' tests/fixtures/smp_information_flow.expected
@@ -8844,26 +8848,26 @@ run_negative_check "INVARIANT" rg -n 'theorem taintPropagation_receive_from_endp
 # PR #873 review: the tracked-content SCOPE, stated as a value and tied to the
 # gate's own channel list, with the one deliberate exclusion (a capability badge
 # is authority metadata, not payload) recorded as a theorem rather than prose.
-run_check "INVARIANT" rg -n '^def contentTrackedFields' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem capabilityBadgeChannel_out_of_scope' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "BUILD" rg -n 'def check_scope_matches_lean' scripts/check_content_flow_coverage.py
+run_check "INVARIANT" rg -n '^def contentTrackedFields($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem capabilityBadgeChannel_out_of_scope($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "BUILD" rg -n 'def check_scope_matches_lean($|[ ({:\[\]])' scripts/check_content_flow_coverage.py
 # PR #873 review: the hot-path elision — a value-preserving join must not extend
 # the table's closure chain, which ordinary untainted IPC would otherwise do on
 # every edge.
-run_check "INVARIANT" rg -n '^theorem joinAt_eq_of_join_eq' SeLe4n/Kernel/InformationFlow/Taint.lean
+run_check "INVARIANT" rg -n '^theorem joinAt_eq_of_join_eq($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Taint.lean
 # SM9.D.9 (audit): the replyRecv REPLY leg — the steady-state server loop's
 # second hop, which a receive-leg-only plan under-approximates (the unsafe
 # direction for a detector).  The resolution mirrors `resolveReplyRecvReply`
 # step for step, sharing `replyTaintEdges` with the `.reply` arm so the two
 # cannot drift.
-run_check "INVARIANT" rg -n '^def replyRecvReplyLegEdges' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintPropagation_replyRecv_reply_to_prevCaller' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def replyRecvReplyLegEdges($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintPropagation_replyRecv_reply_to_prevCaller($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n 'the replyRecv plan names the reply object.s recorded caller as a sink' tests/SmpInformationFlowSuite.lean
 run_check "INVARIANT" rg -n 'NEGATIVE: the receive-leg edges alone miss the recorded caller' tests/SmpInformationFlowSuite.lean
 # SM9.D.14 (audit): the monitor's own inference direction — every read 1 ⇒ the
 # view is causal — alongside the forward reconstruction.
-run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
-run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem declassificationChainCausal_of_pairwise($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
+run_check "INVARIANT" rg -n '^theorem chainVerdict_all_ok_causal($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/DeclassificationPerCore.lean
 # PR #873 review: the flow sources are SEEDED with this commit's own origination,
 # so a syscall that both declassifies and delivers (`.declassifySignal`, whose
 # second hop is an ordinary delivery) carries the fresh event's tag to the object
@@ -8946,14 +8950,14 @@ run_negative_check "INVARIANT" rg -n 'chainLinkageIsSyntactic' SeLe4n/Kernel/Inf
 # eight content-moving syscalls would serialise every IPC in the system against
 # every other and blow the SM5.J tick budget the IPC fixtures pin, so the
 # absence of that lock on the hot path is pinned NEGATIVELY.
-run_check "INVARIANT" rg -n '^def taintWriteKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame_off_writeKeys' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^def taintWriteKeys($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame_off_writeKeys($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 
 # The origination keys are serialised by their own object locks, not by the
 # trail's state-level lock: `stateLevelLock` orders this transition against
 # other state-level writers only, while an ordinary IPC writing the same taint
 # key holds that key's lock and no state-level lock at all.
-run_check "INVARIANT" rg -n '^theorem lockSet_declassify_originationKeys_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_declassify_originationKeys_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" rg -n 'targetLock : Option LockId' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The aggregate bound must quantify over the new member, or the resolved shape
 # is silently unbounded at the defaulted `none` — the SM9.C notificationSignal defect.
@@ -8962,28 +8966,28 @@ run_check "INVARIANT" rg -n 'lockSet_declassify a b t\).size' SeLe4n/Kernel/Conc
 # Provenance follows content through the frozen operations, not only across the
 # freeze itself — a snapshot that stopped propagating one operation later would
 # report every recorded downgrade as causally unconnected.
-run_check "INVARIANT" rg -n '^private def frozenTaintFlow' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n '^private def frozenTaintClear' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^private def frozenTaintFlow($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Operations.lean
+run_check "INVARIANT" rg -n '^private def frozenTaintClear($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Operations.lean
 run_check "INVARIANT" rg -n 'signaller : SeLe4n\.ThreadId' SeLe4n/Kernel/FrozenOps/Operations.lean
 # NEGATIVE: the replier is the content source of a frozen reply, so it must not
 # go back to being an unused parameter.
 run_negative_check "INVARIANT" rg -n 'frozenEndpointReply \(_replierId' SeLe4n/Kernel/FrozenOps/Operations.lean
-run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_updates_independent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_disjoint_updates_independent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_of_no_events($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # Pinned positively at the send's base list, whose last member is the endpoint:
 # appending the level-0 singleton here is exactly the regression, and it breaks
 # this anchor.  (`stateLevelLock` still appears in the file — on the three
 # footprints that write the audit TRAIL, whose `List` append does not
 # decompose by key — so a file-wide negative would be wrong.)
 run_check "INVARIANT" rg -n '^       \(endpointLock endpointObjId, .write\)\]\)$' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem taintWriteKeys_inert($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 # SM9.D.18: the propagation is framed to one field and visible to no observer,
 # so every existing invariant argument and every NI result stands unchanged.
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
-run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_frame($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_confinedToCores_nil($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_onCore($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
+run_check "INVARIANT" rg -n '^theorem applySyscallTaint_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/FineLockFlow.lean
 
 # SM9.D tests: the eight runtime groups, their load-bearing negatives, the
 # surface anchors and the golden-fixture lines.
@@ -9071,70 +9075,70 @@ run_check "INVARIANT" rg -n 'the four sub-phase headliners stand together' tests
 run_check "INVARIANT" rg -n 'the epoch discipline and the seam.s coverage of both declassifying syscalls' tests/SmpSurfaceAnchors.lean
 
 # WS-H12d IPC message payload bounds anchors — predicate definitions + enforcement + theorems.
-run_check "INVARIANT" rg -n '^def maxMessageRegisters' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def maxExtraCaps' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def bounded' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def checkBounds' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem empty_bounded' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem checkBounds_iff_bounded' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^def allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointCall_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReply_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_message_bounded' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^def maxMessageRegisters($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def maxExtraCaps($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def bounded($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def checkBounds($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem empty_bounded($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem checkBounds_iff_bounded($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^def allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_message_bounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointCall_message_bounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReply_message_bounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_message_bounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/EndpointPreservation.lean
 # WS-H12d: KernelError variants for bounds enforcement.
 run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooLarge' SeLe4n/Model/KernelError.lean
 run_check "INVARIANT" rg -n '^\s*\| ipcMessageTooManyCaps' SeLe4n/Model/KernelError.lean
 # WS-H12d: Trace harness and fixture anchors.
-run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runIpcMessageBoundsTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
 run_check "TRACE" rg -n 'H12d oversized registers rejected' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d oversized caps rejected' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12d boundary message accepted' tests/fixtures/main_trace_smoke.expected
 
 # WS-H12e: Cross-subsystem invariant reconciliation anchors.
 # contextMatchesCurrent defined and included in schedulerInvariantBundleFull.
-run_check "INVARIANT" rg -n '^def contextMatchesCurrent' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^def contextMatchesCurrent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
 run_check "INVARIANT" rg -n 'contextMatchesCurrent st' SeLe4n/Kernel/Scheduler/Invariant.lean
 # schedulerInvariantBundleFull includes contextMatchesCurrent (5-conjunct).
-run_check "INVARIANT" rg -n '^def schedulerInvariantBundleFull' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^def schedulerInvariantBundleFull($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
 # ipcSchedulerCouplingInvariantBundle includes contextMatchesCurrent + currentThreadDequeueCoherent.
 run_check "INVARIANT" rg -n 'contextMatchesCurrent st ∧ currentThreadDequeueCoherent st' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 # proofLayerInvariantBundle uses schedulerInvariantBundleFull.
 run_check "INVARIANT" rg -n 'schedulerInvariantBundleFull st' SeLe4n/Kernel/Architecture/Invariant.lean
 # Extraction theorems for new components.
-run_check "INVARIANT" rg -n '^theorem schedulerInvariantBundleFull_to_contextMatchesCurrent' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_ipcInvariant' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_dualQueueSystemInvariant' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
-run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_allPendingMessagesBounded' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem schedulerInvariantBundleFull_to_contextMatchesCurrent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_ipcInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_dualQueueSystemInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^theorem coreIpcInvariantBundle_to_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 # switchDomain preserves contextMatchesCurrent (new for WS-H12e).
-run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_contextMatchesCurrent' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_contextMatchesCurrent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 # WS-H12e: allPendingMessagesBounded frame lemmas for primitive ops.
-run_check "INVARIANT" rg -n '^theorem ensureRunnable_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem removeRunnable_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeObject_endpoint_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem storeObject_notification_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem ensureRunnable_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem removeRunnable_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcState_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeTcbIpcStateAndMessage_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeTcbPendingMessage_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeObject_endpoint_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeTcbQueueLinks_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem storeObject_notification_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 # WS-H12e: Compound allPendingMessagesBounded preservation theorems.
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_allPendingMessagesBounded' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_allPendingMessagesBounded($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 # WS-H12e: Composed ipcInvariantFull preservation theorems.
-run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
-run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationSignal_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem notificationWait_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReply_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointSendDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReceiveDual_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointCall_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
+run_check "INVARIANT" rg -n '^theorem endpointReplyRecv_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/
 
 # WS-H12f: Test harness & documentation sync anchors.
 # Trace function definitions in MainTraceHarness.
-run_check "INVARIANT" rg -n '^private def runDequeueOnDispatchTrace' SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n '^private def runInlineContextSwitchTrace' SeLe4n/Testing/MainTraceHarness.lean
-run_check "INVARIANT" rg -n '^private def runBoundedMessageExtendedTrace' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runDequeueOnDispatchTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runInlineContextSwitchTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
+run_check "INVARIANT" rg -n '^private def runBoundedMessageExtendedTrace($|[ ({:\[\]])' SeLe4n/Testing/MainTraceHarness.lean
 # Fixture output anchors for WS-H12f trace scenarios.
 run_check "TRACE" rg -n 'H12f dequeue-on-dispatch current' tests/fixtures/main_trace_smoke.expected
 run_check "TRACE" rg -n 'H12f dispatched thread absent from runQueue' tests/fixtures/main_trace_smoke.expected
@@ -9175,142 +9179,142 @@ NI_CTORS=$(sed -n '/^inductive NonInterferenceStep/,/^\(theorem\|def\|\/\-!\)/p'
 run_check "INVARIANT" test "${NI_CTORS}" -ge 20
 
 # WS-H16/A-13: objectIndexLive predicate exists in Model/State.lean.
-run_check "INVARIANT" rg -n '^def objectIndexLive' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^def objectIndexLive($|[ ({:\[\]])' SeLe4n/Model/State.lean
 
 # WS-H16/A-13: objectIndexLive default theorem exists.
-run_check "INVARIANT" rg -n '^theorem objectIndexLive_default' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem objectIndexLive_default($|[ ({:\[\]])' SeLe4n/Model/State.lean
 
 # WS-H16/A-13: objectIndexLive preservation theorem for storeObject exists.
-run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectIndexLive' SeLe4n/Model/State.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_preserves_objectIndexLive($|[ ({:\[\]])' SeLe4n/Model/State.lean
 
 # W3: runQueueThreadPriorityConsistent removed as dead code (superseded by
 # schedulerPriorityMatch in schedulerInvariantBundleFull with full preservation proofs).
 
 # WS-H16/M-18: Lifecycle negative test function exists in NegativeStateSuite.
-run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks' tests/NegativeStateSuite.lean
+run_check "INVARIANT" rg -n '^def runWSH16LifecycleChecks($|[ ({:\[\]])' tests/NegativeStateSuite.lean
 
 # WS-H16/A-18: schedule uses O(1) RunQueue membership (not O(n) list scan).
 # Verify schedule references runQueue (O(1) HashSet) not runnable (O(n) list).
 run_check "INVARIANT" rg -n 'scheduler\.runQueue' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 
 # WS-F6/D1: Reclassified operation-correctness lemmas (removed from capabilityInvariantBundle).
-run_check "INVARIANT" rg -n '^theorem cspaceAttenuationRule_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleAuthorityMonotonicity_holds' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem cspaceAttenuationRule_holds($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleAuthorityMonotonicity_holds($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Authority.lean
 
 # WS-F6/D2: blockedOnNotificationNotRunnable predicate in IPC invariant defs.
-run_check "INVARIANT" rg -n '^def blockedOnNotificationNotRunnable' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def blockedOnNotificationNotRunnable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 
 # WS-F6/D2: ipcSchedulerBlockedNotificationComponent in capability preservation.
-run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
+run_check "INVARIANT" rg -n '^def ipcSchedulerBlockedNotificationComponent($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Invariant/Preservation/EndpointReplyAndLifecycle.lean
 
 # WS-F6/D3: runnableThreadsAreTCBs predicate and preservation theorems.
-run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^def runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant.lean
 # W3: runnableThreadsAreTCBs_of_scheduler_objects_eq removed (dead frame lemma).
-run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
-run_check "INVARIANT" rg -n '^theorem timerTick_preserves_runnableThreadsAreTCBs' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem switchDomain_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem schedule_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem handleYield_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
+run_check "INVARIANT" rg -n '^theorem timerTick_preserves_runnableThreadsAreTCBs($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Preservation.lean
 
 # WS-F6/D4: serviceCountBounded and serviceGraphInvariant default-state proofs.
-run_check "INVARIANT" rg -n '^theorem default_serviceCountBounded' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
-run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem default_serviceCountBounded($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
+run_check "INVARIANT" rg -n '^theorem default_serviceGraphInvariant($|[ ({:\[\]])' SeLe4n/Kernel/Service/Invariant/Acyclicity.lean
 
 # WS-F6/D6: vspaceCrossAsidIsolation in VSpace invariant bundle.
-run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
+run_check "INVARIANT" rg -n '^def vspaceCrossAsidIsolation($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/VSpaceInvariant.lean
 
 
 # WS-J1-D: Register decode consistency predicate and preservation anchors.
-run_check "INVARIANT" rg -n '^def registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem registerDecodeConsistent_of_proofLayerInvariantBundle' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem default_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
-run_check "INVARIANT" rg -n '^theorem writeRegisterState_preserves_registerDecodeConsistent' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^def registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem registerDecodeConsistent_of_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem default_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem advanceTimerState_preserves_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
+run_check "INVARIANT" rg -n '^theorem writeRegisterState_preserves_registerDecodeConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Invariant.lean
 # WS-J1-D: syscallEntry invariant preservation and NI theorems in API.lean.
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_preserves_proofLayerInvariantBundle' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem lookupThreadRegisterContext_preserves_lowEquivalent' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallLookupCap_preserves_projection' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projection' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_error_yields_NI_step' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallEntry_success_yields_NI_step' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_preserves_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallArgs_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem lookupThreadRegisterContext_preserves_lowEquivalent($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallLookupCap_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_error_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem syscallEntry_success_yields_NI_step($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # WS-J1-D: NonInterferenceStep constructors for decode path.
 run_check "INVARIANT" rg -n 'syscallDecodeError' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 run_check "INVARIANT" rg -n 'syscallDispatchHigh' SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean
 # WS-J1-E: RegisterDecode module definitions and round-trip lemmas.
-run_check "INVARIANT" rg -n 'def decodeCapPtr' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n 'def decodeMsgInfo' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n 'def decodeSyscallId' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n 'def validateRegBound' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n 'def decodeSyscallArgs' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeCapPtr_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallId_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeSyscallId_error_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_error_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeCapPtr_ok_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem validateRegBound_ok_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem validateRegBound_error_iff' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def decodeCapPtr($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def decodeMsgInfo($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def decodeSyscallId($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def validateRegBound($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n 'def decodeSyscallArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCapPtr_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallId_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeSyscallId_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCapPtr_ok_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem validateRegBound_ok_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem validateRegBound_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 # Audit optimization: new round-trip and composition theorems.
-run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem decode_components_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeMsgInfo_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decode_components_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 
 # WS-K-A: Message register extraction definitions and theorems.
 # W3: encodeMsgRegs (identity function) and decodeMsgRegs_roundtrip removed as dead code.
 # Message registers need no encode/decode round-trip — identity in the abstract model.
-run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeMsgRegs_length($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 run_check "INVARIANT" rg -n 'msgRegs.*Array.*RegValue' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem encode_decode_roundtrip($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
 
 # WS-K-B: Per-syscall argument decode layer definitions and theorems.
-run_check "INVARIANT" rg -n 'def requireMsgReg' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^structure CSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^structure VSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeVSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def requireMsgReg($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure CSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure VSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure VSpaceUnmapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeVSpaceMapArgs_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem requireMsgReg_error_iff($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-Q1-D: Service syscall argument decode structures and roundtrip proofs.
-run_check "INVARIANT" rg -n '^structure ServiceRegisterArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^structure ServiceRevokeArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeServiceRegisterArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^def decodeServiceRevokeArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeServiceRegisterArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeServiceRevokeArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeServiceRegisterArgs_roundtrip' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decodeServiceRevokeArgs_roundtrip' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure ServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^structure ServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^def decodeServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodeServiceRegisterArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodeServiceRevokeArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeServiceRegisterArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeServiceRevokeArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-Q1-D: Service registration enforcement wrapper.
-run_check "INVARIANT" rg -n '^def registerServiceChecked' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
-run_check "INVARIANT" rg -n '^theorem registerServiceChecked_eq_registerService_when_allowed' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem registerServiceChecked_flowDenied' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
-run_check "INVARIANT" rg -n '^theorem enforcementSoundness_registerServiceChecked' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^def registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean
+run_check "INVARIANT" rg -n '^theorem registerServiceChecked_eq_registerService_when_allowed($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem registerServiceChecked_flowDenied($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
+run_check "INVARIANT" rg -n '^theorem enforcementSoundness_registerServiceChecked($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Enforcement/Soundness.lean
 
 # WS-K-E/Q1: IPC message population anchors (ServiceConfig and serviceStart/Stop dispatch removed in Q1).
-run_check "INVARIANT" rg -n 'def extractMessageRegisters' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded' SeLe4n/Kernel/Architecture/RegisterDecode.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_crossCoreDispatch' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n 'def extractMessageRegisters($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_length($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_ipc_bounded($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_send_uses_withCaps($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_call_uses_crossCoreDispatch($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_reply_populates_msg($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 
 # WS-K-F1: Per-syscall encode functions (layer 2).
-run_check "INVARIANT" rg -n 'def encodeCSpaceMintArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n 'def encodeVSpaceMapArgs' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodeCSpaceMintArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n 'def encodeVSpaceMapArgs($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-K-F2: Layer 2 round-trip proofs.
-run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
-run_check "INVARIANT" rg -n '^theorem decode_layer2_roundtrip_all' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decodeCSpaceMintArgs_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^theorem decode_layer2_roundtrip_all($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
 
 # WS-K-F3: Layer 1 extraction round-trip.
-run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_roundtrip' SeLe4n/Kernel/Architecture/RegisterDecode.lean
+run_check "INVARIANT" rg -n '^theorem extractMessageRegisters_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/RegisterDecode.lean
 
 # WS-K-F4: Dispatch preservation and decode purity.
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_layer2_decode_pure' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchWithCap_preservation_composition_witness' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_layer2_decode_pure($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchWithCap_preservation_composition_witness($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 
 # WS-K-F5: Lifecycle NI proofs.
 run_check "INVARIANT" rg -n 'retypeFromUntyped_preserves_lowEquivalent' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
@@ -9326,7 +9330,7 @@ run_check "INVARIANT" rg -n 'cspaceRevoke_preserves_projection' SeLe4n/Kernel/In
 # Pin the post-R2 surface so a regression that strips the substantive
 # routing or renames the bridge symbols fails Tier 3 instead of silently
 # downgrading to a stub return.
-run_check "INVARIANT" rg -n '^def KernelError.toUInt32' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def KernelError.toUInt32($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RA (RA.E.5): the bit-63 protocol is RETIRED — `encodeOk` / `encodeError`
 # must not come back as definitions anywhere in the production tree (the
 # retained hazard statement is `bit63Encoding_not_injective_on_badges`, which
@@ -9336,15 +9340,15 @@ run_negative_check "INVARIANT" rg -n 'def encodeError' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'def encodeOk' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^initialize kernelStateRef' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '^initialize kernelLabelingContextRef' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def initialiseKernelState' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def getKernelState' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def updateKernelState' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def initialiseKernelLabelingContext' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def getKernelLabelingContext' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def readReturnValue' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def initialiseKernelState($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def getKernelState($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def updateKernelState($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def initialiseKernelLabelingContext($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def getKernelLabelingContext($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def bootAndInitialiseFromPlatform($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def writeFfiRegistersToTcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def readReturnValue($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RR RR5.1/RR5.2 (audit round, revised in the review round): the platform
 # binding carries the deployment labeling's source (a `DeploymentLabeling`), so
 # admission and full validity are theorems of every binding rather than fields;
@@ -9353,22 +9357,22 @@ run_check "INVARIANT" rg -n '^def syscallDispatchFromAbi' SeLe4n/Platform/FFI.le
 # provably the checked idle boot plus the installs.
 run_check "INVARIANT" rg -n '^  deploymentLabeling : SeLe4n.Kernel.DeploymentLabeling' SeLe4n/Platform/Contract.lean
 run_negative_check "INVARIANT" rg -n '^  deploymentLabelingAdmitted :' SeLe4n/Platform/Contract.lean
-run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem _root_.SeLe4n.Platform.PlatformBinding.labeling_valid($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^theorem rpi5_deploymentLabeling ' SeLe4n/Platform/RPi5/Contract.lean
-run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem rpi5UpperDomainBase_clears_idle_range($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Contract.lean
 run_check "INVARIANT" rg -n '^def bootAndInitialisePlatform ' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_eq_checked_boot($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # PR #889 review round 2: the idle slots are unreachable by user authority — a
 # capability naming one resolves like an empty slot at the single resolution
 # every syscall passes through, and a boot config that references one is
 # refused with its own diagnostic; the deployment source carries the policy
 # fields; the inactive-flag relation the live decisions read is stated and
 # holds of the boot state.
-run_check "INVARIANT" rg -n '^def capTargetsReservedIdleObject' SeLe4n/Kernel/Scheduler/IdleThread.lean
+run_check "INVARIANT" rg -n '^def capTargetsReservedIdleObject($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/IdleThread.lean
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.capTargetsReservedIdleObject cap then .error .invalidCapability' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem syscallResolveCap_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def bootObjectReferencesReservedIdleSlot($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 8: the raw suspend seam checks the idle reservation
 # before the transition and the export runs exactly the pure step; the
 # boot-safety check reads all three queue links; the reference check
@@ -9376,7 +9380,7 @@ run_check "INVARIANT" rg -n '^theorem idleSlotsReserved_no_idle_references' SeLe
 # field.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId vtid.val then' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'modifyGetKernelState \(suspendThreadCrossCoreStep tid execCore\)' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused' SeLe4n/Kernel/SyscallDispatchEntry.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadCrossCoreStep_idle_refused($|[ ({:\[\]])' SeLe4n/Kernel/SyscallDispatchEntry.lean
 run_check "INVARIANT" rg -n 'tcb.queueNext.isNone && tcb.queuePrev.isNone && tcb.queuePPrev.isNone &&' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => tcbReferencesReservedIdleSlot tcb' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '  \| .tcb tcb => bootSafeTcbCheck tcb' SeLe4n/Platform/Boot.lean
@@ -9418,24 +9422,24 @@ run_check "INVARIANT" rg -nF 'core::hint::spin_loop();' rust/sele4n-hal/src/smp.
 run_check "INVARIANT" rg -nF 'crate::smp::irq_ready_core_count_within(' rust/sele4n-hal/src/boot.rs
 run_negative_check "INVARIANT" rg -nF 'let running_cores = 1 + online;' rust/sele4n-hal/src/boot.rs
 run_check "INVARIANT" rg -n '^const SECONDARY_READY_TIMEOUT_TICKS' rust/sele4n-hal/src/boot.rs
-run_check "INVARIANT" rg -n '^def declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def declaredCoreCountInRange($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -nF '0 < config.machineConfig.declaredCoreCount' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -nF 'objectBudgetRespected config && declaredCoreCountInRange config' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -nF '(declaredCoreCountInRange config, declaredCoreCountBootError)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCountInRange' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem PlatformConfig.wellFormed_declaredCoreCountInRange($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 22: one question answered in two places diverges.  The
 # generic boot wrapper derives its core list from the configuration that the
 # machine will carry (it hardcoded `allCores` while `applyMachineConfig`
 # installed a narrower count); the handoff refusal uses the system-wide
 # barrier rather than the per-PE park; and the assembly source fallback asks
 # the same section question the archive parser has asked since round 8.
-run_check "INVARIANT" rg -n '^def declaredCoresOfConfig' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def declaredCoresOfConfig($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn (declaredCoresOfConfig config) config ctx' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -nF 'bootAndInitialiseFromPlatformOn SeLe4n.Kernel.Concurrency.allCores config ctx' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_allCores($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem declaredCoresOfConfig_length_le($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -nF 'crate::gic::halt_all();' rust/sele4n-hal/src/boot.rs
-run_check "INVARIANT" rg -n '^def executable_label_names' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def executable_label_names($|[ ({:\[\]])' scripts/check_kernel_entry_exports.py
 # PR #889 review round 25 repointed this off the `set(ASM_GLOBAL.findall(view))`
 # spelling: both halves of the conjunction now read `asm_statements`, because a
 # provider is a directive *and* a label and the two must agree on what a
@@ -9448,8 +9452,8 @@ run_check "INVARIANT" rg -nF 'return exported & executable_label_names(view)' sc
 # assembly section is GAS's, stack and all: `.pushsection` / `.popsection` /
 # `.previous`, with an unresolvable change leaving it unknown, which is never
 # executable.
-run_check "INVARIANT" rg -n '^def asm_statements' scripts/check_kernel_entry_exports.py
-run_check "INVARIANT" rg -n '^def section_name_is_executable' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def asm_statements($|[ ({:\[\]])' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def section_name_is_executable($|[ ({:\[\]])' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -nF 'if name in ("section", "pushsection"):' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -nF 'restored = stack.pop() if stack else None' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -nF 'if name.endswith("section") or name in ASM_UNMODELLED_SECTION_CHANGE:' scripts/check_kernel_entry_exports.py
@@ -9526,7 +9530,7 @@ run_check "INVARIANT" rg -nF 'const GUILLEMET: &str' rust/sele4n-hal/build.rs
 # required to *be* `bootAndInitialiseRPi5OrHalt` applied to a configuration —
 # one `isDefEq`, which zeta- and beta-reduces, so the forms rounds 18-21 each
 # taught the walk are not questions any more.
-run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def isApprovedBootApplication($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 # PR #892 review round 2: the shape is decided by a reduction DIRECTED at the
 # approved call (`whnfUntil`), then one reducible defeq on the result — never
 # by an unbounded `isDefEq` that opens the approved call itself, which hit the
@@ -9535,98 +9539,98 @@ run_check "INVARIANT" rg -n '^def isApprovedBootApplication' SeLe4n/Testing/Boot
 # inlined copy of the wrapper's body.
 run_check "INVARIANT" rg -n -U 'match ← Meta\.whnfUntil body approvedBootCall with\n\s+\| none => pure false\n\s+\| some reduced =>[^\n]*(\n([ \t][^\n]*)?)*?Meta\.withReducible <\| Meta\.isDefEq reduced \(mkApp \(mkConst approvedBootCall\) config\)' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -nF 'Meta.isDefEq body (mkApp (mkConst approvedBootCall) config)' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundConfig($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessLetBoundHalt($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasedBoot($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_negative_check "INVARIANT" rg -n 'partial def unconditionalActions' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasHaltedFirst' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def parameter_expansion_end' scripts/check_identifier_naming.py
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessHaltedFirst($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessAliasHaltedFirst($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def parameter_expansion_end($|[ ({:\[\]])' scripts/check_identifier_naming.py
 # ...the declared PE count travels config → machine → transition, every binding
 # proves its machine agrees with its own coreCount, and the affinity write
 # refuses a core the platform does not have.
 run_check "INVARIANT" rg -n '  declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores' SeLe4n/Machine.lean
 run_check "INVARIANT" rg -n 'declaredCoreCount := config.declaredCoreCount' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  declaredCoreCountAgrees :' SeLe4n/Platform/Contract.lean
-run_check "INVARIANT" rg -n '^def simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
+run_check "INVARIANT" rg -n '^def simSingleCoreMachineConfig($|[ ({:\[\]])' SeLe4n/Platform/Sim/Contract.lean
 run_check "INVARIANT" rg -n '  machineConfig := simSingleCoreMachineConfig' SeLe4n/Platform/Sim/Contract.lean
 run_check "INVARIANT" rg -n 'if affinity.any \(fun c => c.val . st.machine.declaredCoreCount\) then' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declaredCoreCount' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem setThreadCpuAffinityWithMigration_rejects_undeclared_core($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreCbs.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_declaredCoreCount($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_declaredCoreCount($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 19: the bind instance is validated before the walk
 # treats it as sequencing, opaque bodies are read, and the object budget has
 # its own boot diagnostic.
 run_check "INVARIANT" rg -n 'allowOpaque := true' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessBogusBind' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessOpaqueBypass' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def objectBudgetBootError' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBogusBind($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessOpaqueBypass($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetBootError($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # ...and the diagnostic is derived from one conjunct list rather than a second
 # enumeration of it, with a pin that fails when the two diverge.
-run_check "INVARIANT" rg -n '^def wellFormedConjuncts' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^def wellFormedDiagnostic' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem wellFormed_eq_all_conjuncts' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem wellFormedDiagnostic_reports_a_fault' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def wellFormedConjuncts($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def wellFormedDiagnostic($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormed_eq_all_conjuncts($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem wellFormedDiagnostic_reports_a_fault($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'error \(wellFormedDiagnostic config\)' SeLe4n/Platform/Boot.lean
 # PR #889 review round 18: the contract reads the production environment, the
 # approved call must be an unconditional action, the entry's FFI type is pinned,
 # and a successful boot leaves object-index room for the root and the idle
 # threads.
 run_check "INVARIANT" rg -n '^import SeLe4n$' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def expectedBootEntryType' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessSequenced' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def objectBudgetRespected' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def expectedBootEntryType($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessConditional($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessWrongType($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSequenced($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def objectBudgetRespected($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 23: repointed off the end-of-line spelling, which broke
 # the moment a sixth conjunct followed it in `wellFormed`.  The conjunct-list
 # pairing is the stable form and is what round 19 made canonical.
 run_check "INVARIANT" rg -nF '(objectBudgetRespected config, objectBudgetBootError)' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded' SeLe4n/Platform/Boot.lean
-run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length_le' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_objectIndexBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_objectIndexBounded($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem foldl_enqueueIdleThread_objectIndex_length_le($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 17: the boot entry's contract moved off Lean source
 # text and onto the elaborated environment.  The fail-closed wrapper makes the
 # error path a definition; the contract module decides the rest with
 # getExportNameFor?, Expr.getUsedConstants and a reachability walk, and carries
 # four witnesses so it is decisive before SM10.1 writes the entry.
-run_check "INVARIANT" rg -n '^def bootAndInitialiseRPi5OrHalt' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def bootAndInitialiseRPi5OrHalt($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n '  \| .error _ => ffiFatalHaltAll' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def approvedBootCall' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def bootEntryContractViolations' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n '^def bootEntryDeclarations' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass' SeLe4n/Testing/BootEntryContract.lean
-run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def approvedBootCall($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryContractViolations($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n '^def bootEntryDeclarations($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessBypass($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
+run_check "INVARIANT" rg -n 'private def bootEntryWitnessSideInstall($|[ ({:\[\]])' SeLe4n/Testing/BootEntryContract.lean
 run_check "INVARIANT" rg -n 'lake build SeLe4n.Testing.BootEntryContract' scripts/test_tier1_build.sh
 # ...and the link-level half that stays in the Python gate: the extern block is
 # resolved rather than spelled, and unassembled regions provide nothing.
-run_check "INVARIANT" rg -n '^def extern_blocks' scripts/rust_code_view.py
-run_check "INVARIANT" rg -n '^def strip_unassembled_regions' scripts/check_kernel_entry_exports.py
+run_check "INVARIANT" rg -n '^def extern_blocks($|[ ({:\[\]])' scripts/rust_code_view.py
+run_check "INVARIANT" rg -n '^def strip_unassembled_regions($|[ ({:\[\]])' scripts/check_kernel_entry_exports.py
 run_check "INVARIANT" rg -n '^fn extern_block_openings' rust/sele4n-hal/build.rs
 # PR #889 review round 11 (P1): a raw thread/object operand refuses a reserved
 # idle id at the one lift point every such operand passes through — the
 # capability chokepoint decides on the resolved capability's target only.
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def binding_statement_before' scripts/rust_code_view.py
+run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def binding_statement_before($|[ ({:\[\]])' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n 'objectIdsUnique config.initialObjects, objectIdDuplicateBootError' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields' SeLe4n/Kernel/InformationFlow/Policy.lean
-run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem deploymentLabelingContext_policy_fields($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Policy.lean
+run_check "INVARIANT" rg -n '^def threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreads_threadInactiveFlagConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 # PR #889 review round 3: the declared separation witnesses must be installed
 # threads of the boot state, and the binding boot installs idle threads on the
 # binding's declared cores only — the RPi5 binding declares every model core,
 # so the all-cores theorems are the hardware boot's.
-run_check "INVARIANT" rg -n '^def declaredWitnessesInstalled' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def declaredWitnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n 'if declaredWitnessesInstalled ist.state ctx then' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^def bootFromPlatformCheckedWithIdleThreadsFor' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootFromPlatformCheckedWithIdleThreadsFor($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^def PlatformBinding.declaredCores ' SeLe4n/Platform/Contract.lean
-run_check "INVARIANT" rg -n '^theorem rpi5_cores_eq_allCores' SeLe4n/Platform/RPi5/Contract.lean
-run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_rpi5_all_cores' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem rpi5_cores_eq_allCores($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Contract.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_rpi5_all_cores($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RR RR5.17: the boot-pinned `suspend_thread_inner` export is REMOVED.  It
 # committed kernel state through a bare `kernelStateRef.set` with no
 # kernel-entry bracket, and `@[export]` made it a live C symbol in the linked
@@ -9634,7 +9638,7 @@ run_check "INVARIANT" rg -n '^theorem bootAndInitialisePlatform_rpi5_all_cores' 
 # stays as the single-core reference path the dispatch suite exercises; the C
 # symbol does not.  Positive anchor on the definition, negative on the export,
 # so neither the path nor its absence can drift.
-run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def suspendThreadInner($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n '@\[export suspend_thread_inner\]' SeLe4n/Platform/FFI.lean
 # WS-RA: the vestigial `syscall_dispatch_inner` export is REMOVED (it was the
 # last other speaker of the retired bit-63 protocol; no Rust source declared
@@ -9647,16 +9651,16 @@ run_negative_check "INVARIANT" rg -n '@\[export syscall_dispatch_inner\]' SeLe4n
 # the live syscall fires the diff-recovered cross-core `.reschedule` SGIs.
 # (WS-RA removed the vestigial boot-pinned `syscall_dispatch_inner`.)
 run_check "INVARIANT" rg -n '^@\[export lean_syscall_dispatch_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^def suspendThreadInner' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^def suspendThreadInner($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n '^def syscallDispatchInner' SeLe4n/Platform/FFI.lean
 # WS-RA: the convention model + the staging seam (RA.A / RA.B.1-B.2 / RA.B.5a).
-run_check "INVARIANT" rg -n '^def syscallReturnShape' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem syscallReturnShape_value_returning' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem returnShape_list_gate_insufficient' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem errorLabel_never_zero' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem errorLabel_roundtrip' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem kernelErrorFitsLabel' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem bit63Encoding_not_injective_on_badges' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def syscallReturnShape($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem syscallReturnShape_value_returning($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem returnShape_list_gate_insufficient($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabel_never_zero($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem errorLabel_roundtrip($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem kernelErrorFitsLabel($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem bit63Encoding_not_injective_on_badges($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 3' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # ABI v3 (fault-handling audit round): kernel status rides in the top of the label range, so a
 # delivered fault message's `seL4_Fault_tag` is never read as a kernel error.
@@ -9664,36 +9668,36 @@ run_check "INVARIANT" rg -n '^def syscallAbiVersion : Nat := 3' SeLe4n/Kernel/Ar
 # the v2 offset encoding from returning on either side of the boundary.
 run_check "INVARIANT" rg -n '^theorem errorLabelBase_eq : errorLabelBase = 0xFFF00' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n '^theorem ofErrorLabel\?_none_of_lt_base' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem returnMessageInfo_label_lt_errorLabelBase' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem faultLabel_lt_errorLabelBase' SeLe4n/Kernel/Architecture/Fault.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_label_lt_errorLabelBase($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem faultLabel_lt_errorLabelBase($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/Fault.lean
 run_negative_check "INVARIANT" rg -n 'e\.toDiscriminant \+ 1' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_check "INVARIANT" rg -n 'pub const ERROR_LABEL_BASE: u64 = \(1 << 20\) - 256' rust/sele4n-types/src/lib.rs
 run_negative_check "INVARIANT" rg -n 'kernel_error_discriminant as u64\) \+ 1\) << 9' rust/sele4n-hal/src/svc_dispatch.rs
-run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def readReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def stageDeliveredMessage' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def writeReturnFrameToTcb($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def readReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem readReturnFrame_writeReturnFrame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def stageDeliveredMessage($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # WS-RA RA.B.5b: the blocked-waiter staging seam — the Option-lifted stagers
 # the unblocking arms compose, the plan-named theorem, and its unit dual.
-run_check "INVARIANT" rg -n '^def stageWokenDelivery' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^def stageWokenSendCompletion' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame' SeLe4n/Kernel/Architecture/SyscallReturn.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^def stageWokenDelivery($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def stageWokenSendCompletion($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_stages_zero($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedReturn_staged_in_waiter_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem blockedUnitReturn_staged_in_sender_frame($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenDelivery_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem stageWokenSendCompletion_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # WS-RA RA.B.8: the per-arm shape-coherence family — the classification and
 # the live dispatch arms cannot disagree (`.call` through the reply arm, §3.5).
-run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def syscallReturnOutcome' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_notificationWait_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_serviceQuery_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_receive_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_replyRecv_matches_returnShape($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchArm_call_frame_delivered_by_reply($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def syscallReturnOutcome($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem readReturnValue_eq_readReturnFrame_x0($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeReturnFrameToTcb_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem stageDeliveredMessage_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_stages_no_frame($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 run_check "INVARIANT" rg -n 'ffi_syscall_return_frame' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n 'pub const SYSCALL_ABI_VERSION: u64 = 3' rust/sele4n-types/src/lib.rs
 # PR #866 review: the Blocked trap arm must poison the frame with the
@@ -9715,8 +9719,8 @@ run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-h
 run_negative_check "INVARIANT" rg -n 'crate::cpu::current_core_id' rust/sele4n-hal/src/ffi.rs
 # PR #866 round-2: the staged extraCaps is the transfer summary's INSTALLED
 # count, never the requested msg.caps.size.
-run_check "INVARIANT" rg -n '^def installedCount' SeLe4n/Model/Object/Types.lean
-run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_installed' SeLe4n/Kernel/Architecture/SyscallReturn.lean
+run_check "INVARIANT" rg -n '^def installedCount($|[ ({:\[\]])' SeLe4n/Model/Object/Types.lean
+run_check "INVARIANT" rg -n '^theorem returnMessageInfo_extraCaps_le_installed($|[ ({:\[\]])' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 run_negative_check "INVARIANT" rg -n 'extraCaps := min msg.caps.size' SeLe4n/Kernel/Architecture/SyscallReturn.lean
 # PR #866 round-2: the query wrapper returns the typed ServiceId.
 run_check "INVARIANT" rg -n 'pub fn service_query\(endpoint_cap: CPtr\) -> KernelResult<ServiceId>' rust/sele4n-sys/src/service.rs
@@ -9737,13 +9741,13 @@ run_check "INVARIANT" rg -n 'pub fn mint_reply_cap' rust/sele4n-sys/src/cspace.r
 # The retired bit-63 theorems must not come back either.
 run_negative_check "INVARIANT" rg -n 'theorem encodeError_high_bit_set' SeLe4n/Platform/FFI.lean
 run_negative_check "INVARIANT" rg -n 'theorem encodeOk_high_bit_clear' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb' SeLe4n/Platform/FFI.lean
-run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_total($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_ok_of_syscallEntryChecked_ok($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_error_of_syscallEntryChecked_error($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_illegalState_when_no_current($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem syscallDispatchFromAbi_abiMismatch_rejected($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem writeFfiRegistersToTcb_id_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
+run_check "INVARIANT" rg -n '^theorem readReturnValue_zero_when_not_tcb($|[ ({:\[\]])' SeLe4n/Platform/FFI.lean
 # WS-RC R2.B.4 / WS-SM SM6.A: Rust ↔ Lean symbol alignment — the FFI inner
 # symbol the Rust HAL extern-imports must match a Lean `@[export]` name in the
 # production closure.  Post-v0.31.67 the live entry is the cross-core
@@ -9759,19 +9763,19 @@ run_check "INVARIANT" rg -n 'fn lean_syscall_dispatch_cross_core' rust/sele4n-ha
 # suspend entry a linked image carries.
 run_check "INVARIANT" rg -n 'fn suspend_thread_cross_core' rust/sele4n-hal/src/ffi.rs
 run_check "INVARIANT" rg -n '^@\[export suspend_thread_cross_core\]' SeLe4n/Kernel/SyscallDispatchEntry.lean
-run_check "INVARIANT" rg -n '^def suspendThreadOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_sgi_remote_reschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deschedule' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^def suspendThreadOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_sgi_remote_reschedule($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deschedule($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 # WS-SM SM6.E (PR #831 review 2): disinheritance scheduling points — the
 # suspend's D4-N capture -> clear -> revert-from-server order, the local
 # preemption gate on a deboosted executing-core current, the diff seam's
 # deboosted-current rule (a still-current remote server whose effective
 # priority dropped is poked), and the declared PIP chain-walk obligation.
 run_check "INVARIANT" rg -n '^def currentEffectivePrio\?' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def currentDeboostedFrom' SeLe4n/Kernel/Lifecycle/Suspend.lean
-run_check "INVARIANT" rg -n '^def suspendRescheduleOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_sgi_shape' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deboost_current' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^def currentDeboostedFrom($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Suspend.lean
+run_check "INVARIANT" rg -n '^def suspendRescheduleOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_sgi_shape($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem crossCoreSgiBody_remote_deboost_current($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # PR #831 review 4: the running-core resolution (an unbound victim current on
 # a secondary core is descheduled + poked on THAT core), the re-keyed diff
@@ -9779,7 +9783,7 @@ run_check "INVARIANT" rg -n '^@\[inline\] def pipChainStart_tcbSuspend' SeLe4n/K
 # Rounds 39/40: the definition moved to `Scheduler/Operations/Core.lean` so the
 # unbind path can key its guard on it; `Suspend.lean` re-exports the name.
 run_check "INVARIANT" rg -n '^def runningCoreOf\?' SeLe4n/Kernel/Scheduler/Operations/Core.lean
-run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem currentScan_boot_of_single_core($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/PerCore.lean
 # WS-OD OD3.10: the splice's neighbour resolver is the neutral
 # `queueSpliceNeighbors?`, in the model beside the link fields it reads, since
 # the bound-notification delivery asks the same question.
@@ -9793,10 +9797,10 @@ run_check "INVARIANT" rg -n '^def queueSpliceNeighbors\?' SeLe4n/Model/Object/Ty
 # definition over the core *set*, because the arity was never the question and a
 # fourth was about to be needed.  The two retired names must not come back
 # (negatives below); this pins the survivor.
-run_check "INVARIANT" rg -n '^def schedCoreSegment' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem mem_schedCoreSegment_iff' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^def canonicalCores' SeLe4n/Kernel/Concurrency/Types.lean
-run_check "INVARIANT" rg -n '^theorem allCores_pairwise_le' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^def schedCoreSegment($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedCoreSegment_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def canonicalCores($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^theorem allCores_pairwise_le($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
 # WS-RR RR8.12: the two retired fixed-arity spellings are refused tree-wide.  A
 # positive anchor on a deleted symbol silently passes forever, so each becomes a
 # negative; the mutation that decides reintroduces the name as *code* (both
@@ -9808,16 +9812,16 @@ run_negative_check "INVARIANT" rg -n 'sortedSchedCoreTriple' SeLe4n/ tests/
 # seven definitions and FOUR of them carried a byte-identical twenty-five-line
 # `_pairwise_le` -- one question with four answers, about to become nine as the
 # remaining syscall arms are declared.
-run_check "INVARIANT" rg -n '^def schedFootprintOfCores' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem mem_schedFootprintOfCores_iff' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_pairwise_le' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_subset' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^def schedFootprintOfCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem mem_schedFootprintOfCores_iff($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_pairwise_le($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_subset($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
 # ...and the two lemmas that make "the argument is a set" a theorem rather than a
 # claim: `canonicalCores_congr` is what retires a footprint's hand-written
 # deduplication branch, and `canonicalCores_singleton` is the `Option CoreId` arm.
-run_check "INVARIANT" rg -n '^theorem canonicalCores_congr' SeLe4n/Kernel/Concurrency/Types.lean
+run_check "INVARIANT" rg -n '^theorem canonicalCores_congr($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Types.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem canonicalCores_singleton' SeLe4n/Kernel/Concurrency/Types.lean
-run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_congr' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
+run_check "INVARIANT" rg -n '^theorem schedFootprintOfCores_congr($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean
 # RELATION, not presence: each repointed footprint's own BODY must name the shared
 # constructor.  The gap is declaration-bounded (the rest of the line, then any run
 # of indented or blank lines), so it cannot reach a neighbouring definition; the
@@ -10020,9 +10024,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReceiveHandoffRe
 # no replenish queue, and the footprint declares no replenish lock.
 run_check "INVARIANT" rg -n '^theorem endpointReceiveHandoffReplenishCores_of_no_donation \(st : SystemState\)' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDualWithCapsOnCore_callDonationSchedContext\?_none_of_none[^\n]*(\n([ \t][^\n]*)?)*receiverSlotBase executingCore st\).1 sender receiver\n *= none :=" SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean'
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_no_donation($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # RELATION: the coverage claim is stated at the donation's OWN resolver on its OWN
 # state -- `hDon` is `callDonationSchedContext?` of the post-receive-leg state, the
 # guard `applyCallDonationOnCore` migrates on -- and bridged back to the pre-state
@@ -10040,8 +10044,8 @@ run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_of_no_donat
 # `Donation.lean` cannot import that module.  Its two invariant consumers stay put.
 run_check "INVARIANT" rg -n "^def sameSchedContextBindings \(st st' : SystemState\) : Prop :=" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_negative_check "INVARIANT" rg -n "^def sameSchedContextBindings \(st st' : SystemState\) : Prop :=" SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationBudgetTransfer_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationOwnerUnique_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationBudgetTransfer_of_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationOwnerUnique_of_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" rg -n "^theorem lookupTcb_backward \{st st' : SystemState\} \(h : sameSchedContextBindings st st'\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n "^theorem of_objects_getElem_eq \{st st' : SystemState\}" SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^theorem lookupTcb_some_toValid\?$' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
@@ -10061,18 +10065,18 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationBudgetTransfer[^\n]*(\n([ \t][^\n]*)?)*unfold endpointReceiveDual SystemState.getObject\? at hStep" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointReceiveDual_preserves_donationOwnerUnique[^\n]*(\n([ \t][^\n]*)?)*unfold endpointReceiveDual SystemState.getObject\? at hStep" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 # The witness computes BOTH retired readings beside the live one, on the three shapes.
-run_check "INVARIANT" rg -n '^private def callKeyedReplenishCores' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def callKeyedReplenishCores($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 # shellcheck disable=SC2016
 run_check "INVARIANT" rg -n 'NEGATIVE \(the defect\): the `Call`-keyed retired reading declared TWO cores here' tests/SmpIpcSuite.lean
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_blockedOnSend' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousDonation_eq_self_of_blockedOnSend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the step the LIVE arm runs is the identity too: `API.lean`'s `.receive` arm
 # calls `applyReceiveRendezvousHandoff`, which is the donation AND OD3.14's chain walk
 # under one guard, so the donation alone is a component rather than the arm's stage.
-run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem applyReceiveRendezvousHandoff_eq_self_of_blockedOnSend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blockedOnSend($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the pop's returned TCB IS the head's pre-state lookup, which is what makes
 # the pre-state resolver the leg's OWN branch condition rather than a second reading.
-run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_popped_tcb_eq_lookup' SeLe4n/Kernel/IPC/DualQueue/Core.lean
+run_check "INVARIANT" rg -n '^theorem endpointQueuePopHead_popped_tcb_eq_lookup($|[ ({:\[\]])' SeLe4n/Kernel/IPC/DualQueue/Core.lean
 run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_no_replenishQueue_of_blocked \(' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and what licenses the pre-state reading: the receive leg moves NO thread's home
 # core, so the footprint's reading and the donation's are the same reading rather
@@ -10355,7 +10359,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore
 # name now, beside the cleanup it completes -- so the destroy path can reach it,
 # which is why the two per-core arms moved down with it (`v0.35.59`'s rule).
 run_check "INVARIANT" rg -n '^def cancelDonationArmOnCore \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
-run_check "INVARIANT" rg -n '^def cancelDonatedDonationOnCore' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
+run_check "INVARIANT" rg -n '^def cancelDonatedDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_unbound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_bound \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
 run_check "INVARIANT" rg -n '^theorem cancelDonationArmOnCore_of_donated \(' SeLe4n/Kernel/Lifecycle/Operations/Cleanup.lean
@@ -11075,8 +11079,8 @@ run_check "INVARIANT" rg -n '^private def runRetypeFootprintChecks : IO Unit' te
 # delete the `runOnlyRetypeFootprint` helper and the assertions reading it.
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runRetypeFootprintChecks[^\n]*(\n([ \t][^\n]*)?)*runOnlyRetypeFootprint stBound" tests/SmpIpcSuite.lean'
 
-run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
-run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^def currentThreadUniqueAcrossCores($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Invariant/PerCore.lean
+run_check "INVARIANT" rg -n '^theorem cancelDonationOnCore_observer_atomic($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 
 # WS-I2/R-05: Lean #check correctness anchors (type-level validation).
 # D5: The Liveness module is proof-only and not imported from Main.lean,
@@ -13994,8 +13998,8 @@ run_negative_check "INVARIANT" rg -n -U 'deviceTreeCoversMachineConfig dt\n\s+Se
 run_negative_check "INVARIANT" rg -n 'machineConfig := PlatformBinding\.machineConfig \(platform := platform\)' SeLe4n/Platform/FFI.lean
 # The coverage predicate is upstream of the bindings, so the binding decides by
 # the bridge's own question rather than by a second predicate.
-run_check "INVARIANT" rg -n '^def machineConfigCovers' SeLe4n/Platform/Boot/MemoryCoverage.lean
-run_check "INVARIANT" rg -n '^def memoryRegionCoveredByUnion' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_check "INVARIANT" rg -n '^def machineConfigCovers($|[ ({:\[\]])' SeLe4n/Platform/Boot/MemoryCoverage.lean
+run_check "INVARIANT" rg -n '^def memoryRegionCoveredByUnion($|[ ({:\[\]])' SeLe4n/Platform/Boot/MemoryCoverage.lean
 # "Covered" DISJOINS the union reading with the single-entry one: a board
 # reporting one aperture in several `reg` pairs is accepted.  A conjunction
 # would keep every token and refuse exactly the boards the round named.
@@ -15173,7 +15177,7 @@ run_negative_check "INVARIANT" rg -n -U '\| some regBlob => fdtRegionsToMemoryRe
 # occupies the address.
 run_check "INVARIANT" rg -n -U 'd\.compatible\.any \(fun c => w\.compatible\.contains c\)\n        && d\.base\.toNat ≤ w\.region\.base\.toNat\n        && w\.region\.endAddr ≤ d\.base\.toNat \+ d\.size' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n -U 'structure RequiredMmioWindow where' SeLe4n/Platform/Boot/MemoryCoverage.lean
-run_check "INVARIANT" rg -n 'theorem requiredMmioWindows_regions_eq' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n 'theorem requiredMmioWindows_regions_eq($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Board.lean
 run_check "INVARIANT" rg -n -U 'some \{ name := node\.name, base := \(SeLe4n\.PAddr\.ofNat base\), size, compatible \}' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the extent-only predicate, which counted any peripheral covering an
 # address as the PL011 and as both GIC blocks.
@@ -15428,9 +15432,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^
 run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockingOnCore[^\n]*(\n([ \t][^\n]*)?)*cancelBelowHeadReads\? st victimTid tcb" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # The bounds, restated at the new arity.  Only `.replyRecv` needed the ceiling
 # raise: the reply arm reaches nine and the cancellation reply arm ten.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem size_le_11' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem size_le_11($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_consistent_base_plus_eleven_opts($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # The admissible per-lock cost moved with the ceiling, as a derived figure.  The
 # POSITIVE pin lives once, at the theorem itself (see the `:= by decide` anchor
 # above); repeating it here would be one question with two answers.  What this
@@ -15497,9 +15501,9 @@ run_prose_check "INVARIANT" rg -n 'the retired owner-merge sharp bounds' SeLe4n/
 # does not, so no state carries both groups.  WS-RM (`v0.35.6`) moved that
 # figure 18 -> 19, because the frame the removal's splice writes is a member the
 # *definition* can produce alongside either group.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_preReturn_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_twenty_of_no_sender_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # WS-RM (`v0.35.6`): and the *reachable* figure is unmoved at eighteen.  It used to
 # rest on a *local coherence fact* -- the head of the returned context's stack is
 # the answered caller's own reply object -- with `replyStackHeadIsAnsweredReply` and
@@ -15514,16 +15518,16 @@ run_negative_check "INVARIANT" rg -n '^def replyStackHeadIsAnsweredReply' SeLe4n
 run_negative_check "INVARIANT" rg -n '^theorem replyStackHead\?_none_of_answeredFrameAbove' SeLe4n/
 # ...and what carries the exclusion instead is pinned positively.
 run_check "INVARIANT" rg -n '^theorem answeredReplyFrameAbove\?_none_of_headContext' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_eighteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_eighteen_of_no_sender_of_no_frameAbove_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_head_of_no_origin($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # **WS-HP HP10.6**: and the three branches on which the redirect IS live, each
 # stated with the origin free and the two below-head arguments absent -- which is
 # what keeps the reachable figures at twenty and eighteen while the declared
 # ceiling moved 23 -> 24.
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_preReturn_of_no_belowHead' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_belowHead' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_frameAbove_of_no_belowHead' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_preReturn_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_nineteen_of_no_sender_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_sender_of_no_frameAbove_of_no_belowHead($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/Deadlock.lean
 # ...and the eighteen is CONDITIONAL: its own signature names the two coherence
 # facts it rests on.  The unconditional figure is the nineteen above, and a cut
 # that dropped these hypotheses to restore the old number would be claiming the
@@ -15542,8 +15546,8 @@ run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_size_le_seventeen_of_no_
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty[^\n]*(\n([ \t][^\n]*)?)*donationChainWellFormed" SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean'
 # The mechanism: a key already present costs nothing, which is what lets a
 # RESOLVED footprint be sharper than the parametric bound it is measured by.
-run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
-run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_containsKey($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
+run_check "INVARIANT" rg -n '^theorem size_insertOrMerge_of_not_containsKey($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSet.lean
 # NEGATIVE: the sharp bound must NOT be stated as the ceiling.  `maxLockSetSize`
 # is what `boundedWait_under_2pl` and the WCRT surface consume and must stay true
 # of every argument value; a cut that lowered the constant to the reachable
@@ -15573,11 +15577,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^
 # declared locks.  The three membership lemmas it rests on had to be added: the
 # second donation member had none on either footprint, and `.replyRecv`'s
 # SchedContext member had none either.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_donationPop' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_donationPop' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedHolder_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedHolder_tcb_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedSc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_donationPop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_donationPop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedHolder_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedHolder_tcb_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_donatedSc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 # NEGATIVE: the retired coverage stand-in must not come back -- its content is
 # definitional now, and a conditional restatement beside it would be a theorem
 # whose subject already supplies it.
@@ -15618,8 +15622,8 @@ run_check "INVARIANT" rg -n 'NEGATIVE: no reachable \.replyRecv shape reaches ma
 # fixed.  The pop is the exception the frame family was designed against, so it
 # carries a preservation theorem instead -- and that theorem is what makes
 # OD2.4's predicate an obligation rather than a decoration.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
-run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
+run_check "INVARIANT" rg -n '^theorem donationHeadPop_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DonationPreservation.lean
 # The two-store lemma is about the head that MOVES.  A version stated for a
 # store that leaves `scReply` where it is would be a corollary of
 # `donationChainFrame_of_storeObject_schedContext` and would say nothing about
@@ -15657,11 +15661,11 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedCo
 # derivation: the walk is a function of its starting point, so a head appearing
 # again below itself makes the walk from that occurrence return the whole chain,
 # which is strictly longer than the suffix it must equal.
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_head_not_mem_tail' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_suffix_walk' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_deterministic' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_length_le' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_head_not_mem_tail($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_suffix_walk($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_deterministic($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_mono_le($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_length_le($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # NEGATIVE: the predicate did not gain an acyclicity conjunct.  Bounded to the
 # structure's own declaration, so the anchor cannot be satisfied or tripped by a
 # `NoDup` anywhere else in a 5700-line file.
@@ -15670,18 +15674,18 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^structure donationChainWellF
 # asks agreement at every key and is useless here -- the pop changes one key's
 # links -- so the sharper form asks it only at the chain's own members, which is
 # exactly what the walk reads.
-run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr_on_chain' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainFrom_congr_on_chain($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The `some`-head refinement of the head clear: a caller that already knows there
 # IS a head should not have to refute "the step did nothing" before it can say
 # what the step wrote.
-run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_some_ok' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem storeDonationHeadClear_some_ok($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # The theorem is EXERCISED on the `some` arm.  Discharged only where the context
 # heads no stack, it would be indistinguishable from one whose writing arm is
 # wrong -- the shape OD2.4's witness exists to refuse, one phase on.  So the
 # depth-2 witness is popped, and the state the pop leaves heads exactly the TAIL
 # of the stack it started with.
-run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_wellFormed' tests/SmpCrossCoreCallSuite.lean
-run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_chain' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_wellFormed($|[ ({:\[\]])' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n '^theorem donationChainWitness_pop_chain($|[ ({:\[\]])' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem donationChainWitness_pop_chain[^\n]*(\n([ \t][^\n]*)?)*= some \[donationChainWitnessOuter\]" tests/SmpCrossCoreCallSuite.lean'
 
 # ============================================================================
@@ -15758,7 +15762,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReplyFrameOnLiveSt
 # (1) ONE removal step, and both spines call it.  A second spelling of "take the
 # answered frame off its stack and unlink it" is the divergence this tree has
 # paid for repeatedly; the composite is the single answer.
-run_check "INVARIANT" rg -n '^def removeCallerReplyFrame' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def removeCallerReplyFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^\n]*(\n([ \t][^\n]*)?)*SystemState\.consumeCallerReply caller rid \(spliceReplyFrameOutOrSelf st rid\)" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
 # The order is the content: the splice reads the link the consume clears, so a
 # consume-then-splice body splices from a Reply whose `next` is already gone.
@@ -15773,10 +15777,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def removeCallerReplyFrame[^
 # HP6.1's rule is that the name and the body move together, so the sever's names
 # are refused tree-wide rather than left beside a spliced body.
 run_negative_check "INVARIANT" rg -n 'frozenDetachReplyFrameAbove' SeLe4n/
-run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOut' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOutOrSelf' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOut($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameOutOrSelf($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 run_check "INVARIANT" rg -n '^def frozenSpliceFrameBelow\?' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameStores' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenSpliceReplyFrameStores($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 # The reciprocity test is what confines the stores to the genuine frame
 # above: a target that does not name us back is a refusal, never a write.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceReplyFrameOut[^\n]*(\n([ \t][^\n]*)?)*if a\.prev != some rid then \.error \.invalidArgument" SeLe4n/Kernel/FrozenOps/Core.lean'
@@ -15795,7 +15799,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceFrameBelow\?[^\n]*(\n
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSpliceFrameBelow\?[^\n]*(\n([ \t][^\n]*)?)*\.error \." SeLe4n/Kernel/FrozenOps/Core.lean'
 # ...and where there is nothing below, the splice IS the sever -- the theorem
 # that makes every pre-HP8 frozen scenario answer as it did.
-run_check "INVARIANT" rg -n '^theorem frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenSpliceReplyFrameStores_eq_sever_of_no_frame_below($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 # ...and the WITNESS, because the flip is invisible to every scenario this surface
 # carried before it: a two-frame stack's lower frame is its bottom, so both
 # policies write the same value there and depth <= 2 cannot tell them apart.
@@ -15846,22 +15850,22 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_endpointReplyRecvOnCore[^
 # ...and a member occurring in a footprint is not that member being a declared
 # write: these are the relation, and the reply path's twin of the coverage the
 # cancellation path has carried since `v0.35.4`.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameAbove_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameAbove_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameAbove_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameAbove($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameAbove($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the same sweep run over the one remaining resolved footprint that had
 # no coverage layer at all.  `lockSet_cancelDonationOnCore`'s parametric members
 # each had a write-membership lemma and the resolved form had none, so nothing
 # tied a member to the resolver the footprint reads it from.  `_correct` and
 # `_size_le` do not stand in: one is about the members' kinds, the other about
 # how many there are.
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_victim' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_stateLevel' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_donatedOwner' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_pop' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_victim($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_bindingSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_stateLevel($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_donatedOwner($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_pop($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelDonationOnCore_covers_outerCaller_key($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # NEGATIVE, token-preserving -- the outer caller is READ by the pop (it validates
 # that TCB before handing a context over) and written by nothing, so a coverage
 # theorem claiming a write there would describe a footprint wider than the
@@ -15870,10 +15874,10 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_cancelDonati
 
 # (4) The chain payoff -- the theorem the workstream exists for -- and the
 # fault-reply and reply-transfer forms that compose it.
-run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_preserves_donationChainWellFormed' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
-run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
-run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChainWellFormed' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem removeCallerReplyFrame_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem faultReplyOnCore_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
+run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChainWellFormed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/FaultPreservation.lean
 # The condition that tied the payoff's two halves was a PRE-state fact,
 # `answeredHeadContextIsServerDonation`.
 # WS-HP HP7 (`v0.35.46`): it is **DELETED**, and this is the anchor block that
@@ -15886,7 +15890,7 @@ run_check "INVARIANT" rg -n '^theorem replyTransferOnCore_preserves_donationChai
 run_negative_check "INVARIANT" rg -n 'answeredHeadContextIsServerDonation' SeLe4n/
 # ...and what the composite carries instead is pinned positively, so "strictly
 # weaker" is checkable rather than asserted.
-run_check "INVARIANT" rg -n '^def replyFrameHeadIsBound' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def replyFrameHeadIsBound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # ...and it is EXHIBITED on a state the live operations reach, beside the retired
 # condition it replaced, so "strictly weaker" and "they coincide on this shape" are
 # both measured.  A hypothesis nothing exhibits is indistinguishable from one that
@@ -15906,8 +15910,8 @@ run_check "INVARIANT" bash -lc 'rg -n "the RETIRED chain condition.s premise: th
 # the order, and WS-HP HP4.5 re-keyed the pop.  What the pop is keyed on is pinned
 # once, in this file's HP4 section -- a second copy would be one question with two
 # answers, and a re-keying would then break an anchor that is not about keys.
-run_check "INVARIANT" rg -n '^def replyRecvPopDonation' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def replyRecvPopDonation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^def replyRecvPostReceiveDonation($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*replyRecvPopDonation [^\n]*st1 with[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) receiverCspaceRoot" SeLe4n/Kernel/API.lean'
 # NEGATIVE: the receive leg must not run on the PRE-pop state.  Token-preserving
 # -- it keeps the pop, the receive leg and both bindings, and feeds the receive
@@ -15915,8 +15919,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def replyRecvBody[^\n]*(\n([ \t][^\n]*)?)*endpointReceiveDualWithCapsOnCore epId tid \(some rid\) receiverCspaceRoot[^\n]*(\n([ \t][^\n]*)?)*receiverSlotBase executingCore st1 with" SeLe4n/Kernel/API.lean'
 # ...and the two halves' bundle theorems, each stated at the state its own step
 # runs on rather than at one two legs away.
-run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPopDonation_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem replyRecvPostReceiveDonation_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 # The dispatch payoff's receive-leg hypotheses are stated at the POST-POP state.
 # Stating them at the reply leg's own is the pre-WS-RM shape and is a claim about
 # a state the receive leg no longer runs on.
@@ -16008,16 +16012,16 @@ run_check "INVARIANT" rg -n '^theorem answeredFrameHeadContext\?_boundThread' Se
 # (3) HP3: both reply footprints declare the frame the splice re-links, and the
 # declaration is tied to the RESOLVER rather than to a name -- the coverage
 # shape this family carries for every member since WS-OD (`v0.35.4`).
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameBelow_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameBelow_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_frameBelow_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_replyRecv_frameBelow_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyOnCore_covers_splicedFrameBelow($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_covers_splicedFrameBelow($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
 # ...and the cancellation footprint, whose removal is the same operation.  Its
 # resolver is DERIVED from `cancelSplicedFrameAbove?`'s own arm test, so the two
 # cannot disagree about which arm removes a frame.
 run_check "INVARIANT" rg -n '^def cancelSplicedFrameBelow\?' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_spliced_frame_below_write_mem' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlocking_spliced_frame_below_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_covers_splicedFrameBelow($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # NEGATIVE: the member must be a WRITE.  The splice re-links the frame below
 # upward, so a read-mode declaration would be false of the operation -- and this
 # is exactly the mode error WS-OD (`v0.35.4`) had to correct on the below-head
@@ -16029,9 +16033,9 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def lockSet_cancelIpcBlockin
 # `.replyRecv` figure is the one that absorbs the new member (19 -> 20); the two
 # reachable ones stay at 18 and 17, because a frame with something above it is
 # not a stack head and so heads no context to pop.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
-run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_size_le_seventeen' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReplyRecvOnCore_size_le_twenty($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_cancelIpcBlockingOnCore_size_le_thirteen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_tcbSuspendOnCore_size_le_seventeen($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/ResolvedFootprintBounds.lean
 # ...and the fourth local coherence fact HP2.2's converse needed,
 # `donatedContextHeadsStack`, which `donationChainWellFormed` does not entail.
 # WS-HP HP7 (`v0.35.46`): it and HP2.2's converse are **DELETED** -- both were
@@ -16071,7 +16075,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDi
 # (3) The single-core bridge is CONDITIONAL on the placement.  An unconditional
 # equation with the boot-pinned `removeRunnable` is precisely what was false, so
 # the negative refuses the retired name rather than the retired proof.
-run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_eq_single_of_placed_at_bootCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 run_negative_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_bootCoreId' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean
 
 # (4) The confinement theorem's core list comes from the SAME resolver the step
@@ -16196,10 +16200,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def endpointReplyCrossCoreDispatch[^\
 # head-driven recipient is the answered caller, which no binding the operation
 # reads constrains, so the guard is what stops a reply from overwriting a
 # reservation that caller had acquired for itself.
-run_check "INVARIANT" rg -n '^def donationRecipientAcceptable' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^def donationRecipientAcceptable($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def returnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*if !donationRecipientAcceptable st originalOwner then" SeLe4n/Kernel/IPC/Operations/Endpoint.lean'
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_rejects_bound_recipient' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_recipient_unbound' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_rejects_bound_recipient($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_recipient_unbound($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 # NEGATIVE: token-preserving -- it keeps the guard and asks it of the SERVER,
 # which is the thread the pop unbinds rather than the one it rebinds, so the
 # check would pass on exactly the state it exists to refuse.
@@ -16221,7 +16225,7 @@ run_prose_check "TRACE" rg -n 'applyReplyDonationOnCore on a frame heading no co
 # definitional rather than bridged: HP4.4's `covers_headDrivenPop` stand-in --
 # which needed two coherence facts and reached the holder's TCB by proving it was
 # the recorded server -- is retired for the hypothesis-free pair anchored above.
-run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedSc_write_mem' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem lockSet_endpointReply_donatedSc_write_mem($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 
 # (12) `.replyRecv`'s pop is head-driven too, and on that arm the frame needs no
 # resolving -- `rid` IS the reply capability the arm was invoked with.  Leaving it
@@ -16284,7 +16288,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenEndpointReplyWithD
 # state where the two candidate triggers disagree.
 run_prose_check "TRACE" rg -n 'the frozen reply OPERATION agrees with the live one, donation and all' tests/FrozenOpsSuite.lean
 run_prose_check "TRACE" rg -n 'the frozen composite follows the LIVE trigger, not the retired one' tests/FrozenOpsSuite.lean
-run_check "INVARIANT" rg -n '^private def differentialEndpointReplyDonationAgrees' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n '^private def differentialEndpointReplyDonationAgrees($|[ ({:\[\]])' tests/FrozenOpsSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def operationDifferentialScenarios[^\n]*(\n([ \t][^\n]*)?)*differentialEndpointReplyDonationAgrees" tests/FrozenOpsSuite.lean'
 
 # (17) And the frozen pop carries ALL THREE live guards, in the live order.  The
@@ -16295,7 +16299,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def operationDifferentialScen
 # a mirror succeeded where the kernel refuses: found by asking the question this
 # cut's flip raises, and its witness is FO-042's third half, which fails on the
 # genuine pre-fix behaviour and leaves every neighbour passing.
-run_check "INVARIANT" rg -n '^def frozenDonationRecipientAcceptable' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenDonationRecipientAcceptable($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenReturnDonatedSchedContext[^\n]*(\n([ \t][^\n]*)?)*frozenOuterCallerAcceptable st serverTid originalOwner newOwner\?[^\n]*(\n([ \t][^\n]*)?)*!frozenDonationRecipientAcceptable st originalOwner" SeLe4n/Kernel/FrozenOps/Core.lean'
 # NEGATIVE: token-preserving -- keeps the guard and asks it of the thread the pop
 # UNBINDS rather than the one it rebinds, so it would pass on exactly the state it
@@ -16347,12 +16351,12 @@ run_check "INVARIANT" rg -n '^theorem cancelledCallerDonation\?_eq_answeredFrame
 # (3) HP5.2: the generalised success lemma takes the context and its bound thread
 # as ARGUMENTS, so the head reading can supply them; the binding-keyed form is its
 # instance rather than a second proof.  Relation, not presence.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_of_boundAndRecipient' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_of_boundAndRecipient($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem returnDonatedSchedContext_ok_under_invariants[^\n]*(\n([ \t][^\n]*)?)*exact returnDonatedSchedContext_ok_of_boundAndRecipient" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 # (4) HP5.2: what a successful pop says about its server id, and the frame that
 # lets a consumer act on it.  The head reading names a `boundThread` no invariant
 # ties to a stored TCB, so the pop declining is what rules the case out.
-run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_server_not_reserved' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
+run_check "INVARIANT" rg -n '^theorem returnDonatedSchedContext_ok_server_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Operations/Endpoint.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem abortHolderPendingIpc_eq_self_of_lookup_none' SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean
 # (5) HP5.3: below the cut the reclaim declines on the STACK -- a frame with a
 # frame above it heads nothing -- so the restatement carries no binding hypothesis.
@@ -16371,7 +16375,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelSplicedFrameBelow\?_of_
 # agreeing shape plus the orphan-head shape on which the two readings differ, with
 # both answers computed side by side so the assertions are known to discriminate.
 run_prose_check "TRACE" rg -n 'the head-driven cancellation reclaim' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^private def stOrphanHeadReclaim' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def stOrphanHeadReclaim($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runFrameHeadReclaimChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED binding-driven reading declines here" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runFrameHeadReclaimChecks[^\n]*(\n([ \t][^\n]*)?)*the head-driven trigger resolves the real holder" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runFrameHeadReclaimChecks" tests/SmpCancellationSuite.lean'
@@ -16390,7 +16394,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "ipcState := \.blockedOnReply 
 # `replyCallerLinkage` always required and which the OD5.2 checks now read -- so the
 # TCB is ONE definition rather than the store's plus two local re-spellings.
 run_check "INVARIANT" bash -lc 'rg -U -n "\|>\.withObject pushOuter\.toObjId[^\n]*(\n([ \t][^\n]*)?)*replyObject := some pushOuterReply" tests/SmpIpcSuite.lean'
-run_check "INVARIANT" rg -n '^private def pushOuterBlockedTcb' tests/SmpIpcSuite.lean
+run_check "INVARIANT" rg -n '^private def pushOuterBlockedTcb($|[ ({:\[\]])' tests/SmpIpcSuite.lean
 run_check "INVARIANT" rg -n '^private def replyRemovalOuterTcb : TCB := pushOuterBlockedTcb' tests/SmpIpcSuite.lean
 # ...and the declining half runs on the state the LIVE push produces, not on a
 # hand-shaped `.unbound` donor: the mutation that made the pair vacuous was passing
@@ -16521,19 +16525,19 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore [^\n
 # step removes a thread that is never the victim -- where the wake's degenerate
 # self-insert made it a disjunction (`cancelIpcBlockingOnCore_placedCoreOf?_cases`,
 # retired).
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_deschedule($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingReclaimed_placedCoreOf\?_victim[^\n]*(\n([ \t][^\n]*)?)*= placedCoreOf\? st victim := by" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_placedCoreOf\?_of_some' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem descheduleThread_fully_descheduled' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem descheduleThread_descheduled_at_placement' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_fully_descheduled($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem descheduleThread_descheduled_at_placement($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" rg -n '^theorem placedCoreOf\?_eq_some_of_unique' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 # The retired readings must not return anywhere in the tree.
 run_negative_check "INVARIANT" rg -n 'descheduleThread_descheduled_on_home|cancelIpcBlockingOnCore_bootHome_state_eq|cancelIpcBlockingOnCore_eq_descheduleThread_closed|cancelIpcBlockingOnCore_eq_descheduleThread\b|cancelIpcBlocking_getTcb\?_isSome_eq|removeRunnableOnCoreOpt_ipcInvariantStage|suspendDequeues_confinedToCores|descheduleThread_no_sgi_if_ghost|cancelIpcBlockingOnCore_no_sgi_if_ghost' SeLe4n tests
 # The witness: an unpinned victim QUEUED on a secondary core, both readings
 # computed side by side -- the retired one in the suite and nowhere else -- and
 # the live `.tcbSuspend` operation run on it.
-run_check "INVARIANT" rg -n '^private def stUnpinnedQueuedRemote' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^private def retiredHomeAndRunningDeschedule' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def stUnpinnedQueuedRemote($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def retiredHomeAndRunningDeschedule($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runPlacementDescheduleChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED home-and-running reading leaves the victim queued on core 2" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runPlacementDescheduleChecks[^\n]*(\n([ \t][^\n]*)?)*suspendThreadOnCore removes the victim from core 2" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def runSmpCancellationChecks[^\n]*(\n([ \t][^\n]*)?)*runPlacementDescheduleChecks" tests/SmpCancellationSuite.lean'
@@ -16558,12 +16562,12 @@ run_check "INVARIANT" rg -n '^def ipcInvariantFullExceptReplyLinkage ' SeLe4n/Ke
 # `replyCallerLinkageReciprocalExcept`, where the frame transport can reach it;
 # the anchor on it moved with it, into that cut's block below.
 # The pin that the contradictory pairing must not be restated.
-run_check "INVARIANT" rg -n '^theorem replyCallerLinkage_refutes_woken_linked_caller' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyCallerLinkage_refutes_woken_linked_caller($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The restore opens the relaxation; the teardown closes it; the pair is the unit.
-run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
-run_check "INVARIANT" rg -n '^theorem consumeReplyLink_closes_exceptReplyLinkage' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_establishes_ipcInvariantFullExceptReplyLinkage($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem consumeReplyLink_closes_exceptReplyLinkage($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def restoredAndConsumed[^\n]*(\n([ \t][^\n]*)?)*Lifecycle\.Suspend\.consumeReplyLink" SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean'
-run_check "INVARIANT" rg -n '^theorem restoredAndConsumed_preserves_ipcInvariantFull' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
+run_check "INVARIANT" rg -n '^theorem restoredAndConsumed_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean
 # The teardown's own bundle theorem takes the RELAXED pre-state.  A revert to the
 # full bundle there is the vacuity coming back, so the relation is anchored
 # rather than the name.
@@ -16574,7 +16578,7 @@ run_negative_check "INVARIANT" rg -n 'removeCallerReplyFrame_preserves_ipcInvari
 # The boundary question has one owner: the notification arm and the reply arm ask
 # it of victims in different blocking states, so the discriminating fact is a
 # parameter and neither arm carries its own copy.
-run_check "INVARIANT" rg -n '^theorem notQueueBlocked_bounds_no_endpoint_queue' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
+run_check "INVARIANT" rg -n '^theorem notQueueBlocked_bounds_no_endpoint_queue($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Invariant/CancellationQueueShape.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem purgedAndRestored_victim_off_endpoint_boundaries[^\n]*(\n([ \t][^\n]*)?)*notQueueBlocked_bounds_no_endpoint_queue" SeLe4n/Kernel/Lifecycle/Invariant/CancellationNotificationShape.lean'
 
 # ---------------------------------------------------------------------------
@@ -16593,26 +16597,26 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageReciprocalExcep
 # And the split is the FULL predicate's split one strength down -- the pair and
 # the third clause, not a flat triple, which is what gives the transport a unit.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def replyCallerLinkageExcept[^\n]*(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
-run_check "INVARIANT" rg -n '^theorem replyCallerLinkageReciprocalExcept_of_frame' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem replyCallerLinkageReciprocalExcept_of_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The store's member of the `replyLinkageFrame` family -- the fact that made the
 # hand-written per-store agreement unnecessary.
-run_check "INVARIANT" rg -n '^theorem storeObject_reply_caller_replyLinkageFrame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_reply_caller_replyLinkageFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 # Everything but the reciprocal pair is proved ONCE and assembled twice.
-run_check "INVARIANT" rg -n '^theorem storeObject_reply_stackLinks_preserves_nonReciprocal' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem storeObject_reply_stackLinks_preserves_nonReciprocal($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_reply_stackLinks_preserves_ipcInvariantFull\n([ \t][^\n]*)?(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocal_of_frame" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem storeObject_reply_stackLinks_preserves_ipcInvariantFullExceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*replyCallerLinkageReciprocalExcept_of_frame" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 # The splice's store chain has ONE owner: which stores run, in what order, with
 # which lookups surviving between them, is a fact about the operation and not
 # about any bundle, so both carriages are one application of the transport.
-run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_transport' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOut_transport($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFull\n([ \t][^\n]*)?(\n([ \t][^\n]*)?)*spliceReplyFrameOut_transport" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFullExceptReplyLinkage[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameOut_transport" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
 # ... and neither carriage may re-run the chain itself, which is how the two
 # would come to disagree about it.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem spliceReplyFrameOut_preserves_ipcInvariantFull[^\n]*(\n([ \t][^\n]*)?)*spliceReplyFrameStores_cases" SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean'
-run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
-run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_replyLinkageFrame' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_preserves_ipcInvariantFullExceptReplyLinkage($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
+run_check "INVARIANT" rg -n '^theorem spliceReplyFrameOutOrSelf_replyLinkageFrame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean
 # The removal's own statement, and the relation that it takes the RELAXED
 # pre-state: asked beside the full bundle the pairing is contradictory, which is
 # the vacuity RR8.7 found.
@@ -16702,7 +16706,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderSpliceHig
 # what closes the reduction.  `v0.35.84` proved the labelling layer and stopped
 # at `endpointSpliceHigh`, because `abortPendingIpcOnEndpoint` runs
 # `endpointQueueRemove` and only `endpointQueueRemoveDual` had such a lemma.
-run_check "INVARIANT" rg -n '^theorem queueNeighbourPatch_preserves_projection_high' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem queueNeighbourPatch_preserves_projection_high($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # The patch's hypothesis is quantified over the RESOLUTION, not over a supplied
 # thread: a caller that knows the removed node has no predecessor discharges it
 # by `simp` instead of inventing one, which is what keeps an under-stated
@@ -16722,8 +16726,8 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointSpliceHigh_q
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueRemove_preserves_projection_and_invExt[^\n]*(\n([ \t][^\n]*)?)*hHigh : endpointSpliceHigh ctx observer st endpointId tid[^\n]*(\n([ \t][^\n]*)?)*hPair : . t : TCB, lookupTcb st tid = some t . t.queuePPrevAgreesWithPrev" SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean'
 run_check "INVARIANT" rg -n '^theorem endpointQueueRemove_preserves_projection$' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # The two lifts: the timeout's object-only prefix, and the reclaim's whole abort.
-run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
-run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_projection' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem abortPendingIpcOnEndpoint_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderPendingIpc_preserves_projection($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/Invariant/Operations.lean
 # ...and the abort's hypothesis is quantified over the endpoint the holder's own
 # `ipcState` names, never over a supplied one: the endpoint is not a parameter
 # of `abortHolderPendingIpc`, so taking one would let a caller be wrong about
@@ -16733,12 +16737,12 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderPendingIp
 # The conjunct, read at one thread through the kernel's own typed lookup --
 # stated beside the conjunct, so a consumer does not re-open the
 # `getTcb?` / `objects[..]?` bridge for itself.
-run_check "INVARIANT" rg -n '^theorem queuePPrevAgreesWithPrev_lookupTcb' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem queuePPrevAgreesWithPrev_lookupTcb($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # The discharge itself: `abortHolderProjectionStable` is no longer a whole
 # obligation a caller carries.  The composed form's ONLY queue hypothesis is the
 # neighbour clause; an `endpointSpliceHigh` hypothesis there would reduce
 # nothing while keeping the name, which is exactly what this cut retires.
-run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_spliceHigh' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
+run_check "INVARIANT" rg -n '^theorem abortHolderProjectionStable_of_spliceHigh($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderProjectionStable_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*hNbr : . \(scId : SeLe4n.SchedContextId\) \(holder : SeLe4n.ThreadId\)," SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem abortHolderProjectionStable_of_neighbourHigh[^\n]*(\n([ \t][^\n]*)?)*\(\w+ : [^\n]*endpointSpliceHigh" SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean'
 # The witness: the reduction computed on a state the live operations build, with
@@ -16752,9 +16756,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def runAbortPrefixProjectionChecks[^\n
 # lift.  The three arm theorems landed one per cut in three modules; these pin
 # the composite that puts them together and the transition the live
 # `.tcbSuspend` dispatch actually runs.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_victim_ready' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_victim_ready($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # Relation, not presence: the premise pack must gate each group on its OWN arm's
 # `ipcState` equation.  A pack whose fields are unconditional keeps every field
 # name and makes the `.ready` arm -- which commits no write -- carry the reply
@@ -16785,9 +16789,9 @@ run_negative_check "INVARIANT" rg -n '^theorem restoreToReadyStaging_preserves_o
 # context to; the reclaim's guards are fail-closed, so on a refusal it moved
 # `scId`'s replenishments to a core no thread bound to `scId` is homed on.  The
 # destination is now read off the post-teardown binding.
-run_check "INVARIANT" rg -n '^def replenishHomeOfSchedContext' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
-run_check "INVARIANT" rg -n '^theorem replenishHomeOfSchedContext_spec' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
-run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^def replenishHomeOfSchedContext($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem replenishHomeOfSchedContext_spec($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
+run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_to_home_preserves_affinityConsistent_smp($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/ReplenishAffinity.lean
 # Relation, not presence: the destination must be `replenishHomeOfSchedContext`
 # OF THE POST-TEARDOWN STATE.  Resolved on the pre-state it would be the pre-state
 # binding's home, which is the source -- a migration that never moves anything.
@@ -16806,10 +16810,10 @@ run_check "INVARIANT" rg -n '^theorem migrateSchedContextReplenishment_to_home_p
 # come back.  The source position keeps `determineTargetCore st holder`, so this
 # names `victim` specifically.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingMigrated[^\n]*(\n([ \t][^\n]*)?)*\(determineTargetCore st victim\)" SeLe4n/Kernel/Lifecycle/Suspend.lean'
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_establishes_replenishQueueAffinityConsistent_smp($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_teardown_of_reclaim_inert($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_eq_victim_home_of_committed($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # ...and the keystone takes NO hypothesis about the reclaim committing.  Such a
 # hypothesis would restore the proxy while keeping the theorem's name.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingMigrated_establishes_replenishQueueAffinityConsistent_smp[^\n]*(\n([ \t][^\n]*)?)*\(h[A-Za-z]* : (returnDonationToCancelledCaller|returnDonatedSchedContextResolved|Lifecycle.Suspend.returnDonation)" SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean'
@@ -16817,13 +16821,13 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelIpcBlockingMig
 # thread's home the teardown moves has ONE owner: the general form in
 # CancellationBundle, not a victim-specialised copy back in Cancellation.lean.
 run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_getSchedContext\?_ne' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_affinity_frame' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_affinity_frame($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 run_negative_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlocking_determineTargetCore_eq($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean
 # The witness that makes the flip a measurement rather than a claim: the retired
 # destination computed beside the live one, in the suite that refutes it and
 # nowhere else.
-run_check "INVARIANT" rg -n '^private def retiredVictimHomeMigration' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def retiredVictimHomeMigration($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 
 # ---------------------------------------------------------------------------
 # v0.35.90 -- WS-RR RR8.12 (second cut): the live suspend's G2 completes its
@@ -16843,7 +16847,7 @@ run_check "INVARIANT" rg -n '^def cancelIpcBlockingReclaimed ' SeLe4n/Kernel/Lif
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingReclaimed [^\n]*(\n([ \t][^\n]*)?)*descheduleUnboundHolder st \(cancelIpcBlockingMigrated victim tcb st\) victim tcb" SeLe4n/Kernel/Lifecycle/Suspend.lean'
 # Relation, not presence: the composite IS the prefix plus the deschedule, and
 # the live pipeline's G2 IS the prefix.
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_eq_reclaimed_deschedule' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_eq_reclaimed_deschedule($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCore [^\n]*(\n([ \t][^\n]*)?)*descheduleThread \(cancelIpcBlockingReclaimed victim tcb st\) victim executingCore" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCore [^\n]*(\n([ \t][^\n]*)?)*let st := cancelIpcBlockingReclaimed tid tcb st" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 # WS-RR RR8.12 (fifth cut): and the single-core reference path reads it too --
@@ -16875,9 +16879,9 @@ run_check "INVARIANT" rg -n 'private theorem cancelIpcBlockingReclaimed_ready_id
 # wake's, until then) -- a footprint that omits a written lock is false -- and
 # the widening costs the two existing run-queue members nothing.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*\[placed\.getD executingCore, executingCore\] \+\+ holderPlaced\.toList" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_holder_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_placed_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_executing_runQueue_write' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_holder_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_placed_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_executing_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # WS-RR RR8.12 Cut C3b-iv (`v0.35.170`): the member the triple above could not
 # name.  G2's reclaim migrates the reclaimed reservation between the holder's
 # home core and the torn state's binding home, and both parametric footprints
@@ -16885,8 +16889,8 @@ run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_e
 # false.  The resolver both of them read is `cancelIpcBlockingReplenishCores`,
 # declared beside the transition so the two composites over one migration
 # cannot name different cores.
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_migration' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCoreSchedLockSet_contains_reclaim_replenishQueue_writes($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCoreSchedLockSet_covers_migration($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingOnCoreSchedLockSet[^\n]*(\n([ \t][^\n]*)?)*schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) reclaimReplenish" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "schedFootprintOfCores \(placed\.toList \+\+ holderPlaced\.toList\) \[\]" SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def cancelIpcBlockingReplenishCores \(st : SystemState\) \(victim : SeLe4n\.ThreadId\)[^\n]*(\n([ \t][^\n]*)?)*let torn := Lifecycle\.Suspend\.cancelIpcBlocking st victim tcb(\n([ \t][^\n]*)?)*let fromCore := determineTargetCore st holder(\n([ \t][^\n]*)?)*\[fromCore, replenishHomeOfSchedContext torn scId fromCore\]" SeLe4n/Kernel/Lifecycle/Suspend.lean'
@@ -16898,16 +16902,16 @@ run_negative_check "INVARIANT" rg -n '^def cancelIpcBlockingReplenishCores' SeLe
 # they are pinned by `rfl` -- which fires on a dispatcher change even when that
 # change updates all of the dispatcher's own frame theorems, which is the case no
 # other theorem covers.
-run_check "INVARIANT" rg -n '^theorem suspendDonationArm_eq_cancelDonationOnCore' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
+run_check "INVARIANT" rg -n '^theorem suspendDonationArm_eq_cancelDonationOnCore($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/Cancellation.lean
 # The witness: the retired G2 computed beside the live one on a state where the
 # abort really unblocks the holder, plus the live transition run on it -- and,
 # since `v0.35.158`, the retired WAKE computed beside the live deschedule on the
 # blocked, the queued and the running holder, with the queued rows the ones the
 # wake could never have passed.
-run_check "INVARIANT" rg -n '^private def bareTeardownG2' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^private def retiredHolderWake' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^private def stStrandedHolderReclaim' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n '^private def stQueuedHolderReclaim' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def bareTeardownG2($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def retiredHolderWake($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def stStrandedHolderReclaim($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '^private def stQueuedHolderReclaim($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*and leaves it on NO run queue on any core, as the live reclaim now does deliberately" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the RETIRED wake leaves the unbound holder QUEUED" tests/SmpCancellationSuite.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspendChecks[^\n]*(\n([ \t][^\n]*)?)*the LIVE reclaim takes the holder it unbound OFF core 2" tests/SmpCancellationSuite.lean'
@@ -17011,9 +17015,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendRescheduleOnCore_prese
 # `v0.35.158` swapped the third frame: resolvability across the walk went with
 # the placed direction, and run-queue well-formedness across it is what the
 # unplaced direction carries to the scheduling point.
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_mem_runQueueOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_currentOnCore' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_mem_runQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_currentOnCore($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 # NARROWED at WS-RR RR8.16 (`v0.35.197`).  This negative used to ban the walk's
 # own resolvability fact tree-wide alongside the three retired *consumers*, and
 # that is a ban on a FACT rather than on the retired approach: the base
@@ -17045,7 +17049,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadInactiveFlagConsistent_dispatch[^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_dispatch_self st c tid" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 # Placement is framed by agreement AT the thread, not by equality of the slots --
 # the equality form cannot frame G4, which clears the victim's current slot.
-run_check "INVARIANT" rg -n '^theorem threadPlacedOnSomeCore_congr_at' SeLe4n/Kernel/Scheduler/Operations/Core.lean
+run_check "INVARIANT" rg -n '^theorem threadPlacedOnSomeCore_congr_at($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Core.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem threadPlacedOnSomeCore_congr [^\n]*(\n([ \t][^\n]*)?)*threadPlacedOnSomeCore_congr_at st st. u" SeLe4n/Kernel/Scheduler/Operations/Core.lean'
 # The witness exhibits the payoff's premises on a state the live operations
 # reach, and asserts its conclusion in the payoff's own vocabulary -- a
@@ -17068,11 +17072,11 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^private def runReclaimCompleteSuspend
 
 # The frame is stated at the write, in both readings, with the composition and
 # the base case that let a chained operation inherit it.
-run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_ok' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_only_modifies_objects' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_trans' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_rfl' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^theorem frozenRewriteObject_only_modifies_objects' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_ok($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenWithObjectStored_only_modifies_objects($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_trans($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenOnlyObjects_rfl($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^theorem frozenRewriteObject_only_modifies_objects($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 
 # ...and it is READ rather than merely declared.  A frame nothing consults reads
 # exactly like one nobody checked, and the eleven re-derivations are what this
@@ -17089,7 +17093,7 @@ run_negative_check "INVARIANT" rg -n 'frozenStoreObject_extracts_state' --glob '
 # The total rewrite is what the one frozen transition that had spelled its write
 # `st.objects.insert` now writes through -- the spelling the `set`-only branch
 # could not see, which is why it sat past the zero as a registered "primitive".
-run_check "INVARIANT" rg -n '^def frozenRewriteObject' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenRewriteObject($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenUpdatePipBoost[^\n]*(\n([ \t][^\n]*)?)*frozenRewriteObject st tid\.toObjId \(\.tcb tcb.\)" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_negative_check "INVARIANT" rg -n 'objects := st\.objects\.insert' SeLe4n/Kernel/FrozenOps
 
@@ -17097,8 +17101,8 @@ run_negative_check "INVARIANT" rg -n 'objects := st\.objects\.insert' SeLe4n/Ker
 # reconciliations run.  A kind named in one branch and not the other is the
 # original defect; a table operation nobody classified is one neither pattern
 # ever looks for.
-run_check "INVARIANT" rg -n '^def table_op_violations' scripts/lean_store_read_census.py
-run_check "INVARIANT" rg -n '^def branch_symmetry_violations' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -n '^def table_op_violations($|[ ({:\[\]])' scripts/lean_store_read_census.py
+run_check "INVARIANT" rg -n '^def branch_symmetry_violations($|[ ({:\[\]])' scripts/lean_store_read_census.py
 run_check "INVARIANT" bash -lc 'rg -n "misclassified = table_op_violations\(\) \+ branch_symmetry_violations\(\)" scripts/lean_store_read_census.py'
 run_negative_check "INVARIANT" bash -lc 'rg -n "^WRITE = re\.compile\(r\"\\\\b\(\?:RHTable\|FrozenMap\)" scripts/lean_store_read_census.py'
 
@@ -17390,7 +17394,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def intrusiveQueueWellFormed
 run_check "INVARIANT" bash -lc 'rg -U -n "headTcb\.queuePPrev = some \.endpointHead" SeLe4n/Testing/InvariantChecks.lean'
 # The fifth conjunct that makes a *clearing* writer able to discharge P2: a thread
 # heads at most one endpoint queue, send and receive counted as different queues.
-run_check "INVARIANT" rg -n '^def endpointQueueHeadDisjoint' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^def endpointQueueHeadDisjoint($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "def dualQueueSystemInvariant[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint st" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 run_check "INVARIANT" rg -n '^theorem dualQueueSystemInvariant\.headDisjoint' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # ...and it is a CONSEQUENCE of `ipcInvariantCore`, not a new assumption: a head's
@@ -17406,8 +17410,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueHeadDisjoint_of_
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem queueHeadExclusive[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 # The two local facts every queue writer discharges the conjunct with, and the
 # general form the specialised one is DERIVED from rather than stated beside.
-run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePrev_some' SeLe4n/Kernel/IPC/Invariant/Defs.lean
-run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePPrev_none' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePrev_some($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem not_queueHead_of_queuePPrev_none($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem endpointQueueHeadDisjoint_of_singleQueueUpdate[^\n]*(\n([ \t][^\n]*)?)*endpointQueueHeadDisjoint_of_freshHeads" SeLe4n/Kernel/IPC/Invariant/Defs.lean'
 # The payoff: a queue MEMBER's back-pointer is derived rather than hypothesised,
 # joining P2's head half with the pairing's interior half, so the removal guard
@@ -17420,7 +17424,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem dualQueueRemovalGuardHolds_of
 run_negative_check "INVARIANT" rg -n 'dualQueueRemovalGuard_of_reachableMember' SeLe4n/ tests/
 # The splice carries the head's field through the same frame its sibling uses for
 # `queuePrev`, which is what lets the cancellation composite transport P2.
-run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_queuePPrev_frame' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
+run_check "INVARIANT" rg -n '^theorem spliceOutMidQueueNode_queuePPrev_frame($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
 
 # ===========================================================================
 # v0.35.109: the scenario-traceability manifests' fragment column is checked.
@@ -17447,7 +17451,7 @@ run_prose_check "INVARIANT" rg -n '^# Suite: robin_hood_suite$' tests/fixtures/r
 run_prose_check "INVARIANT" rg -n '^# Suite: two_phase_arch_suite$' tests/fixtures/two_phase_arch_smoke.expected
 # One ID parser: `validate-registry` and `generate-registry-stub` asked the same
 # question and had grown two copies of the answer.
-run_check "INVARIANT" rg -n '^def scenario_ids_in' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def scenario_ids_in($|[ ({:\[\]])' scripts/scenario_catalog.py
 run_negative_check "INVARIANT" rg -n 'bracket_re = re.compile' scripts/scenario_catalog.py
 # The two suites route through the SHARED assertion helper, which is what makes
 # the emitted line one function's output rather than two spellings of it —
@@ -17637,7 +17641,7 @@ run_check "INVARIANT" bash -lc 'rg -n "match \(env\.find\? c\)\.bind cfExecutabl
 run_check "INVARIANT" bash -lc 'rg -n "SELF_TEST_ROGUE_OPAQUE = .cfPlantedOpaqueTaintWriter." scripts/check_content_flow_coverage.py'
 run_check "INVARIANT" bash -lc 'rg -n "^private opaque \{SELF_TEST_ROGUE_OPAQUE\}" scripts/check_content_flow_coverage.py'
 run_check "INVARIANT" bash -lc 'rg -n "rogue_opaque not in field_writers" scripts/check_content_flow_coverage.py'
-run_check "INVARIANT" bash -lc 'rg -n "^opaque routeSelfTestOpaque" scripts/check_live_arm_per_core_routing.py'
+run_check "INVARIANT" bash -lc 'rg -n "^opaque routeSelfTestOpaque($|[ ({:\[\]])" scripts/check_live_arm_per_core_routing.py'
 run_check "INVARIANT" bash -lc 'rg -n "routeSelfTestOpaque, .OPAQUE.." scripts/check_live_arm_per_core_routing.py'
 # (D) The derived discipline check: one owner, a domain over both places this
 # tree writes Lean, and a reconciliation in BOTH directions.  A pin nothing
@@ -17730,7 +17734,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def nonExecutedTransitionsPri
 # section, scoped to that heading — a filename backticked in another table cannot
 # satisfy a fixture's membership — and only the `Fixture` and `Hash` cells declare,
 # so prose in the `Used by` column cannot stand in for a row.
-run_check "INVARIANT" rg -n '^def fixture_table_filenames' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def fixture_table_filenames($|[ ({:\[\]])' scripts/scenario_catalog.py
 run_check "INVARIANT" rg -n '^FIXTURE_TABLE_HEADING = "## Files"' scripts/scenario_catalog.py
 # (`v0.35.137` repoints this: the `cells[1:3]` slice it used to pin is retired,
 # the two declaring cells now being read separately so the row-shape contract can
@@ -17753,7 +17757,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "def check_fixture_index[^\n]*
 # not parse is an ERROR.  The superseded classifier answered "not a manifest" and
 # the caller did a bare skip, so such a file was swept as golden output with the
 # gate still reporting PASS.
-run_check "INVARIANT" rg -n '^def classify_fixture' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def classify_fixture($|[ ({:\[\]])' scripts/scenario_catalog.py
 run_check "INVARIANT" bash -lc 'rg -U -n "def classify_fixture[^\n]*(\n([ \t][^\n]*)?)*if not declares and not content_is_rows:" scripts/scenario_catalog.py'
 run_check "INVARIANT" bash -lc 'rg -U -n "def discover_manifests[^\n]*(\n([ \t][^\n]*)?)*if shape.error is not None:\n *errors.append" scripts/scenario_catalog.py'
 # ...and the retired content-only skip must not return.
@@ -17764,7 +17768,7 @@ run_check "INVARIANT" bash -lc 'rg -n "scenario_catalog.py\" list-manifests" scr
 # evidence for the scenario the row claims rather than for whichever assertion
 # happens to be emitted; and the id must not be satisfied by a longer one that
 # merely has it as a prefix.
-run_check "INVARIANT" rg -n '^def fragment_names_scenario' scripts/scenario_catalog.py
+run_check "INVARIANT" rg -n '^def fragment_names_scenario($|[ ({:\[\]])' scripts/scenario_catalog.py
 # (`v0.35.139` retires the inline-pattern anchor that stood here.  The label
 # position is one owner now -- the module-level `LABEL_POSITION`, which the
 # reverse direction reads too -- so this declaration no longer spells the
@@ -17826,9 +17830,9 @@ run_check "INVARIANT" bash -lc 'rg -n "on a line naming " scripts/scenario_catal
 run_negative_check "INVARIANT" bash -lc 'rg -n "if fragment not in output_text:" scripts/scenario_catalog.py'
 # ...with the decisive case and BOTH controls, so the rejection is attributable to
 # the collision and not to the row's shape or to the unbracketed label form.
-run_check "INVARIANT" bash -lc 'rg -n "def test_rejects_a_fragment_emitted_under_a_LONGER_scenario_id" scripts/tests/test_scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_that_same_row_against_its_OWN_line" scripts/tests/test_scenario_catalog.py'
-run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_the_unbracketed_label_shape" scripts/tests/test_scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "def test_rejects_a_fragment_emitted_under_a_LONGER_scenario_id($|[ ({:\[\]])" scripts/tests/test_scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_that_same_row_against_its_OWN_line($|[ ({:\[\]])" scripts/tests/test_scenario_catalog.py'
+run_check "INVARIANT" bash -lc 'rg -n "def test_accepts_the_unbracketed_label_shape($|[ ({:\[\]])" scripts/tests/test_scenario_catalog.py'
 
 # ---------------------------------------------------------------------------
 # `v0.35.120`: a plain search quoted through a shell is COMPARED, not "composed".
@@ -19974,21 +19978,21 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*
 # rewrites (WS-OD OD5.3), so the segment must not resolve it at `st`.
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def suspendThreadReplenishCores[^\n]*(\n([ \t][^\n]*)?)*cancelDonationArmReplenishCoresAt st vtid\.val" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # Membership, per written core.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_of_inactive' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_of_inactive($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_executing_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_placed_runQueue_write($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_contains_reclaim_replenishQueue_writes($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_covers_parametric_runQueue($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 #
 # The EXACTNESS half -- the pair a resolved footprint owes.  The pipeline has
 # seven stages and exactly two of them move a reservation; every other stage
 # frames every replenish queue, which is what makes the segment's two halves the
 # whole of it.
-run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_replenishQueueOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendThreadOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingReclaimed_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingMigrated_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem cancelIpcBlockingOnCore_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem suspendRescheduleOnCore_replenishQueueOnCore($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem descheduleAt_replenishQueueOnCore' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # ...and it is stated over the whole arm rather than over a component: a claim
 # about `cancelIpcBlockingReclaimed` alone would be a claim about a prefix of
@@ -19999,14 +20003,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem suspendThreadOnCore_replenish
 # two askers hand it different cores: the destroy path reads it off the state it
 # runs on, and the suspend's G3 was handed it from the PRE-G2 state.  A frame
 # stated at `determineTargetCore st tid` covers the first and not the second.
-run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem donationArmAt_replenishQueueOnCore_ne($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cancelDonationArmOnCore_replenishQueueOnCore_ne[^\n]*(\n([ \t][^\n]*)?)*donationArmAt_replenishQueueOnCore_ne st st. tid tcb \(determineTargetCore st tid\) c hne h" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 #
 # The witness computes both retired parametric readings beside the live ones, on
 # a state the live operations reach: the reservation on the holder's home core,
 # the victim homed elsewhere, and a migration between them.
-run_check "INVARIANT" rg -n 'private def retiredSuspendSchedLockSet' tests/SmpCancellationSuite.lean
-run_check "INVARIANT" rg -n 'private def retiredCancelSchedLockSet' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'private def retiredSuspendSchedLockSet($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'private def retiredCancelSchedLockSet($|[ ({:\[\]])' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n '^  runReclaimMigrationFootprintChecks$' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -F -n 'NEGATIVE: the RETIRED suspend footprint omits the migration'"'"'s SOURCE core' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL: core 3'"'"'s replenish queue is in NEITHER footprint' tests/SmpCancellationSuite.lean
@@ -20046,16 +20050,16 @@ run_check "INVARIANT" rg -F -n 'replyRegisters : Option (Array SeLe4n.RegValue) 
 # The per-arm characterisations close the inventory's other drift direction: an
 # arm listed as declared that had become unconditionally `none` could not
 # satisfy its own `iff`.
-run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_call_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_reply_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_replyRecv_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_tcbSetAffinity_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_lifecycle_isSome_iff' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_call_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_reply_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_replyRecv_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_tcbSetAffinity_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSetForSyscall_lifecycle_isSome_iff($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem schedLockSetForSyscall_notificationWait_isSome' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # The witness: a declared arm's answer IS its own footprint, two arms do not
 # answer the same set, and the operand each arm needs is the one it refuses
 # without.
-run_check "INVARIANT" rg -n 'private def runSyscallSchedResolverScenarios' tests/SmpCbsSuite.lean
+run_check "INVARIANT" rg -n 'private def runSyscallSchedResolverScenarios($|[ ({:\[\]])' tests/SmpCbsSuite.lean
 run_check "INVARIANT" rg -n '^  runSyscallSchedResolverScenarios$' tests/SmpCbsSuite.lean
 run_check "INVARIANT" rg -F -n 'NEGATIVE: the priority arm and the unbind arm declare DIFFERENT sets' tests/SmpCbsSuite.lean
 run_check "INVARIANT" rg -F -n 'CONTROL: .tcbSetAffinity refuses on the thread operand ALONE' tests/SmpCbsSuite.lean
@@ -20119,7 +20123,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| \.lifecycleRetype, \.object _ =>(\n
 # STATE -- an inactive victim declares the object-store lock alone and an active
 # one additionally declares the executing core's run queue, which is what a
 # state-ignoring resolver could not do.
-run_check "INVARIANT" rg -n 'private def runAbiSchedFootprintChecks' tests/SmpCrossCoreCallSuite.lean
+run_check "INVARIANT" rg -n 'private def runAbiSchedFootprintChecks($|[ ({:\[\]])' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -n '^  runAbiSchedFootprintChecks$' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -F -n 'both domains resolve ONE decode and ONE operand record' tests/SmpCrossCoreCallSuite.lean
 run_check "INVARIANT" rg -F -n 'the five scheduler operands do not move the OBJECT domain' tests/SmpCrossCoreCallSuite.lean
@@ -20165,11 +20169,11 @@ run_check "INVARIANT" rg -F -n '``SeLe4n.Kernel.schedLockSet_endpointReplyOnCore
 # constant with the family's NAME and not its TYPE, which must stay out of the
 # family permanently rather than for the length of one mutation run; and the
 # namer pair, whose indirect half is what separates `named` from `reached`.
-run_check "INVARIANT" rg -n '^private def censusPlantedCanonical' SeLe4n/Testing/SchedFootprintCensus.lean
-run_check "INVARIANT" rg -n '^private def censusPlantedInlined' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedCanonical($|[ ({:\[\]])' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedInlined($|[ ({:\[\]])' SeLe4n/Testing/SchedFootprintCensus.lean
 run_check "INVARIANT" rg -n '^private def schedLockSet_censusPlantedNotAFootprint : Nat' SeLe4n/Testing/SchedFootprintCensus.lean
-run_check "INVARIANT" rg -n '^private def censusPlantedNamer' SeLe4n/Testing/SchedFootprintCensus.lean
-run_check "INVARIANT" rg -n '^private def censusPlantedIndirectNamer' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedNamer($|[ ({:\[\]])' SeLe4n/Testing/SchedFootprintCensus.lean
+run_check "INVARIANT" rg -n '^private def censusPlantedIndirectNamer($|[ ({:\[\]])' SeLe4n/Testing/SchedFootprintCensus.lean
 # ...and the WIRING case, which the plants alone cannot supply: they decide
 # `namedBy`, and a `resolverConsumed` that closed over it transitively would
 # pass every one of them.  A write-set helper is named by a footprint and by no
@@ -20195,20 +20199,20 @@ run_check "INVARIANT" rg -n '^theorem schedFootprintCoversWrites_of_confined \(S
 # -- a canonical footprint always names the object-store table write lock -- and
 # reduces the other two to the arm's own SM8.B confinement result and its own
 # replenish frame, neither of which is re-derived here.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setPriorityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setMCPriorityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationWaitOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_notificationSignalBoundOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointSendOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_resumeThreadOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setPriorityOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setMCPriorityOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextBindOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_suspendThreadOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # Eight proved theorems cannot be wrong; what they could be is VACUOUS, if the
 # obligation held of any footprint whatever.  These two say it does not, one
 # clause each -- and the replenish one is the clause SM8.B's confinement cannot
 # supply, the replenish queue not being one of its six per-core slots.
-run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_runQueue_moved' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_replenish_moved' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_runQueue_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem not_schedFootprintCoversWrites_of_replenish_moved($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # ...and no arm's coverage may be discharged by the no-op lemma, which holds of
 # EVERY footprint: that is the token-preserving weakening this family admits, and
 # it would turn eight measurements into eight tautologies.
@@ -20238,9 +20242,9 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem setThreadCpuAffinityWithMigra
 run_check "INVARIANT" rg -n '^theorem schedContextConfigure_replenishQueueOnCore_ne_of_sc \(' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextConfigure_replenishQueueOnCore_ne \(st st. : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*hne : c ≠ SchedContextOps\.schedContextReplenishHome" SeLe4n/Kernel/SyscallSchedFootprint.lean'
 # The three coverage theorems.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
-run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextConfigureOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_schedContextUnbindOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_setThreadCpuAffinityOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 
 # ============================================================================
 # WS-RR RR8.12 Cut C6c (`v0.35.176`): the `.call` arm's coverage, and the
@@ -20262,7 +20266,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyTransferOnCore_replenish
 # The first IPC arm's coverage.  Stated of the UNCHECKED dispatch, which is what
 # the write set and the confinement result are stated at and what the checked arm
 # equals wherever its flow gate admits; a denied flow commits nothing.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 
 # ============================================================================
 # WS-RR RR8.12 Cut C6d (`v0.35.177`): the live `.reply` ARM's coverage.
@@ -20273,7 +20277,7 @@ run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointCallOnCore_coversWrit
 # unfaulted caller, the decoded outcome on a faulted one.  So the coverage
 # claim is stated at the ARM, and the confinement chain it consumes is stated
 # at the write sets the ARM's own definitions derive.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_replyTransferOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 # ...and it is stated of the arm's step, not of the dispatch: the coverage
 # theorem takes the seam's own `.ok` step as a hypothesis, which a claim about
 # `endpointReplyCrossCoreDispatch` structurally cannot.
@@ -20307,7 +20311,7 @@ run_check "INVARIANT" rg -n 'C6d: the abandon.s appended core is already a membe
 # rather than a claim about a prefix.  The replenish half is the four-stage
 # composition, and each stage's own exactness frame is keyed on the SUB-SEGMENT the
 # definition appends at that stage.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReplyRecvOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReplyRecvOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : replyRecvBody" SeLe4n/Kernel/SyscallSchedContainment.lean'
 # The composite frame, keyed on the footprint's own segment rather than on which
 # path any of the four stages took.
@@ -20326,7 +20330,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^@\[simp\] theorem replyRecvHolderDesc
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem replyRecvPostReceiveDonation_preserves_objects_invExt[^\n]*(\n([ \t][^\n]*)?)*returned. : Option" SeLe4n/Kernel/API.lean'
 # The de-duplication: the descheduled state's integrity has ONE owner now, beside
 # the step, where it was spelled inline at three sites in `Kernel/API.lean`.
-run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
+run_check "INVARIANT" rg -n '^theorem descheduleAtPlacement_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/Selection.lean
 run_negative_check "INVARIANT" bash -lc 'rg -n "rw \[descheduleAtPlacement_preserves_objects\]; exact" SeLe4n/Kernel/API.lean'
 # And the retired hand-kept figure: the family's size is not restated in prose.
 # `run_prose_negative_check`, not `run_negative_check` -- the subject genuinely IS
@@ -20349,7 +20353,7 @@ run_check "INVARIANT" rg -n 'C6e: core 3 is outside the segment' tests/SmpIpcSui
 # dynamically through `pipChainSchedFootprint` instead.  A coverage claim at the
 # whole hand-off would be FALSE of this footprint, which is why the theorem names
 # `applyReceiveRendezvousDonation` and not `applyReceiveRendezvousHandoff`.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_endpointReceiveOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hDon : applyReceiveRendezvousDonation st1 receiver dequeued" SeLe4n/Kernel/SyscallSchedContainment.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_endpointReceiveOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*applyReceiveRendezvousHandoff" SeLe4n/Kernel/SyscallSchedContainment.lean'
 # The arm's replenish frame, keyed on the footprint's own segment rather than on
@@ -20380,7 +20384,7 @@ run_check "INVARIANT" rg -n 'C6f: ...and the segment is a strict subset here' te
 # the `.aside1` shootdown round with the initiator's own TLB drain, and the
 # domain-wide `IC IALLUIS`, each write kernel state, so a coverage claim taken at
 # the core would be a claim about a program the arm does not run.
-run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites' SeLe4n/Kernel/SyscallSchedContainment.lean
+run_check "INVARIANT" rg -n '^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedContainment.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache" SeLe4n/Kernel/SyscallSchedContainment.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedLockSet_lifecycleRetypeOnCore_coversWrites[^\n]*(\n([ \t][^\n]*)?)*hStep : lifecycleRetypeDirectWithCleanup [^S]" SeLe4n/Kernel/SyscallSchedContainment.lean'
 # The arm's replenish frame, keyed on the footprint's own PRE-STATE segment — it
@@ -20394,7 +20398,7 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lifecycleRetypeDirectWithClea
 # The two frames the drain half needs, in PRODUCTION beside the wrapper they frame
 # rather than private to the staged non-interference module that first needed them.
 run_check "INVARIANT" rg -n '^@\[simp\] theorem retypeInitiatorDrain_scheduler' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
-run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirect_scheduler_machine_eq' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
+run_check "INVARIANT" rg -n '^theorem lifecycleRetypeDirect_scheduler_machine_eq($|[ ({:\[\]])' SeLe4n/Kernel/Lifecycle/Operations/RetypeWrappers.lean
 run_negative_check "INVARIANT" rg -n 'private theorem lifecycleRetypeDirect_framed' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean
 # The frame MEASURED over every core on the arm the syscall runs, with the retired
 # reading FAILING the same measurement — every mutation of the production footprint
@@ -20423,20 +20427,20 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def syscallDispatchCrossCore
 # are one set of lock words — `stateLevelLock` and `schedObjStoreLockId` are the
 # same `objStoreLock`, so nesting takes it twice and walks the SM0.I ladder
 # backwards.
-run_check "INVARIANT" rg -n '^def unifiedSchedLockSetForSyscall' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def declaredUnifiedLockSetForAbiEntry' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^def canonicalSchedLockOfObject' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
+run_check "INVARIANT" rg -n '^def unifiedSchedLockSetForSyscall($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def declaredUnifiedLockSetForAbiEntry($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^def canonicalSchedLockOfObject($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem schedAcquireLock_objStore_congr' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem schedLockHeld_objStore_congr' SeLe4n/Kernel/Scheduler/Operations/SchedLockSet.lean
 # The bridge the deletion rests on: a per-arm coverage claim, stated over the
 # SCHEDULER footprint, reaches the UNIFIED one the bracket acquires — so the
 # sixteen theorems are not restated at a second footprint.
-run_check "INVARIANT" rg -n '^theorem unifiedSchedLockSetForSyscall_coversWrites' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem unifiedSchedLockSetForSyscall_coversWrites($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedFootprintCoversWrites_mono[^\n]*(\n([ \t][^\n]*)?)*hSub : ∀ p ∈ S.pairs, p ∈ U.pairs" SeLe4n/Kernel/SchedLockBracket.lean'
 # And the membership it is built from, in BOTH directions — a unified footprint
 # that dropped a scheduler member would make every coverage claim about it false.
-run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_sched' SeLe4n/Kernel/SyscallSchedFootprint.lean
-run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_object' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_sched($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
+run_check "INVARIANT" rg -n '^theorem mem_unifiedSchedLockSetForSyscall_of_object($|[ ({:\[\]])' SeLe4n/Kernel/SyscallSchedFootprint.lean
 # The inventory falls from two to one, measured rather than described.
 run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with an owner' tests/SmpInformationFlowSuite.lean
 
@@ -20447,7 +20451,7 @@ run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with a
 # seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE`; this kernel's bind
 # re-bucketed only a thread already queued, so `v0.35.158`'s parked holder — the
 # recovery that cut names — could never be recovered by binding it a reservation.
-run_check "INVARIANT" rg -n '^def bindPlacesParkedThread' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^def bindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.ipcState == .ready" SeLe4n/Kernel/SchedContext/Operations.lean'
 # RELATION: the bind's own body reads that guard, on the state its writes reach.
 run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb then" SeLe4n/Kernel/SchedContext/Operations.lean'
@@ -20455,14 +20459,14 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^
 # two cannot disagree about which bucket a bound thread belongs in.
 run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The payoff, and the three refusals that keep the guard from admitting anything.
-run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_placed' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_blocked' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_inactive' SeLe4n/Kernel/SchedContext/Operations.lean
 # The FROZEN mirror carries it, through a BIND-SPECIFIC writer: widening
 # `frozenWriteTcbRebucketed` would let a priority write place a parked thread.
-run_check "INVARIANT" rg -n '^def frozenBindPlacesParkedThread' SeLe4n/Kernel/FrozenOps/Core.lean
-run_check "INVARIANT" rg -n '^def frozenWriteTcbBoundPlaced' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenBindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
+run_check "INVARIANT" rg -n '^def frozenWriteTcbBoundPlaced($|[ ({:\[\]])' SeLe4n/Kernel/FrozenOps/Core.lean
 # RELATION, not presence: the bind-specific writer is the SHARED mechanics under a
 # widened admission, so `v0.35.101`'s "one re-bucket, three askers" still holds of
 # it -- a second fold spelled inline here would be that cut's own defect returning.
@@ -20522,10 +20526,10 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^theorem receiveRendezvousDonatedSc\?_
 # move to PRODUCTION: the footprint and the licence are production and the frame
 # was declared in the STAGED call-chain invariant surface, so neither could read
 # it -- the same layering rule, at the frame rather than at the resolver.
-run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_objects_invExt' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem wakeThread_sameSchedContextBindings_of_ready' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
-run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_sameSchedContextBindings' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_preserves_objects_invExt($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem wakeThread_sameSchedContextBindings_of_ready($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallOnCore_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean
+run_check "INVARIANT" rg -n '^theorem endpointCallWithCapsOnCore_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointCallDispatch.lean
 run_negative_check "INVARIANT" rg -n '^theorem (endpointCallOnCore_preserves_objects_invExt|wakeThread_sameSchedContextBindings_of_ready|endpointCallOnCore_sameSchedContextBindings)' SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean
 # ONE question, two lock domains: on the receive side both resolve on the SAME
 # (pre-)state, so the object member and the scheduler segment declare on exactly
@@ -20571,19 +20575,19 @@ run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke    => \.write' SeLe4n/Kernel/A
 # `dispatchCapabilityOnly_preserves_ipcInvariantFull`, whose chain this cut built
 # from nothing (the family's preservation surface was `capabilityInvariantBundle`
 # alone).
-run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem processRevokeNode_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem cspaceRevokeCdt_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem processRevokeNode_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean
 # 4. ONE QUESTION, ONE OWNER: the scaffold's case analysis and the traversal's
 # induction are PREDICATE-FREE and live beside their definitions, so the
 # capability bundle's argument and the IPC bundle's are one answer rather than
 # two.  The fold body moved with them and the traversal is DEFINED through it --
 # keeping it in an invariant module is what forced that traversal's proof to
 # `change` its way into an inlined lambda.
-run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_decompose' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtFold_induct' SeLe4n/Kernel/Capability/Operations.lean
-run_check "INVARIANT" rg -n '^theorem revokeCdtMaterializedTraversal_ok_induct' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtFold_induct($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" rg -n '^theorem revokeCdtMaterializedTraversal_ok_induct($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtMaterializedTraversal[^\n]*(\n([ \t][^\n]*)?)*descendants\.foldl revokeCdtFoldBody" SeLe4n/Kernel/Capability/Operations.lean'
 run_negative_check "INVARIANT" rg -n '^def revokeCdtFoldBody' SeLe4n/Kernel/Capability/Invariant/Preservation/Revoke.lean
 # 5. A `donationReadAgreement` DOES NOT DEMAND pendingMessage EQUALITY.  The
@@ -20598,13 +20602,13 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^def TCB\.pendingCapsDropped[^\n]*(\n(
 # ...and the binding-frame table is SYMMETRIC: `donationChainAcyclic` carries
 # across a binding frame like its two siblings, which it had not since IPC
 # de-threading D6.
-run_check "INVARIANT" rg -n '^theorem donationChainAcyclic_of_sameSchedContextBindings' SeLe4n/Kernel/IPC/Invariant/Defs.lean
+run_check "INVARIANT" rg -n '^theorem donationChainAcyclic_of_sameSchedContextBindings($|[ ({:\[\]])' SeLe4n/Kernel/IPC/Invariant/Defs.lean
 # 6. NO STATIC LOCK FOOTPRINT, and that is a DECISION: the CDT walk's CNode set
 # is state-discovered and unbounded while a `LockSet` is capped, so a footprint
 # naming only the source CNode would be FALSE of the transition.  Stated as a
 # total classification rather than as an off-by-one against `SyscallId.count`.
-run_check "INVARIANT" rg -n '^def declaresStaticLockFootprint' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
-run_check "INVARIANT" rg -n '^theorem declaresStaticLockFootprint_false_iff' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^def declaresStaticLockFootprint($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
+run_check "INVARIANT" rg -n '^theorem declaresStaticLockFootprint_false_iff($|[ ({:\[\]])' SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*\(SyscallId\.all\.filter declaresStaticLockFootprint\)\.length" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_aggregate_covers_every_syscall[^\n]*(\n([ \t][^\n]*)?)*= *$\n *SyscallId\.count" SeLe4n/Kernel/Concurrency/Locks/LockSetInventory.lean'
 # 7. IT WRITES A CONTENT-TRACKED FIELD AND MOVES NO TRACKED CONTENT.  The reach
@@ -20614,7 +20618,7 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^theorem lockSet_consistent_a
 # kept and only the capability array shrinks, which is the metadata the mint's
 # boundary already excludes.  That theorem is the gate's justification, and the
 # exemption is reconciled in BOTH directions.
-run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_trackedContent' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
+run_check "INVARIANT" rg -n '^theorem revokePendingTransfersFrom_preserves_trackedContent($|[ ({:\[\]])' SeLe4n/Kernel/InformationFlow/TaintPropagation.lean
 run_check "INVARIANT" rg -n '^theorem TCB\.pendingCapsDropped_registers' SeLe4n/Model/Object/Types.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^CONTENT_WRITE_EXEMPT = \{\n *\x22cspaceRevoke\x22: \x22SeLe4n\.Kernel\.revokePendingTransfersFrom_preserves_trackedContent\x22," scripts/check_content_flow_coverage.py'
 run_check "INVARIANT" rg -n 'is exempted from the content-write check but reaches' scripts/check_content_flow_coverage.py
@@ -20637,16 +20641,16 @@ run_check "INVARIANT" bash -lc 'rg -U -n "sd058_mintReplyCapThroughTheSyscallGat
 # reply's abandon arm consumes at the POST-state.  Reading it off the OUTCOME is
 # what retires the hypothesis; threading a post-state one is what the RR3
 # de-threading gate forbids.
-run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_decompose' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_target_ready' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
-run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_ok_target_ready' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
-run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_tcb_ipcState_backward' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_decompose($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyOnCore_ok_target_ready($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReply.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_ok_target_ready($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem applyReplyDonationOnCore_tcb_ipcState_backward($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 # The frame the dispatch-level statement composes lives beside the transition it
 # frames and beside its notification sibling, not in whichever module first
 # needed it -- `BlockedSenderPreservation.lean` is outside the closure of every
 # asker on the reply path.
-run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_ipcState_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
-run_check "INVARIANT" rg -n '^theorem updatePipBoostOnCore_tcb_ipcState_backward' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem propagatePipChainCrossCore_tcb_ipcState_backward($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
+run_check "INVARIANT" rg -n '^theorem updatePipBoostOnCore_tcb_ipcState_backward($|[ ({:\[\]])' SeLe4n/Kernel/Scheduler/PriorityInheritance/Propagate.lean
 run_negative_check "INVARIANT" rg -n 'induction fuel generalizing st tid with' SeLe4n/Kernel/IPC/Invariant/BlockedSenderPreservation.lean
 # RETIRED: the hypothesis and the pack field that carried the confinement.  A
 # `run_check` on a deleted symbol fails outright; a silent `run_negative_check`
@@ -20669,7 +20673,7 @@ run_negative_check "INVARIANT" rg -n 'endpointReplyCrossCoreDispatch_preserves_i
 # cannot diverge (its proof is one application of the general form), so it is
 # anchored rather than orphaned -- a derivation nothing consults reads exactly
 # like one nobody checked.
-run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
+run_check "INVARIANT" rg -n '^theorem endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull($|[ ({:\[\]])' SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean
 # MEASURED: the witness exhibits the state the retired hypothesis refutes --
 # built by ordinary operations, with the CONTROL that an unbound faulter's
 # delivery donates nothing, so the assertions are about the reservation rather

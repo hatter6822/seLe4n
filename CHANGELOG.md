@@ -1,3 +1,58 @@
+## v0.35.198 — WS-RR RR8.16: a bare-name anchor pins nothing (register row closed)
+
+`v0.35.197`'s mutation run over its own Tier 3 anchors found a class and
+registered it; this cut closes it.  `rg '^theorem foo'` matches `theorem fooX`,
+so an anchor over a declaration with **no other consumer** — which is exactly
+what these anchors exist for — goes on reporting PASS once the name it pins is
+gone.  That is `v0.35.29`'s tautological pin reached by a **rename** rather than
+by a deletion, and it is a rule `CLAUDE.md` has stated since Cut C3b-iv
+(`v0.35.170`), which fixed the one anchor it was written for and left the class.
+
+**The sweep.**  2543 positive anchors bounded with the delimiters a declaration
+name can be followed by — a class containing no alphanumeric, so the
+identifier-naming gate does not read a workstream code in it, and one both `rg`
+and the PCRE `grep` shim accept.
+
+**Negatives are deliberately out of scope, and that is a decision.**  Bounding a
+positive is strictly stricter, so it can only fail closed; bounding a *negative*
+can stop it firing on a name it was catching, which is fail-open.  Each of the
+tree's 27 bare negatives is therefore a judgement rather than a sweep, and the
+check says so.
+
+**The sweep is driven by the gate's own anchor parser, not by a second regex.**
+A hand-rolled pattern is a recognised set and `parse_anchors` is the derived
+one — which is what found the last **41** sites the hand-rolled sweep missed,
+inside `bash -lc` wrappers and `-e` spellings it could not see.
+
+**And the sweep's own measurement is the argument for it: eight anchors pinned
+nothing they name.**  Six named the prefix `_preserves_ipcInvariant` where the
+declaration is `_preserves_ipcInvariantFull`, so each was satisfied by a longer
+name it does not mention.  `^def chooseThread` named
+`Scheduler/Operations/Core.lean`, where the bare form was satisfied by
+`chooseThreadInDomain` while the declaration it means lives in `Selection.lean`
+— an anchor over the scheduler's transition API pinning a different declaration
+in the wrong file.  And `queueOwnership_respected_by_` is correctly bare: it is
+an `rg -c` family count against a threshold, where the prefix **is** the
+question, so it is registered in `FAMILY_PREFIX_ANCHORS` with its reason and
+reconciled in both directions — an exemption nobody reconciles reads exactly
+like coverage.
+
+**The check.**  `unbounded_declaration_anchors` in
+`scripts/check_anchor_consistency.py` (Tier 0) refuses a new bare positive, so
+the next one fails on the day it is written rather than being restated a third
+time in prose.  It is a **floor** over the exact shape the sweep retired — a
+declaration keyword, a name, and nothing else — and its docstring says so rather
+than implying completeness.  Four mutations, all caught, including the two
+fail-open directions: sweeping negatives too, and dropping the exemption
+reconciliation.  The self-test's witnesses are a bare anchor (reported), its
+bounded form (not), a bare *negative* (not), and a script carrying none of the
+exemptions (reported stale).
+
+No production Lean changed; Tier 3 is green at 6078 positive and 1011 negative
+anchors.
+
+Refs: docs/REGISTERED_DEBT.md (WS-RR RR8.16)
+
 ## v0.35.197 — WS-RR RR8.16: the two cross-subsystem bundles get their frames (register row 85, first half)
 
 `docs/REGISTERED_DEBT.md` row 85 asks for `schedulerInvariantBundle` and
