@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "9bc2d139f0f214bea42ca979c06884dfed7e6fe3",
-      "tree_sha": "e4d8ce62c5b0934ba7d3a433bfe3e412d3e94040",
-      "committed_at_utc": "2026-09-24T18:35:47+00:00"
+      "commit_sha": "dd5541c2f194540c02816dd77ac3c8e100e75df2",
+      "tree_sha": "6cd1d0413a25ae31efdfcf9a60fec76c9b658c3f",
+      "committed_at_utc": "2026-09-24T21:27:23+00:00"
     }
   },
   "source_sync": {
@@ -17,7 +17,7 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "0c4a444cf1c97aab18978258c1073f6adccc5cd5124fcd922ae800c320bcfbdb"
+    "source_digest": "0d22ec74c896145039728a86f844f9d115fa381c866798efbd125c01c4b6d5f4"
   },
   "summary": {
     "module_count": 413,
@@ -27,7 +27,7 @@
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
     "production_files": 342,
-    "production_loc": 419009,
+    "production_loc": 419011,
     "test_files": 71,
     "test_loc": 85328,
     "proved_theorem_lemma_decls": 13871,
@@ -288267,6 +288267,7 @@
             "commitSort",
             "contextSwitchState",
             "continueFromAcquired",
+            "createBootObject",
             "createObject",
             "cspaceLookupMultiLevel",
             "cspaceLookupPath",
@@ -288390,6 +288391,7 @@
             "revokeCdtStreamingTraversal",
             "revokeCdtStrictTraversal",
             "revokeCdtTransactionalTraversal",
+            "rpi5DeploymentBootState",
             "runChainExtension",
             "runUnderDeclaredLockSet",
             "saveOutgoingContext",
@@ -288472,7 +288474,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitionsPrivate",
-          "line": 1254,
+          "line": 1256,
           "called": [
             "_cstage1.censusWitnessNestedTransformer",
             "_flat_ctor",
@@ -288506,7 +288508,7 @@
         {
           "kind": "def",
           "name": "nonExecutedTransitions",
-          "line": 1297,
+          "line": 1299,
           "called": [
             "nonExecutedTransitionsPlain",
             "nonExecutedTransitionsPrivate"
@@ -288515,7 +288517,7 @@
         {
           "kind": "def",
           "name": "standsBesideLive",
-          "line": 1323,
+          "line": 1325,
           "called": [
             "cancelBoundDonationOnCore",
             "cancelDonationOnCore",
@@ -288528,7 +288530,7 @@
         {
           "kind": "def",
           "name": "reconciliationViolations",
-          "line": 1347,
+          "line": 1349,
           "called": [
             "contains",
             "insert",
@@ -288540,7 +288542,7 @@
         {
           "kind": "def",
           "name": "pinSides",
-          "line": 1380,
+          "line": 1382,
           "called": [
             "conclusionOf",
             "none"
@@ -288549,7 +288551,7 @@
         {
           "kind": "def",
           "name": "pinRelatesPrograms",
-          "line": 1412,
+          "line": 1414,
           "called": [
             "contains",
             "none",
@@ -288559,7 +288561,7 @@
         {
           "kind": "def",
           "name": "pinViolations",
-          "line": 1425,
+          "line": 1427,
           "called": [
             "any",
             "contains",
@@ -288574,7 +288576,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessConjunctionOfReflexivity",
-          "line": 1465,
+          "line": 1467,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -288583,7 +288585,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessReflexiveOverBoth",
-          "line": 1473,
+          "line": 1475,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -288592,7 +288594,7 @@
         {
           "kind": "theorem",
           "name": "pinWitnessBothOnOneSide",
-          "line": 1480,
+          "line": 1482,
           "called": [
             "cancelIpcBlockingOnCore",
             "cancelIpcBlockingReclaimed"
@@ -288601,7 +288603,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnesses",
-          "line": 1485,
+          "line": 1487,
           "called": [
             "pinWitnessBothOnOneSide",
             "pinWitnessConjunctionOfReflexivity",
@@ -288611,7 +288613,7 @@
         {
           "kind": "def",
           "name": "pinCheckWitnessViolations",
-          "line": 1497,
+          "line": 1499,
           "called": [
             "SystemState",
             "cancelIpcBlockingOnCore",

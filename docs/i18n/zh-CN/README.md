@@ -93,9 +93,9 @@ seLe4n 是一个完全使用 Lean 4 从零构建的微内核。每一个内核�
 |------|------|
 | **版本** | `0.36.2` |
 | **Lean 工具链** | `v4.28.0` |
-| **生产代码行数** | 418,122 行，分布于 341 个文件 |
-| **测试代码行数** | 85,243 行，分布于 71 个测试套件 |
-| **已证明的声明** | 13,815 个定理/引理声明（零 sorry/axiom） |
+| **生产代码行数** | 419,011 行，分布于 342 个文件 |
+| **测试代码行数** | 85,328 行，分布于 71 个测试套件 |
+| **已证明的声明** | 13,871 个定理/引理声明（零 sorry/axiom） |
 | **目标硬件** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **规范审计** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) —— 1.0 前综合审计（202 项发现；已由 WS-AK AK1–AK10 修复；已归档） |
 | **最新审计** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) —— WS-AN 收尾后进行的 1.0 前就绪审计（接替现已归档、由 WS-AN AN0–AN12 修复的 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md)）。WS-RC R0..R5 已于 v0.31.2 落地；WS-RC R6..R14 已按 SM0.Q.1 吸收映射并入 WS-SM（见 [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)）。当前活跃的工作流计划：[`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md)。 |

@@ -96,9 +96,9 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 |------|-----|
 | **버전** | `0.36.2` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 341개 파일, 418,122줄 |
-| **테스트 Lean LoC** | 71개 테스트 스위트, 85,243줄 |
-| **증명된 선언** | 13,815개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 342개 파일, 419,011줄 |
+| **테스트 Lean LoC** | 71개 테스트 스위트, 85,328줄 |
+| **증명된 선언** | 13,871개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |
 | **최신 감사** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN 마감 후 수행된 1.0 이전 준비 상태 감사 (WS-AN AN0–AN12 로 해결되어 현재 보관된 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) 를 계승). WS-RC R0..R5 는 v0.31.2 에서 완료됨; WS-RC R6..R14 는 SM0.Q.1 흡수 매핑에 따라 WS-SM 으로 흡수됨 ([`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) 참조). 활성 작업 스트림 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
