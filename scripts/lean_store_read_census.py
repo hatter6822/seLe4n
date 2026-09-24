@@ -817,19 +817,33 @@ FIELD_KINDS = {"structure", "class"}
 _OPENERS = "([{⟨"
 _CLOSERS = ")]}⟩"
 
+# The token classes the depth walks below jump between.  Each walk used to
+# visit every character of its text in Python; locating the next token with
+# one compiled pattern and treating the text between tokens as a run is the
+# same walk with the interpreter out of the inner loop (test-performance
+# audit, v0.35.159).  Every alphabet here is `_OPENERS` and `_CLOSERS` plus
+# the one token the walk is about.
+_BRACKET = re.compile(r"[([{⟨)\]}⟩]")
+_BRACKET_OR_ASSIGN = re.compile(r"[([{⟨)\]}⟩]|:=")
+_BRACKET_OR_COLON = re.compile(r"[([{⟨)\]}⟩:]")
+_BRACKET_OR_ARROW = re.compile(r"[([{⟨)\]}⟩]|→|->")
+_PROP_HEAD = re.compile(r"Prop\b")
+_IDENT_HEAD = re.compile(r"([A-Za-z_][A-Za-z0-9_'!?.]*)")
+
 
 def _result_type(head: str) -> str:
     """The declared result type of a signature, or `""` when none is declared."""
     depth = 0
-    for i, ch in enumerate(head):
+    for m in _BRACKET_OR_COLON.finditer(head):
+        ch = m.group()
         if ch in _OPENERS:
             depth += 1
         elif ch in _CLOSERS:
             depth -= 1
-        elif ch == ":" and depth == 0:
+        elif depth == 0:
             # `:=` is the signature terminator and never opens a result type;
             # `_signature_head` has already cut there, so a bare `:` is ours.
-            return head[i + 1:].strip()
+            return head[m.end():].strip()
     return ""
 
 
@@ -850,20 +864,33 @@ def _depth_zero_scan(line: str, pattern: "re.Pattern[str]", depth: int = 0):
     once in the structure split and once, three functions away, in the signature
     terminator that kept using a bare `search` under a comment promising
     "top-level" (PR #895 review rounds 4 and 5).
+
+    **The walk is by run, not by character** (test-performance audit,
+    v0.35.159).  The brackets are located with one pass of `_BRACKET`, and the
+    pattern is asked of each bracket-free run at depth zero with `search`,
+    which answers the leftmost position in the run at which it matches -- the
+    same first depth-zero match the per-character `match` loop found, since a
+    match found at a later position is one the loop would have tried later.
+    A match that starts at or beyond the run's closing bracket is not in the
+    run, and the loop never tried the pattern at a bracket.  The depth after
+    the line is the bracket balance whether or not anything matched.
     """
     found = None
-    i = 0
-    while i < len(line):
-        ch = line[i]
-        if ch in _OPENERS:
+    at = 0
+    for m in _BRACKET.finditer(line):
+        if found is None and depth == 0 and at < m.start():
+            hit = pattern.search(line, at)
+            if hit is not None and hit.start() < m.start():
+                found = hit
+        if m.group() in _OPENERS:
             depth += 1
-        elif ch in _CLOSERS:
+        else:
             depth -= 1
-        elif found is None and depth == 0:
-            m = pattern.match(line, i)
-            if m is not None:
-                found = m
-        i += 1
+        at = m.end()
+    if found is None and depth == 0 and at < len(line):
+        hit = pattern.search(line, at)
+        if hit is not None and hit.start() < len(line):
+            found = hit
     return found, depth
 
 
@@ -950,28 +977,35 @@ def _split_binder_defaults(text: str, depth: int = 0, default_depth=None):
     caller, since a binder may span lines.
     """
     spec, code = [], []
-    i = 0
-    while i < len(text):
-        ch = text[i]
-        if ch in _OPENERS:
+    at = 0
+    # By run: the text between two tokens goes whole into whichever bucket is
+    # open, and only a bracket or a `:=` can change which one that is.
+    for m in _BRACKET_OR_ASSIGN.finditer(text):
+        i = m.start()
+        if at < i:
+            (code if default_depth is not None else spec).append(text[at:i])
+        tok = m.group()
+        if tok == ":=":
+            if (default_depth is None and depth > 0
+                    and not _binding_open_at(text, i, depth)):
+                # The default's own separator belongs to neither bucket.
+                default_depth = depth
+            else:
+                (code if default_depth is not None else spec).append(tok)
+        elif tok in _OPENERS:
             depth += 1
-            (code if default_depth is not None else spec).append(ch)
-        elif ch in _CLOSERS:
+            (code if default_depth is not None else spec).append(tok)
+        else:
             depth -= 1
             if default_depth is not None and depth < default_depth:
                 # The group carrying the default closed, so the binder ended.
                 default_depth = None
-                spec.append(ch)
+                spec.append(tok)
             else:
-                (code if default_depth is not None else spec).append(ch)
-        elif (default_depth is None and depth > 0 and text.startswith(":=", i)
-              and not _binding_open_at(text, i, depth)):
-            default_depth = depth
-            i += 2
-            continue
-        else:
-            (code if default_depth is not None else spec).append(ch)
-        i += 1
+                (code if default_depth is not None else spec).append(tok)
+        at = m.end()
+    if at < len(text):
+        (code if default_depth is not None else spec).append(text[at:])
     return "".join(spec), "".join(code), depth, default_depth
 
 
@@ -988,6 +1022,9 @@ PROP_ALIAS = re.compile(
     r"(?:private\s+|protected\s+|scoped\s+|noncomputable\s+|partial\s+|unsafe\s+)*"
     r"(?:abbrev|def)\s+([A-Za-z_][A-Za-z0-9_'!?]*)[^\n]*?:=\s*([A-Za-z_][A-Za-z0-9_'!?.]*)\s*$"
 )
+
+
+_ALIAS_CACHE: dict = {}
 
 
 def prop_aliases(view: Path) -> frozenset:
@@ -1008,10 +1045,17 @@ def prop_aliases(view: Path) -> frozenset:
     so nothing hides -- and `StoreReadClassificationCensus` reports it as a
     classifier defect rather than leaving the Tier 0 refusal unexplained.
     """
+    # Keyed on the tree's TEXT, as `census_view` is: the four censuses `main`
+    # runs each resolve the aliases of one unchanged view.
+    snapshot = tuple((str(f), f.read_text())
+                     for f in sorted(view.rglob("SeLe4n/**/*.lean")))
+    cached = _ALIAS_CACHE.get(snapshot)
+    if cached is not None:
+        return cached
     direct = {}
-    for f in sorted(view.rglob("SeLe4n/**/*.lean")):
+    for _name, text in snapshot:
         scope: list[str] = []
-        for line in f.read_text().splitlines():
+        for line in text.splitlines():
             opened = NAMESPACE_OPEN.match(line)
             if opened is not None:
                 scope.append(opened.group(1))
@@ -1040,7 +1084,8 @@ def prop_aliases(view: Path) -> frozenset:
             cur = direct[cur]
         if cur == "Prop":
             names.update(seen)
-    return frozenset(names)
+    _ALIAS_CACHE[snapshot] = result = frozenset(names)
+    return result
 
 
 def _returns_prop(head: str, aliases: frozenset = frozenset(),
@@ -1049,36 +1094,30 @@ def _returns_prop(head: str, aliases: frozenset = frozenset(),
     result = _result_type(head)
     if not result:
         return False
-    # Split on top-level arrows: `SystemState → Prop` returns `Prop`.
+    # Split on top-level arrows: `SystemState → Prop` returns `Prop`.  Lean
+    # accepts both arrow spellings and this tree uses both, so a predicate
+    # written `SystemState -> Prop` must not read as a declaration returning
+    # something executable -- that direction fails STRICT, rejecting
+    # legitimate specification code against an enforced zero.
     depth, last = 0, 0
     parts = []
-    i = 0
-    while i < len(result):
-        ch = result[i]
-        if ch in _OPENERS:
+    for m in _BRACKET_OR_ARROW.finditer(result):
+        tok = m.group()
+        if tok == "→" or tok == "->":
+            if depth == 0:
+                parts.append(result[last:m.start()])
+                last = m.end()
+        elif tok in _OPENERS:
             depth += 1
-        elif ch in _CLOSERS:
+        else:
             depth -= 1
-        elif depth == 0 and result.startswith("→", i):
-            parts.append(result[last:i])
-            last = i + 1
-        elif depth == 0 and result.startswith("->", i):
-            # Lean accepts both arrow spellings and this tree uses both, so a
-            # predicate written `SystemState -> Prop` must not read as a
-            # declaration returning something executable -- that direction
-            # fails STRICT, rejecting legitimate specification code against an
-            # enforced zero.
-            parts.append(result[last:i])
-            i += 1
-            last = i + 1
-        i += 1
     parts.append(result[last:])
     term = parts[-1].strip()
-    if re.match(r"Prop\b", term) is not None:
+    if _PROP_HEAD.match(term) is not None:
         return True
     if not aliases:
         return False
-    head_token = re.match(r"([A-Za-z_][A-Za-z0-9_'!?.]*)", term)
+    head_token = _IDENT_HEAD.match(term)
     if head_token is None:
         return False
     tok = head_token.group(1)
@@ -1106,6 +1145,12 @@ def code_view(root: Path) -> Path:
     return out
 
 
+#: `census_view` by the file's TEXT.  `main` reads every file once per census
+#: and runs four censuses, and the self-test rewrites one path with many
+#: contents -- so the key is what was read, never where it was read from.
+_VIEW_CACHE: dict = {}
+
+
 def census_view(path: Path) -> str:
     """The overlay file with string CONTENTS blanked as well.
 
@@ -1129,7 +1174,11 @@ def census_view(path: Path) -> str:
     `_SIGNATURE_END`'s own comment already asserted that the view had blanked
     strings.  It had not; this is what makes that sentence true.
     """
-    return lean_code_view.strip(path.read_text(), blank_strings=True)
+    raw = path.read_text()
+    view = _VIEW_CACHE.get(raw)
+    if view is None:
+        view = _VIEW_CACHE[raw] = lean_code_view.strip(raw, blank_strings=True)
+    return view
 
 
 # A signature ends at the first top-level `:=`, `where`, or **equation clause**.
@@ -1214,54 +1263,35 @@ def _declaration_is_valueless(lines: list[str], at: int) -> bool:
     return True
 
 
-def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
-             pattern=READ, collect=None):
-    """Yield (declaration, is_prop, occurrences, line, region) per access-bearing line.
+#: `_line_regions` by `(text, aliases)`: see its docstring.
+_REGIONS_CACHE: dict = {}
 
-    `pattern` is the access being counted — `READ` (the default) or `WRITE`.  The
-    two questions share every structural decision below (which declaration owns
-    a line, whether it is executable, which region the access sits in); only the
-    spelling counted differs, which is why the write census is this classifier
-    with one argument rather than a second parser (`v0.35.76`).
 
-    `unparsed`, when a list is supplied, collects
-    `(declaration, kind, line, reason)` for every declaration whose signature
-    this parser could not close.  That is a **refusal channel, not a
-    diagnostic**: a signature left open swallows the declaration's whole body
-    into the `sig` region, which is SPEC and which the Tier 1 elaborator
-    reconciliation deliberately skips, so an unclosed signature is a silent
-    route around the enforced `STORE_READ_CODE = 0`.  The caller fails the gate
-    on a non-empty list, which is this project's own *a scanner's default branch
-    is a decision* applied to a region boundary.
+def _line_regions(text: str, aliases: frozenset = frozenset()):
+    """The parse behind `classify`: one record per line, and the refusals.
 
-    `region` is `"sig"` for a read in the declaration's signature — a hypothesis
-    binder or the result type, which is a proposition whatever the declaration
-    is — and `"body"` otherwise.  The Tier 1 reconciliation needs the
-    distinction: the elaborator's verdict is per *declaration*, so it cannot
-    adjudicate a proposition sitting inside an executable declaration's binder.
+    `(records, refusals)`, where a record is `(declaration, kind, signature
+    text, specification text, binder-default text, executable text, line)` --
+    the four region texts `classify` counts a pattern in, already split the way
+    it splits them -- and a refusal is `(declaration, kind, line, reason)`.
 
-    `collect`, when a callable is supplied, is invoked once per line with
-    `(declaration, kind, signature_text, specification_text, executable_text)` --
-    the same four region texts this classifier counts `pattern` in, with the two
-    executable regions (a body that is not a proposition, and a binder default)
-    joined because both are code.  It is how the INDIRECT census
-    (`indirect_accesses`) reads declarations: that question needs a
-    declaration's signature *and* its body at once, which no line pattern can
-    express, and routing it through this classifier is what keeps the
-    declaration boundary, the `Prop` verdict and the region split ONE answer
-    shared by the direct and indirect censuses -- so a mutation of any of them
-    fails both rather than one.
-
-    A read in a declaration's SIGNATURE -- anywhere before the top-level `:=`,
-    which is where its hypothesis binders and its result type live -- is spec
-    whatever the declaration's kind, because a binder is a proposition.  That
-    is not a technicality: `mkRetypeTarget` is a smart constructor taking
-    `(hTypeMeta : ∀ obj, st.objects[target]? = some obj → …)`, and reading that
-    as a transition declining to use an accessor would be reading a hypothesis
-    as code.  Only a read in the BODY of a declaration whose result is not a
-    `Prop` is a transition reading the store raw.
+    **Memoised on the text and the alias set, which are its only inputs.**
+    Which declaration owns a line, whether it is executable and which region
+    an access sits in are decided here once; `main` asks all three of one
+    unchanged view four times, once per census, and re-deciding them cost the
+    gate most of its runtime (test-performance audit, v0.35.159).  Keyed on the
+    text rather than the path because the self-test rewrites one path with
+    many contents.  The records are what `classify` counts over and hands to
+    its `collect` hook, so a mutation of this parse reaches every census the
+    same way it did when each census ran it: there is still one parse.
     """
-    lines = census_view(path).splitlines()
+    key = (text, frozenset(aliases))
+    cached = _REGIONS_CACHE.get(key)
+    if cached is not None:
+        return cached
+    records: list = []
+    refusals: list = []
+    lines = text.splitlines()
     decl, kind, signature, sig_open = "<file scope>", "<none>", "", False
     in_default, body_depth, sig_depth, field_col = False, 0, 0, None
     binder_depth, binder_default = 0, None
@@ -1269,10 +1299,23 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
     # The enclosing namespaces of the line being classified: what a bare alias
     # reference at this point resolves against (PR #895 review round 12).
     scope: list[str] = []
+    # The signature head and the `Prop` verdict are functions of the
+    # accumulated signature (and, for the verdict, of the scope), and both
+    # were recomputed on EVERY line of the declaration -- a depth-zero walk
+    # over a signature that grows with each line it spans, so a long
+    # declaration cost quadratically and the census spent 183 of its 263
+    # seconds re-reading heads it had already read (test-performance audit,
+    # v0.35.159).  Both are now recomputed only when their inputs change: the
+    # signature is rebound to a new string object exactly when its text
+    # changes, so identity is the test, and the verdict follows the head and
+    # the scope.  What is computed is the same; only how often.
+    head_source: str | None = None
+    head = ""
+    verdict_scope: tuple[str, ...] | None = None
+    verdict = False
 
     def refuse(reason: str) -> None:
-        if unparsed is not None:
-            unparsed.append((decl, kind, decl_line, reason))
+        refusals.append((decl, kind, decl_line, reason))
 
     for idx, (lineno, line) in enumerate(zip(range(1, len(lines) + 1), lines)):
         if not sig_open:
@@ -1336,8 +1379,21 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
                     sig_open = False
         else:
             sig_part, body_part = "", line
-        head = _signature_head(signature)
-        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or _returns_prop(head, aliases, tuple(scope))
+        if signature is not head_source:
+            # While the signature is still open its head IS the accumulated
+            # text: the per-line terminator scan carries the bracket depth
+            # across lines exactly as a scan of the joined text would, so no
+            # depth-zero terminator exists in it yet and `_signature_head`
+            # would return it whole.  The cut is computed once, on the line
+            # that closes the signature; before this a multi-line signature
+            # was re-walked in full on every line it spanned.
+            head_source = signature
+            head = signature if sig_open else _signature_head(signature)
+            verdict_scope = None
+        scope_key = tuple(scope)
+        if verdict_scope is None or verdict_scope != scope_key:
+            verdict_scope, verdict = scope_key, _returns_prop(head, aliases, scope_key)
+        is_prop_decl = kind in PROP_KINDS or kind in FIELD_KINDS or verdict
         # Split a structure/class body line into its field-type half and its
         # default half.  Once a default has opened it stays open for the rest of
         # the declaration: a default may span lines, there is no terminator a
@@ -1348,7 +1404,7 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
         # A `Prop`-sorted structure has no executable content: every field is a
         # proof and so is every default, so it is spec whole and the split below
         # does not apply to it.
-        if kind in FIELD_KINDS and body_part and not _returns_prop(head, aliases, tuple(scope)):
+        if kind in FIELD_KINDS and body_part and not verdict:
             # **A default ends where the next field begins.**  Carrying
             # `in_default` to the end of the declaration classified every later
             # field TYPE as executable, so `tag : Nat := 0` followed by a
@@ -1376,17 +1432,83 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
         # A binder's default value is executable exactly when the declaration is
         # -- a `theorem`'s defaulted binder carries a proof, a `def`'s carries a
         # term -- so the split is gated by the same `is_prop_decl` the body uses.
-        sig_spec, sig_default, binder_depth, binder_default = _split_binder_defaults(
-            sig_part, binder_depth, binder_default
-        )
+        if sig_part:
+            sig_spec, sig_default, binder_depth, binder_default = _split_binder_defaults(
+                sig_part, binder_depth, binder_default
+            )
+        else:
+            sig_spec, sig_default = "", ""
         if is_prop_decl:
             sig_spec, sig_default = sig_spec + sig_default, ""
+        records.append((decl, kind, sig_spec, body_spec, sig_default, body_code, lineno))
+    if sig_open:
+        refuse("the file ended while its signature was open")
+    _REGIONS_CACHE[key] = (records, refusals)
+    return records, refusals
+
+
+def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
+             pattern=READ, collect=None):
+    """Yield (declaration, is_prop, occurrences, line, region) per access-bearing line.
+
+    `pattern` is the access being counted — `READ` (the default) or `WRITE`.  The
+    two questions share every structural decision below (which declaration owns
+    a line, whether it is executable, which region the access sits in); only the
+    spelling counted differs, which is why the write census is this classifier
+    with one argument rather than a second parser (`v0.35.76`).
+
+    `unparsed`, when a list is supplied, collects
+    `(declaration, kind, line, reason)` for every declaration whose signature
+    this parser could not close.  That is a **refusal channel, not a
+    diagnostic**: a signature left open swallows the declaration's whole body
+    into the `sig` region, which is SPEC and which the Tier 1 elaborator
+    reconciliation deliberately skips, so an unclosed signature is a silent
+    route around the enforced `STORE_READ_CODE = 0`.  The caller fails the gate
+    on a non-empty list, which is this project's own *a scanner's default branch
+    is a decision* applied to a region boundary.
+
+    `region` is `"sig"` for a read in the declaration's signature — a hypothesis
+    binder or the result type, which is a proposition whatever the declaration
+    is — and `"body"` otherwise.  The Tier 1 reconciliation needs the
+    distinction: the elaborator's verdict is per *declaration*, so it cannot
+    adjudicate a proposition sitting inside an executable declaration's binder.
+
+    `collect`, when a callable is supplied, is invoked once per line with
+    `(declaration, kind, signature_text, specification_text, executable_text)` --
+    the same four region texts this classifier counts `pattern` in, with the two
+    executable regions (a body that is not a proposition, and a binder default)
+    joined because both are code.  It is how the INDIRECT census
+    (`indirect_accesses`) reads declarations: that question needs a
+    declaration's signature *and* its body at once, which no line pattern can
+    express, and routing it through this classifier is what keeps the
+    declaration boundary, the `Prop` verdict and the region split ONE answer
+    shared by the direct and indirect censuses -- so a mutation of any of them
+    fails both rather than one.
+
+    A read in a declaration's SIGNATURE -- anywhere before the top-level `:=`,
+    which is where its hypothesis binders and its result type live -- is spec
+    whatever the declaration's kind, because a binder is a proposition.  That
+    is not a technicality: `mkRetypeTarget` is a smart constructor taking
+    `(hTypeMeta : ∀ obj, st.objects[target]? = some obj → …)`, and reading that
+    as a transition declining to use an accessor would be reading a hypothesis
+    as code.  Only a read in the BODY of a declaration whose result is not a
+    `Prop` is a transition reading the store raw.
+
+    **The parse is `_line_regions`, memoised on the file's text.**  What varies
+    between the censuses is only the `pattern` counted and the `collect` hook,
+    and both run here over the cached records.  A pattern is asked of an empty
+    region exactly as it was of the empty string, so a pattern that matched
+    nothing there still matches nothing.
+    """
+    records, refusals = _line_regions(census_view(path), aliases)
+    empty_hit = len(pattern.findall(""))
+    for decl, kind, sig_spec, body_spec, sig_default, body_code, lineno in records:
         if collect is not None:
             collect(decl, kind, sig_spec, body_spec, sig_default + body_code)
-        n_sig = len(pattern.findall(sig_spec))
-        n_default = len(pattern.findall(sig_default))
-        n_spec = len(pattern.findall(body_spec))
-        n_code = len(pattern.findall(body_code))
+        n_sig = len(pattern.findall(sig_spec)) if sig_spec else empty_hit
+        n_default = len(pattern.findall(sig_default)) if sig_default else empty_hit
+        n_spec = len(pattern.findall(body_spec)) if body_spec else empty_hit
+        n_code = len(pattern.findall(body_code)) if body_code else empty_hit
         if n_sig:
             yield decl, True, n_sig, lineno, "sig"   # a binder or result type
         if n_default:
@@ -1397,8 +1519,8 @@ def classify(path: Path, aliases: frozenset = frozenset(), unparsed=None,
             yield decl, True, n_spec, lineno, "body"
         if n_code:
             yield decl, False, n_code, lineno, "body"
-    if sig_open:
-        refuse("the file ended while its signature was open")
+    if unparsed is not None:
+        unparsed.extend(refusals)
 
 
 # The definitions whose body IS the raw read, which is what makes each of them
@@ -1688,6 +1810,13 @@ def table_receivers(signature: str, body: str) -> dict:
     """
     names: dict = {}
     text = signature + "\n" + body
+    if "RHTable" not in text and "FrozenMap" not in text and ".objects" not in text:
+        # Every pattern below spells one of these three literally (`_TABLE_TYPE`
+        # names the table types, and a binding aliases a table only from the
+        # `.objects` projection or from a name one of them bound), so a
+        # declaration holding none binds nothing and the answer is known before
+        # the three patterns run -- which is where this function's cost was.
+        return names
     # Over the WHOLE declaration, not the signature alone: a `fun` binder or an
     # ascription sits in the BODY, and a table bound there keys into the store
     # exactly as a parameter does -- so a signature-only scan would leave the third

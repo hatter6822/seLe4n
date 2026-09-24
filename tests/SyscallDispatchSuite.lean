@@ -897,32 +897,40 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
-  -- PR #889 review round 11 (P1): the chokepoint decides on the *resolved
-  -- capability's* target, so an arm whose operand is a RAW id from a message
-  -- register escapes it.  `.schedContextBind` resolves its capability to the
-  -- SchedContext and takes the thread from `args.threadId`: with an ordinary
-  -- writable SchedContext capability a caller could name `idleThreadId c`,
-  -- and `schedContextBind` would bind the idle TCB, overwrite its priority
-  -- with the SchedContext's and re-bucket it — a high-priority SchedContext
-  -- making idle outrank ordinary runnable threads.  The refusal is at the
-  -- one lift point every raw thread operand passes through.
+  -- PR #889 review round 11 (P1), re-based at `v0.35.204`: the chokepoint
+  -- decides on the *resolved capability's* target.  Until `v0.35.204`
+  -- `.schedContextBind` read its thread from a RAW message-register id, so the
+  -- idle refusal had to be repeated at the operand's lift point
+  -- (`validateThreadIdArg`); the operand is a TCB **capability address** now
+  -- (`resolveSchedContextBindThread`), so the bind reaches the idle TCB only
+  -- through a capability naming it — which the chokepoint refuses exactly as
+  -- it refuses the `.tcbSuspend` above.  Slot 0 of the caller's CNode holds
+  -- such a capability.
   let scObj : SeLe4n.ObjId := ⟨60⟩
   let scCap : Capability :=
     { target := .object scObj, rights := AccessRightSet.ofList [.write] }
-  let bindDecoded (threadId : Nat) : SyscallDecodeResult :=
+  let bindDecoded (tcbCPtr : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 2,
       msgInfo := { length := 1, extraCaps := 0, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[⟨threadId⟩], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[⟨tcbCPtr⟩], inlineCount := 1, overflowCount := 0 }
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
-  expect "sd054_raw_thread_operand_naming_idle_is_refused"
-    (match dispatchCapabilityOnly (bindDecoded idle0Tid.toNat) scCap caller with
+  expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
+    (match dispatchCapabilityOnly (bindDecoded 0) scCap caller with
      | some f =>
        match f st with
-       | .error .invalidArgument => true
+       | .error .invalidCapability => true
        | _ => false
      | none => false)
-    "a schedContextBind whose raw thread operand names an idle thread must be refused"
+    "a schedContextBind whose TCB capability names an idle thread must be refused like an empty slot"
+  -- The retired reading, computed beside the live one: the idle thread's raw
+  -- id in MR0 is an ADDRESS in the caller's CSpace now, and whatever slot it
+  -- masks to, the resolver never answers the idle thread.
+  expect "sd054_raw_idle_id_in_mr0_never_resolves_the_idle_thread"
+    (match resolveSchedContextBindThread caller (bindDecoded idle0Tid.toNat) st with
+     | .ok v => decide (v.val ≠ idle0Tid)
+     | .error _ => true)
+    "a raw idle id in MR0 is a capability address and must resolve to no idle thread"
   expect "sd054_raw_thread_operand_validator_refuses_every_core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       match validateThreadIdArg (SeLe4n.Kernel.idleThreadId c) with
@@ -1390,6 +1398,260 @@ private def sd058_mintReplyCapThroughTheSyscallGate : IO Unit := do
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
+
+/-- SD-059 (WS-RR RR8.16, `v0.35.190`): **`seL4_CNode_Revoke` through the syscall
+gate.**
+
+The revocation family was verified machinery with no ABI path — `API.lean` had
+no revocation arm at all, so no capability a thread could present revoked
+anything.  This drives the arm the dispatcher now routes, and its claims are
+the three the arm's own docstring decides:
+
+1. **It dispatches `cspaceRevokeCdt`, not the local `cspaceRevoke`.**  That is
+   the whole of the arm's security content: the local primitive reaches only the
+   *containing* CNode, so a derived capability copied into any other CSpace
+   survives it, while the CDT walk follows the derivation tree across arbitrary
+   CNodes.  The retired reading is computed beside the live one — `localOnly`
+   below, spelled here and nowhere else — on a state where a derivation of the
+   source lives in a **second** CNode, so the assertions are known to
+   discriminate rather than merely to pass.
+2. **The source slot survives.**  Revocation destroys a capability's
+   derivations, not the capability; that is what distinguishes it from the
+   delete and what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
+   dischargeable — a caller revokes, then deletes, and both halves are run here.
+3. **The authority is `.write` on the invoked CNode**, and a primary capability
+   that is not an `.object` is refused, so the arm's fail-closed
+   `| _ => fun _ => .error .invalidCapability` is exercised rather than
+   asserted.
+4. **Only derivations are destroyed** (PR #900 review, `v0.36.1`).  The invoked
+   CNode also holds an **independent** capability to the same object (slot 2,
+   the root of nothing the source derived) and a derivation of the source in the
+   *same* CNode (slot 4).  Until `v0.36.1` the revocation opened with the local
+   same-target sweep, which destroyed slot 2 as well; now slot 2 survives and slot
+   4 is still destroyed — the second half is the direction that matters, since it
+   is what removing the sweep could have broken.  The local reading computed
+   below destroys both, which is what makes the pair discriminate. -/
+private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
+  let caller  : SeLe4n.ThreadId := ⟨1⟩
+  let cnA     : SeLe4n.ObjId := ⟨70⟩   -- the invoked CNode: holds the source slot
+  let cnB     : SeLe4n.ObjId := ⟨71⟩   -- a *second* CSpace the derivation lands in
+  let ntfnObj : SeLe4n.ObjId := ⟨72⟩   -- the object both capabilities name
+  let ntfnCap : Capability :=
+    { target := .object ntfnObj, rights := AccessRightSet.ofList [.read, .write] }
+  let cnBCap : Capability :=
+    { target := .object cnB, rights := AccessRightSet.ofList [.read, .write, .grant] }
+  let mkSt (primary : Capability) : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnA }),
+      (ntfnObj, .notification
+        { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none }),
+      (cnA, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [ (SeLe4n.Slot.ofNat 0, primary)
+            , (SeLe4n.Slot.ofNat 1, ntfnCap)
+            -- An INDEPENDENT capability to the same object: no CDT edge links it
+            -- to slot 1, so revoking slot 1 must leave it alone.
+            , (SeLe4n.Slot.ofNat 2, ntfnCap)
+            , (SeLe4n.Slot.ofNat 3, cnBCap) ] }),
+      (cnB, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF [] })
+    ]
+  let cnodeCapWrite : Capability :=
+    { target := .object cnA, rights := AccessRightSet.ofList [.read, .write] }
+  let cnodeCapNoWrite : Capability :=
+    { target := .object cnA, rights := AccessRightSet.ofList [.read] }
+  let wrongKindCap : Capability :=
+    { target := .cnodeSlot cnA (SeLe4n.Slot.ofNat 1),
+      rights := AccessRightSet.ofList [.read, .write] }
+  let src : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 1 }
+  -- The derived capability lands in the OTHER CNode, which is the only place the
+  -- two readings of "revoke" can disagree.
+  let derived : SeLe4n.Kernel.CSpaceAddr := { cnode := cnB, slot := SeLe4n.Slot.ofNat 0 }
+  -- A derivation in the SAME CNode as the source, and the independent sibling.
+  let derivedLocal : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 4 }
+  let sibling : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 2 }
+  let present (addr : SeLe4n.Kernel.CSpaceAddr) (st : SystemState) : Bool :=
+    match SeLe4n.Kernel.cspaceLookupSlot addr st with
+    | .ok _ => true | .error _ => false
+  let decoded (slot : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .cspaceRevoke,
+      msgRegs := #[SeLe4n.RegValue.ofNat slot],
+      inlineCount := 1, overflowCount := 0 }
+  -- The right the gate demands, stated rather than assumed.
+  expect "sd059_required_right_is_write"
+    (decide (SeLe4n.Kernel.syscallRequiredRight .cspaceRevoke = AccessRight.write))
+    "the revoke arm must require write authority on the invoked CNode"
+  -- Build the cross-CNode derivation with the live mint, so the fixture is a
+  -- state the kernel reaches rather than one written by hand.
+  match SeLe4n.Kernel.cspaceMintWithCdt src derived
+      (AccessRightSet.ofList [.read]) none (mkSt cnodeCapWrite) >>= fun ((), stCross) =>
+      SeLe4n.Kernel.cspaceMintWithCdt src derivedLocal
+        (AccessRightSet.ofList [.read]) none stCross with
+  | .error e =>
+      failLine "sd059_cross_cnode_mint"
+        s!"minting a derivation into each CNode must succeed; got: {repr e}"
+  | .ok ((), stMinted) =>
+      expect "sd059_fixture_holds_both_derivations_and_the_sibling"
+        (present derivedLocal stMinted && present sibling stMinted)
+        "the same-CNode derivation and the independent sibling must exist before the revoke"
+      expect "sd059_derivation_starts_present"
+        (match SeLe4n.Kernel.cspaceLookupSlot derived stMinted with
+         | .ok _ => true | .error _ => false)
+        "the derived capability must be present before the revocation"
+      -- 1a. The RETIRED reading — the local primitive the arm does NOT dispatch —
+      -- leaves the derivation standing.  Computed here and nowhere else.
+      match SeLe4n.Kernel.cspaceRevoke src stMinted with
+      | .error e =>
+          failLine "sd059_local_only_reading"
+            s!"the local revoke must succeed on this state; got: {repr e}"
+      | .ok ((), stLocalOnly) =>
+          expect "sd059_local_only_leaves_the_cross_cnode_derivation"
+            (match SeLe4n.Kernel.cspaceLookupSlot derived stLocalOnly with
+             | .ok _ => true | .error _ => false)
+            "the local revoke must NOT reach a derivation in another CNode \
+             (this is what makes the dispatched variant the security content)"
+          -- 4a. …and it destroys the INDEPENDENT sibling, because it matches on
+          -- the target rather than on the derivation tree.  This is the reading
+          -- the dispatched revoke opened with until `v0.36.1`.
+          expect "sd059_local_only_destroys_the_independent_sibling"
+            (!(present sibling stLocalOnly))
+            "the local same-target sweep must destroy the independent sibling \
+             (this is the over-revocation the dispatched revoke no longer performs)"
+      -- 1b. The LIVE arm, through the dispatcher, removes it.
+      match dispatchSyscall (decoded 1) caller stMinted with
+      | .error e =>
+          failLine "sd059_dispatch_succeeds"
+            s!"a write-bearing primary capability must revoke through the gate; got: {repr e}"
+      | .ok ((), stRevoked) =>
+          expect "sd059_dispatch_removes_the_cross_cnode_derivation"
+            (match SeLe4n.Kernel.cspaceLookupSlot derived stRevoked with
+             | .error _ => true | .ok _ => false)
+            "the dispatched revoke must remove a derivation held in another CNode"
+          -- 4b. The same-CNode derivation is still destroyed — by the walk, not
+          -- by a sweep — and the independent sibling survives.
+          expect "sd059_dispatch_removes_the_same_cnode_derivation"
+            (!(present derivedLocal stRevoked))
+            "the dispatched revoke must remove a derivation held in the source's own CNode"
+          expect "sd059_dispatch_leaves_the_independent_sibling"
+            (present sibling stRevoked)
+            "the dispatched revoke must not destroy a capability the source did not derive"
+          -- 2. The source survives, and is then deletable.
+          expect "sd059_source_slot_survives"
+            (match SeLe4n.Kernel.cspaceLookupSlot src stRevoked with
+             | .ok (cap, _) => decide (cap.target = .object ntfnObj)
+             | .error _ => false)
+            "revocation must destroy derivations, not the capability itself"
+          expect "sd059_revoke_then_delete"
+            (match SeLe4n.Kernel.cspaceDeleteSlot src stRevoked with
+             | .ok _ => true | .error _ => false)
+            "a revoked source slot must then be deletable — the `.revocationRequired` \
+             refusal is what the revoke discharges"
+  -- 3. Authority: the same call without `.write` is refused.
+  expect "sd059_without_write_refused_on_authority"
+    (match dispatchSyscall (decoded 1) caller (mkSt cnodeCapNoWrite) with
+     | .error .illegalAuthority => true
+     | _ => false)
+    "a primary capability lacking write must be refused with illegalAuthority"
+  -- 4. A primary capability of the wrong target kind: the arm's fail-closed arm.
+  expect "sd059_wrong_primary_kind_refused"
+    (match dispatchSyscall (decoded 1) caller (mkSt wrongKindCap) with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a primary capability that is not an `.object` must be refused"
+
+/-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
+holds a WRITABLE TCB capability to.**
+
+Until `v0.35.204` the arm read MR0 as a raw thread id under the SchedContext
+capability alone, so a holder of one could bind that context to any unbound
+same-domain thread it could name — and `schedContextBind` writes `sc.priority`
+into the bound thread's base priority (Z5-G3) and, since WS-RR RR8.12 Cut B2,
+places a parked thread.  seL4-MCS's `seL4_SchedContext_Bind` takes the TCB as a
+capability, and `tcbBindNotification` (SD-050) already resolved its extra
+operand that way.
+
+The caller's CNode holds the SchedContext capability at slot 0, a writable TCB
+capability at slot 1, a **read-only** one to the same TCB at slot 2 and a
+capability to the CNode itself at slot 3.  Through `dispatchSyscall`: slot 1
+binds (the SchedContext names the thread and the thread names it back); slot 2
+is `.illegalAuthority`; slot 3 is `.invalidCapability` (not a TCB); and the
+RETIRED reading — the target's raw thread id in MR0 — is refused, because `70`
+is an address in the caller's CSpace and no capability sits there: *naming a
+thread is not holding it*. -/
+private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let tgtTcb : SeLe4n.ObjId := ⟨70⟩
+  let tgtTid : SeLe4n.ThreadId := ⟨70⟩
+  let scCap    : Capability := { target := .object scObj, rights := AccessRightSet.ofList [.write] }
+  let tcbCap   : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
+  let tcbCapRO : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.read] }
+  let cnCap    : Capability := { target := .object cnId, rights := AccessRightSet.ofList [.write] }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
+             (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)] })
+    ]
+  let decoded (tcbCPtr : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,                 -- the SchedContext cap at slot 0
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
+  -- The resolver: slot 1 IS the target thread, answered as a promoted id.
+  expect "sd060_resolver_answers_the_held_tcb"
+    (match resolveSchedContextBindThread caller (decoded 1) st with
+     | .ok v => decide (v.val = tgtTid)
+     | .error _ => false)
+    "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
+  -- Positive: bound both ways, at the SchedContext's configured band.
+  match dispatchSyscall (decoded 1) caller st with
+  | .ok ((), st') =>
+      expect "sd060_bind_through_tcb_capability_binds_the_target"
+        ((st'.getTcb? tgtTid).any (fun t =>
+            decide (t.schedContextBinding = .bound scId) && decide (t.priority = ⟨20⟩)) &&
+         (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some tgtTid)))
+        "a bind through a writable TCB capability must bind the target both ways"
+  | .error e =>
+      failLine "sd060_bind_through_tcb_capability_binds_the_target"
+        s!"unexpected refusal: {repr e}"
+  -- Negative 1: a read-only TCB capability -> illegalAuthority.
+  expect "sd060_readonly_tcb_capability_rejected"
+    (match dispatchSyscall (decoded 2) caller st with
+     | .error .illegalAuthority => true
+     | _ => false)
+    "a read-only TCB capability must fail with illegalAuthority"
+  -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
+  expect "sd060_non_tcb_capability_rejected"
+    (match dispatchSyscall (decoded 3) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
+  -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
+  -- is an address, it masks to an empty slot, and the chokepoint refuses it.
+  expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
+    (match dispatchSyscall (decoded tgtTid.toNat) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "naming the thread's id is not holding a capability to it"
+  -- Negative 4: an empty slot beside the held ones.
+  expect "sd060_empty_slot_rejected"
+    (match dispatchSyscall (decoded 9) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "an empty CSpace slot must fail with invalidCapability"
+
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
@@ -1844,4 +2106,7 @@ def main : IO Unit := do
   sd057_rawSuspendSeamRefusesIdleIds
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
+  sd059_cspaceRevokeThroughTheSyscallGate
+  IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
+  sd060_schedContextBind_requires_tcb_capability
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

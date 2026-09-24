@@ -2587,6 +2587,78 @@ theorem storeObject_cdtNodeSlot_eq
   rfl
 
 -- ============================================================================
+-- WS-RR RR8.16 (`v0.35.199`) — the shape every IPC store chain has
+-- ============================================================================
+--
+-- Register row 85 needs `capabilityInvariantBundle` and
+-- `schedulerInvariantBase_smp` carried across the cross-core Call and reply
+-- chains, and every step of both writes objects the same way: a TCB for a TCB,
+-- a Reply for a Reply, a SchedContext for a SchedContext.  `v0.35.197` gave
+-- both bundles frames keyed on exactly that, stated inline at each consumer;
+-- stating it once here is what makes a chain a `.trans` rather than a fresh
+-- pointwise argument per step.
+--
+-- It lives in the model, upstream of both invariants, because it is a relation
+-- between two object stores and mentions neither.
+
+/-- WS-RR RR8.16 (`v0.35.199`): **at every key, the store is unchanged or holds
+an object of the same kind, and that kind is not `cnode`.**
+
+The `cnode` exclusion is what the capability bundle needs and the scheduler
+bundle does not: three of that bundle's conjuncts read a CNode's *value*, so a
+CNode rewrite keeps the key and the kind while changing what they read.  It is
+carried here rather than at the consumer so a chain does not have to re-establish
+it per step. -/
+def kindPreservingWrite (st st' : SystemState) : Prop :=
+  ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]? ∨
+    ∃ pre post : KernelObject,
+      st.objects[oid]? = some pre ∧ st'.objects[oid]? = some post ∧
+      post.objectType = pre.objectType ∧ post.objectType ≠ KernelObjectType.cnode
+
+namespace kindPreservingWrite
+
+theorem refl (st : SystemState) : kindPreservingWrite st st := fun _ => Or.inl rfl
+
+theorem trans {st st' st'' : SystemState}
+    (h₁ : kindPreservingWrite st st') (h₂ : kindPreservingWrite st' st'') :
+    kindPreservingWrite st st'' := by
+  intro oid
+  rcases h₁ oid with e₁ | ⟨p₁, q₁, hp₁, hq₁, ht₁, hn₁⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
+    · exact Or.inl (e₂.trans e₁)
+    · exact Or.inr ⟨p₂, q₂, e₁ ▸ hp₂, hq₂, ht₂, hn₂⟩
+  · rcases h₂ oid with e₂ | ⟨p₂, q₂, hp₂, hq₂, ht₂, hn₂⟩
+    · exact Or.inr ⟨p₁, q₁, hp₁, e₂.trans hq₁, ht₁, hn₁⟩
+    · rw [hq₁] at hp₂
+      cases hp₂
+      exact Or.inr ⟨p₁, q₂, hp₁, hq₂, ht₂.trans ht₁, hn₂⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): the degenerate instance — a step that writes no
+object at all. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    kindPreservingWrite st st' := fun _ => Or.inl (by rw [h])
+
+end kindPreservingWrite
+
+/-- WS-RR RR8.16 (`v0.35.199`): a `storeObject` that replaces an object with one
+of the same non-`cnode` kind is a `kindPreservingWrite` — the step every IPC
+chain is built from. -/
+theorem storeObject_kindPreservingWrite
+    {st st' : SystemState} {oid : SeLe4n.ObjId} {obj pre : KernelObject}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeObject oid obj st = .ok ((), st'))
+    (hPre : st.objects[oid]? = some pre)
+    (hKind : obj.objectType = pre.objectType)
+    (hNotCnode : obj.objectType ≠ KernelObjectType.cnode) :
+    kindPreservingWrite st st' := by
+  intro k
+  by_cases hEq : k = oid
+  · subst hEq
+    exact Or.inr ⟨pre, obj, hPre,
+      storeObject_objects_eq st st' k obj hObjInv hStore, hKind, hNotCnode⟩
+  · exact Or.inl (storeObject_objects_ne st st' oid k obj hEq hObjInv hStore)
+
+-- ============================================================================
 -- WS-G3/F-P06: storeObject ASID table maintenance lemmas
 -- ============================================================================
 
@@ -2789,6 +2861,24 @@ The frame every transition discharges, now with no hypothesis: it used to requir
 agreement at the thread's priority source. -/
 theorem threadBasePriority_congr {st st' : SystemState} (tcb : TCB) :
     st'.threadBasePriority tcb = st.threadBasePriority tcb := rfl
+
+/-- WS-RR RR8.16 (`v0.35.199`): **a thread that resolved still resolves.**
+
+The scheduler-side reading of `kindPreservingWrite`, and what
+`currentThreadValidOnCore` needs: the relation says a key keeps its kind, so a
+key holding a TCB still holds one.  It sits here rather than with the relation's
+other algebra because `getTcb?` is declared below that block. -/
+theorem _root_.SeLe4n.Model.kindPreservingWrite.getTcb?_isSome {st st' : SystemState}
+    (h : kindPreservingWrite st st') (t : SeLe4n.ThreadId)
+    (hSome : (st.getTcb? t).isSome) : (st'.getTcb? t).isSome := by
+  unfold SystemState.getTcb? at hSome ⊢
+  rcases h t.toObjId with e | ⟨pre, post, hp, hq, ht, _⟩
+  · rw [e]; exact hSome
+  · rw [hp] at hSome
+    rw [hq]
+    cases pre with
+    | tcb _ => cases post <;> simp [KernelObject.objectType] at ht ⊢
+    | _ => simp at hSome
 
 /-- WS-SM SM6.D: Read a Reply from the global object store. -/
 def getReply? (st : SystemState) (replyId : SeLe4n.ReplyId)
@@ -3135,6 +3225,81 @@ theorem getReply?_eq_some_iff (st : SystemState) (replyId : SeLe4n.ReplyId)
   · rename_i hne; constructor
     · intro h; cases h
     · intro h; exact absurd h (fun h' => hne _ (by rw [h']))
+
+/-- **`v0.35.166`: the bridge from a *kind biconditional* to the typed reading.**
+
+Nearly every step frame in this tree is proved from a biconditional over
+`objects[·]?` at one kind — "this step holds a `.schedContext sc` at `k` iff the
+pre-state did" — because that is the shape the store's own frame lemmas produce.
+The predicate a consumer reads, though, is `getSchedContext?`, and `getSchedContext?`
+is *determined* by which `.schedContext` the store holds at the key.  So the two
+are one fact and this is the crossing.
+
+It lives here, beside `getSchedContext?_eq_some_iff` — the accessor's own
+unfolding lemma, which is the whole of its proof — rather than in whichever
+invariant module first needed it: it is a fact about the accessor, and the
+cancellation path, the destroy path and the reservation frames all ask it.
+(WS-RR RR8.11 wrote it `private` in `IPC/Invariant/CancellationBundle.lean`,
+which is downstream of the destroy path; `v0.35.166` moved it here so the
+retype's own reservation theorems could be stated at all.) -/
+theorem getSchedContext?_eq_of_kind_iff {sa sb : SystemState}
+    {scId : SeLe4n.SchedContextId}
+    (h : ∀ sc : SeLe4n.Kernel.SchedContext,
+      sb.objects[scId.toObjId]? = some (.schedContext sc) ↔
+      sa.objects[scId.toObjId]? = some (.schedContext sc)) :
+    sb.getSchedContext? scId = sa.getSchedContext? scId := by
+  cases hA : sa.getSchedContext? scId with
+  | none =>
+    cases hB : sb.getSchedContext? scId with
+    | none => rfl
+    | some sc =>
+      exact absurd
+        ((getSchedContext?_eq_some_iff sa scId sc).mpr
+          ((h sc).mp ((getSchedContext?_eq_some_iff sb scId sc).mp hB)))
+        (by rw [hA]; simp)
+  | some sc =>
+    rw [(getSchedContext?_eq_some_iff sb scId sc).mpr
+      ((h sc).mpr ((getSchedContext?_eq_some_iff sa scId sc).mp hA))]
+
+/-- **`v0.35.166`: the shape every TCB-field frame in this tree is proved in.**
+
+A step whose TCB readings refine forward with `f` preserved, and whose post-state
+TCBs all have pre-state TCBs at the same key, frames `f` at that key.  The `none`
+case of the backward direction is the statement that the step *materialises* no
+thread where none was, which is why it is needed at all: a forward refinement
+alone leaves the post-state free to invent one.
+
+Beside `getTcb?_eq_some_iff` for the reason the bridge above is beside its own
+accessor's: it is a fact about `getTcb?` and one TCB field, and it has askers on
+the cancellation path, on the destroy path and in the reservation frames.
+(WS-RR RR8.11 wrote it `private` in `IPC/Invariant/CancellationBundle.lean`;
+moved here at `v0.35.166`.)
+
+**`v0.35.183` (register row 63): the field is a PARAMETER.**  It was written for
+`cpuAffinity`, whose consumer is `determineTargetCore_congr`, and the bridge has
+nothing to do with which field is read — *a field is not the relation*, and the
+version that fixes one is a bridge the next conjunct cannot use.  Register row 63
+needs exactly this shape for `TCB.schedContextBinding`, which
+`schedContextBindingConsistent_transfer` consumes, so the fix is to take `f`
+rather than to write a second bridge beside this one. -/
+theorem map_tcbField_eq_of_refines {α : Type} (f : TCB → α)
+    {sa sb : SystemState} {x : SeLe4n.ThreadId}
+    (hFwd : ∀ t0, sa.getTcb? x = some t0 →
+      ∃ t', sb.getTcb? x = some t' ∧ f t' = f t0)
+    (hBwd : ∀ t', sb.getTcb? x = some t' → ∃ t0, sa.getTcb? x = some t0) :
+    (sb.getTcb? x).map f = (sa.getTcb? x).map f := by
+  cases hA : sa.getTcb? x with
+  | none =>
+    cases hB : sb.getTcb? x with
+    | none => rfl
+    | some t' =>
+      obtain ⟨t0, h0⟩ := hBwd t' hB
+      rw [hA] at h0
+      exact absurd h0 (by simp)
+  | some t0 =>
+    obtain ⟨t', hB, hField⟩ := hFwd t0 hA
+    rw [hB]
+    simp [hField]
 
 /-- WS-SM SM6.D: link a Reply object to the caller about to block on it
 (sets `reply.caller`).  Fails closed with `.replyCapInvalid` if the reply is
@@ -3772,6 +3937,240 @@ theorem consumeCallerReply_tcb_caller (st st' : SystemState)
     have hT : st1.getTcb? caller = some t0 := (getTcb?_eq_some_iff st1 caller t0).mpr h1
     simp only [hT] at hStep
     exact storeObject_objects_eq st1 st' caller.toObjId _ hInv1 hStep
+
+/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
+stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
+preserve the object-store extensional invariant.
+
+**Relocated from `IPC/Invariant/Defs.lean` at WS-RR RR8.16 (`v0.35.200`)**: it is
+built from `linkReply_preserves_objects_invExt` and
+`storeObject_preserves_objects_invExt` and mentions nothing of that layer, and
+`linkCallerReply_kindPreservingWrite` below — which belongs at the model, where
+the relation does — needs it. -/
+theorem _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
+      · simp at hStep
+
+/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
+it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
+TCB store (which preserves it). -/
+theorem _root_.SeLe4n.Model.linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.objects.invExt := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hObjInv1 := _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
+        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): `linkReply` is a `kindPreservingWrite` — its
+one store replaces a Reply with that Reply carrying a caller. -/
+theorem linkReply_kindPreservingWrite (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkReply rid caller st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; simp at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    cases hCond : r.isFree with
+    | true =>
+      rw [if_pos hCond] at hStep
+      exact storeObject_kindPreservingWrite hObjInv hStep
+        ((getReply?_eq_some_iff st rid r).mp hGet) rfl (by simp [KernelObject.objectType])
+    | false =>
+      rw [if_neg (by simp [hCond])] at hStep
+      simp at hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and so is `linkCallerReply` — the Reply
+store above, then a TCB store at the caller's own key.
+
+The `.call` chain's counterpart of `consumeCallerReply_kindPreservingWrite`, and
+what carries register row 85's two bundles across the server-first rendezvous. -/
+theorem linkCallerReply_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have hInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
+    have hW1 := linkReply_kindPreservingWrite st st1 rid caller hObjInv hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact hW1.trans (storeObject_kindPreservingWrite hInv1 hStep
+          ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl (by simp [KernelObject.objectType]))
+      · simp at hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): and `linkServerStashedReply` — the link above
+plus the server's stash clear, another TCB for a TCB. -/
+theorem linkServerStashedReply_kindPreservingWrite (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have hW1 := linkCallerReply_kindPreservingWrite st st1 caller rid hObjInv hLink
+      have hInv1 := _root_.SeLe4n.Model.linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [← hStep]; exact hW1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact hW1.trans (storeObject_kindPreservingWrite hInv1 hStep
+          ((getTcb?_eq_some_iff st1 server sTcb).mp hT) rfl (by simp [KernelObject.objectType]))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): none of the three link steps writes a CDT
+table — every one of their stores is a `storeObject`. -/
+theorem linkReply_cdt_eq (st st' : SystemState)
+    (rid : SeLe4n.ReplyId) (caller : SeLe4n.ThreadId)
+    (hStep : linkReply rid caller st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; simp at hStep
+  | some r =>
+    simp only [hGet] at hStep
+    cases hCond : r.isFree with
+    | true =>
+      rw [if_pos hCond] at hStep
+      exact ⟨storeObject_cdt_eq _ _ _ _ hStep, storeObject_cdtNodeSlot_eq _ _ _ _ hStep⟩
+    | false =>
+      rw [if_neg (by simp [hCond])] at hStep
+      simp at hStep
+
+theorem linkCallerReply_cdt_eq (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId)
+    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkCallerReply at hStep
+  cases hLink : linkReply rid caller st with
+  | error e => simp [hLink] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hLink] at hStep
+    have e1 := linkReply_cdt_eq st st1 rid caller hLink
+    cases hT : st1.getTcb? caller with
+    | none => simp [hT] at hStep
+    | some tcb =>
+      simp only [hT] at hStep
+      split at hStep
+      · exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
+          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+      · simp at hStep
+
+theorem linkServerStashedReply_cdt_eq (st st' : SystemState)
+    (caller server : SeLe4n.ThreadId)
+    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold linkServerStashedReply at hStep
+  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
+  | none => simp [hStash] at hStep
+  | some rid =>
+    simp only [hStash] at hStep
+    cases hLink : linkCallerReply caller rid st with
+    | error e => simp [hLink] at hStep
+    | ok p1 =>
+      obtain ⟨_, st1⟩ := p1
+      simp only [hLink] at hStep
+      have e1 := linkCallerReply_cdt_eq st st1 caller rid hLink
+      cases hT : st1.getTcb? server with
+      | none =>
+        simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+        rw [← hStep]; exact e1
+      | some sTcb =>
+        simp only [hT] at hStep
+        exact ⟨(storeObject_cdt_eq _ _ _ _ hStep).trans e1.1,
+          (storeObject_cdtNodeSlot_eq _ _ _ _ hStep).trans e1.2⟩
+
+/-- **WS-RR RR8.16** (`v0.35.199`): `consumeReply` is a `kindPreservingWrite` —
+its one store replaces a Reply with that Reply's own consumed record. -/
+theorem consumeReply_kindPreservingWrite (st st' : SystemState) (rid : SeLe4n.ReplyId)
+    (hObjInv : st.objects.invExt)
+    (hStep : consumeReply rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold consumeReply at hStep
+  cases hGet : st.getReply? rid with
+  | none => rw [hGet] at hStep; cases hStep; exact kindPreservingWrite.refl _
+  | some r =>
+    rw [hGet] at hStep
+    exact storeObject_kindPreservingWrite hObjInv hStep
+      ((getReply?_eq_some_iff st rid r).mp hGet) rfl (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.199`): and so is `consumeCallerReply` — the Reply
+store above, then a TCB store at the caller's own key.
+
+The shape register row 85's two bundle frames consume.  Stated here rather than
+at the reply path, because it is a fact about this primitive and every asker (the
+reply leg's removal, the cancellation teardown) is downstream of it. -/
+theorem consumeCallerReply_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : consumeCallerReply caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  unfold consumeCallerReply at hStep
+  cases hCons : consumeReply rid st with
+  | error e => simp [hCons] at hStep
+  | ok p1 =>
+    obtain ⟨_, st1⟩ := p1
+    simp only [hCons] at hStep
+    have hInv1 : st1.objects.invExt :=
+      consumeReply_preserves_objects_invExt st st1 rid hObjInv hCons
+    have h1 : kindPreservingWrite st st1 :=
+      consumeReply_kindPreservingWrite st st1 rid hObjInv hCons
+    cases hT : st1.getTcb? caller with
+    | none =>
+      simp only [hT, Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+      rw [← hStep]; exact h1
+    | some tcb =>
+      simp only [hT] at hStep
+      exact h1.trans (storeObject_kindPreservingWrite hInv1 hStep
+        ((getTcb?_eq_some_iff st1 caller tcb).mp hT) rfl
+        (by simp [KernelObject.objectType]))
 
 /-- WS-SM SM6.D (PR #827 #3 fold): `consumeReply` leaves the scheduler untouched
 (object-store writes only). -/
@@ -4914,6 +5313,34 @@ theorem rewriteObject_objects_ne (st : SystemState) (id k : SeLe4n.ObjId) (new :
   simp only [RHTable_getElem?_eq_get?]
   exact RHTable.getElem?_insert_ne st.objects id k new (fun hb => hNe (eq_of_beq hb)) hInv
 
+/-- **WS-RR RR8.16** (`v0.35.199`): **every `rewriteObject` is a
+`kindPreservingWrite`, with no side condition at all.**
+
+The in-place sibling of `storeObject_kindPreservingWrite`, and strictly cheaper:
+a rewrite carries its own proof that the key holds an object of the replacement's
+kind *and* that the kind is bookkeeping-neutral (`rewriteAdmissible`), and
+`KernelObjectType.rewriteNeutral` is `false` at `.cnode` — so both of the store
+lemma's hypotheses are already in the rewrite's proof argument.  That is the
+whole difference between the two, and the reason they are separate lemmas rather
+than one.
+
+Stated here so register row 85's frame question has one answer per store
+primitive, beside the primitive. -/
+theorem rewriteObject_kindPreservingWrite (st : SystemState) (id : SeLe4n.ObjId)
+    (new : KernelObject) (h : st.rewriteAdmissible id new) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.rewriteObject id new h) := by
+  intro k
+  by_cases hEq : id = k
+  · subst hEq
+    have hAdm := h
+    obtain ⟨pre, hPre, hKind, hNeutral⟩ := hAdm
+    refine Or.inr ⟨pre, new, hPre, rewriteObject_objects_self st id new h hInv,
+      hKind.symm, ?_⟩
+    intro hCn
+    rw [hCn] at hNeutral
+    exact absurd hNeutral (by simp [KernelObjectType.rewriteNeutral])
+  · exact Or.inl (rewriteObject_objects_ne st id k new h hEq hInv)
+
 -- The bookkeeping, unconditionally.
 
 theorem rewriteObject_preserves_objectIndexBounded (st : SystemState) (id : SeLe4n.ObjId)
@@ -5098,6 +5525,28 @@ theorem updateTcb_eq_self_of_none {st : SystemState} {tid : SeLe4n.ThreadId}
   unfold updateTcb
   rw [getTcbWitnessed?_eq_none h]
 
+/-- **`v0.35.183` (register row 63)**: `updateTcb` reads and writes the object
+table and nothing else, so two states that agree on it agree after the update.
+
+The bridge a *composite* needs when its TCB write is not the outermost one: an
+operation that writes the scheduler between its object writes leaves a state
+whose `objects` field is the earlier one's but whose other fields are not, and
+`rfl` will not see through the dependent `getTcbWitnessed?` match at two
+different states.  Proved through the update's own two equations rather than by
+unfolding it, which is what makes it independent of how the witness is spelled. -/
+theorem updateTcb_objects_congr {A B : SystemState} (hObj : A.objects = B.objects)
+    (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (A.updateTcb tid f).objects = (B.updateTcb tid f).objects := by
+  have hGet : A.getTcb? tid = B.getTcb? tid := getTcb?_frame hObj tid
+  cases hA : A.getTcb? tid with
+  | none =>
+    rw [updateTcb_eq_self_of_none hA, updateTcb_eq_self_of_none (hGet ▸ hA)]
+    exact hObj
+  | some t =>
+    rw [updateTcb_eq_of_some hA, updateTcb_eq_of_some (hGet ▸ hA)]
+    simp only []
+    rw [hObj]
+
 /-- `updateTcb` writes the object table and nothing else (see
 `rewriteObject_eq_objects_update`). -/
 theorem updateTcb_eq_objects_update (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
@@ -5135,6 +5584,35 @@ theorem updateTcb_serviceRegistry (st : SystemState) (tid : SeLe4n.ThreadId) (f 
 theorem updateTcb_scThreadIndex (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
     (st.updateTcb tid f).scThreadIndex = st.scThreadIndex := by
   unfold updateTcb; split <;> rfl
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the typed read-modify-write never touches
+either derivation table — it is `rewriteObject` at one key, and a rewrite writes
+the object store and nothing else. -/
+theorem updateTcb_cdt (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).cdt = st.cdt := by
+  unfold updateTcb; split <;> rfl
+
+theorem updateTcb_cdtNodeSlot (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB → TCB) :
+    (st.updateTcb tid f).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold updateTcb; split <;> rfl
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it is a `kindPreservingWrite`, with no
+side condition — the `none` arm is the identity, and the `some` arm is
+`rewriteObject` under `rewriteAdmissible_tcb`, which carries the kind equality
+*and* `rewriteNeutral`, false at `.cnode`.
+
+This is the one owner for "a typed TCB rewrite keeps every key's kind".  Every
+transition on the IPC and fault paths that edits one thread's record — the four
+register-context writers, the fault record, the restart frame, the `.Inactive`
+store — is `updateTcb`, so each reaches both invariant bundles through this
+lemma rather than re-deriving the rewrite's admissibility at its own site. -/
+theorem updateTcb_kindPreservingWrite (st : SystemState) (tid : SeLe4n.ThreadId)
+    (f : TCB → TCB) (hInv : st.objects.invExt) :
+    kindPreservingWrite st (st.updateTcb tid f) := by
+  unfold updateTcb
+  split
+  · exact rewriteObject_kindPreservingWrite _ _ _ _ hInv
+  · exact kindPreservingWrite.refl st
 
 theorem updateTcb_preserves_objects_invExt (st : SystemState) (tid : SeLe4n.ThreadId)
     (f : TCB → TCB) (hInv : st.objects.invExt) :
@@ -5447,20 +5925,10 @@ theorem updateTcb_getTcb?_ne (st : SystemState) (tid : SeLe4n.ThreadId) (f : TCB
   · exact rewriteObject_getTcb?_ne st _ _ _ hInv tid' hNe
   · rfl
 
-/-- **WS-RR RR8.12 (Cut 4)**: the typed read-modify-write rewrites a TCB **in
-place**, so a thread that resolved before resolves after — at the written key and
-at every other.  The suspend pipeline's placement payoff needs exactly this of
-its `clearPendingState` and `threadState := .Inactive` stages: a scheduling point
-can strand a thread whose TCB does not resolve, so the chain has to carry the
-resolvability forward rather than assume it. -/
-theorem updateTcb_getTcb?_isSome (st : SystemState) (tid : SeLe4n.ThreadId)
-    (f : TCB → TCB) (hInv : st.objects.invExt) (x : SeLe4n.ThreadId)
-    (h : (st.getTcb? x).isSome) : ((st.updateTcb tid f).getTcb? x).isSome := by
-  by_cases hEq : tid.toObjId = x.toObjId
-  · obtain rfl : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ hEq
-    rw [updateTcb_getTcb?_self st tid f hInv]
-    simpa using h
-  · rw [updateTcb_getTcb?_ne st tid f hInv x hEq]; exact h
+-- `v0.35.158`: `updateTcb_getTcb?_isSome` — the typed read-modify-write keeps
+-- every TCB resolvable — is retired with `suspendThreadOnCore_holder_still_placed`,
+-- its only consumer; `updateTcb_getTcb?_self` and `updateTcb_getTcb?_ne` above are
+-- the two facts it composed and stay.
 
 theorem updateSchedContext_getTcb? (st : SystemState) (scId : SeLe4n.SchedContextId)
     (f : SeLe4n.Kernel.SchedContext → SeLe4n.Kernel.SchedContext) (hInv : st.objects.invExt)

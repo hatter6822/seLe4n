@@ -58,12 +58,13 @@ finding ID, the affected site, and the remediation applied.
   observe the timeout deterministically on the next receive attempt.
   No behavior change required.
 
-- **I-L3 — `endpointCallWithDonation` `popHead_returns_head` external
-  composition.** `endpointQueuePopHead_returns_head` (defined in
-  `IPC/Invariant/Defs.lean`) is referenced across both
-  `endpointCallWithDonation` (Operations/Donation.lean) and
-  `endpointSendDualWithCaps` (DualQueue/WithCaps.lean) without a local
-  composition wrapper. The theorem is non-fragile (invariant-independent)
+- **I-L3 — `popHead_returns_head` external composition.**
+  `endpointQueuePopHead_returns_head` (defined in `IPC/Invariant/Defs.lean`) is
+  referenced across more than one caller — `endpointSendDualWithCaps`
+  (DualQueue/WithCaps.lean) among them — without a local composition wrapper.
+  (The note named `endpointCallWithDonation` as the other until `v0.35.192`
+  deleted it; the live Call path reads the same theorem through
+  `endpointCallCrossCoreDispatch`.) The theorem is non-fragile (invariant-independent)
   so inlining its composition is not required; cross-file use is
   idiomatic.
 
@@ -410,6 +411,36 @@ theorem foldl_removeRunnableStepOnCore_domain_frame
     exact ⟨by rw [List.foldl_cons, h1, g1], by rw [List.foldl_cons, h2, g2],
            by rw [List.foldl_cons, h3, g3]⟩
 
+/-- **`v0.35.165`: the sweep leaves every core's REPLENISH queue alone.**
+
+The seventh scheduler slot, and the one the SM5.H affinity invariant reads.  The
+sweep's step writes a run queue and a current slot in its taken branch and
+nothing in its untaken one, so a destroy path that removes a thread from every
+core's run queue moves no scheduling context's eligibility entry — which is what
+lets `cleanupTcbReferences` carry `replenishQueueAffinityConsistent_smp`. -/
+theorem foldl_removeRunnableStepOnCore_replenishQueueOnCore
+    (cs : List SeLe4n.Kernel.Concurrency.CoreId) (tid : SeLe4n.ThreadId) :
+    ∀ (st : SystemState) (c : SeLe4n.Kernel.Concurrency.CoreId),
+      (cs.foldl (removeRunnableStepOnCore tid) st).scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+  induction cs with
+  | nil => intro _ _; rfl
+  | cons d ds ih =>
+    intro st c
+    have hStep : ∀ (s : SystemState) (e : SeLe4n.Kernel.Concurrency.CoreId),
+        (removeRunnableStepOnCore tid s e).scheduler.replenishQueueOnCore c
+          = s.scheduler.replenishQueueOnCore c := by
+      intro s e
+      unfold removeRunnableStepOnCore
+      split <;> simp
+    rw [List.foldl_cons, ih (removeRunnableStepOnCore tid st d) c, hStep st d]
+
+@[simp] theorem removeRunnableFromAllCores_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    (removeRunnableFromAllCores st tid).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c :=
+  foldl_removeRunnableStepOnCore_replenishQueueOnCore _ tid st c
+
 @[simp] theorem removeRunnableFromAllCores_activeDomainOnCore (st : SystemState)
     (tid : SeLe4n.ThreadId) (c : SeLe4n.Kernel.Concurrency.CoreId) :
     (removeRunnableFromAllCores st tid).scheduler.activeDomainOnCore c
@@ -525,6 +556,22 @@ theorem lookupTcb_of_objects_of_not_reserved
   unfold lookupTcb SystemState.getTcb?
   rw [if_neg hNotReserved, hObj]
 
+/-- **WS-RR RR8.12 Cut C1**: a thread `lookupTcb` resolves is promotable — the
+reserved-id refusal `lookupTcb` performs is exactly the test `ThreadId.toValid?`
+makes, so a resolved id has a `ValidThreadId` form that reads back to itself.  What
+lets a statement over a resolved thread be handed to a primitive whose signature
+demands the promoted form (`applyCallDonationOnCore`) without a second reserved-id
+hypothesis. -/
+theorem lookupTcb_some_toValid?
+    (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (h : lookupTcb st tid = some tcb) :
+    ∃ v : SeLe4n.ValidThreadId, tid.toValid? = some v ∧ v.val = tid := by
+  have hNR : tid.isReserved = false := by
+    simpa using lookupTcb_some_not_reserved st tid tcb h
+  obtain ⟨v, hV⟩ :=
+    Option.isSome_iff_exists.mp ((SeLe4n.ThreadId.toValid?_isSome_iff tid).mpr hNR)
+  exact ⟨v, hV, SeLe4n.ThreadId.toValid?_some_val_eq tid v hV⟩
+
 /-- If lookupTcb succeeds, the underlying objects map has a TCB at tid.toObjId. -/
 theorem lookupTcb_some_objects
     (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
@@ -596,6 +643,104 @@ def storeTcbIpcStateAndMessage_fromTcb (st : SystemState) (tid : SeLe4n.ThreadId
   match storeObject tid.toObjId (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
   | .error e => .error e
   | .ok ((), st') => .ok st'
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the resolving spelling of the delivery store
+is a `kindPreservingWrite` too — it looks the TCB up itself, so it needs no
+`hPre`.
+
+The `.call` leg writes through this form where the reply leg writes through
+`_fromTcb`, and both spellings are one store; stating the relation at each is
+what keeps a chain over either a citation. -/
+theorem storeTcbIpcStateAndMessage_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hObjInv : st.objects.invExt)
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLk : lookupTcb st tid with
+  | none => rw [hLk] at hStore; cases hStore
+  | some tcb =>
+    rw [hLk] at hStore
+    simp only at hStore
+    cases hS : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => rw [hS] at hStore; cases hStore
+    | ok p =>
+      obtain ⟨_, s1⟩ := p
+      rw [hS] at hStore
+      simp only [Except.ok.injEq] at hStore
+      subst hStore
+      exact storeObject_kindPreservingWrite hObjInv hS
+        (lookupTcb_some_objects st tid tcb hLk) rfl (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it writes neither CDT table. -/
+theorem storeTcbIpcStateAndMessage_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hStore : storeTcbIpcStateAndMessage st tid ipcState msg = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeTcbIpcStateAndMessage at hStore
+  cases hLk : lookupTcb st tid with
+  | none => rw [hLk] at hStore; cases hStore
+  | some tcb =>
+    rw [hLk] at hStore
+    simp only at hStore
+    cases hS : storeObject tid.toObjId
+        (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+    | error e => rw [hS] at hStore; cases hStore
+    | ok p =>
+      obtain ⟨_, s1⟩ := p
+      rw [hS] at hStore
+      simp only [Except.ok.injEq] at hStore
+      subst hStore
+      exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- **WS-RR RR8.16** (`v0.35.199`): the delivery store is a
+`kindPreservingWrite` — one `storeObject` of a `.tcb` at a key the caller has
+already resolved to a TCB.
+
+The shape register row 85's two bundle frames consume.  Stated beside the
+definition rather than at each IPC chain: every arm of the reply and call spines
+opens with this store, and re-deriving the fact per arm is the duplication this
+project retires. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hObjInv : st.objects.invExt)
+    (hPre : st.objects[tid.toObjId]? = some (.tcb tcb))
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
+    kindPreservingWrite st st' := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStore
+  cases hS : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  | error e => rw [hS] at hStore; cases hStore
+  | ok p =>
+    obtain ⟨_, s1⟩ := p
+    rw [hS] at hStore
+    simp only [Except.ok.injEq] at hStore
+    subst hStore
+    exact storeObject_kindPreservingWrite hObjInv hS hPre rfl
+      (by simp [KernelObject.objectType])
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and it writes neither CDT table —
+`storeObject` writes `objects`, the two indices, the lifecycle table and the ASID
+table, and no more. -/
+theorem storeTcbIpcStateAndMessage_fromTcb_cdt_eq
+    {st st' : SystemState} {tid : SeLe4n.ThreadId} {tcb : TCB}
+    {ipcState : ThreadIpcState} {msg : Option IpcMessage}
+    (hStore : storeTcbIpcStateAndMessage_fromTcb st tid tcb ipcState msg = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  unfold storeTcbIpcStateAndMessage_fromTcb at hStore
+  cases hS : storeObject tid.toObjId
+      (.tcb { tcb with ipcState := ipcState, pendingMessage := msg }) st with
+  | error e => rw [hS] at hStore; cases hStore
+  | ok p =>
+    obtain ⟨_, s1⟩ := p
+    rw [hS] at hStore
+    simp only [Except.ok.injEq] at hStore
+    subst hStore
+    exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
 
 /-- WS-L1/L1-B: Equivalence theorem — `_fromTcb` produces identical results
 to the original when the provided TCB matches the state. All existing
@@ -944,6 +1089,46 @@ theorem storeDonationFramePush_preserves_objects_invExt
   · exact hInv1
   · exact storeObject_preserves_objects_invExt s1 st' _ _ hInv1 hS2
 
+/-- **WS-RR RR8.16** (`v0.35.200`): the frame push is a `kindPreservingWrite` —
+a Reply for a Reply at the pushed frame, and another at the old head when the
+context already headed one.
+
+The pushed frame's pre-state record is a hypothesis rather than derived: the
+push takes it as an *argument*, and `donationPushFrame?_ok` is what the donation
+supplies it from. -/
+theorem storeDonationFramePush_kindPreservingWrite
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (hPre : st.getReply? pushRid = some pushReply)
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1
+      ((SystemState.getReply?_eq_some_iff st pushRid pushReply).mp hPre) rfl
+      (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  rcases hRest with ⟨_, rfl⟩ | ⟨old, oldR, _, hR, hS2⟩
+  · exact hW1
+  · exact hW1.trans (storeObject_kindPreservingWrite hInv1 hS2
+      ((SystemState.getReply?_eq_some_iff s1 old oldR).mp hR) rfl
+      (by simp [KernelObject.objectType]))
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the push writes neither CDT table. -/
+theorem storeDonationFramePush_cdt_eq
+    {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
+    {oldHead? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationFramePush scId pushRid pushReply oldHead? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨_, s1, hS1, hRest⟩ := storeDonationFramePush_cases h
+  have e1 : s1.cdt = st.cdt ∧ s1.cdtNodeSlot = st.cdtNodeSlot :=
+    ⟨storeObject_cdt_eq _ _ _ _ hS1, storeObject_cdtNodeSlot_eq _ _ _ _ hS1⟩
+  rcases hRest with ⟨_, rfl⟩ | ⟨_, _, _, _, hS2⟩
+  · exact e1
+  · exact ⟨(storeObject_cdt_eq _ _ _ _ hS2).trans e1.1,
+      (storeObject_cdtNodeSlot_eq _ _ _ _ hS2).trans e1.2⟩
+
 /-- The pushed frame's record afterwards. -/
 theorem storeDonationFramePush_getReply?_pushed
     {scId : SeLe4n.SchedContextId} {pushRid : SeLe4n.ReplyId} {pushReply : Reply}
@@ -1180,6 +1365,225 @@ question; two spellings of it would be free to drift, and the store-chain
 decomposition is the *only* description of the operation. -/
 @[inline] def donationFirstPush (donorTcb : TCB) (scId : SeLe4n.SchedContextId) : Bool :=
   donorTcb.schedContextBinding.ownScId? == some scId
+
+-- ============================================================================
+-- The SchedContext-binding frame (IPC de-threading D6; declared here since
+-- WS-RR RR8.12 Cut C1, `v0.35.160`)
+-- ============================================================================
+
+/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
+post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
+This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
+needs: it is preserved by every core IPC transition that never writes a binding (all but
+the donation primitives `donateSchedContext` / `returnDonatedSchedContext`, which is why
+it is declared beside them).  Stated backward (post ⟹ pre) so it composes directly with
+the store-frame style used throughout the de-threading proofs.
+
+**WS-RR RR8.12 Cut C1 (`v0.35.160`, register row 55): declared HERE, in the operations
+layer, and not in `IPC/Invariant/Defs.lean` where it was born.**
+`callDonationSchedContext?` (`IPC/Operations/Donation.lean`) is the resolver every
+donation-carrying footprint and transition read, and the `.receive` arm's replenish
+segment has to transport its pre-state answer across the receive leg — which is
+exactly this frame.  `Donation.lean`'s import closure did not contain `Defs.lean`, nor
+the reverse, so the bridge from the frame to the resolver had no home beside the
+resolver: *when a question has one owner and an asker that cannot see it, the owner
+is in the wrong layer* (`v0.35.59`).  The predicate reads two model records and
+nothing of the invariant layer, so this is where it always belonged; its two
+invariant consumers (`donationBudgetTransfer_of_sameSchedContextBindings`,
+`donationOwnerUnique_of_sameSchedContextBindings`) stay in `Defs.lean`, and the
+`SeLe4n.Kernel` namespace is kept so that no call site is renamed. -/
+def sameSchedContextBindings (st st' : SystemState) : Prop :=
+  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
+    st'.objects[tid.toObjId]? = some (.tcb tcb') →
+    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding
+
+namespace sameSchedContextBindings
+
+/-- Reflexivity: a state has the same bindings as itself. -/
+theorem refl (st : SystemState) : sameSchedContextBindings st st :=
+  fun _ tcb' h => ⟨tcb', h, rfl⟩
+
+/-- Transitivity: chain two binding-preserving steps. -/
+theorem trans {st st' st'' : SystemState}
+    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
+    sameSchedContextBindings st st'' := by
+  intro tid tcb'' hObj''
+  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
+  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
+  exact ⟨tc, hObj, hEq.trans hEq'⟩
+
+/-- A transition that leaves the object store untouched (a scheduler-only step such
+as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
+theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
+    sameSchedContextBindings st st' :=
+  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
+
+/-- **WS-RR RR8.12 Cut C1**: the pointwise form of `of_objects_eq` — a step invisible
+to every object-store lookup preserves all bindings.  The cross-core `wakeThread` of
+an already-`.ready` thread is such a step (`wakeThread_objects_getElem_eq_of_ready`)
+without its table being *equal* to the pre-state's, which the whole-table form cannot
+see. -/
+theorem of_objects_getElem_eq {st st' : SystemState}
+    (h : ∀ oid : SeLe4n.ObjId, st'.objects[oid]? = st.objects[oid]?) :
+    sameSchedContextBindings st st' :=
+  fun tid tcb' hObj => ⟨tcb', by rw [← h tid.toObjId]; exact hObj, rfl⟩
+
+/-- **WS-RR RR8.12 Cut C1**: a post-state `lookupTcb` pulls back to a pre-state
+`lookupTcb` at the same thread with an equal binding — the frame read through the
+reader `callDonationSchedContext?` actually uses.  `lookupTcb` is `getTcb?` under the
+reserved-id refusal, and the refusal is a fact about the id alone, so it carries
+across states unchanged. -/
+theorem lookupTcb_backward {st st' : SystemState} (h : sameSchedContextBindings st st')
+    (tid : SeLe4n.ThreadId) (tcb' : TCB) (hL : lookupTcb st' tid = some tcb') :
+    ∃ tcb, lookupTcb st tid = some tcb ∧
+      tcb.schedContextBinding = tcb'.schedContextBinding := by
+  obtain ⟨tcb, hObj, hEq⟩ := h tid tcb' (lookupTcb_some_objects st' tid tcb' hL)
+  exact ⟨tcb, lookupTcb_of_objects_of_not_reserved st tid tcb hObj
+    (lookupTcb_some_not_reserved st' tid tcb' hL), hEq⟩
+
+end sameSchedContextBindings
+
+/-- WS-RR RR2.1: the SchedContext a `.call` donation would actually transfer —
+`some scId` exactly when `applyCallDonation` takes its donating arm (the
+receiver is passive and the caller holds a bound SchedContext), `none` on every
+no-op arm.
+
+Single-sourced here because three consumers need the same answer and a second
+copy would drift: `applyCallDonationOnCore` names the SchedContext whose
+replenishments migrate, the cross-core `.call` dispatch pre-resolves the
+`lockSet_endpointCall` donation footprint from it, and the affinity proof below
+case-splits on it.  Reading the same function is what keeps the declared lock
+footprint and the executed write the same set. -/
+def callDonationSchedContext? (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  match lookupTcb st receiver with
+  | some receiverTcb =>
+      match receiverTcb.schedContextBinding with
+      | .unbound =>
+          match lookupTcb st caller with
+          -- **WS-OD OD4.2**: the caller's *effective* context, bound or donated
+          -- (`SchedContextBinding.scId?`), so the resolver and the transition
+          -- widen in the same cut and cannot disagree about whether a call
+          -- donates.
+          | some callerTcb => callerTcb.schedContextBinding.scId?
+          | none => none
+      | _ => none
+  | none => none
+
+/-- **WS-OD OD4.2/OD4.6: the guard fires at call depth ≥ 2.**
+
+The resolver reads the caller's *effective* context, so a caller that is itself
+holding a donation (`.donated scId owner` -- the intermediate server of a chain)
+names `scId` exactly as a `.bound` caller names its own.  This is the fact that
+makes the chain transitive at the resolver, stated rather than read off the
+definition at each of its three consumers.
+
+The receiver's `.unbound` premise is the other half of the guard and is what a
+passive server *is*; without it the call is a no-op at any depth. -/
+theorem callDonationSchedContext?_of_donated_caller
+    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
+    (cTcb rTcb : TCB)
+    (hR : lookupTcb st receiver = some rTcb)
+    (hRB : rTcb.schedContextBinding = .unbound)
+    (hC : lookupTcb st caller = some cTcb)
+    (hCB : cTcb.schedContextBinding = .donated scId owner) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext?
+  rw [hR]
+  simp only []
+  rw [hRB]
+  simp only []
+  rw [hC]
+  simp only []
+  rw [hCB]
+  rfl
+
+/-- **WS-RR RR8.12 Cut C1 (register row 55): the resolver's `some` answer transports
+BACKWARD across a binding-preserving step.**
+
+`sameSchedContextBindings st st'` says every post-state TCB pulls back to a pre-state
+TCB with the same binding, and `callDonationSchedContext?` reads nothing but two
+threads' bindings through `lookupTcb` — so a post-state `some scId` was already the
+pre-state's answer.  This is the direction a footprint needs and the only one the
+backward frame gives: the `.receive` arm's replenish segment is resolved on the
+syscall's PRE-state while WS-OD OD3.6's donation runs at the POST-receive-leg state,
+and a footprint is sound exactly when *the transition migrates ⟹ the footprint
+declares*, i.e. post `some` ⟹ pre `some`.  The forward direction (pre `some` ⟹ post
+`some`) is neither given by the frame nor needed: a footprint that declares on a
+pre-state `some` the transition then declines is wider than its operation, which is
+sound.
+
+Declared beside the resolver, which is why the frame moved down to
+`IPC/Operations/Endpoint.lean` in the same cut: *when a question has one owner and an
+asker that cannot see it, the owner is in the wrong layer* (`v0.35.59`). -/
+theorem callDonationSchedContext?_some_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hPost : callDonationSchedContext? st' caller receiver = some scId) :
+    callDonationSchedContext? st caller receiver = some scId := by
+  unfold callDonationSchedContext? at hPost ⊢
+  cases hR' : lookupTcb st' receiver with
+  | none => rw [hR'] at hPost; simp at hPost
+  | some rTcb' =>
+    rw [hR'] at hPost
+    simp only [] at hPost
+    obtain ⟨rTcb, hR, hRB⟩ := hSame.lookupTcb_backward receiver rTcb' hR'
+    rw [hR]
+    simp only []
+    cases hRB' : rTcb'.schedContextBinding with
+    | bound _ => rw [hRB'] at hPost; simp at hPost
+    | donated _ _ => rw [hRB'] at hPost; simp at hPost
+    | unbound =>
+      rw [hRB'] at hPost
+      simp only [] at hPost
+      rw [hRB, hRB']
+      simp only []
+      cases hC' : lookupTcb st' caller with
+      | none => rw [hC'] at hPost; simp at hPost
+      | some cTcb' =>
+        rw [hC'] at hPost
+        simp only [] at hPost
+        obtain ⟨cTcb, hC, hCB⟩ := hSame.lookupTcb_backward caller cTcb' hC'
+        rw [hC]
+        simp only []
+        rw [hCB]
+        exact hPost
+
+/-- **WS-RR RR8.12 Cut C1**: the contrapositive, in the shape the narrowed replenish
+segment consumes — a pre-state `none` is a post-state `none`, so a receive whose
+pre-state resolver declines migrates nothing at the state its donation runs on. -/
+theorem callDonationSchedContext?_none_of_sameSchedContextBindings
+    {st st' : SystemState} (hSame : sameSchedContextBindings st st')
+    (caller receiver : SeLe4n.ThreadId)
+    (hPre : callDonationSchedContext? st caller receiver = none) :
+    callDonationSchedContext? st' caller receiver = none := by
+  cases hPost : callDonationSchedContext? st' caller receiver with
+  | none => rfl
+  | some scId =>
+    rw [callDonationSchedContext?_some_of_sameSchedContextBindings hSame caller receiver scId
+      hPost] at hPre
+    cases hPre
+
+/-- **WS-RR RR8.12 Cut C6f**: a thread donates nothing to itself.
+
+The resolver requires the *receiver* `.unbound` and then reads the **caller's**
+effective context — so with one thread in both roles the second read is of an
+`.unbound` binding, whose `scId?` is `none`.  The `.receive` arm's block path hands
+the hand-off the receiver's own id (it dequeued nobody), which is what makes this
+the whole of that path's donation story: no guard on the post-state `ipcState` is
+needed, because the resolver refuses on the pre-state shape alone. -/
+@[simp] theorem callDonationSchedContext?_self (st : SystemState) (tid : SeLe4n.ThreadId) :
+    callDonationSchedContext? st tid tid = none := by
+  unfold callDonationSchedContext?
+  cases hT : lookupTcb st tid with
+  | none => rfl
+  | some tcb =>
+    cases hB : tcb.schedContextBinding with
+    | unbound => simp only [hB, SchedContextBinding.scId?]
+    | bound scId => simp only [hB]
+    | donated scId owner => simp only [hB]
 
 /-- Z7-B2: Transfer a client's SchedContext to a passive server during IPC Call.
 
@@ -1781,61 +2185,112 @@ def outerCallerAcceptable (st : SystemState) (serverTid originalOwner : SeLe4n.T
     (serverTid originalOwner : SeLe4n.ThreadId) :
     outerCallerAcceptable st serverTid originalOwner none = true := rfl
 
-/-- **WS-HP HP10.7: the origin may be rebound without invalidating a live
-donation.**
+/-- WS-OD (`v0.35.4`): does this thread's reply link name a frame that is on a
+live reply stack — one whose upward link is **answered** by what it names?  Such
+a thread is owed a scheduling context by the pop that reaches its frame.
+
+**The test is reciprocity, not `next.isSome`** (PR #894 review).  A stale upward
+link is reachable: the splice's below side *degenerates* to the sever when the
+frame below does not reciprocate (`spliceFrameBelow?` answers `none`), and the
+sever leaves the frame below the cut with an upward link nothing answers — under
+`severAtCut`, live until WS-HP HP6.8, cancelling the middle caller of `B → M → H`
+cleared `H.prev` and consumed `M` while `B.next` still read `some (.frame M)`.
+`B` is then on no live stack and is owed nothing, so refusing its bind refuses an
+operation `schedContextBind` documents as supported (binding a *blocked* thread).
+Presence of the link is not the property; the property is that the frame or
+context above answers this frame.
+
+That is the same question `donationChainWalk` validates on the way down — a link
+is validated by the target's own upward link, never by its `caller`, because a
+re-linked Reply carries no answer back — and the one `spliceReplyFrameOut`
+checks before it writes.  Asking it one step is **exact** rather than
+approximate: under `donationChainWellFormed`, `prevLinkReciprocal` and
+`headTerminates` make a reciprocated link a link to a frame that is itself on the
+stack, so no walk is needed and the guard stays `O(1)`.  A frame that really is
+live still answers `true`, so the fail-closed direction is unchanged.
+
+**Relocated here at `v0.35.157`** from `SchedContext/Operations.lean`, where
+`schedContextBind` had it, because the reply pop's origin redirect asks the same
+question of the reservation's recorded origin (`donationOriginRebindable`) and
+the endpoint operations cannot import the SchedContext module.  Its `.head` arm
+is `replyFrameHeadContext?`'s own reciprocity test (defined further down, where the
+reply-stack resolvers live; `replyFrameOnLiveStack_of_head` beside it is the tie),
+and its `.frame` arm is the reciprocity `spliceFrameBelow?` checks before it writes.
+It sits here, ahead of `donationOriginRebindable`, because that guard reads it. -/
+def replyFrameOnLiveStack (st : SystemState) (tcb : TCB) : Bool :=
+  match tcb.replyObject with
+  | none => false
+  | some rid =>
+    match st.getReply? rid with
+    | none => false
+    | some r =>
+      match r.next with
+      | none => false
+      | some (.frame above) =>
+        match st.getReply? above with
+        | none => false
+        | some a => a.prev == some rid
+      | some (.head scId) =>
+        match st.getSchedContext? scId with
+        | none => false
+        | some sc => sc.scReply == some rid
+
+/-- A thread holding no reply object is on no live stack. -/
+@[simp] theorem replyFrameOnLiveStack_of_no_reply (st : SystemState) (tcb : TCB)
+    (h : tcb.replyObject = none) : replyFrameOnLiveStack st tcb = false := by
+  unfold replyFrameOnLiveStack; rw [h]
+
+/-- **WS-HP HP10.7 / `v0.35.157`: the origin may be rebound without invalidating a
+live donation — the bind's own admissibility, asked of the reservation's origin.**
 
 `donationRecipientAcceptable` asks that the recipient hold no binding of its own,
 which is what the pop is about to overwrite.  That is sufficient for the
 *reachability* recipient and **not** for the redirected one, and the gap is a
-soundness hole rather than a tightening:
+soundness hole rather than a tightening: `donationOwnerValid` requires the `owner`
+of every live `.donated scId' owner` binding to be `.unbound`, and a thread can be
+`.unbound` while named as such an owner — that is exactly what a donor awaiting its
+reservation back looks like.  The redirect would then write `.bound scId` there, and
+that binding's owner clause becomes false: `donationOwnerValid` broken by a
+successful reply.  Reachable with ordinary syscalls: a client whose frame was
+answered out of order is woken `.ready` and `.unbound`; nothing stops it binding a
+*second* reservation, Calling with it, and so becoming the owner of a fresh
+`.donated` binding — all while the first reservation is still parked on a server
+whose stack records it as the origin.
 
-`donationOwnerValid` requires the `owner` of every live `.donated scId' owner`
-binding to be `.unbound` **and** `.blockedOnReply`.  A thread can be both
-`.unbound` and named as such an owner — that is exactly what a donor awaiting its
-reservation back looks like — so a recorded origin can pass
-`donationRecipientAcceptable` while some other thread's binding names it.  The
-redirect would then write `.bound scId` there, and that binding's owner clause
-becomes false: `donationOwnerValid` broken by a successful reply.
+**The question is `schedContextBind`'s, and this is its answer** (`v0.35.157`,
+closing the finding PR #897's review registered at `v0.35.141`): may this thread be
+handed a scheduling context now?  The bind refuses a thread whose reply frame is on
+a **live** stack (`replyFrameOnLiveStack` — one-step reciprocity, exact under
+`donationChainWellFormed`), because such a thread is owed a context by the pop that
+reaches its frame, and a second context bound to it in the meantime would be refused
+by that pop's own recipient guard or orphaned by its write.  The redirect *is* a
+bind of the reservation to its origin, so it asks the same test of the origin,
+through the same definition.
 
-It is reachable with ordinary syscalls, not a representability artefact.  A
-client whose frame was answered out of order is woken `.ready` and `.unbound`;
-nothing stops it binding a *second* reservation, Calling with it, and so becoming
-the owner of a fresh `.donated` binding — all while the first reservation is
-still parked on a server whose stack records it as the origin.  The server's
-reply then fires the redirect at a thread another binding is counting on.
+Two things that test decides and the retired proxy did not.  Until `v0.35.157` this
+guard read the origin's `ipcState` and refused a `.blockedOnReply` thread, standing
+in for "some live `.donated _ origin` binding names it" — a fact being reply-blocked
+is *implied by* and does not *imply*.  It therefore **refused the re-called
+client**: a client answered out of order and re-Called is `.unbound`, so its Call
+donated nothing and pushed no frame — its new reply object is on no stack — and no
+binding names it as owner; the pop then fell back to the answered caller and
+*transferred* the reservation to the intermediate caller of the chain, erasing the
+origin with it (`v0.35.141`, measured at `tests/SmpIpcSuite.lean` §3.25 — the
+decline was sound and not conservative).  The structural test **admits** that client,
+and it **refuses** two shapes the proxy could not tell apart from it: an origin
+whose frame *heads* a context — a live owner, named by that context's holder — and
+an origin whose frame sits *inside* a live stack, which is owed a pop that a
+binding made here would make refuse.
 
-**The contrapositive is the guard, and it is O(1).**  Any live binding naming a
-thread as owner forces that thread `.blockedOnReply`; so a thread that is *not*
-reply-blocked is named by none, and rebinding it can falsify nothing
-(`donationOriginRebindable_no_owner`).  A recorded origin that *is* still
-reply-blocked is declined, and that decline is **sound but not conservative** —
-which corrects what this docstring said until `v0.35.141`.
-
-**`.blockedOnReply` is a PROXY for ownership, and the fallback it declines to is a
-TRANSFER** (PR #897's review, measured at `tests/SmpIpcSuite.lean` §3.25's COST
-group).  Being reply-blocked is *implied* by owning a live donation and does not
-*imply* it: a client answered out of order is woken `.ready` and `.unbound`, and
-its next ordinary Call donates nothing — `callDonationSchedContext?` reads
-`SchedContextBinding.scId?`, which is `none` at `.unbound` — while still putting it
-`.blockedOnReply`.  No binding names it, and this guard refuses it anyway.  The pop
-then falls back to the *answered caller*, which at depth 2 is the intermediate
-caller of the chain: the reservation is bound to a thread that owns nothing,
-`donationOrigin` is cleared, and the kernel can never return it — the context heads
-no stack afterwards, so no later pop can deliver it, and the origin that would have
-named the recipient is gone with it; only an out-of-band `schedContextUnbind` +
-`schedContextBind` by a holder of the *SchedContext* capability can repair it.  So
-the
-decline is not "the pop behaves as it did before HP10.7" — before HP10.7 that same
-transfer is what happened, and HP10.7 exists to stop it.
-
-Closing it needs the **fact** the proxy stands in for, which no invariant in this
-tree carries: `donationOwnerValid` relates a donation's owner to no reply frame, so
-"a live `.donated _ origin` binding implies `origin`'s own frame heads that
-context" — true on every reachable state by construction, since
-`donateSchedContext` mints the binding and pushes the frame in one step, and
-already *stated* for the cancellation path as `donatedContextIsOwnerFrameHead` —
-is not derivable here.  Registered in `docs/REGISTERED_DEBT.md` table C with the
-two candidate mechanisms and their measured costs.
+**Soundness is the coherence fact, not the `ipcState`.**
+`donationOriginRebindable_no_owner` derives "no live `.donated _ origin` binding
+names it" from this guard under `donatedContextIsOwnerFrameHead` — a live
+binding's owner has its own frame heading that context, which is exactly
+`replyFrameOnLiveStack`'s `.head` arm — so the fact the proxy stood in for is what
+licenses the pop's write, stated once (WS-HP HP5.2's fact, which the cancellation
+reclaim already carried) and consumed by the reply path as
+`redirectedOriginFrameCoherent`.  It is not derivable from `donationOwnerValid`,
+which relates a donation's owner to no reply frame.
 
 A thread that does not resolve passes, as the sibling guards' `_of_none` arms do
 -- and since `v0.35.61` the resolver never consults this guard on one:
@@ -1844,16 +2299,13 @@ declines a candidate that does not resolve, so a stale origin falls back to the
 reachability recipient instead of reaching the pop's own lookup as a refusal.
 This guard reads `st.getTcb?` where its siblings read `lookupTcb`; on a thread the
 resolver has already resolved the two readers agree (`getTcb?_of_lookupTcb`), and
-the frozen mirror (`frozenDonationOriginRebindable`) reads `frozenLookupTcb`, which
-agrees with this one on every thread `frozenDonationOriginRecipient?` hands it,
-since that resolver resolves first too. -/
+the frozen mirror (`frozenDonationOriginRebindable`) reads `frozenLookupTcb` and
+`frozenReplyFrameOnLiveStack`, which agree with these on every thread
+`frozenDonationOriginRecipient?` hands it, since that resolver resolves first too. -/
 def donationOriginRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Bool :=
   match st.getTcb? origin with
   | none => true
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ _ => false
-    | _ => true
+  | some tcb => !replyFrameOnLiveStack st tcb
 
 /-- An origin that does not resolve is rebindable; the pop refuses it later. -/
 @[simp] theorem donationOriginRebindable_of_none (st : SystemState)
@@ -1861,19 +2313,29 @@ def donationOriginRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Boo
     donationOriginRebindable st origin = true := by
   unfold donationOriginRebindable; rw [h]
 
-/-- WS-HP HP10.7: **a rebindable origin is reply-blocked nowhere**, which is the
-half `donationOwnerValid` reads. -/
-theorem donationOriginRebindable_not_blockedOnReply (st : SystemState)
+/-- **`v0.35.157`: a rebindable origin's reply frame is on no live stack** — the
+whole of what the guard reads, and the half `donatedContextIsOwnerFrameHead` turns
+into "named by no live donation" (`donationOriginRebindable_no_owner`). -/
+theorem donationOriginRebindable_not_onLiveStack (st : SystemState)
     {origin : SeLe4n.ThreadId} {tcb : TCB}
     (hTcb : st.getTcb? origin = some tcb)
     (h : donationOriginRebindable st origin = true) :
-    ∀ epId replyTarget, tcb.ipcState ≠ .blockedOnReply epId replyTarget := by
-  intro epId replyTarget hEq
+    replyFrameOnLiveStack st tcb = false := by
   unfold donationOriginRebindable at h
   rw [hTcb] at h
-  dsimp only at h
-  rw [hEq] at h
-  exact absurd h (by simp)
+  simpa using h
+
+/-- **`v0.35.157`: a thread holding no reply object is rebindable** -- the shape a
+frame's removal leaves its owner in (`removeCallerReplyFrame_replyObject_none`), and
+what makes the depth-2 payoff's rebindability a *derived* fact rather than a stated
+one (`donationAccountingPreserved_atCallDepthTwo`). -/
+theorem donationOriginRebindable_of_no_reply (st : SystemState)
+    {origin : SeLe4n.ThreadId} {tcb : TCB}
+    (hTcb : st.getTcb? origin = some tcb) (h : tcb.replyObject = none) :
+    donationOriginRebindable st origin = true := by
+  unfold donationOriginRebindable
+  rw [hTcb]
+  simp [replyFrameOnLiveStack_of_no_reply st tcb h]
 
 
 /-- **WS-HP HP4.6: the thread the pop hands the context TO holds none of its
@@ -3389,6 +3851,64 @@ theorem storeDonationHeadPop_non_reply_eq
           (fun hk => hNotReply b (by rw [← e1, hk]; exact hReadB)) hInv1 hS2
     rw [e2, e1]
 
+/-- WS-RR RR8.16 (`v0.35.199`): the head clear writes no CDT table -- it is one
+`storeObject`, which writes `objects`, the two indices, the lifecycle table and
+the ASID table. -/
+theorem storeDonationHeadClear_cdt_eq {head? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeDonationHeadClear head? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases storeDonationHeadClear_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): and neither does the re-head. -/
+theorem storeReplyReHead_cdt_eq {scId : SeLe4n.SchedContextId}
+    {below? : Option SeLe4n.ReplyId} {st st' : SystemState}
+    (h : storeReplyReHead scId below? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  rcases storeReplyReHead_cases h with rfl | ⟨rid, r, _, _, hS⟩
+  · exact ⟨rfl, rfl⟩
+  · exact ⟨storeObject_cdt_eq _ _ _ _ hS, storeObject_cdtNodeSlot_eq _ _ _ _ hS⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): so the pop writes no CDT table either. -/
+theorem storeDonationHeadPop_cdt_eq {scId : SeLe4n.SchedContextId}
+    {head? : Option (SeLe4n.ReplyId × Reply)} {st st' : SystemState}
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  cases head? with
+  | none => cases h; exact ⟨rfl, rfl⟩
+  | some p =>
+      obtain ⟨rid, r⟩ := p
+      rw [storeDonationHeadPop_some] at h
+      revert h
+      cases hClear : storeDonationHeadClear (some rid) st with
+      | error _ => intro h; simp only at h; cases h
+      | ok s1 =>
+          intro h
+          simp only at h
+          have h1 := storeDonationHeadClear_cdt_eq hClear
+          have h2 := storeReplyReHead_cdt_eq h
+          exact ⟨h2.1.trans h1.1, h2.2.trans h1.2⟩
+
+/-- WS-RR RR8.16 (`v0.35.199`): the pop is a `kindPreservingWrite` — every key
+it touches held a Reply and still holds one, and every other key is untouched.
+
+The shape register row 85's two bundle frames consume, so the donation return's
+whole store chain composes by `.trans` rather than by a pointwise argument per
+step. -/
+theorem storeDonationHeadPop_kindPreservingWrite
+    {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
+    {st st' : SystemState}
+    (hObjInv : st.objects.invExt)
+    (h : storeDonationHeadPop scId head? st = .ok st') :
+    kindPreservingWrite st st' := by
+  intro k
+  by_cases hRep : ∃ r : Reply, st.objects[k]? = some (.reply r)
+  · obtain ⟨r, hr⟩ := hRep
+    obtain ⟨r', hr', _⟩ := storeDonationHeadPop_reply_rewrite hObjInv h k r hr
+    exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType]⟩
+  · exact Or.inl (storeDonationHeadPop_non_reply_eq hObjInv h k (fun r hr => hRep ⟨r, hr⟩))
+
 /-- A non-Reply found after the pop was there before it. -/
 theorem storeDonationHeadPop_non_reply_backward
     {scId : SeLe4n.SchedContextId} {head? : Option (SeLe4n.ReplyId × Reply)}
@@ -4419,6 +4939,16 @@ theorem replyFrameHeadContext?_eq_some {st : SystemState} {rid : SeLe4n.ReplyId}
             subst hEq
             exact ⟨r, sc, rfl, hN, hSc, by simpa using hRec⟩
 
+/-- ...and a thread whose frame heads a context is on one: the `.head` arm of the
+test is `replyFrameHeadContext?`'s own question, so a reciprocating head answers
+`true` here by that resolver's characterisation. -/
+theorem replyFrameOnLiveStack_of_head (st : SystemState) (tcb : TCB)
+    (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+    (hRO : tcb.replyObject = some rid) (hHead : replyFrameHeadContext? st rid = some scId) :
+    replyFrameOnLiveStack st tcb = true := by
+  obtain ⟨r, sc, hR, hN, hSc, hRec⟩ := replyFrameHeadContext?_eq_some hHead
+  simp only [replyFrameOnLiveStack, hRO, hR, hN, hSc, hRec, beq_self_eq_true]
+
 @[simp] theorem replyFrameHeadContext?_of_none (st : SystemState) (rid : SeLe4n.ReplyId)
     (h : st.getReply? rid = none) : replyFrameHeadContext? st rid = none := by
   unfold replyFrameHeadContext?; rw [h]
@@ -5241,6 +5771,33 @@ theorem removeCallerReplyFrame_cdtNodeSlot_eq (st st' : SystemState)
   exact (SystemState.consumeCallerReply_cdtNodeSlot_eq _ st' caller rid hStep).trans
     (spliceReplyFrameOutOrSelf_cdtNodeSlot_eq st rid)
 
+/-- **WS-RR RR8.16** (`v0.35.199`): the splice is a `kindPreservingWrite` — it
+rewrites the stack links of up to three Reply objects and touches nothing else,
+so every key it writes held a Reply and still holds one. -/
+theorem spliceReplyFrameOutOrSelf_kindPreservingWrite (st : SystemState)
+    (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt) :
+    kindPreservingWrite st (spliceReplyFrameOutOrSelf st rid) := by
+  intro k
+  rcases spliceReplyFrameOutOrSelf_objects_rewrite st rid hObjInv k with h | ⟨r, r', hr, hr', _⟩
+  · exact Or.inl h
+  · exact Or.inr ⟨.reply r, .reply r', hr, hr', rfl, by simp [KernelObject.objectType]⟩
+
+/-- **WS-RR RR8.16** (`v0.35.199`): and so is the removal — the splice above, then
+the consume, which writes a Reply for a Reply and a TCB for a TCB.
+
+This is what carries register row 85's two bundles across seL4's `reply_remove`:
+the capability bundle's four transport hypotheses collapse into it
+(`capabilityInvariantBundle_of_kindPreserving`) and the scheduler bundle reads the
+`getTcb?` half of it. -/
+theorem removeCallerReplyFrame_kindPreservingWrite (st st' : SystemState)
+    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
+    (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
+    kindPreservingWrite st st' := by
+  rw [removeCallerReplyFrame_eq] at hStep
+  exact (spliceReplyFrameOutOrSelf_kindPreservingWrite st rid hObjInv).trans
+    (SystemState.consumeCallerReply_kindPreservingWrite _ st' caller rid
+      (spliceReplyFrameOutOrSelf_preserves_objects_invExt st rid hObjInv) hStep)
+
 theorem removeCallerReplyFrame_preserves_objects_invExt (st st' : SystemState)
     (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
     (hStep : removeCallerReplyFrame caller rid st = .ok ((), st')) :
@@ -5994,18 +6551,24 @@ theorem returnDonatedSchedContextResolved_eq_legacy_of_no_stack
   returnDonatedSchedContextResolved_of_resolved
     (replyStackOuterCaller?_of_no_stack st scId sc hSc hNoHead)
 
-/-- Z7-E: Clean up an active donation when a server with `.donated` binding
-blocks on receive without replying first (abnormal path).
-
-Returns the SchedContext to the original owner and sets the server to unbound.
-This prevents resource leaks when a server drops a call without replying. -/
-def cleanupActiveDonation
-    (st : SystemState)
-    (serverTid : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId)
-    (originalOwner : SeLe4n.ThreadId)
-    (newOwner? : Option SeLe4n.ThreadId) : Except KernelError SystemState :=
-  returnDonatedSchedContext st serverTid scId originalOwner newOwner?
+-- **WS-RR RR8.12 follow-on (`v0.35.192`): `cleanupActiveDonation` is DELETED.**
+--
+-- Z7-E's alias for `returnDonatedSchedContext` — definitionally that function,
+-- with the same five arguments in the same order — whose docstring described
+-- "a server with a `.donated` binding blocking on receive without replying
+-- first".  That scenario has a live implementation, and has had one since
+-- AK1-A: `cleanupPreReceiveDonation` resolves the binding out of the receiver's
+-- own TCB rather than taking it as three arguments a caller must already know,
+-- `cleanupPreReceiveDonationChecked` propagates the failure a kernel path needs
+-- surfaced, and `cleanupPreReceiveDonationMigrated` (WS-RR, `v0.35.161`) carries
+-- the replenishment across cores.  The alias was superseded by all three and
+-- consumed by nothing: no live path, no theorem, no suite, no gate.
+--
+-- The register row that scheduled the wire-or-retire judgement recorded the risk
+-- of deleting part of a symmetric family; this one is not part of one — it is a
+-- lone alias whose replacement family is three definitions wide.  The two X2-I
+-- wrappers named in the same row were judged the other way and kept, with
+-- witnesses: see `SeLe4n/Kernel/API.lean`.
 
 -- ============================================================================
 -- AN10 residual closure (H5–H6): typed entry-points for donation handlers
@@ -6058,6 +6621,66 @@ def cleanupActiveDonation
     (newOwner? : Option SeLe4n.ThreadId) :
     returnDonatedSchedContextValid st serverVtid scId originalOwnerVtid newOwner? =
       returnDonatedSchedContext st serverVtid.val scId originalOwnerVtid.val newOwner? := rfl
+
+/-- **`v0.35.161` (register row 57): the context a pre-receive return POPS, with the
+owner it settles back on — `cleanupPreReceiveDonationChecked`'s own guard, named.**
+
+The two cleanups below decide whether to run `returnDonatedSchedContextResolved` by
+reading the receiver through `lookupTcb` and matching its binding for
+`.donated scId originalOwner`; this is that reading, so the pre-receive replenishment
+migration (`preReceiveReturnMigration`, at the cross-core layer) fires on exactly the
+states the pop fires on rather than on a proxy for them — *a proxy is not the fact*.
+`endpointReplyDonation?` asks the same question of the store raw (`getTcb?`), which
+is what a footprint resolver must do; the two agree on every receiver `lookupTcb`
+resolves (`preReceiveDonation?_eq_endpointReplyDonation?_of_lookup`) and differ only
+on a reserved id, where this one answers `none` — the pop's own answer, since
+`lookupTcb` refuses a reserved id — and the footprint over-declares two members for a
+migration that never runs.
+
+The cleanups are **not** restated over it: their bodies are pinned by some forty
+proofs that case on `lookupTcb` and the binding directly, and by a Tier 3 anchor on
+the `Checked` variant's own match.  `cleanupPreReceiveDonationChecked_of_no_donation`
+and `_of_donation` are the two characterisations that hold this reading and the
+cleanups' to one answer. -/
+def preReceiveDonation? (st : SystemState) (receiver : SeLe4n.ThreadId) :
+    Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  match lookupTcb st receiver with
+  | some recvTcb =>
+      match recvTcb.schedContextBinding with
+      | .donated scId originalOwner => some (scId, originalOwner)
+      | _ => none
+  | none => none
+
+/-- `v0.35.161`: the resolver at a receiver the store resolves as holding a loan. -/
+theorem preReceiveDonation?_of_donated (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (recvTcb : TCB) (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (hLk : lookupTcb st receiver = some recvTcb)
+    (hB : recvTcb.schedContextBinding = .donated scId originalOwner) :
+    preReceiveDonation? st receiver = some (scId, originalOwner) := by
+  unfold preReceiveDonation?
+  rw [hLk]
+  simp only [hB]
+
+/-- `v0.35.161`: and a `some` answer names a stored, `lookupTcb`-resolved TCB whose
+binding is that loan — the direction the migration's own proofs consume. -/
+theorem preReceiveDonation?_some_lookup (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = some (scId, originalOwner)) :
+    ∃ recvTcb, lookupTcb st receiver = some recvTcb ∧
+      recvTcb.schedContextBinding = .donated scId originalOwner := by
+  unfold preReceiveDonation? at h
+  cases hLk : lookupTcb st receiver with
+  | none => rw [hLk] at h; cases h
+  | some recvTcb =>
+    simp only [hLk] at h
+    cases hB : recvTcb.schedContextBinding with
+    | donated scId' owner' =>
+        rw [hB] at h
+        simp only [Option.some.injEq, Prod.mk.injEq] at h
+        obtain ⟨rfl, rfl⟩ := h
+        exact ⟨recvTcb, rfl, hB⟩
+    | unbound => rw [hB] at h; cases h
+    | bound _ => rw [hB] at h; cases h
 
 /-- AI4-A (M-01): Clean up stale donation before a server blocks on receive.
 
@@ -6165,6 +6788,40 @@ theorem cleanupPreReceiveDonation_eq_cleanupChecked_ok
     (h : cleanupPreReceiveDonationChecked st receiver = .ok st') :
     st' = cleanupPreReceiveDonation st receiver :=
   (cleanupPreReceiveDonationChecked_ok_eq_cleanup st st' receiver h).symm
+
+/-- **`v0.35.161`**: with no loan to return (`preReceiveDonation?` answers `none`),
+the checked cleanup is the identity — one of the two characterisations that hold
+the cleanup's own guard and its named reading to one answer. -/
+theorem cleanupPreReceiveDonationChecked_of_no_donation
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = none) :
+    cleanupPreReceiveDonationChecked st receiver = .ok st := by
+  unfold preReceiveDonation? at h
+  unfold cleanupPreReceiveDonationChecked
+  cases hLk : lookupTcb st receiver with
+  | none => rfl
+  | some recvTcb =>
+    simp only [hLk] at h
+    simp only []
+    cases hB : recvTcb.schedContextBinding with
+    | donated scId owner => rw [hB] at h; cases h
+    | unbound => rfl
+    | bound _ => rfl
+
+/-- **`v0.35.161`**: and with one, the checked cleanup **is** the resolved return of
+that context to that owner — the other characterisation, and the one the
+pre-receive replenishment migration's affinity proof crosses to reach the pop's
+own frame lemmas. -/
+theorem cleanupPreReceiveDonationChecked_of_donation
+    (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (h : preReceiveDonation? st receiver = some (scId, originalOwner)) :
+    cleanupPreReceiveDonationChecked st receiver
+      = returnDonatedSchedContextResolved st receiver scId originalOwner := by
+  obtain ⟨recvTcb, hLk, hB⟩ := preReceiveDonation?_some_lookup st receiver scId originalOwner h
+  unfold cleanupPreReceiveDonationChecked
+  rw [hLk]
+  simp only [hB]
 
 /-- AN3-E.5 (IPC-M09): compile-time guard — if `cleanupPreReceiveDonation`
 or `cleanupPreReceiveDonationChecked` is relocated out of this file, this
@@ -6379,6 +7036,54 @@ theorem returnDonatedSchedContext_ok_server_not_reserved
   obtain ⟨_, _, _, serverTcb, _, _, s3, _, _, _, _, _, _, _, _, _, hL2, _⟩ :=
     returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
   exact lookupTcb_some_not_reserved s3 serverTid serverTcb hL2
+
+/-- **`v0.35.183`**: and neither is its recipient.
+
+The sibling of the fact above, at the other thread the pop resolves through
+`lookupTcb`: the recipient's binding write reads it (`_ok_storeChain`'s `hL1`),
+and `lookupTcb` refuses a reserved id, so a successful pop's recipient is
+promotable.  Added beside the server's for register row 63, whose Z4-O proof
+needs the recipient's *pre*-state binding and can only reach it through
+`lookupTcb`. -/
+theorem returnDonatedSchedContext_ok_recipient_not_reserved
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    ¬ originalOwner.isReserved := by
+  obtain ⟨_, _, clientTcb, _, _, s2, _, _, _, _, _, _, _, _, hL1, _, _, _⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  exact lookupTcb_some_not_reserved s2 originalOwner clientTcb hL1
+
+/-- **`v0.35.185`**: a successful pop's recipient is not its holder.
+
+One thread has one binding, and the pop's own guard refuses a recipient that
+holds any (`_ok_recipient_unbound`) — so a holder whose binding is *not*
+`.unbound` cannot also be the recipient.  `hNotUnbound` is what every caller has:
+the pop is reached through the `.donated` arm of a binding match.
+
+Extracted at `v0.35.185` from the Z4-O preservation proof that first needed it,
+because the destroy path's own `.donated` arm needs the same distinctness to read
+the pop's per-thread characterisation, and a second copy of a four-line argument
+is the duplication this project treats as debt. -/
+theorem returnDonatedSchedContext_ok_recipient_ne_server
+    (st st' : SystemState) (serverTid : SeLe4n.ThreadId)
+    (scId : SeLe4n.SchedContextId) (originalOwner : SeLe4n.ThreadId)
+    (newOwner? : Option SeLe4n.ThreadId) (serverTcb : TCB)
+    (hServer : st.getTcb? serverTid = some serverTcb)
+    (hNotUnbound : serverTcb.schedContextBinding ≠ SchedContextBinding.unbound)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    originalOwner ≠ serverTid := by
+  intro hEq
+  have hNotResOwn : ¬ originalOwner.isReserved :=
+    returnDonatedSchedContext_ok_recipient_not_reserved st st' serverTid scId originalOwner
+      newOwner? h
+  have hLk : lookupTcb st originalOwner = some serverTcb := by
+    unfold lookupTcb
+    rw [if_neg hNotResOwn, hEq]
+    exact hServer
+  exact hNotUnbound (returnDonatedSchedContext_ok_recipient_unbound st st' serverTid scId
+    originalOwner newOwner? h serverTcb hLk)
 
 /-- **WS-HP HP4.6 (the refusal): the pop declines a recipient that already holds a
 binding**, committing nothing.  The direction that says the guard fires, stated
@@ -6866,6 +7571,76 @@ theorem returnDonatedSchedContext_objects_forward_of_kind
       exact absurd (by rw [← Option.some.inj h3]; exact trivial) hKind
     · rw [storeObject_objects_ne s3 s4 serverTid.toObjId oid _ hk hInv3 hS4]; exact h3
   rw [hEq]; exact h4
+
+/-- WS-RR RR8.16 (`v0.35.199`): **the donation return is a `kindPreservingWrite`.**
+
+Its whole store chain, composed: a SchedContext for a SchedContext, the head
+pop's Reply-for-Reply, and two TCBs for two TCBs.  Register row 85's two bundle
+frames consume exactly this, so the reply chain's lift is a `.trans` rather than
+a fresh pointwise argument -- and the `.trans` is the content, since a key the
+first store rewrote and a later one left alone is still a same-kind
+replacement. -/
+theorem returnDonatedSchedContext_kindPreservingWrite
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (hObjInv : st.objects.invExt)
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    kindPreservingWrite st st' := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    hSc, _, _, _hHead, hS1, hClear, hL1, hS3, hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  -- Step 1: the SchedContext rewrite.
+  have hW1 : kindPreservingWrite st s1 :=
+    storeObject_kindPreservingWrite hObjInv hS1 hSc rfl (by simp [KernelObject.objectType])
+  have hInv1 := storeObject_preserves_objects_invExt st s1 _ _ hObjInv hS1
+  -- Step 2: the head pop, a Reply for a Reply.
+  have hW2 : kindPreservingWrite s1 s2 := storeDonationHeadPop_kindPreservingWrite hInv1 hClear
+  have hInv2 := storeDonationHeadPop_preserves_objects_invExt hInv1 hClear
+  -- Step 3: the recipient's TCB.
+  have hPre3 : s2.objects[originalOwner.toObjId]? = some (.tcb clientTcb) :=
+    lookupTcb_some_objects s2 originalOwner clientTcb hL1
+  have hW3 : kindPreservingWrite s2 s3 :=
+    storeObject_kindPreservingWrite hInv2 hS3 hPre3 rfl (by simp [KernelObject.objectType])
+  have hInv3 := storeObject_preserves_objects_invExt s2 s3 _ _ hInv2 hS3
+  -- Step 4: the holder's TCB.
+  have hPre4 : s3.objects[serverTid.toObjId]? = some (.tcb serverTcb) :=
+    lookupTcb_some_objects s3 serverTid serverTcb hL2
+  have hW4 : kindPreservingWrite s3 s4 :=
+    storeObject_kindPreservingWrite hInv3 hS4 hPre4 rfl (by simp [KernelObject.objectType])
+  -- The `scThreadIndex` rewrite that closes the chain touches no object.
+  have hLast : kindPreservingWrite s4 st' :=
+    kindPreservingWrite.of_objects_eq (by rw [hEq])
+  exact ((((hW1.trans hW2).trans hW3).trans hW4).trans hLast)
+
+/-- WS-RR RR8.16 (`v0.35.199`): the donation return writes no CDT table.
+
+Read off its own store chain, beside the transition, rather than from
+`CrossSubsystem.lean`'s `returnDonatedSchedContext_preservesFieldsOutside`: that
+module is downstream of every capability-side asker, so the bundle frame could
+not reach it.  The two are the same fact at different strengths, and this is the
+one the capability lift consumes. -/
+theorem returnDonatedSchedContext_cdt_eq
+    {st st' : SystemState} {serverTid : SeLe4n.ThreadId}
+    {scId : SeLe4n.SchedContextId} {originalOwner : SeLe4n.ThreadId}
+    {newOwner? : Option SeLe4n.ThreadId}
+    (h : returnDonatedSchedContext st serverTid scId originalOwner newOwner? = .ok st') :
+    st'.cdt = st.cdt ∧ st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨sc, head?, clientTcb, serverTcb, s1, s2, s3, s4,
+    _hSc, _, _, _hHead, hS1, hClear, _hL1, hS3, _hL2, hS4, hEq⟩ :=
+    returnDonatedSchedContext_ok_storeChain st st' serverTid scId originalOwner newOwner? h
+  have e1 := storeObject_cdt_eq st s1 _ _ hS1
+  have e1' := storeObject_cdtNodeSlot_eq st s1 _ _ hS1
+  have e2 := storeDonationHeadPop_cdt_eq hClear
+  have e3 := storeObject_cdt_eq s2 s3 _ _ hS3
+  have e3' := storeObject_cdtNodeSlot_eq s2 s3 _ _ hS3
+  have e4 := storeObject_cdt_eq s3 s4 _ _ hS4
+  have e4' := storeObject_cdtNodeSlot_eq s3 s4 _ _ hS4
+  refine ⟨?_, ?_⟩
+  · rw [hEq]; simp only
+    rw [e4, e3, e2.1, e1]
+  · rw [hEq]; simp only
+    rw [e4', e3', e2.2, e1']
 
 /-- WS-OD OD3.2: the donation return preserves the object store's extended
 invariant.  Relocated off the store chain, where it was a fifth copy of the

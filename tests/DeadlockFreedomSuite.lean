@@ -877,9 +877,10 @@ private def runNewlyBoundedFootprintChecks : IO Unit := do
   -- **WS-HP HP10.8 correction.**  HP10.6 gave the reason as "HP10.4 records an
   -- origin on every first push, so a depth-1 donating reply resolves this member
   -- to `some`", and HP10.7's second guard made that false: the footprint resolves
-  -- on the syscall's PRE-state, where the answered caller is `.blockedOnReply` --
-  -- it is waiting on this very reply -- so `donationOriginRebindable` refuses it
-  -- and the member is `none` there.  The equality below is therefore a statement
+  -- on the syscall's PRE-state, where the answered caller is waiting on this very
+  -- reply -- its frame HEADS the context, so it is on a live stack and
+  -- `donationOriginRebindable` (the bind's own admissibility since `v0.35.157`)
+  -- refuses it, and the member is `none` there.  The equality below is therefore a statement
   -- about the ARGUMENT value, not about a reachable resolution, and it is still
   -- the one the arithmetic needs.
   assertBool "…and at depth 1 the origin IS the answered caller, so it merges"

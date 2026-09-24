@@ -33,8 +33,9 @@ Decomposed into:
   `Operations -> Donation -> Transport -> Core -> Operations` cycle.
 
 The transport-dependent donation wrappers
-(`endpointCallWithDonation`, `endpointReplyWithDonation`,
-`endpointReplyRecvWithDonation`) remain in
+(`endpointReplyWithDonation`, `endpointReplyRecvWithDonation`; the Call form
+was deleted at `v0.35.192`, superseded by `endpointCallCrossCoreDispatch`)
+remain in
 `SeLe4n.Kernel.IPC.Operations.Donation` and are importable directly from
 consumers that need them; they are NOT re-exported here by design (per
 WS-AN AN3-A; historical record in CHANGELOG.md).

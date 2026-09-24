@@ -1540,21 +1540,30 @@ private def revokeConsumesPendingTransfer : IO Unit := do
           ((stAfter.cdt.childrenOf srcNode).isEmpty)
         assertInvariants s!"revoke-pending: {name} consumed the pending transfer" stAfter
 
-/-- SCN-CAP-REVOKE-SWEPT-SIBLING (PR #873 round 18): a transfer parked against a
-slot the *local* sweep emptied must not install either.
+/-- SCN-CAP-REVOKE-INDEPENDENT-SIBLING (PR #900 review, `v0.36.1`): **revocation
+destroys derivations, not every capability that names the same object.**
 
-`cspaceRevoke` clears every sibling naming the revoked target
-(`revokeTargetLocal` filters them out of the CNode) but stores the swept CNode
-without touching the CDT maps.  So the swept sibling's node kept pointing
-at a slot that no longer holds anything, and the install-time check -- which
-asked only whether the node still *mapped* to a slot -- let the transfer through.
-Nothing could revoke the installed copy afterwards: `cspaceRevokeCdt` on an empty
-slot fails at `cspaceLookupSlot`.
+Two slots in one CNode name the same target, each the root of its own CDT node —
+independent capabilities, neither derived from the other.  Until `v0.36.1` every
+revocation entry point opened with the local `cspaceRevoke`, which matches on the
+**target**: revoking the first slot deleted the second, and stored the swept
+CNode without touching the CDT maps, so the second slot's node went on mapping to
+an empty slot.  That is not revocation — seL4's `cteRevoke` deletes exactly the
+slots `isMDBParentOf` the source (read at `13.0.0`) — and it made the swept
+capability's own derivations unrevocable, since every revocation begins with a
+lookup of its slot and an empty slot refuses it.
 
-The swept sibling is neither the revoked root nor one of its descendants, so the
-in-flight consumption does not reach it -- asserted below, because that is what
-makes this a second hole rather than a restatement of the first. -/
-private def revokeSweptSiblingBlocksPendingTransfer : IO Unit := do
+So this drives the four entry points on that state and asserts what revocation
+must leave alone: the revoked slot itself, the independent sibling, the sibling's
+node (still revocable), and the sibling's in-flight transfer, which lands.  The
+retired reading is computed beside it — the local `cspaceRevoke`, still an
+operation (`lifecycleRevokeDeleteRetype` runs it) — so every assertion is known to
+discriminate: it sweeps the sibling and strands the node.  And the install guard
+that closed PR #873 round 18's hole (this scenario was
+`revokeSweptSiblingBlocksPendingTransfer` until `v0.36.1`) is still exercised on
+that retired state: a transfer parked against a node whose slot was emptied does
+not install, whichever writer emptied it. -/
+private def revokeLeavesIndependentSibling : IO Unit := do
   let epId : SeLe4n.ObjId := ⟨3850⟩
   let sender : SeLe4n.ThreadId := ⟨3860⟩
   let receiver : SeLe4n.ThreadId := ⟨3861⟩
@@ -1564,8 +1573,8 @@ private def revokeSweptSiblingBlocksPendingTransfer : IO Unit := do
   let payloadCap : Capability :=
     { target := .object payloadObj, rights := AccessRightSet.ofList [.read], badge := none }
   let grantRights : AccessRightSet := AccessRightSet.ofList [.read, .write, .grant]
-  -- Two slots in ONE CNode naming the SAME target: revoking the first sweeps the
-  -- second, which is the shape the mapping-only check could not see.
+  -- Two slots in ONE CNode naming the SAME target, each the root of its own CDT
+  -- node: independent capabilities, neither derived from the other.
   let revokedSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 5
   let siblingSlot : SeLe4n.Slot := SeLe4n.Slot.ofNat 6
   let recvSlot0 : SeLe4n.Slot := SeLe4n.Slot.ofNat 0
@@ -1607,36 +1616,58 @@ private def revokeSweptSiblingBlocksPendingTransfer : IO Unit := do
   let (stControl, _) :=
     SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
       recvSlot0 bootCoreId stParked
-  expect "swept-sibling: control — the sibling-sourced transfer installs when nothing revokes"
+  expect "independent-sibling: control — the sibling-sourced transfer installs when nothing revokes"
     (slotFilled stControl receiverCNode recvSlot0)
 
-  match SeLe4n.Kernel.cspaceRevokeCdt revokedAddr stParked with
+  expect "independent-sibling: all four revocation entry points are exercised"
+    (revocationEntryPoints.length == 4)
+
+  -- THE FIX, at every entry point: nothing that was not derived is destroyed.
+  for (name, revoke) in revocationEntryPoints do
+    match revoke revokedAddr stParked with
+    | .error e =>
+        expect s!"independent-sibling: {name} must not fail ({reprStr e})" false
+    | .ok ((), stRevoked) =>
+        expect s!"independent-sibling: {name} leaves the revoked slot itself"
+          (slotFilled stRevoked senderCNode revokedSlot)
+        expect s!"independent-sibling: {name} leaves the independent sibling"
+          (slotFilled stRevoked senderCNode siblingSlot)
+        expect s!"independent-sibling: {name} leaves the sibling's node revocable"
+          (SeLe4n.Kernel.cdtNodeIsRevocable stRevoked siblingNode)
+        expect s!"independent-sibling: {name} does not consume the sibling's in-flight transfer"
+          ((stRevoked.getTcb? sender).any (fun t =>
+            match t.pendingMessage with
+            | some m => m.caps.any (fun tc => tc.srcNode == siblingNode)
+            | none => false))
+        let (stAfter, _) :=
+          SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
+            recvSlot0 bootCoreId stRevoked
+        expect s!"independent-sibling: the sibling-sourced transfer still lands after {name}"
+          (slotFilled stAfter receiverCNode recvSlot0)
+        expect s!"independent-sibling: and hangs a child edge under the sibling's node after {name}"
+          (!(stAfter.cdt.childrenOf siblingNode).isEmpty)
+        assertInvariants s!"independent-sibling: {name} revoked nothing it did not derive" stAfter
+
+  -- THE RETIRED READING, computed beside it: the local same-target sweep.
+  match SeLe4n.Kernel.cspaceRevoke revokedAddr stParked with
   | .error e =>
-      expect s!"swept-sibling: the revoke must not fail ({reprStr e})" false
-  | .ok ((), stRevoked) =>
-      expect "swept-sibling: the local sweep emptied the sibling slot"
-        (!(slotFilled stRevoked senderCNode siblingSlot))
-      -- The two load-bearing negatives.  The mapping survives the sweep, so the
-      -- old check would have passed; and the sibling is outside the revoked
-      -- subtree, so the in-flight consumption did not reach it.
-      expect "swept-sibling: NEGATIVE — the CDT mapping outlived the capability"
-        ((SystemState.lookupCdtSlotOfNode stRevoked siblingNode).isSome)
-      expect "swept-sibling: NEGATIVE — the consumption sweep did not reach it"
-        ((stRevoked.getTcb? sender).any (fun t =>
-          match t.pendingMessage with
-          | some m => m.caps.any (fun tc => tc.srcNode == siblingNode)
-          | none => false))
-      -- And the install declines anyway, because the mapped slot is empty.
-      expect "swept-sibling: the node is no longer revocable"
-        (!(SeLe4n.Kernel.cdtNodeIsRevocable stRevoked siblingNode))
+      expect s!"independent-sibling: the local sweep runs on this state ({reprStr e})" false
+  | .ok ((), stSwept) =>
+      expect "independent-sibling: RETIRED — the local sweep emptied the independent sibling"
+        (!(slotFilled stSwept senderCNode siblingSlot))
+      expect "independent-sibling: RETIRED — and left its node mapped to the empty slot"
+        ((SystemState.lookupCdtSlotOfNode stSwept siblingNode).isSome)
+      expect "independent-sibling: RETIRED — so no revocation can enter that node any more"
+        (!(SeLe4n.Kernel.cdtNodeIsRevocable stSwept siblingNode))
+      -- The install guard is still load-bearing on that state, whoever emptied the slot.
       let (stAfter, _) :=
         SeLe4n.Kernel.endpointReceiveDualWithCapsOnCore epId receiver none receiverCNode
-          recvSlot0 bootCoreId stRevoked
-      expect "swept-sibling: no capability arrives after the sweep"
+          recvSlot0 bootCoreId stSwept
+      expect "independent-sibling: the install guard declines a transfer whose source slot was emptied"
         (!(slotFilled stAfter receiverCNode recvSlot0))
-      expect "swept-sibling: and no child edge appears under the swept node"
+      expect "independent-sibling: and hangs no child edge under the stranded node"
         ((stAfter.cdt.childrenOf siblingNode).isEmpty)
-      assertInvariants "swept-sibling: the swept source declined the install" stAfter
+      assertInvariants "independent-sibling: the emptied source declined the install" stAfter
 
 /-- SCN-IPC-CAP-TRANSFER-GRANT-STAMPED (PR #873 round 13): the endpoint's grant
 right decides, whatever the message arrived carrying.
@@ -3257,7 +3288,7 @@ private def runOperationChainSuite : IO Unit := do
   receiveWithoutSenderInstallsNothing
   receiveRefusesMessagelessParkedSender
   revokeConsumesPendingTransfer
-  revokeSweptSiblingBlocksPendingTransfer
+  revokeLeavesIndependentSibling
   endpointGrantDecidesBothOrderings
   chain13IpcCapTransferNoGrant
   chain14IpcBadgeAndCapTransfer

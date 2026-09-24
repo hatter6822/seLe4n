@@ -75,15 +75,6 @@ theorem recordPendingFault_preserves_ipcInvariantFull
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- WS-RR RR4.17: `recordPendingFault` preserves the object-store invariant —
-one `insert` of a well-typed TCB. -/
-theorem recordPendingFault_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (tf : ThreadFault)
-    (hObjInv : st.objects.invExt) :
-    (recordPendingFault st tid tf).objects.invExt := by
-  unfold recordPendingFault
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.9/RR4.17: the deschedule half of the fail-closed dispositions
 preserves the bundle.
 
@@ -154,14 +145,6 @@ theorem faultSuspendOnCore_preserves_ipcInvariantFull_of_ready
   faultSuspendOnCore_preserves_ipcInvariantFull st tid c hObjInv
     (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
 
-/-- WS-RR RR4.9: and it preserves the object-store invariant. -/
-theorem faultSuspendOnCore_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt) :
-    (faultSuspendOnCore st tid c).objects.invExt := by
-  unfold faultSuspendOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.18: the reply-declined disposition preserves the bundle — it
 adds only the `pendingFault` clear to the suspend's writes, and that field is
 read by no conjunct either. -/
@@ -197,14 +180,6 @@ theorem faultAbandonOnCore_preserves_ipcInvariantFull_of_ready
   faultAbandonOnCore_preserves_ipcInvariantFull st tid c hObjInv
     (fun tcb hTcb => Or.inr (Or.inl (hReady tcb hTcb))) hInv
 
-/-- WS-RR RR4.18: and it preserves the object-store invariant. -/
-theorem faultAbandonOnCore_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (c : CoreId)
-    (hObjInv : st.objects.invExt) :
-    (faultAbandonOnCore st tid c).objects.invExt := by
-  unfold faultAbandonOnCore
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
-
 /-- WS-RR RR4.16/RR4.18: **installing a restart frame preserves the bundle.**
 
 The restart writes `registerContext` (the RR4.16 writeback) and clears
@@ -226,91 +201,30 @@ theorem applyFaultRestart_preserves_ipcInvariantFull
         ((SystemState.getTcb?_eq_some_iff st tid tcb).mp hT)
         rfl rfl rfl rfl rfl rfl rfl rfl rfl
 
-/-- WS-RR RR4.16: and it preserves the object-store invariant. -/
-theorem applyFaultRestart_preserves_objects_invExt
-    (st : SystemState) (tid : SeLe4n.ThreadId) (frame : FaultRestartFrame)
-    (hObjInv : st.objects.invExt) :
-    (applyFaultRestart st tid frame).objects.invExt := by
-  unfold applyFaultRestart
-  exact SystemState.updateTcb_preserves_objects_invExt _ _ _ hObjInv
+-- **WS-RR RR8.16 (`v0.35.200`) — RELOCATED**: the four fault-path
+-- `_preserves_objects_invExt` frames (`recordPendingFault`, `applyFaultRestart`,
+-- `faultSuspendOnCore`, `faultAbandonOnCore`) now live beside the operations they
+-- frame, in `IPC/Operations/Fault.lean` and `IPC/CrossCore/Fault.lean`.  Each is
+-- one citation of `SystemState.updateTcb_preserves_objects_invExt` and reads no
+-- staged surface, so keeping them in *this* module — staged for the
+-- `ipcInvariantFull` call-chain surface — put them out of reach of the production
+-- bundle lifts in `IPC/Invariant/FaultBundlePreservation.lean`, which is the
+-- RR2-closure rule (*a theorem that reads no staged surface is production*)
+-- arriving at four frames nobody had asked of it before.
+
+-- **WS-RR RR8.16 (`v0.35.200`) — RELOCATED**: the two chain
+-- `_preserves_objects_invExt` frames now live beside the chains they frame, in
+-- the production `IPC/CrossCore/EndpointCallDispatch.lean` and
+-- `IPC/CrossCore/EndpointReplyDispatchInvariant.lean`.  Same reason as the four
+-- fault-path frames above: neither reads a staged surface, and the production
+-- bundle lifts in `IPC/Invariant/FaultBundlePreservation.lean` must be able to
+-- cite them.
 
 -- ============================================================================
 -- §2 The Call and Reply chains preserve the object-store invariant
 -- ============================================================================
 
-/-- The `.call` chain preserves `objects.invExt` — the rendezvous-plus-transfer
-leg, the donation, and the priority-inheritance walk each do, and the chain is
-their composition. Needed because the fault delivery writes the fault record
-onto the chain's post-state, and that write is an `insert`. -/
-theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (endpointRights : AccessRightSet)
-    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
-      receiverSlotBase executingCore st).1.objects.invExt := by
-  have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
-    endpointRights receiverSlotBase executingCore st hObjInv
-  unfold endpointCallCrossCoreDispatch
-  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
-      receiverSlotBase executingCore st with
-  | mk stW resW =>
-      rw [hWcEq] at hWc
-      simp only at hWc ⊢
-      cases resW with
-      | error e => exact hWc
-      | ok r =>
-          obtain ⟨summaryW, sgiW⟩ := r
-          simp only
-          split
-          · split
-            · split
-              · exact hWc
-              · rename_i stD hDon
-                exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _
-                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc hDon)
-            · exact hWc
-          · exact hWc
 
-/-- The `.reply` chain preserves `objects.invExt` — same shape, over the reply
-delivery, the donation return and the priority-inheritance reversion. -/
-theorem endpointReplyCrossCoreDispatch_preserves_objects_invExt
-    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
-    (st : SystemState) (hObjInv : st.objects.invExt) :
-    (endpointReplyCrossCoreDispatch replier target msg executingCore st).1.objects.invExt := by
-  have hRep := endpointReplyOnCore_preserves_objects_invExt replier target msg executingCore
-    st hObjInv
-  unfold endpointReplyCrossCoreDispatch
-  cases hRepEq : endpointReplyOnCore replier target msg executingCore st with
-  | mk st1 res1 =>
-      rw [hRepEq] at hRep
-      simp only at hRep ⊢
-      cases res1 with
-      | error e => exact hObjInv
-      | ok replySgi? =>
-          simp only
-          -- **WS-HP HP4.4**: two more splits than before the trigger flip — the
-          -- answered frame's resolution and the answered caller's validation.
-          split
-          · split
-            · split
-              · exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                  _ _ _ _ hRep
-              · split
-                · exact hObjInv
-                · split
-                  · exact hObjInv
-                  · rename_i st2 hRet
-                    exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
-                      _ _ _ _
-                      (applyReplyDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hRep hRet)
-            · exact hObjInv
-          · exact hObjInv
-
--- ============================================================================
--- §3 RR4.17 — fault delivery preserves the bundle
--- ============================================================================
 
 /-- WS-RR RR4.17 (**the delivery payoff**): `faultDeliverOnCore` preserves
 `ipcInvariantFull`, on both dispositions.
@@ -507,41 +421,77 @@ reason a bare reply's post-state satisfies only
 `ipcInvariantFullExceptDonationOwner` and this one satisfies the full bundle),
 then either the restart writeback or the abandon.
 
-`hTargetIdleAllowed` is a post-reply side condition of exactly the kind the
-`.reply` chain's own theorem already carries as `hServerIdleAllowed`, and it
-is dischargeable for the same reason: the reply wakes its target `.ready`, and
-`.ready` is a `passiveServerIdleAllowed` state. It binds only on the abandon
-arm, where the thread is descheduled — the restart arm writes no scheduler
-slot at all. -/
+**WS-RR RR8.16 (`v0.35.195`): the DONATING fault reply is covered, and until this
+cut it was not.**  The composition ran through
+`endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, whose
+`hNoDonationOwnedBy` says no thread's binding is `.donated _ faulted` — and on the
+ordinary MCS fault path of a thread that holds a reservation that is **false**:
+`faultDeliverOnCore` composes the live `.call` chain, so the delivery donates the
+faulted thread's scheduling context to its handler, and the handler's binding is
+`.donated sc faulted` in exactly the state it replies from.  So the payoff was
+stated over a premise the path it is named for refutes, which is vacuity wearing a
+confinement.  It composes `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull`
+instead — the same five pre-state-computable conditions the live `.reply` arm's
+own dispatch payoff already carries, at `IpcMessage.empty` — and the confinement is
+gone rather than restated.
+
+**WS-RR RR8.16 (`v0.35.195`): the abandon arm's idle-state side condition is
+DERIVED, not carried.**  It used to be a hypothesis (`hTargetIdleAllowed`), a
+post-reply fact about the dispatch's own output, and the docstring said in prose
+why it holds: *the reply wakes its target `.ready`, and `.ready` is a
+`passiveServerIdleAllowed` state*.  A sentence is not a discharge, and the
+hypothesis was consumed on the `.ok` branch alone — so nothing weaker was ever
+being asked for, and
+`endpointReplyCrossCoreDispatch_ok_target_ready` reads the same fact off the
+**outcome**, which is what retires it.  Closing this is what lets the staged
+dispatch payoff's `.reply` arm cover a faulted caller at all: a caller could not
+discharge a post-state hypothesis without threading one, which is what the RR3
+de-threading gate forbids.
+
+The condition binds only on the abandon arm, where the thread is descheduled —
+the restart arm writes no scheduler slot at all. -/
 theorem faultReplyOnCore_preserves_ipcInvariantFull
     (replier faulted : SeLe4n.ThreadId) (mi : MessageInfo)
     (regs : Array SeLe4n.RegValue) (c : CoreId) (st : SystemState)
     (hInv : ipcInvariantFull st)
     (hObjInv : st.objects.invExt)
-    (hNoDonationOwnedBy : ∀ (tid : SeLe4n.ThreadId) (tcb : TCB)
-      (scId : SeLe4n.SchedContextId),
-      st.getTcb? tid = some tcb →
-      tcb.schedContextBinding ≠ .donated scId faulted)
     (hAllBudgetsNone : allTimeoutBudgetsNone st)
-    -- **WS-HP HP4.4**: the head-driven pop is the identity exactly when the
-    -- answered frame heads no scheduling context, which is the other half of
-    -- "this reply returns no donation" -- see
-    -- `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull` for why the
-    -- binding half no longer implies it.
-    (hNoHead : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+    -- **WS-RR RR8.16**: the five conditions
+    -- `endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull` carries, at
+    -- the empty message this seam replies with.  Each is a pre-state-computable
+    -- expression, so the de-threading discipline is respected and a caller
+    -- discharges them before the step.
+    (hDonationReturned : ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1.objects[s.toObjId]?
+            = some (.tcb sTcb) →
+        sTcb.schedContextBinding = .donated sc faulted →
+        ∃ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid ∧
+          replyFrameHeadHolder?
+            (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid = some (sc, s))
+    (hHolderDonation : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      replyFrameHeadHolderDonation
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted)
+    (hHolderIdleAllowed : ∀ (rid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId)
+        (holder : SeLe4n.ThreadId),
+      answeredReplyObject? st faulted = some rid →
       replyFrameHeadHolder?
-        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid = none)
-    (hTargetIdleAllowed : ∀ tcb : TCB,
-      (endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st).1.getTcb? faulted
+          (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid
+            = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore replier faulted IpcMessage.empty c st).1.getTcb? holder
           = some tcb →
-      tcb.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed tcb.ipcState)
+        passiveServerIdleAllowed tcb.ipcState)
     -- **WS-OD OD4.4**: the reply's donation return resolves its new owner from
     -- the context's reply stack; this is the obligation that resolution carries,
     -- stated at the state the pop runs at (the reply leg commits first).
     (hStackValid : ∀ scId serverTid originalOwner,
         replyStackOuterCallerValid
           (endpointReplyOnCore replier faulted IpcMessage.empty c st).1
-          scId serverTid originalOwner) :
+          scId serverTid originalOwner)
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, at the same
+    -- state and quantified over the answered frame like the trigger's own fields.
+    (hOriginCoherent : ∀ rid : SeLe4n.ReplyId, answeredReplyObject? st faulted = some rid →
+      redirectedOriginFrameCoherent
+        (endpointReplyOnCore replier faulted IpcMessage.empty c st).1 rid faulted) :
     ipcInvariantFull (faultReplyOnCore replier faulted mi regs c st).1 := by
   cases hTcb : st.getTcb? faulted with
   | none => simpa only [faultReplyOnCore, hTcb] using hInv
@@ -549,20 +499,29 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
       cases hFault : tcb.pendingFault with
       | none => simpa only [faultReplyOnCore, hTcb, hFault] using hInv
       | some tf =>
-          have hRep := endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull replier
-            faulted IpcMessage.empty c st hInv hObjInv
-            (fun t tcb' sc hS => hNoDonationOwnedBy t tcb' sc
-              ((SystemState.getTcb?_eq_some_iff st t tcb').mpr hS))
-            hAllBudgetsNone hNoHead hStackValid
+          have hRep := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull replier
+            faulted IpcMessage.empty c st hInv hObjInv hDonationReturned hHolderDonation
+            hAllBudgetsNone hHolderIdleAllowed hStackValid hOriginCoherent
           have hRepObj := endpointReplyCrossCoreDispatch_preserves_objects_invExt replier
             faulted IpcMessage.empty c st hObjInv
           rcases hStep : endpointReplyCrossCoreDispatch replier faulted IpcMessage.empty c st
             with ⟨stR, res⟩
-          rw [hStep] at hRep hRepObj hTargetIdleAllowed
-          simp only at hRep hRepObj hTargetIdleAllowed
+          rw [hStep] at hRep hRepObj
+          simp only at hRep hRepObj
           cases res with
           | error e => simpa only [faultReplyOnCore, hTcb, hFault, hStep] using hInv
           | ok sgi? =>
+              -- **WS-RR RR8.16**: the abandon arm's idle-state obligation, read
+              -- off the dispatch's own `.ok` outcome rather than carried.
+              have hAbandonIdleAllowed : ∀ u : TCB, stR.getTcb? faulted = some u →
+                  u.schedContextBinding ≠ .unbound ∨ passiveServerIdleAllowed u.ipcState := by
+                intro u hU
+                refine Or.inr ?_
+                have hReady : u.ipcState = .ready :=
+                  endpointReplyCrossCoreDispatch_ok_target_ready replier faulted
+                    IpcMessage.empty c st hObjInv (by rw [hStep]) (by rw [hStep]; exact hU)
+                rw [hReady]
+                exact Or.inl rfl
               simp only [faultReplyOnCore, hTcb, hFault, hStep, faultReplyApplyOnCore]
               cases hOut : decodeFaultReply tf.fault tf.context mi regs with
               | restart frame =>
@@ -571,7 +530,7 @@ theorem faultReplyOnCore_preserves_ipcInvariantFull
               | abandon =>
                   simpa only [hOut] using
                     faultAbandonOnCore_preserves_ipcInvariantFull stR faulted
-                      (determineTargetCore stR faulted) hRepObj hTargetIdleAllowed hRep
+                      (determineTargetCore stR faulted) hRepObj hAbandonIdleAllowed hRep
 
 /-- WS-RR RR4.18: and the reply preserves the object-store invariant. -/
 theorem faultReplyOnCore_preserves_objects_invExt

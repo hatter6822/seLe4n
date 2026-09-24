@@ -1763,10 +1763,12 @@ theorem restoreToReadyStaging_tcb_lookup
     rw [SystemState.updateTcb_eq_of_some hT]
     cases frame with
     | none =>
-        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+          st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
     | some f =>
-        exact insert_tcb_rewrite_lookup st.objects tid.toObjId k t _ t0 hInv
+        exact insert_tcb_rewrite_lookup (motive := fun a b => a.cpuAffinity = b.cpuAffinity)
+          st.objects tid.toObjId k t _ t0 (fun _ => rfl) hInv
           ((SystemState.getTcb?_eq_some_iff st tid t).mp hT) rfl hPre
 
 theorem restoreToReady_tcb_lookup

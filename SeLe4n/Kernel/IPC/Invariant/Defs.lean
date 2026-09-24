@@ -250,6 +250,24 @@ theorem queuePPrevAgreesWithPrev_of_frame {st st' : SystemState}
   obtain ⟨tcb, hTcb, hPrev, hPPrev⟩ := hFrame tid tcb' hTcb'
   exact TCB.queuePPrevAgreesWithPrev_of_pairEq hPrev hPPrev (h tid tcb hTcb)
 
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the conjunct, read at one thread through the
+kernel's own typed lookup.
+
+Every consumer that holds the store-level conjunct and wants the pairing at a
+*particular* thread has resolved that thread through `lookupTcb`, not through a
+raw store read — so without this accessor each one would re-open the
+`getTcb?` / `objects[…]?` bridge itself, which is the raw-read hygiene the AK7
+census exists to keep out of consumers.  Stated here, beside the conjunct,
+because that is the question's owner. -/
+theorem queuePPrevAgreesWithPrev_lookupTcb {st : SystemState}
+    (h : queuePPrevAgreesWithPrev st) {tid : SeLe4n.ThreadId} {t : TCB}
+    (hLk : lookupTcb st tid = some t) : t.queuePPrevAgreesWithPrev := by
+  refine h tid t ?_
+  unfold lookupTcb at hLk
+  split at hLk
+  · exact absurd hLk (by simp)
+  · exact (SystemState.getTcb?_eq_some_iff st tid t).mp hLk
+
 /-- Transitive closure of the queueNext relation: a path a →⁺ b exists in the
 system state when there is a chain of TCBs whose queueNext fields connect a to b. -/
 inductive QueueNextPath (st : SystemState) : SeLe4n.ThreadId → SeLe4n.ThreadId → Prop
@@ -875,6 +893,50 @@ def allPendingMessagesBounded (st : SystemState) : Prop :=
     st.objects[tid.toObjId]? = some (.tcb tcb) →
     tcb.pendingMessage = some msg →
     msg.bounded
+
+/-- **WS-RR RR8.16 (`v0.35.190`): what the bundle reads of a pending message.**
+
+`donationReadAgreement` demanded pending-message *equality* from the day it was
+written, because every transition it covered wrote none.  Only two conjuncts of
+`ipcInvariantFull` read the field at all — `blockedThreadsPendingMessageConsistent`
+asks whether one is present, and `allPendingMessagesBounded` asks whether it is
+within the payload bounds — so equality was strictly more than the agreement
+transports, and the one transition that drops capabilities from a message in
+flight (`revokePendingTransfersFrom`, the tail of every CDT revocation) could not
+be given an agreement at all.
+
+Stated in the direction the transports use it: `mx` is the post-state reading and
+`my` the pre-state one, so a *shrinking* rewrite qualifies and a growing one does
+not.  Equality gives it outright (`pendingMessageReadAgrees_of_eq`), so every
+existing producer is unchanged. -/
+def pendingMessageReadAgrees (mx my : Option IpcMessage) : Prop :=
+  mx.isSome = my.isSome ∧
+  ∀ m m', mx = some m → my = some m' → m'.bounded → m.bounded
+
+/-- Equality is agreement — the shape every pre-`v0.35.190` producer supplies. -/
+theorem pendingMessageReadAgrees_of_eq {mx my : Option IpcMessage} (h : mx = my) :
+    pendingMessageReadAgrees mx my := by
+  subst h
+  refine ⟨rfl, fun m m' hm hm' hb => ?_⟩
+  rw [hm] at hm'
+  exact (Option.some.inj hm').symm ▸ hb
+
+/-- Reflexivity. -/
+@[simp] theorem pendingMessageReadAgrees_refl (m : Option IpcMessage) :
+    pendingMessageReadAgrees m m := pendingMessageReadAgrees_of_eq rfl
+
+/-- Transitivity — what `donationReadAgreement.trans` composes. -/
+theorem pendingMessageReadAgrees_trans {ma mb mc : Option IpcMessage}
+    (h1 : pendingMessageReadAgrees ma mb) (h2 : pendingMessageReadAgrees mb mc) :
+    pendingMessageReadAgrees ma mc := by
+  refine ⟨h1.1.trans h2.1, fun m m'' hm hm'' hb => ?_⟩
+  cases hb' : mb with
+  | none =>
+      have hFalse : (none : Option IpcMessage).isSome = (some m'').isSome := by
+        rw [← hb', h2.1, hm'']
+      simp at hFalse
+  | some m' =>
+      exact h1.2 m m' hm hb' (h2.2 m' m'' hb' hm'' hb)
 
 /-- WS-RR RR3.11: **every in-flight message satisfies `P`** — the shape shared by
 every property of messages parked in a TCB's `pendingMessage`.
@@ -1580,28 +1642,13 @@ theorem storeObject_preserves_ipcInvariant_of_ne_notification
     exact absurd (Option.some.inj hObj) (hNotNtfn ntfn)
   · exact hInv oid ntfn (by rwa [storeObject_objects_ne st st' id oid obj hNe hObjInv hStore] at hObj)
 
-open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves `objects.invExt` — its two
-stores (`linkReply` at `rid.toObjId`, the caller-TCB `replyObject` write) each
-preserve the object-store extensional invariant. -/
-theorem linkCallerReply_preserves_objects_invExt (st st' : SystemState)
-    (caller : SeLe4n.ThreadId) (rid : SeLe4n.ReplyId) (hObjInv : st.objects.invExt)
-    (hStep : linkCallerReply caller rid st = .ok ((), st')) :
-    st'.objects.invExt := by
-  unfold linkCallerReply at hStep
-  cases hLink : linkReply rid caller st with
-  | error e => simp [hLink] at hStep
-  | ok p1 =>
-    obtain ⟨_, st1⟩ := p1
-    simp only [hLink] at hStep
-    have hObjInv1 := linkReply_preserves_objects_invExt st st1 rid caller hObjInv hLink
-    cases hT : st1.getTcb? caller with
-    | none => simp [hT] at hStep
-    | some tcb =>
-      simp only [hT] at hStep
-      split at hStep
-      · exact storeObject_preserves_objects_invExt st1 st' caller.toObjId _ hObjInv1 hStep
-      · simp at hStep
+-- **WS-RR RR8.16 (`v0.35.200`)**: `linkCallerReply_preserves_objects_invExt`
+-- moved to `Model/State.lean`, beside the primitive it frames.  It is built from
+-- `linkReply_preserves_objects_invExt` and `storeObject_preserves_objects_invExt`
+-- and mentions nothing of this layer, and `linkCallerReply_kindPreservingWrite`
+-- -- which lives at the model, where the relation does -- needs it: *when a
+-- question has one owner and an asker that cannot see it, the owner is in the
+-- wrong layer.*  Consumers here read it unchanged; the name did not move.
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.1 fold): `linkCallerReply` preserves the notification
@@ -1701,31 +1748,9 @@ theorem linkCallerReply_machine_eq (st st' : SystemState)
       · simp at hStep
 
 open SeLe4n.Model.SystemState in
-/-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `objects.invExt` —
-it composes `linkCallerReply` (which preserves it) with a single `pendingReceiveReply`
-TCB store (which preserves it). -/
-theorem linkServerStashedReply_preserves_objects_invExt (st st' : SystemState)
-    (caller server : SeLe4n.ThreadId) (hObjInv : st.objects.invExt)
-    (hStep : linkServerStashedReply caller server st = .ok ((), st')) :
-    st'.objects.invExt := by
-  unfold linkServerStashedReply at hStep
-  cases hStash : (st.getTcb? server).bind (·.pendingReceiveReply) with
-  | none => simp [hStash] at hStep
-  | some rid =>
-    simp only [hStash] at hStep
-    cases hLink : linkCallerReply caller rid st with
-    | error e => simp [hLink] at hStep
-    | ok p1 =>
-      obtain ⟨_, st1⟩ := p1
-      simp only [hLink] at hStep
-      have hObjInv1 := linkCallerReply_preserves_objects_invExt st st1 caller rid hObjInv hLink
-      cases hT : st1.getTcb? server with
-      | none =>
-        simp only [hT, Except.ok.injEq, Prod.mk.injEq] at hStep
-        obtain ⟨_, hEq⟩ := hStep; subst hEq; exact hObjInv1
-      | some sTcb =>
-        simp only [hT] at hStep
-        exact storeObject_preserves_objects_invExt st1 st' server.toObjId _ hObjInv1 hStep
+-- **WS-RR RR8.16 (`v0.35.200`)**: `linkServerStashedReply_preserves_objects_invExt`
+-- moved to `Model/State.lean` with its `linkCallerReply` sibling, and for the
+-- same reason.  Consumers here read it unchanged.
 
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D (#7.3 fold): `linkServerStashedReply` preserves `ipcInvariant` — both
@@ -4928,41 +4953,14 @@ theorem donationBudgetTransfer_of_no_shared
 -- IPC de-threading D6: SchedContext-binding frame for `donationBudgetTransfer`
 -- ============================================================================
 
-/-- IPC de-threading D6: two states have **the same SchedContext bindings** when every
-post-state TCB slot pulls back to a pre-state TCB carrying an equal `schedContextBinding`.
-This is the exact frame `donationBudgetTransfer` (which reads only `schedContextBinding`)
-needs: it is preserved by every core IPC transition that never writes a binding (all but
-the donation primitives `donateSchedContext` / `returnDonatedSchedContext`).  Stated
-backward (post ⟹ pre) so it composes directly with the store-frame style used throughout
-the de-threading proofs. -/
-def sameSchedContextBindings (st st' : SystemState) : Prop :=
-  ∀ (tid : SeLe4n.ThreadId) (tcb' : TCB),
-    st'.objects[tid.toObjId]? = some (.tcb tcb') →
-    ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧
-      tcb.schedContextBinding = tcb'.schedContextBinding
-
-namespace sameSchedContextBindings
-
-/-- Reflexivity: a state has the same bindings as itself. -/
-theorem refl (st : SystemState) : sameSchedContextBindings st st :=
-  fun _ tcb' h => ⟨tcb', h, rfl⟩
-
-/-- Transitivity: chain two binding-preserving steps. -/
-theorem trans {st st' st'' : SystemState}
-    (h1 : sameSchedContextBindings st st') (h2 : sameSchedContextBindings st' st'') :
-    sameSchedContextBindings st st'' := by
-  intro tid tcb'' hObj''
-  obtain ⟨tc', hObj', hEq'⟩ := h2 tid tcb'' hObj''
-  obtain ⟨tc, hObj, hEq⟩ := h1 tid tc' hObj'
-  exact ⟨tc, hObj, hEq.trans hEq'⟩
-
-/-- A transition that leaves the object store untouched (a scheduler-only step such
-as `removeRunnable` / `ensureRunnable`) preserves all bindings. -/
-theorem of_objects_eq {st st' : SystemState} (h : st'.objects = st.objects) :
-    sameSchedContextBindings st st' :=
-  fun _ tcb' hObj => ⟨tcb', h ▸ hObj, rfl⟩
-
-end sameSchedContextBindings
+-- `sameSchedContextBindings` and its `refl` / `trans` / `of_objects_eq` were declared
+-- here from IPC de-threading D6 until WS-RR RR8.12 Cut C1 (`v0.35.160`), which moved
+-- them to `IPC/Operations/Endpoint.lean`, beside the two primitives that write the
+-- field they frame: `IPC/Operations/Donation.lean` needs the frame at the resolver
+-- `callDonationSchedContext?` and could not import this module (register row 55).
+-- The namespace is unchanged, so every citation resolves as before; the two
+-- invariant consumers below stay here because they read `donationBudgetTransfer`
+-- and `donationOwnerUnique`, which the operations layer does not know.
 
 /-- IPC de-threading D6: `donationBudgetTransfer` transfers across any transition that
 preserves every TCB's `schedContextBinding`.  The frame reads the two witness TCBs'
@@ -4977,6 +4975,25 @@ theorem donationBudgetTransfer_of_sameSchedContextBindings
   obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
   obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
   exact hDBT tid1 tid2 tc1 tc2 scId hP1 hP2 hNe
+    (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
+
+/-- **WS-RR RR8.16 (`v0.35.190`): `donationChainAcyclic` is a binding fact too.**
+
+Its two siblings above — `donationBudgetTransfer` and `donationOwnerUnique` —
+have carried across a binding frame since IPC de-threading D6, and this one, whose
+whole statement is a pair of `.donated` bindings, did not: every caller unfolded
+the definition and pulled both bindings back by hand.  *Keep the tables
+symmetric*; the revocation family's in-flight sweep is the first transition to
+need all three at once. -/
+theorem donationChainAcyclic_of_sameSchedContextBindings
+    {st st' : SystemState}
+    (hSame : sameSchedContextBindings st st')
+    (hInv : donationChainAcyclic st) :
+    donationChainAcyclic st' := by
+  intro tid1 tid2 tcb1 tcb2 scId1 scId2 h1 h2 hB1 hB2
+  obtain ⟨tc1, hP1, hEq1⟩ := hSame tid1 tcb1 h1
+  obtain ⟨tc2, hP2, hEq2⟩ := hSame tid2 tcb2 h2
+  exact hInv tid1 tid2 tc1 tc2 scId1 scId2 hP1 hP2
     (by rw [hEq1]; exact hB1) (by rw [hEq2]; exact hB2)
 
 /-- IPC de-threading D6 (`donationOwnerUnique`): every binding-frame transition preserves
@@ -5124,33 +5141,183 @@ theorem donationOwnerValidExcept_of_donationOwnerValid
   obtain ⟨hSc, ownerTcb, hOwner, hUnbound, hReply⟩ := h tid tcb scId owner hTcb hBind
   exact ⟨hSc, ownerTcb, hOwner, hUnbound, Or.inr hReply⟩
 
-/-- **WS-HP HP10.7: a rebindable origin is named as owner by no live donation.**
+/-- **WS-HP HP5.2 / `v0.35.157`: the donation a thread owns is the one its own reply
+frame heads** — binding → head, the local coherence fact both the cancellation
+reclaim and the reply pop's origin redirect consume.
+
+Stated over the reply path's own resolver (`answeredFrameHeadContext?`: the thread's
+`replyObject`, then `replyFrameHeadHolder?` of that frame), because it lives here
+upstream of both askers.  The cancellation form — the reclaim's trigger
+`Lifecycle.Suspend.cancelledCallerDonation?` answering the same pair — is the
+corollary `donatedContextIsOwnerFrameHead_cancelledCallerDonation?` in
+`Lifecycle/Invariant/CancellationReplyShape.lean`, where the fact was first stated at
+WS-HP HP5.2 (`v0.35.39`) and where HP5.1's bridge ties the two resolvers together.
+It moved here at `v0.35.157` because the reply path became its second asker and
+could not see it: *when a question has one owner and an asker that cannot see it,
+the owner is in the wrong layer.*
+
+**Why it is stated and not derived.**  `donationOwnerValid` relates a donation's
+owner to no reply object and `donationChainWellFormed` carries no binding clause
+(see its docstring's *what is deliberately absent*), so nothing in the bundle says
+the owner's frame heads the context.  It is true on the seL4-MCS path because
+`donateSchedContext` mints the `.donated` binding and pushes the donor's own
+`replyObject` as that context's stack head in **one** step, and every later writer
+of either — the pop, the splice, the cancellation reclaim — keeps them together.
+The one window in which it fails is the reply leg's, at the thread the reply just
+woke (its frame consumed while the holder's binding still names it), which is why
+the reply path states it gated away from that thread
+(`redirectedOriginFrameCoherent`).  Registered in `docs/REGISTERED_DEBT.md`
+table C beside `replyFrameHeadHolderDonation`, its head → binding sibling.
+
+**What it buys since `v0.35.157`.**  The pop's origin redirect is guarded by the
+bind's own admissibility, `¬ replyFrameOnLiveStack` at the origin, and this fact
+is what makes that guard *sound*: a live binding's owner has its frame heading the
+context (this fact), a frame heading a context is on a live stack
+(`replyFrameOnLiveStack_of_head`), so a thread the guard admits is named by no
+live binding (`donationOriginRebindable_no_owner`) and the pop's write cannot
+falsify `donationOwnerValid`'s owner clause. -/
+def donatedContextIsOwnerFrameHead (st : SystemState) (owner : SeLe4n.ThreadId) : Prop :=
+  ∀ ownerTcb, lookupTcb st owner = some ownerTcb →
+    ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding = .donated scId owner →
+        answeredFrameHeadContext? st owner = some (scId, holder) ∧
+        lookupTcb st holder = some holderTcb
+
+/-- **WS-HP HP5.2**: vacuous on a state that cannot resolve the owner -- the
+discharge a cancellation of a reserved or absent thread takes. -/
+theorem donatedContextIsOwnerFrameHead_of_no_owner (st : SystemState)
+    (owner : SeLe4n.ThreadId) (h : lookupTcb st owner = none) :
+    donatedContextIsOwnerFrameHead st owner := by
+  intro _ hLk
+  rw [h] at hLk
+  cases hLk
+
+/-- **WS-HP HP5.2**: and vacuous wherever nothing is donated by the owner -- every
+state outside the passive-server pattern, which is the discharge every
+cancellation with no donation to reclaim takes. -/
+theorem donatedContextIsOwnerFrameHead_of_no_donation (st : SystemState)
+    (owner : SeLe4n.ThreadId)
+    (hNone : ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding ≠ .donated scId owner) :
+    donatedContextIsOwnerFrameHead st owner :=
+  fun _ _ holder holderTcb scId hAt hBind => absurd hBind (hNone holder holderTcb scId hAt)
+
+/-- **WS-HP HP5.2: the builder, and the measurement of what the fact costs.**
+
+Everything but two clauses comes out of `donationOwnerValid`: that the donated
+context exists and is bound to the holder, and that the owner is a stored thread.
+What is left over -- and therefore what this coherence fact is actually *about* --
+is that the owner's own reply object **heads** that context, and that the holder is
+a promotable thread id.  Neither is entailed by any invariant in this tree, which is
+why the fact is stated rather than derived, and stating the builder this way is what
+keeps that boundary visible instead of buried in a `Prop`. -/
+theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid (st : SystemState)
+    (owner : SeLe4n.ThreadId)
+    (hOwnerValid : donationOwnerValid st)
+    (hHeads : ∀ (ownerTcb : TCB) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
+        (scId : SeLe4n.SchedContextId),
+      lookupTcb st owner = some ownerTcb →
+      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
+      holderTcb.schedContextBinding = .donated scId owner →
+        (∃ rid, ownerTcb.replyObject = some rid ∧
+          replyFrameHeadContext? st rid = some scId) ∧ ¬ holder.isReserved) :
+    donatedContextIsOwnerFrameHead st owner := by
+  intro ownerTcb hLkOwner holder holderTcb scId hAt hBind
+  obtain ⟨⟨rid, hRO, hHead⟩, hNR⟩ := hHeads ownerTcb holder holderTcb scId hLkOwner hAt hBind
+  obtain ⟨⟨sc, hScObj, hScBound⟩, _⟩ := hOwnerValid holder holderTcb scId owner hAt hBind
+  refine ⟨?_, lookupTcb_of_objects_of_not_reserved st holder holderTcb hAt hNR⟩
+  refine answeredFrameHeadContext?_of_head st owner rid scId holder ?_ hHead ?_
+  · unfold answeredReplyObject?
+    rw [getTcb?_of_lookupTcb st owner ownerTcb hLkOwner]
+    simpa using hRO
+  · rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj]
+    simpa using hScBound
+
+/-- **WS-HP HP10.7 / `v0.35.157`: a rebindable origin is named as owner by no live
+donation.**
 
 The fact the reply path's redirect rests on, and the reason
 `donationOriginRebindable` exists beside `donationRecipientAcceptable` rather than
 being folded into it.  The recipient guard asks that the origin hold no binding of
-its **own**; this asks that no *other* thread's binding be counting on it — two
+its **own**; this asks that no *other* thread's binding be counting on it -- two
 different questions, and the redirect would falsify `donationOwnerValid` without
 the second (see `donationOriginRebindable` for the reachable sequence).
 
-Stated against the **relaxed** invariant because that is what the reply path has:
-`donationOwnerValidExcept st relaxed` drops the reply-blocked clause at one thread,
-so an origin distinct from that thread still gets the full reading — and where the
-two coincide the redirect is the identity, so nothing is owed. -/
+**Derived from the coherence fact, not from the bundle** (`v0.35.157`).  Until then
+this read `donationOwnerValidExcept` and the guard's `.blockedOnReply` proxy: a
+live binding's owner is reply-blocked, the proxy refused reply-blocked threads, so
+an admitted thread was named by none -- sound, and refusing every re-called client
+with it (PR #897's review, `v0.35.141`).  The structural guard admits a thread whose
+frame is on no live stack, and what makes *that* sound is
+`donatedContextIsOwnerFrameHead`: a live binding's owner has its own frame heading
+the context, a frame heading a context is on a live stack
+(`replyFrameOnLiveStack_of_head`), and the guard says the origin's is not.  The
+origin must resolve, which every caller has from
+`donationOriginRecipient?_resolves`. -/
 theorem donationOriginRebindable_no_owner
-    {st : SystemState} {origin relaxed : SeLe4n.ThreadId}
-    (hDOV : donationOwnerValidExcept st relaxed)
-    (hNe : origin ≠ relaxed)
+    {st : SystemState} {origin : SeLe4n.ThreadId}
+    (hCoh : donatedContextIsOwnerFrameHead st origin)
+    (hRes : ∃ tcb, lookupTcb st origin = some tcb)
     (h : donationOriginRebindable st origin = true) :
     ∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (scId' : SeLe4n.SchedContextId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.schedContextBinding ≠ .donated scId' origin := by
   intro tid tcb scId' hObj hBind
-  obtain ⟨_, ownerTcb, hOwnerObj, _, hCase⟩ := hDOV tid tcb scId' origin hObj hBind
-  rcases hCase with hEq | ⟨epId, replyTarget, hIpc⟩
-  · exact hNe hEq
-  · exact donationOriginRebindable_not_blockedOnReply st
-      ((SystemState.getTcb?_eq_some_iff st origin ownerTcb).mpr hOwnerObj) h epId replyTarget hIpc
+  obtain ⟨originTcb, hLk⟩ := hRes
+  have hGet : st.getTcb? origin = some originTcb := getTcb?_of_lookupTcb st origin originTcb hLk
+  obtain ⟨hHead, _⟩ := hCoh originTcb hLk tid tcb scId' hObj hBind
+  obtain ⟨rid, hRid, hHeadCtx, _⟩ := answeredFrameHeadContext?_eq_some hHead
+  have hRO : originTcb.replyObject = some rid := by
+    unfold answeredReplyObject? at hRid
+    rw [hGet] at hRid
+    simpa using hRid
+  have hLive := replyFrameOnLiveStack_of_head st originTcb rid scId' hRO hHeadCtx
+  rw [donationOriginRebindable_not_onLiveStack st hGet h] at hLive
+  cases hLive
+
+/-- **`v0.35.157`: the reply path's coherence obligation for the origin redirect.**
+
+Whenever the answered frame `rid` heads a context and the redirect resolves that
+context's recorded origin to a thread other than the answered caller, the
+binding → head fact holds at that origin.  Gated on the trigger, on the resolver
+and on the distinctness, so it is vacuous on every reply that pops nothing, on
+every pop whose stack still names an outer caller, on every context recording no
+origin, and at depth 1 (where the origin *is* the answered caller and the
+redirect is the identity) — and it says nothing about the answered caller itself,
+whose frame the reply leg has just consumed while the holder's binding still names
+it: that is the one thread the fact is genuinely false at in the pop's own state,
+which is why the gated shape is the honest one and an unconditional
+`∀ owner, donatedContextIsOwnerFrameHead st owner` would be vacuous.
+
+The reply-path sibling of the cancellation pack's `holder` field
+(`cancelReplyArmPremises.holder`), stated at the state the pop runs on and consumed
+through `donationOriginRebindable_no_owner`. -/
+def redirectedOriginFrameCoherent (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) : Prop :=
+  ∀ (scId : SeLe4n.SchedContextId) (holder origin : SeLe4n.ThreadId),
+    replyFrameHeadHolder? st rid = some (scId, holder) →
+    donationOriginRecipient? st scId = some origin →
+    origin ≠ target →
+    donatedContextIsOwnerFrameHead st origin
+
+/-- Vacuous where the answered frame heads nothing -- every reply that pops nothing. -/
+theorem redirectedOriginFrameCoherent_of_no_head (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId) (h : replyFrameHeadHolder? st rid = none) :
+    redirectedOriginFrameCoherent st rid target := by
+  intro scId holder origin hHead
+  rw [h] at hHead; cases hHead
+
+/-- ...and where the redirect resolves nothing -- no origin recorded, or a stack that
+still names an outer caller. -/
+theorem redirectedOriginFrameCoherent_of_no_origin (st : SystemState) (rid : SeLe4n.ReplyId)
+    (target : SeLe4n.ThreadId)
+    (h : ∀ scId holder, replyFrameHeadHolder? st rid = some (scId, holder) →
+      donationOriginRecipient? st scId = none) :
+    redirectedOriginFrameCoherent st rid target := by
+  intro scId holder origin hHead hOrigin
+  rw [h scId holder hHead] at hOrigin; cases hOrigin
 
 /-- WS-RR RR3.12: the relaxed form is the full one once nothing is donated **by**
 the relaxed thread — the state the donation return leaves behind, and the state a
@@ -5677,7 +5844,8 @@ The relaxation is the **narrowest** one that admits the state: at the woken thre
 the reciprocal pair is still required to exist, and only the blocking clause is
 dropped.  Clause 1 and `blockedOnReplyHasReplyObject` are untouched, because
 waking a caller costs neither. -/
-def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+def replyCallerLinkageReciprocalExcept (st : SystemState) (woken : SeLe4n.ThreadId) :
+    Prop :=
   (∀ (tid : SeLe4n.ThreadId) (tcb : TCB) (rid : SeLe4n.ReplyId),
       st.objects[tid.toObjId]? = some (.tcb tcb) →
       tcb.replyObject = some rid →
@@ -5687,25 +5855,78 @@ def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop
       r.caller = some tid →
       ∃ tcb, st.objects[tid.toObjId]? = some (.tcb tcb) ∧ tcb.replyObject = some rid ∧
         (tid = woken ∨ ∃ (ep : SeLe4n.ObjId) (rt : Option SeLe4n.ThreadId),
-          tcb.ipcState = .blockedOnReply ep rt)) ∧
-  blockedOnReplyHasReplyObject st
+          tcb.ipcState = .blockedOnReply ep rt))
 
-/-- WS-RR RR8.7: **a relaxed linkage with nothing referencing the woken thread is
-the full linkage.**  This is what the reply-link teardown supplies: it clears the
-one Reply that named the caller, and under the relaxed clause it is the only one
-that could (a second would force the caller's single `replyObject` to name two
-Reply objects). -/
+/-- WS-RR RR8.16: the relaxed linkage, split exactly as the full one is.
+
+`replyCallerLinkage` is `replyCallerLinkageReciprocal ∧ blockedOnReplyHasReplyObject`,
+and this is the same split one strength down — which is what lets the *pair* be
+transported across a `replyLinkageFrame` (`replyCallerLinkageReciprocalExcept_of_frame`)
+the way its full sibling already is, with the third clause supplied by whoever
+knows the step writes no TCB.  Stated flat, the relaxed triple had no unit at
+which that transport could be written, so the splice's relaxed carriage had to
+re-run the full store's whole case analysis instead of composing the frame. -/
+def replyCallerLinkageExcept (st : SystemState) (woken : SeLe4n.ThreadId) : Prop :=
+  replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st
+
+/-- WS-RR RR8.7: **a relaxed reciprocal pair with nothing referencing the woken
+thread is the full pair.**  This is what the reply-link teardown supplies: it
+clears the one Reply that named the caller, and under the relaxed clause it is the
+only one that could (a second would force the caller's single `replyObject` to
+name two Reply objects). -/
+theorem replyCallerLinkageReciprocal_of_except_of_unreferenced {st : SystemState}
+    {woken : SeLe4n.ThreadId} (h : replyCallerLinkageReciprocalExcept st woken)
+    (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
+      st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
+    replyCallerLinkageReciprocal st := by
+  refine ⟨h.1, ?_⟩
+  intro rid r tid hR hC
+  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2 rid r tid hR hC
+  rcases hCase with hEq | hBlk
+  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
+  · exact ⟨tcb, hT, hRO, hBlk⟩
+
+/-- WS-RR RR8.7: and the bundle-level lift. -/
 theorem replyCallerLinkage_of_except_of_unreferenced {st : SystemState}
     {woken : SeLe4n.ThreadId} (h : replyCallerLinkageExcept st woken)
     (hFree : ∀ (rid : SeLe4n.ReplyId) (r : Reply),
       st.objects[rid.toObjId]? = some (.reply r) → r.caller ≠ some woken) :
-    replyCallerLinkage st := by
-  refine ⟨⟨h.1, ?_⟩, h.2.2⟩
-  intro rid r tid hR hC
-  obtain ⟨tcb, hT, hRO, hCase⟩ := h.2.1 rid r tid hR hC
-  rcases hCase with hEq | hBlk
-  · exact absurd hC (by rw [hEq] at hC ⊢; exact hFree rid r hR)
-  · exact ⟨tcb, hT, hRO, hBlk⟩
+    replyCallerLinkage st :=
+  ⟨replyCallerLinkageReciprocal_of_except_of_unreferenced h.1 hFree, h.2⟩
+
+/-- **WS-RR RR8.16: the relaxed reciprocal pair transports across the very frame
+its full sibling does.**
+
+`replyCallerLinkageReciprocal_of_frame` is the same theorem one strength up, and
+the proofs differ in exactly one place: where that one reads the pre-state's
+`.blockedOnReply` witness and pushes it forward, this one case-splits the
+relaxation — `tid = woken` survives untouched (the frame moves no thread's
+identity), and the blocked branch pushes forward exactly as before.  Nothing else
+about a frame is needed, which is the measurement that the relaxation is about the
+*blocking* clause alone and not about the pair's existence.
+
+The third clause (`blockedOnReplyHasReplyObject`) is deliberately not concluded
+here, for the reason its full sibling does not conclude it either: a
+`replyLinkageFrame` says nothing about an **unlinked** thread's `ipcState`, so a
+step that blocks a reply-less thread satisfies the frame and breaks that clause.
+Whoever knows their step writes no TCB supplies it. -/
+theorem replyCallerLinkageReciprocalExcept_of_frame {st st' : SystemState}
+    {woken : SeLe4n.ThreadId}
+    (hFrame : replyLinkageFrame st st')
+    (hInv : replyCallerLinkageReciprocalExcept st woken) :
+    replyCallerLinkageReciprocalExcept st' woken := by
+  refine ⟨fun tid tcb' rid hTcb' hRO' => ?_, fun rid r tid hReply' hCaller => ?_⟩
+  · obtain ⟨tcb, hTcb, hEq⟩ := hFrame.pullback tid tcb' hTcb'
+    obtain ⟨r, hReply, hCaller⟩ := hInv.1 tid tcb rid hTcb (hEq ▸ hRO')
+    exact (hFrame.replyCallerAgree rid (some tid)).mpr ⟨r, hReply, hCaller⟩
+  · obtain ⟨r0, hReply0, hCaller0⟩ :=
+      (hFrame.replyCallerAgree rid (some tid)).mp ⟨r, hReply', hCaller⟩
+    obtain ⟨tcb, hTcb, hRO, hCase⟩ := hInv.2 rid r0 tid hReply0 hCaller0
+    obtain ⟨tcb', hTcb', hEq, hBlk'⟩ := hFrame.pushLinked tid tcb rid hTcb hRO
+    refine ⟨tcb', hTcb', hEq.trans hRO, ?_⟩
+    rcases hCase with hW | ⟨ep, rt, hb⟩
+    · exact Or.inl hW
+    · exact Or.inr (hBlk' ep rt hb)
 
 /-- **WS-RR RR8.7: `ipcInvariantFull` with the reply linkage relaxed at one woken
 caller** — the honest statement about the state a reply path reaches between
@@ -5903,6 +6124,27 @@ theorem ipcInvariantFull_of_core_replyCallerLinkage {st : SystemState}
     (hTail : endpointQueueTailBlockedConsistent st)
     (hQNTB : queueNextTargetBlocked st) :
     ipcInvariantFull st :=
+  ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
+   hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+   hCore.2.2.2.2.2.2.2.2.2.2.2.2.2.2, hLink, hPRR, hUnique, hTail, hQNTB⟩
+
+/-- **WS-RR RR8.16: the relaxed bundle's assembler**, the sibling of
+`ipcInvariantFull_of_core_replyCallerLinkage` one strength down.
+
+The two differ in their second argument and nowhere else, which is the statement
+that the relaxation is confined to the reciprocal pair: a step that carries the
+other nineteen conjuncts carries them for both bundles, so the reply-stack
+writers prove those once and assemble twice. -/
+theorem ipcInvariantFullExceptReplyLinkage_of_core_replyCallerLinkageExcept
+    {st : SystemState} {woken : SeLe4n.ThreadId}
+    (hCore : ipcInvariantCore st) (hLink : replyCallerLinkageExcept st woken)
+    (hPRR : pendingReceiveReplyWellFormed st) (hUnique : donationOwnerUnique st)
+    (hTail : endpointQueueTailBlockedConsistent st)
+    (hQNTB : queueNextTargetBlocked st) :
+    ipcInvariantFullExceptReplyLinkage st woken :=
   ⟨hCore.1, hCore.2.1, hCore.2.2.1, hCore.2.2.2.1, hCore.2.2.2.2.1,
    hCore.2.2.2.2.2.1, hCore.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.1,
    hCore.2.2.2.2.2.2.2.2.1, hCore.2.2.2.2.2.2.2.2.2.1,

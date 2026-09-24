@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.155` (`lakefile.toml`) |
+| **Package version** | `0.36.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 396,702 across 334 Lean files |
-| **Test LoC** | 81,018 across 70 Lean test suites |
-| **Proved declarations** | 13,131 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 417,841 across 340 Lean files |
+| **Test LoC** | 84,834 across 70 Lean test suites |
+| **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-RR (SMP release readiness)** — pre-SM10 remediation, RR0–RR6 landed. SM10 (release closure → v1.0.0) is blocked on it. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203, no sub-task started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -1446,7 +1446,17 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    (kernel-checked `decide` over packed keys, `SeLe4n/PackedString.lean`;
    the list size once forced `native_decide` here), and a
    coverage theorem `lockSet_consistent_aggregate_covers_every_syscall`
-   pinning `consistency category count = SyscallId.count`.
+   pinning `consistency category count` to the syscalls that declare a
+   **static** footprint (`declaresStaticLockFootprint`, `v0.35.190`).
+   Stated over that classification rather than against `SyscallId.count`
+   because `.cspaceRevoke` declares none: `cspaceRevokeCdt` walks the CDT
+   across arbitrary CNodes, a set the state discovers and nothing bounds,
+   while a `LockSet` is capped at `maxLockSetSize` — so a static footprint
+   naming only the source CNode would be **false** of the transition, and
+   demanding an entry for it would force a footprint to exist in order to
+   satisfy a number.  `permittedKinds .cspaceRevoke` says which kinds a
+   future declaration may contain, in the shape the PIP chain walk's
+   `pipChainStart_<τ>` markers take for the same reason.
 
    **Production/staged partition**: all five SM3.B modules
    (`LockSet`, `LockIdProjection`, `LockSetTransitions`,
@@ -1544,11 +1554,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
      violation, both objects are correctly locked.  This makes
      the reply paths symmetric with `lockSet_tcbSuspend`.
 
-   * **PIP-chain dynamic-locking acknowledged**: traced
-     `endpointCallWithDonation` /
-     `endpointReplyWithDonation` through
-     `propagatePriorityInheritance` /
-     `revertPriorityInheritance`.  These walk arbitrarily-long
+   * **PIP-chain dynamic-locking acknowledged**: traced the live `.call`
+     and `.reply` arms through
+     `propagatePipChainCrossCore` /
+     `revertPriorityInheritance`.  (Traced through the single-core
+     `endpointCallWithDonation` when this note was written; that definition
+     was deleted at `v0.35.192`, superseded by
+     `endpointCallCrossCoreDispatch`.)  These walk arbitrarily-long
      blocking-graph chains, touching TCB `pipBoost` fields.
      Chain length is state-discovered, not statically
      pre-resolvable.  Plan §4.1's "variable number of locks"
@@ -1761,12 +1773,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    The **syscall seam** brackets since WS-RR RR7.12 (`v0.34.65`), the
    raw `suspend_thread_cross_core` since SM3.C.9's own exception, and
    the three per-core scheduler entries do too since WS-RR RR7.39, which
-   gave the `SchedLockId` domain a runtime.  What remains uncovered is
-   the *syscall* seam's scheduler writes —
-   `UncoveredLockDomain.syscallSeamSchedulerDomain`, since
-   `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot name a
-   run-queue lock.  `ExportCommitDisciplineCensus` measures which is
-   which: seven seams commit, five bracket.)*
+   gave the `SchedLockId` domain a runtime.  The *syscall* seam's own
+   scheduler writes — `UncoveredLockDomain.syscallSeamSchedulerDomain`,
+   since `lockSetForSyscall` returns a `LockSet` whose `LockId` cannot
+   name a run-queue lock — closed at WS-RR RR8.12 Cut C6h (`v0.35.181`),
+   which brackets that seam over one unified footprint spanning both
+   domains.  `ExportCommitDisciplineCensus` measures which is which:
+   seven seams commit, five bracket.)*
 
    *Progress.*  The piece that connects the SM3 footprints to a
    running syscall is `lockSetForSyscall : SyscallId →
@@ -1807,12 +1820,13 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    what makes bracketing safe while most arms are undeclared.  The
    **per-core scheduler path** brackets too since WS-RR RR7.39
    (`v0.34.89`), which gave `SchedLockId` the state words it never had
-   and made the revalidating bracket shared between the two domains;
-   what remains uncovered is the *syscall* seam's scheduler writes
-   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
-   because `lockSetForSyscall` returns a `LockSet` whose `LockId`
-   cannot name a run-queue lock.  Live WCRT remains the global entry
-   lock's until Track D retires it.
+   and made the revalidating bracket shared between the two domains.
+   The *syscall* seam's scheduler writes
+   (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed
+   at WS-RR RR8.12 Cut C6h (`v0.35.181`): the seam brackets over one
+   unified footprint whose `SchedLockId` members name what a `LockSet`
+   could not.  Live WCRT remains the global entry lock's until Track D
+   retires it.
 
    *And how much of the kernel that is, is measured* (WS-RR RR7.13,
    `v0.34.66`).  `SeLe4n/Testing/ExportCommitDisciplineCensus.lean`
@@ -2016,7 +2030,7 @@ abstract Lean kernel model to concrete ARM64 hardware:
 ```
 ┌──────────────────────────────────────────────────────────┐
 │  Lean Kernel Model (pure functions, machine-checked)     │
-│  - Transitions: SeLe4n/Kernel/API.lean (35 syscalls)     │
+│  - Transitions: SeLe4n/Kernel/API.lean (36 syscalls)     │
 │  - Invariants: cross-subsystem, IPC, scheduler, etc.     │
 ├──────────────────────────────────────────────────────────┤
 │  FFI Bridge (@[extern] declarations)                     │
@@ -2311,7 +2325,8 @@ instruction is precisely the livelock RR4 exists to remove.
   a lock set (caller's TCB, target's TCB, target's CNode root in read mode),
   preserves `ipcInvariantFull`, `objects.invExt` and the low projection, and
   is mirrored in `sele4n-types` / `sele4n-abi` / `sele4n-sys`
-  (`tcb_set_fault_handler`; 35 syscalls).
+  (`tcb_set_fault_handler`; 36 syscalls since WS-RR RR8.16 added
+  `.cspaceRevoke`).
 - A current-EL abort (EC `0x25`/`0x21`) or an EL1-origin frame was delivered
   as the current *user* thread's fault, carrying the kernel's register window
   to a handler whose reply would `eret` into the kernel frame.  The syndromes
@@ -2795,14 +2810,30 @@ must halt; a diverging statement before the handling match, or a rebinding of
 the result's name, is refused (review round 10), and the halt must be the
 arm's terminal action rather than a token inside it (review round 11).
 
-**A raw id operand is refused at its lift point** (PR #889 review round 11).
+**A raw id operand is refused at its lift point** (PR #889 review round 11),
+**and since `v0.35.204` the bind has no raw thread operand at all.**
 `syscallResolveCap` refuses a *capability* naming a reserved idle object,
 which covers every arm whose operand is the resolved capability's target;
-`.schedContextBind` resolves its capability to the SchedContext and takes the
-thread from `args.threadId`, so `validateThreadIdArg` and `validateObjIdArg` —
-the lift points every raw operand passes through — refuse a reserved idle id
-(`validateThreadIdArg_ok_not_reserved`,
-`dispatchCapabilityOnly_schedContextBind_idle_operand_refused`).
+`validateThreadIdArg` and `validateObjIdArg` — the lift points every raw
+operand passes through — refuse a reserved idle id
+(`validateThreadIdArg_ok_not_reserved`).  Until `v0.35.204` `.schedContextBind`
+resolved its capability to the SchedContext and took the thread from a raw
+`args.threadId`, which is why the idle refusal had to be repeated at that lift
+point — and why a holder of an ordinary SchedContext capability could bind it
+to any unbound same-domain thread it could name, rewriting that thread's base
+priority through the bind's Z5-G3 propagation with no TCB authority at all
+(seL4-MCS's `seL4_SchedContext_Bind` takes the TCB as a capability).  MR0 is a
+TCB **capability address** now (`SchedContextBindArgs.tcbCPtr`), resolved
+through the caller's own CSpace with `.write` by
+`resolveSchedContextBindThread` — one resolver read by the live arm and by the
+scheduler-domain operand builder — exactly as `.tcbBindNotification` resolves
+its notification.  `resolveSchedContextBindThread_ok_authorised` is the
+authority fact (the thread bound is one the caller holds a writable TCB
+capability to), `dispatchCapabilityOnly_schedContextBind_eq` pins the arm to
+the resolved bind, and the idle TCB is unreachable through the bind because the
+chokepoint refuses the capability
+(`resolveSchedContextBindThread_refuses_idle_capability`,
+`dispatchCapabilityOnly_schedContextBind_idle_capability_refused`).
 
 **The raw suspend seam refuses idle ids, and the reservation is pinned by
 constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`
@@ -4044,6 +4075,100 @@ All test states use `BootstrapBuilder.buildChecked` instead of `build`:
 - **31 post-mutation invariant checks** in the trace harness covering all
   major transition families (IPC, VSpace, lifecycle, scheduler, capability).
 
+### 8.11.1 Capability Revocation (`seL4_CNode_Revoke`, WS-RR RR8.16)
+
+`SyscallId.cspaceRevoke` (discriminant 35) revokes every capability derived
+from the one in the named slot of the invoked CNode.  It was added at
+`v0.35.190`: the revocation family was verified machinery with **no ABI path**
+— `API.lean` carried no revocation arm at all, so no capability a thread could
+present revoked anything — which the reachability census found and the
+implement-the-improvement rule says to close by wiring the syscall rather than
+documenting its absence.
+
+**What the arm dispatches, and why.**  `cspaceRevokeCdt`, the CDT-traversing
+variant, not the local `cspaceRevoke`.  The local primitive reaches only the
+*containing* CNode, so a derived capability copied into any other CSpace would
+survive a revocation that claimed to destroy it; the CDT walk follows the
+derivation tree across arbitrary CNodes and ends with the in-flight sweep
+(`revokePendingTransfersFrom`), which consumes derivations parked in senders'
+`pendingMessage` and have therefore not landed yet.
+
+**What it destroys: exactly the source's derivations (`v0.36.1`).**  Until
+`v0.36.1` every entry point opened with the local `cspaceRevoke`, which matches
+on the capability's **target**: it deleted an independently rooted capability to
+the same object and the source's own parent when they shared the CNode, and it
+left their CDT nodes mapped to the emptied slots, so their own derivations could
+no longer be revoked by anyone.  `revokeCdtScaffold` now opens with a read of the
+source slot (`cspaceLookupSlot`, with the same refusal set and no writes), so the
+revocation destroys exactly the source's CDT descendants, in every CNode
+including its own, which is seL4's `cteRevoke` (read at `13.0.0`).  Every live
+capability-install path records its derivation edge, so nothing derived escapes
+the walk; `tests/SyscallDispatchSuite.lean` SD-059 and
+`tests/OperationChainSuite.lean`'s `revokeLeavesIndependentSibling` are the
+witnesses.  The
+three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
+`…Transactional`) are the same scaffold at a different traversal and are
+offered to **in-kernel** callers: a userspace invocation has no channel to
+receive a structured failure report through.
+
+**ABI.**  The delete's layout — one message register naming the slot
+(`decodeCSpaceDeleteArgs`) — since both name one slot of the invoked CNode.
+The authority is the **write** right on that CNode, not `.grant`: grant
+authorises *creating* a derivation (mint/copy/move), and destroying one is not
+that authority.  The return shape is `.unit`.
+
+**The source slot survives.**  Revocation destroys a capability's derivations,
+not the capability itself, which is what distinguishes it from the delete and
+what makes `cspaceDeleteSlot`'s own `.revocationRequired` refusal
+dischargeable: a caller revokes, then deletes.
+
+**Invariants.**  `cspaceRevokeCdt_preserves_ipcInvariantFull` carries the arm
+in the capability-only dispatch payoff.  Three things that chain records:
+
+- `donationReadAgreement` no longer demands `pendingMessage` **equality**.  The
+  in-flight sweep is the one transition in the tree that rewrites a
+  `TCB.pendingMessage` to a *different* value while the thread stays blocked,
+  and equality was strictly more than the bundle reads — only
+  `allPendingMessagesBounded` and `blockedThreadsPendingMessageConsistent` read
+  the field.  The relation is `pendingMessageReadAgrees` (presence agrees,
+  boundedness transfers) and the sweep's write is a *drop*
+  (`TCB.pendingCapsDropped`: every other field equal, registers kept,
+  capability array shorter), which both conjuncts survive.
+- The scaffold's case analysis and the traversal's induction are
+  **predicate-free and live beside their definitions**
+  (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`,
+  `revokeCdtMaterializedTraversal_ok_induct`), so the capability bundle's
+  argument and the IPC bundle's are one answer rather than two;
+  `revokeCdtFoldBody` moved to `Capability/Operations.lean` with them and the
+  materialized traversal is now *defined* through it.
+- The arm declares **no static lock footprint**, and that is a decision: the
+  CDT walk's CNode set is state-discovered and unbounded while a `LockSet` is
+  capped at `maxLockSetSize`, so a footprint naming only the source CNode would
+  be *false* of the transition.  `declaresStaticLockFootprint` is the total
+  classification that records it, and the SM3.B inventory's coverage theorem is
+  stated over that rather than against `SyscallId.count`.
+
+**Information flow.**  Classified `.inert`, on the *scope* ground
+`.cspaceMint` rests on rather than the self-loop ground its CSpace siblings do.
+It writes a content-tracked field — the sweep rewrites `TCB.pendingMessage`,
+which the Tier-1 reach gate detects and is right to — and moves no tracked
+content: `revokePendingTransfersFrom_preserves_trackedContent` says the payload
+(`IpcMessage.registers`) is kept and only `IpcMessage.caps` shrinks, which is
+the same capability metadata `capabilityBadgeChannel_out_of_scope` already
+excludes.  That theorem is the gate's `CONTENT_WRITE_EXEMPT` justification,
+reconciled in both directions.
+
+**Frozen surface.**  No mirror: the traversal's per-node step ends in
+`cdt.removeNode`, a *key removal* from the derivation tree, and the frozen CDT
+is four `FrozenMap`s with no `erase` — the same reason `lifecycleRetype` and
+the two service operations give.
+
+**Witness.**  `tests/SyscallDispatchSuite.lean` SD-059 drives the live dispatch
+on a state whose derivation lives in a **second** CNode, computing the retired
+local-only reading beside it (spelled in the suite and nowhere else), so the
+assertions are known to discriminate; a mutation of the arm to the local
+variant fails exactly the one that names the claim.
+
 ### 8.12 Scheduling Context Objects
 A `SchedContext` is a first-class kernel object containing CPU budget, period,
 priority, deadline, and domain parameters for CBS (Constant Bandwidth Server)
@@ -4137,6 +4262,20 @@ removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.
+
+Since `v0.35.182` (WS-RR RR8.12 Cut B2) the bind also **places** a parked
+runnable thread on its home core — seL4-MCS's `schedContext_bindTCB` tail
+(`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); … }`, read at `13.0.0`) — under
+`bindPlacesParkedThread`, and since `v0.36.1` (PR #900 review) only when the
+reservation being bound has budget left: the guard's fourth conjunct is
+`sc.budgetRemaining.isPositive`, which is the selector's own reading
+(`bindPlacesParkedThread_budget_eq_hasSufficientBudget`).  A thread bound to an
+exhausted reservation therefore stays parked
+(`schedContextBind_leaves_unplaced_of_exhausted`) rather than joining a run
+queue the selector would skip forever.  What the bind does not do is seL4's
+`postpone`: the unbind purges the reservation's replenish-queue entry and nothing
+re-arms it, so the parked thread waits for its manager — the WS-CB residual in
+[`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C.
 
 #### 8.12.5 API Surface & Syscall Wiring
 3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,
@@ -4241,7 +4380,7 @@ carry an explicit `h : ... = .ok st'` success hypothesis.
 `*_preserves_ipcInvariantFull` theorem now *establishes* each conjunct from its
 pre-state and the step rather than assuming it of its own post-state: the Tier-0
 gate `scripts/check_ipc_invariant_dethreading.py` reports **zero** conjuncts
-bound on a post-state across all **186** statements in the family (the
+bound on a post-state across all **196** statements in the family (the
 `*_establishes_ipcInvariantFull*` composites included), with the conjunct
 set, the bundle family and each bundle's pre-state all derived from the sources
 rather than listed, and prints `[PASS] ipcInvariantFull is de-threaded end to
@@ -4271,7 +4410,16 @@ on the unbound-delivery path only, `.replyRecv` excluding a live donation
 edge naming the woken caller, retype and suspend behind their quiescence
 disciplines — so `ipcInvariantFull` across a syscall is machine-checked
 *given the packs*, and the pack-hardening residue is registered as WS-DT debt
-in `docs/REGISTERED_DEBT.md`.
+in `docs/REGISTERED_DEBT.md`.  The `.reply` arm's own confinement is
+**retired** at `v0.35.195` (WS-RR RR8.16): RR4.14 held the payoff to *unfaulted*
+callers because the seam is seL4's `doReplyTransfer` and the fault branch's
+abandon arm needs the answered thread `passiveServerIdleAllowed` at the
+**post**-state, which the de-threading discipline forbids threading.
+`endpointReplyCrossCoreDispatch_ok_target_ready` reads that off the dispatch's
+own outcome, so the arm case-splits on `threadHasPendingFault` and covers both
+branches — the donating one included, which
+`faultReplyOnCore_preserves_ipcInvariantFull` had been excluding through a
+premise the fault path itself refutes.
 
 **Invariants** (`ipcInvariantFull` 20 conjuncts — the first 15 forming
 `ipcInvariantCore` after WS-RC R4.C.7's close-out
@@ -4313,7 +4461,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   permanently.  `cancelIpcBlockingOnCore` enqueues it on its **home** core,
   which is neither necessarily the victim's nor the executing core; the declared
   scheduler footprint names that core's run-queue write lock, and the composite's
-  per-core run-queue locality clause excludes it.
+  per-core run-queue locality clause excludes it.  **That placement is retired at
+  `v0.35.158`** — the reclaim deschedules the holder it unbinds; see the
+  paragraph on it below.
 
   **And the live `.tcbSuspend` performs that wake only since `v0.35.90`** (WS-RR
   RR8.12, second cut).  `cancelIpcBlockingOnCore` has no production caller: the
@@ -4325,7 +4475,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   it.  G2 now reads `cancelIpcBlockingReclaimed`, the composite's prefix, so both
   steps are on the live path and every result about the composite's teardown half
   applies to it; `suspendThreadOnCoreSchedLockSet` and `suspendThreadOnCoreWriteSet`
-  each grew by the wake core they had been silent about.
+  each grew by the wake core they had been silent about (the holder's *placed*
+  core, `holderPlaced`, since `v0.35.158`, and the step it declares for is a
+  removal).
 
   **And the holder is *still* placed after the six pipeline stages that follow
   G2** (`suspendThreadOnCore_holder_still_placed`, WS-RR RR8.12 fourth cut,
@@ -4347,6 +4499,53 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `switchToThreadOnCore_preserves_threadPlacedOnSomeCore` states that side
   condition rather than hiding it.  §3.26 now exhibits the theorem's premises and
   its conclusion on a state the live operations reach.
+
+  **And since `v0.35.158` the reclaim DESCHEDULES the holder it unbinds, so the
+  payoff inverts** (the `v0.35.149` residue's reclaim half, closed).  OD1.7's
+  wake rested on *an unbound thread is fully schedulable in this model*, which is
+  true and is the defect: it is schedulable **at its legacy TCB band charged to no
+  reservation** (`hasSufficientBudget`'s `.unbound` arm is `true`,
+  `timerTickBudgetOnCore`'s refills `configDefaultTimeSlice` forever), so an
+  ordinary `.tcbSuspend` of a *client* — authority over the client, none over the
+  server — handed the server the CPU on nobody's budget, outside CBS admission
+  entirely, and `passiveServerIdle` could not see it because its antecedent is
+  *not queued*.  Every other donation pop in the tree already took the
+  MCS-passive reading (`applyReplyDonation`, `applyReplyDonationOnCore`,
+  `replyRecvHolderDeschedule`; seL4-MCS's `schedContext_donate`, read at
+  `13.0.0`, dequeues the previous holder), and the reclaim was the one outlier.
+  The reclaim-complete teardown is now the migration followed by
+  `descheduleUnboundHolder`: the trigger `cancelUnboundHolder?` reads the pop's
+  two writes off the post-teardown state — the holder's binding cleared, the
+  victim's installed — so it fires on a blocked holder and on a queued one alike
+  (the wake's `.ready`-gated trigger was silent on exactly the queued server),
+  and `holder ≠ victim` is structural (`cancelUnboundHolder?_ne_victim`: one
+  thread cannot answer both conjuncts).  The step is `descheduleAtPlacement`,
+  the removal every other pop performs — the identity on a holder placed nowhere,
+  a scheduler-only write otherwise, so `cancelIpcBlockingOnCore_objects_eq` and
+  the `CancellationNI` surface hold verbatim and the cross-core poke comes from
+  the committed diff's `currentSlotChangeSgis` rule.  The holder is left
+  `.ready`, `.unbound` and on no slot, with the `.ipcTimeout` frame the abort
+  staged still in its register context, for its own manager to resume or to bind
+  a reservation to.  The declared footprint names the holder's **placed** core
+  (`cancelIpcBlockingOnCoreSchedLockSet`'s `holderPlaced`, resolved by
+  `cancelUnboundHolderCore?` through the same `placedCoreOf?` the step reads;
+  `…_covers_holder_deschedule` is the relation), both halves of
+  `cancellation_cross_core_correct`'s locality clause exclude it, the bundle frame
+  a removal owes is discharged from the abort that runs first
+  (`cancelIpcBlocking_unboundHolder_binding_or_allowed`), and the
+  information-flow obligation is `descheduledHolderHigh`, `abortHolderWakeHigh`'s
+  successor with the same discharge.  The pipeline payoff is
+  `suspendThreadOnCore_holder_unplaced`, the inverse of the theorem it retires:
+  under single placement of the holder and a well-formed run queue on the
+  executing core, the live suspend leaves the holder on **no** scheduler slot,
+  through the same six stages — with the chain walk and the placement removal now
+  preserving well-formedness (`propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed`,
+  `descheduleAt_preserves_runQueueOnCore_wellFormed`) and the scheduling point
+  preserving *un*placement (`switchToThreadOnCore_preserves_unplaced`), where the
+  retired direction had needed resolvability carried at every stage.  §3.26
+  computes the retired wake beside the live reclaim on three shapes — a blocked
+  holder, a queued one and a running one — and the golden trace's `[SCO-020d]` /
+  `[SCO-020e]` rows measure the first two on the harness.
 
   **And the single-core reference path completes the reclaim too** (WS-RR RR8.12
   fifth cut, `v0.35.93`).  `cancelIpcBlockingReclaimed` and the aborted-holder wake
@@ -4372,8 +4571,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   merge.  It closes the first cut's unswept sibling:
   `cancelIpcBlockingOnCoreSchedLockSet` answered a set question with an
   `if placed = some c` deduplication branch, and with that branch gone
-  `…_contains_wake_runQueue_write` holds unconditionally where it used to need
-  `placed ≠ some c`.  That the argument is a set is now a theorem
+  `…_contains_wake_runQueue_write` (`…_contains_holder_runQueue_write` since
+  `v0.35.158`, when the member became the holder's placed core) holds
+  unconditionally where it used to need `placed ≠ some c`.  That the argument is a set is now a theorem
   (`Concurrency.canonicalCores_congr`, `schedFootprintOfCores_congr`,
   `canonicalCores_singleton`).  No footprint's member set moved, so the golden
   trace is byte-identical and `maxLockSetSize` is unmoved.
@@ -4405,9 +4605,10 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `endpointReceiveDualWithCapsOnCore_determineTargetCore_eq_of_rendezvous` says the
   receive leg moves no thread's home core (`determineTargetCore` reads
   `cpuAffinity`, and only `.tcbSetAffinity` writes it), and
-  `endpointReceiveHandoffReplenishCores_of_call_rendezvous` states that the pre-state
-  list **equals** the pair WS-OD OD3.6's donation resolves at the post-receive-leg
-  state it runs on.  So the footprint a bracket acquires before the transition and
+  `endpointReceiveHandoffReplenishCores_of_donating_call_rendezvous` (re-keyed at Cut
+  C1, `v0.35.160`, on the donation resolver's pre-state answer) states that the
+  pre-state list **equals** the pair WS-OD OD3.6's donation resolves at the
+  post-receive-leg state it runs on.  So the footprint a bracket acquires before the transition and
   the migration the transition then performs cannot name different cores, which
   closes for `.receive` the footprint/transition resolution asymmetry WS-HP HP10.8
   registered for the reply arm's origin member.  On the block path the segment is
@@ -4432,28 +4633,583 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   leaves the dequeued sender `.ready`, so the post-state guard is false), the payoffs
   are `applyReceiveRendezvousDonation_eq_self_of_blockedOnSend` and
   `…_no_replenishQueue_of_blockedOnSend`, and `tests/SmpIpcSuite.lean` §3.26
-  measures both shapes against the retired reading.  **What remains over-declared** is
-  a dequeued `Call` whose donation prerequisites fail; narrowing on
-  `callDonationSchedContext?` needs its pre-state answer transported across the receive
-  leg by the backward `sameSchedContextBindings` frame, and two things are in the way:
-  no such frame exists for `endpointReceiveDual` or `endpointReceiveDualWithCaps` at
-  all (the two theorems needing one inline the whole rendezvous composition), and
-  `IPC/Operations/Donation.lean`'s import closure contains neither
-  `IPC/Invariant/Defs.lean`, where the frame is declared, nor the reverse — so a bridge
-  to the resolver has no home beside it.  The frames themselves *are* reachable from
-  the module declaring the footprint, which an earlier statement of this paragraph
-  denied; the deferral is therefore a placement cost, not an impossibility, and it is
-  registered in `docs/REGISTERED_DEBT.md` table C with WS-RR RR8.12 Cut 9 as its
-  deadline.  The declaration is true in both directions by
+  measures both shapes against the retired reading.  **What remained over-declared**
+  — a dequeued `Call` whose donation prerequisites fail — closed at `v0.35.160`
+  (WS-RR RR8.12 Cut C1, register row 55): the segment keys on
+  `receiveRendezvousDonatingSender?`, the `Call`-narrowed resolver narrowed once more
+  by `callDonationSchedContext?` asked on the pre-state, and what licenses reading the
+  transition's post-state resolver off the pre-state is the receive leg's binding
+  frame (`endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous`,
+  extracted from the two invariant theorems that had inlined it) composed with the
+  bridge `callDonationSchedContext?_some_of_sameSchedContextBindings` — a post-state
+  `some` pulls back to a pre-state `some`, which is the one direction a footprint
+  needs.  Landing it moved `sameSchedContextBindings` down to
+  `IPC/Operations/Endpoint.lean`, where the resolver's module can see it (the
+  frames themselves were reachable from the footprint's module all along, which an
+  earlier statement of this paragraph denied).  The payoffs are
+  `applyReceiveRendezvousDonation_eq_self_of_no_donation`,
+  `applyReceiveRendezvousHandoff_replenishQueueOnCore_of_no_donation` and
+  `…_no_replenishQueue_of_no_donation`, and §3.26 measures the third shape — a
+  `Call` to an active server — against the `Call`-keyed retired reading.  The
+  declaration is true in both directions by
   theorem:
   `schedLockSet_endpointReceiveOnCore_covers_donation` covers the donation's own
-  footprint member for member, hence the SM5.H migration's two slots, while
-  `endpointReceiveDualOnCore_replenishQueueOnCore` and its WithCaps sibling say the
-  receive **leg** writes no replenish queue at all.  The arm's PIP chain walk stays
+  footprint member for member — at the donation's own resolver on its own state,
+  since Cut C1 — hence the SM5.H migration's two slots, while
+  `endpointReceiveDualOnCore_replenishQueueOnCore_of_rendezvous` and its WithCaps
+  sibling say the receive **leg** writes no replenish queue on a rendezvous —
+  and, since `v0.35.161`, `…_of_blocked` says a block writes exactly what the
+  migrated pre-receive return writes, the whole-leg frame that claimed *none on
+  either path* having been true only because the transition omitted the write
+  (register row 57).  The arm's PIP chain walk stays
   declared *dynamically* through `pipChainSchedFootprint` and the
   `pipChainStart_endpointReceive` obligation, since a walked chain is unbounded and
-  no static footprint can enumerate it.  `.replyRecv` remains undeclared;
-  `maxLockSetSize` is unmoved, a `SchedLockSet` carrying no cardinality bound.
+  no static footprint can enumerate it.  `maxLockSetSize` is unmoved, a
+  `SchedLockSet` carrying no cardinality bound.
+
+  **And the OBJECT-domain members follow the same guard** (WS-RR RR8.16,
+  `v0.35.189`; register row 56).  Cut C1 narrowed the *replenish* segment and
+  registered that the two object-domain members had its gaps one lock domain over:
+  `endpointCallDonatedSc?` read the caller's own effective context with no test
+  that a receiver was waiting or that it was passive, and
+  `receiveRendezvousDonatedSc?` read the queued sender's through it — so a plain
+  `Send`, and a `Call` to a receiver that already holds a reservation, each
+  declared a SchedContext **write** lock and a donation-old-head reply lock for a
+  migration that provably does not happen.  Both are now the *other* party
+  resolved and the transition's own guard asked of the pair:
+  `endpointCallDonatedSc? st endpointId caller` is
+  `(endpointCallReceiver? st endpointId).bind fun receiver =>
+  callDonationSchedContext? st caller receiver`, and
+  `receiveRendezvousDonatedSc? st endpointObjId receiver` is
+  `(receiveRendezvousCallSender? st endpointObjId).bind fun sender =>
+  callDonationSchedContext? st sender receiver`.
+
+  The soundness half — *the transition migrates ⟹ the footprint declares*, which
+  is **post `some` ⟹ pre `some`**, the footprint resolving on the state the
+  bracket acquires at and the donation branching at the state its leg leaves — is
+  `endpointCallDonatedSc?_some_of_post` and
+  `receiveRendezvousDonatedSc?_some_of_post`, each through Cut C1's backward
+  binding frame over the arm's own leg, with
+  `endpointCallWithCapsOnCore_sameSchedContextBindings` the sending side's new
+  whole-leg frame.  The two lock domains are then shown to ask **one** question:
+  `receiveRendezvousDonatedSc?_isSome_iff_donatingSender` says the object member
+  and the scheduler segment declare on exactly the same rendezvous, since both
+  compose `receiveRendezvousCallSender?` with `callDonationSchedContext?` at the
+  same two threads — a shared *spelling* is not that fact.  The `.call` arm has no
+  such equality by design, its scheduler segment resolving at the WithCaps
+  post-state and its object member on the pre-state, which is what the
+  `_some_of_post` licence is for.  Landing it moved `callDonationSchedContext?` and
+  its four lemmas down to `IPC/Operations/Endpoint.lean` — measured on the import
+  closure, `IPC/CrossCore/EndpointCall.lean` and `IPC/Operations/Donation.lean`
+  are *incomparable* and both reach it — and three binding frames out of the
+  **staged** `EndpointCallInvariant.lean` into production, since the footprint and
+  the licence are production and could not read a frame declared there.
+  `tests/SmpIpcSuite.lean` §3.36 measures five shapes against both retired
+  readings; `maxLockSetSize` is unmoved, both reachable `.replyRecv` bounds are
+  unchanged (a narrowing can only lower a bound) and the golden trace is
+  byte-identical.
+
+  **And the `.replyRecv` arm declares one, by re-running its own spine** (WS-RR
+  RR8.12 Cut C2, `v0.35.162`).  `schedLockSet_endpointReplyRecvOnCore` is
+  `schedFootprintOfCores` of `replyRecvBodyWriteSet` — the arm's SM8.B write set,
+  which `replyRecvBody_confinedToCores` is stated at — and of
+  `replyRecvHandoffReplenishCores`, the cores its **three** SchedContext hand-offs
+  migrate between: the pop between the legs, the receive leg's block-path return
+  (`v0.35.161`) and the re-donation on a dequeued `Call`.  Each is read **at the
+  state it runs on, through its own arm selector** — the pop's `returned?`, the
+  block path's `receivePreReturn?`, the re-donation's `callDonationSchedContext?`
+  at the post-deschedule state — because the pop rewrites the receiver's binding
+  between the legs, so `.receive`'s pre-state form would read a proxy for the guard
+  the transition consults two legs later; the footprint's resolution and the
+  transition's are one computation, and WS-HP HP10.8's registered asymmetry has no
+  instance here.  The block-path pair is one definition for both receiving arms
+  (`receivePreReturnReplenishCores`, with `…_eq_migration` its shared licence).
+  Coverage is by theorem at the cores each migration actually resolves
+  (`schedLockSet_endpointReplyRecvOnCore_covers_pop`, `…_covers_preReturnMigration`,
+  `…_covers_postReceiveDonation`), and the empty segment is exact in both
+  directions (`…_no_replenishQueue_of_no_donation`,
+  `replyRecvBody_replenishQueueOnCore_of_no_donation`, over the reply leg's new
+  frame `endpointReplyOnCore_replenishQueueOnCore`).  That last licence pins a
+  divergence deliberately: a `.replyRecv` whose pop returned nothing does **not**
+  donate a dequeued `Call` caller's context to an `.unbound` receiver, where
+  `.receive` and seL4-MCS's `receiveIPC` would — the register's WS-CB row records
+  it as the third instance of the passive/legacy split, `tests/SmpIpcSuite.lean`
+  §3.29 (b) measures it beside the `.receive` step, and a cut that closes it must
+  widen the segment in the same cut.  `maxLockSetSize` is unmoved.
+
+  **And the `.call` and `.reply` arms declare theirs, over write sets that now live
+  in production** (WS-RR RR8.12 Cut C3a, `v0.35.163`).
+  `schedLockSet_endpointCallOnCore` is `schedFootprintOfCores` of
+  `endpointCallDispatchWriteSet` — the arm's SM8.B write set — and of
+  `endpointCallDispatchReplenishCores`, the donation's pair read the way the
+  dispatch reads it: the guard `callDonationSchedContext?` at the WithCaps
+  post-state, the two homes off the pre-state.  `schedLockSet_endpointReplyOnCore`
+  is the same over `endpointReplyDispatchWriteSet` and
+  `endpointReplyDispatchReplenishCores`, the return's pair read at the reply leg's
+  post-state through the frame trigger the pop reads; and because the arm the API
+  runs is `replyTransferOnCore` (seL4's `doReplyTransfer` branch),
+  `schedLockSet_replyTransferOnCore` sits over the dispatch's footprint at the
+  message each branch hands it and adds, on an abandon, the faulted thread's own
+  home core — the member a dispatch-level footprint would miss.  The pop's pair has
+  one owner (`replyDonationReturnReplenishCores`, read by `.reply` and `.replyRecv`
+  alike; `replyRecvPopReplenishCores` is retired).  Coverage is by theorem at the
+  cores each migration actually resolves (`…_covers_donation` and
+  `…_covers_parametric` for the RR2.4 shape on the call side; `…_covers_migration`,
+  `…_covers_deschedule` and `…_covers_donation` on the reply side;
+  `…_covers_dispatch_of_no_fault`, `…_covers_dispatch_of_fault` and
+  `…_contains_abandon_runQueue_write` on the arm), and the empty segments are exact
+  in both directions over four new frames, among them the walk's
+  `propagatePipChainCrossCore_replenishQueueOnCore`, which needs no object-store
+  hypothesis.  The chain walks are in the run segments — each write set re-runs
+  the spine to the state its walk starts from and appends `pipChainWriteSet`
+  there, for `.call`, `.reply` and `.replyRecv` alike — with the
+  `pipChainStart_*` obligations adding the object domain's per-member TCB lock.
+  The RR2.10 parametric `.reply` footprint's executing-core member is an
+  over-declaration on a false justification (the reversion re-buckets each member
+  on its *home* core), which the derived form drops.  Five write sets and one
+  frame moved from the staged non-interference module to production, each leaving
+  a tombstone.  `tests/SmpIpcSuite.lean` §3.30 and `tests/FaultHandlingSuite.lean`
+  §7c are the witnesses.  `maxLockSetSize` is unmoved.
+
+  **And the destroy path ends a thread's reservation the way the suspend's G3
+  does** (`v0.35.164`, register row 62).  `lifecyclePreRetypeCleanup`'s TCB arm
+  runs `cancelDonationArmOnCore` (`Lifecycle/Operations/Cleanup.lean`), the
+  suspend pipeline's three-way binding match named — `.unbound` the identity,
+  `.bound` the in-place unbind with the replenish purge on the thread's home
+  core (seL4's `finaliseCap` → `unbindFromSc`), `.donated` the return and the
+  replenishment migration to the owner's home — where it used to run the bare
+  `cleanupDonatedSchedContext` and, for a `.bound` thread, an index-only removal
+  that left the SchedContext bound to a destroyed thread with its replenishment
+  stranded on that thread's home core.  The two per-core arms moved beside the
+  cleanup so the destroy path can reach them, `cancelDonationOnCore` is defined
+  through the arm, the suspend's G3 is pinned to it by `rfl`,
+  `retypeTargetDetached` gained `tcbNotBound`, and the arm carries the affinity
+  theorem neither caller had
+  (`cancelDonationArmOnCore_preserves_replenishQueueAffinityConsistent_smp`).
+  `tests/SmpIpcSuite.lean` §3.31 is the witness.
+
+  **And the SchedContext-target arm releases the binding the context holds**
+  (`v0.35.165`, register row 63's arm half).  That arm refused a context heading a
+  reply stack and nothing else, so a context **bound** to a thread passed and the
+  retype left the thread `.bound scId` naming a destroyed object, its
+  `scThreadIndex` entry in place and its replenish entries queued under an id the
+  slot's next occupant inherits.  `releaseSchedContextBinding` is seL4's
+  `schedContext_unbindAllTCBs` per core — the binding cleared, the replenishments
+  purged on the bound thread's home core (every core when the TCB is already gone,
+  for the unbind's own reason), the index entry removed — composed from
+  `schedContextUnbind`'s own primitives and leaving the SchedContext record alone,
+  since the retype replaces it.  Its affinity theorem is unconditional because the
+  release only ever *removes* entries and frames both readings the invariant makes.
+  `tests/SmpIpcSuite.lean` §3.32 is the witness.
+
+  **And the cleanup itself has its reservation theorem** (`v0.35.166`, register
+  row 63's layering half).  The blocker was that a reservation theorem about
+  `lifecyclePreRetypeCleanup` was *unstateable*: the `.tcb` arm's reference sweep
+  runs two whole-store folds whose `getSchedContext?` and `cpuAffinity` frames were
+  `private` in `IPC/Invariant/CancellationBundle.lean`, downstream of both the
+  cleanup and the retype wrapper.  Each frame now sits beside the fact its proof
+  rests on — the two generic accessor bridges in `Model/State.lean`, the splice's
+  in `CleanupPreservation.lean`, each sweep's in its own `Cancellation*Shape.lean`
+  — and `Lifecycle/Invariant/RetypeReservation.lean` (library root) proves
+  `cleanupTcbReferences_preserves_replenishQueueAffinityConsistent_smp` and
+  `lifecyclePreRetypeCleanup_preserves_replenishQueueAffinityConsistent_smp` over
+  all six object kinds, with **no** detachment pack, so it covers exactly the
+  states on which the runtime arms do the work.
+
+  **And Z4-O crosses that cleanup too, with the SchedContext arm refuted rather
+  than proved** (`v0.35.183`, register row 63's remaining half).  What the row then
+  carried was an effort fact — no `preserves_schedContextBindingConsistent` theorem
+  existed anywhere in the tree — and it is built: `schedContextBindingConsistent`
+  reads exactly two projections, so `schedContextBindingConsistent_transfer` beside
+  the predicate carries it whole given both frames, `spliceOutMidQueueNode`'s field
+  frame has one owner over an arbitrary projection with the affinity and binding
+  readings its instances, and eight preservation theorems run from
+  `returnDonatedSchedContext` — the pop, which moves one whole reciprocal pair — up
+  to `lifecyclePreRetypeCleanup_preserves_schedContextBindingConsistent`.  The
+  `.schedContext` arm is excluded by `hNotSc` and **refuted**
+  (`releaseSchedContextBinding_refutes_schedContextBindingConsistent`): the arm
+  deliberately leaves the destroyed context's `boundThread` naming the thread it
+  has just unbound, for the retype's own `storeObject` at that key to replace, so
+  Z4-O's backward clause is false on the arm's post-state and repaired one step
+  later — and `retypeTargetDetached`'s `notSc` makes the hypothesis free at the live
+  call site.  What register row 63 still carries is the retype *composite*'s two
+  theorems, and the model-level hole measuring their hypotheses found: neither
+  `KernelObject.wellFormed` nor `retypeReplacementFresh` constrained a replacement
+  SchedContext's `boundThread`, so the admissible replacement space contained a
+  context claiming a thread that does not name it back — the class SM6.D closed for
+  `Reply` one field over.
+
+  **And that hole is closed** (`v0.35.184`).  `KernelObject.wellFormed`'s
+  `.schedContext` arm is `sc.boundThread = none`, and since both retype wrappers
+  answer `.illegalState` and commit nothing when `wellFormed` fails, the clause *is*
+  the refusal — no call site changed.  It costs the tree nothing: nothing depended
+  on the arm being `True`, and the live dispatch's builder `objectOfKernelType`
+  installs `SchedContext.empty`, whose `boundThread` is at its `none` default.  That
+  is what makes it structural enforcement rather than a convention — it holds of
+  every future replacement builder rather than of the one that exists.
+  `tests/SmpIpcSuite.lean` §3.34 is the witness, with the retired guard spelled in
+  the suite alone: it stores the claiming replacement and Z4-O is **falsified**,
+  against a control on the pristine replacement where it holds.
+
+  **And the composite is stated, so register row 63 closes** (`v0.35.185`).  The
+  crossing goes through one intermediate — `schedContextBindingRetypeReady`, Z4-O
+  with the retype's target carved out of **both the subject and the object** of
+  both clauses — and it has to be an intermediate rather than Z4-O itself, because
+  the `.schedContext` arm refutes Z4-O on its own post-state by design.  All four
+  carve-outs earn their place at the store and neither pair follows from the
+  other: the forward clause rules out a thread still bound to the *destroyed
+  context*, the backward clause a surviving context still naming the *destroyed
+  thread*, and dropping either makes
+  `storeObject_establishes_schedContextBindingConsistent` false rather than
+  unprovable.  The **same** predicate carries
+  `storeObject_preserves_replenishQueueAffinityConsistent_smp`, which is the
+  measurement that it is the destroy path's own fact rather than one proof's
+  scaffolding: the backward carve-out is exactly what keeps the store from moving
+  a replenish entry's home core, the replacement TCB's `cpuAffinity` being its
+  own.  Both theorems are stated of the **program the live arm runs** —
+  `lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache`, the composite under
+  the ASID shootdown rounds, the initiator's per-core TLB drain and the
+  instruction-cache broadcast — lifted by one shared frame, since a theorem stated
+  one wrapper down is a claim about a program no syscall reaches.  Two hypotheses
+  remain and both are free at the live call site: `hNotSc`, from
+  `retypeTargetDetached`'s `notSc`, and `hIdentity` — a TCB is stored under its
+  own thread id — which holds of every reachable state by four measurements and
+  is stated by no invariant, so the model-level gap behind it carried a register
+  row of its own — and **the improvement was taken** (`v0.35.187`, below) rather
+  than the claim weakened.
+
+  **And a retyped object carries the slot's identity** (`v0.35.187`).  A TCB, a
+  SchedContext and a Reply each carry their own id in a field while the object
+  store is keyed by `ObjId`, so the two can disagree;
+  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that
+  at **boot** since PR #889 review round 8, and **nothing refused it at the
+  runtime** while `objectOfKernelType` — the one builder the live retype
+  installs through — stamped the reserved *sentinel* into all three, so a
+  successful retype broke at the runtime exactly the agreement the boot
+  enforces.  `KernelObject.embeddedIdentityMatches` is the question (no
+  wildcard: a kernel object that starts carrying its own id must be classified),
+  `KernelObject.withIdentity` the answer a caller can give (the identity field
+  and nothing else, so the payoff pack and the `wellFormed` clauses are
+  untouched), and both retype wrappers read **one** named predicate,
+  `retypeReplacementAdmissible`, rather than a second guard beside the first.
+  `embeddedIdentitiesMatchSlots_iff` says the boot's check and the runtime's
+  guard are the same question, by theorem rather than by a shared spelling.
+  What is **not** closed is `hIdentity`, which is about the object being
+  *destroyed*: retiring it needs the store-level invariant *every stored
+  object's embedded id is its key*, which the boot, the idle enqueue and now the
+  retype all establish and which no transition falsifies, proved inductively —
+  registered rather than implied.
+
+  **And the three TCB-control arms declare theirs, in a module of their own**
+  (WS-RR RR8.12 Cut C3b-i, `v0.35.167`).  `schedLockSet_resumeThreadOnCore`,
+  `schedLockSet_priorityControlOnCore` and
+  `schedLockSet_setThreadCpuAffinityOnCore` sit in
+  `SeLe4n/Kernel/SyscallSchedFootprint.lean` rather than beside their
+  transitions, and that is a fact about the import graph rather than a convention
+  abandoned: `SchedLockId` is declared in
+  `Scheduler/Operations/PerCoreChooseThread.lean`, which imports
+  `Lifecycle/Suspend.lean` and `IPC/Operations/Endpoint.lean`, so the lifecycle,
+  priority, affinity, SchedContext and retype transition modules are all outside
+  its reverse closure and none can name a `SchedLockId` at all.  Moving the
+  identifier down was rejected — it is declared with `RunQueueLockId`,
+  `ReplenishQueueLockId` and the cross-domain order over them, which is what
+  `schedFootprintOfCores` is about — so the rule is stated once in that module's
+  header: *a resolved scheduler footprint lives beside its transition where that
+  module can name a `SchedLockId`, and here where it cannot*, the shape the
+  object domain reached at `Concurrency/Locks/LockSetTransitions.lean`.  Each is
+  `schedFootprintOfCores` of the arm's own SM8.B write set (Cut 7's rule), which
+  is what moved `resumeThreadOnCoreWriteSet`, `priorityControlWriteSet` and
+  `setThreadCpuAffinityWriteSet` out of the staged non-interference module; the
+  priority pair shares one footprint because SM8.B gives the two arms one write
+  set.  The affinity arm's replenish segment follows the thread's **binding** —
+  both cores on a reservation, none on the `.unbound` path — and every empty
+  segment is a theorem
+  (`resumeThreadOnCoreLive_replenishQueueOnCore`,
+  `setPriorityOnCore_replenishQueueOnCore`,
+  `setMCPriorityOnCore_replenishQueueOnCore`,
+  `setThreadCpuAffinityWithMigration_replenishQueueOnCore_of_no_context`) against
+  the declaration's own half, so each narrowing is exact in both directions.
+  Coverage against the transition is its own statement
+  (`schedLockSet_setThreadCpuAffinityOnCore_covers_migration`): the transition
+  resolves its destination at the post-affinity-write state and the footprint
+  from the argument, one value only through
+  `setThreadCpuAffinity_determineTargetCore_eq`.
+  Stating `schedLockSet_setThreadCpuAffinityOnCore_covers_parametric` is what
+  found the SM5.H.4 parametric family still in the staged `PerCoreCbs.lean`
+  twenty lines below the tombstone WS-RR RR2.4 left when it relocated
+  `migrateSchedContextReplenishmentLockSet` out of that same file for that same
+  reason; `setThreadCpuAffinityWithMigrationLockSet` and
+  `migrateRunQueueOnAffinityChangeLockSet` are production now, and four frames
+  moved beside the definitions they frame.  `tests/SmpCbsSuite.lean` §4.5 is the
+  decisive witness — one state, a thread on a reservation and a thread on none,
+  the same migration, opposite segments, with the parametric footprint computed
+  beside the resolved one so the assertions discriminate — and
+  `tests/SuspendResumeSuite.lean` SR-035 and
+  `tests/PriorityManagementSuite.lean` PM-FP-01 drive the other two arms.
+  `maxLockSetSize` is unmoved.
+
+  **And the three SchedContext arms declare theirs** (WS-RR RR8.12 Cut C3b-ii,
+  `v0.35.168`).  `schedLockSet_schedContextConfigureOnCore`,
+  `schedLockSet_schedContextBindOnCore` and
+  `schedLockSet_schedContextUnbindOnCore` sit in the same module for the same
+  reason, each `schedFootprintOfCores` of its arm's own SM8.B write set — four
+  more moved out of the staged non-interference module — and of a replenish
+  segment read from the arm's own purge.  Three things the cut decided.  The
+  configure's segment keys on the **SchedContext resolving** rather than on its
+  being bound, because an unbound SC has no home, the purge falls back to the boot
+  core, and a stale entry from an earlier binding is what it drops; when the SC is
+  bound the purge and the re-bucket land on one core, so a single lock covers an
+  operation with two scheduling effects.  The unbind's segment is the first in
+  this family that is **every** core: its sweep arm, reached when the bound TCB is
+  already gone from the store, runs `purgeReplenishmentFromAllCores` because there
+  is no `cpuAffinity` left to read, and both arms are decided on the pre-state, so
+  the declaration is exact rather than conservative — a footprint naming only the
+  home core would be *false* there.  And the bind declares no replenish lock at
+  all.  Every narrowing has its theorem in both directions
+  (`schedContextBind_replenishQueueOnCore`,
+  `schedContextConfigure_replenishQueueOnCore_ne`,
+  `schedContextUnbind_replenishQueueOnCore_ne_of_tcb` and its per-core lift),
+  except the sweep arm, which needs none and can have none.
+
+  Declaring them found a duplicate:
+  `SchedContextOps.schedContextBoundThread?`'s docstring has said since SM8.B
+  that it is *"single-sourced here in production because two consumers need it
+  and a second copy would drift"*, and the staged non-interference module carried
+  `schedContextSubject?`, clause for clause the same function, which the write
+  set that docstring names read instead.  The copy is deleted and refused
+  tree-wide.  `tests/SmpCbsSuite.lean` §4.6 is the witness, computing the retired
+  home-only reading beside the live segment on the sweep fixture.
+  `maxLockSetSize` is unmoved.
+
+  **And the destroy path declares its own** (WS-RR RR8.12 Cut C3b-iii,
+  `v0.35.169`).  `schedLockSet_lifecycleRetypeOnCore` is the live
+  `.lifecycleRetype` arm's footprint, and declaring it is what made visible that
+  SM8.B's `lifecycleRetypeWriteSet` is a **run-queue** write set:
+  `observableSlotsConfinedToCores` covers six per-core slots and the replenish
+  queue is not one of them, so that set says nothing about the two reservation
+  steps `v0.35.164` and `v0.35.165` put on the destroy path, and a footprint built
+  from it alone would be false of the operation.  The replenish segment is keyed
+  on the object kind — a `.tcb` target's is the donation arm's cores (nothing for
+  `.unbound`, the thread's home for `.bound`, the return's two migration endpoints
+  for `.donated`), a `.schedContext` target's is the release's (the bound thread's
+  home, or **every** core where that thread is already gone from the store), and
+  every other kind's is empty, with the declaration's own half stated so a kind
+  that acquires a scheduling effect has to move a definition rather than a proof.
+  Both resolvers read the pre-state, which is a fact rather than a convenience:
+  for a SchedContext target every earlier step of the cleanup is the identity, and
+  for a TCB target the donation arm is the first step.  Exactness is composed over
+  all six kinds (`lifecyclePreRetypeCleanup_replenishQueueOnCore_ne`, over two
+  step frames and two arm frames), `tests/SmpIpcSuite.lean` §3.33 is the witness —
+  computing the run-only reading beside the live footprint on both target shapes —
+  and `maxLockSetSize` is unmoved.
+
+  **And the last arm declares its own — and the two parametric footprints it
+  replaces were false** (WS-RR RR8.12 Cut C3b-iv, `v0.35.170`).
+  `schedLockSet_suspendThreadOnCore` is the sixteenth and last of the arms Cut 7's
+  sequence enumerated, so every arm it identified as writing a scheduler slot now
+  has a footprint resolved from the state rather than handed to it; which of the
+  remaining nineteen write one is the next cut's question.  Declaring it found that
+  **neither** parametric footprint over the suspend's G2 named the replenish queues
+  that step writes.  Since WS-RR RR8.11 (`v0.35.86`) the teardown is
+  `cancelIpcBlockingMigrated`, and since RR8.12's second cut (`v0.35.90`) the live
+  pipeline runs it: it moves the reclaimed reservation from the **holder's** home
+  core to the home the context is bound to at the torn state, writing both.
+  `cancelIpcBlockingOnCoreSchedLockSet`'s replenish segment was `[]` and
+  `suspendThreadOnCoreSchedLockSet`'s was G3's migration read off the *victim's*
+  binding, so neither endpoint was named — RR8.12's second cut widened the *run*
+  segment by the holder's placed core and did not ask the same question of the
+  replenish segment.  Latent rather than live (the syscall seam does not yet
+  bracket the scheduler domain), so it is a verification defect of RR8.11's and
+  OD3.9's own posture: everything stated over those footprints was silent about
+  the two queues rather than conservative.  Both are fixed, each taking a
+  `reclaimReplenish : List CoreId` whose resolver
+  (`cancelIpcBlockingReplenishCores`) lives beside `cancelIpcBlockingMigrated`,
+  because both footprints must name it and neither can see the resolved-footprint
+  module.  Neither half of the arm's own replenish segment is pre-state
+  computable — G3's resolver is read at the post-revert state, the reclaim having
+  rebound the victim (WS-OD OD5.3) — so the segment re-runs the spine as
+  `replyRecvBodyWriteSet` does.  Exactness is over the whole arm
+  (`suspendThreadOnCore_replenishQueueOnCore_ne`, seven stages, two of which move
+  a reservation), the donation-arm frame gained one owner at an explicit purge
+  core (`donationArmAt_replenishQueueOnCore_ne`, of which the destroy path's is
+  now an instance), coverage against the parametric form is stated over the
+  run-queue half alone, `tests/SmpCancellationSuite.lean` §3.27 is the witness —
+  computing both retired readings beside the live ones, with core 3 as the control
+  — and `maxLockSetSize` is unmoved.
+
+  **And the sixteen declared arms have one resolver** (WS-RR RR8.12 Cut C4,
+  `v0.35.171`).  `schedLockSetForSyscall` is the scheduler domain's
+  `lockSetForSyscall`: a `match` over `SyscallId` dispatching to the arm's own
+  resolved footprint, `declaredSchedFootprintSyscall` as the inventory of which
+  arms declare, and `schedLockSetForSyscall_undeclared_none` over that inventory
+  — the load-bearing direction, since a caller reading `some S` treats `S` as the
+  complete set of cores the transition writes.  The other drift direction is
+  closed by the per-arm `_isSome_iff` family.  `SyscallLockOperands` gains the
+  scheduler domain's five fields rather than acquiring a record of its own,
+  because the two domains ask different questions of one syscall's operands; the
+  affinity operand is doubly optional, the inner `Option` being the unpin request.
+  `.notificationSignal` routes to the bound arm's footprint and `.reply` to the
+  arm's rather than the dispatch's, both pinned as relations with the wrong
+  resolver refused.  `tests/SmpCbsSuite.lean` §4.7 is the witness; nothing
+  consumes the resolver until the bracket cut.
+
+  **And the ABI seam resolves one decode for both domains** (WS-RR RR8.12 Cut
+  C4b, `v0.35.172`).  `declaredSchedLockSetForAbiEntry` is
+  `declaredLockSetForAbiEntry`'s twin — `abiEntryPlan`, then
+  `abiEntryLockOperands` on that plan's answer, then the domain's own resolver —
+  and Cut C4 could not have it, because that builder supplied none of the five
+  scheduler operands, so `.call`, `.reply`, `.replyRecv` and `.tcbSetAffinity`
+  would each have answered `none`: sound, an undeclared arm establishing no
+  exclusion, and four arms silently outside the coverage this workstream is
+  building.  C4b extends **that** builder rather than adding a second, because a
+  second is what lets one domain's footprint be acquired around the other
+  domain's transition; `declaredSchedLockSetForAbiEntry_shares_decode` states
+  that both footprints are functions of one `(tid, decoded, stFilled)` and one
+  operand record, and a negative refuses the resolver re-deriving the gate or the
+  capability lookup.  What one record costs is a congruence the object domain
+  must satisfy, and `lockSetForSyscall_ignores_sched_operands` is it — stated
+  over all five fields at once, so a sixth added without extending it is a field
+  nothing has checked.  Four arms grew the operands their scheduler footprint
+  refuses without, each naming what its own live dispatch arm names (the
+  `.replyRecv` payload is MR0-stripped and badged with the **reply** capability's
+  badge, SM6.D's own distinction, refused in the wrong spelling by a negative);
+  eight more are there because the scheduler domain declares for them, with
+  `.schedContextBind` naming the thread its TCB-capability operand resolves to
+  (`resolveSchedContextBindThread`, `v0.35.204`; the decoded raw `threadId`
+  argument until then) rather than the capability's object.  `abiEntryGate_cspaceRoot` and
+  `abiEntrySchedReceiverCspaceRoot` make the `.replyRecv` footprint's CSpace root
+  and the gate's one lookup.  `tests/SmpCrossCoreCallSuite.lean` is the witness,
+  state-dependent by construction: an `.Inactive` victim declares the
+  object-store lock alone and an active one, one field apart, additionally
+  declares the executing core's run queue.
+
+  **And the family that resolver dispatches to is derived and reconciled** (WS-RR
+  RR8.12 Cut C5, `v0.35.173`).  `SeLe4n/Testing/SchedFootprintCensus.lean` (Tier
+  1) is `LockFootprintBoundCensus`'s counterpart for the scheduler domain, and it
+  exists for the measurement Cut 8a-ii recorded: thirty-three of the family's
+  forty-seven theorems had neither a consumer nor an anchor, every one silently
+  deletable.  It asks two questions and reports seventeen footprints, all
+  canonical, fifteen consumed and two registered as superseded.  **Every
+  footprint is `schedFootprintOfCores` applied to two core lists at its full
+  arity** — the premise every generic lemma is consumed under, since
+  `_write_only`, `_pairwise_le`, `_keys_nodup`, `_subset` and `mem_…_iff` are
+  stated once of that function and inherited by shape, so a footprint written any
+  other way loses all five silently and `SchedLockSet.ofList?` may then refuse it
+  and leave the arm undeclared.  The question goes to the elaborator, reducing
+  *towards* the constant (`Meta.whnfUntil`) rather than to weak head normal form,
+  which would run past it into the `List.cons` the body builds.  **And every
+  footprint is NAMED by `schedLockSetForSyscall` or registered with a reason** —
+  named rather than reached, since a transitive closure would count a footprint
+  as consumed because a reachable helper mentions it; the register holds the bare
+  notification signal and the dispatch-level reply footprint, both superseded by
+  the arm the live dispatch takes, reconciled in both directions.  Neither
+  failing branch can fire on the live tree, so the module carries plants on the
+  far side of each decision plus a wiring case drawn from the tree itself — a
+  write-set helper named by a footprint and by no arm.
+
+  **And the first eight arms' footprints are proved not to be false** (WS-RR
+  RR8.12 Cut C6a, `v0.35.174`).  A footprint that omits a slot the transition
+  writes is false, and the 2PL serialisation results, `boundedWait_under_2pl` and
+  the CC-5 bound are then *silent* about that slot rather than conservative;
+  `UncoveredLockDomain.syscallSeamSchedulerDomain` was the register entry saying
+  the scheduler domain had not met that standard at the syscall seam (retired at
+  Cut C6h, `v0.35.181`, once it had), and the
+  coverage lands **before** the bracket because a bracket acquiring a footprint
+  nobody proved covers the writes hands out exclusion the runtime never
+  established.  `SeLe4n/Kernel/SyscallSchedContainment.lean` (staged, as
+  `SchedLockTimerContainment` is, since every proof consumes an SM8.B confinement
+  theorem) holds one bridge and one application per arm: the **object** clause is
+  structural, a canonical footprint always naming the object-store table write
+  lock; the **run-queue** clause is the arm's own `observableSlotsConfinedToCores`
+  result; and the **replenish** clause is the arm's own frame, which confinement
+  cannot supply because the replenish queue is not one of its six per-core slots.
+  The split from Cut C6b is semantic — an empty replenish segment makes the clause
+  a whole-state frame and a core-naming one makes it an exactness claim, two
+  different propositions with two different frames — so the seven empty-segment
+  arms are here plus `.tcbSuspend`, whose `_ne` frame RR8.12's fourth cut already
+  built.  Eight proved theorems cannot be wrong and could be vacuous, so the
+  module carries a refutation per clause, and a Tier 3 negative refuses
+  `schedFootprintCoversWrites_refl` inside it: discharging an arm with the no-op
+  lemma is the token-preserving weakening this family admits.
+
+  **And the first three core-naming segments are covered** (WS-RR RR8.12 Cut C6b,
+  `v0.35.175`).  `.schedContextConfigure`, `.schedContextUnbind` and
+  `.tcbSetAffinity` are the first arms whose replenish segment names cores, so
+  their clause is an exactness claim; each coverage proof is one application of
+  the bridge because each arm's `_ne` frame is keyed on the **footprint's own**
+  segment rather than on a resolution — a resolution-keyed frame answers a
+  different question that every consumer would then case-split to reach, so the
+  footprint-keyed form carries the plain `_ne` name, the resolution-keyed one is
+  `_ne_of_sc` / `_ne_of_tcb`, and a Tier 3 negative refuses the plain name
+  re-acquiring the narrower hypothesis.  Two readings the proofs make explicit: an
+  unresolved segment is a **refusal** rather than a gap, since both SchedContext
+  arms' transitions fail there; and `allCores` is a legitimate segment, on which
+  the clause is vacuous because there is no core outside it.
+
+  **And the two IPC spines get their exactness frames, with `.call` covered**
+  (WS-RR RR8.12 Cut C6c, `v0.35.176`).  The IPC arms' replenish segments are
+  computed by running the transition, so their frames are the one place a
+  footprint and its operation could describe different migrations; each is one
+  case split because the segment's branch structure and the transition's are the
+  same structure by construction (Cut C3a).  Each donation step gained an `_ne`
+  beside its `_of_no_donation` — the existing frames say the hand-off moves
+  nothing when the resolver declines, the new ones say where it moves when it
+  answers — and the `.reply` arm's frame is stated per branch rather than through
+  the hypothesis-parameterised form, because the segment is message-dependent (the
+  fault branch composes the dispatch at `IpcMessage.empty`, the ordinary branch at
+  `msg`).  `.call`'s coverage is stated of the unchecked dispatch, which is what
+  its write set and confinement result are stated at and what the checked arm
+  equals wherever its flow gate admits; `.reply`'s waits on a confinement theorem
+  at `replyTransferWriteSet` that does not exist yet.
+
+  **And a coverage claim names the ARM, not the dispatch beneath it** (WS-RR
+  RR8.12 Cut C6d, `v0.35.177`).  `replyTransferOnCore` — seL4's `doReplyTransfer`
+  branch, and what `API.dispatchWithCap`'s `.reply` arm actually runs — has a
+  post-state the dispatch does not: the delivered-message staging on an unfaulted
+  caller, the decoded outcome on a faulted one, the latter either installing a
+  restart frame or *descheduling* the faulted thread.  Five confinement theorems
+  (`applyFaultRestart_confinedToCores` at `[]`,
+  `faultAbandonOnCore_confinedToCores` at `[cc]`,
+  `faultReplyApplyOnCore_confinedToCores`, `faultReplyOnCore_confinedToCores`,
+  `replyTransferOnCore_confinedToCores`), each at the write set its own definition
+  derives, plus two machine frames the `regs` conjunct needs
+  (`applyFaultRestart_machine_eq`, `faultAbandonOnCore_machine_eq`), make
+  `schedLockSet_replyTransferOnCore_coversWrites` one application of
+  `schedFootprintCoversWrites_of_confined`.  The abandon's appended core is a
+  *duplicate* of one the dispatch already names — measured in
+  `tests/FaultHandlingSuite.lean` §7c since Cut C3a, and asserted since this cut —
+  so the arm's declaration is derived from the arm rather than tightened to that
+  coincidence.
+
+  **And the live `.replyRecv` arm is covered whole** (WS-RR RR8.12 Cut C6e,
+  `v0.35.178`).  It is the one declared arm whose footprint bounds its **entire**
+  body: `replyRecvBodyWriteSet` carries both chain walks in its run segment, so
+  `schedLockSet_endpointReplyRecvOnCore_coversWrites` is a complete claim rather
+  than one about a prefix (`.receive` is the arm whose walk sits outside).  The
+  replenish half is five exactness frames, one per stage of the four-stage
+  composition — the pop's, the block-path return's over
+  `cleanupPreReceiveDonationMigrated_…_ne`, the re-donation's over
+  `applyRendezvousCallDonation_…_ne` — each keyed on the *sub-segment* the
+  definition appends at that stage and composed through
+  `replyRecvHandoffReplenishCores_eq_of_legs`.  `tests/SmpIpcSuite.lean` §3.29
+  measures the direction the segment assertions cannot see: the arm writes no
+  replenish queue on a core the segment does not name, with the empty-segment shape
+  as the decisive case.
+
+  **And `.receive`'s coverage names a sub-composition** (WS-RR RR8.12 Cut C6f,
+  `v0.35.179`).  It is the one declared arm whose priority-inheritance walk sits
+  outside its run segment — declared dynamically through `pipChainSchedFootprint`
+  — so `schedLockSet_endpointReceiveOnCore_coversWrites` is stated at the receive
+  leg composed with WS-OD OD3.6's donation, which is what that footprint bounds; a
+  claim at the whole hand-off would be false of it, and a Tier 3 negative refuses
+  that spelling.  What made it statable is
+  `endpointReceiveDualWithCapsOnCore_ok_dequeued_eq_head` and its block-path
+  sibling: the thread the leg reports is decided by the *pre-state* send queue, so
+  a footprint resolved before the transition and a donation resolved after it name
+  the same two threads.  The block path needs no post-state guard at all
+  (`callDonationSchedContext?_self`), and `queueHeadBlockedConsistent` is taken for
+  exactly one corner — a rendezvous whose sender is not a `Call` yet whose donation
+  resolver answers `some`.
 - `donationBudgetTransfer`: at most one thread per SchedContext — now satisfiable
   for donated states (the donor is `.unbound`; only the server's `.donated`
   references the SchedContext)
@@ -4642,12 +5398,14 @@ behaviour**.  Two edits make donation transitive, and they land in the same cut
 because each is false without the other.
 
 - **`applyCallDonation` reads the caller's *effective* context.**
-  `callDonationSchedContext?` and the footprint's `endpointCallDonatedSc?` both
-  answer `SchedContextBinding.scId?`, which is `some scId` for a `.bound` caller
-  and for a `.donated` one alike — seL4-MCS's `maybeDonateSchedContext`, which
-  reads `sender->tcbSchedContext` without asking how the sender came by it.  A
-  footprint narrower than its transition is *false*, so the resolver and the
-  guard widened in one cut and neither can move without the other.
+  `callDonationSchedContext?` answers `SchedContextBinding.scId?`, which is
+  `some scId` for a `.bound` caller and for a `.donated` one alike — seL4-MCS's
+  `maybeDonateSchedContext`, which reads `sender->tcbSchedContext` without asking
+  how the sender came by it.  A footprint narrower than its transition is *false*,
+  so the resolver and the guard widened in one cut and neither can move without
+  the other — and since `v0.35.189` there is nothing left to keep in step, the
+  footprint's `endpointCallDonatedSc?` **being** that resolver at the endpoint's
+  waiting receiver rather than a second reading beside it.
 - **`donateSchedContext` pushes a reply-stack frame.**  Five object writes since
   `v0.35.4`: the context's rebind **and** new stack head as one store
   (`boundThread := some serverTid`, `scReply := some pushRid`), the pushed
@@ -4732,7 +5490,9 @@ because each is false without the other.
   arm fires on a victim that entered `.unbound`, and its migration's destination
   is the *outer caller's* home core.  That core is not resolvable from the
   victim's pre-state binding, because at the pre-state the victim has none, so
-  `suspendThreadOnCoreSchedLockSet`'s replenish segment is a **triple**.
+  `suspendThreadOnCoreSchedLockSet`'s replenish segment carries a **triple** for
+  G3 — beside which `v0.35.170` appends G2's own migration pair, read off the
+  holder's affinity and the torn state rather than off the victim's binding.
 - **Retype refuses both halves of a live stack** (OD5.4).  A Reply that is not
   `Reply.isFree` is a frame; a SchedContext with `scReply ≠ none` is a head,
   and by the chain's own completeness clause that is exactly "some frame names
@@ -5374,13 +6134,17 @@ seL4-MCS rather than parity with it.
 **What the theorem derives and what it must hypothesise.**
 `replyStackOuterCaller? st' scId = .ok none` — the reachability answer that names
 the *wrong* thread — is a **conclusion**, read off the removal, so no hypothesis
-hands the payoff over.  The two guards are **hypotheses**, and one of them cannot
-be anything else: `donationOriginRebindable` is *false* at the pre-state, the owner
-being `.blockedOnReply` on exactly the reply being answered, and becomes true at the
-wake `endpointReplyOnCore` performs before the removal.  A statement about the
-removal alone therefore cannot supply it.  Tier 3 negatives refuse hypothesising
-either derived fact, because either turns the payoff into a theorem whose conclusion
-is one of its own premises.
+hands the payoff over.  So is the owner's rebindability since `v0.35.157`: the
+guard asks whether the owner's reply frame is on a live stack, and the removal that
+fires the redirect has just taken that frame off the stack and cleared the owner's
+`replyObject` (`removeCallerReplyFrame_replyObject_none`,
+`donationOriginRebindable_of_no_reply`).  What stays a **hypothesis** is the
+recipient guard — the owner holds no reservation of its own — which nothing about
+the removal supplies.  (Until `v0.35.157` the rebindability was hypothesised too,
+and had to be: the guard read the owner's `ipcState`, which is `.blockedOnReply` at
+the pre-state and again the moment the owner re-Calls.)  Tier 3 negatives refuse
+hypothesising any derived fact, because each turns the payoff into a theorem whose
+conclusion is one of its own premises.
 
 **And the resolver decides its own contract** (`v0.35.61`, the post-landing
 audit).  `donationOriginRecipient?` resolves the recorded origin through
@@ -5427,17 +6191,31 @@ It is structural rather than lucky: at depth ≥ 3 the pop sits at a `some` arm,
 `replyDonationRecipient_eq_of_outer_some` makes the redirect the identity by
 theorem.
 
-**And the payoff holds only under its two guard hypotheses, one of which is false
-on a reachable state** (PR #897's review, `v0.35.141`).
-`donationOriginRebindable` refuses an origin that is `.blockedOnReply`, as a proxy
+**And the payoff held only under a guard that was a PROXY — closed at
+`v0.35.157`** (PR #897's review, `v0.35.141`).  Until `v0.35.157`
+`donationOriginRebindable` refused an origin that is `.blockedOnReply`, as a proxy
 for "some live `.donated _ origin` binding names it" — and a client answered out of
 order and re-called is reply-blocked while owning nothing, because its Call is
-`.unbound` and so donates nothing.  The pop then falls back to the answered caller
-and **transfers** the reservation to the intermediate caller, clearing
-`donationOrigin` with it (`tests/SmpIpcSuite.lean` §3.25, COST group).  So v1.0.0
-**must not** claim that completing a call chain returns a client's reservation at
-every depth; the depth-≥ 3 half stands.  Re-opened in `docs/REGISTERED_DEBT.md`
-table C.
+`.unbound` and so donates nothing.  The pop then fell back to the answered caller
+and **transferred** the reservation to the intermediate caller, clearing
+`donationOrigin` with it.  The guard is now `schedContextBind`'s own admissibility,
+asked of the origin: its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
+one-step reciprocity, on both surfaces).  That admits the re-called client, whose
+fresh frame is on no stack, and refuses the two shapes the proxy could not
+distinguish from it — a frame that *heads* a context (a live owner) and a frame
+*inside* a live stack (owed a pop that a binding made now would make refuse).  Its
+soundness is the binding → head coherence fact `donatedContextIsOwnerFrameHead`,
+relocated upstream to `IPC/Invariant/Defs.lean` and carried by the reply path as
+`redirectedOriginFrameCoherent` (gated on the trigger, the resolver and the
+distinctness from the answered caller); `donationOriginRebindable_no_owner` derives
+"named by no live binding" from the guard under it.  `tests/SmpIpcSuite.lean` §3.25
+drives the live pop on the re-called client with the retired proxy computed beside
+the live guard, and plants the two refused shapes with the control that the
+recipient guard alone admits them.  So the donation accounting holds at every
+reply-stack depth: v1.0.0 **may** claim that completing a call chain returns a
+client's reservation at every depth — the depth-≥ 3 half by the splice, the depth-2
+half by the recorded origin under a guard that is the fact.  Closed in
+`docs/REGISTERED_DEBT.md` table C.
 
 #### 8.12.16 The teardown's bundle statement is honest about its own state — WS-RR RR8.7 (`v0.35.80`)
 
@@ -5482,12 +6260,48 @@ arm actually performs — is what carries `ipcInvariantFull` end to end
 (`restoredAndConsumed_preserves_ipcInvariantFull`).  A claim taken at either half is a
 claim about a state the arm does not rest at.
 
-What is **owed** rather than claimed: the splice's own bundle statement.  Deleting the
-retired composite theorem leaves `removeCallerReplyFrame` — the splice then the consume
-— with no `ipcInvariantFull` result, and the honest one is the relaxed form, which needs
-a relaxed twin of `storeObject_reply_stackLinks_preserves_ipcInvariantFull`.  It is
-registered in `docs/REGISTERED_DEBT.md` rather than absorbed, and the deletion carries a
-tombstone naming both the replacement and what is missing.
+**The removal's own statement landed at `v0.35.188` (WS-RR RR8.16), and what it needed
+was a unit rather than an argument.**  Deleting the retired composite left
+`removeCallerReplyFrame` — the splice then the consume — with no `ipcInvariantFull`
+result at all, and the honest one is the relaxed form.  The obstacle was that
+`replyCallerLinkageExcept` was written **flat**: a `replyLinkageFrame` transports the
+reciprocal *pair*, and with no name for the relaxed pair there was nothing for it to
+carry, so the splice's relaxed carriage would have had to re-run the full store's case
+analysis.  It is now split exactly as `replyCallerLinkage` is —
+`replyCallerLinkageReciprocalExcept st woken ∧ blockedOnReplyHasReplyObject st` — and
+`replyCallerLinkageReciprocalExcept_of_frame` is `replyCallerLinkageReciprocal_of_frame`
+one strength down, differing only where the relaxation is spent.  The frame the two
+share is the family member the tree lacked:
+`storeObject_reply_caller_replyLinkageFrame`, a `.reply` store that keeps the stored
+Reply's `caller`, which its neighbour `storeObject_nonTcbNonReply_replyLinkageFrame`
+excludes on purpose because a store that *overwrote* a Reply would destroy a back-link.
+
+Three things that cut fixed the shape of, and each is one question given one owner.
+**Everything but the reciprocal pair is proved once**
+(`storeObject_reply_stackLinks_preserves_nonReciprocal`, over the six pre-state facts a
+stack-link store actually reads) and assembled twice, because the full bundle and the
+relaxed one differ in the pair and nowhere else.  **The splice's store chain has one
+owner** — `spliceReplyFrameOut_transport`, stated over *any* predicate a
+caller-preserving Reply store carries — since which stores run, in what order, with
+which lookups surviving between them, is a fact about the operation and not about a
+bundle; both carriages are one application of it, and
+`spliceReplyFrameOutOrSelf_replyLinkageFrame` is that same transport at
+`P := replyLinkageFrame st`.  And **the composite states every hypothesis on the state
+the removal runs on**: the answered Reply survives the splice with its `caller`
+(`replyCallerAgree`) and the woken caller's TCB survives it verbatim
+(`spliceReplyFrameOutOrSelf_tcb_backward`), both discharged inside
+`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage` rather than
+pushed onto a caller who would have to reason about a state the operation does not rest
+at.
+
+The premises are **jointly satisfiable, and that is exhibited rather than argued**:
+`restoredAndConsumed_preserves_ipcInvariantFull` already supplies the relaxed bundle and
+the woken caller's non-`.blockedOnReply`-ness *at one state*, which is exactly the
+pairing the deleted theorem could not have — so the vacuity this section is about is
+refuted by a live production composite rather than by a fixture.  Nothing consumes the
+new composite today (the reply spine proves the same result per conjunct over the whole
+`endpointReply`, and collapsing those two routes is a cut of its own), so it is
+**anchored** for the reason `replyCallerLinkage_refutes_woken_linked_caller` is.
 
 One de-duplication rode along.  "Does this victim bound an endpoint queue?" was asked by
 the notification arm and, in this cut, by the reply arm — of victims in *different*
@@ -5567,7 +6381,9 @@ bounded by `objectIndex.length`.
 - `revertPriorityInheritance`: structurally identical to propagation (same updatePipBoost)
 
 **Integration points**:
-- `endpointCallWithDonation`: propagates PIP after Call completes (D4-L)
+- `endpointCallCrossCoreDispatch`: propagates PIP after Call completes (D4-L;
+  the single-core `endpointCallWithDonation` held this integration point until
+  `v0.35.192` deleted it as superseded)
 - `endpointReplyWithDonation`: reverts PIP after Reply unblocks client (D4-M)
 - `endpointReplyRecvWithDonation`: reverts PIP for ReplyRecv (D4-M)
 - `suspendThread`: reverts PIP before cleanup pipeline (D4-N)
@@ -6401,6 +7217,33 @@ endpoint-keyed gates through `endpointFlowGate`, which **conjoins** the global
 lattice check with the endpoint's override rather than replacing it — so V6-G's
 `endpointPolicyRestricted` is structural (a misconfigured override cannot widen
 anything) and unconfigured deployments are unchanged.
+
+**What the gate checked is recorded in the state, on both sides (WS-RR RR8.16,
+`v0.35.191` and `v0.35.196`).**  `endpointFlowGate` is evaluated at a transition
+and the state records no trace of it, so a *later* transition cannot see that it
+passed.  Two predicates close that: `blockedSenderFlowsToEndpoint` says every
+thread blocked *sending* or *calling* on an endpoint has a label that flows **to**
+it, and `blockedReceiverFlowsFromEndpoint` says every thread blocked *receiving*
+on one has a label the endpoint's flows **to**.  The direction is the whole
+content of each — one reads `thread ⊑ endpoint` and the other `endpoint ⊑
+thread` — and their composition is what makes a *donated* scheduling context's two
+ends comparable: `label owner ⊑ label ep ⊑ label holder`.  Both are established at
+the single production write of a blocking `ipcState`
+(`storeTcbIpcStateAndMessage`), taking that arm's own gate as an argument;
+transported by `blockedSenderShrinks` / `blockedReceiverShrinks`, which are
+weaker than an `ipcState` frame on purpose, since a rendezvous writes the
+receiver `.ready` and a wake writes a runnable state — neither frames every
+`ipcState` while both leave the blocked set no larger; and inhabited by the
+production boot state for **every** labelling context, so neither is an
+assumption nothing exhibits.  With them the two checked endpoint dispatches carry
+both facts, including the one transition that **mints** a donation, where no
+binding frame can: the `.call` arm reads the receiver's half off the state at the
+rendezvous, and `queueHeadBlockedConsistent` — an `ipcInvariantFull` conjunct — is
+what says *which* thread the receiver is, the sending gate being evaluated on the
+invoking thread while the receiving gate is evaluated on a thread the rendezvous
+finds on a queue.  `ipcReachableUnder ctx` is the reachable-state pack under a
+labelling: `ipcReachable` and the three flow facts, opt-in, so a consumer that
+reasons about no flow keeps the unlabelled pack unchanged.
 
 **Information flow under fine locks (WS-SM SM8.D, v0.33.9).**
 The SM3 two-phase-locking bracket writes a per-object `RwLockState` on every

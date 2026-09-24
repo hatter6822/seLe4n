@@ -1879,14 +1879,15 @@ private def differentialEndpointReplyRedirectsToOrigin : IO Unit := do
     (diffAddEndpoint mkEmptyIntermediateState diffEpId {}) caller) server) origin)
     rid { replyId := rid, caller := some diffA, next := some (.head diffScId) })
     diffScId { diffDonatedSc (some rid) with donationOrigin := some diffA }
-  -- **The resolver DECLINES here, and that is the point.**  The answered caller is
-  -- `.blockedOnReply` at the state the resolver reads — it is waiting on this very
-  -- reply — so `donationOriginRebindable` refuses it and the recipient comes from
-  -- the FALLBACK rather than from the origin field.  The outcome is the same
-  -- thread by a different route, which is exactly what makes this half
+  -- **The resolver DECLINES here, and that is the point.**  The answered caller's
+  -- own frame HEADS the context at the state the resolver reads — it is waiting on
+  -- this very reply — so its frame is on a live stack and `donationOriginRebindable`
+  -- (the bind's own admissibility since `v0.35.157`) refuses it; the recipient
+  -- comes from the FALLBACK rather than from the origin field.  The outcome is the
+  -- same thread by a different route, which is exactly what makes this half
   -- discriminating: a selector that fired unconditionally would answer
   -- `some diffA`, pass every outcome assertion, and fail this one.
-  expect "FO-044 half two: the resolver DECLINES a reply-blocked origin"
+  expect "FO-044 half two: the resolver DECLINES an origin whose frame heads the context"
     (frozenDonationOriginRecipient? (freeze sameOrigin) diffScId == none
       && SeLe4n.Kernel.donationOriginRecipient? sameOrigin.state diffScId == none)
   expect "FO-044 half two: ...so the recipient is the answered caller by FALLBACK, on both surfaces"
@@ -2543,6 +2544,135 @@ private def differentialSchedContextUnbindClearsOrigin : IO Unit := do
      | .ok (_, st') => frozenOriginOf st' diffScId == some none
      | .error _ => false)
 
+/-- **FO-050 (WS-RR RR8.12 Cut B2, `v0.35.182`): the bind PLACES a parked
+runnable thread, on both surfaces.**
+
+The live bind re-bucketed only a thread already on a run queue, so a runnable
+thread on none kept a reservation it could never spend — `chooseThreadOnCore`
+selects exclusively from `runQueueOnCore`.  `v0.35.158`'s reclaim parks exactly
+such a thread and names a bind as its recovery, so this is that recovery made to
+work; seL4-MCS's `schedContext_bindTCB` ends in `SCHED_ENQUEUE` (read at
+`13.0.0`).
+
+The frozen mirror carried the same divergence and is swept in the same cut,
+because a cut that touches a live transition with a frozen mirror sweeps the
+mirror: `frozenWriteTcbBoundPlaced` is the bind-specific writer, and it is not a
+widening of `frozenWriteTcbRebucketed` — that one's other callers are priority
+writes, which must not make a parked thread schedulable.
+
+The RETIRED reading is computed beside the live one on both surfaces, so the
+assertions are known to discriminate. -/
+private def differentialSchedContextBindPlacesParked : IO Unit := do
+  -- A parked runnable thread: `.ready`, not suspended, and on NO run queue.
+  -- Built through `Builder.createObject` directly rather than through
+  -- `diffAddTcb`, which enqueues every `.ready` thread it is handed — the very
+  -- shape this witness must not have.
+  -- `threadState := .Ready` is load-bearing: `diffTcb` leaves the TCB structure's
+  -- default, which is `.Inactive`, and the guard refuses a suspended thread.  The
+  -- live parked holder carries `.Ready` (measured on `SmpCancellationSuite` §3.26b),
+  -- so this is the shape the kernel reaches rather than a fixture convenience.
+  let parkedTcb : TCB := { diffTcb 62 with ipcState := .ready, threadState := .Ready }
+  let scFree : SeLe4n.Kernel.SchedContext :=
+    { scId := diffScId, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+      deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+      boundThread := none, scReply := none, isActive := false }
+  let istParked := diffAddSchedContext
+    (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
+      parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
+    diffScId scFree
+  let stParked := istParked.state
+  expect "FO-050 setup: the thread is `.ready`, unbound and on NO core"
+    ((stParked.getTcb? diffA).map (·.ipcState) == some .ready
+      && (stParked.getTcb? diffA).map (·.schedContextBinding)
+           == some SeLe4n.Kernel.SchedContextBinding.unbound
+      && SeLe4n.Kernel.placedCoreOf? stParked diffA == none)
+  -- (1) the live side.
+  match stParked.getTcb? diffA with
+  | none => expect "FO-050 setup: the parked thread resolves" false
+  | some t =>
+    expect "FO-050: the live placement guard admits it"
+      (SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t scFree)
+    expect "FO-050 NEGATIVE: ...and refuses it once BLOCKED"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
+        { t with ipcState := .blockedOnReceive diffEpId } scFree)
+    expect "FO-050 NEGATIVE: ...and once SUSPENDED"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
+        { t with threadState := .Inactive } scFree)
+    expect "FO-050 NEGATIVE: ...and on a reservation with NO BUDGET (PR #900 review)"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t
+        { scFree with budgetRemaining := ⟨0⟩ })
+  match liveSchedContextBindState stParked diffScId diffA with
+  | none => expect "FO-050: the live bind succeeds on the parked thread" false
+  | some stBound =>
+    expect "FO-050: the live bind puts it on a run queue"
+      (SeLe4n.Kernel.runnableOnSomeCore stBound diffA)
+  -- (2) the frozen side, on the SAME state.
+  let fz := freeze istParked
+  match fz.getTcb? diffA with
+  | none => expect "FO-050 setup: the frozen store holds the parked thread" false
+  | some ft =>
+    expect "FO-050: the FROZEN placement guard admits it, and the retired reading does not place"
+      (SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread fz diffA ft scFree
+        && !SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fz diffA)
+  match frozenSchedContextBind diffScId.toObjId diffA fz with
+  | .error e => expect s!"FO-050: the frozen bind succeeds (error: {reprStr e})" false
+  | .ok (_, fzBound) =>
+    expect "FO-050: the frozen bind puts it in a bucket"
+      (SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
+    expect "FO-050 NEGATIVE: the RETIRED frozen writer leaves it in none"
+      (match SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed fz diffA
+          { (fz.getTcb? diffA).getD (diffTcb 62) with
+            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId } with
+       | .ok fzRetired => !SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzRetired diffA
+       | .error _ => false)
+    -- CONTROL: on a thread that was already in a bucket both writers re-bucket,
+    -- so the negative above is about the PARKED shape rather than about the
+    -- retired writer doing nothing at all.
+    let fzQueued := freeze (diffAddSchedContext
+      (diffAddTcb (diffAddTcb mkEmptyIntermediateState (diffTcb 62)) (diffTcb 63))
+      diffScId scFree)
+    expect "FO-050 CONTROL: on an already-queued thread both writers keep it queued"
+      (match SeLe4n.Kernel.FrozenOps.frozenWriteTcbRebucketed fzQueued diffA
+          { (fzQueued.getTcb? diffA).getD (diffTcb 62) with
+            schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId } with
+       | .ok fzR => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzR diffA
+       | .error _ => false)
+  -- (3) PR #900 review (`v0.36.1`): the SAME parked thread on an EXHAUSTED
+  -- reservation is placed by NEITHER surface.  Cut B2's guard admitted it whatever
+  -- the budget, so it landed on a run queue the selector skips it on; the fourth
+  -- conjunct is the selector's own reading, and the frozen mirror carries it
+  -- clause for clause.  The RETIRED three-conjunct guard is computed beside it.
+  let scSpent : SeLe4n.Kernel.SchedContext := { scFree with budgetRemaining := ⟨0⟩ }
+  let istSpent := diffAddSchedContext
+    (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
+      parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
+    diffScId scSpent
+  let stSpent := istSpent.state
+  match stSpent.getTcb? diffA with
+  | none => expect "FO-050 (3) setup: the parked thread resolves" false
+  | some t =>
+    expect "FO-050 (3) NEGATIVE: the RETIRED three-conjunct guard admits the spent reservation"
+      ((SeLe4n.Kernel.placedCoreOf? stSpent diffA).isNone && t.ipcState == .ready
+        && t.threadState != SeLe4n.Model.ThreadState.Inactive)
+    expect "FO-050 (3): the live guard refuses it"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stSpent diffA t scSpent)
+  match liveSchedContextBindState stSpent diffScId diffA with
+  | none => expect "FO-050 (3): the live bind of the spent reservation succeeds" false
+  | some stBound =>
+    expect "FO-050 (3): the live bind leaves the thread on NO scheduler slot"
+      (SeLe4n.Kernel.placedCoreOf? stBound diffA == none)
+  let fzSpent := freeze istSpent
+  match fzSpent.getTcb? diffA with
+  | none => expect "FO-050 (3) setup: the frozen store holds the parked thread" false
+  | some ft =>
+    expect "FO-050 (3): the FROZEN guard refuses it too"
+      (!SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread fzSpent diffA ft scSpent)
+  match frozenSchedContextBind diffScId.toObjId diffA fzSpent with
+  | .error e => expect s!"FO-050 (3): the frozen bind succeeds (error: {reprStr e})" false
+  | .ok (_, fzBound) =>
+    expect "FO-050 (3): the frozen bind leaves it in NO bucket"
+      (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
+
 /-- FO-047c: the three refusals the frozen bind did not carry.
 
 Each half drives a state the live bind refuses and asserts the frozen mirror
@@ -3039,6 +3169,7 @@ def main : IO Unit := do
   differentialSchedContextBindClearsOrigin
   differentialSchedContextUnbindClearsOrigin
   differentialSchedContextBindRefusalsAgree
+  differentialSchedContextBindPlacesParked
   differentialSchedContextConfigureDomainOnlyKeepsOrder
   differentialComparisonHasBite
   -- **Derived, not hand-kept** (PR #895 review round 15).  The literal that

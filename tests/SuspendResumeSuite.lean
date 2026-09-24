@@ -799,9 +799,61 @@ private def sr034_frozenResumePreemptsOnEffectivePriority : IO Unit := do
       (fstB'.scheduler.current == some curTid)
   | .error e => throw <| IO.userError s!"frozen resume (b) failed: {repr e}"
 
+-- ============================================================================
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the live `.tcbResume` arm's resolved
+-- scheduler-domain footprint
+-- ============================================================================
+--
+-- `schedLockSet_resumeThreadOnCore` is `schedFootprintOfCores` of the arm's own
+-- SM8.B write set with an **empty** replenish segment.  The two claims a state
+-- can measure that no theorem states of one are that the write set's first core
+-- is the resumed thread's *home* rather than the executing core -- so a remote
+-- resume declares the queue it actually enqueues on -- and that the live arm
+-- moves no scheduling context, which is the empty segment's exact half.
+
+/-- SR-035: the resume footprint names the resumed thread's home core and the
+executing core, and **no** replenish-queue lock on any core; the live arm writes
+none either.  B is pinned to core 1 and the syscall runs on core 0, so the two
+members are distinct -- a footprint resolved at the executing core alone would
+declare neither the queue B enters nor a lock the enqueue needs. -/
+private def sr035_resumeFootprintNamesHomeAndExecutingCores : IO Unit := do
+  let aTid : SeLe4n.ThreadId := ⟨1⟩
+  let bTid : SeLe4n.ThreadId := ⟨2⟩
+  let core1 : SeLe4n.Kernel.Concurrency.CoreId := ⟨1, by decide⟩
+  let bootCore := SeLe4n.Kernel.Concurrency.bootCoreId
+  let st : SystemState :=
+    (((SeLe4n.Testing.BootstrapBuilder.empty.withObject aTid.toObjId
+        (.tcb (mkTcb 1 .Running 10))).withObject bTid.toObjId
+        (.tcb { mkTcb 2 .Inactive 20 with cpuAffinity := some core1 })).withCurrent
+        (some aTid)).build
+  let vB : SeLe4n.ValidThreadId := ⟨bTid, by decide⟩
+  let fp := SeLe4n.Kernel.schedLockSet_resumeThreadOnCore st vB bootCore
+  expect "SR-035 precondition: B is homed on core 1, the syscall runs on core 0"
+    (SeLe4n.Kernel.determineTargetCore st bTid == core1 && core1 != bootCore)
+  expect "SR-035 the footprint names B's home core's run-queue write lock"
+    (decide ((SeLe4n.Kernel.SchedLockId.runQueue ⟨core1⟩,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
+  expect "SR-035 ...and the executing core's, which the inline reschedule writes"
+    (decide ((SeLe4n.Kernel.SchedLockId.runQueue ⟨bootCore⟩,
+      SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp))
+  expect "SR-035 ...and no replenish-queue write lock on any core"
+    (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+      !decide ((SeLe4n.Kernel.SchedLockId.replenishQueue ⟨c⟩,
+        SeLe4n.Kernel.Concurrency.AccessMode.write) ∈ fp)))
+  match resumeThreadOnCoreLive st vB bootCore with
+  | .ok (st', _) =>
+    expect "SR-035 the live arm enqueues B on its own home core, not the executing one"
+      ((st'.scheduler.runQueueOnCore core1).contains bTid)
+    expect "SR-035 ...and writes no replenish queue on any core -- the empty segment's exact half"
+      (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
+        (st'.scheduler.replenishQueueOnCore c).entries
+          == (st.scheduler.replenishQueueOnCore c).entries))
+  | .error e => throw <| IO.userError s!"SR-035 live resume should succeed, got {repr e}"
+
 end SeLe4n.Testing.SuspendResumeSuite
 
 open SeLe4n.Testing.SuspendResumeSuite in
+
 def main : IO Unit := do
   IO.println "=== D1 Suspend/Resume Test Suite ==="
   IO.println "--- D1-Q1: suspendThread ---"
@@ -853,4 +905,6 @@ def main : IO Unit := do
   sr032_frozenResumeClearsEveryRestoredField
   sr033_frozenResumeRecomputesPipBoost
   sr034_frozenResumePreemptsOnEffectivePriority
-  IO.println "=== All D1 suspend/resume tests passed (35 tests) ==="
+  IO.println "--- v0.35.167: the .tcbResume arm's resolved scheduler footprint ---"
+  sr035_resumeFootprintNamesHomeAndExecutingCores
+  IO.println "=== All D1 suspend/resume tests passed (36 tests) ==="

@@ -364,6 +364,17 @@ MACHINERY_PINS = {
     # reconciliation and the per-site discipline check; it mints no
     # declaration.
     ("SeLe4n/Testing/ReplyStackWriteCensus.lean", "run_cmd"): 1,
+    # WS-RR RR8.12 Cut C5: the scheduler-footprint census, decided over the
+    # elaborated environment.  TWO `run_cmd`s and no minting: the census itself
+    # (it derives the `SchedLockId` footprint family, reduces each member
+    # towards `schedFootprintOfCores` and reconciles consumption against the
+    # exemption register in both directions), and its self-test, which decides
+    # both branches of the shape check, the type half of the family test, and
+    # `namedBy` against a planted namer pair plus a live-tree wiring case.  The
+    # self-test is separate because neither failing branch can fire on the live
+    # tree, and a check that cannot fire and carries no witness is
+    # indistinguishable from one that is wrong.
+    ("SeLe4n/Testing/SchedFootprintCensus.lean", "run_cmd"): 2,
     # The store-read classifier's Tier 1 reconciliation: it compares the text
     # classifier's per-line verdicts against `findDeclarationRanges?` and the
     # conclusion of each declaration's type, and throws on disagreement.  It
@@ -495,7 +506,7 @@ _DECL_RE = re.compile(
     # skipped, and an *anonymous* instance has no name for the marker to
     # live in, so the name capture correctly refuses it.  `public` joins
     # the modifier run for the module system's spellings.
-    r"^\s*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
+    r"^[^\S\n]*" + _COMPOSITE_PREFIX + r"(?:@\[[^\]]*\]\s*)*"
     r"(?P<mods>" + _MODIFIER_RUN + r")"
     r"(?:theorem|lemma|def|abbrev|opaque|axiom"
     r"|instance(?:\s*\(\s*priority\s*:=[^)]*\))?)\s+"
@@ -1023,6 +1034,21 @@ def lean_sources(root: str) -> list[str]:
     return sorted(found)
 
 
+#: Where `_blank_strings`' code state has a decision to make: a guillemet, a
+#: string opener, a possible char-literal opener.  Inside a literal only an
+#: escape, the closer or a newline matters; inside a guillemet span only its
+#: close or a newline.
+_BS_CODE = re.compile(r"[«\"']")
+_BS_STRING = re.compile(r'[\\"\n]')
+_BS_CHAR = re.compile(r"[\\'\n]")
+_BS_QUOTED = re.compile(r"[»\n]")
+_BS_IDENT = re.compile(r"[\w'!?]")
+#: `_blank_syntax_quotations`' two triggers, and its paren balancer's.
+_SQ_OPEN = re.compile(r"«|`\(")
+_SQ_PAREN = re.compile(r"[()]")
+_SQ_NON_NEWLINE = re.compile(r"[^\n]")
+
+
 def _blank_strings(source: str) -> str:
     """Blank the contents of double-quoted string literals, offsets kept.
 
@@ -1034,30 +1060,28 @@ def _blank_strings(source: str) -> str:
     numbers stay aligned, and the quotes themselves survive so the lexical
     structure stays visible.
     """
+
+    # Run-based (test-performance audit, v0.35.159): the character loop this
+    # replaced was 25 of this gate's 75 seconds, and outside a literal it did
+    # nothing but copy.  Each state jumps to the next character it decides
+    # on and copies or blanks the run in between whole; the states, their
+    # transitions and the character they emit are the loop's own, and the
+    # output is byte-identical to it -- verified over every source in the
+    # tree and over 300 000 random strings drawn from the delimiter alphabet.
     out: list[str] = []
-    in_string = False
-    in_char = False
-    in_quoted = False
-    escaped = False
-    for char in source:
-        if in_string or in_char:
-            if escaped:
-                out.append(" ")
-                escaped = False
-            elif char == "\\":
-                out.append(" ")
-                escaped = True
-            elif in_string and char == '"':
-                out.append(char)
-                in_string = False
-            elif in_char and char == "'":
-                out.append(char)
-                in_char = False
-            elif char == "\n":
-                out.append(char)
-            else:
-                out.append(" ")
-        elif in_quoted:
+    n = len(source)
+    i = 0
+    while i < n:
+        m = _BS_CODE.search(source, i)
+        if m is None:
+            out.append(source[i:])
+            break
+        j = m.start()
+        out.append(source[i:j])
+        char = source[j]
+        out.append(char)
+        i = j + 1
+        if char == "«":
             # A guillemet-quoted identifier (`«a"b»`) is code, not data --
             # and it is *one atomic token*, so its word characters survive
             # while every delimiter-significant character inside is
@@ -1073,28 +1097,54 @@ def _blank_strings(source: str) -> str:
             # *family name* keeps its marker and stays censused; a newline
             # ends the state, since Lean's quoted identifiers cannot span
             # lines, so a stray `«` cannot restyle the rest of the file.
-            if char == "»" or char == "\n":
-                out.append(char)
-                in_quoted = False
-            elif char.isalnum() or char in "_'!?":
-                out.append(char)
-            else:
-                out.append("_")
+            m2 = _BS_QUOTED.search(source, i)
+            stop = n if m2 is None else m2.start()
+            for inner in source[i:stop]:
+                out.append(inner if (inner.isalnum() or inner in "_'!?") else "_")
+            if m2 is None:
+                break
+            out.append(source[stop])
+            i = stop + 1
+            continue
+        if char == "'":
+            # A quote after a non-identifier character opens a *char
+            # literal* (PR #886 review: `'"'` flipped the string state
+            # and blanked the rest of the file); a quote after an
+            # identifier character is a prime (`st'`) and stays plain
+            # text.
+            if not (j == 0 or not _BS_IDENT.match(source[j - 1])):
+                continue
+            closer = _BS_CHAR
         else:
-            out.append(char)
-            if char == "«":
-                in_quoted = True
-            elif char == '"':
-                in_string = True
-            elif char == "'" and (not out[:-1] or not re.match(
-                r"[\w'!?]", out[-2] if len(out) >= 2 else " "
-            )):
-                # A quote after a non-identifier character opens a *char
-                # literal* (PR #886 review: `'"'` flipped the string state
-                # and blanked the rest of the file); a quote after an
-                # identifier character is a prime (`st'`) and stays plain
-                # text.
-                in_char = True
+            closer = _BS_STRING
+        # Inside a string or char literal: every character between the
+        # quotes (escapes included) becomes a space; newlines survive so
+        # line numbers stay aligned, and the closing quote survives so the
+        # lexical structure stays visible.
+        while True:
+            m2 = closer.search(source, i)
+            if m2 is None:
+                out.append(" " * (n - i))
+                i = n
+                break
+            k = m2.start()
+            out.append(" " * (k - i))
+            inner = source[k]
+            if inner == "\\":
+                out.append(" ")
+                if k + 1 < n:
+                    out.append(" ")
+                    i = k + 2
+                else:
+                    i = k + 1
+                continue
+            if inner == "\n":
+                out.append("\n")
+                i = k + 1
+                continue
+            out.append(inner)
+            i = k + 1
+            break
     return "".join(out)
 
 
@@ -1111,11 +1161,22 @@ def _blank_syntax_quotations(source: str) -> str:
     direction: a quotation never *contains* a real declaration, so the
     census can only lose imposters.
     """
-    out = list(source)
+
+    # Token-driven (test-performance audit, v0.35.159): the loop this replaced
+    # examined every character to find the rare `«` and `` `( ``; it now jumps
+    # from one to the next and balances a quotation's parentheses by the same
+    # rule, blanking the runs between them whole.  Byte-identical to the loop
+    # -- verified over the tree and over random strings, as `_blank_strings`.
+    pieces: list[str] = []
+    n = len(source)
     index = 0
-    while index < len(source) - 1:
-        char = source[index]
-        if char == "«":
+    last = 0
+    while index < n - 1:
+        m = _SQ_OPEN.search(source, index)
+        if m is None or m.start() >= n - 1:
+            break
+        index = m.start()
+        if source[index] == "«":
             # A guillemet-quoted identifier is one token: a backtick or
             # paren inside it (`«harmless\`(unclosed»`) is identifier text,
             # and treating it as a quotation opener blanked to end of file
@@ -1128,25 +1189,40 @@ def _blank_syntax_quotations(source: str) -> str:
             # template to the census (PR #886 review, the next round).
             # This skip stays as the local statement of the same fact.
             close = source.find("»", index + 1)
-            index = len(source) if close == -1 else close + 1
-        elif char == "`" and source[index + 1] == "(":
-            depth = 0
-            scan = index + 1
-            while scan < len(source):
-                inner = source[scan]
-                if inner == "(":
-                    depth += 1
-                elif inner == ")":
-                    depth -= 1
-                    if depth == 0:
-                        break
-                elif depth > 0 and inner != "\n":
-                    out[scan] = " "
-                scan += 1
-            index = scan + 1
+            index = n if close == -1 else close + 1
+            continue
+        # `` `( ``: the interior is blanked to the matching close paren --
+        # newlines and the bracketing parens kept, nesting respected.
+        scan = index + 1
+        pieces.append(source[last:scan])
+        depth = 0
+        while True:
+            m2 = _SQ_PAREN.search(source, scan)
+            if m2 is None:
+                tail = source[scan:]
+                pieces.append(_SQ_NON_NEWLINE.sub(" ", tail) if depth > 0 else tail)
+                scan = n
+                break
+            k = m2.start()
+            run = source[scan:k]
+            pieces.append(_SQ_NON_NEWLINE.sub(" ", run) if depth > 0 else run)
+            pieces.append(source[k])
+            if source[k] == "(":
+                depth += 1
+            else:
+                depth -= 1
+                if depth == 0:
+                    scan = k
+                    break
+            scan = k + 1
+        if scan >= n:
+            last = n
+            index = n + 1
         else:
-            index += 1
-    return "".join(out)
+            last = scan + 1
+            index = scan + 1
+    pieces.append(source[last:])
+    return "".join(pieces)
 
 
 @functools.lru_cache(maxsize=None)
@@ -2710,8 +2786,20 @@ class Bundle:
 # (PR #886 review): `namespace «shadow»` is a scope Lean accepts, and a
 # scanner that did not push it recorded declarations inside under the
 # *enclosing* prefix -- which is exactly where a shadow must not be recorded.
+# `^[^\S\n]*`, not `^\s*`, at the head of every line-anchored scan here
+# (test-performance audit, v0.35.159).  `\s*` under MULTILINE eats the blank
+# lines and the indentation BELOW every line start before it can fail the
+# keyword, then backtracks through them one character at a time retrying the
+# alternation, so a proof-heavy tree pays quadratically per whitespace run:
+# 9.3 s per pass for each of `_SCOPE_RE` and `_DECL_RE`, 1.6 s with the class
+# bounded to the line.  What changes is only where a match preceded by blank
+# lines is said to START (its own line rather than the first blank one); every
+# match, its end and its groups are the same, and the two consumers of a start
+# -- the namespace bisection and the `variable` interval sort -- were checked to
+# answer identically on every declaration in the tree, because a breakpoint
+# ends mid-line and a declaration never begins inside blank lines.
 _SCOPE_RE = re.compile(
-    r"^\s*(?:namespace\s+"
+    r"^[^\S\n]*(?:namespace\s+"
     r"(?P<ns>(?:«[^»\n]*»|[^\W\d][\w']*)(?:\.(?:«[^»\n]*»|[^\W\d][\w']*))*)"
     # `public section` is a scope like any other (PR #886 review -- verified
     # against the toolchain): a scanner blind to the modifier missed the
@@ -2770,7 +2858,7 @@ def prefix_at(breakpoints: list[tuple[int, str]], offset: int) -> str:
     return breakpoints[index - 1][1] if index else ""
 
 
-_VARIABLE_RE = re.compile(r"^\s*variable(?![\w'!?])", re.MULTILINE)
+_VARIABLE_RE = re.compile(r"^[^\S\n]*variable(?![\w'!?])", re.MULTILINE)
 
 
 @functools.lru_cache(maxsize=None)

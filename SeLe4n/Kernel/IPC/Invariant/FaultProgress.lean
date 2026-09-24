@@ -66,9 +66,10 @@ open SeLe4n.Kernel.Concurrency
 --
 -- The relocation is this project's *a shared answer must be reachable from
 -- every asker* rule rather than tidying.  The suspend pipeline's placement
--- payoff (`suspendThreadOnCore_holder_still_placed`, in
--- `IPC/CrossCore/Cancellation.lean`) needs the walk's run-queue and `current`
--- frames, and this module imports `IPC.CrossCore.Fault`, which imports that one
+-- payoff (`suspendThreadOnCore_holder_unplaced` since `v0.35.158`;
+-- `suspendThreadOnCore_holder_still_placed` until the reclaim stopped waking the
+-- holder, in `IPC/CrossCore/Cancellation.lean`) needs the walk's run-queue and
+-- `current` frames, and this module imports `IPC.CrossCore.Fault`, which imports that one
 -- — so the second asker could not have reached the answer and would have grown
 -- its own.  §2 and §3 below consume the relocated names through the
 -- `PriorityInheritance` namespace.

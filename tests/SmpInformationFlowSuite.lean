@@ -620,7 +620,7 @@ open SeLe4n.Kernel.Concurrency (CoreId bootCoreId allCores)
 #check @SeLe4n.Kernel.schedulingCapacityRun
 #check @SeLe4n.Kernel.schedulingCapacityRun_singleton
 #check @SeLe4n.Kernel.schedulingChannel_trace_determines_observations
-#check @SeLe4n.Kernel.schedContextSubject?
+#check @SeLe4n.Kernel.SchedContextOps.schedContextBoundThread?
 #check @SeLe4n.Kernel.schedContextWriteSet
 #check @SeLe4n.Kernel.schedContextUnbind_confinedToCores
 #check @SeLe4n.Kernel.schedContextUnbind_crossCoreNonInterference
@@ -5459,9 +5459,9 @@ private def runPerCoreCoverageChecks : IO Unit := do
 /-- §4.7  The per-core enforcement boundary (SM8.B.6 / SM8.B.7). -/
 private def runEnforcementBoundaryChecks : IO Unit := do
   IO.println "--- §4.7 the per-core enforcement boundary ---"
-  assertBool "59 entries: 44 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration) + 15 cross-core wrappers"
-    (decide (enforcementBoundaryPerCore.length = 59) &&
-     decide (enforcementBoundaryExtended.length = 44) &&
+  assertBool "60 entries: 45 canonical (the 2PL bracket, the two audit readers, the declassifying signal, the fault-handler configuration, WS-RR RR8.16's revocation) + 15 cross-core wrappers"
+    (decide (enforcementBoundaryPerCore.length = 60) &&
+     decide (enforcementBoundaryExtended.length = 45) &&
      decide (crossCoreEnforcementEntries.length = 15))
   assertBool "every SyscallId is still covered by the extended boundary (single-core half)"
     (enforcementBoundaryPerCoreComplete)
@@ -7858,9 +7858,18 @@ private def ipcReceiverTcb : TCB :=
   { mkTcb 1043 40 (some c1) with cspaceRoot := ipcReceiverRoot }
 
 /-- A sender parked with a caps-bearing message — `receiveInstallsCaps`'s
-condition, read from exactly this field. -/
+condition, read from exactly this field.
+
+**WS-RR RR8.16 (`v0.35.189`)**: it is `.blockedOnCall lowEndpoint`, which is what
+a thread sitting on an endpoint's *send* queue is; before the object-domain
+donation members followed the transition's own guard, the fixture could leave it
+`.ready` — a shape no reachable state produces — and the donation assertions below
+still fired.  Parking it properly is what makes each of them decided by the
+`schedContextBinding` alone, which is what each one claims to be about. -/
 private def ipcSenderTcb : TCB :=
-  { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCapsMessage }
+  { mkTcb 1044 40 (some c0) with
+      pendingMessage := some ipcCapsMessage,
+      ipcState := .blockedOnCall lowEndpoint }
 
 private def ipcFootprintState : SystemState :=
   { niState with
@@ -7890,6 +7899,7 @@ conditioned on `installsCaps` alone would be absent exactly here. -/
 private def ipcDonatingCaplessSenderTcb : TCB :=
   { mkTcb 1044 40 (some c0) with
       pendingMessage := some ipcCaplessMessage,
+      ipcState := .blockedOnCall lowEndpoint,
       schedContextBinding := .bound ipcDonatedScId }
 
 /-- The fixture with a donating, caps-carrying rendezvous sender. -/
@@ -7903,12 +7913,16 @@ private def ipcDonatingCaplessFootprintState : SystemState :=
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId (.tcb ipcDonatingCaplessSenderTcb) }
 
-/-- ...and one that neither donates nor installs, for the negatives. -/
+/-- ...and one that neither donates nor installs, for the negatives.  The sender
+is parked on the send queue as a `Call` exactly as the donating ones are, so the
+negatives below are decided by its `.unbound` binding and by nothing else. -/
 private def ipcInertFootprintState : SystemState :=
   { ipcFootprintState with
       objects :=
         ipcFootprintState.objects.insert ipcSender.toObjId
-          (.tcb { mkTcb 1044 40 (some c0) with pendingMessage := some ipcCaplessMessage }) }
+          (.tcb { mkTcb 1044 40 (some c0) with
+                    pendingMessage := some ipcCaplessMessage,
+                    ipcState := .blockedOnCall lowEndpoint }) }
 
 /-- The operands a live `.send` supplies: the endpoint its capability names and
 the message it built. -/
@@ -7999,8 +8013,13 @@ private def runIpcDeclaredFootprintChecks : IO Unit := do
   -- while `.replyRecv` did it.  The resolver reads the same send-queue head the
   -- `senderTid` member does, so these run against a fixture whose head is a
   -- `.bound` caller rather than asserting a shape no state produces.
+  --
+  -- **WS-RR RR8.16 (`v0.35.189`)**: and since the member follows the donation's
+  -- own guard, the head must be parked as a `Call` and the receiver must be
+  -- `.unbound` — both true of this fixture, the first only since that cut made
+  -- the sender `.blockedOnCall` rather than `.ready`.
   assertBool "the rendezvous resolver finds the donation on a `.bound` sender"
-    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint
+    (decide (receiveRendezvousDonatedSc? ipcDonatingFootprintState lowEndpoint lowCurrent
       = some ipcDonatedScId))
   assertBool "a donating `.receive` declares the donated SchedContext write"
     (ipcDeclaredMember (Concurrency.lockSetForSyscall .receive
@@ -8295,18 +8314,24 @@ private def runDeclaredFootprintChecks : IO Unit := do
   -- `resolveCapAddress`'s own recursion, `cspaceWalkLockSet` read-locks each, and
   -- `cspaceWalk_conflicts_with_delete` proves the conflict with a `cspaceDelete`
   -- on the path that the root-only footprint could not state.
-  assertBool "the two uncovered lock domains are registered, each with an owner"
-    (decide (declaredFootprintUncoveredDomains.length = 2) &&
+  --
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): **one**, from two.  The syscall seam's
+  -- scheduler-domain entry is deleted — `syscallDispatchCrossCoreBracketedStep`
+  -- brackets on `schedulerLockBracketDomain` over the unified
+  -- `declaredUnifiedLockSetForAbiEntry`, whose `SchedLockId` members name the
+  -- run-queue and replenish-queue locks a `LockSet` could not express, and each
+  -- of the sixteen declared arms carries a coverage proof.
+  assertBool "the one uncovered lock domain is registered, with an owner"
+    (decide (declaredFootprintUncoveredDomains.length = 1) &&
      decide (declaredFootprintUncoveredDomains.map Prod.fst
-       = [UncoveredLockDomain.syscallSeamSchedulerDomain,
-          UncoveredLockDomain.taintTablePerKeyStore]) &&
+       = [UncoveredLockDomain.taintTablePerKeyStore]) &&
      declaredFootprintUncoveredDomains.all (fun d => !d.2.isEmpty))
   -- LOAD-BEARING NEGATIVE: completeness is quantified over the *constructors*,
   -- so a domain added without a registration cannot pass.
   assertBool "NEGATIVE: every uncovered-domain constructor is registered"
     (UncoveredLockDomain.all.all
        (fun d => declaredFootprintUncoveredDomains.map Prod.fst |>.contains d) &&
-     decide (UncoveredLockDomain.all.length = 2))
+     decide (UncoveredLockDomain.all.length = 1))
   -- PR #873 round 6: the inventory is no longer data alone.  Relying on declared
   -- footprints as a complete serialization discipline is gated on it being
   -- EMPTY, so the per-key taint store — the entry the review pressed twice — is
@@ -9706,7 +9731,7 @@ private def runAuditLiveArmChecks : IO Unit := do
   assertBool "both audit syscalls are in the ABI, with different required rights"
     (decide (SyscallId.auditRead.toNat = 31) &&
      decide (SyscallId.auditDrain.toNat = 32) &&
-     decide (SyscallId.count = 35) &&
+     decide (SyscallId.count = 36) &&
      decide (syscallRequiredRight .auditRead = AccessRight.read) &&
      decide (syscallRequiredRight .auditDrain = AccessRight.write))
   assertBool "both return a WORD, so the boundary reads the staged frame rather than constructing"
@@ -10333,9 +10358,9 @@ private def runDeclassifiedSignalDefaultChecks : IO Unit := do
 /-- §11.6  SM9.C.8 / SM9.C.9 — the ABI, the live arm and the registries. -/
 private def runDeclassifiedSignalAbiChecks : IO Unit := do
   IO.println "--- §11.6 SM9.C.8 the syscall, end to end ---"
-  assertBool "the syscall is in the ABI at 33, count 35, requiring the notification's write right"
+  assertBool "the syscall is in the ABI at 33, count 36, requiring the notification's write right"
     (decide (SyscallId.declassifySignal.toNat = 33) &&
-     decide (SyscallId.count = 35) &&
+     decide (SyscallId.count = 36) &&
      decide (SyscallId.ofNat? 33 = some SyscallId.declassifySignal) &&
      decide (syscallRequiredRight .declassifySignal = AccessRight.write))
   -- The same right the ordinary signal needs: the declassification gates sit
@@ -12051,6 +12076,308 @@ grep '^\\[declassification-taint\\]' > {declassificationTaintFixturePath}"
     IO.println s!"          (then refresh {declassificationTaintFixturePath}.sha256)"
     throw (IO.userError "taint-side acceptance trace fixture mismatch")
 
+-- ============================================================================
+-- §14  WS-RR RR8.8 (`v0.35.193`) — the cancellation reclaim's ABORT PREFIX is
+--      invisible, and the ONE class that is left is exhibited
+-- ============================================================================
+
+/-! ### §14 — the abort prefix's projection, and its residue
+
+`abortHolderProjectionStable` is the obligation WS-OD OD1.4 added when the
+cancellation reclaim grew a prefix that ends the holder's outstanding send or
+call.  `v0.35.84` proved the labelling layer under it — the endpoint object and
+the holder's own TCB are non-observable whenever the victim is — and could go no
+further, because the prefix runs the **single** `endpointQueueRemove` and only
+the **dual** removal had a projection lemma.  `v0.35.193` writes the single
+one (`endpointQueueRemove_preserves_projection`), so the obligation is
+discharged from `endpointSpliceHigh` and what a caller supplies is the holder's
+**queue neighbours** alone.
+
+These checks are that reduction, computed on a state the live operations build
+rather than asserted: the same abort, under two labellings that differ in
+exactly one object's label.  With the neighbour **high** the low observer's view
+is unchanged at every key the removal writes; with the neighbour **low** it
+changes at that key and at no other — which is register row 179's class, made
+visible rather than described.
+-/
+
+private def abortEp : SeLe4n.ObjId := ⟨1200⟩
+private def abortHolderTid : SeLe4n.ThreadId := ⟨1201⟩
+private def abortNeighbourTid : SeLe4n.ThreadId := ⟨1202⟩
+
+/-- The holder: blocked on a **call** at `abortEp`, at the head of its send
+queue.  That is the shape `abortHolderPendingIpc` aborts — a thread the reclaim
+found holding a donated reservation while it is itself waiting to be received. -/
+private def abortHolderTcb : TCB :=
+  { mkTcb 1201 40 none with
+      ipcState := .blockedOnCall abortEp
+      threadState := .BlockedCall
+      queuePrev := none
+      queuePPrev := some .endpointHead
+      queueNext := some abortNeighbourTid }
+
+/-- The thread queued **behind** it — the one the removal's successor patch
+rewrites, and the one whose label no fact of this tree constrains against the
+holder's. -/
+private def abortNeighbourTcb : TCB :=
+  { mkTcb 1202 40 none with
+      ipcState := .blockedOnSend abortEp
+      threadState := .BlockedSend
+      queuePrev := some abortHolderTid
+      queuePPrev := some (.tcbNext abortHolderTid)
+      queueNext := none }
+
+private def abortState : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject cnRoot (.cnode rootCNodeValue)
+    |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
+    |>.withObject abortEp (.endpoint
+        { sendQ := { head := some abortHolderTid, tail := some abortNeighbourTid } })
+    |>.withObject abortHolderTid.toObjId (.tcb abortHolderTcb)
+    |>.withObject abortNeighbourTid.toObjId (.tcb abortNeighbourTcb)
+    |>.build)
+
+/-- The live prefix, run for effect. -/
+private def abortPost : SystemState :=
+  Lifecycle.Suspend.abortHolderPendingIpc abortState abortHolderTid
+
+/-- Everything in the fixture high — the hypothesis `endpointSpliceHigh` states. -/
+private def abortLabelingAllHigh : LabelingContext :=
+  { objectLabelOf := fun _ => highLabel
+    threadLabelOf := fun _ => highLabel
+    endpointLabelOf := fun _ => highLabel
+    serviceLabelOf := fun _ => highLabel }
+
+/-- The same, with the **neighbour alone** dropped to low — the one clause of
+`endpointSpliceHigh` that no labelling fact of this tree can supply. -/
+private def abortLabelingLowNeighbour : LabelingContext :=
+  { abortLabelingAllHigh with
+      objectLabelOf := fun oid =>
+        if oid = abortNeighbourTid.toObjId then lowLabel else highLabel
+      threadLabelOf := fun t =>
+        if t = abortNeighbourTid then lowLabel else highLabel }
+
+/-- A thread's `queuePrev` **as the low observer sees it**: `none` when the
+thread is not observable at all, `some q` when it is.  `Option (Option ThreadId)`
+has `DecidableEq`, so unlike the whole projected state this is a decidable
+end-to-end read of the observable view. -/
+private def abortViewQueuePrev (ctx : LabelingContext) (st : SystemState)
+    (t : SeLe4n.ThreadId) : Option (Option SeLe4n.ThreadId) :=
+  match (projectState ctx lowObserver st).objects t.toObjId with
+  | some (.tcb pt) => some pt.queuePrev
+  | _ => none
+
+/-- An endpoint's send-queue head as the low observer sees it. -/
+private def abortViewSendHead (ctx : LabelingContext) (st : SystemState)
+    (oid : SeLe4n.ObjId) : Option (Option SeLe4n.ThreadId) :=
+  match (projectState ctx lowObserver st).objects oid with
+  | some (.endpoint ep) => some ep.sendQ.head
+  | _ => none
+
+def runAbortPrefixProjectionChecks : IO Unit := do
+  IO.println "-- §14 WS-RR RR8.8: the reclaim's abort prefix, and its residue --"
+  -- The fixture is a state the *live* removal acts on, not a hand-built
+  -- post-state: without this the invisibility below would be reporting an
+  -- operation that did nothing.
+  assertBool "the abort FIRES: the holder leaves the queue and is made ready"
+    (match abortPost.objects[abortHolderTid.toObjId]?,
+           abortPost.objects[abortEp]? with
+     | some (.tcb h), some (.endpoint ep) =>
+         decide (h.ipcState = ThreadIpcState.ready) &&
+         decide (h.queueNext = none) && decide (h.queuePPrev = none) &&
+         decide (ep.sendQ.head = some abortNeighbourTid)
+     | _, _ => false)
+  assertBool "…and it REWRITES the neighbour, which is what the residue is about"
+    (match abortPost.objects[abortNeighbourTid.toObjId]? with
+     | some (.tcb n) =>
+         decide (n.queuePrev = none) && decide (n.queuePPrev = some .endpointHead)
+     | _ => false)
+  -- (1) All four objects high — the theorem's hypothesis.  The low observer
+  -- sees none of them, before or after, so its view is unchanged at every key
+  -- the removal writes.
+  assertBool "ALL-HIGH: the low observer sees none of the three written objects"
+    (abortViewQueuePrev abortLabelingAllHigh abortState abortHolderTid == none &&
+     abortViewQueuePrev abortLabelingAllHigh abortState abortNeighbourTid == none &&
+     abortViewSendHead abortLabelingAllHigh abortState abortEp == none)
+  assertBool "ALL-HIGH: …and its view is UNCHANGED across the abort at each of them"
+    (abortViewQueuePrev abortLabelingAllHigh abortPost abortHolderTid
+        == abortViewQueuePrev abortLabelingAllHigh abortState abortHolderTid &&
+     abortViewQueuePrev abortLabelingAllHigh abortPost abortNeighbourTid
+        == abortViewQueuePrev abortLabelingAllHigh abortState abortNeighbourTid &&
+     abortViewSendHead abortLabelingAllHigh abortPost abortEp
+        == abortViewSendHead abortLabelingAllHigh abortState abortEp)
+  -- (2) The neighbour alone dropped to low — the class register row 179 owns.
+  -- The endpoint and the holder stay invisible, so the difference below is
+  -- attributable to the neighbour and to nothing else.
+  assertBool "LOW NEIGHBOUR: the endpoint and the holder are still invisible"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortState abortHolderTid == none &&
+     abortViewQueuePrev abortLabelingLowNeighbour abortPost abortHolderTid == none &&
+     abortViewSendHead abortLabelingLowNeighbour abortState abortEp == none &&
+     abortViewSendHead abortLabelingLowNeighbour abortPost abortEp == none)
+  assertBool "RESIDUE: the neighbour IS visible, and its link names the high holder"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortState abortNeighbourTid
+        == some (some abortHolderTid))
+  assertBool "RESIDUE: the abort of a HIGH holder MOVES that low view"
+    (abortViewQueuePrev abortLabelingLowNeighbour abortPost abortNeighbourTid
+        == some none &&
+     abortViewQueuePrev abortLabelingLowNeighbour abortPost abortNeighbourTid
+        != abortViewQueuePrev abortLabelingLowNeighbour abortState abortNeighbourTid)
+
+-- ============================================================================
+-- §15  WS-RR RR8.16 (`v0.35.196`) — the RECEIVING side of the endpoint gate,
+--      and the `.call` arm that can now carry the donation flow fact
+-- ============================================================================
+
+/-! ### §15 — what the receiver's gate recorded, and why the `.call` arm needed it
+
+`blockedSenderFlowsToEndpoint` records what the **sending** gate checked.  Nothing
+recorded what the **receiving** gate checked, so `donationFlowFromBlockedDonor`
+had to take that half as an argument and
+`endpointCallCrossCoreDispatchChecked` — the one transition that *mints* a
+donation — could carry no `donationOwnerFlowsToHolder` at all (register row 183).
+
+`blockedReceiverFlowsFromEndpoint` is that record, and these checks are what makes
+it load-bearing rather than decorative: three labellings over **one** fixture, a
+passive server blocked at an endpoint's receive-queue head and a client holding a
+reservation, driven through the **live** checked dispatch.
+
+1. **ADMITTING** — both gates pass, the donation is minted, and the composed flow
+   `client ⊑ server` holds.  That is the lift's conclusion, computed.
+2. **SEND-DENIED** — the caller's own gate fails, so the dispatch commits nothing
+   and no donation exists.  The control that the first case is about the gate.
+3. **RECEIVER-FACT-FALSE** — the caller's gate passes and the donation *is*
+   minted, and the conclusion `client ⊑ server` is **FALSE**.  The state is one no
+   `.receive` gate would have produced, which is exactly what
+   `blockedReceiverFlowsFromEndpoint` excludes — so the hypothesis is doing work,
+   and dropping it from the lift would make the lift false rather than merely
+   weaker.
+-/
+
+private def flowEp : SeLe4n.ObjId := ⟨1210⟩
+private def flowClient : SeLe4n.ThreadId := ⟨1211⟩
+private def flowServer : SeLe4n.ThreadId := ⟨1212⟩
+private def flowSc : SeLe4n.SchedContextId := SchedContextId.ofNat 1213
+
+/-- The client's own reservation — what the rendezvous lends to the server. -/
+private def flowClientSc : SchedContext :=
+  { scId := flowSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some flowClient, isActive := true }
+
+private def flowClientTcb : TCB :=
+  { mkTcb 1211 40 none with schedContextBinding := .bound flowSc }
+
+/-- The passive server, before it receives: `.ready` and holding no reservation. -/
+private def flowServerTcb : TCB :=
+  { mkTcb 1212 20 none with schedContextBinding := .unbound }
+
+private def flowReply : SeLe4n.ReplyId := ⟨1214⟩
+
+private def flowBase : SystemState :=
+  (BootstrapBuilder.empty
+    |>.withObject cnRoot (.cnode rootCNodeValue)
+    |>.withObject vsRoot (.vspaceRoot rootVSpaceValue)
+    |>.withObject flowEp (.endpoint {})
+    |>.withObject flowSc.toObjId (.schedContext flowClientSc)
+    |>.withObject flowReply.toObjId (.reply { replyId := flowReply })
+    |>.withObject flowClient.toObjId (.tcb flowClientTcb)
+    |>.withObject flowServer.toObjId (.tcb flowServerTcb)
+    |>.withRunnable [flowClient]
+    |>.build)
+
+/-- The state the checks run on, built by the **live** receive rather than by
+hand: the server blocks at `flowEp` with a reply object stashed, which is the
+shape `queueHeadBlockedConsistent` constrains and the premise
+`blockedReceiverFlowsFromEndpoint` is quantified over. -/
+private def flowState : SystemState :=
+  (endpointReceiveDualOnCore flowEp flowServer (some flowReply) bootCoreId flowBase).1
+
+/-- A labelling built from one assignment per principal, so the three cases below
+differ in the labels and in nothing else. -/
+private def flowLabeling (clientL epL serverL : SecurityLabel) : LabelingContext :=
+  { objectLabelOf := fun oid =>
+      if oid = flowEp then epL
+      else if oid = flowClient.toObjId then clientL
+      else if oid = flowServer.toObjId then serverL
+      else highLabel
+    threadLabelOf := fun t =>
+      if t = flowClient then clientL else if t = flowServer then serverL else highLabel
+    endpointLabelOf := fun oid => if oid = flowEp then epL else highLabel
+    serviceLabelOf := fun _ => highLabel }
+
+/-- Both gates pass: `client(low) ⊑ ep(low)` on the way in, `ep(low) ⊑ server(high)`
+when the server blocked. -/
+private def flowAdmitting : LabelingContext := flowLabeling lowLabel lowLabel highLabel
+
+/-- The caller's own gate fails: `client(high) ⊑ ep(low)` is refused. -/
+private def flowSendDenied : LabelingContext := flowLabeling highLabel lowLabel lowLabel
+
+/-- The caller's gate passes and the **receiver-side fact is false**:
+`ep(high) ⊑ server(low)` is refused, so no `.receive` gate could have produced this
+state — and the donation's conclusion `client(high) ⊑ server(low)` is false. -/
+private def flowReceiverFalse : LabelingContext := flowLabeling highLabel highLabel lowLabel
+
+/-- The live checked `.call` dispatch under a labelling. -/
+private def flowCall (ctx : LabelingContext) : SystemState :=
+  (endpointCallCrossCoreDispatchChecked ctx flowEp flowClient IpcMessage.empty
+    (AccessRightSet.ofList [.read, .write, .grant]) (SeLe4n.Slot.ofNat 0) bootCoreId
+    flowState).1
+
+/-- Did the rendezvous lend the client's reservation to the server? -/
+private def flowDonated (st : SystemState) : Option (SeLe4n.SchedContextId × SeLe4n.ThreadId) :=
+  replyDonationReturn? st flowServer
+
+def runReceiverGateFlowChecks : IO Unit := do
+  IO.println "-- §15 WS-RR RR8.16: the receiving gate's record, and the .call donation flow --"
+  -- The fixture is the shape the two hypotheses are about.
+  assertBool "pre: the server is blocked receiving at the endpoint's receive-queue head"
+    (match flowState.objects[flowServer.toObjId]?, flowState.objects[flowEp]? with
+     | some (.tcb s), some (.endpoint ep) =>
+         decide (s.ipcState = ThreadIpcState.blockedOnReceive flowEp) &&
+         decide (ep.receiveQ.head = some flowServer)
+     | _, _ => false)
+  assertBool "pre: the client owns a reservation and the server owns none"
+    (match flowState.objects[flowClient.toObjId]?, flowState.objects[flowServer.toObjId]? with
+     | some (.tcb c), some (.tcb s) =>
+         decide (c.schedContextBinding = .bound flowSc) &&
+         decide (s.schedContextBinding = .unbound)
+     | _, _ => false)
+  assertBool "pre: no donation exists yet"
+    (flowDonated flowState == none)
+  -- (1) ADMITTING.  Both gates pass, so the composition is available and the
+  -- donation the dispatch mints satisfies it.
+  assertBool "ADMITTING: the caller's gate passes and the receiver-side fact holds"
+    (securityFlowsTo (flowAdmitting.threadLabelOf flowClient)
+        (flowAdmitting.endpointLabelOf flowEp) &&
+      securityFlowsTo (flowAdmitting.endpointLabelOf flowEp)
+        (flowAdmitting.threadLabelOf flowServer))
+  assertBool "ADMITTING: the live dispatch lends the reservation to the server"
+    (flowDonated (flowCall flowAdmitting) == some (flowSc, flowClient))
+  assertBool "ADMITTING: …and the minted donation satisfies `donationOwnerFlowsToHolder`"
+    (securityFlowsTo (flowAdmitting.threadLabelOf flowClient)
+      (flowAdmitting.threadLabelOf flowServer))
+  -- (2) SEND-DENIED.  The control: the first case is about the gate, not about
+  -- the fixture.
+  assertBool "SEND-DENIED: the caller's own gate is refused"
+    (!securityFlowsTo (flowSendDenied.threadLabelOf flowClient)
+      (flowSendDenied.endpointLabelOf flowEp))
+  assertBool "SEND-DENIED: the dispatch commits nothing, so no donation exists"
+    (flowDonated (flowCall flowSendDenied) == none)
+  -- (3) RECEIVER-FACT-FALSE.  The decisive case: the caller's gate passes, the
+  -- donation IS minted, and the conclusion is false — so the receiver-side
+  -- hypothesis is load-bearing rather than decorative.
+  assertBool "RECEIVER-FALSE: the caller's gate passes"
+    (securityFlowsTo (flowReceiverFalse.threadLabelOf flowClient)
+      (flowReceiverFalse.endpointLabelOf flowEp))
+  assertBool "RECEIVER-FALSE: but the receiver-side fact is FALSE at the server"
+    (!securityFlowsTo (flowReceiverFalse.endpointLabelOf flowEp)
+      (flowReceiverFalse.threadLabelOf flowServer))
+  assertBool "RECEIVER-FALSE: the donation is still minted…"
+    (flowDonated (flowCall flowReceiverFalse) == some (flowSc, flowClient))
+  assertBool "RECEIVER-FALSE: …and `donationOwnerFlowsToHolder` would be FALSE there"
+    (!securityFlowsTo (flowReceiverFalse.threadLabelOf flowClient)
+      (flowReceiverFalse.threadLabelOf flowServer))
+
 def runSmpInformationFlowChecks : IO Unit := do
   IO.println "WS-SM SM8.A / SM8.B / SM8.C / SM8.D / SM8.E / SM9.A / SM9.B / SM9.C / SM9.D / \
 SM9.E — per-core observable state, non-interference, declassification audit, fine-lock \
@@ -12165,6 +12492,8 @@ declassification, causal provenance and the acceptance scenarios"
   runInformationFlowTraceFixtureCheck
   runDeclassificationReaderFixtureCheck
   runDeclassificationTaintFixtureCheck
+  runAbortPrefixProjectionChecks
+  runReceiverGateFlowChecks
   IO.println "===================================="
   IO.println ("All SM8.A per-core observable-state, SM8.B non-interference, " ++
     "SM8.C declassification-audit, SM8.D fine-lock information-flow, " ++

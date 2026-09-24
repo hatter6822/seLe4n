@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Безпека" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.155-blue" alt="Версія" />
+  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Версія" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="Ліцензія" /></a>
 </p>
@@ -96,11 +96,11 @@ security model) від seL4, водночас впроваджуючи архі�
 
 | Атрибут | Значення |
 |---------|----------|
-| **Версія** | `0.35.155` |
+| **Версія** | `0.36.1` |
 | **Тулчейн Lean** | `v4.28.0` |
-| **Продуктовий код (Lean LoC)** | 396 702 рядки у 334 файлах |
-| **Тестовий код (Lean LoC)** | 81 018 рядків у 70 тест-сьютах |
-| **Доведені декларації** | 13 131 декларація theorem/lemma (нуль sorry/axiom) |
+| **Продуктовий код (Lean LoC)** | 417 841 рядок у 340 файлах |
+| **Тестовий код (Lean LoC)** | 84 834 рядки у 70 тест-сьютах |
+| **Доведені декларації** | 13 815 декларацій theorem/lemma (нуль sorry/axiom) |
 | **Крейти Rust** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) у 48 файлах вихідного коду |
 | **Цільове обладнання** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Прив'язка до обладнання** | **H3 ЗАВЕРШЕНО** (WS-AG AG1–AG10): HAL, GIC-400, таймер, таблиці сторінок ARMv8, FFI-міст, завантаження в QEMU |
@@ -244,7 +244,7 @@ shootdown та обслуговування кешів, інформаційни
 **SM10** (релізне закриття → v1.0.0). Робочий потік ABI повернення
 системних викликів (**WS-RA**) завершено.
 
-**SM10 заблокована WS-RR** (готовність SMP-релізу) — фаза усунення зауважень перед 1.0, що триває зараз ([`SMP_RELEASE_READINESS_PLAN.md`](../../planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) та **RR4 — обробка відмов: повний fault-IPC із перезапуском за відповіддю (v0.34.44)**, який не дає потоку з відмовою відновитися на інструкції, що спричинила відмову: відмова записується в TCB, доставляється на кінцеву точку `faultHandler` потоку живим міжʼядерним ланцюжком call і опрацьовується відповіддю, що перезапускає потік із обраного PC або відкидає його. Залишаються RR5–RR8, далі **SM10** (релізне закриття → v1.0.0).
+**WS-RR** (готовність SMP-релізу) — фаза усунення зауважень перед 1.0 — **завершена у v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) та **RR4 — обробка відмов: повний fault-IPC із перезапуском за відповіддю (v0.34.44)**, який не дає потоку з відмовою відновитися на інструкції, що спричинила відмову: відмова записується в TCB, доставляється на кінцеву точку `faultHandler` потоку живим міжʼядерним ланцюжком call і опрацьовується відповіддю, що перезапускає потік із обраного PC або відкидає його. RR5–RR8 також завершені (RR8 — у v0.35.203). Тепер **SM10 заблокована WS-BP** (шлях завантаження на «голому залізі», [`SMP_BOOT_PATH_PLAN.md`](../../planning/SMP_BOOT_PATH_PLAN.md)) — це вміст SM10.1, жодну підзадачу не розпочато; далі **SM10** (релізне закриття → v1.0.0).
 
 Головний план: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 з планами окремих фаз у `docs/planning/SMP_*.md`. Канонічний пофазовий

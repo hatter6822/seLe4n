@@ -32,7 +32,7 @@ AN3-A / H-01), but deliberately does NOT re-export
 donation wrappers) because doing so would reintroduce the
 `Operations -> Donation -> Transport -> Core -> Operations` import
 cycle closed by AI4-A.  Consumers that want the transport-dependent
-donation wrappers (`endpointCallWithDonation`, etc.) must import
+donation wrappers (`endpointReplyWithDonation`, etc.) must import
 `SeLe4n.Kernel.IPC.Operations.Donation` directly — this is a
 prescriptive policy, not an accidental omission.  New IPC modules
 must honour the hub symmetry by exporting their primitives through

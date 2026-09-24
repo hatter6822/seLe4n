@@ -109,30 +109,22 @@ theorem cspaceInsertSlot_preserves_badgeWellFormed
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     badgeWellFormed st' := by
   obtain ⟨hNtfn, hCap⟩ := hInv
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-    cases obj with
-    | cnode cn =>
-      have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
-      simp only [hObj] at hStep
-      split at hStep
-      · simp at hStep
-      · refine ⟨?_, ?_⟩
-        · exact storeObject_cnode_preserves_notificationBadgesWellFormed st st' addr.cnode _
-            hNtfn hObjInv hStep
-        · exact storeObject_cnode_preserves_capabilityBadgesWellFormed st st' addr.cnode _
-            hCap hObjInv hStep
-            (fun slot' cap' badge' hLk hBdg => by
-              by_cases hSlotEq : addr.slot = slot'
-              · subst hSlotEq
-                rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
-                cases hLk; exact hCapValid badge' hBdg
-              · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
-                exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
-    | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-    | schedContext _ | reply _ => simp [hObj] at hStep
+  obtain ⟨cn, hCn, _, _, hStore⟩ := cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  have hObj : st.objects[addr.cnode]? = some (.cnode cn) :=
+    (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCn
+  have hUniq := SeLe4n.Model.CNode.slotsUnique_holds cn
+  refine ⟨?_, ?_⟩
+  · exact storeObject_cnode_preserves_notificationBadgesWellFormed st st' addr.cnode _
+      hNtfn hObjInv hStore
+  · exact storeObject_cnode_preserves_capabilityBadgesWellFormed st st' addr.cnode _
+      hCap hObjInv hStore
+      (fun slot' cap' badge' hLk hBdg => by
+        by_cases hSlotEq : addr.slot = slot'
+        · subst hSlotEq
+          rw [CNode.lookup_insert_eq cn addr.slot cap hUniq] at hLk
+          cases hLk; exact hCapValid badge' hBdg
+        · rw [CNode.lookup_insert_ne cn addr.slot slot' cap hSlotEq hUniq] at hLk
+          exact hCap addr.cnode cn slot' cap' badge' hObj hLk hBdg)
 
 /-- IPC de-threading D8: `ipcTransferSingleCap` preserves `badgeWellFormed` when the
 transferred cap has a valid badge. The CDT-edge steps (`ensureCdtNodeForSlot` ×2 +
@@ -152,7 +144,7 @@ theorem ipcTransferSingleCap_preserves_badgeWellFormed
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hInv
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -1573,7 +1565,7 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                 refine endpointQueueHeadDisjoint_of_singleQueueUpdate (recvQ := isReceiveQ)
                                   hEpBackC hObj hEpNewC ?_ ?_ hHD
                                 · cases isReceiveQ <;>
-                                    simp [hQ, queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext]
+                                    simp [queueRemoveBoundary_midLast hTailPair hQHeadNeTid hNext]
                                 · intro hd h
                                   refine Or.inl ?_
                                   rw [hQ]
@@ -2046,14 +2038,12 @@ theorem endpointQueueRemoveDual_preserves_dualQueueSystemInvariant
                                   have hHDStF : endpointQueueHeadDisjoint stF := by
                                     refine endpointQueueHeadDisjoint_of_singleQueueUpdate (recvQ := isReceiveQ)
                                       hEpBackD hObj hEpNewD ?_ ?_ hHD
-                                    · cases isReceiveQ <;>
-                                        simp [hQ, queueRemoveBoundary_midMore hTailPair hQHeadNeTid hNext]
+                                    · cases isReceiveQ <;> simp
                                     · intro hd h
                                       refine Or.inl ?_
                                       rw [hQ]
                                       revert h
-                                      cases isReceiveQ <;>
-                                        simp [queueRemoveBoundary_midMore hTailPair hQHeadNeTid hNext]
+                                      cases isReceiveQ <;> simp
                                   exact ⟨hEpWfD, hLinkStF, hAcycSF, hPPSF, hHDStF⟩
 
 -- ============================================================================

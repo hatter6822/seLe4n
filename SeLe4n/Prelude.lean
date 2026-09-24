@@ -170,6 +170,17 @@ instance : ToString ThreadId where
 /-- H-06/WS-E3: The sentinel ThreadId (value 0). -/
 @[inline] def sentinel : ThreadId := ⟨0⟩
 
+/-- `v0.35.187`: convert `ObjId` to `ThreadId` — the third member of a family
+`SchedContextId` and `ReplyId` have always had, and whose absence is why the one
+place that must stamp a stored object's identity from its key had nothing to
+call.  Unchecked, like both siblings: the sentinel round-trips to the sentinel,
+which is what `toObjIdChecked` is for. -/
+@[inline] def ofObjId (oid : ObjId) : ThreadId := ⟨oid.toNat⟩
+
+/-- `v0.35.187`: `ofObjId` is a section of `toObjId`, so a stamped identity is
+the key it was stamped from. -/
+@[simp] theorem toObjId_ofObjId (oid : ObjId) : (ThreadId.ofObjId oid).toObjId = oid := rfl
+
 /-- L-04/WS-E6: Checked variant of `toObjId` that rejects sentinel thread IDs.
 Returns `none` for the reserved sentinel (value 0). -/
 @[inline] def toObjIdChecked (id : ThreadId) : Option ObjId :=
@@ -440,6 +451,11 @@ namespace SchedContextId
 /-- Convert ObjId to SchedContextId. -/
 @[inline] def ofObjId (oid : ObjId) : SchedContextId := ⟨oid.toNat⟩
 
+/-- `v0.35.187`: `ofObjId` is a section of `toObjId` — the sibling of
+`ThreadId.toObjId_ofObjId`, stated so a stamped identity is provably the key it
+was stamped from. -/
+@[simp] theorem toObjId_ofObjId (oid : ObjId) : (SchedContextId.ofObjId oid).toObjId = oid := rfl
+
 /-- AF2-B: Checked conversion that rejects the reserved sentinel (value 0).
     Mirrors `ThreadId.toObjIdChecked` for consistency across typed identifier
     conversions. Prefer this at ABI boundaries where ObjId 0 could indicate
@@ -511,6 +527,11 @@ namespace ReplyId
 
 /-- Convert ObjId to ReplyId. -/
 @[inline] def ofObjId (oid : ObjId) : ReplyId := ⟨oid.toNat⟩
+
+/-- `v0.35.187`: `ofObjId` is a section of `toObjId` — the sibling of
+`ThreadId.toObjId_ofObjId`, stated so a stamped identity is provably the key it
+was stamped from. -/
+@[simp] theorem toObjId_ofObjId (oid : ObjId) : (ReplyId.ofObjId oid).toObjId = oid := rfl
 
 /-- Checked conversion that rejects the reserved sentinel (value 0).  Mirrors
     `SchedContextId.ofObjIdChecked`.  Prefer this at ABI boundaries where ObjId 0

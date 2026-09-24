@@ -28,8 +28,10 @@ cross-domain extension (tracked SM5.I closure target)".
 (`UncoveredLockDomain`'s own entry recorded the *syscall* half of the same
 domain — it names `suspendThreadOnCoreSchedLockSet`, a syscall footprint — and
 RR7.39 narrowed it to `syscallSeamSchedulerDomain` rather than deleting it, since
-`lockSetForSyscall` still returns a `LockSet` whose `LockId` cannot name a
-run-queue lock.)
+`lockSetForSyscall` still returned a `LockSet` whose `LockId` cannot name a
+run-queue lock.  WS-RR RR8.12 Cut C6h, `v0.35.181`, deleted it: the syscall seam
+brackets on this domain now, over one unified footprint spanning both — see
+`declaredUnifiedLockSetForAbiEntry`.)
 
 This module is that extension's consumer.  Three pieces, in the order the entries
 run them.
@@ -287,6 +289,84 @@ def schedFootprintCoversWrites (S : SchedLockSet) (st st' : SystemState) : Prop 
 theorem schedFootprintCoversWrites_refl (S : SchedLockSet) (st : SystemState) :
     schedFootprintCoversWrites S st st :=
   ⟨fun _ _ _ => rfl, fun _ _ => ⟨rfl, rfl, rfl⟩, fun _ _ => rfl⟩
+
+/-- **WS-RR RR8.12 Cut C6h**: coverage is MONOTONE in the footprint.
+
+A footprint that names more locks covers at least what a smaller one covers,
+because every clause of `schedFootprintCoversWrites` is of the form *"a lock the
+footprint does **not** name guards state the step did not change"* — so widening
+the footprint only ever discharges more of those antecedents.
+
+This is what lets a per-arm coverage theorem, stated over the arm's own
+scheduler footprint, reach the **unified** footprint the syscall seam actually
+acquires (`unifiedSchedLockSetForSyscall`, which appends the object domain's
+residue).  Without it the family would have to be restated at the unified
+footprint, which is one question with two answers.
+
+Over-declaring is the safe direction for coverage and **not** free in general:
+lock contention is an observable channel (SM8.D's CC-5), which is why the
+footprints themselves are narrowed per arm rather than widened to `allCores`.
+What this theorem says is only that the *proof obligation* travels upward, not
+that a wider footprint is a better one. -/
+theorem schedFootprintCoversWrites_mono (S U : SchedLockSet) (st st' : SystemState)
+    (hSub : ∀ p ∈ S.pairs, p ∈ U.pairs)
+    (h : schedFootprintCoversWrites S st st') :
+    schedFootprintCoversWrites U st st' := by
+  obtain ⟨hObj, hRun, hRepl⟩ := h
+  refine ⟨?_, ?_, ?_⟩
+  · intro hTable oid hTcb
+    exact hObj (fun hMem => hTable (hSub _ hMem)) oid (fun hMem => hTcb (hSub _ hMem))
+  · intro d hd
+    exact hRun d (fun hMem => hd (hSub _ hMem))
+  · intro d hd
+    exact hRepl d (fun hMem => hd (hSub _ hMem))
+
+/-- **WS-RR RR8.12 Cut C6a**: a canonical footprint covers a step confined to
+its own two core lists.
+
+The one bridge every declared syscall arm's coverage proof is an instance of.
+`schedFootprintCoversWrites`'s three clauses are discharged in three different
+ways and only one of them is per-arm work:
+
+* the **object** clause is vacuous, because `schedFootprintOfCores` always names
+  the object-store table write lock (`schedFootprintOfCores_contains_objStore_write`)
+  — a scheduler-domain footprint is a footprint of an operation that stores;
+* the **run-queue** clause is the arm's own SM8.B confinement result, read
+  through `mem_schedFootprintOfCores_runQueue_iff`: a lock the footprint does not
+  name is a core outside the write set, which is exactly what confinement says
+  the step did not touch;
+* the **replenish** clause is the arm's own replenish frame, which SM8.B's
+  confinement does *not* supply — `observableSlotsConfinedToCores` covers six
+  per-core slots and the replenish queue is not one of them, which is why every
+  donating arm carries a frame of its own.
+
+Stated over the two core lists rather than over a `SchedLockSet`, with the
+footprint's `pairs` given by hypothesis, so it applies to a footprint however it
+was constructed — and `SchedFootprintCensus` is what makes "however it was
+constructed" mean "the canonical ladder" for every member of the family. -/
+theorem schedFootprintCoversWrites_of_cores (S : SchedLockSet)
+    (runCores replenishCores : List CoreId) (st st' : SystemState)
+    (hS : S.pairs = schedFootprintOfCores runCores replenishCores)
+    (hRun : ∀ d : CoreId, d ∉ runCores →
+      st'.scheduler.runQueueOnCore d = st.scheduler.runQueueOnCore d ∧
+      st'.scheduler.currentOnCore d = st.scheduler.currentOnCore d ∧
+      st'.scheduler.activeDomainOnCore d = st.scheduler.activeDomainOnCore d)
+    (hRepl : ∀ d : CoreId, d ∉ replenishCores →
+      st'.scheduler.replenishQueueOnCore d = st.scheduler.replenishQueueOnCore d) :
+    schedFootprintCoversWrites S st st' := by
+  refine ⟨?_, ?_, ?_⟩
+  · intro hAbsent
+    exact absurd (hS ▸ schedFootprintOfCores_contains_objStore_write runCores replenishCores)
+      hAbsent
+  · intro d hd
+    refine hRun d ?_
+    intro hMem
+    exact hd (hS ▸ (mem_schedFootprintOfCores_runQueue_iff runCores replenishCores d).mpr hMem)
+  · intro d hd
+    refine hRepl d ?_
+    intro hMem
+    exact hd
+      (hS ▸ (mem_schedFootprintOfCores_replenishQueue_iff runCores replenishCores d).mpr hMem)
 
 -- ============================================================================
 -- §4  The reschedule step's writes are inside its footprint

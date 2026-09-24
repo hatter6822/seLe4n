@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.155-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -96,11 +96,11 @@ demostración de Lean 4:
 
 | Atributo | Valor |
 |----------|-------|
-| **Versión** | `0.35.155` |
+| **Versión** | `0.36.1` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 396.702 en 334 archivos |
-| **LoC de pruebas en Lean** | 81.018 en 70 suites de pruebas |
-| **Declaraciones demostradas** | 13.131 declaraciones theorem/lemma (cero sorry/axiom) |
+| **LoC de producción en Lean** | 417.841 en 340 archivos |
+| **LoC de pruebas en Lean** | 84.834 en 70 suites de pruebas |
+| **Declaraciones demostradas** | 13.815 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoría canónica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoría integral previa a 1.0 (202 hallazgos; remediados por WS-AK AK1–AK10; archivada) |
 | **Última auditoría** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — auditoría de preparación previa a 1.0 realizada tras el cierre de WS-AN (sucede a la ahora archivada [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md), remediada por WS-AN AN0–AN12). WS-RC R0..R5 completados en v0.31.2; WS-RC R6..R14 absorbidos en WS-SM según el mapeo de absorción SM0.Q.1 (véase [`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md)). Plan de flujo de trabajo activo: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
@@ -238,7 +238,7 @@ v0.33.100). La fase restante es **SM10** (cierre de lanzamiento → v1.0.0). El
 flujo de trabajo del ABI de retorno de llamadas al sistema (**WS-RA**) está
 completo.
 
-**SM10 está bloqueada por WS-RR** (preparación de lanzamiento SMP), la fase de remediación previa a 1.0 actualmente en curso ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) y **RR4 — manejo de fallos: IPC de fallo completo con reinicio basado en respuesta (v0.34.44)**, que impide que un hilo con fallo se reanude en la instrucción que lo provocó: el fallo se registra en el TCB, se entrega al endpoint `faultHandler` del hilo a través de la cadena de llamada entre núcleos activa y se atiende con una respuesta que reinicia el hilo en un PC elegido o lo abandona. Quedan RR5–RR8 y luego **SM10** (cierre de lanzamiento → v1.0.0).
+**WS-RR** (preparación de lanzamiento SMP), la fase de remediación previa a 1.0, está **completa en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) y **RR4 — manejo de fallos: IPC de fallo completo con reinicio basado en respuesta (v0.34.44)**, que impide que un hilo con fallo se reanude en la instrucción que lo provocó: el fallo se registra en el TCB, se entrega al endpoint `faultHandler` del hilo a través de la cadena de llamada entre núcleos activa y se atiende con una respuesta que reinicia el hilo en un PC elegido o lo abandona. RR5–RR8 también han aterrizado (RR8 en v0.35.203). **SM10 está ahora bloqueada por WS-BP** (la ruta de arranque bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que es el contenido de SM10.1 y en la que no ha empezado ninguna subtarea; luego **SM10** (cierre de lanzamiento → v1.0.0).
 
 Plan maestro: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 con planes por fase en `docs/planning/SMP_*.md`. El registro canónico por fase

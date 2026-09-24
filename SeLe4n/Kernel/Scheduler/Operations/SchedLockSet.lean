@@ -169,6 +169,105 @@ handling would have to delete this theorem to do it. -/
     (mode : AccessMode) (s : SystemState) :
     schedLockHeld c (.object lid) mode s = lockHeld c lid mode s := rfl
 
+/-- **WS-RR RR8.12 Cut C6h**: every `.objStore` `LockId` names ONE word.
+
+`acquireLockOnObject`'s first arm writes `SystemState.objStoreLock` and reads
+nothing else of the `LockId`, so `stateLevelLock` (`⟨.objStore, ObjId.ofNat 0⟩`,
+the object domain's spelling) and `schedObjStoreLockId`
+(`⟨.objStore, ObjId.sentinel⟩`, the scheduler domain's) are the **same physical
+lock under two keys**.  `schedObjStoreLockId`'s own docstring has said so since
+SM5.A.2 — *"a `.objStore` `LockId` routes to `SystemState.objStoreLock`
+regardless of its `objId`"* — and nothing stated it, so nothing stopped a
+footprint from naming both and a bracket from acquiring one word twice.
+
+Stated at all four primitives rather than at `acquireLockOnObject` alone: a
+canonicalisation is sound only if *every* operation the domain performs on the
+two keys agrees, and a release or a held-check that read the `ObjId` would make
+the acquire's agreement worthless. -/
+@[simp] theorem schedAcquireLock_objStore_congr (s : SystemState) (core : CoreId)
+    (a b : SeLe4n.ObjId) (mode : AccessMode) :
+    schedAcquireLock s core (.object ⟨Concurrency.LockKind.objStore, a⟩) mode
+      = schedAcquireLock s core (.object ⟨Concurrency.LockKind.objStore, b⟩) mode := rfl
+
+/-- **Cut C6h**: the release half of the same aliasing. -/
+@[simp] theorem schedReleaseLock_objStore_congr (s : SystemState) (core : CoreId)
+    (a b : SeLe4n.ObjId) (mode : AccessMode) :
+    schedReleaseLock s core (.object ⟨Concurrency.LockKind.objStore, a⟩) mode
+      = schedReleaseLock s core (.object ⟨Concurrency.LockKind.objStore, b⟩) mode := rfl
+
+/-- **Cut C6h**: the withdrawal half. -/
+@[simp] theorem schedCancelLock_objStore_congr (s : SystemState) (core : CoreId)
+    (a b : SeLe4n.ObjId) (mode : AccessMode) :
+    schedCancelLock s core (.object ⟨Concurrency.LockKind.objStore, a⟩) mode
+      = schedCancelLock s core (.object ⟨Concurrency.LockKind.objStore, b⟩) mode := rfl
+
+/-- **Cut C6h**: and the held predicate, which is what makes a bracket's guard
+insensitive to which spelling the footprint carried. -/
+@[simp] theorem schedLockHeld_objStore_congr (c : CoreId) (a b : SeLe4n.ObjId)
+    (mode : AccessMode) (s : SystemState) :
+    schedLockHeld c (.object ⟨Concurrency.LockKind.objStore, a⟩) mode s
+      = schedLockHeld c (.object ⟨Concurrency.LockKind.objStore, b⟩) mode s := rfl
+
+/-- **WS-RR RR8.12 Cut C6h**: an object-domain lock as a unified-domain one, with
+the table lock canonicalised.
+
+The lift the syscall seam's unified footprint is built from.  Every non-`.objStore`
+`LockId` maps to itself under `.object`; every `.objStore` one maps to
+`schedObjStoreLockId`, which is sound by the four congruences above and
+**necessary** because `SchedLockSet` keys on `SchedLockId`: without it the object
+domain's `stateLevelLock` and the scheduler domain's `schedObjStoreLockId` are two
+keys over one word, so a single acquisition sequence would take that word twice
+and the SM0.I ladder — which is a statement about the sequence — would say nothing
+about the second. -/
+def canonicalSchedLockOfObject (l : Concurrency.LockId) : SchedLockId :=
+  if l.kind = Concurrency.LockKind.objStore then .object schedObjStoreLockId else .object l
+
+/-- **Cut C6h**: the lift is the identity on every lock the canonicalisation does
+not touch. -/
+@[simp] theorem canonicalSchedLockOfObject_of_ne (l : Concurrency.LockId)
+    (h : l.kind ≠ Concurrency.LockKind.objStore) :
+    canonicalSchedLockOfObject l = .object l := by
+  unfold canonicalSchedLockOfObject; rw [if_neg h]
+
+/-- **Cut C6h**: and it collapses every table-lock spelling onto one. -/
+@[simp] theorem canonicalSchedLockOfObject_objStore (a : SeLe4n.ObjId) :
+    canonicalSchedLockOfObject ⟨Concurrency.LockKind.objStore, a⟩
+      = .object schedObjStoreLockId := by
+  unfold canonicalSchedLockOfObject; rw [if_pos rfl]
+
+/-- **Cut C6h**: the lift ACQUIRES what the object domain's own primitive does.
+
+The theorem that makes the canonicalisation a renaming rather than a change of
+behaviour: whichever spelling a footprint carried, the state the growing phase
+reaches is the one `acquireLockOnObject` reaches on the original. -/
+theorem schedAcquireLock_canonical (s : SystemState) (core : CoreId)
+    (l : Concurrency.LockId) (mode : AccessMode) :
+    schedAcquireLock s core (canonicalSchedLockOfObject l) mode
+      = acquireLockOnObject s core l mode := by
+  unfold canonicalSchedLockOfObject
+  by_cases h : l.kind = Concurrency.LockKind.objStore
+  · rw [if_pos h]
+    simp only [schedAcquireLock_object]
+    unfold acquireLockOnObject
+    rw [h]
+    rfl
+  · rw [if_neg h]
+    rfl
+
+/-- **Cut C6h**: and HOLDS what it does. -/
+theorem schedLockHeld_canonical (c : CoreId) (l : Concurrency.LockId)
+    (mode : AccessMode) (s : SystemState) :
+    schedLockHeld c (canonicalSchedLockOfObject l) mode s = lockHeld c l mode s := by
+  unfold canonicalSchedLockOfObject
+  by_cases h : l.kind = Concurrency.LockKind.objStore
+  · rw [if_pos h]
+    simp only [schedLockHeld_object]
+    unfold lockHeld
+    rw [h]
+    rfl
+  · rw [if_neg h]
+    rfl
+
 -- ============================================================================
 -- §2  The folds
 -- ============================================================================

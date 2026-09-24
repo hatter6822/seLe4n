@@ -17,6 +17,7 @@
 import SeLe4n.Kernel.IPC.CrossCore.EndpointCall
 import SeLe4n.Kernel.IPC.DualQueue.WithCaps
 import SeLe4n.Kernel.IPC.Operations.Donation
+import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.Scheduler.PriorityInheritance.Propagate
 import SeLe4n.Kernel.InformationFlow.Enforcement.Wrappers
 
@@ -286,5 +287,1059 @@ theorem endpointCallCrossCoreDispatch_no_receiver
   | mk st' res => cases res with
     | error e => rfl
     | ok pair => rfl
+
+-- ============================================================================
+-- §3 WS-RR RR8.12 Cut C3a — the live `.call` arm's per-core write set and its
+--    scheduler-domain footprint
+-- ============================================================================
+--
+-- `lockSet_endpointCall` is an object-domain `LockSet` and cannot name a per-core
+-- run-queue or replenish-queue slot at all, so
+-- `UncoveredLockDomain.syscallSeamSchedulerDomain` recorded the live `.call` arm's
+-- scheduler writes as outside the footprint the RR7.12 seam acquired (that entry is
+-- retired at Cut C6h, `v0.35.181`).  This
+-- section declares them, in the same cross-domain `SchedLockId` order every
+-- sibling footprint uses (`object < runQueue < replenishQueue`, each same-kind
+-- segment `CoreId`-ascending, so the list *is* the SM3.D acquisition sequence).
+-- Inert until the bracket cut wires `schedLockSetForSyscall`.
+--
+-- The arm's SM8.B write set is declared here too, relocated from the staged
+-- `InformationFlow/NonInterferenceCrossCore.lean` for the reason Cuts 5, 7, 8a-ii
+-- and C2 each applied: a write set declared in a staged module is one the
+-- production footprint cannot read.  The confinement theorem
+-- (`endpointCallCrossCoreDispatch_confinedToCores`) stays there, because
+-- `observableSlotsConfinedToCores` is that module's predicate.
+
+/-- SM8.B.2: the WithCaps call leaves the bare call's run queues in place — every
+arm either *is* the bare call's post-state or is that state after an
+`ipcUnwrapCaps`, which preserves the scheduler.
+
+Relocated to production at **WS-RR RR8.12 Cut C3a**: the `.call` footprint's
+exactness licence composes it, and a staged frame is one a production footprint
+cannot read. -/
+theorem endpointCallWithCapsOnCore_scheduler_eq (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+        receiverSlotBase executingCore st).1.scheduler
+      = (endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st).1.scheduler := by
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    cases res with
+    | error e => rfl
+    | ok sgi =>
+      simp only []
+      repeat' split
+      all_goals first
+        | rfl
+        | (rename_i h; exact ipcUnwrapCaps_preserves_scheduler _ _ _ _ _ _ _ h)
+
+/-- **WS-RR RR8.12 Cut C3a (frame)**: so the WithCaps call writes no replenish
+queue either — the bare call's frame `endpointCallOnCore_replenishQueueOnCore`
+through the scheduler equality above. -/
+theorem endpointCallWithCapsOnCore_replenishQueueOnCore (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (c : CoreId) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+        receiverSlotBase executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  rw [endpointCallWithCapsOnCore_scheduler_eq]
+  exact endpointCallOnCore_replenishQueueOnCore endpointId caller _ executingCore st c
+
+/-- SM8.B.2: **the chain leg the live `.call` actually walks**, recovered from
+the pre-state by mirroring `endpointCallCrossCoreDispatch`'s own control flow —
+same receiver resolution, same WithCaps call, same `applyCallDonation` — so the
+walk is keyed on the *resolved receiver* at the *post-donation* state, which is
+where the dispatch keys it. Every arm on which the dispatch does not walk a
+chain returns `[]`.
+
+Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
+so the scheduler-domain footprint `schedLockSet_endpointCallOnCore` can read it; its
+confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
+`observableSlotsConfinedToCores` is that module's predicate. -/
+def endpointCallDispatchChainWriteSet
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  let maybeReceiver := match st.getEndpoint? endpointId with
+    | some ep => ep.receiveQ.head
+    | none => none
+  match endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | (_, .error _) => []
+  | (st', .ok _) =>
+      match maybeReceiver with
+      | some receiverTid =>
+        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+        | some callerV, some receiverV =>
+          -- WS-RR RR2.7: mirrors the dispatch's own migrating donation, so the
+          -- chain state named here is the state the dispatch really walks from.
+          match applyCallDonationOnCore st' callerV receiverV
+              (determineTargetCore st caller) (determineTargetCore st receiverTid) with
+          | .error _ => []
+          | .ok st'' =>
+              pipChainWriteSet st'' receiverTid executingCore st''.objectIndex.length
+        | _, _ => []
+      | none => []
+
+/-- SM8.B.2: **the cores the live cross-core `.call` may write** — the endpoint
+call's own two-core set, plus the chain the dispatch really walks. A function of
+the dispatch's own arguments, so it can be evaluated at a call site rather than
+supplied by hand.
+
+Relocated to production at **WS-RR RR8.12 Cut C3a**, beside the dispatch it mirrors,
+so the scheduler-domain footprint `schedLockSet_endpointCallOnCore` can read it; its
+confinement theorem stays in `InformationFlow/NonInterferenceCrossCore.lean`, because
+`observableSlotsConfinedToCores` is that module's predicate. -/
+def endpointCallDispatchWriteSet
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  endpointCallWriteSet st endpointId executingCore
+    ++ endpointCallDispatchChainWriteSet endpointId caller msg endpointRights
+        receiverSlotBase executingCore st
+
+/-- **WS-RR RR8.16 (`v0.35.189`)**: and installing the call's capabilities writes
+no binding either (`ipcUnwrapCaps_sameSchedContextBindings`), so the whole leg the
+live `.call` arm runs is a binding frame — the sending-side counterpart of
+`endpointReceiveDualWithCapsOnCore_sameSchedContextBindings_of_rendezvous`.
+
+This is the licence `endpointCallDonatedSc?_some_of_post` composes with the
+resolver's own bridge: the footprint resolves before the transition runs and
+`applyCallDonationOnCore` branches at the post-leg state, and a binding frame is
+what makes those one answer. -/
+theorem endpointCallWithCapsOnCore_sameSchedContextBindings
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (hObjInv : st.objects.invExt) :
+    sameSchedContextBindings st
+      (endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1 := by
+  have hLeg := endpointCallOnCore_sameSchedContextBindings endpointId caller
+    { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+  have hLegInv :
+      ((endpointCallOnCore endpointId caller
+        { msg with capsGranted := endpointRights.mem .grant } executingCore st).1).objects.invExt :=
+    endpointCallOnCore_preserves_objects_invExt endpointId caller
+      { msg with capsGranted := endpointRights.mem .grant } executingCore st hObjInv
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem .grant } executingCore st with
+  | mk stCall res =>
+      rw [hCall] at hLeg hLegInv
+      have hLeg' : sameSchedContextBindings st stCall := by simpa using hLeg
+      cases res with
+      | error e => simpa using hLeg
+      | ok sgi =>
+          simp only []
+          repeat' split
+          all_goals first
+            | simpa using hLeg
+            | (rename_i hUnwrap
+               exact hLeg'.trans (ipcUnwrapCaps_sameSchedContextBindings _ _ receiverSlotBase
+                 _ stCall _ _ hLegInv hUnwrap))
+
+/-- **WS-RR RR8.16 (`v0.35.189`): the narrowed `.call` member omits no lock the
+transition takes.**
+
+The soundness half of the narrowing, and the reason it needed a frame rather than
+an argument.  `applyCallDonationOnCore` migrates exactly when
+`callDonationSchedContext?` answers `some` at the state the leg leaves, while
+`lockSet_endpointCallOnCore` resolves on the state the bracket acquires at — so
+"the transition donates ⟹ the footprint declares" is *post* `some` ⟹ *pre* `some`,
+which is the direction `callDonationSchedContext?_some_of_sameSchedContextBindings`
+gives and the only one a backward frame can. -/
+theorem endpointCallDonatedSc?_some_of_post
+    (endpointId : SeLe4n.ObjId) (caller receiver : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (scId : SeLe4n.SchedContextId)
+    (hObjInv : st.objects.invExt)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver)
+    (hPost : callDonationSchedContext?
+      (endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1 caller receiver = some scId) :
+    endpointCallDonatedSc? st endpointId caller = some scId := by
+  rw [endpointCallDonatedSc?_of_receiver st endpointId caller receiver hRecv]
+  exact callDonationSchedContext?_some_of_sameSchedContextBindings
+    (endpointCallWithCapsOnCore_sameSchedContextBindings endpointId caller msg endpointRights
+      receiverSlotBase executingCore st hObjInv)
+    caller receiver scId hPost
+
+/-- **WS-RR RR8.12 Cut C3a**: the replenish-queue cores the live `.call` dispatch's
+donation migrates between — the caller's home and the receiver's — recovered from
+the pre-state by mirroring `endpointCallCrossCoreDispatch`'s own control flow, as
+`endpointCallDispatchChainWriteSet` mirrors it for the chain: the same WithCaps
+leg, the same receiver, the same two `toValid?`s, and the donation's own guard
+`callDonationSchedContext?` asked of the two threads the dispatch asks it of, **at
+the WithCaps post-state**, which is where `applyCallDonationOnCore` reads it.  The
+two homes are read off the pre-state because that is where the dispatch reads
+them — `applyCallDonationOnCore st' callerV receiverV (determineTargetCore st
+caller) (determineTargetCore st receiverTid)` — so the footprint's pair and the
+migration's endpoints are the same two expressions, and no home-core frame stands
+between them.
+
+Every arm on which the dispatch migrates nothing returns `[]`: a failed leg, no
+receiver, a caller or receiver that does not validate, and a guard that declines
+(a bound receiver, or a caller with no context to hand on).  That last one is
+exact rather than merely narrow
+(`endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation`), and it
+matters: lock contention is an observable channel (SM8.D's CC-5), so a segment
+naming two cores for a migration that does not happen is a footprint wider than
+its operation — the over-declaration Cut C1 removed from the `.receive` segment. -/
+def endpointCallDispatchReplenishCores
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List CoreId :=
+  let maybeReceiver := match st.getEndpoint? endpointId with
+    | some ep => ep.receiveQ.head
+    | none => none
+  match endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | (_, .error _) => []
+  | (st', .ok _) =>
+      match maybeReceiver with
+      | some receiverTid =>
+        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
+        | some callerV, some receiverV =>
+          match callDonationSchedContext? st' callerV.val receiverV.val with
+          | some _ => [determineTargetCore st caller, determineTargetCore st receiverTid]
+          | none => []
+        | _, _ => []
+      | none => []
+
+/-- The segment on a rendezvous whose donation resolves: the migration's own two
+endpoints, read where the dispatch reads them. -/
+theorem endpointCallDispatchReplenishCores_of_donation (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (scId : SeLe4n.SchedContextId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
+    endpointCallDispatchReplenishCores endpointId caller msg endpointRights
+        receiverSlotBase executingCore st
+      = [determineTargetCore st caller, determineTargetCore st receiverTid] := by
+  have hRecv' : (match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none => none) = some receiverTid := hRecv
+  unfold endpointCallDispatchReplenishCores
+  simp only [hWith, hRecv', hCallerV, hRecvV, hSc]
+
+/-- Where the guard declines, no core. -/
+theorem endpointCallDispatchReplenishCores_of_no_donation (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none) :
+    endpointCallDispatchReplenishCores endpointId caller msg endpointRights
+        receiverSlotBase executingCore st = [] := by
+  have hRecv' : (match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none => none) = some receiverTid := hRecv
+  unfold endpointCallDispatchReplenishCores
+  simp only [hWith, hRecv', hCallerV, hRecvV, hNone]
+
+/-- And with no receiver — the block path — none either, whatever the leg did. -/
+theorem endpointCallDispatchReplenishCores_of_no_receiver (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hRecv : endpointCallReceiver? st endpointId = none) :
+    endpointCallDispatchReplenishCores endpointId caller msg endpointRights
+        receiverSlotBase executingCore st = [] := by
+  have hRecv' : (match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none => none) = none := hRecv
+  unfold endpointCallDispatchReplenishCores
+  cases endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+      executingCore st with
+  | mk st' res =>
+    cases res with
+    | error e => rfl
+    | ok pair => simp only [hRecv']
+
+/-- **WS-RR RR8.12 Cut C3a**: the scheduler-domain footprint of the live `.call`
+arm — the object-store table write lock, the run-queue write locks of every core
+the dispatch writes (the caller's own, the receiver's home on a rendezvous, and
+the home of each priority-inheritance chain member the walk re-buckets), and the
+replenish-queue write locks of the two cores the donation migrates between.
+
+**Every core is derived; nothing is a parameter.**  The run segment is
+`endpointCallDispatchWriteSet`, the arm's own SM8.B write set, which
+`endpointCallCrossCoreDispatch_confinedToCores` is stated at — so the footprint and
+the confinement claim cannot name different cores (Cut 7's rule).  The replenish
+segment is `endpointCallDispatchReplenishCores`, the donation's own pair by
+construction.  Both mirror the dispatch's own control flow, so the footprint's
+resolution and the transition's are one computation, and a bracket resolving this
+footprint has everything it needs before the transition runs.
+
+**The chain walk is in the run segment, not left to the dynamic extension.**
+`endpointCallDispatchWriteSet` appends `pipChainWriteSet` at the post-donation
+state the walk really starts from, so every run queue the reversion re-buckets is a
+static member here — bounded by the object count rather than by a constant, which
+a `SchedLockSet` permits, carrying no cardinality bound.  What
+`pipChainStart_endpointCall`'s dynamic walker still adds is the object domain's
+per-member TCB write lock, which no scheduler footprint can name.  The RR2.4
+parametric `endpointCallCrossCoreDispatchSchedLockSet` is the shape this refines:
+on the rendezvous arm whose donation resolves, this footprint covers it at the
+resolved cores (`…_covers_parametric`), and names besides the chain members the
+parametric form left to the walker. -/
+def schedLockSet_endpointCallOnCore
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId)
+    (st : SystemState) : List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores
+    (endpointCallDispatchWriteSet endpointId caller msg endpointRights receiverSlotBase
+      executingCore st)
+    (endpointCallDispatchReplenishCores endpointId caller msg endpointRights receiverSlotBase
+      executingCore st)
+
+-- No `_write_only` / `_pairwise_le` restatement here, and that is deliberate: both
+-- are `schedFootprintOfCores_write_only` / `_pairwise_le` applied to this
+-- footprint's own arguments, so a consumer reaches for the shared lemma directly.
+
+/-- **WS-RR RR8.12 Cut C3a**: the caller's own core is a run-queue write member on
+both paths — it is descheduled there whether it rendezvouses or blocks. -/
+theorem schedLockSet_endpointCallOnCore_contains_executing_runQueue_write
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) :
+    (SchedLockId.runQueue ⟨executingCore⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+          receiverSlotBase executingCore st := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointCallDispatchWriteSet
+  exact List.mem_append.mpr
+    (Or.inl (executingCore_mem_endpointCallWriteSet st endpointId executingCore))
+
+/-- **WS-RR RR8.12 Cut C3a**: and with a receiver waiting, that receiver's home
+core — resolved through `endpointCallReceiver?`, the resolver the object-domain
+footprint's own receiver member comes from. -/
+theorem schedLockSet_endpointCallOnCore_contains_receiver_runQueue_write
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState) (receiver : SeLe4n.ThreadId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiver) :
+    (SchedLockId.runQueue ⟨determineTargetCore st receiver⟩, Concurrency.AccessMode.write)
+      ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+          receiverSlotBase executingCore st := by
+  refine (mem_schedFootprintOfCores_runQueue_iff _ _ _).mpr ?_
+  unfold endpointCallDispatchWriteSet
+  rw [endpointCallWriteSet_of_receiver st endpointId executingCore receiver hRecv]
+  simp
+
+/-- **WS-RR RR8.12 Cut C3a (coverage)**: on the rendezvous arm whose donation
+resolves, the footprint covers `applyCallDonationOnCoreSchedLockSet` member for
+member — at the two cores the dispatch hands the migration, which are the two the
+segment names — hence, through
+`applyCallDonationOnCoreSchedLockSet_covers_migration`, the migration's two
+replenish-queue write locks.  Conditioned on the dispatch's own readings (the
+receiver it resolves, the WithCaps leg it runs, the guard it asks at that leg's
+post-state), because those are the only shape on which there is a migration to
+cover. -/
+theorem schedLockSet_endpointCallOnCore_covers_donation (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (scId : SeLe4n.SchedContextId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
+    ∀ p ∈ applyCallDonationOnCoreSchedLockSet (determineTargetCore st caller)
+             (determineTargetCore st receiverTid),
+      p ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+            receiverSlotBase executingCore st := by
+  have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller msg
+    endpointRights receiverSlotBase executingCore st stWith receiverTid callerV receiverV
+    summary sgi scId hRecv hWith hCallerV hRecvV hSc
+  unfold applyCallDonationOnCoreSchedLockSet schedLockSet_endpointCallOnCore
+  rw [hSeg]
+  exact schedFootprintOfCores_subset (fun _ h => absurd h (by simp)) (fun _ h => h)
+
+/-- **WS-RR RR8.12 Cut C3a (the RR2.4 footprint is covered)**: on the same arm the
+derived footprint covers the parametric `endpointCallCrossCoreDispatchSchedLockSet`
+at the resolved cores — the executing core and the receiver's home in its run
+segment, the caller's and receiver's homes in its replenish segment — and names in
+addition every chain member's home, which the parametric form leaves to the dynamic
+extension.  The RR2.4 lemmas are stated over the parametric shape; this is what
+carries them to the footprint the syscall resolver consumes. -/
+theorem schedLockSet_endpointCallOnCore_covers_parametric (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st stWith : SystemState)
+    (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (scId : SeLe4n.SchedContextId)
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hSc : callDonationSchedContext? stWith callerV.val receiverV.val = some scId) :
+    ∀ p ∈ endpointCallCrossCoreDispatchSchedLockSet executingCore
+             (determineTargetCore st receiverTid) (determineTargetCore st caller)
+             (determineTargetCore st receiverTid),
+      p ∈ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+            receiverSlotBase executingCore st := by
+  have hSeg := endpointCallDispatchReplenishCores_of_donation endpointId caller msg
+    endpointRights receiverSlotBase executingCore st stWith receiverTid callerV receiverV
+    summary sgi scId hRecv hWith hCallerV hRecvV hSc
+  unfold endpointCallCrossCoreDispatchSchedLockSet schedLockSet_endpointCallOnCore
+  rw [hSeg]
+  refine schedFootprintOfCores_subset (fun c hc => ?_) (fun _ h => h)
+  unfold endpointCallDispatchWriteSet
+  rw [endpointCallWriteSet_of_receiver st endpointId executingCore receiverTid hRecv]
+  simp only [List.mem_cons, List.not_mem_nil, or_false] at hc
+  simp only [List.mem_append, List.mem_cons]
+  rcases hc with h | h <;> simp [h]
+
+/-- **WS-RR RR8.12 Cut C3a (the empty segment, footprint side)**: where the guard
+declines the footprint names no replenish-queue lock — over-declaring is sound and
+not free (SM8.D's CC-5), and
+`endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation` is the licence
+that the transition writes none there either. -/
+theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_donation
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st stWith : SystemState) (receiverTid : SeLe4n.ThreadId)
+    (callerV receiverV : SeLe4n.ValidThreadId) (summary : CapTransferSummary)
+    (sgi : Option (CoreId × SgiKind))
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
+    (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+          receiverSlotBase executingCore st := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [endpointCallDispatchReplenishCores_of_no_donation endpointId caller msg endpointRights
+    receiverSlotBase executingCore st stWith receiverTid callerV receiverV summary sgi hRecv
+    hWith hCallerV hRecvV hNone] at this
+  simp at this
+
+/-- **WS-RR RR8.12 Cut C3a**: and on the block path — no receiver, so no
+rendezvous and no donation — none either. -/
+theorem schedLockSet_endpointCallOnCore_no_replenishQueue_of_no_receiver
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState)
+    (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
+    (SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write)
+      ∉ schedLockSet_endpointCallOnCore endpointId caller msg endpointRights
+          receiverSlotBase executingCore st := by
+  intro hMem
+  have := (mem_schedFootprintOfCores_replenishQueue_iff _ _ c).mp hMem
+  rw [endpointCallDispatchReplenishCores_of_no_receiver endpointId caller msg endpointRights
+    receiverSlotBase executingCore st hRecv] at this
+  simp at this
+
+/-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: on the block
+path the live dispatch is the WithCaps leg alone
+(`endpointCallCrossCoreDispatch_no_receiver`), which writes no replenish queue. -/
+theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_receiver
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st : SystemState)
+    (hRecv : endpointCallReceiver? st endpointId = none) (c : CoreId) :
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  rw [endpointCallCrossCoreDispatch_no_receiver endpointId caller msg endpointRights
+    receiverSlotBase executingCore st hRecv]
+  exact endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller msg endpointRights
+    receiverSlotBase executingCore st c
+
+/-- **WS-RR RR8.12 Cut C3a (the empty segment, transition side)**: and where the
+guard declines on a rendezvous, the live dispatch writes no replenish queue either
+— the WithCaps leg never does
+(`endpointCallWithCapsOnCore_replenishQueueOnCore`), the donation's migration arm
+is not taken (`applyCallDonationOnCore_replenishQueueOnCore_of_no_donation`), and
+the chain walk re-buckets run queues alone
+(`propagatePipChainCrossCore_replenishQueueOnCore`).  So the empty segment is
+exact, not merely narrow: the footprint declares no replenish lock there, and the
+transition writes none. -/
+theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet) (receiverSlotBase : SeLe4n.Slot)
+    (executingCore : CoreId) (st stWith stDisp : SystemState)
+    (receiverTid : SeLe4n.ThreadId) (callerV receiverV : SeLe4n.ValidThreadId)
+    (summary : CapTransferSummary) (sgi : Option (CoreId × SgiKind))
+    (res : Except KernelError (CapTransferSummary × Option (CoreId × SgiKind)))
+    (hRecv : endpointCallReceiver? st endpointId = some receiverTid)
+    (hWith : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stWith, .ok (summary, sgi)))
+    (hCallerV : SeLe4n.ThreadId.toValid? caller = some callerV)
+    (hRecvV : SeLe4n.ThreadId.toValid? receiverTid = some receiverV)
+    (hNone : callDonationSchedContext? stWith callerV.val receiverV.val = none)
+    (hDisp : endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      receiverSlotBase executingCore st = (stDisp, res)) (c : CoreId) :
+    stDisp.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  have hRecv' : (match st.getEndpoint? endpointId with
+      | some ep => ep.receiveQ.head
+      | none => none) = some receiverTid := hRecv
+  have hWithRep : stWith.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+    have h := endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st c
+    rw [hWith] at h
+    exact h
+  unfold endpointCallCrossCoreDispatch at hDisp
+  simp only [hWith, hRecv', hCallerV, hRecvV] at hDisp
+  cases hDon : applyCallDonationOnCore stWith callerV receiverV (determineTargetCore st caller)
+      (determineTargetCore st receiverTid) with
+  | error e =>
+    rw [hDon] at hDisp
+    simp only [] at hDisp
+    rw [← (Prod.mk.inj hDisp).1]
+    exact hWithRep
+  | ok stDon =>
+    rw [hDon] at hDisp
+    simp only [] at hDisp
+    rw [← (Prod.mk.inj hDisp).1,
+      PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore,
+      applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stWith stDon callerV
+        receiverV _ _ hNone hDon c]
+    exact hWithRep
+
+/-- **WS-RR RR8.12 Cut C6c: the `.call` arm's exactness frame.**
+
+Keyed on the footprint's own replenish segment, which is what the coverage proof
+consumes — the two `_of_*` frames above are the branch-shaped forms it is built
+from.  The dispatch's branch structure and `endpointCallDispatchReplenishCores`'
+are the *same* structure, deliberately (Cut C3a), so the proof is one case split
+that visits both at once: every arm short of a resolving donation leaves the
+segment empty and the step's own frame applies, and the resolving arm is the
+migration's `_other` frame at exactly the pair the segment names. -/
+theorem endpointCallCrossCoreDispatch_replenishQueueOnCore_ne (endpointId : SeLe4n.ObjId)
+    (caller : SeLe4n.ThreadId) (msg : IpcMessage) (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState) (c : CoreId)
+    (hne : c ∉ endpointCallDispatchReplenishCores endpointId caller msg endpointRights
+      receiverSlotBase executingCore st) :
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights receiverSlotBase
+        executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold endpointCallCrossCoreDispatch endpointCallDispatchReplenishCores at *
+  cases hW : endpointCallWithCapsOnCore endpointId caller msg endpointRights receiverSlotBase
+      executingCore st with
+  | mk stW res =>
+    rw [hW] at hne
+    have hFrame : stW.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+      have h0 := endpointCallWithCapsOnCore_replenishQueueOnCore endpointId caller msg
+        endpointRights receiverSlotBase executingCore st c
+      rw [hW] at h0
+      exact h0
+    simp only at hne ⊢
+    cases res with
+    | error e => exact hFrame
+    | ok pair =>
+      obtain ⟨summary, sgi⟩ := pair
+      simp only at hne ⊢
+      split
+      · rename_i receiverTid hRecv
+        rw [hRecv] at hne
+        simp only [] at hne
+        split
+        · rename_i callerV receiverV hCv hRv
+          rw [hCv, hRv] at hne
+          simp only [] at hne
+          split
+          · exact hFrame
+          · rename_i st'' hDon
+            simp only [PriorityInheritance.propagatePipChainCrossCore_replenishQueueOnCore]
+            cases hSc : callDonationSchedContext? stW callerV.val receiverV.val with
+            | none =>
+                rw [applyCallDonationOnCore_replenishQueueOnCore_of_no_donation stW st''
+                  callerV receiverV (determineTargetCore st caller)
+                  (determineTargetCore st receiverTid) hSc hDon c]
+                exact hFrame
+            | some scId =>
+                rw [hSc] at hne
+                simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+                rw [applyCallDonationOnCore_replenishQueueOnCore_ne stW st'' callerV receiverV
+                  (determineTargetCore st caller) (determineTargetCore st receiverTid) c
+                  hne.1 hne.2 hDon]
+                exact hFrame
+        · exact hFrame
+      · exact hFrame
+
+/-- WS-RR RR2.6: `endpointCallWithCapsOnCore` preserves the object store's
+extended invariant. -/
+theorem endpointCallWithCapsOnCore_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    (endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st).1.objects.invExt := by
+  have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBareInv
+    cases res with
+    | error e => exact hBareInv
+    | ok sgi =>
+      simp only
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only; split <;> exact hBareInv
+      | some ep =>
+        simp only
+        cases hHead : ep.receiveQ.head with
+        | none => simp only; split <;> exact hBareInv
+        | some receiverId =>
+          simp only
+          split
+          · exact hBareInv
+          · cases hRoot : lookupCspaceRoot stCall receiverId with
+            | none => exact hBareInv
+            | some recvRoot =>
+              simp only
+              cases hUnwrap : ipcUnwrapCaps
+                  { msg with capsGranted := endpointRights.mem AccessRight.grant }
+                  recvRoot receiverSlotBase
+                  (endpointRights.mem AccessRight.grant) stCall with
+              | error e => exact hBareInv
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
+                simp only
+                exact ipcUnwrapCaps_preserves_objects_invExt _ recvRoot
+                  receiverSlotBase _ stCall stFinal summary hBareInv hUnwrap
+
+-- ============================================================================
+-- §5 WS-RR RR8.16 (`v0.35.200`): the scheduler and capability bundles across
+--    the capability-transferring `.call` leg
+-- ============================================================================
+
+/-- **WS-RR RR8.16** (`v0.35.200`): *the capability transfer step preserves the
+capability invariant bundle* — the one obligation the `.call` chain's own lift
+reduces to, stated over the arguments `endpointCallWithCapsOnCore` fixes and
+quantified over the two it does not.
+
+**Why a reduction hypothesis and not
+`ipcUnwrapCaps_preserves_capabilityInvariantBundle`'s own premises.**  That
+lemma externalises three conditions, and the first is quantified over *every*
+bundle-satisfying state, *every* CNode at the receiver root and *every* slot:
+`∀ s, (cn.insert s cap).slotCountBounded`.  `cspaceSlotCountBounded` is `≤`, so a
+bundle-satisfying state may hold a CNode at capacity, and `CNode.insert` at a
+fresh slot grows the table — so the premise is **refuted** rather than merely
+unproved, and a lift that took it would be vacuous while its name read as
+coverage.  (That the lemma has had no consumer since it was written is the
+corroborating measurement.)  This hypothesis is instead a statement about the
+*operation*, and it is exhibited: `ipcUnwrapCapsPreservesCapabilityBundle_of_noGrant`
+discharges it whenever the endpoint carries no grant right, which is every
+rendezvous that transfers nothing.
+
+The residue — a usable bundle lemma for a grant-bearing transfer — is registered
+debt, and `ipcTransferSingleCap`'s use of the **unchecked** slot scan is the
+reason it cannot simply be proved today. -/
+def ipcUnwrapCapsPreservesCapabilityBundle (msg : IpcMessage) (slotBase : SeLe4n.Slot)
+    (grantRight : Bool) : Prop :=
+  ∀ (receiverRoot : SeLe4n.ObjId) (stI stJ : SystemState) (summary : CapTransferSummary),
+    capabilityInvariantBundle stI →
+    ipcUnwrapCaps msg receiverRoot slotBase grantRight stI = .ok (summary, stJ) →
+    capabilityInvariantBundle stJ
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and it holds outright when the endpoint
+carries no grant right — `ipcUnwrapCaps` is then the identity.  The inhabitation
+witness: a hypothesis nothing exhibits is indistinguishable from one that cannot
+hold. -/
+theorem ipcUnwrapCapsPreservesCapabilityBundle_of_noGrant (msg : IpcMessage)
+    (slotBase : SeLe4n.Slot) :
+    ipcUnwrapCapsPreservesCapabilityBundle msg slotBase false :=
+  fun _ stI stJ summary hInv hStep =>
+    ipcUnwrapCaps_preserves_capabilityInvariantBundle_noGrant stI stJ msg _ slotBase
+      summary hInv hStep
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the cross-core `Call` **with capability
+transfer** preserves the base SMP scheduler invariant.
+
+Two steps, two different arguments, and the difference is the point.  The bare
+leg is `kindPreservingWrite` and carries the invariant by
+`endpointCallOnCore_preserves_schedulerInvariantBase_smp`; `ipcUnwrapCaps` is
+**not** — it writes a CNode, and `kindPreservingWrite` excludes that kind
+outright — so it carries the invariant through the plain frame instead, from
+`ipcUnwrapCaps_preserves_scheduler` and `ipcUnwrapCaps_getTcb?_eq`, which fixes
+the *whole* TCB projection because cap transfer writes only `receiverRoot` and
+only as a CNode.
+
+`hNotCur` is the bare leg's own precondition, read at the pre-state and about the
+endpoint alone, so the capability transfer is invisible to it. -/
+theorem endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
+      ∀ r, ep.receiveQ.head = some r →
+        st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (endpointCallWithCapsOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hBare := endpointCallOnCore_preserves_schedulerInvariantBase_smp endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
+    hNotCur h
+  have hBareInv := endpointCallOnCore_preserves_objects_invExt endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st hObjInv
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBare hBareInv
+    cases res with
+    | error e => exact hBare
+    | ok sgi =>
+      simp only
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only; split <;> exact hBare
+      | some ep =>
+        simp only
+        cases hHead : ep.receiveQ.head with
+        | none => simp only; split <;> exact hBare
+        | some receiverId =>
+          simp only
+          split
+          · exact hBare
+          · cases hRoot : lookupCspaceRoot stCall receiverId with
+            | none => exact hBare
+            | some recvRoot =>
+              simp only
+              cases hUnwrap : ipcUnwrapCaps
+                  { msg with capsGranted := endpointRights.mem AccessRight.grant }
+                  recvRoot receiverSlotBase
+                  (endpointRights.mem AccessRight.grant) stCall with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
+                simp only
+                exact schedulerInvariantBase_smp_of_frame hBare
+                  (ipcUnwrapCaps_preserves_scheduler _ recvRoot receiverSlotBase _ stCall
+                    stFinal summary hUnwrap)
+                  (fun tid hSome => by
+                    rw [ipcUnwrapCaps_getTcb?_eq _ recvRoot receiverSlotBase _ stCall stFinal
+                      summary tid hBareInv hUnwrap]
+                    exact hSome)
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,
+which is where the two halves of the leg part company.
+
+The bare leg writes no CNode and neither CDT table, so it carries the bundle with
+no side condition at all (`endpointCallOnCore_preserves_capabilityInvariantBundle`).
+`ipcUnwrapCaps` is the one IPC step that writes a CNode *and* mints CDT
+derivations, so the whole leg's bundle **reduces** to that step's — which is why
+this theorem takes the reduction hypothesis and §11's reply-side twin takes
+nothing.  Where the message carries no capabilities the step is not reached at
+all, and `…_of_no_caps` below is unconditional. -/
+theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hTransfer : ipcUnwrapCapsPreservesCapabilityBundle
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } receiverSlotBase
+      (endpointRights.mem AccessRight.grant))
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (endpointCallWithCapsOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hBare := endpointCallOnCore_preserves_capabilityInvariantBundle endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st h
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBare
+    cases res with
+    | error e => exact hBare
+    | ok sgi =>
+      simp only
+      cases hEp : st.getEndpoint? endpointId with
+      | none => simp only; split <;> exact hBare
+      | some ep =>
+        simp only
+        cases hHead : ep.receiveQ.head with
+        | none => simp only; split <;> exact hBare
+        | some receiverId =>
+          simp only
+          split
+          · exact hBare
+          · cases hRoot : lookupCspaceRoot stCall receiverId with
+            | none => exact hBare
+            | some recvRoot =>
+              simp only
+              cases hUnwrap : ipcUnwrapCaps
+                  { msg with capsGranted := endpointRights.mem AccessRight.grant }
+                  recvRoot receiverSlotBase
+                  (endpointRights.mem AccessRight.grant) stCall with
+              | error e => exact hBare
+              | ok pair =>
+                obtain ⟨summary, stFinal⟩ := pair
+                simp only
+                exact hTransfer recvRoot stCall stFinal summary hBare hUnwrap
+
+-- **WS-RR RR8.16** (`v0.35.200`): relocated here from the staged
+-- `IPC/Invariant/FaultPreservation.lean`, so the production fault-path bundle
+-- lifts can cite it — it reads no staged surface, being a composition of each
+-- step's own `invExt` frame.
+
+/-- The `.call` chain preserves `objects.invExt` — the rendezvous-plus-transfer
+leg, the donation, and the priority-inheritance walk each do, and the chain is
+their composition. Needed because the fault delivery writes the fault record
+onto the chain's post-state, and that write is an `insert`. -/
+theorem endpointCallCrossCoreDispatch_preserves_objects_invExt
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt) :
+    (endpointCallCrossCoreDispatch endpointId caller msg endpointRights
+      receiverSlotBase executingCore st).1.objects.invExt := by
+  have hWc := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
+    endpointRights receiverSlotBase executingCore st hObjInv
+  unfold endpointCallCrossCoreDispatch
+  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | mk stW resW =>
+      rw [hWcEq] at hWc
+      simp only at hWc ⊢
+      cases resW with
+      | error e => exact hWc
+      | ok r =>
+          obtain ⟨summaryW, sgiW⟩ := r
+          simp only
+          split
+          · split
+            · split
+              · exact hWc
+              · rename_i stD hDon
+                exact PriorityInheritance.propagatePipChainCrossCore_preserves_objects_invExt
+                  _ _ _ _
+                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWc hDon)
+            · exact hWc
+          · exact hWc
+
+/-- **WS-RR RR8.16** (`v0.35.200`): the cross-core call **donation** preserves the
+base SMP scheduler invariant.
+
+Two steps, one citation each: the rebinding writes no scheduler state at all
+(`applyCallDonation_scheduler_eq`), and the SM5.H migration writes
+`replenishQueue` alone — which the base invariant does not read, so it takes the
+narrower field frame rather than whole-scheduler equality.  The `.reply` chain's
+counterpart is `applyReplyDonationOnCore_preserves_schedulerInvariantBase_smp`.
+
+**Placement**: the two bundle lifts for this operation live here rather than
+beside the bundles they are about, because `applyCallDonationOnCore` is declared
+in `IPC/Operations/Donation.lean` — above the scheduler-invariant layer, since it
+composes the priority-inheritance walk — so neither
+`Scheduler/Invariant/PerCore.lean` nor `Capability/Invariant/Authority.lean` can
+name it.  `returnDonatedSchedContext` sits *below* both and its lifts are
+therefore beside the bundles; the asymmetry is the import graph's, not a
+convention's. -/
+theorem applyCallDonationOnCore_preserves_schedulerInvariantBase_smp
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hObjInv : st.objects.invExt)
+    (h : schedulerInvariantBase_smp st)
+    (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    schedulerInvariantBase_smp st'' := by
+  obtain ⟨st1, hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid
+    donorHome doneeHome hStep
+  have h1 : schedulerInvariantBase_smp st1 :=
+    schedulerInvariantBase_smp_of_kindPreserving h
+      (applyCallDonation_scheduler_eq st callerVtid receiverVtid st1 hDon)
+      (applyCallDonation_kindPreservingWrite st st1 callerVtid receiverVtid hObjInv hDon)
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩ <;> subst hEq
+  · exact h1
+  · exact migrateSchedContextReplenishment_preserves_schedulerInvariantBase_smp _ _ _ h1
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,
+with no side condition: the donation writes four kernel objects and rewrites
+`scThreadIndex`, none of them a CNode and neither CDT table, and the migration
+writes no object at all. -/
+theorem applyCallDonationOnCore_preserves_capabilityInvariantBundle
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (h : capabilityInvariantBundle st)
+    (hStep : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    capabilityInvariantBundle st'' := by
+  have hObjInv : st.objects.invExt := h.2.2.2.2.2.1
+  have hCdt := applyCallDonationOnCore_cdt_eq st st'' callerVtid receiverVtid donorHome doneeHome
+    hStep
+  exact capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1
+    (applyCallDonationOnCore_preserves_objects_invExt st st'' callerVtid receiverVtid donorHome
+      doneeHome hObjInv hStep)
+    (applyCallDonationOnCore_kindPreservingWrite st st'' callerVtid receiverVtid donorHome
+      doneeHome hObjInv hStep)
+
+/-- **WS-RR RR8.16** (`v0.35.200`): **the live cross-core `.call` chain preserves
+the base SMP scheduler invariant** — the leg, the donation and the
+priority-inheritance walk, each by its own lift.
+
+`hNotCur` is the leg's own precondition and nothing else's: the donation moves no
+thread's placement and the chain walk re-buckets on each member's *home* core, so
+neither can make a woken receiver current where it was not. -/
+theorem endpointCallCrossCoreDispatch_preserves_schedulerInvariantBase_smp
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hObjInv : st.objects.invExt)
+    (hNotCur : ∀ ep, st.getEndpoint? endpointId = some ep →
+      ∀ r, ep.receiveQ.head = some r →
+        st.scheduler.currentOnCore (determineTargetCore st r) ≠ some r)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp (endpointCallCrossCoreDispatch endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hWc := endpointCallWithCapsOnCore_preserves_schedulerInvariantBase_smp endpointId caller
+    msg endpointRights receiverSlotBase executingCore st hObjInv hNotCur h
+  have hWcInv := endpointCallWithCapsOnCore_preserves_objects_invExt endpointId caller msg
+    endpointRights receiverSlotBase executingCore st hObjInv
+  unfold endpointCallCrossCoreDispatch
+  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | mk stW resW =>
+      rw [hWcEq] at hWc hWcInv
+      simp only at hWc hWcInv ⊢
+      cases resW with
+      | error e => exact hWc
+      | ok r =>
+          obtain ⟨summaryW, sgiW⟩ := r
+          simp only
+          split
+          · split
+            · split
+              · exact hWc
+              · rename_i stD hDon
+                exact propagatePipChainCrossCore_preserves_schedulerInvariantBase_smp _ _ _ _
+                  (applyCallDonationOnCore_preserves_objects_invExt _ _ _ _ _ _ hWcInv hDon)
+                  (applyCallDonationOnCore_preserves_schedulerInvariantBase_smp _ _ _ _ _ _
+                    hWcInv hWc hDon)
+            · exact hWc
+          · exact hWc
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the **capability invariant bundle**,
+under the capability subsystem's own transfer premises and nothing else.
+
+The hypothesis reaches exactly one step of the chain — `ipcUnwrapCaps`, inside
+the leg — because the donation and the chain walk write no CNode and neither CDT
+table.  The `.reply` chain's counterpart
+(`endpointReplyCrossCoreDispatch_preserves_capabilityInvariantBundle`) takes
+nothing at all, which is the difference between a chain that installs
+capabilities and one that does not. -/
+theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hTransfer : ipcUnwrapCapsPreservesCapabilityBundle
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } receiverSlotBase
+      (endpointRights.mem AccessRight.grant))
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle endpointId caller
+    msg endpointRights receiverSlotBase executingCore st hTransfer h
+  unfold endpointCallCrossCoreDispatch
+  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | mk stW resW =>
+      rw [hWcEq] at hWc
+      simp only at hWc ⊢
+      cases resW with
+      | error e => exact hWc
+      | ok r =>
+          obtain ⟨summaryW, sgiW⟩ := r
+          simp only
+          split
+          · split
+            · split
+              · exact hWc
+              · rename_i stD hDon
+                exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
+                  (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                    hWc hDon)
+            · exact hWc
+          · exact hWc
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and when the message carries **no**
+capabilities the leg preserves the bundle outright.
+
+`endpointCallWithCapsOnCore` short-circuits on `msg.caps.isEmpty` *before* it
+resolves the receiver's CSpace root, so `ipcUnwrapCaps` is not reached at all and
+the whole leg is the bare rendezvous.  This is what makes the fault delivery's
+lift unconditional: `faultMessage` carries `caps := #[]`. -/
+theorem endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hNoCaps : msg.caps.isEmpty = true)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (endpointCallWithCapsOnCore endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hBare := endpointCallOnCore_preserves_capabilityInvariantBundle endpointId caller
+    { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st h
+  unfold endpointCallWithCapsOnCore
+  cases hCall : endpointCallOnCore endpointId caller
+      { msg with capsGranted := endpointRights.mem AccessRight.grant } executingCore st with
+  | mk stCall res =>
+    rw [hCall] at hBare
+    cases res with
+    | error e => exact hBare
+    | ok sgi =>
+      simp only [hNoCaps, Bool.or_true, if_pos]
+      exact hBare
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and the whole `.call` chain, same
+condition — the donation and the chain walk never reach a capability transfer. -/
+theorem endpointCallCrossCoreDispatch_preserves_capabilityInvariantBundle_of_no_caps
+    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
+    (endpointRights : AccessRightSet)
+    (receiverSlotBase : SeLe4n.Slot) (executingCore : CoreId) (st : SystemState)
+    (hNoCaps : msg.caps.isEmpty = true)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle (endpointCallCrossCoreDispatch endpointId caller msg
+      endpointRights receiverSlotBase executingCore st).1 := by
+  have hWc := endpointCallWithCapsOnCore_preserves_capabilityInvariantBundle_of_no_caps
+    endpointId caller msg endpointRights receiverSlotBase executingCore st hNoCaps h
+  unfold endpointCallCrossCoreDispatch
+  cases hWcEq : endpointCallWithCapsOnCore endpointId caller msg endpointRights
+      receiverSlotBase executingCore st with
+  | mk stW resW =>
+      rw [hWcEq] at hWc
+      simp only at hWc ⊢
+      cases resW with
+      | error e => exact hWc
+      | ok r =>
+          obtain ⟨summaryW, sgiW⟩ := r
+          simp only
+          split
+          · split
+            · split
+              · exact hWc
+              · rename_i stD hDon
+                exact propagatePipChainCrossCore_preserves_capabilityInvariantBundle _ _ _ _
+                  (applyCallDonationOnCore_preserves_capabilityInvariantBundle _ _ _ _ _ _
+                    hWc hDon)
+            · exact hWc
+          · exact hWc
 
 end SeLe4n.Kernel

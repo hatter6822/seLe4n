@@ -13,11 +13,12 @@
 > The third SM3.B-owned domain, `.queueOwnershipProtocol`, closed at
 > `v0.34.88` (RR7.38) — outside Track B, whose rows never touched splice
 > neighbours — by giving the eleven footprints that can write a *queued* TCB
-> the queue owner's write lock.  **Five of the register's seven domains are
-> covered and two remain** — `syscallSeamSchedulerDomain` (RR7.39's syscall
-> half) and `taintTablePerKeyStore` (owned by the representation cut, Track D's
-> PR 13); the register itself is the authority, since its completeness theorem
-> fails until a covered constructor is deleted.
+> the queue owner's write lock.  **Six of the register's seven domains are
+> covered and one remains** — `taintTablePerKeyStore` (owned by the
+> representation cut, Track D's PR 13); `syscallSeamSchedulerDomain` (RR7.39's
+> syscall half) closed at `v0.35.181` (RR8.12 Cut C6h).  The register itself is
+> the authority, since its completeness theorem fails until a covered
+> constructor is deleted.
 > **Track C** (4 PRs) is closed: the decoded-driven resolver at `v0.34.63`
 > (RR7.10), the eight declared IPC footprints at `v0.34.64` (RR7.11), the
 > **syscall seam's bracket** at `v0.34.65` (RR7.12) and the export-commit
@@ -611,9 +612,9 @@ gated on BP6, validated at BP8).**  Consumes PR 12.
   PR 13 closes; re-pin the release closure
   (`SMP_RELEASE_CLOSURE_PLAN.md` SMP-C3 made dischargeable; the SMP-plan risk
   row).  The timer-tick fine-lock migration is **not** owed here: RR7.39 landed
-  it at `v0.34.89`, and what remains of the scheduler domain is the syscall
-  seam's own wake targets (`UncoveredLockDomain.syscallSeamSchedulerDomain`,
-  owner RR8).
+  it at `v0.34.89`, and the syscall seam's own wake targets
+  (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
+  `v0.35.181` (RR8.12 Cut C6h), so the scheduler domain is covered end to end.
 - *Step 5:* measure `tCs` on the board.  Every WCRT figure in this tree is
   parametric in it (`admissibleCriticalSection`, WS-RR RR7.31), so the
   partitioned commit's bound cannot be quoted as a time until this runs — and
@@ -747,9 +748,10 @@ time.
       seam flag; the constructors PR 11 registered and PR 13 closes deleted;
       `tCs` measured on the board at BP8.
 
-What remains open after this plan is the **syscall seam's scheduler domain**
-(`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) and the **BP6 seam
-flip**; both are named follow-ons, not silent gaps.  The timer-tick fine-lock
+What remains open after this plan is the **BP6 seam flip**, a named follow-on
+rather than a silent gap.  The **syscall seam's scheduler domain**
+(`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
+`v0.35.181` (RR8.12 Cut C6h).  The timer-tick fine-lock
 migration this section used to name as SM3.C.9.b is **closed** — RR7.39 landed
 it at `v0.34.89`.
 

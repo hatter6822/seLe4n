@@ -28,45 +28,25 @@ while read -r exe; do suite_exes+=("${exe}"); done < <(
   grep -oE '^run_check_with_timeout "TRACE" lake exe [[:alnum:]_]+' \
     "${BASH_SOURCE[0]}" | awk '{print $5}')
 
-# **WS-RR RR7.35 (register finding 78)**: the suites this tier runs through the
-# *interpreter* are compiled too.  Their `lean_exe` targets were declared in
-# `lakefile.toml` and built by no gate at all -- including
-# `negative_state_suite`, the one CLAUDE.md names as build-fragile: a
-# `do`-block deep enough to blow clang's `-fbracket-depth` fails
-# `lake build <suite>` while `lake env lean --run` sails past it, so the exact
-# hazard the interpreter runs were introduced to route around was the one
-# nothing checked.  Compiling costs ~10 s cold for the largest of the three, so
-# the "pathological C compilation times" the comment below records is a
-# statement about the pre-thin-dispatcher suites and no longer about these.
-#
-# Derived, not listed: the interpreter lines name a *module path*, so the
-# executable is resolved through `lakefile.toml`'s own `root =` field.  A suite
-# added in interpreted form is therefore compiled without a second list, and a
-# module with no `lean_exe` is reported rather than silently skipped -- an
-# unbuilt target is exactly what this closes.
-while read -r module; do
-  root="$(printf '%s' "${module}" | sed 's|^tests/||; s|\.lean$||')"
-  exe="$(awk -v r="tests.${root}" '
-    /^name = /   { n = $3; gsub(/"/, "", n) }
-    /^root = /   { t = $3; gsub(/"/, "", t); if (t == r) { print n; exit } }
-  ' lakefile.toml)"
-  if [[ -z "${exe}" ]]; then
-    echo "test_tier2_negative: ${module} is run but declares no lean_exe in lakefile.toml" >&2
-    exit 1
-  fi
-  suite_exes+=("${exe}")
-done < <(
-  grep -oE '^run_check_with_timeout "TRACE" lake env lean --run tests/[[:alnum:]_]+\.lean' \
-    "${BASH_SOURCE[0]}" | awk '{print $7}')
-
 run_check "BUILD" lake build "${suite_exes[@]}"
 
-# Run suites through the Lean interpreter to avoid pathological C compilation
-# times for very large test modules (notably NegativeStateSuite).
-run_check_with_timeout "TRACE" lake env lean --run tests/NegativeStateSuite.lean
+# `negative_state_suite`, `information_flow_suite` and `robin_hood_suite` ran
+# through the Lean *interpreter* (`lake env lean --run`) from the day the first
+# of them blew clang's `-fbracket-depth`; the thin-dispatcher pattern CLAUDE.md
+# records ended that, and **WS-RR RR7.35** (register finding 78) then made the
+# three compile in this tier's prebuild so the hazard is checked rather than
+# routed around.  What the interpreter runs still cost was re-elaborating each
+# suite on every run -- 24 s for `InformationFlowSuite` and 5 s for
+# `NegativeStateSuite`, a third of this tier -- to reach a `main` whose compiled
+# form runs in half a second (test-performance audit, v0.35.159).  They run as
+# the executables the prebuild already made, exactly as every other suite here
+# does: the verdict lines are the same, and the derivation above covers them
+# like any other `lake exe` line, so RR7.35's "compiled too" needs no second
+# list.
+run_check_with_timeout "TRACE" lake exe negative_state_suite
 run_check_with_timeout "TRACE" lake exe operation_chain_suite
-run_check_with_timeout "TRACE" lake env lean --run tests/InformationFlowSuite.lean
-run_check_with_timeout "TRACE" lake env lean --run tests/RobinHoodSuite.lean
+run_check_with_timeout "TRACE" lake exe information_flow_suite
+run_check_with_timeout "TRACE" lake exe robin_hood_suite
 # R8-D (I-M04): Execute frozen/radix test suites that were compiled but never run.
 # Q4: Radix tree O(1) operations (lookup, insert, erase, fold, toList).
 run_check_with_timeout "TRACE" lake exe radix_tree_suite

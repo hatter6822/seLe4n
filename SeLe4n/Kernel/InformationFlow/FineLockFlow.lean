@@ -3179,33 +3179,25 @@ Data rather than prose, so the scope of `syscallEntryUnderDeclaredLockSet` is
 checkable and a future cut that composes a domain has to delete an entry here
 rather than quietly leave a stale comment. -/
 inductive UncoveredLockDomain where
-  /-- **WS-RR RR7.39**: the per-core run-queue and replenish-queue locks a
-  **syscall** takes — `SchedLockId`, as `suspendThreadOnCoreSchedLockSet`
-  declares them for a live `.tcbSuspend`.
-
-  RR7.39 gave the scheduler domain a runtime — `SystemState.schedulerLocks`,
-  the `SchedLockId` primitives, the `SchedLockSet` footprint type and the
-  `schedulerLockBracketDomain` instance of the shared bracket — and put the three
-  per-core scheduler *entries* (the timer tick, the `.reschedule` SGI receiver and
-  the secondary bring-up entry) inside their declared footprints, with the
-  write-set containment proved for both steps.  What it did **not** do is move the
-  RR7.12 **syscall** seam onto that domain, and this constructor is the syscall
-  half: `lockSetForSyscall` returns a `LockSet`, whose `LockId` cannot name a
-  run-queue lock at all, so the scheduler writes an `endpointSend`'s receiver wake
-  or a `.tcbSuspend`'s cancellation performs are still outside the footprint the
-  seam acquires.
-
-  Narrowed rather than deleted, deliberately.  The blanket entry read as "the
-  scheduler domain is uncovered", which after RR7.39 is false of the entries and
-  true of the syscalls; deleting it would have been false of the syscalls.  Why
-  the syscall half is its own cut: the object-domain syscall footprints hold
-  `stateLevelLock` and per-object locks, **not** the object-store table lock, so
-  the over-approximation that made the scheduler entries' widening free (see
-  `timerTickOnCoreCompleteLockSet_serialises_pairwise`) would here serialise
-  unrelated IPC on unrelated endpoints across every core's run queue.  The
-  footprints must therefore name the *resolved* wake targets, per arm — RR7.11's
-  shape, over a domain RR7.39 has now built. -/
-  | syscallSeamSchedulerDomain
+  -- **WS-RR RR8.12 Cut C6h (`v0.35.181`)**: `syscallSeamSchedulerDomain` is
+  -- DELETED.  The syscall seam brackets on the scheduler domain now:
+  -- `syscallDispatchCrossCoreBracketedStep` runs `Concurrency.runBracketed
+  -- schedulerLockBracketDomain` over `declaredUnifiedLockSetForAbiEntry`, whose
+  -- `SchedLockId` members name the run-queue and replenish-queue locks the
+  -- constructor said a `LockSet` could not express, and each of the sixteen
+  -- declared arms carries a `schedLockSet_*_coversWrites` proof that reaches the
+  -- acquired set through `unifiedSchedLockSetForSyscall_coversWrites`.
+  --
+  -- The constructor's stated reason for the syscall half being its own cut is
+  -- **corrected** rather than merely satisfied: it read *"the object-domain
+  -- syscall footprints hold `stateLevelLock` and per-object locks, **not** the
+  -- object-store table lock"*, and `stateLevelLock` IS the object-store table
+  -- lock — `acquireLockOnObject`'s `.objStore` arm writes
+  -- `SystemState.objStoreLock` and reads nothing else of the `LockId`
+  -- (`schedAcquireLock_objStore_congr`).  The two domains were therefore never
+  -- two lock words, which is why the cut unifies the footprints rather than
+  -- nesting two brackets: nesting would take that one word twice and walk the
+  -- SM0.I ladder backwards.
   /-- WS-SM SM9.D.17 (audit): the **taint table's per-key realisation**.
 
   Every content-moving syscall writes `SystemState.declassificationTaint` at the
@@ -3281,23 +3273,32 @@ round 2) — and
 it.  The entry goes rather than narrows because the walk is now covered end to
 end; the inventory falls from four to three, which is the only reason it may.
 
-**The scheduler domain's owner moves again at v0.34.89 (WS-RR RR7.39).**  RR7.39
-closed the *entries*' half — the three per-core scheduler seams now acquire their
-declared footprints, and the domain has a runtime for them to acquire — and the
-constructor was narrowed to `syscallSeamSchedulerDomain`, the half that remains:
-moving the RR7.12 syscall seam onto the same domain, with each declared arm's
-resolved wake targets named.  That is RR8's, not RR7.39's, because it is a
-per-arm footprint cut of RR7.11's shape rather than a domain-construction one. -/
+**The scheduler domain's entry is DELETED at v0.35.181 (WS-RR RR8.12 Cut C6h).**
+RR7.39 (v0.34.89) closed the *entries*' half — the three per-core scheduler seams
+acquire their declared footprints over a domain it built — and narrowed the
+constructor to `syscallSeamSchedulerDomain`, the syscall half.  RR8.12 closed
+that half in sequence: the shared core segment, then sixteen per-arm footprints,
+then a coverage proof for each, then the seam's bracket.  The entry goes rather
+than narrows because the syscall seam is now bracketed on the scheduler domain
+end to end; **the inventory falls from two to one**, which is the only reason it
+may.
+
+One correction the deletion carries, because the retired constructor's own stated
+reason was false: it said the object-domain syscall footprints hold
+`stateLevelLock` *"**not** the object-store table lock"*.  They are the same lock
+— `acquireLockOnObject`'s `.objStore` arm writes `SystemState.objStoreLock` and
+reads nothing else of the `LockId` — so the two domains were never two words, and
+the seam acquires **one** unified footprint (`declaredUnifiedLockSetForAbiEntry`)
+rather than nesting two brackets that would take that word twice. -/
 def declaredFootprintUncoveredDomains : List (UncoveredLockDomain × String) :=
-  [(.syscallSeamSchedulerDomain, "WS-RR RR8 (fine-lock Track C closure)"),
-   (.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
+  [(.taintTablePerKeyStore, "SM10.1 (fine-lock Track D)"),
 ]
 
 /-- SM8.D.5: the exhaustive list of uncovered domains, in the shape the claim
 inventory uses — so completeness can be quantified over the *constructors*
 rather than compared against a literal. -/
 def UncoveredLockDomain.all : List UncoveredLockDomain :=
-  [.syscallSeamSchedulerDomain, .taintTablePerKeyStore]
+  [.taintTablePerKeyStore]
 
 /-- SM8.D.5: every constructor is listed.  This is the clause a literal
 comparison cannot supply: adding a new domain makes `cases d` non-exhaustive

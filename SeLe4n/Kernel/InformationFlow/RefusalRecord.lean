@@ -679,7 +679,7 @@ def refusalSeamClass : SeLe4n.Model.SyscallId → RefusalSeamClass
   -- "many, all denied".
   | .declassify | .declassifySignal => .records
   | .send | .receive | .call | .reply => .exempt
-  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete => .exempt
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .cspaceRevoke => .exempt
   | .lifecycleRetype => .exempt
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction => .exempt
   | .serviceRegister | .serviceRevoke | .serviceQuery => .exempt

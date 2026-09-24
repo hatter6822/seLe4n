@@ -124,6 +124,32 @@ theorem endpointReplyOnCore_preserves_objects_invExt
     · -- PR #827 #3 fold: the consume is two object-store writes; invExt carries.
       exact removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hWake hCons
 
+/-- **WS-RR RR8.12 Cut C2 (`v0.35.162`, frame)**: the reply leg writes **no replenish
+queue** on any path.  Its one scheduler write is the woken caller's run-queue insert
+(`wakeThread`), and the two object stores around it — the delivery and the reply
+frame's removal — leave the scheduler untouched.  The `.replyRecv` footprint's
+replenish segment starts after this leg, and this is the frame that licenses it: a
+footprint that declared nothing for a leg that migrated would be false. -/
+theorem endpointReplyOnCore_replenishQueueOnCore
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (c : CoreId) :
+    (endpointReplyOnCore replier target msg executingCore st).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hSched : st'.scheduler = st.scheduler :=
+      storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
+    have hWake : (wakeThread st' target executingCore).1.scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+      rw [wakeThread_replenishQueueOnCore, hSched]
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hRem⟩
+    · rw [hEq]; exact hWake
+    · rw [removeCallerReplyFrame_scheduler_eq _ _ target rid hRem]
+      exact hWake
+
 -- ============================================================================
 -- §3  `ipcInvariant` (notification well-formedness) preservation
 -- ============================================================================
@@ -402,6 +428,31 @@ theorem endpointReplyOnCore_preserves_ipcInvariantFull_perCore
 -- §7  SM6.D: per-core passive-server frame for the cross-core receive leg
 -- ============================================================================
 
+/-- **`v0.35.161`**: the pre-receive return's replenishment migration frames every
+core's `passiveServerIdle` slice — it reads and writes no object, no run queue and
+no current slot (`preReceiveReturnMigration_getTcb?`, `_runQueueOnCore`,
+`_currentOnCore`), so every pullback is the identity. -/
+theorem preReceiveReturnMigration_passiveServerIdleFrameOnCore (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) {c : CoreId} :
+    passiveServerIdleFrameOnCore stClean (preReceiveReturnMigration st stClean receiver) c :=
+  ⟨fun tid tcb' h hU hQ hC _ =>
+    ⟨tcb', by rwa [preReceiveReturnMigration_getTcb?] at h, hU,
+      by rwa [preReceiveReturnMigration_runQueueOnCore] at hQ,
+      by rwa [preReceiveReturnMigration_currentOnCore] at hC, rfl⟩⟩
+
+/-- **`v0.35.161`**: and it agrees with its input off the scheduler — the migration
+is a scheduler-only update (`migrateSchedContextReplenishment` rewrites two
+replenish queues and nothing else), or the identity.  This is what lets the
+single-core/cross-core agreement dichotomy carry the block path across the point
+where the two spines part. -/
+theorem preReceiveReturnMigration_offSchedulerAgrees (st stClean : SystemState)
+    (receiver : SeLe4n.ThreadId) :
+    OffSchedulerAgrees stClean (preReceiveReturnMigration st stClean receiver) := by
+  unfold preReceiveReturnMigration
+  split
+  · exact migrateSchedContextReplenishment_offSchedulerAgrees _ _ _ _
+  · exact OffSchedulerAgrees.refl _
+
 open SeLe4n.Model.SystemState in
 /-- WS-SM SM6.D: `endpointReceiveDualOnCore` frames every core's
 `passiveServerIdle` slice, unconditionally over success/failure.  Rendezvous:
@@ -500,26 +551,35 @@ theorem endpointReceiveDualOnCore_passiveServerIdleFrameOnCore
                   senderTcb.pendingMessage (Or.inl (Or.inl rfl)) hInvWake hStore2)
     | none =>
       simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
       | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
-      | ok stClean =>
+      | ok stClean' =>
         simp only
+        -- **`v0.35.161`**: the cross-core return is the pop followed by the
+        -- replenishment migration it owes.  The pop frames the slice exactly as
+        -- before; the migration reads and writes no object, run queue or current
+        -- slot, so it frames it trivially.
+        obtain ⟨stClean, hChecked, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hClean
         have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
-          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hClean).symm
+          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
         subst hBridge
-        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-        have hFClean := cleanupPreReceiveDonation_passiveServerIdleFrameOnCore (c := c) st receiver
-          hObjInv (fun tcb h => Or.inl (hReceiverReady tcb h))
-        cases hEnq : endpointQueueEnqueue endpointId true receiver
-            (cleanupPreReceiveDonation st receiver) with
+        have hObjInvClean : stClean'.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
+            hObjInv hClean
+        have hFClean : passiveServerIdleFrameOnCore st stClean' c := by
+          rw [hMig]
+          exact (cleanupPreReceiveDonation_passiveServerIdleFrameOnCore (c := c) st receiver
+            hObjInv (fun tcb h => Or.inl (hReceiverReady tcb h))).trans
+            (preReceiveReturnMigration_passiveServerIdleFrameOnCore st _ receiver)
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
         | ok st1 =>
           simp only
           have hObjInvEnq : st1.objects.invExt :=
             endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver
-              (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+              stClean' st1 hObjInvClean hEnq
           have hF1 := hFClean.trans (endpointQueueEnqueue_passiveServerIdleFrameOnCore endpointId
-            true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq)
+            true receiver stClean' st1 hObjInvClean hEnq)
           cases hIpc : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => simp only; exact passiveServerIdleFrameOnCore.refl st
           | ok st2 =>
@@ -668,41 +728,82 @@ theorem endpointReceiveDualOnCore_post_agrees
                   hStore1, hStore2SC]
     | none =>
       simp only
-      cases hClean : cleanupPreReceiveDonationChecked st receiver with
+      cases hClean : cleanupPreReceiveDonationMigrated st receiver with
       | error e => left; rfl
-      | ok stClean =>
+      | ok stClean' =>
         simp only
-        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean with
+        -- **`v0.35.161`**: the two spines part here.  The single-core spine runs
+        -- the bare checked cleanup and lands on `stClean`; the cross-core spine
+        -- runs the migrated one and lands on `stClean'`, which agrees with it off
+        -- the scheduler.  From here on both run the same object-level steps on
+        -- two states rather than one, and each step's congruence carries the
+        -- relation (`endpointQueueEnqueue_offSchedulerAgrees`,
+        -- `storeTcbIpcStateAndMessage_offSchedulerAgrees`,
+        -- `storeObject_offSchedulerAgrees`); the stash guard reads the *input*
+        -- state `st`, so it needs no congruence at all.
+        obtain ⟨stClean, hChecked, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hClean
+        have hRelC : OffSchedulerAgrees stClean stClean' := by
+          rw [hMig]; exact preReceiveReturnMigration_offSchedulerAgrees st stClean receiver
+        have hInvC : stClean.objects.invExt := by
+          rw [← cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked]
+          exact cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
+        have hInvC' : stClean'.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
+            hObjInv hClean
+        cases hEnq' : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => left; rfl
-        | ok st1 =>
+        | ok st1' =>
           simp only
-          cases hStore1 : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
+          obtain ⟨st1, hEnq, hRel1⟩ := endpointQueueEnqueue_offSchedulerAgrees endpointId true
+            receiver hRelC hInvC hInvC' hEnq'
+          have hInv1 : st1.objects.invExt :=
+            endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver stClean st1
+              hInvC hEnq
+          have hInv1' : st1'.objects.invExt :=
+            endpointQueueEnqueue_preserves_objects_invExt endpointId true receiver stClean' st1'
+              hInvC' hEnq'
+          cases hStore1' : storeTcbIpcStateAndMessage st1' receiver (.blockedOnReceive endpointId)
+              none with
           | error e => left; rfl
-          | ok st2 =>
+          | ok st2' =>
             simp only
-            cases hGetR : st2.getTcb? receiver with
+            obtain ⟨st2, hStore1, hRel2⟩ := storeTcbIpcStateAndMessage_offSchedulerAgrees receiver
+              (.blockedOnReceive endpointId) none hRel1 hInv1 hInv1' hStore1'
+            have hInv2 : st2.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1 st2 receiver _ _ hInv1 hStore1
+            have hInv2' : st2'.objects.invExt :=
+              storeTcbIpcStateAndMessage_preserves_objects_invExt st1' st2' receiver _ _ hInv1'
+                hStore1'
+            have hGetEq : st2.getTcb? receiver = st2'.getTcb? receiver :=
+              (getTcb?_congr_getElem hRel2.objects receiver).symm
+            cases hGetR' : st2'.getTcb? receiver with
             | none =>
               right
               refine ⟨receiver, removeRunnable st2 receiver, ?_, ?_⟩
               · unfold endpointReceiveDual SystemState.getObject?
-                simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR]
+                simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR']
               · exact (removeRunnable_offSchedulerAgrees st2 receiver).symm.trans
-                  (removeRunnableOnCore_offSchedulerAgrees st2 receiver executingCore)
+                  (hRel2.trans (removeRunnableOnCore_offSchedulerAgrees st2' receiver executingCore))
             | some rTcb =>
               simp only
               split
               · next hValid =>
-                cases hStash : storeObject receiver.toObjId
-                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2 with
+                cases hStash' : storeObject receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId }) st2' with
                 | error e => left; rfl
-                | ok pStash =>
-                  obtain ⟨⟨⟩, stStashed⟩ := pStash
+                | ok pStash' =>
+                  obtain ⟨⟨⟩, stStashed'⟩ := pStash'
                   right
+                  obtain ⟨stStashed, hStash⟩ := storeObject_isOk st2 receiver.toObjId
+                    (.tcb { rTcb with pendingReceiveReply := replyId })
                   refine ⟨receiver, removeRunnable stStashed receiver, ?_, ?_⟩
                   · unfold endpointReceiveDual SystemState.getObject?
-                    simp only [hEpRaw, hHead, hClean, hEnq, hStore1, hGetR, if_pos hValid, hStash]
+                    simp only [hEpRaw, hHead, hChecked, hEnq, hStore1, hGetEq.trans hGetR',
+                      if_pos hValid, hStash]
                   · exact (removeRunnable_offSchedulerAgrees stStashed receiver).symm.trans
-                      (removeRunnableOnCore_offSchedulerAgrees stStashed receiver executingCore)
+                      ((storeObject_offSchedulerAgrees _ _ hRel2 hInv2 hInv2' hStash hStash').trans
+                        (removeRunnableOnCore_offSchedulerAgrees stStashed' receiver
+                          executingCore))
               · left; rfl
 
 -- ============================================================================
@@ -1760,6 +1861,119 @@ theorem endpointReplyRecvOnCore_observer_atomic
     (threadIpcStateObserver_insensitiveOn executingCore observed) hInv
     (fun s' h => endpointReplyRecvOnCore_preserves_objects_invExt endpointId receiver
       target msg replyId executingCore s' h)
+
+
+-- ============================================================================
+-- §11  WS-RR RR8.16 (`v0.35.199`) — the reply leg's two cross-subsystem bundles
+-- ============================================================================
+--
+-- Register row 85.  `v0.35.197` gave `schedulerInvariantBase_smp` and
+-- `capabilityInvariantBundle` their frames; here the reply leg's own store chain
+-- -- the delivery, the wake and seL4's `reply_remove` -- is carried across both,
+-- each step by a citation rather than by an argument.
+--
+-- The two lifts take different preconditions, and the asymmetry is the content:
+-- the capability bundle reads only the object store and the two CDT tables, all
+-- three of which the leg frames or writes kind-preservingly, so it is
+-- **unconditional**; the scheduler bundle reads `currentOnCore`, and the wake's
+-- `queueCurrentConsistentOnCore` preservation needs the thread it enqueues not
+-- to be that core's current thread.
+
+/-- **WS-RR RR8.16** (`v0.35.199`): the cross-core reply leg preserves the **base
+SMP scheduler invariant**.
+
+Three steps, one citation each: the delivery store is a `kindPreservingWrite` on
+a state whose scheduler it does not touch, the wake is `wakeThread`'s own lift,
+and seL4's `reply_remove` is another kind-preserving object write.
+
+`hNotCur` is stated on the **pre**-state, which is where a caller can discharge
+it: the delivery frames the scheduler and every thread's `cpuAffinity`, so the
+core the wake enqueues on and the slot it reads are the pre-state's.
+
+It is **stated rather than derived**, and the reason is a gap this cut does not
+close: the answered caller is `.blockedOnReply` in the pre-state, and what turns
+that into "not current" is a *per-core* current-thread-IPC-readiness discipline,
+which this tree states at the boot core only (`currentThreadIpcReady`).
+`blockedOnReplyNotRunnable` is not it — it says a reply-blocked thread is not in
+a run **queue**, which `queueCurrentConsistentOnCore` makes compatible with being
+current rather than incompatible.  A per-core `currentThreadIpcReady` retires the
+hypothesis; until there is one, a caller supplies it (the single-core
+`endpointReply_preserves_schedulerInvariantBundle` has taken the boot-core form
+since WS-H1 for the same reason). -/
+theorem endpointReplyOnCore_preserves_schedulerInvariantBase_smp
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (hNotCur : st.scheduler.currentOnCore (determineTargetCore st target) ≠ some target)
+    (h : schedulerInvariantBase_smp st) :
+    schedulerInvariantBase_smp
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]; exact h
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hSched : st'.scheduler = st.scheduler :=
+      storeTcbIpcStateAndMessage_scheduler_eq st st' target .ready (some msg) hStore'
+    have hObj' : st'.objects.invExt :=
+      storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg)
+        hObjInv hStore'
+    have h1 : schedulerInvariantBase_smp st' :=
+      schedulerInvariantBase_smp_of_kindPreserving h hSched
+        (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv
+          (lookupTcb_some_objects st target tcb hLk) hStore)
+    have hNotCur' :
+        st'.scheduler.currentOnCore (determineTargetCore st' target) ≠ some target := by
+      rw [storeTcbIpcStateAndMessage_determineTargetCore_eq st st' target .ready (some msg)
+        target hObjInv hStore', hSched]
+      exact hNotCur
+    have h2 : schedulerInvariantBase_smp (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_schedulerInvariantBase_smp st' target executingCore hObj'
+        hNotCur' h1
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact h2
+    · exact schedulerInvariantBase_smp_of_kindPreserving h2
+        (removeCallerReplyFrame_scheduler_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_kindPreservingWrite _ _ target rid
+          (wakeThread_preserves_objects_invExt st' target executingCore hObj') hCons)
+
+/-- **WS-RR RR8.16** (`v0.35.199`): ...and the **capability invariant bundle**,
+with no precondition beyond object-store integrity.
+
+Every write the leg performs replaces an object with one of the same non-`cnode`
+kind -- a TCB for a TCB at the answered caller, the woken thread's own `.ready`
+rewrite, and a Reply for a Reply at each frame `reply_remove` repairs -- and no
+step writes either CDT table.  That is exactly what
+`capabilityInvariantBundle_of_kindPreserving` asks. -/
+theorem endpointReplyOnCore_preserves_capabilityInvariantBundle
+    (replier target : SeLe4n.ThreadId) (msg : IpcMessage) (executingCore : CoreId)
+    (st : SystemState) (hObjInv : st.objects.invExt)
+    (h : capabilityInvariantBundle st) :
+    capabilityInvariantBundle
+      (endpointReplyOnCore replier target msg executingCore st).1 := by
+  rcases endpointReplyOnCore_state_eq replier target msg executingCore st with
+    hEq | ⟨tcb, st', hLk, hStore, hTail⟩
+  · rw [hEq]; exact h
+  · have hStore' : storeTcbIpcStateAndMessage st target .ready (some msg) = .ok st' := by
+      rw [← storeTcbIpcStateAndMessage_fromTcb_eq hLk]; exact hStore
+    have hObj' : st'.objects.invExt :=
+      storeTcbIpcStateAndMessage_preserves_objects_invExt st st' target .ready (some msg)
+        hObjInv hStore'
+    have hCdt := storeTcbIpcStateAndMessage_fromTcb_cdt_eq hStore
+    have h1 : capabilityInvariantBundle st' :=
+      capabilityInvariantBundle_of_kindPreserving h hCdt.2 hCdt.1 hObj'
+        (storeTcbIpcStateAndMessage_fromTcb_kindPreservingWrite hObjInv
+          (lookupTcb_some_objects st target tcb hLk) hStore)
+    have hObjW : (wakeThread st' target executingCore).1.objects.invExt :=
+      wakeThread_preserves_objects_invExt st' target executingCore hObj'
+    have h2 : capabilityInvariantBundle (wakeThread st' target executingCore).1 :=
+      wakeThread_preserves_capabilityInvariantBundle st' target executingCore hObj' h1
+    rcases hTail with ⟨_, hEq⟩ | ⟨rid, _, hCons⟩
+    · rw [hEq]; exact h2
+    · exact capabilityInvariantBundle_of_kindPreserving h2
+        (removeCallerReplyFrame_cdtNodeSlot_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_cdt_eq _ _ target rid hCons)
+        (removeCallerReplyFrame_preserves_objects_invExt _ _ target rid hObjW hCons)
+        (removeCallerReplyFrame_kindPreservingWrite _ _ target rid hObjW hCons)
 
 
 end SeLe4n.Kernel

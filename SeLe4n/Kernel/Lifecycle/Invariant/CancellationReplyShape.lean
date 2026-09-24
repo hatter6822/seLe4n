@@ -111,110 +111,46 @@ theorem cancelledCallerDonation?_some (st : SystemState) (tid : SeLe4n.ThreadId)
       simpa using hBt
   | _ => rw [hIp] at h; cases h
 
-/-- **WS-HP HP5.2: the donation a cancelled caller owns is the one its own reply
-frame heads** -- the local coherence fact the head-driven reclaim consumes, in
-place of WS-RR RR7.22's `donationHolderIsReplyTarget`.
+/-- **WS-HP HP5.2 / `v0.35.157`: the donation a cancelled caller owns is the one its
+own reply frame heads** — the cancellation reading of `donatedContextIsOwnerFrameHead`.
 
-Under the binding-driven trigger the reclaim found its holder through the victim's
-own **recorded reply target**, and the fact that made that lookup complete was
-"the holder of a caller's donation is that caller's reply target".  Since HP5.1 the
-reclaim reads the victim's reply *frame* instead, so the fact is re-keyed with it:
-whatever donation the victim owns, `cancelledCallerDonation?` finds it, and finds
-it at the same `(context, holder)` pair.  Keeping the old fact beside the new one
-would leave a stated hypothesis with no consumer, which this project retires.
+The fact itself lives upstream in `IPC/Invariant/Defs.lean` since `v0.35.157`, stated
+over the reply path's resolver (`answeredFrameHeadContext?`), because the reply pop's
+origin redirect became its second asker and could not see a definition here.  This
+is the corollary the reclaim consumes: on an owner `donationOwnerValid` puts
+`.blockedOnReply`, HP5.1's bridge
+(`cancelledCallerDonation?_eq_answeredFrameHeadContext?`) makes the reclaim's
+trigger answer exactly the pair the reply path's resolver answers, so whatever
+donation the victim owns, `cancelledCallerDonation?` finds it, and finds it at the
+same `(context, holder)`.
 
-**Why it names the reclaim's resolver rather than spelling the structure.**  The
-content is "`owner`'s reply object heads `scId`, and `scId` is bound to `holder`",
-and that *is* `cancelledCallerDonation?`'s body -- so naming the resolver is how
-the hypothesis and the code are kept from disagreeing about which donation the
-reclaim reaches.  `cancelledCallerDonation?_some` unpacks a `some` answer into the
-structural form for a consumer that needs the frame, and
-`donatedContextIsOwnerFrameHead_of_donationOwnerValid` builds the fact from that
-form -- where it is visible that the only content beyond `ipcInvariantFull` is the
-frame-head link and the holder's promotability.
-
-**Only this direction, and that is not an oversight.**  The reply path's sibling
-ran head -> binding, because there the *consumers* were binding-keyed and the
-trigger became head-keyed; that sibling was
-`answeredHeadContextIsServerDonation`, **deleted** at WS-HP HP7 (`v0.35.46`) once
-the head-driven trigger made its content a derivation and HP6.8's splice falsified
-it on reachable states.  Here it is the
-other way round: `returnDonationToCancelledCaller_no_donation_to_victim` quantifies
-over bindings while the trigger is head-keyed, so what it needs is binding -> head.
-The converse is not stated and is not needed -- everything the pop itself must know
-about the context it is popping (that it exists, and is bound to the holder the
-reclaim names) is a consequence of the trigger firing.
-
-**True on the seL4-MCS path** for the same reason its reply-side sibling is:
-`donateSchedContext` mints the `.donated` binding and pushes the donor's own
-`replyObject` as that context's stack head in *one* step, so the binding and the
-frame are two writes of a single operation.  **Not entailed by `ipcInvariantFull`**:
-`donationOwnerValid` relates a donation to no reply object, and
-`donationChainWellFormed` carries no binding clause at all (see its docstring's
-*what is deliberately absent*).  So it is stated, exactly as RR7.22 stated its
-predecessor. -/
-def donatedContextIsOwnerFrameHead (st : SystemState) (owner : SeLe4n.ThreadId) : Prop :=
-  ∀ ownerTcb, lookupTcb st owner = some ownerTcb →
-    ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
-      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
-      holderTcb.schedContextBinding = .donated scId owner →
-        Lifecycle.Suspend.cancelledCallerDonation? st owner ownerTcb = some (scId, holder) ∧
-        lookupTcb st holder = some holderTcb
-
-/-- **WS-HP HP5.2**: vacuous on a state that cannot resolve the cancelled caller --
-the discharge a cancellation of a reserved or absent thread takes. -/
-theorem donatedContextIsOwnerFrameHead_of_no_owner (st : SystemState)
-    (owner : SeLe4n.ThreadId) (h : lookupTcb st owner = none) :
-    donatedContextIsOwnerFrameHead st owner := by
-  intro _ hLk
-  rw [h] at hLk
-  cases hLk
-
-/-- **WS-HP HP5.2**: and vacuous wherever nothing is donated by the cancelled
-caller -- every state outside the passive-server pattern, which is the discharge
-every cancellation with no donation to reclaim takes. -/
-theorem donatedContextIsOwnerFrameHead_of_no_donation (st : SystemState)
-    (owner : SeLe4n.ThreadId)
-    (hNone : ∀ (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId),
-      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
-      holderTcb.schedContextBinding ≠ .donated scId owner) :
-    donatedContextIsOwnerFrameHead st owner :=
-  fun _ _ holder holderTcb scId hAt hBind => absurd hBind (hNone holder holderTcb scId hAt)
-
-/-- **WS-HP HP5.2: the builder, and the measurement of what the fact costs.**
-
-Everything but two clauses comes out of `donationOwnerValid`: that the donated
-context exists and is bound to the holder, and that the owner is a reply-blocked
-thread.  What is left over -- and therefore what this coherence fact is actually
-*about* -- is that the owner's own reply object **heads** that context, and that the
-holder is a promotable thread id.  Neither is entailed by any invariant in this
-tree, which is why the fact is stated rather than derived, and stating the builder
-this way is what keeps that boundary visible instead of buried in a `Prop`. -/
-theorem donatedContextIsOwnerFrameHead_of_donationOwnerValid (st : SystemState)
-    (owner : SeLe4n.ThreadId)
+**Why the reclaim consumes this direction.**  The reply path's sibling ran head ->
+binding, because there the *consumers* were binding-keyed and the trigger became
+head-keyed; that sibling was `answeredHeadContextIsServerDonation`, **deleted** at
+WS-HP HP7 (`v0.35.46`).  Here it is the other way round:
+`returnDonationToCancelledCaller_no_donation_to_victim` quantifies over bindings
+while the trigger is head-keyed, so what it needs is binding -> head. -/
+theorem donatedContextIsOwnerFrameHead_cancelledCallerDonation? (st : SystemState)
+    (owner : SeLe4n.ThreadId) (ownerTcb : TCB)
+    (hHolder : donatedContextIsOwnerFrameHead st owner)
+    (hLk : lookupTcb st owner = some ownerTcb)
     (hOwnerValid : donationOwnerValid st)
-    (hHeads : ∀ (ownerTcb : TCB) (holder : SeLe4n.ThreadId) (holderTcb : TCB)
-        (scId : SeLe4n.SchedContextId),
-      lookupTcb st owner = some ownerTcb →
-      st.objects[holder.toObjId]? = some (.tcb holderTcb) →
-      holderTcb.schedContextBinding = .donated scId owner →
-        (∃ rid, ownerTcb.replyObject = some rid ∧
-          replyFrameHeadContext? st rid = some scId) ∧ ¬ holder.isReserved) :
-    donatedContextIsOwnerFrameHead st owner := by
-  intro ownerTcb hLkOwner holder holderTcb scId hAt hBind
-  obtain ⟨⟨rid, hRO, hHead⟩, hNR⟩ := hHeads ownerTcb holder holderTcb scId hLkOwner hAt hBind
-  obtain ⟨⟨sc, hScObj, hScBound⟩, ownerTcb0, hOwnerObj, _, ep, rt, hIp0⟩ :=
+    (holder : SeLe4n.ThreadId) (holderTcb : TCB) (scId : SeLe4n.SchedContextId)
+    (hAt : st.objects[holder.toObjId]? = some (.tcb holderTcb))
+    (hBind : holderTcb.schedContextBinding = .donated scId owner) :
+    Lifecycle.Suspend.cancelledCallerDonation? st owner ownerTcb = some (scId, holder) ∧
+      lookupTcb st holder = some holderTcb := by
+  obtain ⟨hHead, hLkHolder⟩ := hHolder ownerTcb hLk holder holderTcb scId hAt hBind
+  obtain ⟨_, ownerTcb0, hOwnerObj, _, ep, rt, hIp0⟩ :=
     hOwnerValid holder holderTcb scId owner hAt hBind
   have hOwnerSame : ownerTcb0 = ownerTcb :=
     KernelObject.tcb.inj (Option.some.inj
-      (hOwnerObj.symm.trans (lookupTcb_some_objects st owner ownerTcb hLkOwner)))
-  refine ⟨?_, lookupTcb_of_objects_of_not_reserved st holder holderTcb hAt hNR⟩
-  unfold Lifecycle.Suspend.cancelledCallerDonation?
+      (hOwnerObj.symm.trans (lookupTcb_some_objects st owner ownerTcb hLk)))
   rw [hOwnerSame] at hIp0
-  rw [hIp0, hRO]
-  refine replyFrameHeadHolder?_of_head st rid scId holder hHead ?_
-  rw [(SystemState.getSchedContext?_eq_some_iff st scId sc).mpr hScObj]
-  simpa using hScBound
+  refine ⟨?_, hLkHolder⟩
+  rw [Lifecycle.Suspend.cancelledCallerDonation?_eq_answeredFrameHeadContext? st owner ownerTcb
+    hLk ep rt hIp0]
+  exact hHead
 
 /-- **WS-OD OD4.4: the outer-caller obligation for the cancellation reclaim.**
 
@@ -316,7 +252,8 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
     -- and the coherence fact says the trigger resolves exactly that donation.
     rw [hRes] at hTcb
     simp only at hTcb
-    exact absurd ((hHolder tcbV hLookup tid tcb scId hTcb hBind).1.symm.trans hRes)
+    exact absurd ((donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV hHolder
+      hLookup hOwner tid tcb scId hTcb hBind).1.symm.trans hRes)
       (by intro hc; cases hc)
   | some p =>
     obtain ⟨scId0, holder⟩ := p
@@ -367,7 +304,8 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
       -- asks of its recipient.
       rw [hRet] at hTcb
       simp only at hTcb
-      obtain ⟨hResEq, hLkTid⟩ := hHolder tcbV hLookup tid tcb scId hTcb hBind
+      obtain ⟨hResEq, hLkTid⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
+        hHolder hLookup hOwner tid tcb scId hTcb hBind
       have hPair : (scId, tid) = (scId0, holder) :=
         Option.some.inj (hResEq.symm.trans hRes)
       have hScIdEq : scId = scId0 := congrArg Prod.fst hPair
@@ -439,8 +377,8 @@ theorem returnDonationToCancelledCaller_no_donation_to_victim
           obtain ⟨t0, h0, hEqB⟩ :=
             Lifecycle.Suspend.abortHolderPendingIpc_binding_backward st holder hInv tid.toObjId
               tA hAtA
-          obtain ⟨hResEq, _⟩ := hHolder tcbV hLookup tid t0 scId h0
-            (by rw [hEqB, hEqA]; exact hBind)
+          obtain ⟨hResEq, _⟩ := donatedContextIsOwnerFrameHead_cancelledCallerDonation? st v tcbV
+            hHolder hLookup hOwner tid t0 scId h0 (by rw [hEqB, hEqA]; exact hBind)
           have hPair : (scId, tid) = (scId0, holder) :=
             Option.some.inj (hResEq.symm.trans hRes)
           have hTidEq : tid = holder := congrArg Prod.snd hPair
@@ -836,68 +774,19 @@ theorem cancelIpcBlocking_replyArm_noDonation_tcb_frame (st : SystemState)
   rw [restoreToReadyStaging_objects_ne _ v _ k hInvD hNe]
   exact spliceThreadReplyFrameOut_tcb_eq st tcbV hInv k t0 hPre
 
-/-- **WS-OD OD3.5**: a successful `endpointQueueRemove` resolved its endpoint.
-
-The removal's two error arms are the unresolvable object and the wrong-kind
-object, and `getEndpoint?` collapses exactly those two; so `.ok` entails the
-typed read succeeded, which is what lets `endpointQueueRemove_eq_patches` be
-stated on the splicing arm without its callers having to carry the endpoint. -/
-theorem endpointQueueRemove_ok_getEndpoint?
-    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
-    (st st' : SystemState)
-    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
-    ∃ ep, st.getEndpoint? endpointId = some ep := by
-  cases hObj : st.objects[endpointId]? with
-  | none =>
-    simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
-    exact absurd hStep (by simp)
-  | some obj =>
-    cases obj with
-    | endpoint ep =>
-      exact ⟨ep, (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mpr hObj⟩
-    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-      simp only [endpointQueueRemove, hObj, SystemState.getObject?] at hStep
-      exact absurd hStep (by simp)
-
-/-- **WS-OD OD3.5**: `endpointQueueRemove`'s two link patches **are**
-`queueNeighbourPatch`, the same step `spliceOutMidQueueNode` performs twice.
-
-Stated on the arm that splices — the endpoint resolves, the thread resolves —
-rather than as a second copy of the whole body: the equation is then about the
-program the removal *runs*, its two error arms are `endpointQueueRemove_ok_getEndpoint?`'s
-subject rather than this one's, and the store is read through `getEndpoint?`
-rather than by re-opening the discriminator the operation has already opened
-(AK7 reader hygiene — a `rfl` restatement of a raw match is still a raw match
-site as far as every reader, human or scanner, is concerned).
-
-The tree had two inlined copies of this shape and one named abstraction over it;
-naming the third is what makes the removal's write set one lemma rather than a
-four-deep nested match.  The two `upd` functions are the shared
-`queueUnlinkPredecessor` / `queueUnlinkSuccessor` (WS-OD OD3.9) — the definitions
-`endpointQueueRemove` itself applies and `spliceOutMidQueueNode_eq_patches` names
-— so the two removals' write sets are stated over one spelling rather than over a
-lambda each that could drift apart.  The successor's carries `queuePPrev`
-(WS-OD OD1.1), which is why the two patches take different updates and not
-one. -/
-theorem endpointQueueRemove_eq_patches (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool)
-    (tid : SeLe4n.ThreadId) (st : SystemState) (ep : Endpoint) (tcb : TCB)
-    (hEp : st.getEndpoint? endpointId = some ep)
-    (hTcb : lookupTcb st tid = some tcb) :
-    endpointQueueRemove endpointId isReceiveQ tid st =
-      (let q := if isReceiveQ then ep.receiveQ else ep.sendQ
-       let objs := queueNeighbourPatch
-         (queueNeighbourPatch st.objects tcb.queuePrev (queueUnlinkPredecessor tcb))
-         tcb.queueNext (queueUnlinkSuccessor tcb)
-       let q' : IntrusiveQueue :=
-         { head := if q.head = some tid then tcb.queueNext else q.head,
-           tail := if q.tail = some tid then tcb.queuePrev else q.tail }
-       let ep' := if isReceiveQ then { ep with receiveQ := q' } else { ep with sendQ := q' }
-       .ok { st with objects :=
-         ((objs.insert endpointId (.endpoint ep')).insert tid.toObjId
-           (.tcb { tcb with queuePrev := none, queuePPrev := none, queueNext := none })) }) := by
-  unfold endpointQueueRemove SystemState.getObject?
-  rw [(SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp, hTcb]
-  rfl
+-- **WS-RR RR8.8 (`v0.35.193`) — RELOCATED.**  `endpointQueueRemove_ok_getEndpoint?`
+-- and `endpointQueueRemove_eq_patches` now live in
+-- `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean`, beside
+-- `queueNeighbourPatch` and `spliceOutMidQueueNode_eq_patches` — the definitions
+-- they are stated over and the *sibling* answer to the same question ("what does
+-- this removal write, named").  They moved because a second asker could not reach
+-- them: the single removal's projection lemma
+-- (`endpointQueueRemove_preserves_projection`) is stated over `endpointSpliceHigh`
+-- and built from `objects_insert_preserves_projection_high`, both of which live in
+-- `InformationFlow/Invariant/Operations.lean`, and that module is not in this
+-- one's import closure nor this one in its.  One question with one owner and an
+-- asker that cannot see it means the owner is in the wrong layer; the two pins
+-- are now in the module *both* askers import.
 
 /-- **WS-OD OD3.5: the removal writes four keys and no others** — the endpoint it
 splices, the removed thread, and the two queue neighbours whose links it patches.
@@ -2691,7 +2580,7 @@ theorem restoreToReadyStaging_replyCallerLinkageExcept (st : SystemState)
           = some (.reply r)) ↔ (st.objects[rid.toObjId]? = some (.reply r)) :=
     fun rid r => restoreToReadyStaging_nonTcb st v frame tcbV hInv hLookup
       rid.toObjId (.reply r) (by simp)
-  refine ⟨?_, ?_, ?_⟩
+  refine ⟨⟨?_, ?_⟩, ?_⟩
   · intro tid tcb' rid hTcb' hRO
     rcases restoreToReadyStaging_tcb_pullback st v frame tcbV hInv hLookup
       tid.toObjId tcb' hTcb' with ⟨_, h0⟩ | ⟨hk, rfl⟩
@@ -2819,7 +2708,7 @@ theorem consumeReplyLink_closes_exceptReplyLinkage (st : SystemState)
       st.objects[rid.toObjId]? = some (.reply r) → r.caller = some v →
       tcbSt.replyObject = some rid := by
     intro rid r hr hc
-    obtain ⟨t, ht, htr, _⟩ := hRecip.2.1 rid r v hr hc
+    obtain ⟨t, ht, htr, _⟩ := hRecip.1.2 rid r v hr hc
     rw [hStore] at ht
     rw [(KernelObject.tcb.inj (Option.some.inj ht)).symm] at htr
     exact htr
@@ -2835,7 +2724,7 @@ theorem consumeReplyLink_closes_exceptReplyLinkage (st : SystemState)
   | some rid =>
     rw [Lifecycle.Suspend.consumeReplyLink_some st v tcb rid hR]
     have hStRid : tcbSt.replyObject = some rid := by rw [hAgree, hR]
-    obtain ⟨r0, hr0, hc0⟩ := hRecip.1 v tcbSt rid hStore hStRid
+    obtain ⟨r0, hr0, hc0⟩ := hRecip.1.1 v tcbSt rid hStore hStRid
     exact consumeCallerReply_establishes_ipcInvariantFull_of_exceptReplyLinkage st _ v rid r0
       hExcept hInv ((SystemState.getReply?_eq_some_iff st rid r0).mpr hr0) hc0
       (fun t ht ep rt => by

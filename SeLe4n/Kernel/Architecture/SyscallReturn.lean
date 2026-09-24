@@ -267,6 +267,13 @@ def syscallReturnShape : SyscallId → ReturnShape
   | .cspaceCopy            => .unit
   | .cspaceMove            => .unit
   | .cspaceDelete          => .unit
+  -- **WS-RR RR8.16 (`v0.35.190`)**: revocation returns nothing.  seL4's
+  -- `seL4_CNode_Revoke` returns only an error code, and the count of
+  -- destroyed derivations is deliberately not a return value: it is a
+  -- measure of *other* CSpaces' contents, which the invoker may hold no
+  -- authority over, so returning it would make the CDT's shape readable
+  -- from a slot the caller merely owns.
+  | .cspaceRevoke          => .unit
   | .lifecycleRetype       => .unit
   | .vspaceMap             => .unit
   | .vspaceUnmap           => .unit
@@ -745,6 +752,20 @@ def stageDeliveredMessage (st : SystemState) (tid : SeLe4n.ThreadId)
       else st
   | none => st
 
+/-- **WS-RR RR8.16** (`v0.35.200`): staging a return frame is a
+`kindPreservingWrite` and writes neither derivation table — it is `updateTcb`,
+so both are that primitive's own facts rather than a re-derivation here. -/
+theorem writeReturnFrameToTcb_kindPreservingWrite (st : SystemState)
+    (tid : SeLe4n.ThreadId) (frame : SyscallReturnFrame) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (writeReturnFrameToTcb st tid frame) :=
+  SystemState.updateTcb_kindPreservingWrite st tid _ hObjInv
+
+theorem writeReturnFrameToTcb_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (frame : SyscallReturnFrame) :
+    (writeReturnFrameToTcb st tid frame).cdt = st.cdt
+    ∧ (writeReturnFrameToTcb st tid frame).cdtNodeSlot = st.cdtNodeSlot :=
+  ⟨SystemState.updateTcb_cdt st tid _, SystemState.updateTcb_cdtNodeSlot st tid _⟩
+
 /-- RA.B.5b frame lemma: delivery staging never touches the scheduler —
 every arm is either `writeReturnFrameToTcb` (whose `_scheduler_eq` this
 lifts) or the identity. -/
@@ -925,6 +946,56 @@ theorem stageWokenDelivery_scheduler_eq (st : SystemState)
   cases woken? with
   | none => rfl
   | some tid => exact stageDeliveredMessage_scheduler_eq st tid installedCaps
+
+/-- **WS-RR RR8.16** (`v0.35.200`): delivery staging is a `kindPreservingWrite`
+— every arm is either the identity or one return-frame write. -/
+theorem stageDeliveredMessage_kindPreservingWrite (st : SystemState)
+    (tid : SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (stageDeliveredMessage st tid installedCaps) := by
+  unfold stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => exact SeLe4n.Model.kindPreservingWrite.refl st
+  | some tcb =>
+      by_cases hReady : tcb.ipcState = .ready
+      · simp only [hReady, if_pos]
+        cases tcb.pendingMessage with
+        | none => exact SeLe4n.Model.kindPreservingWrite.refl st
+        | some msg => exact writeReturnFrameToTcb_kindPreservingWrite st tid _ hObjInv
+      · simp only [hReady, if_false]
+        exact SeLe4n.Model.kindPreservingWrite.refl st
+
+/-- **WS-RR RR8.16** (`v0.35.200`): ...and writes neither derivation table. -/
+theorem stageDeliveredMessage_cdt_eq (st : SystemState) (tid : SeLe4n.ThreadId)
+    (installedCaps : Nat) :
+    (stageDeliveredMessage st tid installedCaps).cdt = st.cdt
+    ∧ (stageDeliveredMessage st tid installedCaps).cdtNodeSlot = st.cdtNodeSlot := by
+  unfold stageDeliveredMessage
+  cases st.getTcb? tid with
+  | none => constructor <;> first | rfl | trivial
+  | some tcb =>
+      by_cases hReady : tcb.ipcState = .ready
+      · simp only [hReady, if_pos]
+        cases tcb.pendingMessage with
+        | none => constructor <;> first | rfl | trivial
+        | some msg => exact writeReturnFrameToTcb_cdt_eq st tid _
+      · simp only [hReady, if_false]
+        constructor <;> first | rfl | trivial
+
+/-- **WS-RR RR8.16** (`v0.35.200`): and the woken-delivery stager inherits both. -/
+theorem stageWokenDelivery_kindPreservingWrite (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) (hObjInv : st.objects.invExt) :
+    SeLe4n.Model.kindPreservingWrite st (stageWokenDelivery st woken? installedCaps) := by
+  cases woken? with
+  | none => exact SeLe4n.Model.kindPreservingWrite.refl st
+  | some tid => exact stageDeliveredMessage_kindPreservingWrite st tid installedCaps hObjInv
+
+theorem stageWokenDelivery_cdt_eq (st : SystemState)
+    (woken? : Option SeLe4n.ThreadId) (installedCaps : Nat) :
+    (stageWokenDelivery st woken? installedCaps).cdt = st.cdt
+    ∧ (stageWokenDelivery st woken? installedCaps).cdtNodeSlot = st.cdtNodeSlot := by
+  cases woken? with
+  | none => constructor <;> first | rfl | trivial
+  | some tid => exact stageDeliveredMessage_cdt_eq st tid installedCaps
 
 /-- RA.B.5b frame lemma: neither stager touches the machine. -/
 theorem stageWokenDelivery_machine_eq (st : SystemState)

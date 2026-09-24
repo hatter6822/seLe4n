@@ -780,11 +780,18 @@ theorem findFirstEmptySlot_none_iff
         have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
         rw [hEq] at this; exact this
 
-/-- Local revoke helper for the current modeled slice.
+/-- The local same-TARGET sweep: keep the source slot, delete every other slot in
+this CNode that names the same capability target.
 
-This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that
-name the same capability target. Full cross-CNode revoke requires an explicit derivation graph and
-is intentionally deferred.
+**This is not revocation**, and nothing on a syscall path runs it since `v0.36.1`
+(PR #900 review).  It predates the capability derivation tree: it was written when
+a target match was the only available stand-in for "derived from the source", and
+it keeps that meaning — so it also deletes an independently rooted capability to
+the same object and the source's own parent when the two share a CNode.  The
+derivation tree the old docstring deferred exists (`SystemState.cdt`), and
+`revokeCdtScaffold` destroys exactly the source's CDT descendants, which is
+seL4's `cteRevoke` (read at `13.0.0`).  What still calls this is the local
+`cspaceRevoke`, an internal operation.
 
 WS-G5/F-P03: Inherently O(m) (filter-by-target), uses `RHTable.filter`. -/
 def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=
@@ -966,6 +973,52 @@ WS-RC R4.A: `cn.slots.size` is the `UniqueSlotMap.size` accessor
 (forwarded to `cn.slots.table.size`). -/
 def slotCountBounded (cn : CNode) : Prop :=
   cn.slots.size ≤ cn.slotCount
+
+/-- **WS-RR RR8.16** (`v0.35.201`): *is this slot index addressable by this
+CNode's radix width?*
+
+`resolveSlot` extracts a slot by masking with `2 ^ radixWidth`, so an index at or
+above `slotCount` can be **stored** and can never be **reached** by any CPtr.  A
+capability installed there is therefore invisible to its holder while still
+consuming a slot-table entry in an object whose memory was accounted, at retype
+time, by `2 ^ radixWidth` slots — so an install that does not ask this question
+lets a CNode grow without bound.  Every capability install asks it, at
+`cspaceInsertSlot`, which is the one primitive all four of them pass through. -/
+def slotAddressable (node : CNode) (s : SeLe4n.Slot) : Bool :=
+  s.toNat < node.slotCount
+
+/-- **WS-RR RR8.16** (`v0.35.201`): the radix-bounded scan produces only
+addressable slots — `findFirstEmptySlotChecked_within_radix` restated in the
+vocabulary the insert guard reads, so the transfer path's `.ok` is provably not
+the guard's refusal. -/
+theorem findFirstEmptySlotChecked_slotAddressable
+    (cn : CNode) (base : SeLe4n.Slot) (limit : Nat) (s : SeLe4n.Slot)
+    (hFind : cn.findFirstEmptySlotChecked base limit = some s) :
+    cn.slotAddressable s = true := by
+  unfold slotAddressable slotCount
+  exact decide_eq_true (findFirstEmptySlotChecked_within_radix cn base limit s hFind)
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and so does CSpace resolution, which is
+the other half of the claim: the guard refuses exactly the slots no CPtr can
+name. -/
+theorem resolveSlot_slotAddressable
+    (node : CNode) (cptr : SeLe4n.CPtr) (bitsRemaining : Nat) (s : SeLe4n.Slot)
+    (hRes : node.resolveSlot cptr bitsRemaining = .ok s) :
+    node.slotAddressable s = true := by
+  unfold resolveSlot at hRes
+  by_cases hDepth : bitsRemaining < node.bitsConsumed
+  · simp only [hDepth, if_pos] at hRes
+    exact absurd hRes (by simp)
+  · simp only [hDepth, if_neg, not_false_eq_true] at hRes
+    by_cases hGuard :
+        ((((cptr.toNat % SeLe4n.machineWordMax) >>> (bitsRemaining - node.bitsConsumed))
+          / 2 ^ node.radixWidth) % (2 ^ node.guardWidth)) = node.guardValue
+    · simp only [hGuard, if_pos] at hRes
+      cases hRes
+      unfold slotAddressable slotCount SeLe4n.Slot.toNat SeLe4n.Slot.ofNat
+      exact decide_eq_true (Nat.mod_lt _ (Nat.two_pow_pos node.radixWidth))
+    · simp only [hGuard, if_neg, not_false_eq_true] at hRes
+      exact absurd hRes (by simp)
 
 /-- Empty CNode satisfies slot-count bound (0 ≤ 2^0 = 1). -/
 theorem empty_slotCountBounded : CNode.empty.slotCountBounded := by
@@ -2979,7 +3032,9 @@ at construction time:
 - **Notification**: always well-formed (waiter validity tracked by `crossSubsystemInvariant`).
 - **VSpaceRoot**: always well-formed (ASID validity is a platform-level concern,
   tracked by `asidTableInvariant`).
-- **Untyped**: always well-formed (size constraints are enforced by the allocator). -/
+- **Untyped**: always well-formed (size constraints are enforced by the allocator).
+- **SchedContext**: must start with **no bound thread** (`v0.35.184`, see below).
+- **Reply**: must start inert (WS-SM SM6.D, see below). -/
 def wellFormed (obj : KernelObject)
     (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
   match obj with
@@ -2991,13 +3046,99 @@ def wellFormed (obj : KernelObject)
   | .notification _ => True
   | .vspaceRoot _ => True
   | .untyped _ => True
-  | .schedContext _ => True
+  -- **`v0.35.184` (register row 63)**: a retyped/created SchedContext must start
+  -- with **no bound thread** -- the `Reply` clause below, one field over, for the
+  -- same reason and found by the same question.  `lifecycleRetypeDirectWithCleanup`
+  -- checks only `newObj.wellFormed`, so without this the model admits a retype
+  -- installing a scheduling context that claims a thread which does not name it
+  -- back, which is exactly what `schedContextBindingConsistent` (Z4-O) forbids: the
+  -- thread's own binding is whatever it was, and no operation reconciles the two.
+  -- The live dispatch already satisfies it -- `objectOfKernelType`'s `.schedContext`
+  -- arm is `SchedContext.empty`, whose `boundThread` is at its `none` default -- so
+  -- this refuses nothing the kernel does and closes what the *model* admitted.
+  | .schedContext sc => sc.boundThread = none
   -- WS-SM SM6.D (PR #822 review): a retyped/created Reply must start INERT — no
   -- caller and no reply-stack link in either direction — mirroring the boot-safe Reply
   -- requirement.  Otherwise `lifecycleRetypeWithCleanup` (which only checks
   -- `newObj.wellFormed`) could install a Reply that bypasses the
   -- `linkCallerReply` / `replyCallerLinkage` setup path and seed a stale/in-use link.
   | .reply r => r.caller = none ∧ r.prev = none ∧ r.next = none
+
+/-- **`v0.35.187`: an object's own embedded identity IS the key it is stored at.**
+
+Three kernel objects carry their own id in a field — a TCB's `tid`, a
+SchedContext's `scId`, a Reply's `replyId` — and the object store is keyed by
+`ObjId`, so the two can disagree.  `PlatformConfig.wellFormed`'s
+`embeddedIdentitiesMatchSlots` has refused that at **boot** since PR #889 review
+round 8, and its own docstring states the hazard in terms: *a SchedContext at
+slot 9 carrying `scId = 12` would have its budget replenished on whatever object
+12 is*.
+
+Nothing enforced it at the **runtime**, and the one path that installs such an
+object — `objectOfKernelType` through the retype — stamps the reserved
+**sentinel** into all three.  So a successful retype broke at the runtime exactly
+the agreement the boot enforces; the two retype wrappers refuse it now
+(`lifecycleRetypeWithCleanup`, `lifecycleRetypeDirectWithCleanup`), and the live
+dispatch stamps the target's identity with `withIdentity` below.
+
+The match has **no** wildcard: a kernel object that starts carrying its own id
+must be classified here, rather than silently answering `true`.  The five that
+carry none answer `true` because the question does not arise for them, which is
+a different fact from "not checked". -/
+def embeddedIdentityMatches (obj : KernelObject) (key : SeLe4n.ObjId) : Bool :=
+  match obj with
+  | .tcb t => t.tid.toObjId == key
+  | .schedContext sc => sc.scId.toObjId == key
+  | .reply r => r.replyId.toObjId == key
+  | .endpoint _ => true
+  | .notification _ => true
+  | .cnode _ => true
+  | .vspaceRoot _ => true
+  | .untyped _ => true
+
+/-- **`v0.35.187`: stamp an object with the identity of the slot it is stored at.**
+
+The other half of the guard above: a refusal with no way to satisfy it would
+refuse every retype.  It writes **only** the identity field, so every property of
+the replacement that the retype's other guards and the dispatch payoff's
+`retypeReplacementFresh` pack read — a TCB's binding and roots, a SchedContext's
+`boundThread`, a Reply's `caller` and stack links — survives it unchanged, which
+is what `withIdentity_preserves_*` below state rather than leave to inspection.
+
+The five kinds that carry no identity are returned untouched, and `.tcb` /
+`.schedContext` / `.reply` are written out rather than matched with a wildcard,
+for the reason `embeddedIdentityMatches` gives. -/
+def withIdentity (obj : KernelObject) (key : SeLe4n.ObjId) : KernelObject :=
+  match obj with
+  | .tcb t => .tcb { t with tid := SeLe4n.ThreadId.ofObjId key }
+  | .schedContext sc => .schedContext { sc with scId := SeLe4n.SchedContextId.ofObjId key }
+  | .reply r => .reply { r with replyId := SeLe4n.ReplyId.ofObjId key }
+  | .endpoint e => .endpoint e
+  | .notification n => .notification n
+  | .cnode c => .cnode c
+  | .vspaceRoot v => .vspaceRoot v
+  | .untyped u => .untyped u
+
+/-- **`v0.35.187`**: stamping satisfies the guard — so the refusal is one a
+caller can meet, which is what keeps it a discipline rather than a wall. -/
+@[simp] theorem withIdentity_embeddedIdentityMatches (obj : KernelObject)
+    (key : SeLe4n.ObjId) :
+    (obj.withIdentity key).embeddedIdentityMatches key = true := by
+  cases obj <;> simp [withIdentity, embeddedIdentityMatches]
+
+/-- **`v0.35.187`**: stamping preserves the *kind*, so every kind-indexed fact
+about a replacement survives it. -/
+@[simp] theorem withIdentity_objectType (obj : KernelObject) (key : SeLe4n.ObjId) :
+    (obj.withIdentity key).objectType = obj.objectType := by
+  cases obj <;> rfl
+
+/-- **`v0.35.187`**: stamping preserves well-formedness — the identity field is
+read by no clause of `wellFormed`, which is what makes the two guards
+independent rather than one constraining the other. -/
+@[simp] theorem withIdentity_wellFormed (obj : KernelObject) (key : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    (obj.withIdentity key).wellFormed objects ↔ obj.wellFormed objects := by
+  cases obj <;> simp [withIdentity, wellFormed]
 
 /-- T5-C: `wellFormed` is decidable for all object kinds, enabling runtime validation. -/
 instance (obj : KernelObject)
@@ -3008,8 +3149,8 @@ instance (obj : KernelObject)
   | .tcb _ => exact instDecidableAnd
   | .cnode _ => exact inferInstance
   | .reply _ => exact inferInstance
-  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _
-  | .schedContext _ =>
+  | .schedContext _ => exact inferInstance
+  | .endpoint _ | .notification _ | .vspaceRoot _ | .untyped _ =>
     exact instDecidableTrue
 
 /-- WS-SM SM8.D: well-formedness does not read the lock word, so the lock-erased

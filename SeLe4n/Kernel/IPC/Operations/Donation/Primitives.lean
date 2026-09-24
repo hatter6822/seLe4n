@@ -19,8 +19,8 @@ This module contains **only** the donation helpers that depend solely on
 `SeLe4n.Kernel.IPC.Operations.Endpoint` (`lookupTcb`, `storeObject`,
 `removeRunnable`, `donateSchedContext`, `returnDonatedSchedContext`,
 `cleanupPreReceiveDonation`). The transport-dependent wrappers
-(`endpointCallWithDonation`, `endpointReplyWithDonation`,
-`endpointReplyRecvWithDonation` and their unfold lemmas) remain in the
+(`endpointReplyWithDonation`, `endpointReplyRecvWithDonation` and their unfold
+lemmas; the Call form was deleted at `v0.35.192`) remain in the
 sibling module `SeLe4n.Kernel.IPC.Operations.Donation`, which also imports
 this file so that legacy single-import consumers continue to see the full
 donation API unchanged.
@@ -55,7 +55,9 @@ the dispatch-boundary discipline at this function's signature —
 construction of a `ValidThreadId` requires a non-sentinel proof, so
 calling `applyCallDonation st sentinel sentinel` is a compile-time
 error.  Production callers (`dispatchWithCap` in `API.lean`,
-`endpointCallWithDonation` in `Donation.lean`) construct
+`endpointCallCrossCoreDispatch` in `IPC/CrossCore/EndpointCallDispatch.lean` —
+the single-core `endpointCallWithDonation` held this role until `v0.35.192`
+deleted it) construct
 `ValidThreadId` from their raw `ThreadId` arguments via
 `ThreadId.toValid?` with `.error .invalidArgument` rejection; under
 the AL7 dispatch-gate (`validateThreadIdArg`) the rejection is
@@ -344,8 +346,8 @@ The atomicity argument has three components:
    interrupts during a syscall path. This is proven by the AG5-G preservation
    theorems in `ExceptionModel.lean`.
 
-2. **Donation occurs within a single syscall**: `endpointCallWithDonation` and
-   `endpointReplyWithDonation` are called from the API dispatch layer, which
+2. **Donation occurs within a single syscall**: `endpointCallCrossCoreDispatch`
+   and `endpointReplyWithDonation` are called from the API dispatch layer, which
    executes entirely within a single exception entry/exit cycle.
 
 3. **No interrupt can fire between donation steps**: Since interrupts remain

@@ -64,70 +64,16 @@ open SeLe4n.Kernel.Concurrency
 -- §1  `objects.invExt` preservation (object-store integrity)
 -- ============================================================================
 
-/-- WS-SM SM6.A.1: the cross-core endpoint call preserves object-store
-integrity (`invExt`).  On every control path the post-state's object store is
-either `st`'s (an error / no-op leaf) or the result of the
-pop / store / wake / store / deschedule chain, each step of which preserves
-`invExt`.  Unconditional: an error leaf returns the pre-state unchanged. -/
-theorem endpointCallOnCore_preserves_objects_invExt
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    (endpointCallOnCore endpointId caller msg executingCore st).1.objects.invExt := by
-  unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact hObjInv
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact hObjInv
-  simp only [if_neg hSz1, if_neg hSz2]
-  cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> exact hObjInv
-  | some ep =>
-    simp only
-    cases hHead : ep.receiveQ.head with
-    | none =>
-      simp only
-      cases hEnq : endpointQueueEnqueue endpointId false caller st with
-      | error e => simp only; exact hObjInv
-      | ok st' =>
-        simp only
-        have h1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
-        | error e => simp only; exact hObjInv
-        | ok st'' =>
-          simp only
-          have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt st' st'' caller _ _ h1 hMsg
-          show (removeRunnableOnCore st'' caller executingCore).objects.invExt
-          rw [removeRunnableOnCore_preserves_objects]; exact h2
-    | some _ =>
-      simp only
-      cases hPop : endpointQueuePopHead endpointId true st with
-      | error e => simp only; exact hObjInv
-      | ok pair =>
-        simp only
-        have h1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
-        | error e => simp only; exact hObjInv
-        | ok st2 =>
-          simp only
-          have h2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ h1 hMsg
-          have hW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore h2
-          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
-              (.blockedOnReply endpointId (some pair.1)) none with
-          | error e => simp only; exact hObjInv
-          | ok st4 =>
-            simp only
-            have h4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hW hCS
-            -- WS-SM SM6.D (#7.3b fold): thread the server-first reply link
-            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
-            | error e => simp only; exact hObjInv
-            | ok pL =>
-              obtain ⟨_, st5⟩ := pL
-              simp only
-              have h5 := linkServerStashedReply_preserves_objects_invExt st4 st5 caller pair.1 h4 hLink
-              show (removeRunnableOnCore st5 caller executingCore).objects.invExt
-              rw [removeRunnableOnCore_preserves_objects]; exact h5
+/-! ### WS-RR RR8.16 (`v0.35.189`) — `endpointCallOnCore_preserves_objects_invExt` moved
+
+It is a frame over a **production** transition composing only production
+per-step lemmas, and it sat here, in a staged module, so the production
+binding frame `endpointCallOnCore_sameSchedContextBindings` could not read it.
+It lives beside the transition it frames, in `IPC/CrossCore/EndpointCall.lean`,
+keeping its name and namespace.  Same rule, same cut sequence as WS-RR RR8.12
+Cuts 5, 7, 8a-ii, C3a and C6g: *a new frame over a production transition goes
+beside that transition, not in whichever module first needed it.* -/
+
 
 -- ============================================================================
 -- §2  Keystone: the cross-core receiver wake is object-invisible
@@ -363,18 +309,13 @@ theorem wakeThread_preserves_donationOwnerUnique_of_ready
   rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv tid2.toObjId] at h2
   exact hInv tid1 tid2 tcb1 tcb2 scId1 scId2 owner h1 h2 hB1 hB2
 
-open SeLe4n.Model.SystemState in
-/-- D6 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's binding (its state
-effect is `enqueueRunnableOnCore` — a scheduler-only step that leaves the object store
-pointwise-unchanged for a `.ready` target). -/
-theorem wakeThread_sameSchedContextBindings_of_ready
-    (st : SystemState) (wtid : SeLe4n.ThreadId) (ec : CoreId) (wtcb : TCB)
-    (hWGet : st.getTcb? wtid = some wtcb) (hWReady : wtcb.ipcState = .ready)
-    (hObjInv : st.objects.invExt) :
-    sameSchedContextBindings st (wakeThread st wtid ec).1 := by
-  intro y tcY hY
-  rw [wakeThread_objects_getElem_eq_of_ready st wtid ec wtcb hWGet hWReady hObjInv y.toObjId] at hY
-  exact ⟨tcY, hY, rfl⟩
+/-! ### WS-RR RR8.16 (`v0.35.189`) — `wakeThread_sameSchedContextBindings_of_ready` moved
+
+The third frame this cut relocated, for the reason the two above name: it is a
+frame over a **production** primitive composing only production lemmas, and the
+production `.call` leg's own binding frame reads it.  It lives beside that leg in
+`IPC/CrossCore/EndpointCall.lean` — not beside `wakeThread` itself, because the
+scheduler layer cannot name `sameSchedContextBindings`. -/
 
 open SeLe4n.Model.SystemState in
 /-- D5 (per-core): a `wakeThread` of a `.ready` thread preserves every TCB's `timeoutBudget` (its
@@ -430,75 +371,14 @@ theorem wakeThread_passiveServerIdleFrame_of_ready
 -- sibling — the production `.reply`-chain bundle consumes it, and nothing in it
 -- reads a staged surface.)
 
-open SeLe4n.Model.SystemState in
-/-- D6 (per-core): `endpointCallOnCore` preserves every TCB's `schedContextBinding` (the cross-core
-mirror of `endpointCall_sameSchedContextBindings`; `wakeThread`/`removeRunnableOnCore` are
-scheduler-only, the store/link ops never write a binding). -/
-theorem endpointCallOnCore_sameSchedContextBindings
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId) (msg : IpcMessage)
-    (executingCore : CoreId) (st : SystemState)
-    (hObjInv : st.objects.invExt) :
-    sameSchedContextBindings st (endpointCallOnCore endpointId caller msg executingCore st).1 := by
-  unfold endpointCallOnCore
-  by_cases hSz1 : msg.registers.size > maxMessageRegisters
-  · simp only [if_pos hSz1]; exact sameSchedContextBindings.refl st
-  by_cases hSz2 : msg.caps.size > maxExtraCaps
-  · simp only [if_neg hSz1, if_pos hSz2]; exact sameSchedContextBindings.refl st
-  simp only [if_neg hSz1, if_neg hSz2]
-  cases hEp : st.getEndpoint? endpointId with
-  | none => simp only; split <;> exact sameSchedContextBindings.refl st
-  | some ep =>
-    simp only
-    cases hHead : ep.receiveQ.head with
-    | none =>
-      simp only
-      cases hEnq : endpointQueueEnqueue endpointId false caller st with
-      | error e => simp only; exact sameSchedContextBindings.refl st
-      | ok st' =>
-        simp only
-        have hS1 := endpointQueueEnqueue_sameSchedContextBindings endpointId false caller st st' hObjInv hEnq
-        have hObj1 := endpointQueueEnqueue_preserves_objects_invExt endpointId false caller st st' hObjInv hEnq
-        cases hMsg : storeTcbIpcStateAndMessage st' caller (.blockedOnCall endpointId) (some msg) with
-        | error e => simp only; exact sameSchedContextBindings.refl st
-        | ok st'' =>
-          simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings st' st'' caller (.blockedOnCall endpointId) (some msg) hObj1 hMsg)
-          show sameSchedContextBindings st (removeRunnableOnCore st'' caller executingCore)
-          exact hS2.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st'' caller executingCore))
-    | some _ =>
-      simp only
-      cases hPop : endpointQueuePopHead endpointId true st with
-      | error e => simp only; exact sameSchedContextBindings.refl st
-      | ok pair =>
-        simp only
-        have hS1 := endpointQueuePopHead_sameSchedContextBindings endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-        have hObj1 := endpointQueuePopHead_preserves_objects_invExt endpointId true st pair.2.2 pair.1 _ hObjInv hPop
-        cases hMsg : storeTcbIpcStateAndMessage pair.2.2 pair.1 .ready (some msg) with
-        | error e => simp only; exact sameSchedContextBindings.refl st
-        | ok st2 =>
-          simp only
-          have hS2 := hS1.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg)
-          have hObj2 := storeTcbIpcStateAndMessage_preserves_objects_invExt pair.2.2 st2 pair.1 _ _ hObj1 hMsg
-          obtain ⟨tr, hTrGet, hTrReady⟩ :=
-            storeTcbIpcStateAndMessage_getTcb?_ipcState pair.2.2 st2 pair.1 .ready (some msg) hObj1 hMsg
-          have hS3 := hS2.trans (wakeThread_sameSchedContextBindings_of_ready st2 pair.1 executingCore tr hTrGet hTrReady hObj2)
-          have hObjW := wakeThread_preserves_objects_invExt st2 pair.1 executingCore hObj2
-          cases hCS : storeTcbIpcStateAndMessage (wakeThread st2 pair.1 executingCore).1 caller
-              (.blockedOnReply endpointId (some pair.1)) none with
-          | error e => simp only; exact sameSchedContextBindings.refl st
-          | ok st4 =>
-            simp only
-            have hS4 := hS3.trans (storeTcbIpcStateAndMessage_sameSchedContextBindings (wakeThread st2 pair.1 executingCore).1 st4 caller (.blockedOnReply endpointId (some pair.1)) none hObjW hCS)
-            have hObjInv4 := storeTcbIpcStateAndMessage_preserves_objects_invExt
-              (wakeThread st2 pair.1 executingCore).1 st4 caller _ _ hObjW hCS
-            cases hLink : SystemState.linkServerStashedReply caller pair.1 st4 with
-            | error e => simp only; exact sameSchedContextBindings.refl st
-            | ok pL =>
-              obtain ⟨_, st5⟩ := pL
-              simp only
-              have hS5 := hS4.trans (linkServerStashedReply_sameSchedContextBindings st4 st5 caller pair.1 hObjInv4 hLink)
-              show sameSchedContextBindings st (removeRunnableOnCore st5 caller executingCore)
-              exact hS5.trans (sameSchedContextBindings.of_objects_eq (removeRunnableOnCore_preserves_objects st5 caller executingCore))
+/-! ### WS-RR RR8.16 (`v0.35.189`) — `endpointCallOnCore_sameSchedContextBindings` moved
+
+Same rule and same cut as the `invExt` frame above it: a frame over a
+**production** transition, composing only production per-step lemmas, that the
+production `.call` footprint now has to read — it is the licence that the
+narrowed donation member omits no lock (`endpointCallDonatedSc?_some_of_post`).
+It lives beside the transition it frames, in `IPC/CrossCore/EndpointCall.lean`,
+with its name, namespace and proof unchanged. -/
 
 open SeLe4n.Model.SystemState in
 /-- D5 (per-core): `endpointCallOnCore` frames `timeoutBudgetFrame` (the cross-core mirror of
@@ -1347,44 +1227,60 @@ theorem endpointReceiveDualOnCore_preserves_dualQueueSystemInvariant
                 (wakeThread st2 pair.1 executingCore).1 _ receiver .ready pair.2.1.pendingMessage hObjW hMsg hInvW
     | none =>
       simp only [hHead]
-      cases hChecked : cleanupPreReceiveDonationChecked st receiver with
+      cases hChecked : cleanupPreReceiveDonationMigrated st receiver with
       | error _ => simp only [hChecked]; exact hInv
-      | ok stClean =>
-        have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
-          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hChecked).symm
+      | ok stClean' =>
         simp only [hChecked]
-        rw [hBridge]
-        have hObjInvClean := cleanupPreReceiveDonation_preserves_objects_invExt st receiver hObjInv
-        have hInvClean := cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv
+        -- **`v0.35.161`**: the cross-core return is the pop followed by the
+        -- replenishment migration it owes.  The pop's object store is the bare
+        -- cleanup's, and the migration writes no object at all, so every
+        -- object-level fact about `stClean'` is the bare cleanup's transported
+        -- through pointwise lookup agreement.
+        obtain ⟨stClean, hCheckedC, hMig⟩ := cleanupPreReceiveDonationMigrated_ok_decompose hChecked
+        have hBridge : stClean = cleanupPreReceiveDonation st receiver :=
+          (cleanupPreReceiveDonationChecked_ok_eq_cleanup st stClean receiver hCheckedC).symm
+        subst hBridge
+        have hObjEq : ∀ oid : SeLe4n.ObjId,
+            stClean'.objects[oid]? = (cleanupPreReceiveDonation st receiver).objects[oid]? := by
+          intro oid; rw [hMig, preReceiveReturnMigration_objects]
+        have hObjInvClean : stClean'.objects.invExt :=
+          cleanupPreReceiveDonationMigrated_preserves_objects_invExt st stClean' receiver
+            hObjInv hChecked
+        have hInvClean : dualQueueSystemInvariant stClean' :=
+          dualQueueSystemInvariant_of_getElem_eq hObjEq
+            (cleanupPreReceiveDonation_preserves_dualQueueSystemInvariant st receiver hObjInv hInv)
         have hFreshReceiverClean : ∀ (epId : SeLe4n.ObjId) (ep : Endpoint),
-            (cleanupPreReceiveDonation st receiver).objects[epId]? = some (.endpoint ep) →
+            stClean'.objects[epId]? = some (.endpoint ep) →
             ep.sendQ.head ≠ some receiver ∧ ep.sendQ.tail ≠ some receiver ∧
             ep.receiveQ.head ≠ some receiver ∧ ep.receiveQ.tail ≠ some receiver :=
           fun epId ep hEp =>
-            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId ep hEp)
+            hFreshReceiver epId ep (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv
+              epId ep (by rwa [hObjEq epId] at hEp))
         have hRecvTailFreshClean : ∀ (ep : Endpoint) (tailTid : SeLe4n.ThreadId),
-            (cleanupPreReceiveDonation st receiver).objects[endpointId]? = some (.endpoint ep) →
+            stClean'.objects[endpointId]? = some (.endpoint ep) →
             ep.receiveQ.tail = some tailTid →
             ∀ (epId' : SeLe4n.ObjId) (ep' : Endpoint),
-              (cleanupPreReceiveDonation st receiver).objects[epId']? = some (.endpoint ep') →
+              stClean'.objects[epId']? = some (.endpoint ep') →
               (epId' ≠ endpointId →
                 ep'.sendQ.tail ≠ some tailTid ∧ ep'.receiveQ.tail ≠ some tailTid) ∧
               (epId' = endpointId →
                 ep'.sendQ.tail ≠ some tailTid) :=
           fun ep tailTid hEp hTail epId' ep' hEp' =>
             hRecvTailFresh ep tailTid
-              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep hEp) hTail
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv endpointId ep
+                (by rwa [hObjEq endpointId] at hEp)) hTail
               epId' ep'
-              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep' hEp')
-        cases hEnq : endpointQueueEnqueue endpointId true receiver (cleanupPreReceiveDonation st receiver) with
+              (cleanupPreReceiveDonation_endpoint_backward st receiver hObjInv epId' ep'
+                (by rwa [hObjEq epId'] at hEp'))
+        cases hEnq : endpointQueueEnqueue endpointId true receiver stClean' with
         | error e => simp only [hEnq]; exact hInv
         | ok st1 =>
           simp only [hEnq]
           have hInv1 := endpointQueueEnqueue_preserves_dualQueueSystemInvariant
-            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hEnq hInvClean hObjInvClean
+            endpointId true receiver stClean' st1 hEnq hInvClean hObjInvClean
             hFreshReceiverClean hRecvTailFreshClean
           have hObjInv1 := endpointQueueEnqueue_preserves_objects_invExt
-            endpointId true receiver (cleanupPreReceiveDonation st receiver) st1 hObjInvClean hEnq
+            endpointId true receiver stClean' st1 hObjInvClean hEnq
           cases hStore : storeTcbIpcStateAndMessage st1 receiver (.blockedOnReceive endpointId) none with
           | error e => simp only [hStore]; exact hInv
           | ok st2 =>

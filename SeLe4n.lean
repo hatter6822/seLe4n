@@ -112,6 +112,25 @@ import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationQueueShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationNotificationShape
 import SeLe4n.Kernel.Lifecycle.Invariant.CancellationReplyShape
+-- `v0.35.166` (WS-RR RR8.12, register row 63): the destroy path's reservation
+-- theorems.  `lifecyclePreRetypeCleanup` preserves the SM5.H replenish-affinity
+-- invariant — the composite `v0.35.164` and `v0.35.165` each left owed, since
+-- each gave an *arm* its theorem and the frames the program over them needs were
+-- `private` in a module downstream of both the cleanup and the retype wrapper.
+-- It sits below the two `Cancellation*Shape` modules above (which is the only
+-- layer that sees every frame it composes) and above nothing.
+import SeLe4n.Kernel.Lifecycle.Invariant.RetypeReservation
+-- `v0.35.167` (WS-RR RR8.12 Cut C3b-i): the three TCB-control arms' resolved
+-- scheduler-domain footprints.  A resolved footprint is `schedFootprintOfCores`
+-- of its arm's own SM8.B write set, and it names `SchedLockId`, which is declared
+-- in `Scheduler/Operations/PerCoreChooseThread.lean` — a module every one of
+-- these arms' transition modules sits *above*.  So the footprints cannot live
+-- beside their transitions the way the IPC arms' do, and a central production
+-- module is where they go; the object domain reached the same shape at
+-- `Concurrency/Locks/LockSetTransitions.lean`.  Nothing in this root imports it,
+-- so without this line it would be outside every Tier 1 census's environment —
+-- the `v0.35.76` finding one file smaller.
+import SeLe4n.Kernel.SyscallSchedFootprint
 -- WS-SM SM7.B: the TLB shootdown protocol — `tlbShootdownLocal` /
 -- `tlbShootdownBroadcast` / `handleTlbShootdownReqOnCore`, the round
 -- composition with its quiescence capstone, Theorem 3.3.1
@@ -160,6 +179,17 @@ import SeLe4n.Kernel.Architecture.TlbiForSharing
 import SeLe4n.Kernel.IPC.Invariant.DonationPreservation
 import SeLe4n.Kernel.IPC.Invariant.CapTransferBundle
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
+-- **WS-RR RR8.16**: the blocked-sender flow fact across the two blocking
+-- dispatches (`IPC.Invariant.BlockedSenderPreservation`).  The per-transition
+-- lift the `v0.35.126` register row named as owed: `blockedSenderFlowsToEndpoint`
+-- is carried by `endpointSendCrossCoreDispatchChecked` and
+-- `endpointCallCrossCoreDispatchChecked`, each under its own `endpointFlowGate`,
+-- with the `ipcState` frames every step of both composites needs.  It is its own
+-- module rather than either arm's, because the two dispatches' invariant modules
+-- are `EndpointSendInvariant` (whose subject is the send alone) and the staged
+-- `DispatchInvariant` — the shape `SyscallSchedContainment` and
+-- `IPC.Invariant.CancellationBundle` already have.  Production-clean.
+import SeLe4n.Kernel.IPC.Invariant.BlockedSenderPreservation
 -- WS-RR (bind/unbind affinity closure): the replenish-queue invariant surface
 -- for the two live arms that create and destroy a SchedContext's binding —
 -- the orphan-freedom invariant (`replenishQueueEntriesBound_smp`), the
@@ -176,6 +206,15 @@ import SeLe4n.Kernel.SchedContext.BindingAffinity
 -- `lean_classify_synchronous_exception`).  One import: the entry's transitive
 -- closure is the whole production fault surface.
 import SeLe4n.Kernel.FaultEntry
+-- **WS-RR RR8.16** (`v0.35.200`): the fault path's *cross-subsystem* bundles —
+-- `faultDeliverOnCore` and `faultReplyOnCore` preserve the base SMP scheduler
+-- invariant and the capability invariant bundle, composed from the live `.call`
+-- and `.reply` chains' own lifts.  Separate from the staged
+-- `IPC.Invariant.FaultPreservation`, which holds the same path's
+-- `ipcInvariantFull` surface and is staged for the call chain's staged
+-- `ipcInvariantFull` bundle: every theorem here reads production facts only, so
+-- staging it would put it out of reach of the production consumers that need it.
+import SeLe4n.Kernel.IPC.Invariant.FaultBundlePreservation
 -- **The frozen execution surface is production** (`v0.35.60`).  It was outside
 -- both library roots and in no staged allowlist, built only by its own
 -- `lean_exe` — which put it outside the *derived* domain of five of the six

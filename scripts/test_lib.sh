@@ -64,55 +64,32 @@ else
   COLOR_RUN=''
 fi
 
-category_color() {
-  local category="$1"
-  case "${category}" in
-    META)
-      printf '%s' "${COLOR_META}"
-      ;;
-    BUILD)
-      printf '%s' "${COLOR_BUILD}"
-      ;;
-    TRACE)
-      printf '%s' "${COLOR_TRACE}"
-      ;;
-    HYGIENE)
-      printf '%s' "${COLOR_HYGIENE}"
-      ;;
-    INVARIANT)
-      printf '%s' "${COLOR_INVARIANT}"
-      ;;
-    *)
-      printf '%s' "${COLOR_META}"
-      ;;
-  esac
-}
-
-status_color() {
-  local message="$1"
-  case "${message}" in
-    PASS*)
-      printf '%s' "${COLOR_PASS}"
-      ;;
-    FAIL*)
-      printf '%s' "${COLOR_FAIL}"
-      ;;
-    RUN*)
-      printf '%s' "${COLOR_RUN}"
-      ;;
-    *)
-      printf '%s' ""
-      ;;
-  esac
-}
-
+# One function, no subshells.  This used to dispatch through two helper
+# functions read with `$(...)`, which is a fork each -- four per check, on top
+# of the two `date` forks the timer took, so a Tier 3 run paid ~6 forks per
+# anchor for the two lines it prints around every one of ~6300 checks (the
+# test-performance audit, v0.35.159: roughly a quarter of a minute of pure
+# process creation).  Inlining the two `case` tables removes every fork from
+# the logging path; the output is byte-identical.
 log_section() {
   local category="$1"
   local message="$2"
   local cat_color
   local msg_color
-  cat_color="$(category_color "${category}")"
-  msg_color="$(status_color "${message}")"
+  case "${category}" in
+    META) cat_color="${COLOR_META}" ;;
+    BUILD) cat_color="${COLOR_BUILD}" ;;
+    TRACE) cat_color="${COLOR_TRACE}" ;;
+    HYGIENE) cat_color="${COLOR_HYGIENE}" ;;
+    INVARIANT) cat_color="${COLOR_INVARIANT}" ;;
+    *) cat_color="${COLOR_META}" ;;
+  esac
+  case "${message}" in
+    PASS*) msg_color="${COLOR_PASS}" ;;
+    FAIL*) msg_color="${COLOR_FAIL}" ;;
+    RUN*) msg_color="${COLOR_RUN}" ;;
+    *) msg_color="" ;;
+  esac
   printf '%b[%s]%b %b%s%b\n' \
     "${cat_color}" "${category}" "${COLOR_RESET}" \
     "${msg_color}" "${message}" "${COLOR_RESET}"
@@ -248,14 +225,29 @@ SLOW_CHECK_LINES=()
 # Below this a duration is noise -- Tier 0 runs hundreds of sub-second checks.
 SLOW_CHECK_THRESHOLD_MS="${SLOW_CHECK_THRESHOLD_MS:-1000}"
 
+# Sets `NOW_MS` to the current time in milliseconds.
+#
+# A global set by the caller rather than a value printed and read with
+# `$(_now_ms)`: the command substitution is a fork, and the `date +%s%3N` it
+# ran was an exec on top, so every timed check paid two forks and two execs
+# for its two timestamps -- about 3.5 ms per check, or twenty seconds of a
+# Tier 3 run (test-performance audit, v0.35.159).  Bash 5 exposes the clock
+# as `EPOCHREALTIME` (seconds, a dot, six decimals), which costs nothing.
+# `date` remains the fallback where that variable is absent, and `%N` is a
+# GNU extension, so a non-GNU `date` degrades to whole seconds rather than
+# breaking the harness.
+NOW_MS=0
 _now_ms() {
-  # `%N` is a GNU extension; fall back to whole seconds where it is absent so a
-  # non-GNU `date` degrades to coarse timing rather than breaking the harness.
+  if [[ -n "${EPOCHREALTIME:-}" ]]; then
+    local sec="${EPOCHREALTIME%.*}" frac="${EPOCHREALTIME#*.}000"
+    NOW_MS="${sec}${frac:0:3}"
+    return 0
+  fi
   local raw
   raw="$(date +%s%3N 2>/dev/null || true)"
   case "${raw}" in
-    ''|*[!0-9]*) printf '%s000\n' "$(date +%s)" ;;
-    *) printf '%s\n' "${raw}" ;;
+    ''|*[!0-9]*) NOW_MS="$(date +%s)000" ;;
+    *) NOW_MS="${raw}" ;;
   esac
 }
 
@@ -268,9 +260,9 @@ _now_ms() {
 # correctly while the summary stayed permanently empty.
 DURATION_NOTE=""
 _note_duration() {
-  local start="$1" label="$2" now elapsed
-  now="$(_now_ms)"
-  elapsed=$(( now - start ))
+  local start="$1" label="$2" elapsed
+  _now_ms
+  elapsed=$(( NOW_MS - start ))
   DURATION_NOTE=""
   if [[ "${elapsed}" -lt "${SLOW_CHECK_THRESHOLD_MS}" ]]; then
     return 0
@@ -314,6 +306,43 @@ _report_slow_checks() {
   fi
 }
 
+# Run a check's command exactly as given, except that a LOGIN shell is run as
+# a plain one: `bash -lc SCRIPT` becomes `bash -c SCRIPT`.
+#
+# `-l` makes bash read `/etc/profile`, `/etc/profile.d/*` and `~/.profile`
+# before the script, and that costs about 100 ms per invocation on an
+# ordinary developer box (measured: 4.9 s for fifty empty `bash -lc true`
+# against 0.1 s for `bash -c`; the profile.d scripts of a toolchain-rich
+# machine are what a login shell pays for).  The Tier 3 surface carries some
+# 1200 anchors spelled `bash -lc`, so the login shells alone were two of its
+# four minutes (test-performance audit, v0.35.159).
+#
+# Nothing an anchor may depend on comes from those profile files.  The tier
+# script has already put the toolchain on `PATH` (`ensure_lake_available`
+# sources the elan env into THIS shell, which every child inherits), `rg` and
+# `python3` are resolved the same way for the anchors that call them bare,
+# and every Lean probe sources `~/.elan/env` itself before it calls `lake`.
+# What a login shell could add beyond that is whatever a contributor's
+# personal profile does, which is exactly what a gate must not depend on.
+# The rewrite is confined to the flag: the script, its quoting and its
+# working directory are untouched, so the classifier above and the code-view
+# routing below see the anchor exactly as written.
+#
+# `timeout DURATION bash -lc …` (the shape `run_check_with_timeout` builds)
+# is rewritten inside the timeout, so the two wrappers compose.
+_run_command() {
+  local -a prefix=()
+  if [[ "${1:-}" == "timeout" || "${1:-}" == "gtimeout" ]]; then
+    prefix=("$1" "$2")
+    shift 2
+  fi
+  if [[ "${1:-}" == "bash" && "${2:-}" == "-lc" ]]; then
+    shift 2
+    set -- bash -c "$@"
+  fi
+  "${prefix[@]}" "$@"
+}
+
 # Run a command, in the code view when it scans Lean source.
 _run_with_view() {
   if _scans_lean_source "$@"; then
@@ -323,7 +352,7 @@ _run_with_view() {
       echo "error: could not build the Lean code view" >&2
       return 125
     fi
-    ( cd "${LEAN_CODE_VIEW_DIR}" && "$@" )
+    ( cd "${LEAN_CODE_VIEW_DIR}" && _run_command "$@" )
     return $?
   fi
   # Fail closed on the shape the classifier cannot place: a tool invocation
@@ -337,7 +366,7 @@ _run_with_view() {
       return 125
     fi
   fi
-  "$@"
+  _run_command "$@"
 }
 
 run_check() {
@@ -346,7 +375,8 @@ run_check() {
 
   log_section "${category}" "RUN: $*"
   local _t0
-  _t0="$(_now_ms)"
+  _now_ms
+  _t0="${NOW_MS}"
   if _run_with_view "$@"; then
     _note_duration "${_t0}" "$*"
     log_section "${category}" "PASS${DURATION_NOTE}"
@@ -372,7 +402,8 @@ run_gate_check() {
 
   log_section "${category}" "RUN: $*"
   local _t0 _rc
-  _t0="$(_now_ms)"
+  _now_ms
+  _t0="${NOW_MS}"
   set +e
   _run_with_view "$@"
   _rc=$?
@@ -411,7 +442,7 @@ run_prose_check() {
   shift
 
   log_section "${category}" "RUN (prose): $*"
-  if "$@"; then
+  if _run_command "$@"; then
     log_section "${category}" "PASS"
     return 0
   fi
@@ -468,7 +499,7 @@ run_prose_negative_check() {
 
   log_section "${category}" "RUN (prose, must not match): $*"
   local status=0
-  "$@" >/dev/null 2>&1 || status=$?
+  _run_command "$@" >/dev/null 2>&1 || status=$?
 
   case "${status}" in
     0)
@@ -497,7 +528,8 @@ run_negative_check() {
   log_section "${category}" "RUN (must not match): $*"
   local status=0
   local _t0
-  _t0="$(_now_ms)"
+  _now_ms
+  _t0="${NOW_MS}"
   _run_with_view "$@" >/dev/null 2>&1 || status=$?
 
   case "${status}" in
@@ -555,10 +587,14 @@ run_check_with_timeout() {
     timeout_bin="gtimeout"
   fi
 
+  local _t0
+  _now_ms
+  _t0="${NOW_MS}"
   if [[ -z "${timeout_bin}" ]]; then
     log_section "${category}" "WARN: timeout(1) not found; running unguarded"
-    if "$@"; then
-      log_section "${category}" "PASS"
+    if _run_command "$@"; then
+      _note_duration "${_t0}" "$*"
+      log_section "${category}" "PASS${DURATION_NOTE}"
       return 0
     fi
     record_failure "${category}" "Command failed: $*"
@@ -572,9 +608,14 @@ run_check_with_timeout() {
   # `set -e`, regardless of the caller's errexit state.  `$?` inside the
   # else-branch holds the exit code; we capture it before any further
   # commands clobber the value.
+  # Timed like every other check (v0.35.159): the suite runs were the one
+  # class of check this file did not measure, so the tier's slowest-checks
+  # summary said nothing about the seventy `lake exe` lines that make up
+  # most of Tier 2.
   local rc=0
-  if "${timeout_bin}" "${mins}m" "$@"; then
-    log_section "${category}" "PASS"
+  if _run_command "${timeout_bin}" "${mins}m" "$@"; then
+    _note_duration "${_t0}" "$*"
+    log_section "${category}" "PASS${DURATION_NOTE}"
     return 0
   else
     rc=$?

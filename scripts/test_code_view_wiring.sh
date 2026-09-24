@@ -123,6 +123,17 @@ expect_recorded "run_prose_negative_check still fires on prose" 1 \
 expect_recorded "run_negative_check ignores a comment-only mention" 0 \
   run_negative_check "WIRING" rg -n 'codeViewWitnessProseOnly' "${FIXTURE}"
 
+# The shell-quoted anchor form -- some 1200 Tier 3 anchors are spelled
+# `bash -lc '…'` -- must route through the view exactly as a bare `rg` does,
+# and must still RUN once the harness drops the login flag (v0.35.159: a login
+# shell costs ~100 ms per anchor and supplies nothing an anchor may depend
+# on).  Both directions, because a shell that no longer started would fail the
+# positive and pass the negated form for the wrong reason.
+expect_recorded "a shell-quoted anchor is routed through the view" 1 \
+  run_check "WIRING" bash -lc "rg -n 'codeViewWitnessProseOnly' ${FIXTURE}"
+expect_recorded "a shell-quoted anchor still runs (and finds code)" 0 \
+  run_check "WIRING" bash -lc "rg -n '^def codeViewWitnessInCode' ${FIXTURE}"
+
 # ---------------------------------------------------------------------------
 # WS-RR RR7.17 — the same three directions, over Rust.
 # ---------------------------------------------------------------------------
@@ -146,5 +157,5 @@ if [[ "${failures}" -ne 0 ]]; then
   note "SELF-TEST FAILED (${failures})"
   exit 1
 fi
-note "SELF-TEST PASS (10 checks)"
+note "SELF-TEST PASS (12 checks)"
 exit 0

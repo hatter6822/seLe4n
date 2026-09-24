@@ -251,6 +251,41 @@ def abiEntryGate (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId) (s : Sy
                 capAddr := decoded.capAddr, capDepth := rootCn.depth,
                 requiredRight := syscallRequiredRight decoded.syscallId })
 
+/-- **WS-RR RR8.12 Cut C4b**: the gate's CSpace root is the caller's own, and the
+TCB it returns is the one the state holds at the caller.
+
+Needed by the scheduler domain, which reads a receiver's `cspaceRoot` off the
+state rather than off the gate: `schedLockSet_endpointReplyRecvOnCore` takes the
+root the capability installation walks, the live `.replyRecv` arm hands it
+`gate.cspaceRoot`, and `declaredSchedLockSetForAbiEntry` resolves it through
+`st.getTcb? ops.caller`.  This is what makes those one lookup rather than two
+readings of the same question — the shape that would let the footprint name a
+root the transition does not install through. -/
+theorem abiEntryGate_cspaceRoot (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
+    (s : SystemState) (tcb : TCB) (gate : SyscallGate)
+    (h : abiEntryGate decoded tid s = some (tcb, gate)) :
+    s.getTcb? tid = some tcb ∧ gate.cspaceRoot = tcb.cspaceRoot ∧ gate.callerId = tid := by
+  unfold abiEntryGate at h
+  cases hTcb : s.getTcb? tid with
+  | none => rw [hTcb] at h; exact absurd h (by simp)
+  | some tcb' =>
+      rw [hTcb] at h
+      simp only at h
+      split at h
+      · exact absurd h (by simp)
+      · rename_i rootCn hRoot
+        split at h
+        · exact absurd h (by simp)
+        · split at h
+          · exact absurd h (by simp)
+          · rename_i ref hRef
+            split at h
+            · exact absurd h (by simp)
+            · obtain ⟨hT, hG⟩ := Prod.mk.injEq .. ▸ Option.some.inj h
+              subst hT
+              subst hG
+              exact ⟨rfl, rfl, rfl⟩
+
 /-- **WS-RR RR7.12**: the message a sending arm's footprint is a function of.
 
 Built exactly as the live `.send` / `.call` arms build theirs — the same
@@ -296,10 +331,29 @@ dispatch arm names:
 * both (`.replyRecv`) — the endpoint it will receive on next *and* the reply
   object it answers first, resolved through `resolveReplyRecvReply`.
 
-Every other syscall gets caller-only operands, which every undeclared arm
-answers `none` to anyway — so this match says what each *declared* arm needs
-rather than enumerating thirty-five cases, and a new declared arm that forgets
-to add itself here gets the fail-closed answer. -/
+**WS-RR RR8.12 Cut C4b: it serves BOTH domains, and that is one builder rather
+than two.**  `declaredSchedLockSetForAbiEntry`
+(`SyscallSchedFootprint.lean` §14) reads this record too, so a second builder
+would be the shape that lets one domain's footprint be acquired around the other
+domain's transition — `declaredSchedLockSetForAbiEntry_shares_decode` is the
+statement that it is not.  Two things follow.  Four arms above gained the
+operands the *scheduler* footprints read and the object domain ignores, so their
+object-domain answers are byte-identical to the pre-C4b ones: `.call` the
+invoked capability's rights and the receiver's slot base (its write set re-runs
+the dispatch), `.reply` the `MessageInfo` and register payload `decodeFaultReply`
+reads to tell a restart from an abandon, `.replyRecv` the reply *payload* badged
+with the reply capability's own badge, and `.tcbSetAffinity` the destination core
+— whose own `Option` is the unpin request, so it must not be collapsed with "not
+supplied".  And eight arms the object domain declares nothing for are here
+because the scheduler domain declares for them: the five TCB-directed ones, the
+three SchedContext ones and the retype.  `lockSetForSyscall` answers `none` at
+every one of those whatever these fields hold, so adding them left the object
+domain untouched.
+
+Every other syscall answers `none`, which every arm undeclared in *both* domains
+would get anyway — so this match says what each declared arm needs rather than
+enumerating thirty-five cases, and a new declared arm that forgets to add itself
+here gets the fail-closed answer. -/
 def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
     (s : SystemState) : Option SyscallLockOperands :=
   match abiEntryGate decoded tid s with
@@ -314,7 +368,17 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
           | none => none
           | some valid => some (.ofThreadTarget tid valid.val)
       | .send, .object epId => some (.ofObjectTarget tid epId (some (abiEntryMessage decoded gate cap s)))
-      | .call, .object epId => some (.ofObjectTarget tid epId (some (abiEntryMessage decoded gate cap s)))
+      -- **WS-RR RR8.12 Cut C4b**: `.call` additionally carries the invoked
+      -- capability's **rights** and the receiver's **slot base**, which are what
+      -- the arm's SCHEDULER-domain footprint needs — `endpointCallDispatchWriteSet`
+      -- re-runs the dispatch, and the live arm hands it exactly `cap.rights` and
+      -- `decoded.capRecvSlot`.  The object domain ignores both, so its answer
+      -- here is byte-identical to the pre-C4b one.
+      | .call, .object epId =>
+          some { caller := tid, targetObject := some epId,
+                 message := some (abiEntryMessage decoded gate cap s),
+                 endpointRights := some cap.rights,
+                 receiverSlotBase := some decoded.capRecvSlot }
       | .receive, .object epId =>
           match resolveRecvReplyId gate decoded s with
           | .error _ => none
@@ -322,11 +386,69 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
               some { caller := tid, targetObject := some epId, targetReply := replyId? }
       | .notificationSignal, .object nId => some (.ofObjectTarget tid nId)
       | .notificationWait, .object nId => some (.ofObjectTarget tid nId)
-      | .reply, .replyCap rid => some (.ofReplyTarget tid rid)
+      -- **Cut C4b**: `.reply` carries the message the live arm builds and the
+      -- `MessageInfo` / register payload `decodeFaultReply` reads to tell a
+      -- restart from an abandon — the branch whose home-core member the
+      -- dispatch-level footprint never names (`v0.35.163`).
+      | .reply, .replyCap rid =>
+          some { caller := tid, targetReply := some rid,
+                 message := some
+                   { registers :=
+                       Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs
+                         decoded.msgInfo,
+                     caps := #[], badge := cap.badge },
+                 replyMessageInfo := some decoded.msgInfo,
+                 replyRegisters := some decoded.msgRegs }
+      -- **Cut C4b**: `.replyRecv` carries the reply *payload* — MR1.. , the
+      -- leading control register stripped exactly as the live arm strips it —
+      -- badged with the REPLY cap's badge rather than the endpoint receive
+      -- cap's, and the receiver's slot base.
       | .replyRecv, .object epId =>
           match resolveReplyRecvReply gate decoded s with
           | .error _ => none
-          | .ok (rid, _, _) => some (.ofReplyTarget tid rid (some epId))
+          | .ok (rid, _, replyBadge) =>
+              let full :=
+                Architecture.RegisterDecode.extractMessageRegisters decoded.msgRegs decoded.msgInfo
+              some { caller := tid, targetObject := some epId, targetReply := some rid,
+                     message := some
+                       { registers := full.extract 1 full.size, caps := #[],
+                         badge := replyBadge },
+                     receiverSlotBase := some decoded.capRecvSlot }
+      -- **Cut C4b**: the eight arms the OBJECT domain declares nothing for and
+      -- the scheduler domain does.  Each names its target the way its own live
+      -- dispatch arm names it — the capability's object read as a thread for the
+      -- five TCB-directed ones, as a SchedContext for the two SchedContext ones
+      -- that are directed at it, and `.schedContextBind`'s bound thread through
+      -- the SAME resolver the live arm binds through
+      -- (`resolveSchedContextBindThread`, `v0.35.204`: a TCB capability at MR0
+      -- in the caller's CSpace, where a raw thread id used to be read).
+      -- `lockSetForSyscall` answers `none` at every one of them whatever these
+      -- fields hold, so the object domain is untouched.
+      | .tcbResume, .object objId =>
+          some (.ofThreadTarget tid (SeLe4n.ThreadId.ofNat objId.toNat))
+      | .tcbSetPriority, .object objId
+      | .tcbSetMCPriority, .object objId =>
+          some (.ofThreadTarget tid (SeLe4n.ThreadId.ofNat objId.toNat))
+      | .tcbSetAffinity, .object objId =>
+          match Architecture.SyscallArgDecode.decodeSetAffinityArgs decoded with
+          | .error _ => none
+          | .ok args =>
+              match decodeAffinity args.affinityRaw with
+              | .error _ => none
+              | .ok affinity =>
+                  some { caller := tid,
+                         targetThread := some (SeLe4n.ThreadId.ofNat objId.toNat),
+                         affinity := some affinity }
+      | .schedContextConfigure, .object scId
+      | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
+      | .schedContextBind, .object _ =>
+          match resolveSchedContextBindThread tid decoded s with
+          | .error _ => none
+          | .ok v => some (.ofThreadTarget tid v.val)
+      | .lifecycleRetype, .object _ =>
+          match Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded with
+          | .error _ => none
+          | .ok args => some (.ofObjectTarget tid args.targetObj)
       | _, _ => none
 
 /-- **WS-RR RR7.12**: the footprint the live ABI seam declares.
@@ -441,12 +563,13 @@ theorem abiEntryLockOperands_caller (decoded : SyscallDecodeResult)
       obtain ⟨cap, _⟩ := capPair
       rw [hLk] at h
       simp only at h
-      split at h <;> try split at h
+      repeat' split at h
       all_goals
         first
           | (rw [← Option.some.inj h]; rfl)
           | rw [← Option.some.inj h]
           | exact absurd h (by simp)
+          | simp_all
 
 -- ============================================================================
 -- §3  The revalidated bracket

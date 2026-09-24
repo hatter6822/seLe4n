@@ -96,6 +96,23 @@ structural guarantees — the two that make revocation terminate and make it
 complete. `objects.invExt` is the Robin Hood table's own well-formedness
 (§3.6), carried here because capability lookup goes through it.
 
+Since `v0.35.190` (WS-RR RR8.16) a thread can actually *reach* that machinery:
+`seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which routes
+`cspaceRevokeCdt` — the variant that walks the derivation tree across arbitrary
+CSpaces, not the local `cspaceRevoke` that reaches only the invoked CNode.
+Before it, the whole family was verified and unreachable.  Since `v0.36.1` the
+walk is also all the revocation does: the shared scaffold no longer opens with
+the local same-target sweep, which had destroyed capabilities the source never
+derived, so a revocation destroys exactly the source's CDT descendants — seL4's
+`cteRevoke` — as the canonical spec's §8.11.1 records.  The arm carries the
+capability-only dispatch payoff (`cspaceRevokeCdt_preserves_ipcInvariantFull`),
+whose scaffold and fold arguments are stated **predicate-free** beside their
+definitions (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`) so this
+bundle's argument and `ipcInvariantFull`'s are one induction rather than two.
+See `SELE4N_SPEC.md` §8.11.1 for the ABI, the authority and the two boundary
+statements the arm needed (no static lock footprint; a content-tracked field
+written with no tracked content moved).
+
 Two invariants that were once state-level predicates are now **structural**:
 `CNode.slots` is a `UniqueSlotMap` and `Notification.waitingThreads` is a
 `NoDupList ThreadId`, so uniqueness is a property of the type rather than a
@@ -121,7 +138,7 @@ make the theorem assume what it claims to prove.
 `scripts/check_ipc_invariant_dethreading.py` (Tier 0) measures this over the
 comment-free code view, deriving the conjunct set and each bundle's own
 pre-state rather than matching binder names, and reports **zero** conjuncts
-bound on a post-state across all **186** statements in the family, with the
+bound on a post-state across all **196** statements in the family, with the
 conjunct set and the bundle family both derived from the sources.  The figure is
 spelled in the form the gate reads, so a cut that grows the family fails until
 this sentence is corrected — it said 146 while the tree measured 170, unwatched,
@@ -308,8 +325,9 @@ upstream facts this workstream rests on — the non-head branch's write, the pop
 trigger, and `reply_pop`'s `tcbSchedContext == NULL` guard — to
 `donationRecipientAcceptable`'s own docstring, each with the revisions it was read at,
 which is what `v0.35.40`'s retraction-of-a-retraction cost.  **Depth 2 was HP10's**,
-and the register row was closed at `v0.35.54` on both halves being earned — and is
-**re-opened at `v0.35.141`** on the depth-2 half, see the correction below.
+and the register row was closed at `v0.35.54` on both halves being earned — was
+**re-opened at `v0.35.141`** on the depth-2 half, and is **closed again at
+`v0.35.157`**, see the correction below.
 
 **HP10.9 (`v0.35.53`) addressed depth 2**, which the splice provably could not reach:
 the frame a depth-2 removal takes off the stack *is* the bottom, so nothing sits
@@ -320,24 +338,27 @@ origin recorded on the `SchedContext` and read in place of stack reachability, a
 delegate answering the client out of order no longer costs that client its
 reservation.  Upstream has the same loss at this depth (`reply_pop` donates to the
 answered frame's own `replyTCB`), so this is an improvement on seL4-MCS too.  The
-theorem **derives** the reachability answer from the removal and **hypothesises**
-the two guards, one of which cannot be derived at all: the owner is
-`.blockedOnReply` on exactly the reply being answered until the reply leg's wake.
+theorem **derives** the reachability answer from the removal and, since `v0.35.157`,
+the owner's rebindability too (the removal cleared its `replyObject`), and
+**hypothesises** the recipient guard.
 
-**And that guard is a PROXY, so the depth-2 claim is retracted** (PR #897's review,
-`v0.35.141`).  `donationOriginRebindable` reads the origin's `ipcState` alone,
-standing in for "some live `.donated _ origin` binding names it".  A client woken
-by the out-of-order reply is an ordinary runnable thread: its next Call is
-`.unbound`, so it donates nothing and no binding names it, while putting it
-`.blockedOnReply` again — and the guard refuses it.  The pop then falls back to the
-answered caller and **transfers** the reservation to the intermediate caller,
-clearing `donationOrigin`, so the kernel can never return it — the context heads no
-stack afterwards and no later pop can deliver it; only an out-of-band
-`schedContextUnbind` + `schedContextBind` by a holder of the *SchedContext*
-capability can repair it.  Measured on the live pop
-at `tests/SmpIpcSuite.lean` §3.25's COST group with an awake-client CONTROL.  The
-theorem stands as stated; what does not stand is reading it as "the accounting
-holds at every reply-stack depth".
+**And that guard was a PROXY, so the depth-2 claim was retracted — and restored**
+(PR #897's review, `v0.35.141`; closed `v0.35.157`).  Until `v0.35.157`
+`donationOriginRebindable` read the origin's `ipcState` alone, standing in for
+"some live `.donated _ origin` binding names it".  A client woken by the
+out-of-order reply is an ordinary runnable thread: its next Call is `.unbound`, so
+it donates nothing and no binding names it, while putting it `.blockedOnReply`
+again — and the proxy refused it.  The pop then fell back to the answered caller
+and **transferred** the reservation to the intermediate caller, clearing
+`donationOrigin`.  The guard is now `schedContextBind`'s own admissibility, asked
+of the origin — its reply frame is on no **live** stack (`replyFrameOnLiveStack`,
+on both surfaces) — which admits the re-called client and refuses a frame that
+heads a context or sits inside a live stack; its soundness is the binding → head
+fact `donatedContextIsOwnerFrameHead`, relocated upstream and carried by the reply
+path as `redirectedOriginFrameCoherent`.  Measured on the live pop at
+`tests/SmpIpcSuite.lean` §3.25's PAYOFF group, with the retired proxy computed
+beside the live guard so the assertions discriminate.  The accounting holds at
+every reply-stack depth.
 §3.20's accounting halves inverted from COST to PAYOFF and now drive the live
 `.reply` spine rather than `returnDonatedSchedContextResolved`, which was an
 accurate proxy for the pop while nothing redirected and omits the redirect since
@@ -431,9 +452,45 @@ thread from the clause (the pair is what the teardown reads).  It stands to
 `donationOwnerValid`.  The **unit** is the restore-and-teardown pair: the restore
 wakes the victim and so breaks reciprocity, the teardown consumes the link that
 wake left dangling, and each is the other's repair — so `restoredAndConsumed` is
-what carries the full bundle end to end.  What that cut leaves owed rather than
-claimed is the splice's own bundle statement, registered in
-`docs/REGISTERED_DEBT.md`.
+what carries the full bundle end to end.
+
+**And the removal's own statement landed at `v0.35.188`** (WS-RR RR8.16), which
+that cut had left owed: `removeCallerReplyFrame` — the splice then the consume —
+now carries the relaxed bundle to the full one
+(`removeCallerReplyFrame_establishes_ipcInvariantFull_of_exceptReplyLinkage`).
+What it needed was a **unit** rather than an argument.  The relaxed predicate was
+written flat, and a `replyLinkageFrame` transports the reciprocal *pair*, so there
+was nothing for the frame to carry and the splice would have had to re-run the
+full store's case analysis; split as `replyCallerLinkage` is —
+`replyCallerLinkageReciprocalExcept ∧ blockedOnReplyHasReplyObject` — the
+transport is its full sibling one strength down.  Two collapses rode along, each
+one question given one owner: everything but the reciprocal pair is proved once
+and assembled twice, and the splice's store chain is one transport over any
+predicate a caller-preserving Reply store carries, rather than a copy per bundle.
+See `SELE4N_SPEC.md` §8.12.16.
+
+**And the object-domain donation members follow the donation's own guard**
+(WS-RR RR8.16, `v0.35.189`; register row 56).  WS-RR RR8.12 Cut C1 narrowed the
+`.receive` *replenish* segment onto `callDonationSchedContext?` and registered
+that the two **object**-domain members had its gaps one lock domain over:
+`endpointCallDonatedSc?` read the caller's own effective context with no test
+that a receiver was waiting or that it was passive, and
+`receiveRendezvousDonatedSc?` read the queued sender's through it — so a plain
+`Send`, and a `Call` to a receiver that already holds a reservation, each
+declared a SchedContext write lock for a migration that provably does not happen.
+Sound, and not free: lock contention is SM8.D's CC-5 channel.  Each member now
+resolves the *other* party and asks the transition's own guard of the pair, and
+the soundness half is proved in the one direction a footprint needs — *the
+transition migrates ⟹ the footprint declares*, which is post-state `some` ⟹
+pre-state `some` (`endpointCallDonatedSc?_some_of_post`,
+`receiveRendezvousDonatedSc?_some_of_post`, each through Cut C1's backward
+binding frame).  `receiveRendezvousDonatedSc?_isSome_iff_donatingSender` then says
+the object member and the scheduler segment declare on exactly the same
+rendezvous, because a shared spelling is not that fact.  Landing it moved
+`callDonationSchedContext?` down to the layer both askers reach and three binding
+frames out of the staged call-chain invariant surface into production.
+`maxLockSetSize` is unmoved and the golden trace is byte-identical.
+See [`SELE4N_SPEC.md`](../spec/SELE4N_SPEC.md) §8.12.7.
 
 **And with the arm keystone, all three cancellation arms carry the bundle**
 (WS-RR RR8.7, `v0.35.82`): the blocked-on-endpoint arm since `v0.34.95`, the

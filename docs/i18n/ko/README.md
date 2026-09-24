@@ -8,7 +8,7 @@
 <p align="center">
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/lean_action_ci.yml/badge.svg?branch=main" alt="CI" /></a>
   <a href="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml"><img src="https://github.com/hatter6822/seLe4n/actions/workflows/platform_security_baseline.yml/badge.svg" alt="Security" /></a>
-  <img src="https://img.shields.io/badge/version-0.35.155-blue" alt="Version" />
+  <img src="https://img.shields.io/badge/version-0.36.1-blue" alt="Version" />
   <img src="https://img.shields.io/badge/Lean-v4.28.0-blueviolet" alt="Lean 4" />
   <a href="../../../LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License" /></a>
 </p>
@@ -94,11 +94,11 @@ seLe4n은 Lean 4로 처음부터 설계된 마이크로커널입니다. 모든 �
 
 | 속성 | 값 |
 |------|-----|
-| **버전** | `0.35.155` |
+| **버전** | `0.36.1` |
 | **Lean 툴체인** | `v4.28.0` |
-| **프로덕션 Lean LoC** | 334개 파일, 396,702줄 |
-| **테스트 Lean LoC** | 70개 테스트 스위트, 81,018줄 |
-| **증명된 선언** | 13,131개 theorem/lemma 선언 (sorry/axiom 제로) |
+| **프로덕션 Lean LoC** | 340개 파일, 417,841줄 |
+| **테스트 Lean LoC** | 70개 테스트 스위트, 84,834줄 |
+| **증명된 선언** | 13,815개 theorem/lemma 선언 (sorry/axiom 제로) |
 | **대상 하드웨어** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **정식 감사** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — 1.0 이전 종합 감사 (202건 발견; WS-AK AK1–AK10 으로 해결됨; 보관됨) |
 | **최신 감사** | [`AUDIT_v0.30.11_COMPREHENSIVE`](../../../docs/audits/AUDIT_v0.30.11_COMPREHENSIVE.md) + [`AUDIT_v0.30.11_DEEP_VERIFICATION`](../../../docs/audits/AUDIT_v0.30.11_DEEP_VERIFICATION.md) — WS-AN 마감 후 수행된 1.0 이전 준비 상태 감사 (WS-AN AN0–AN12 로 해결되어 현재 보관된 [`AUDIT_v0.30.6_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.30.6_COMPREHENSIVE.md) 를 계승). WS-RC R0..R5 는 v0.31.2 에서 완료됨; WS-RC R6..R14 는 SM0.Q.1 흡수 매핑에 따라 WS-SM 으로 흡수됨 ([`AUDIT_v0.30.11_WORKSTREAM_PLAN.md §15`](../../../docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md) 참조). 활성 작업 스트림 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md). |
@@ -230,7 +230,7 @@ TLB 슈트다운과 캐시 유지 관리, SMP 정보 흐름, 그리고 기밀 �
 v0.33.100 에서 마감). 남은 단계는 **SM10**(릴리스 마감 → v1.0.0)입니다.
 시스템 콜 반환 ABI 작업 스트림(**WS-RA**)은 완료되었습니다.
 
-**SM10 은 WS-RR**(SMP 릴리스 준비)**에 의해 차단되어 있습니다** — 현재 진행 중인 1.0 이전 교정 단계입니다([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0(v0.34.26), RR1(v0.34.41), RR2(v0.34.42), RR3(v0.34.43), 그리고 **RR4 — 폴트 처리: 응답 기반 재시작을 갖춘 완전한 폴트 IPC(v0.34.44)**. RR4 는 폴트가 발생한 스레드가 폴트를 일으킨 명령에서 재개되는 것을 막습니다: 폴트는 TCB 에 기록되고, 활성 코어 간 call 체인을 통해 스레드의 `faultHandler` 엔드포인트로 전달되며, 선택한 PC 에서 스레드를 재시작하거나 포기하는 응답으로 처리됩니다. RR5–RR8 이 남아 있으며, 그다음이 **SM10**(릴리스 마감 → v1.0.0)입니다.
+**WS-RR**(SMP 릴리스 준비) — 1.0 이전 교정 단계는 **v0.35.203 에서 완료되었습니다**([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0(v0.34.26), RR1(v0.34.41), RR2(v0.34.42), RR3(v0.34.43), 그리고 **RR4 — 폴트 처리: 응답 기반 재시작을 갖춘 완전한 폴트 IPC(v0.34.44)**. RR4 는 폴트가 발생한 스레드가 폴트를 일으킨 명령에서 재개되는 것을 막습니다: 폴트는 TCB 에 기록되고, 활성 코어 간 call 체인을 통해 스레드의 `faultHandler` 엔드포인트로 전달되며, 선택한 PC 에서 스레드를 재시작하거나 포기하는 응답으로 처리됩니다. RR5–RR8 도 모두 완료되었습니다(RR8 은 v0.35.203). 이제 **SM10 은 WS-BP**(베어메탈 부트 경로, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md))**에 의해 차단되어 있습니다** — SM10.1 의 내용이며 아직 시작된 하위 작업이 없습니다. 그다음이 **SM10**(릴리스 마감 → v1.0.0)입니다.
 
 마스터 계획: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 단계별 계획은 `docs/planning/SMP_*.md` 에 있습니다. 완료된 모든 작업 스트림

@@ -256,6 +256,33 @@ private def cspaceSlotCoherencyChecks (objectIds : List SeLe4n.ObjId) (st : Syst
           (s!"cspace slot target backed: oid={oid} slot={slot}", ok) :: inner)
     | _ => acc) []
 
+/-- **WS-RR RR8.16** (`v0.35.201`): every occupied slot of a CNode is addressable
+by that CNode's own radix width.
+
+`cspaceSlotCountBounded` — `cn.slots.size ≤ cn.slotCount` — is a conjunct of
+`capabilityInvariantBundle`, and **nothing here asserted it**: the word
+`slotCountBounded` appeared nowhere under `SeLe4n/Testing/`.  That is how six
+fixture CNodes came to declare `radixWidth := 0` — *one* slot — while holding
+capabilities at indices up to 12, the trace harness's own bootstrap root CSpace
+among them.  `CNode.resolveSlot` masks with `2 ^ radixWidth`, so each of those
+capabilities was unreachable by any CPtr while still consuming a slot-table
+entry in an object whose memory was accounted, at retype time, by
+`2 ^ radixWidth` slots.
+
+The check is the **structural** property rather than the cardinality: slot keys
+are unique (`UniqueSlotMap`), so "every occupied index is below `slotCount`"
+entails the count bound, and unlike the count it names the offending slot —
+which is the whole content of such a failure. -/
+private def cspaceSlotAddressableChecks (objectIds : List SeLe4n.ObjId) (st : SystemState) :
+    List (String × Bool) :=
+  objectIds.foldr (fun oid acc =>
+    match st.getCNode? oid with
+    | some cn =>
+        cn.slots.fold acc (fun inner slot _ =>
+          (s!"cspace slot addressable: oid={oid} slot={slot} slotCount={cn.slotCount}",
+            cn.slotAddressable slot) :: inner)
+    | _ => acc) []
+
 /-- M-11 Capability rights attenuation: minted (badge-carrying) capabilities must have
 rights that are a subset of the source capability's rights. Since the source is not
 tracked at runtime, we validate that badge-carrying caps have non-empty rights and
@@ -522,6 +549,7 @@ def stateInvariantChecksFor (objectIds : List SeLe4n.ObjId) (st : SystemState)
   let fuel := objectIds.length + 256
   schedulerChecks ++ runnableChecks ++ endpointAndNotificationChecks
     ++ cspaceSlotCoherencyChecks objectIds st
+    ++ cspaceSlotAddressableChecks objectIds st
     ++ capabilityRightsStructuralChecks objectIds st
     ++ lifecycleMetadataChecks objectIds st
     ++ serviceGraphAcyclicityChecks serviceIds st fuel

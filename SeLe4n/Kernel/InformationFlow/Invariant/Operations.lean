@@ -3621,6 +3621,298 @@ theorem objects_insert_preserves_projection_high
   rfl
 
 -- ============================================================================
+-- WS-RR RR8.8: the SINGLE endpoint-queue removal's projection lemma
+-- ============================================================================
+
+section EndpointQueueRemoveProjection
+
+open SeLe4n.Kernel.RobinHood
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: one neighbour patch at a non-observable
+thread is invisible.
+
+`queueNeighbourPatch` is the guarded "rewrite this thread's links if it exists"
+step both mid-queue removals perform twice.  It writes **at most one key**, so
+its projection frame is one application of
+`objects_insert_preserves_projection_high`, and the *value* it writes is
+irrelevant — which is why `upd` is unconstrained.
+
+The hypothesis is quantified over the resolution rather than taking a thread, so
+a caller that knows the removed node has no predecessor discharges it by `simp`
+instead of inventing one. -/
+theorem queueNeighbourPatch_preserves_projection_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (objs : RHTable SeLe4n.ObjId KernelObject)
+    (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB)
+    (hHigh : ∀ n : SeLe4n.ThreadId, nid? = some n →
+        objectObservable ctx observer n.toObjId = false)
+    (hInv : objs.invExt) :
+    projectState ctx observer { st with objects := queueNeighbourPatch objs nid? upd }
+      = projectState ctx observer { st with objects := objs } := by
+  unfold queueNeighbourPatch
+  cases hN : nid? with
+  | none => rfl
+  | some nid =>
+    dsimp only
+    cases hLk : objs[nid.toObjId]? with
+    | none => rfl
+    | some o =>
+      cases o with
+      | tcb t =>
+          exact objects_insert_preserves_projection_high ctx observer
+            { st with objects := objs } nid.toObjId (.tcb (upd t)) (hHigh nid hN) hInv
+      | cnode _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
+      | schedContext _ | reply _ => rfl
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: `endpointSpliceHigh` names the predecessor
+through `queuePPrev`; the single removal reads `queuePrev`.  Under RR8.3's
+pairing they are the same thread.
+
+This is the one mismatch the register row said closing this class must bridge.
+It is a *mismatch of spelling*, not of content: `queuePPrev` carries exactly one
+bit beyond `queuePrev` — whether the node is linked into a queue at all — and
+`TCB.queuePPrevAgreesWithPrev` is the statement that everything else it says
+agrees.  So a thread with a `queuePrev` has a `.tcbNext` back-pointer naming the
+same thread, and the splice hypothesis covers it.
+
+Stated as its own lemma rather than inlined, because `endpointQueueRemoveDual`
+reads the back-pointer and `endpointQueueRemove` reads the forward one, and a
+reader of either lemma needs to see *why* one hypothesis serves both. -/
+theorem endpointSpliceHigh_queuePrev_high
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (endpointId : SeLe4n.ObjId) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (hHigh : endpointSpliceHigh ctx observer st endpointId tid)
+    (hLookup : lookupTcb st tid = some tcb)
+    (hPair : tcb.queuePPrevAgreesWithPrev)
+    {p : SeLe4n.ThreadId} (hPrev : tcb.queuePrev = some p) :
+    objectObservable ctx observer p.toObjId = false := by
+  obtain ⟨_, _, hNbr⟩ := hHigh
+  obtain ⟨hPrevHigh, _⟩ := hNbr tcb hLookup
+  unfold TCB.queuePPrevAgreesWithPrev at hPair
+  cases hPP : tcb.queuePPrev with
+  | none =>
+      rw [hPP] at hPair
+      rw [hPair] at hPrev
+      exact absurd hPrev (by simp)
+  | some qpp =>
+      cases qpp with
+      | endpointHead =>
+          rw [hPP] at hPair
+          rw [hPair] at hPrev
+          exact absurd hPrev (by simp)
+      | tcbNext q =>
+          rw [hPP] at hPair
+          rw [hPair] at hPrev
+          have hpq : p = q := (Option.some.inj hPrev).symm
+          subst hpq
+          exact hPrevHigh p hPP
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the *single* endpoint-queue removal is
+invisible to an observer that sees none of the four objects it writes — the
+lemma `endpointQueueRemoveDual` has had since RR7.22 and this one did not.
+
+Its absence is what left `abortHolderProjectionStable` carrying its whole
+obligation as a hypothesis after `v0.35.84` had proved the labelling layer under
+it: the reclaim's abort prefix runs `abortPendingIpcOnEndpoint`, whose removal is
+the **single** one, and nothing connected `endpointSpliceHigh` to it.
+
+Three differences from the dual's lemma, all of them consequences of the two
+removals being written differently rather than of the property differing.  (1)
+The writes are raw `RHTable.insert`s rather than `storeObject` /
+`storeTcbQueueLinks`, so the chain is built from
+`objects_insert_preserves_projection_high` rather than from the two store
+primitives' frames.  (2) The four writes land in **one** record update, not four
+states, so the chain is over *tables* and the intermediate states are
+`{ st with objects := · }` — which is why the two helpers below take an `objs`
+and the base case is `rfl` rather than a lemma.  (3) The predecessor is read
+through `queuePrev`, so the pairing hypothesis is what makes
+`endpointSpliceHigh`'s `queuePPrev` clause reach it
+(`endpointSpliceHigh_queuePrev_high`); the dual reads `queuePPrev` directly and
+needs no such bridge.
+
+Both halves are proved together for the reason the dual's are: each step's
+projection frame needs the *previous* table's `invExt`, so carrying the
+projection alone would leave every step but the first unprovable. -/
+theorem endpointQueueRemove_preserves_projection_and_invExt
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hHigh : endpointSpliceHigh ctx observer st endpointId tid)
+    (hPair : ∀ t : TCB, lookupTcb st tid = some t → t.queuePPrevAgreesWithPrev)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st
+      ∧ st'.objects.invExt := by
+  obtain ⟨hEpHigh, hTidHigh, hNbr⟩ := hHigh
+  obtain ⟨ep, hEp⟩ :=
+    endpointQueueRemove_ok_getEndpoint? endpointId isReceiveQ tid st st' hStep
+  cases hTcb : lookupTcb st tid with
+  | none =>
+      -- the removal refuses a thread it cannot resolve, so this arm is dead
+      rw [endpointQueueRemove, SystemState.getObject?,
+        (SystemState.getEndpoint?_eq_some_iff st endpointId ep).mp hEp, hTcb] at hStep
+      exact absurd hStep (by simp)
+  | some tcb =>
+    -- the two chain steps, each carrying the projection equality *back to `st`*
+    -- so the four writes compose without four transitivity hops at the leaves
+    have keyIns : ∀ (o : RHTable SeLe4n.ObjId KernelObject),
+        (projectState ctx observer { st with objects := o } = projectState ctx observer st
+          ∧ o.invExt) →
+        ∀ (k : SeLe4n.ObjId) (v : KernelObject),
+          objectObservable ctx observer k = false →
+          (projectState ctx observer { st with objects := o.insert k v }
+              = projectState ctx observer st ∧ (o.insert k v).invExt) := by
+      rintro o ⟨hp, hi⟩ k v hk
+      exact ⟨(objects_insert_preserves_projection_high ctx observer
+                { st with objects := o } k v hk hi).trans hp,
+             RHTable.insert_preserves_invExt _ _ _ hi⟩
+    have keyPatch : ∀ (o : RHTable SeLe4n.ObjId KernelObject),
+        (projectState ctx observer { st with objects := o } = projectState ctx observer st
+          ∧ o.invExt) →
+        ∀ (nid? : Option SeLe4n.ThreadId) (upd : TCB → TCB),
+          (∀ n : SeLe4n.ThreadId, nid? = some n →
+              objectObservable ctx observer n.toObjId = false) →
+          (projectState ctx observer { st with objects := queueNeighbourPatch o nid? upd }
+              = projectState ctx observer st ∧ (queueNeighbourPatch o nid? upd).invExt) := by
+      rintro o ⟨hp, hi⟩ nid? upd hn
+      exact ⟨(queueNeighbourPatch_preserves_projection_high ctx observer st o nid? upd
+                hn hi).trans hp,
+             queueNeighbourPatch_invExt _ _ _ hi⟩
+    rw [endpointQueueRemove_eq_patches endpointId isReceiveQ tid st ep tcb hEp hTcb] at hStep
+    simp only [Except.ok.injEq] at hStep
+    subst hStep
+    exact keyIns _
+      (keyIns _
+        (keyPatch _
+          (keyPatch _ ⟨rfl, hObjInv⟩ tcb.queuePrev (queueUnlinkPredecessor tcb)
+            (fun p hp => endpointSpliceHigh_queuePrev_high ctx observer st endpointId tid tcb
+              ⟨hEpHigh, hTidHigh, hNbr⟩ hTcb (hPair tcb hTcb) hp))
+          tcb.queueNext (queueUnlinkSuccessor tcb)
+          (fun n hn => (hNbr tcb hTcb).2 n hn))
+        endpointId _ hEpHigh)
+      tid.toObjId _ hTidHigh
+
+/-- **WS-RR RR8.8**: the projection half on its own — the name a consumer cites,
+mirroring `endpointQueueRemoveDual_preserves_projection`. -/
+theorem endpointQueueRemove_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (endpointId : SeLe4n.ObjId)
+    (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hHigh : endpointSpliceHigh ctx observer st endpointId tid)
+    (hPair : ∀ t : TCB, lookupTcb st tid = some t → t.queuePPrevAgreesWithPrev)
+    (hObjInv : st.objects.invExt)
+    (hStep : endpointQueueRemove endpointId isReceiveQ tid st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st :=
+  (endpointQueueRemove_preserves_projection_and_invExt ctx observer st st' endpointId
+    isReceiveQ tid hHigh hPair hObjInv hStep).1
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the timeout's object-only prefix is invisible
+to an observer that sees none of the four objects the removal writes.
+
+`abortPendingIpcOnEndpoint` is the removal followed by **one** TCB store, at the
+thread the removal just unblocked — which `endpointSpliceHigh`'s second clause
+already calls non-observable, so the composite needs no hypothesis the removal
+does not.  That the store also stages WS-RR RR7.14's timeout error frame costs
+nothing here: the frame goes into the *same* TCB, and a store at a
+non-observable key is invisible whatever it writes. -/
+theorem abortPendingIpcOnEndpoint_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver)
+    (st st' : SystemState) (epId : SeLe4n.ObjId) (isRecvQ : Bool)
+    (tid : SeLe4n.ThreadId)
+    (hHigh : endpointSpliceHigh ctx observer st epId tid)
+    (hPair : ∀ t : TCB, lookupTcb st tid = some t → t.queuePPrevAgreesWithPrev)
+    (hObjInv : st.objects.invExt)
+    (hStep : abortPendingIpcOnEndpoint epId isRecvQ tid st = .ok st') :
+    projectState ctx observer st' = projectState ctx observer st := by
+  unfold abortPendingIpcOnEndpoint at hStep
+  split at hStep
+  · exact absurd hStep (by simp)
+  · rename_i st1 hRemove
+    obtain ⟨eRemove, iRemove⟩ :=
+      endpointQueueRemove_preserves_projection_and_invExt ctx observer st st1 epId isRecvQ
+        tid hHigh hPair hObjInv hRemove
+    -- the final store is written under a `have`-bound record, which `split`
+    -- cannot open; generalising the object is what lets the store's own frame
+    -- apply, and the *value* is irrelevant — the key is the one the splice
+    -- hypothesis already calls non-observable.
+    have hFinal : ∀ o : KernelObject,
+        (match storeObject tid.toObjId o st1 with
+          | .error e => Except.error e
+          | .ok ((), st2) => Except.ok st2) = Except.ok st' →
+        projectState ctx observer st' = projectState ctx observer st := by
+      intro o h
+      cases hStore : storeObject tid.toObjId o st1 with
+      | error e => rw [hStore] at h; exact absurd h (by simp)
+      | ok pair =>
+          obtain ⟨_, st2⟩ := pair
+          rw [hStore] at h
+          simp only [Except.ok.injEq] at h
+          subst h
+          exact (storeObject_preserves_projection ctx observer st1 st2 tid.toObjId o
+            hHigh.2.1 iRemove hStore).trans eRemove
+    split at hStep
+    · exact absurd hStep (by simp)
+    · exact hFinal _ hStep
+
+/-- **WS-RR RR8.8 (`v0.35.193`)**: the cancellation reclaim's **abort prefix** is
+invisible — the composite `abortHolderProjectionStable` is about.
+
+`abortHolderPendingIpc` is the identity unless the holder is blocked sending or
+calling (`abortHolderPendingIpc_eq_self_of_allowed`), and on those two arms it is
+`abortPendingIpcOnEndpoint` at the endpoint the holder's own `ipcState` names.
+The hypothesis is therefore quantified over that resolution rather than over a
+supplied endpoint: a caller supplies one fact about whatever endpoint the holder
+turns out to be blocked on, which is the shape that makes an under-stated
+hypothesis impossible.
+
+`hPair` is RR8.3's pairing at the holder — the bridge that lets
+`endpointSpliceHigh`'s `queuePPrev` clause reach the `queuePrev` the single
+removal reads; a caller holding `queuePPrevAgreesWithPrev` (the fourth conjunct
+of `dualQueueSystemInvariant`) discharges it through
+`queuePPrevAgreesWithPrev_lookupTcb`. -/
+theorem abortHolderPendingIpc_preserves_projection
+    (ctx : LabelingContext) (observer : IfObserver) (st : SystemState)
+    (holder : SeLe4n.ThreadId)
+    (hHigh : ∀ (holderTcb : TCB) (epId : SeLe4n.ObjId),
+        lookupTcb st holder = some holderTcb →
+        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
+        endpointSpliceHigh ctx observer st epId holder)
+    (hPair : ∀ t : TCB, lookupTcb st holder = some t → t.queuePPrevAgreesWithPrev)
+    (hObjInv : st.objects.invExt) :
+    projectState ctx observer (Lifecycle.Suspend.abortHolderPendingIpc st holder)
+      = projectState ctx observer st := by
+  unfold Lifecycle.Suspend.abortHolderPendingIpc
+  cases hLk : lookupTcb st holder with
+  | none => rfl
+  | some holderTcb =>
+    dsimp only
+    -- both blocking arms are the same program at their own endpoint, so the
+    -- arm analysis states it once rather than twice
+    have harm : ∀ epId : SeLe4n.ObjId,
+        (holderTcb.ipcState = ThreadIpcState.blockedOnSend epId ∨
+          holderTcb.ipcState = ThreadIpcState.blockedOnCall epId) →
+        projectState ctx observer
+            (match abortPendingIpcOnEndpoint epId false holder st with
+             | .ok st' => st'
+             | .error _ => st)
+          = projectState ctx observer st := by
+      intro epId hB
+      cases hAbort : abortPendingIpcOnEndpoint epId false holder st with
+      | error _ => rfl
+      | ok st' =>
+          exact abortPendingIpcOnEndpoint_preserves_projection ctx observer st st' epId
+            false holder (hHigh holderTcb epId hLk hB) hPair hObjInv hAbort
+    cases hIpc : holderTcb.ipcState with
+    | blockedOnSend epId => exact harm epId (Or.inl hIpc)
+    | blockedOnCall epId => exact harm epId (Or.inr hIpc)
+    | ready => rfl
+    | blockedOnReceive _ => rfl
+    | blockedOnNotification _ => rfl
+    | blockedOnReply _ _ => rfl
+end EndpointQueueRemoveProjection
+
+-- ============================================================================
 -- AK6-F.2c: updatePrioritySource + setPriorityOp preservation
 -- ============================================================================
 

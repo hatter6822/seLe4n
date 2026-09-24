@@ -10,6 +10,7 @@
 import SeLe4n.Kernel.API
 import SeLe4n.Kernel.IPC.CrossCore.DispatchInvariant
 import SeLe4n.Kernel.IPC.CrossCore.EndpointReplyDispatchInvariant
+import SeLe4n.Kernel.IPC.Invariant.FaultPreservation
 import SeLe4n.Kernel.IPC.Invariant.Reachability
 
 /-!
@@ -182,6 +183,11 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     (hStackValid1 : ∀ scId serverTid originalOwner,
       replyStackOuterCallerValid (endpointReplyOnCore tid prevCaller msg ec st).1
         scId serverTid originalOwner)
+    -- **`v0.35.157`**: the pop's origin redirect is guarded by the bind's own
+    -- admissibility, and this is the coherence fact that makes the guard sound,
+    -- at the state the pop runs on.
+    (hOriginCoherent1 : redirectedOriginFrameCoherent
+      (endpointReplyOnCore tid prevCaller msg ec st).1 rid prevCaller)
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg and the donation pop
@@ -246,7 +252,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
     ipcInvariantFull_of_exceptDonationOwner_of_no_edge _ prevCaller hExc1 hNoEdge1
   cases hReply : endpointReplyOnCore tid prevCaller msg ec st with
   | mk st1 res1 =>
-      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
+      rw [hReply] at hStep hInv1 hObjInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hOriginCoherent1 hCleanupStack1 hReceiverReady1 hBudgets1 hReplyIdValid1 hCapBadges1 hReturnStage
       cases res1 with
       | error e => simp only [] at hStep; cases hStep
       | ok u =>
@@ -263,7 +269,7 @@ theorem replyRecvBody_preserves_ipcInvariantFull
             have hInv1p : ipcInvariantFull st1p :=
               replyRecvPopDonation_preserves_ipcInvariantFull
                 rid prevCaller st1 st1p returnedSc?
-                hObjInv1 hInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hPop
+                hObjInv1 hInv1 hHolderDonation1 hHolderIdle1 hStackValid1 hOriginCoherent1 hPop
             have hObjInv1p : st1p.objects.invExt :=
               replyRecvPopDonation_preserves_objects_invExt
                 rid prevCaller st1 st1p returnedSc?
@@ -452,6 +458,14 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
             caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
         scId serverTid originalOwner) ∧
+    -- **`v0.35.157`**: the origin redirect's coherence obligation -- the
+    -- binding → head fact at the resolved origin, gated on the trigger, the
+    -- resolver and the distinctness, at the state the pop runs on.
+    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
+      redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid
+          { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
+            caps := #[], badge := cap.badge } (determineExecutingCore st tid) st).1
+        hid callerTid) ∧
     (∀ st1 res, endpointReplyCrossCoreDispatch tid callerTid
         { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo,
           caps := #[], badge := cap.badge } (determineExecutingCore st tid) st
@@ -500,6 +514,13 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
             1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
           caps := #[], badge := replyBadge }
         (determineExecutingCore st tid) st).1 scId serverTid originalOwner) ∧
+    -- **`v0.35.157`**: the origin redirect's coherence obligation, as in
+    -- `replyStage`, at the state the pop between the legs runs on.
+    redirectedOriginFrameCoherent (endpointReplyOnCore tid prevCaller
+        { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract
+            1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size,
+          caps := #[], badge := replyBadge }
+        (determineExecutingCore st tid) st).1 rid prevCaller ∧
     -- **WS-OD OD4.4**: the receive leg's pre-receive cleanup pops whatever
     -- donation the receiver abandoned; the pop resolves its new owner off that
     -- context's own reply stack, at the state the reply leg **and the donation
@@ -579,23 +600,63 @@ structure syscallDispatchQuiescence (decoded : SyscallDecodeResult)
           st2 = .ok ((), st3) →
         st3.objects.invExt))
 
-  /-- WS-RR RR4.14 — **stated confinement**: the answered caller carries no
-      pending fault.  Since RR4 the `.reply` arm is seL4's `doReplyTransfer`,
-      which branches on the answered thread's `tcbFault`; the fault branch has
-      its own bundle theorem (`faultReplyOnCore_preserves_ipcInvariantFull`,
-      `IPC/Invariant/FaultPreservation.lean`) but composing it here needs a
-      lemma the reply chain does not yet carry — that the cross-core reply
-      leaves its target `.ready`, hence `passiveServerIdleAllowed`, which is
-      what the fault reply's abandon arm consumes at the *post*-state.  Rather
-      than thread a post-state hypothesis (which the RR3 de-threading gate
-      forbids) or leave the branch silently uncovered, the payoff is confined
-      here and the composition is registered as debt in
-      `docs/REGISTERED_DEBT.md`.  It is a pre-state fact, so a caller
-      discharges it before the step. -/
-  replyNoPendingFault : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
+  /-- **WS-RR RR8.16 (`v0.35.195`) — the faulted caller's stage.**
+
+      Since RR4 the `.reply` arm is seL4's `doReplyTransfer`, which branches on
+      the answered thread's `tcbFault`.  RR4.14 **confined** the payoff to the
+      unfaulted branch (`replyNoPendingFault`, retired here) because composing
+      the fault branch needed a lemma the reply chain did not carry — that the
+      cross-core reply leaves its target `.ready`, hence
+      `passiveServerIdleAllowed`, which the fault reply's abandon arm consumes at
+      the *post*-state.  `endpointReplyCrossCoreDispatch_ok_target_ready` reads
+      that off the **outcome**, so nothing post-state is threaded and the branch
+      is covered rather than excluded.
+
+      What a caller supplies is the five conditions the reply dispatch's own
+      payoff already carries, stated at the **empty** message this seam replies
+      with.  They are the same five predicates `replyStage` states, at this
+      branch's own argument — one field per branch, which is the shape this pack
+      already has for `callStage`, `replyStage` and `replyRecvStage`.  They are
+      deliberately **not** derived from `replyStage`'s: `endpointReplyOnCore`
+      reads the message in its two size guards as well as in its store, so the
+      two post-states agree off the answered caller's `pendingMessage` only when
+      the *real* message also fits — a further pre-state condition, plus a
+      congruence per predicate, to collapse two independent branches into one.
+      The payoff's fault branch never evaluates the real message, so the
+      independence is the honest shape.  Every condition is a
+      pre-state-computable expression, so the RR3 de-threading discipline is
+      respected.
+
+      Gated on the branch: a caller owes nothing when the answered thread carries
+      no fault, which is what keeps the pack's own inhabitation witness (whose
+      TCBs carry `pendingFault = none`) discharging it by contradiction. -/
+  replyFaultStage : ∀ rid (r : Reply) (callerTid : SeLe4n.ThreadId),
     decoded.syscallId = .reply → cap.target = .replyCap rid →
     st.getReply? rid = some r → r.caller = some callerTid →
-    threadHasPendingFault st callerTid = false
+    threadHasPendingFault st callerTid = true →
+    (∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc : SeLe4n.SchedContextId),
+      (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1.objects[s.toObjId]? = some (.tcb sTcb) →
+      sTcb.schedContextBinding = .donated sc callerTid →
+      ∃ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid ∧
+        replyFrameHeadHolder? (endpointReplyOnCore tid callerTid IpcMessage.empty
+            (determineExecutingCore st tid) st).1 hid = some (sc, s)) ∧
+    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
+      replyFrameHeadHolderDonation (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1 hid callerTid) ∧
+    (∀ (hid : SeLe4n.ReplyId) (scId : SeLe4n.SchedContextId) (holder : SeLe4n.ThreadId),
+      answeredReplyObject? st callerTid = some hid →
+      replyFrameHeadHolder? (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1 hid = some (scId, holder) →
+      ∀ tcb, (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1.getTcb? holder = some tcb →
+        passiveServerIdleAllowed tcb.ipcState) ∧
+    (∀ scId serverTid originalOwner,
+      replyStackOuterCallerValid (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1 scId serverTid originalOwner) ∧
+    (∀ hid : SeLe4n.ReplyId, answeredReplyObject? st callerTid = some hid →
+      redirectedOriginFrameCoherent (endpointReplyOnCore tid callerTid IpcMessage.empty
+          (determineExecutingCore st tid) st).1 hid callerTid)
 
 /-- WS-RR RR3.24 (**the dispatch payoff**): every syscall `dispatchWithCap`
 routes preserves `ipcInvariantFull`.  The capability-only tier delegates to
@@ -877,34 +938,58 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
               | some callerTid =>
                   simp only [replyAnsweredCaller?_of_getReply st rid reply hR, hCaller]
                     at hStep
-                  obtain ⟨hDon, hHolderDon, hHolderIdle, hReplyStack, hReplyInvExt⟩ :=
-                    hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
-                  -- WS-RR RR4.14: the seam's ordinary branch, under the pack's
-                  -- stated confinement.  On an unfaulted caller it is the
-                  -- pre-RR4 body verbatim, so the rest of this proof is
-                  -- unchanged.
-                  rw [replyTransferOnCore_of_no_fault tid callerTid decoded.msgInfo
-                    decoded.msgRegs _ _ st
-                    (hPack.replyNoPendingFault rid reply callerTid hSy hTgt hR hCaller)] at hStep
-                  have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
-                    tid callerTid
-                    { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
-                    (determineExecutingCore st tid) st hInv hObjInv
-                    hDon hHolderDon hBudgets hHolderIdle hReplyStack
-                  cases hReply : endpointReplyCrossCoreDispatch tid callerTid
+                  -- **WS-RR RR8.16**: the seam branches on the answered thread's
+                  -- `tcbFault` (seL4's `doReplyTransfer`), and BOTH branches are
+                  -- covered since `v0.35.195`.  RR4.14 confined the payoff to
+                  -- the unfaulted one; what unblocked the other is
+                  -- `endpointReplyCrossCoreDispatch_ok_target_ready`, which reads
+                  -- the abandon arm's idle-state obligation off the dispatch's
+                  -- own outcome instead of threading a post-state hypothesis.
+                  by_cases hF : threadHasPendingFault st callerTid = true
+                  · rw [replyTransferOnCore_of_fault tid callerTid decoded.msgInfo
+                      decoded.msgRegs _ _ st hF] at hStep
+                    obtain ⟨hFDon, hFHolderDon, hFHolderIdle, hFStack, hFOrigin⟩ :=
+                      hPack.replyFaultStage rid reply callerTid hSy hTgt hR hCaller hF
+                    have hFaultInv := faultReplyOnCore_preserves_ipcInvariantFull tid
+                      callerTid decoded.msgInfo decoded.msgRegs
+                      (determineExecutingCore st tid) st hInv hObjInv hBudgets hFDon
+                      hFHolderDon hFHolderIdle hFStack hFOrigin
+                    cases hFR : faultReplyOnCore tid callerTid decoded.msgInfo decoded.msgRegs
+                        (determineExecutingCore st tid) st with
+                    | mk stF resF =>
+                        rw [hFR] at hStep hFaultInv
+                        cases resF with
+                        | error e => simp only [] at hStep; cases hStep
+                        | ok uF =>
+                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            rw [← hStep]
+                            exact hFaultInv
+                  · rw [Bool.not_eq_true] at hF
+                    obtain ⟨hDon, hHolderDon, hHolderIdle, hReplyStack, hOriginCoh,
+                      hReplyInvExt⟩ := hPack.replyStage rid reply callerTid hSy hTgt hR hCaller
+                    -- On an unfaulted caller the seam is the pre-RR4 body verbatim,
+                    -- so the rest of this branch is unchanged.
+                    rw [replyTransferOnCore_of_no_fault tid callerTid decoded.msgInfo
+                      decoded.msgRegs _ _ st hF] at hStep
+                    have hReplyInv := endpointReplyCrossCoreDispatch_establishes_ipcInvariantFull
+                      tid callerTid
                       { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
-                      (determineExecutingCore st tid) st with
-                  | mk st1 res1 =>
-                      rw [hReply] at hStep hReplyInv
-                      cases res1 with
-                      | error e => simp only [] at hStep; cases hStep
-                      | ok u1 =>
-                          simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
-                          have hObjInv1 : st1.objects.invExt :=
-                            hReplyInvExt st1 _ hReply
-                          rw [← hStep]
-                          exact stageDeliveredMessage_preserves_ipcInvariantFull st1
-                            callerTid 0 hObjInv1 hReplyInv
+                      (determineExecutingCore st tid) st hInv hObjInv
+                      hDon hHolderDon hBudgets hHolderIdle hReplyStack hOriginCoh
+                    cases hReply : endpointReplyCrossCoreDispatch tid callerTid
+                        { registers := extractMessageRegisters decoded.msgRegs decoded.msgInfo, caps := #[], badge := cap.badge }
+                        (determineExecutingCore st tid) st with
+                    | mk st1 res1 =>
+                        rw [hReply] at hStep hReplyInv
+                        cases res1 with
+                        | error e => simp only [] at hStep; cases hStep
+                        | ok u1 =>
+                            simp only [Except.ok.injEq, Prod.mk.injEq, true_and] at hStep
+                            have hObjInv1 : st1.objects.invExt :=
+                              hReplyInvExt st1 _ hReply
+                            rw [← hStep]
+                            exact stageDeliveredMessage_preserves_ipcInvariantFull st1
+                              callerTid 0 hObjInv1 hReplyInv
         all_goals try cases hStep
       case cspaceMint =>
         cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -1064,8 +1149,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
           | ok triple =>
               obtain ⟨rid, prevCaller, replyBadge⟩ := triple
               simp only [hRR] at hStep
-              obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hCleanupStack1,
-                  hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
+              obtain ⟨hNoEdge1, hHolderDon1, hHolderIdle1, hStackValid1, hOriginCoh1,
+                  hCleanupStack1, hReady1, hBudgets1, hRidFresh1, hBadges1, hRetStage⟩ :=
                 hPack.replyRecvStage rid prevCaller replyBadge epId hSy hTgt hRR
               cases hBody : replyRecvBody epId tid rid prevCaller
                   { registers := (extractMessageRegisters decoded.msgRegs decoded.msgInfo).extract 1 (extractMessageRegisters decoded.msgRegs decoded.msgInfo).size, caps := #[], badge := replyBadge }
@@ -1079,7 +1164,8 @@ theorem dispatchWithCap_preserves_ipcInvariantFull
                     epId tid rid prevCaller _ gate.cspaceRoot decoded.capRecvSlot
                     (determineExecutingCore st tid) st stB summary
                     hPack.reachable hNoEdge1 hHolderDon1 hHolderIdle1 hStackValid1
-                    hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage hBody
+                    hOriginCoh1 hCleanupStack1 hReady1 hBudgets1 hRidFresh1 hBadges1 hRetStage
+                    hBody
                   rw [← hStep]
                   exact stageDeliveredMessage_preserves_ipcInvariantFull stB tid _
                     hObjInvB hInvB
@@ -2013,7 +2099,7 @@ private theorem witnessCapOnly :
     simp only [decodeLifecycleRetypeArgs, witnessDecoded, requireMsgReg, bind,
       Except.bind] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -2158,10 +2244,8 @@ private theorem witnessCapOnlySignal :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedSignal, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedSignal, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedSignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2272,7 +2356,7 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
     (hTid : (witnessTid.toObjId == target) = false) :
     retypeTargetDetached witnessSt3 target := by
   have hTargetEmpty := witnessSt3_lookup_none target hSc hTid
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
   · intro sc; rw [hTargetEmpty]; simp
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
@@ -2281,8 +2365,10 @@ private theorem witnessSt3_detached_of (target : SeLe4n.ObjId)
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
+  -- `v0.35.164`: `tcbNotBound`, vacuous on the empty slot like its neighbours.
+  · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   -- **WS-HP HP10.5**: the target holds nothing in this witness, so the origin
-  -- clause is vacuous exactly as its seven neighbours above are.
+  -- clause is vacuous exactly as its eight neighbours above are.
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro t hLk; rw [hTargetEmpty] at hLk; cases hLk
   · intro tid tcb hLk
@@ -2321,7 +2407,7 @@ private theorem witnessCapOnlyRetype :
       bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
     cases hDec
     exact witnessSt3_detached_of _ (by decide) (by decide)
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -2394,10 +2480,10 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     simp only [decodeLifecycleRetypeArgs, hRegs, requireMsgReg, bind,
       Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, hRegs, requireMsgReg, bind,
-      Except.bind] at hDec
-    cases hDec
+  · intro _ _ _ hRes
+    simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
+      requireMsgReg, bind, Except.bind] at hRes
+    cases hRes
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2584,13 +2670,8 @@ private theorem witnessCapOnlyMint :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedMint, requireMsgReg,
       bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal
-    simp only [decodeSchedContextBindArgs, witnessDecodedMint, requireMsgReg,
-      bind, Except.bind, pure, Except.pure] at hDec
-    cases hDec
-    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
-    rw [dif_pos (by decide)] at hVal
-    cases hVal
+  · intro _ _ hSy _
+    simp [witnessDecodedMint] at hSy
   · intro scObj _ hTgt
     simp [witnessCap] at hTgt
   · intro objId _ hTgt
@@ -2649,10 +2730,8 @@ private theorem witnessCapOnlyDeclassifySignal :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedDeclassifySignal,
       requireMsgReg, bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedDeclassifySignal,
-      requireMsgReg, bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedDeclassifySignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2872,10 +2951,8 @@ private theorem witnessCapOnlyReply :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedReply, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedReply, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedReply] at hSy
   · intro scObj _ hTgt
     simp [witnessCapReply] at hTgt
   · intro objId _ hTgt
@@ -2911,14 +2988,20 @@ theorem syscallDispatchQuiescence_inhabited_reply :
     simp [witnessDecodedReply] at hSy
   · intro rid prevCaller replyBadge epId hSy
     simp [witnessDecodedReply] at hSy
-  · intro rid r callerTid _hSy _hTgt hR hCaller
-    -- WS-RR RR4.14: the witness state carries no faulted thread at all,
-    -- so the confinement holds for whatever caller the reply resolves to.
-    exact witnessSt4_no_pendingFault callerTid
+  · intro rid r callerTid _hSy _hTgt hR hCaller hF
+    -- **WS-RR RR8.16**: the witness state carries no faulted thread at all, so
+    -- the faulted branch is not the one this witness takes and its stage is
+    -- discharged by contradiction.  That is what the RR4.14 confinement field
+    -- (`replyNoPendingFault`, retired at `v0.35.195`) used to say positively;
+    -- the fact it rested on is unchanged and still consumed here.
+    exact absurd (witnessSt4_no_pendingFault callerTid) (by rw [hF]; simp)
 
-/-- A `.schedContextBind` decode whose one register decodes (thread id 5,
-valid): the bind field's donation conclusion is read off the stored binding
-under its own arm. -/
+/-- A `.schedContextBind` decode whose one register decodes (capability address
+5 — `v0.35.204`; a raw thread id until then): the bind field's donation
+conclusion is read off the stored binding under its own arm, for **every** thread
+the resolver could name, since the witness store holds no `.donated` binding at
+all.  That is why the witness needs no CSpace: the field is inhabited by its
+conclusion, not by refuting its antecedent. -/
 private def witnessDecodedBind : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
     syscallId := .schedContextBind, msgRegs := #[⟨5⟩] }
@@ -2936,7 +3019,7 @@ private theorem witnessCapOnlyBind :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedBind, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -2950,8 +3033,9 @@ private theorem witnessCapOnlyBind :
     simp [witnessCap] at hTgt
 
 /-- **The bind donation field is exercised under its own arm**: the
-`.schedContextBind` decode fires, the register decodes, and the conclusion
-is read off the stored binding. -/
+`.schedContextBind` decode fires, the register decodes, and the conclusion is
+read off the stored binding for every thread a caller's CSpace could resolve
+MR0 to (`v0.35.204`: the operand is a TCB capability address now). -/
 theorem syscallDispatchQuiescence_inhabited_bind :
     syscallDispatchQuiescence witnessDecodedBind witnessTid witnessGateBind
       witnessCap witnessSt3 := by
@@ -2997,10 +3081,8 @@ private theorem witnessCapOnlyUnbind :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedUnbind, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedUnbind, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedUnbind] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -3063,10 +3145,8 @@ private theorem witnessCapOnlySuspend :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedSuspend, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedSuspend, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedSuspend] at hSy
   · intro scObj hSy hTgt
     simp [witnessDecodedSuspend] at hSy
   · intro objId _ hTgt vtid hVal

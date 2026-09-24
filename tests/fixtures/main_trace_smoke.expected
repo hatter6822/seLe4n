@@ -143,7 +143,7 @@
 [PIP-002] A3 send msgInfo.length=2: true
 [PIP-003] A3 send first msgReg=42: true
 [PIP-004] A4 syscallEntryChecked send success, endpoint has sender: true
-[PIP-005] A5 post-dispatch invariants preserved (29 checks)
+[PIP-005] A5 post-dispatch invariants preserved (32 checks)
 [PIP-006] A6 trace equivalence: objects=true scheduler=true
 [MOV-001] cspaceMove decode ok: src=slot0 dst=slot2
 [MOV-002] cspaceMove source empty: true
@@ -190,7 +190,8 @@
 [SCO-020a] successor pprev inherited=true dual_dequeue_ok=true
 [SCO-020b] reclaim holder_ready=true holder_unbound=true caller_rebound=true holder_spliced=true
 [SCO-020c] reclaim allowed_holder untouched=true unbound=true queue_intact=true
-[SCO-020d] reclaim holder_queued=true holder_runnable=true victim_descheduled=true
+[SCO-020d] reclaim blocked_holder_parked=true holder_unbound=true victim_descheduled=true
+[SCO-020e] reclaim queued_holder queued_before=true queued_after=false holder_unplaced=true holder_core_named=true
 [SCO-021] endpointQueueRemove not-found: SeLe4n.Model.KernelError.objectNotFound
 [SCO-022] endpointQueueRemove no-endpoint: SeLe4n.Model.KernelError.objectNotFound
 [SCO-023] timeoutThread blocked: ready=true threadReady=true budgetCleared=true errCode=true linksCleared=true
@@ -233,7 +234,7 @@
 [PTY-001] parameterized topology ok: medium (threads=4 prio=10 radix=8 asids=2 svcs=2)
 [PTY-001] parameterized topology ok: large (threads=8 prio=100 radix=16 asids=4 svcs=4)
 [XVAL-001] MessageInfo roundtrip ok: encoded=2386218 length=42 extraCaps=2 label=4660
-[XVAL-002] SyscallId roundtrip ok: all 35 variants
+[XVAL-002] SyscallId roundtrip ok: all 36 variants
 [XVAL-003] CSpaceMintArgs roundtrip ok: regs=#[{ val := 10 }, { val := 20 }, { val := 7 }, { val := 999 }]
 [XVAL-004] MessageInfo bit layout ok: len=42 caps=384 label=2560
 [XVAL-005] SetIPCBufferArgs roundtrip ok: regs=#[{ val := 512 }]

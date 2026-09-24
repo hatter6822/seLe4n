@@ -30,8 +30,13 @@ private def setBootRqCur (s : SchedulerState) (rq : SeLe4n.Kernel.RunQueue)
   (s.setRunQueueOnCore bootCoreId rq).setCurrentOnCore bootCoreId cur
 
 def rootSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 0 }
-def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 0, depth := 0 }
-def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 1, depth := 0 }
+-- **WS-RR RR8.16** (`v0.35.201`): CNode ⟨10⟩ consumes `guardWidth + radixWidth`
+-- = 3 bits per resolution hop, so a path into it carries at least that depth.
+-- The alias carries one bit more and a CPtr whose low bit is shifted out, so it
+-- is a *different* CPtr naming slot 0 — where before the two aliased only
+-- because a zero-width radix masks every CPtr to slot 0.
+def rootPath : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 0, depth := 3 }
+def rootPathAlias : SeLe4n.Kernel.CSpacePathAddr := { cnode := ⟨10⟩, cptr := SeLe4n.CPtr.ofNat 1, depth := 4 }
 def lifecycleAuthSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨10⟩, slot := SeLe4n.Slot.ofNat 5 }
 def mintedSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 3 }
 def siblingSlot : SeLe4n.Kernel.CSpaceAddr := { cnode := ⟨11⟩, slot := SeLe4n.Slot.ofNat 4 }
@@ -74,11 +79,16 @@ def bootstrapState : SystemState :=
       ipcState := .ready
       threadState := .Ready  -- V8-G: In run queue
     })
+    -- **WS-RR RR8.16** (`v0.35.201`): eight addressable slots, because this
+    -- fixture holds capabilities at 0, 5 and 6 and the harness installs one at
+    -- 7.  It declared `radixWidth := 0` — one slot — so `cspaceSlotCountBounded`
+    -- was false of the harness's own root CSpace and every capability but slot
+    -- 0's was unreachable by any CPtr.
     |>.withObject ⟨10⟩ (.cnode {
-      depth := 0
+      depth := 3
       guardWidth := 0
       guardValue := 0
-      radixWidth := 0
+      radixWidth := 3
       slots := SeLe4n.UniqueSlotMap.ofListWF
         [ (SeLe4n.Slot.ofNat 0, {
             target := .object ⟨1⟩
@@ -106,7 +116,9 @@ def bootstrapState : SystemState :=
       ipcState := .ready
       threadState := .Ready  -- V8-G: In run queue
     })
-    |>.withObject ⟨11⟩ (.cnode CNode.empty)
+    -- **WS-RR RR8.16** (`v0.35.201`): `CNode.empty` is `radixWidth := 0`, one
+    -- slot; the mint/copy scenarios below install at 3, 4 and 7.
+    |>.withObject ⟨11⟩ (.cnode (CNode.mk' 3 0 0 3))
     |>.withObject ⟨20⟩ (.vspaceRoot { asid := ⟨1⟩, mappings := {} })
     |>.withObject demoEndpoint (.endpoint {})
     |>.withObject demoNotification (.notification { state := .idle, waitingThreads := SeLe4n.NoDupList.empty, pendingBadge := none })
@@ -1108,8 +1120,10 @@ private def runUntypedMemoryTrace (counter : IO.Ref Nat) (st1 : SystemState) : I
     st1.withObjectStored deviceUntypedId (.untyped {
           regionBase := (SeLe4n.PAddr.ofNat 0x200000), regionSize := 8192,
           watermark := 0, children := [], isDevice := true })
+        -- WS-RR RR8.16 (`v0.35.201`): eight addressable slots — this variant
+        -- holds capabilities at 0, 5, 6 and 7.
         |>.withObjectStored ⟨10⟩ (.cnode {
-          depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0,
+          depth := 3, guardWidth := 0, guardValue := 0, radixWidth := 3,
           slots := SeLe4n.UniqueSlotMap.ofListWF [
             (SeLe4n.Slot.ofNat 0, { target := .object ⟨1⟩, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none }),
             (SeLe4n.Slot.ofNat 5, { target := .object ⟨12⟩, rights := AccessRightSet.ofList [.read, .write, .retype], badge := none }),
@@ -1594,8 +1608,10 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   let stKsd : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject ksdEpId (.endpoint {})
+      -- WS-RR RR8.16 (`v0.35.201`): two addressable slots — the decoded
+      -- register arguments below name destination slot 1.
       |>.withObject ksdCnodeId (.cnode {
-        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+        depth := 1, guardWidth := 0, guardValue := 0, radixWidth := 1
         slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, { target := .object ksdEpId, rights := AccessRightSet.ofList [.read, .write, .grant], badge := none })
         ]
@@ -1677,7 +1693,12 @@ private def runSyscallDispatchTrace (counter : IO.Ref Nat) (st1 : SystemState) :
   match SeLe4n.Kernel.Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs retypeDecoded with
   | .error e => IO.println s!"[KSD-004] lifecycleRetype decode error: {reprStr e}"
   | .ok retypeArgs =>
-      let newObj := SeLe4n.Kernel.objectOfKernelType retypeArgs.newType retypeArgs.size
+      -- `v0.35.187`: the harness builds the replacement the live dispatch
+      -- builds, stamped identity included -- the wrappers refuse an
+      -- unstamped one, so an unstamped fixture would measure the refusal
+      -- rather than the retype.
+      let newObj := (SeLe4n.Kernel.objectOfKernelType retypeArgs.newType
+        retypeArgs.size).withIdentity retypeArgs.targetObj
       let retypeCap : SeLe4n.Model.Capability := {
         target := .object (ObjId.ofNat retypeArgs.targetObj.toNat)
         rights := AccessRightSet.ofList [.read, .write, .retype]
@@ -1885,8 +1906,10 @@ private def runCspaceMoveTrace (counter : IO.Ref Nat) (_st1 : SystemState) : IO 
   let stMove : SystemState :=
     (BootstrapBuilder.empty
       |>.withObject moveEpId (.endpoint {})
+      -- WS-RR RR8.16 (`v0.35.201`): four addressable slots — the decoded move
+      -- arguments below name destination slot 2.
       |>.withObject moveCnId (.cnode {
-        depth := 0, guardWidth := 0, guardValue := 0, radixWidth := 0
+        depth := 2, guardWidth := 0, guardValue := 0, radixWidth := 2
         slots := SeLe4n.UniqueSlotMap.ofListWF [
           (SeLe4n.Slot.ofNat 0, ({ target := .object moveEpId, rights := AccessRightSet.ofList [.read, .write], badge := none } : Capability))
         ]
@@ -2640,24 +2663,50 @@ private def runTimeoutEndpointTrace (_counter : IO.Ref Nat) (st1 : SystemState) 
     | none => false
   IO.println s!"[SCO-020c] reclaim allowed_holder untouched={recvHolderUntouched} unbound={recvHolderUnbound} queue_intact={recvQueueUntouched}"
 
-  -- SCO-020d (WS-OD OD1.7): **and the reclaim puts the aborted holder back on a
-  -- run queue.**  SCO-020b shows the abort ends the holder's call; on its own
-  -- that left the holder `.ready`, spliced off its endpoint and on *no* run
-  -- queue, with every recovery path closed — `.tcbResume` demands `.Inactive`,
-  -- `schedContextBind` re-buckets only an already-queued thread, and
-  -- `chooseThreadOnCore` never scans ready TCBs.  The server was stranded
-  -- permanently.  The cross-core composite now places it, on the **holder's**
-  -- home core, which this fixture deliberately makes a *different* core from the
-  -- victim's: core 1 rather than the boot core.  So the run-queue write the
-  -- reclaim performs is one the victim's own deschedule does not cover, which is
-  -- why `cancelIpcBlockingOnCoreSchedLockSet` names it.
+  -- SCO-020d (`v0.35.158`; WS-OD OD1.7 until then): **and the reclaim takes the
+  -- holder it unbound OFF the scheduler.**  SCO-020b shows the abort ends the
+  -- holder's call, leaving it `.ready`, `.unbound` and spliced off its endpoint;
+  -- OD1.7 then placed it on its home core's run queue, where an unbound thread
+  -- runs at its legacy TCB band charged to no reservation — the temporal-isolation
+  -- break PR #897's review measured on the live suspend.  The reclaim's scheduler
+  -- step is now the deschedule every other donation pop performs.  On THIS
+  -- fixture the holder was blocked, hence placed nowhere, so the step is the
+  -- identity: the holder stays parked, recoverable by its own manager.  The holder
+  -- is pinned to core 1 so that the placement the next line removes from is one
+  -- the victim's own deschedule (core 0) does not cover — which is why
+  -- `cancelIpcBlockingOnCoreSchedLockSet` names it.
   let holderPinned : TCB := { holderTcb with cpuAffinity := some ⟨1, by decide⟩ }
   let stPin := stR.withObjectStored hTid.toObjId (.tcb holderPinned)
-  let stWoken := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
-  let holderQueued := (stWoken.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
-  let holderRunnable := SeLe4n.Kernel.runnableOnSomeCore stWoken hTid
-  let victimDescheduled := !((stWoken.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
-  IO.println s!"[SCO-020d] reclaim holder_queued={holderQueued} holder_runnable={holderRunnable} victim_descheduled={victimDescheduled}"
+  let stParked := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stPin).1
+  let parkedUnplaced := !SeLe4n.Kernel.runnableOnSomeCore stParked hTid
+    && !SeLe4n.Kernel.runningOnSomeCore stParked hTid
+  let parkedUnbound := match stParked.getTcb? hTid with
+    | some t => t.schedContextBinding == SeLe4n.Kernel.SchedContextBinding.unbound
+    | none => false
+  let victimDescheduled := !((stParked.scheduler.runQueueOnCore ⟨0, by decide⟩).contains vTid)
+  IO.println s!"[SCO-020d] reclaim blocked_holder_parked={parkedUnplaced} holder_unbound={parkedUnbound} victim_descheduled={victimDescheduled}"
+
+  -- SCO-020e (`v0.35.158`): **the queued holder — the case the wake never
+  -- touched.**  The same reclaim with the holder `.ready` and QUEUED on core 1
+  -- while holding the victim's donated reservation: the ordinary passive server
+  -- servicing a request when its client is suspended.  The abort is inert, the
+  -- pop unbinds the server, and the deschedule takes it off core 1's run queue —
+  -- where OD1.7's wake, whose guards declined a queued thread, left it running
+  -- `.unbound` on nobody's budget.  The resolver names the core the step wrote.
+  let holderReady : TCB := { holderPinned with ipcState := .ready, queuePPrev := none }
+  let epIdle : Endpoint := { sendQ := {}, receiveQ := {} }
+  let stReady := stR.withObjectStored epH (.endpoint epIdle)
+      |>.withObjectStored hTid.toObjId (.tcb holderReady)
+  let stQueued := SeLe4n.Kernel.enqueueRunnableOnCore stReady ⟨1, by decide⟩ hTid
+  let queuedBefore := (stQueued.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let stDesch := (SeLe4n.Kernel.cancelIpcBlockingOnCore vTid victimTcb ⟨0, by decide⟩ stQueued).1
+  let queuedAfter := (stDesch.scheduler.runQueueOnCore ⟨1, by decide⟩).contains hTid
+  let holderUnplaced := !SeLe4n.Kernel.runnableOnSomeCore stDesch hTid
+    && !SeLe4n.Kernel.runningOnSomeCore stDesch hTid
+  let holderCoreNamed := decide (SeLe4n.Kernel.cancelUnboundHolderCore? stQueued
+    (SeLe4n.Kernel.cancelIpcBlockingMigrated vTid victimTcb stQueued) vTid victimTcb
+      = some ⟨1, by decide⟩)
+  IO.println s!"[SCO-020e] reclaim queued_holder queued_before={queuedBefore} queued_after={queuedAfter} holder_unplaced={holderUnplaced} holder_core_named={holderCoreNamed}"
 
   -- SCO-021: endpointQueueRemove — thread not found error
   let badTid : SeLe4n.ThreadId := ⟨9999⟩

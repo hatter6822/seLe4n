@@ -155,13 +155,24 @@ question differently. -/
 theorem getCurrentPriority_eq_threadBasePriority (st : SystemState) (tcb : TCB) :
     getCurrentPriority st tcb = st.threadBasePriority tcb := rfl
 
-/-- WS-OD (v0.35.3): a **donated** thread's current priority is its own,
-whatever the donor's reservation holds. -/
-@[simp] theorem getCurrentPriority_donated (st : SystemState) (tcb : TCB)
-    {scId : SeLe4n.SchedContextId} {owner : SeLe4n.ThreadId}
-    (h : tcb.schedContextBinding = .donated scId owner) :
-    getCurrentPriority st tcb = tcb.priority := by
-  simp [getCurrentPriority, SystemState.threadBasePriority, h]
+/-- WS-OD (v0.35.3), restated unconditionally at `v0.35.156`: a thread's current
+priority is its own `TCB.priority` at **every** binding.
+
+This was `getCurrentPriority_donated`, which took a `.donated` binding as a
+hypothesis: the arm WS-OD singled out when the `.bound` arm still read the
+reservation.  Since the one-home collapse (`v0.35.133`) no arm reads one, so the
+hypothesis narrowed nothing and the compiler said so (an unused variable and an
+unused simp argument).  It is retired for the reason `v0.35.133` gave for the
+resolver's arm lemmas rather than kept beside this: a name kept past its
+hypothesis teaches a false dependency -- a reader would go on believing that
+only a *donee's* current priority is its own.
+
+Not a `simp` lemma, deliberately: `getCurrentPriority` is what the priority
+management operations branch on, and an unconditional rewrite of it would
+change what every downstream `simp` sees of them -- the retired form fired on no
+goal that lacked its hypothesis, so this keeps the simp set it leaves behind. -/
+theorem getCurrentPriority_eq_priority (st : SystemState) (tcb : TCB) :
+    getCurrentPriority st tcb = tcb.priority := rfl
 
 /-- AK8-E (WS-AK / C-M06): Error-surfacing variant of `getCurrentPriority`.
 
@@ -434,6 +445,24 @@ def migrateRunQueueBucket (st : SystemState) (tid : SeLe4n.ThreadId)
     (newPriority : SeLe4n.Priority) :
     migrateRunQueueBucket st tid newPriority
       = migrateRunQueueBucketOnCore st tid newPriority bootCoreId := rfl
+
+/-- **`v0.35.167` (WS-RR RR8.12 Cut C3b-i): the bucket migration moves no
+replenish entry.**
+
+It writes one run queue and nothing else, so a priority change's scheduler
+footprint declares **no** replenish-queue member — and a footprint that declares
+one it does not write is wider than its operation, which costs the arm the lock
+contention SM8.D's CC-5 measures.  The exactness half of that declaration: the
+`_replenishQueueOnCore` frames the `.call` / `.reply` / `.receive` arms carry for
+the same reason. -/
+@[simp] theorem migrateRunQueueBucketOnCore_replenishQueueOnCore (st : SystemState)
+    (tid : SeLe4n.ThreadId) (newPriority : SeLe4n.Priority) (homeCore c : Concurrency.CoreId) :
+    (migrateRunQueueBucketOnCore st tid newPriority homeCore).scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  unfold migrateRunQueueBucketOnCore
+  split
+  · exact SchedulerState.setRunQueueOnCore_replenishQueueOnCore _ _ _ _
+  · rfl
 
 /-- D2-E: Set the scheduling priority of a target thread.
 

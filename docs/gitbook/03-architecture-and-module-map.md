@@ -292,6 +292,7 @@ inventory was written:
   - CSpace transitions (`lookup`, `insert`, `mint`, `delete`, `revoke`, `copy`, `move`, CDT-aware revoke, streaming BFS revoke).
   - Node-stable CDT integration: slot↔node mapping (`cdtSlotNode`/`cdtNodeSlot`), move-as-pointer-update semantics, delete-time mapping detachment to avoid stale slot reuse aliasing, and strict revoke reporting (`cspaceRevokeCdtStrict`) that returns first descendant-delete failure context.
   - Streaming BFS revoke (`cspaceRevokeCdtStreaming`): level-by-level BFS traversal via `streamingRevokeBFS`, eliminating full `descendantsOf` materialization. Preserves `capabilityInvariantBundle` with proved step and composed preservation theorems.
+  - **The syscall arm (WS-RR RR8.16, `v0.35.190`)**: `SyscallId.cspaceRevoke` dispatches `cspaceRevokeCdt` — the family had no ABI path at all before it. The scaffold's case analysis (`revokeCdtScaffold_ok_decompose`) and the fold's induction (`revokeCdtFold_induct`, `revokeCdtMaterializedTraversal_ok_induct`) live here, **predicate-free**, so the capability bundle's preservation argument and `ipcInvariantFull`'s are one answer rather than two; `revokeCdtFoldBody` moved here with them and `revokeCdtMaterializedTraversal` is defined through it.
 - `SeLe4n/Kernel/Capability/Invariant.lean` (re-export hub)
   - `Invariant/Defs.lean` — core invariant definitions, transfer theorems, depth consistency; AN4-F.4 `RetypeTarget` subtype + `cleanupHookDischarged` predicate; AN4-F.5 `CapabilityInvariantBundle` named-projection structure + bridge + `@[simp]` abbrevs.
   - `Invariant/Authority.lean` — authority reduction, attenuation, badge routing consistency.
@@ -408,7 +409,7 @@ equivalence theorems (M-01), error asymmetry documentation (L-18).
 ### Lifecycle subsystem
 
 - `SeLe4n/Kernel/Lifecycle/Operations.lean` — thin re-export hub after AN4-G.5 split (~54 LOC).
-  - `Operations/Cleanup.lean` — cleanup primitives (`lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences`).
+  - `Operations/Cleanup.lean` — cleanup primitives (`lifecycleRetypeAuthority`, `removeThreadFromQueue`, `spliceOutMidQueueNode`, `removeFromAll{Endpoint,Notification}Queues`, `cleanupDonatedSchedContext`, `cleanupTcbReferences`, and since `v0.35.164` the per-core donation-cancellation arms `cancelBoundDonationOnCore` / `cancelDonatedDonationOnCore` with their dispatcher `cancelDonationArmOnCore`, run by the destroy path and pinned to the suspend's G3).
   - `Operations/CleanupPreservation.lean` — cleanup preservation theorems, `detachCNodeSlots`, `lifecyclePreRetypeCleanup`, AN4-G.2 `lifecycleCleanupPipeline` wrapper, `Internal.lifecycleRetypeObject` (AN4-A), `lifecycleRevokeDeleteRetype`.
   - `Operations/ScrubAndUntyped.lean` — `scrubObjectMemory` + frame theorems, `retypeFromUntyped` + capacity / freshness / AN4-G.4 atomicity / error-path theorems.
   - `Operations/RetypeWrappers.lean` — production entry points: `lifecycleRetypeWithCleanup`, WS-K-D dispatch helpers, `lifecycleRetypeDirect*` variants.

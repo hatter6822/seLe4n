@@ -4032,9 +4032,11 @@ Four user syscalls (`.call`, `.reply`, `.replyRecv`, `.receive`) invoke a
 priority-inheritance chain walk after their core IPC mutation
 completes, and `.replyRecv` invokes **two** (WS-OD OD3.14):
 
-* `endpointCallWithDonation`: calls `propagatePriorityInheritance
+* `endpointCallCrossCoreDispatch`: calls `propagatePipChainCrossCore
   receiverTid` on the handshake path (only when the endpoint had a
-  blocked receiver waiting at call-time).
+  blocked receiver waiting at call-time).  Named for the single-core
+  `endpointCallWithDonation` until `v0.35.192` deleted it; the live `.call`
+  arm has dispatched the cross-core form since WS-SM SM6.A.5.
 * `endpointReplyWithDonation`: calls `revertPriorityInheritance
   callerTid` after the base reply.
 * `endpointReplyRecvWithDonation`: calls `revertPriorityInheritance
@@ -4122,9 +4124,9 @@ Detailed dynamic-walk design lives in SM3.C.11 (see
 
 /-- WS-SM SM3.B.3 audit-pass-5: chain-start hint for `.call`.
 
-`endpointCallWithDonation` invokes `propagatePriorityInheritance
-receiverTid` **only on the handshake path** (when the endpoint had
-a blocked receiver at call-time).  When `receiverTid = none` the
+The live `.call` arm (`endpointCallCrossCoreDispatch`) invokes a
+priority-inheritance chain walk on `receiverTid` **only on the handshake
+path** (when the endpoint had a blocked receiver at call-time).  When `receiverTid = none` the
 caller blocks waiting, and no chain walk is invoked.  So the
 chain-start signal mirrors the `receiverTid` argument exactly. -/
 @[inline] def pipChainStart_endpointCall
@@ -4301,6 +4303,18 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- acquired first and the by-kind ladder stays acyclic.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap =>
       [.tcb, .cnode, .objStore]
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` writes the same three kinds
+  -- as the delete it generalises — CNodes, the CDT through `stateLevelLock`, and
+  -- the caller's TCB in read mode.  It declares **no** static footprint, and
+  -- that is a decision rather than an omission: `cspaceRevokeCdt` walks the
+  -- source slot's CDT descendants across *arbitrary* CNodes, a set the state
+  -- discovers and nothing bounds, while a `LockSet` is capped at
+  -- `maxLockSetSize`.  So this list says which kinds a future declaration may
+  -- contain, in the shape the PIP chain walk's `pipChainStart_<τ>` markers take
+  -- for the same reason — an unbounded walk's locks cannot be enumerated
+  -- statically, and pretending otherwise is what makes a footprint false.
+  | .cspaceRevoke =>
+      [.tcb, .cnode, .objStore]
   -- Lifecycle.  **Every kind, for the reason `.declassify` admits every kind**
   -- (PR #873 round 7): SM9.D.12 makes the retype the arm that *clears*
   -- provenance at `args.targetObj`, so `lockSet_lifecycleRetype` carries that
@@ -4437,6 +4451,41 @@ def permittedKinds (sid : SyscallId) : List LockKind :=
   -- the footprint, plus the CNode (read) covering the capability resolution.
   | .tcbBindNotification | .tcbUnbindNotification =>
       [.tcb, .cnode, .notification, .endpoint]
+
+/-- **WS-RR RR8.16 (`v0.35.190`): does this syscall declare a STATIC footprint?**
+
+Every arm but one does, and the exception is structural rather than unfinished:
+`cspaceRevokeCdt` walks the source slot's CDT descendants across *arbitrary*
+CNodes, a set the state discovers and nothing bounds, while a `LockSet` is
+capped at `maxLockSetSize`.  A static footprint naming only the source CNode
+would be **false** of the transition, which this project rates worse than no
+footprint at all, so `.cspaceRevoke` has none — and `permittedKinds .cspaceRevoke`
+above says which kinds a future declaration may contain, in the shape the PIP
+chain walk's `pipChainStart_<τ>` markers take for the same reason.
+
+Total, with no wildcard, so a new syscall decides this at elaboration rather
+than inheriting a default; and it is what `lockSet_consistent_aggregate_covers_every_syscall`
+is stated over, so the inventory's coverage claim names the set it actually
+covers instead of an off-by-one against `SyscallId.count`. -/
+def declaresStaticLockFootprint : SyscallId → Bool
+  | .cspaceRevoke => false
+  | .send | .receive | .call | .reply | .replyRecv
+  | .notificationSignal | .notificationWait
+  | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete | .mintReplyCap
+  | .lifecycleRetype
+  | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
+  | .serviceRegister | .serviceRevoke | .serviceQuery
+  | .schedContextConfigure | .schedContextBind | .schedContextUnbind
+  | .tcbSuspend | .tcbResume | .tcbSetPriority | .tcbSetMCPriority
+  | .tcbSetIPCBuffer | .tcbSetAffinity | .tcbSetFaultHandler
+  | .tcbBindNotification | .tcbUnbindNotification
+  | .declassify | .declassifySignal | .auditRead | .auditDrain => true
+
+/-- **The exemption is exactly one arm**, so a second undeclared syscall is a
+decision somebody has to write down rather than a number that quietly moves. -/
+theorem declaresStaticLockFootprint_false_iff (sid : SyscallId) :
+    declaresStaticLockFootprint sid = false ↔ sid = .cspaceRevoke := by
+  cases sid <;> simp [declaresStaticLockFootprint]
 
 /-- WS-SM SM3.B.4 (PR #873 round 6): **the kind inventory admits any target.**
 

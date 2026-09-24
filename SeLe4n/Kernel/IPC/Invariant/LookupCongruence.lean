@@ -618,6 +618,17 @@ theorem removeRunnableOnCore_offSchedulerAgrees (st : SystemState)
     OffSchedulerAgrees st (removeRunnableOnCore st tid c) :=
   offSchedulerAgrees_scheduler_update st _
 
+/-- **`v0.35.161`**: a replenishment migration is a scheduler-only update, or the
+identity — it moves a SchedContext's CBS replenishments between two cores'
+replenish queues and touches nothing else. -/
+theorem migrateSchedContextReplenishment_offSchedulerAgrees (st : SystemState)
+    (scId : SeLe4n.SchedContextId) (fromCore toCore : CoreId) :
+    OffSchedulerAgrees st (migrateSchedContextReplenishment st scId fromCore toCore) := by
+  unfold migrateSchedContextReplenishment
+  split
+  · exact OffSchedulerAgrees.refl _
+  · exact offSchedulerAgrees_scheduler_update _ _
+
 /-- SM6.D: `enqueueRunnableOnCore` of an already-`.ready` thread agrees with
 its input off-scheduler — the only object it writes is the woken TCB with
 `ipcState := .ready`, an identical-value (lookup-invisible) re-insert; every
@@ -675,7 +686,7 @@ theorem storeObject_offSchedulerAgrees {s1 s2 r1 r2 : SystemState}
     hRel.declassificationRefusals, hRel.declassificationTaint⟩
   · simp only [hRel.objectIndexSet, hRel.objectIndex]
   · simp only [hRel.objectIndexSet]
-  · simp only [hRel.objects id, hRel.lifecycle]
+  · simp only [hRel.lifecycle]
   · simp only [hRel.objects id, hRel.asidTable]
 
 open SeLe4n.Model.SystemState in
@@ -705,6 +716,152 @@ theorem storeTcbIpcStateAndMessage_offSchedulerAgrees {s1 s2 r2 : SystemState}
       | ok p1 =>
         obtain ⟨⟨⟩, r1'⟩ := p1
         exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
+
+open SeLe4n.Model.SystemState in
+/-- **`v0.35.161`** step congruence: `storeTcbQueueLinks` succeeds on the
+single-core-side state whenever it succeeds on the cross-core-side state, with
+off-scheduler-agreeing outputs — it reads the store through `lookupTcb`, which
+the relation fixes, and writes through `storeObject`, which carries it. -/
+theorem storeTcbQueueLinks_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (tid : SeLe4n.ThreadId) (prev : Option SeLe4n.ThreadId) (pprev : Option QueuePPrev)
+    (next : Option SeLe4n.ThreadId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : storeTcbQueueLinks s2 tid prev pprev next = .ok r2) :
+    ∃ r1, storeTcbQueueLinks s1 tid prev pprev next = .ok r1 ∧ OffSchedulerAgrees r1 r2 := by
+  unfold storeTcbQueueLinks at h2 ⊢
+  rw [lookupTcb_congr_getElem hRel.objects tid] at h2
+  cases hL : lookupTcb s1 tid with
+  | none => simp only [hL] at h2; cases h2
+  | some tcb =>
+    simp only [hL] at h2 ⊢
+    cases hSO2 : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) s2 with
+    | error e => simp only [hSO2] at h2; cases h2
+    | ok p2 =>
+      obtain ⟨⟨⟩, r2'⟩ := p2
+      simp only [hSO2, Except.ok.injEq] at h2
+      subst h2
+      cases hSO1 : storeObject tid.toObjId (.tcb (tcbWithQueueLinks tcb prev pprev next)) s1 with
+      | error e => exact absurd hSO1 (by unfold storeObject; simp)
+      | ok p1 =>
+        obtain ⟨⟨⟩, r1'⟩ := p1
+        exact ⟨r1', rfl, storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2⟩
+
+open SeLe4n.Model.SystemState in
+/-- **`v0.35.161`** step congruence: `endpointQueueEnqueue` succeeds on the
+single-core-side state whenever it succeeds on the cross-core-side state, with
+off-scheduler-agreeing outputs.  Every read — the endpoint, the thread, the old
+tail — goes through a lookup the relation fixes, so both spines take the same
+branch, and each of the one to three stores carries the relation.
+
+The receive leg needs it since `v0.35.161`: the two spines part at the
+pre-receive donation return, whose cross-core form migrates the reservation's
+replenishments (`cleanupPreReceiveDonationMigrated`), so from there on the
+enqueue runs on two states that agree off the scheduler rather than on one. -/
+theorem endpointQueueEnqueue_offSchedulerAgrees {s1 s2 r2 : SystemState}
+    (endpointId : SeLe4n.ObjId) (isReceiveQ : Bool) (tid : SeLe4n.ThreadId)
+    (hRel : OffSchedulerAgrees s1 s2)
+    (hInv1 : s1.objects.invExt) (hInv2 : s2.objects.invExt)
+    (h2 : endpointQueueEnqueue endpointId isReceiveQ tid s2 = .ok r2) :
+    ∃ r1, endpointQueueEnqueue endpointId isReceiveQ tid s1 = .ok r1 ∧
+      OffSchedulerAgrees r1 r2 := by
+  unfold endpointQueueEnqueue SystemState.getObject? at h2 ⊢
+  rw [hRel.objects endpointId, lookupTcb_congr_getElem hRel.objects tid] at h2
+  revert h2
+  cases hObj : s1.objects[endpointId]? with
+  | none => simp
+  | some obj =>
+    cases obj with
+    | tcb _ | cnode _ | notification _ | vspaceRoot _ | untyped _ | schedContext _
+    | reply _ => simp
+    | endpoint ep =>
+      simp only []
+      cases hL : lookupTcb s1 tid with
+      | none => simp
+      | some tcb =>
+        simp only []
+        split
+        · simp
+        · split
+          · simp
+          · cases hTail : (if isReceiveQ then ep.receiveQ else ep.sendQ).tail with
+            | none =>
+              simp only []
+              cases hSO2 : storeObject endpointId
+                  (.endpoint (if isReceiveQ
+                    then { ep with receiveQ := { head := some tid, tail := some tid } }
+                    else { ep with sendQ := { head := some tid, tail := some tid } })) s2 with
+              | error e => simp
+              | ok p2 =>
+                obtain ⟨⟨⟩, t2⟩ := p2
+                simp only []
+                intro hLinks2
+                cases hSO1 : storeObject endpointId
+                    (.endpoint (if isReceiveQ
+                      then { ep with receiveQ := { head := some tid, tail := some tid } }
+                      else { ep with sendQ := { head := some tid, tail := some tid } })) s1 with
+                | error e => exact absurd hSO1 (by unfold storeObject; simp)
+                | ok p1 =>
+                  obtain ⟨⟨⟩, t1⟩ := p1
+                  simp only []
+                  exact storeTcbQueueLinks_offSchedulerAgrees tid none (some .endpointHead) none
+                    (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2)
+                    (storeObject_preserves_objects_invExt s1 t1 endpointId _ hInv1 hSO1)
+                    (storeObject_preserves_objects_invExt s2 t2 endpointId _ hInv2 hSO2) hLinks2
+            | some tailTid =>
+              simp only []
+              rw [lookupTcb_congr_getElem hRel.objects tailTid]
+              cases hLT : lookupTcb s1 tailTid with
+              | none => simp
+              | some tailTcb =>
+                simp only []
+                cases hSO2 : storeObject endpointId
+                    (.endpoint (if isReceiveQ
+                      then { ep with receiveQ :=
+                        { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                          tail := some tid } }
+                      else { ep with sendQ :=
+                        { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                          tail := some tid } })) s2 with
+                | error e => simp
+                | ok p2 =>
+                  obtain ⟨⟨⟩, t2⟩ := p2
+                  simp only []
+                  cases hLinkT2 : storeTcbQueueLinks t2 tailTid tailTcb.queuePrev
+                      tailTcb.queuePPrev (some tid) with
+                  | error e => simp
+                  | ok u2 =>
+                    simp only []
+                    intro hLinks2
+                    cases hSO1 : storeObject endpointId
+                        (.endpoint (if isReceiveQ
+                          then { ep with receiveQ :=
+                            { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                              tail := some tid } }
+                          else { ep with sendQ :=
+                            { head := (if isReceiveQ then ep.receiveQ else ep.sendQ).head,
+                              tail := some tid } })) s1 with
+                    | error e => exact absurd hSO1 (by unfold storeObject; simp)
+                    | ok p1 =>
+                      obtain ⟨⟨⟩, t1⟩ := p1
+                      simp only []
+                      have hInvT1 : t1.objects.invExt :=
+                        storeObject_preserves_objects_invExt s1 t1 endpointId _ hInv1 hSO1
+                      have hInvT2 : t2.objects.invExt :=
+                        storeObject_preserves_objects_invExt s2 t2 endpointId _ hInv2 hSO2
+                      obtain ⟨u1, hLinkT1, hRelU⟩ :=
+                        storeTcbQueueLinks_offSchedulerAgrees tailTid tailTcb.queuePrev
+                          tailTcb.queuePPrev (some tid)
+                          (storeObject_offSchedulerAgrees _ _ hRel hInv1 hInv2 hSO1 hSO2)
+                          hInvT1 hInvT2 hLinkT2
+                      rw [hLinkT1]
+                      simp only []
+                      exact storeTcbQueueLinks_offSchedulerAgrees tid (some tailTid)
+                        (some (.tcbNext tailTid)) none hRelU
+                        (storeTcbQueueLinks_preserves_objects_invExt t1 u1 tailTid _ _ _ hInvT1
+                          hLinkT1)
+                        (storeTcbQueueLinks_preserves_objects_invExt t2 u2 tailTid _ _ _ hInvT2
+                          hLinkT2) hLinks2
 
 open SeLe4n.Model.SystemState in
 /-- SM6.D step congruence: `consumeReply` (total) maps off-scheduler-agreeing

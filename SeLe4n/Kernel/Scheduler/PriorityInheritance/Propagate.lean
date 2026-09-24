@@ -686,6 +686,119 @@ theorem propagatePipChainCrossCore_notification_backward (st : SystemState) (tid
         exact pipBoostWithWake_notification_backward st tid ec hInv oid ntfn
           (ih _ nextServer hNext h)
 
+/-- **WS-RR RR8.16 (`v0.35.196`)**: `updatePipBoostOnCore` rewrites a TCB's
+`pipBoost` and nothing else, backward.
+
+The TCB-side sibling of `updatePipBoostOnCore_notification_backward` above, and
+it lives here for the reason that one does: a frame over a production transition
+belongs beside the transition, not in whichever module first needed it.  The
+boost's only object write is the boosted holder's own
+`{ tcb with pipBoost := _ }`, so at that key every other field is preserved
+definitionally and at every other key the store is untouched — which is the fact
+`propagatePipChainCrossCore`'s own docstring already relies on when it reads
+`blockingServer` from the pre-mutation state.
+
+Stated at the **record** rather than at one field (`v0.35.196`): the walk frames
+every field but `pipBoost`, so a consumer that wants `ipcState`
+(`blockedSenderShrinks`) and one that wants `schedContextBinding`
+(`donationOwnerFlowsToHolder`) are two instances of one proof rather than two
+copies of it.  Stated pointwise rather than through `ipcStateFrame` or
+`sameSchedContextBindings`, because both relations are declared in the IPC layer
+and the scheduler layer is upstream of them; the relation-shaped restatements are
+one application each. -/
+theorem updatePipBoostOnCore_tcb_backward (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
+    (h : (updatePipBoostOnCore st c tid).objects[t.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb' = { tcb with pipBoost := p } := by
+  cases hT : st.getTcb? tid with
+  | none =>
+      rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT] at h
+      exact ⟨tcb', tcb'.pipBoost, h, rfl⟩
+  | some tcb =>
+      by_cases hEq : t.toObjId = tid.toObjId
+      · obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+        rw [hEq] at h
+        rw [SystemState.getTcb?_eq_some_iff] at hAt
+        rw [hAt] at h
+        refine ⟨tcb, p, ?_, ?_⟩
+        · rw [hEq]; exact (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT
+        · simp only [Option.some.injEq, KernelObject.tcb.injEq] at h
+          rw [h]
+      · refine ⟨tcb', tcb'.pipBoost, ?_, rfl⟩
+        rw [← updatePipBoostOnCore_objects_ne st c tid t.toObjId
+          (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv]
+        exact h
+
+/-- WS-RR RR8.16 (`v0.35.195`, an instance of the record frame since
+`v0.35.196`): the `ipcState` reading. -/
+theorem updatePipBoostOnCore_tcb_ipcState_backward (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
+    (h : (updatePipBoostOnCore st c tid).objects[t.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+  obtain ⟨tcb, p, hPre, hEq⟩ := updatePipBoostOnCore_tcb_backward st c tid hInv t tcb' h
+  exact ⟨tcb, hPre, by rw [hEq]⟩
+
+/-- **WS-RR RR8.16 (`v0.35.196`)**: the wake-surfacing form is the boost with an
+SGI computation beside it, so it frames the same thing. -/
+theorem pipBoostWithWake_tcb_backward (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
+    (h : (pipBoostWithWake st tid ec).1.objects[t.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb' = { tcb with pipBoost := p } :=
+  updatePipBoostOnCore_tcb_backward st (determineTargetCore st tid) tid hInv t tcb' h
+
+/-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
+reading. -/
+theorem pipBoostWithWake_tcb_ipcState_backward (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (hInv : st.objects.invExt) (t : ThreadId) (tcb' : TCB)
+    (h : (pipBoostWithWake st tid ec).1.objects[t.toObjId]? = some (.tcb tcb')) :
+    ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState :=
+  updatePipBoostOnCore_tcb_ipcState_backward st (determineTargetCore st tid) tid hInv t
+    tcb' h
+
+/-- **WS-RR RR8.16 (`v0.35.196`)**: and the whole chain walk inherits it by
+induction on the fuel — the shape
+`propagatePipChainCrossCore_notification_backward` already has for the other
+object kind. -/
+theorem propagatePipChainCrossCore_tcb_backward (st : SystemState)
+    (tid : ThreadId) (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt)
+    (t : ThreadId) (tcb' : TCB)
+    (h : (propagatePipChainCrossCore st tid ec fuel).1.objects[t.toObjId]?
+        = some (.tcb tcb')) :
+    ∃ tcb p, st.objects[t.toObjId]? = some (.tcb tcb) ∧
+      tcb' = { tcb with pipBoost := p } := by
+  induction fuel generalizing st tid tcb' with
+  | zero =>
+      rw [propagatePipChainCrossCore_zero] at h
+      exact ⟨tcb', tcb'.pipBoost, h, rfl⟩
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step] at h
+    have hNext := pipBoostWithWake_preserves_objects_invExt st tid ec hInv
+    revert h
+    cases hB : blockingServer st tid with
+    | none =>
+        intro h
+        exact pipBoostWithWake_tcb_backward st tid ec hInv t tcb' h
+    | some nextServer =>
+        intro h
+        obtain ⟨mid, pMid, hMid, hEqMid⟩ := ih _ nextServer hNext tcb' h
+        obtain ⟨pre, pPre, hPre, hEqPre⟩ :=
+          pipBoostWithWake_tcb_backward st tid ec hInv t mid hMid
+        exact ⟨pre, pMid, hPre, by rw [hEqMid, hEqPre]⟩
+
+/-- WS-RR RR8.16 (`v0.35.195`, an instance since `v0.35.196`): its `ipcState`
+reading. -/
+theorem propagatePipChainCrossCore_tcb_ipcState_backward (st : SystemState)
+    (tid : ThreadId) (ec : CoreId) (fuel : Nat) (hInv : st.objects.invExt)
+    (t : ThreadId) (tcb' : TCB)
+    (h : (propagatePipChainCrossCore st tid ec fuel).1.objects[t.toObjId]?
+        = some (.tcb tcb')) :
+    ∃ tcb, st.objects[t.toObjId]? = some (.tcb tcb) ∧ tcb.ipcState = tcb'.ipcState := by
+  obtain ⟨tcb, p, hPre, hEq⟩ :=
+    propagatePipChainCrossCore_tcb_backward st tid ec fuel hInv t tcb' h
+  exact ⟨tcb, hPre, by rw [hEq]⟩
+
 -- ============================================================================
 -- WS-RR RR2.20 — the PIP chain walk is a frame for replenish-queue affinity
 -- ============================================================================
@@ -786,18 +899,56 @@ theorem propagatePipChainCrossCore_replenish_readings (st : SystemState) (tid : 
                fun scId => (hS scId).trans (hHere.2.1 scId),
                fun t => (hT t).trans (hHere.2.2 t)⟩
 
+/-- **WS-RR RR8.12 Cut C3a (frame)**: the whole cross-core chain walk writes **no
+replenish queue**, on any core, under no hypothesis at all — each step's only
+scheduler write is a run-queue bucket migration
+(`updatePipBoostOnCore_replenishQueueOnCore`).
+
+The first component of `propagatePipChainCrossCore_replenish_readings` without that
+theorem's object-store hypothesis, which its other two components genuinely need and
+this one never did.  Stated on its own because the footprint exactness licences that
+read it — `endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation` and its
+`.reply` sibling — are claims about what a transition *writes*, and a claim about a
+write should not have to assume the invariant the transition preserves. -/
+theorem propagatePipChainCrossCore_replenishQueueOnCore (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (fuel : Nat) (c : CoreId) :
+    (propagatePipChainCrossCore st tid ec fuel).1.scheduler.replenishQueueOnCore c
+      = st.scheduler.replenishQueueOnCore c := by
+  induction fuel generalizing st tid with
+  | zero => rw [propagatePipChainCrossCore_zero]
+  | succ n ih =>
+    rw [propagatePipChainCrossCore_step]
+    have hStep : (pipBoostWithWake st tid ec).1
+        = updatePipBoostOnCore st (determineTargetCore st tid) tid := rfl
+    have hHere : (pipBoostWithWake st tid ec).1.scheduler.replenishQueueOnCore c
+        = st.scheduler.replenishQueueOnCore c := by
+      rw [hStep]; exact updatePipBoostOnCore_replenishQueueOnCore st _ c tid
+    cases hB : blockingServer st tid with
+    | none => exact hHere
+    | some nextServer =>
+        exact (ih (pipBoostWithWake st tid ec).1 nextServer).trans hHere
+
 -- ============================================================================
 -- §  WS-RR RR8.12 (Cut 4) — the walk's scheduler frames
 -- ============================================================================
 --
--- The three facts a consumer needs to say that the chain reversion does not
--- move a thread it is not about: run-queue membership, the `current` slots, and
--- the resolvability of a TCB.  They live here, beside the walk, because the
--- suspend pipeline's placement payoff (`suspendThreadOnCore_holder_still_placed`)
--- is stated in `IPC/CrossCore/Cancellation.lean`, which `IPC/Invariant/
--- FaultProgress.lean` — where the current-slot frame used to sit — imports
--- transitively.  A shared answer must be reachable from every asker, and the
--- walk's own module is the layer both can see.
+-- The two facts a consumer needs to say that the chain reversion does not
+-- move a thread it is not about: run-queue membership and the `current` slots.
+-- They live here, beside the walk, because the suspend pipeline's placement
+-- payoff (`suspendThreadOnCore_holder_unplaced`, `v0.35.158`;
+-- `suspendThreadOnCore_holder_still_placed` until then) is stated in
+-- `IPC/CrossCore/Cancellation.lean`, which `IPC/Invariant/FaultProgress.lean` —
+-- where the current-slot frame used to sit — imports transitively.  A shared
+-- answer must be reachable from every asker, and the walk's own module is the
+-- layer both can see.
+--
+-- `v0.35.158`: the third fact this section carried — the resolvability of a TCB
+-- across the walk (`updatePipBoostOnCore_getTcb?_isSome`,
+-- `pipBoostWithWake_getTcb?_isSome`, `propagatePipChainCrossCore_getTcb?_isSome`)
+-- — is retired with the placed-direction payoff that was its only consumer: a
+-- scheduling point re-enqueues an outgoing thread only when its TCB resolves, so
+-- the placed direction had to carry resolvability forward; the unplaced direction
+-- never consults the holder's TCB.
 
 /-- **WS-RR RR8.12**: one walk step leaves every thread's run-queue *membership*
 exactly where it was, on every core — the lift of
@@ -861,47 +1012,315 @@ theorem propagatePipChainCrossCore_currentOnCore :
           rw [hTail]
           exact pipBoostWithWake_currentOnCore st startTid ec c'
 
-/-- **WS-RR RR8.12**: a boost rewrites a TCB **in place**, so a thread that
-resolved before resolves after — on every key, not only the boosted one. -/
-theorem updatePipBoostOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
-    (tid x : ThreadId) (hInv : st.objects.invExt) (h : (st.getTcb? x).isSome) :
-    ((updatePipBoostOnCore st c tid).getTcb? x).isSome := by
-  by_cases hEq : (tid.toObjId == x.toObjId) = true
-  · obtain rfl : tid = x := SeLe4n.ThreadId.toObjId_injective _ _ (by simpa using hEq)
-    cases hT : st.getTcb? tid with
-    | none => rw [hT] at h; exact absurd h (by simp)
-    | some tcb =>
-      obtain ⟨p, hPost⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
-      rw [hPost]; rfl
-  · have hRaw := updatePipBoostOnCore_objects_ne st c tid x.toObjId hEq hInv
-    have hTcb : (updatePipBoostOnCore st c tid).getTcb? x = st.getTcb? x := by
-      unfold SystemState.getTcb?; rw [hRaw]
-    rw [hTcb]; exact h
+-- ============================================================================
+-- `v0.35.158` — the walk keeps every run queue well-formed
+-- ============================================================================
+--
+-- The boost migrates a run-queue *bucket* by a `remove` followed by an `insert`,
+-- both of which preserve `RunQueue.wellFormed`; every other core's queue is
+-- untouched.  Needed by the suspend pipeline's placement payoff
+-- (`suspendThreadOnCore_holder_unplaced`), whose scheduling point reads the
+-- executing core's queue through the chooser and needs it well-formed there.
 
-/-- **WS-RR RR8.12**: hence one walk step keeps a thread resolvable. -/
-theorem pipBoostWithWake_getTcb?_isSome (st : SystemState) (tid x : ThreadId)
-    (ec : CoreId) (hInv : st.objects.invExt) (h : (st.getTcb? x).isSome) :
-    (((pipBoostWithWake st tid ec).1).getTcb? x).isSome := by
+/-- `v0.35.158`: the per-core boost keeps every core's run queue well-formed. -/
+theorem updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed (st : SystemState)
+    (c : CoreId) (tid : ThreadId) (c' : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
+    ((updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c').wellFormed := by
+  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
+  split
+  · split
+    · exact hwf
+    · split
+      · split
+        · by_cases hcc : c = c'
+          · subst hcc
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_wellFormed _
+              (RunQueue.remove_preserves_wellFormed _ hwf tid) tid _
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+            exact hwf
+        · exact hwf
+      · exact hwf
+  · exact hwf
+
+/-- `v0.35.158`: ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_preserves_runQueueOnCore_wellFormed (st : SystemState)
+    (tid : ThreadId) (ec c' : CoreId)
+    (hwf : (st.scheduler.runQueueOnCore c').wellFormed) :
+    ((pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c').wellFormed := by
   rw [pipBoostWithWake_state]
-  exact updatePipBoostOnCore_getTcb?_isSome st _ tid x hInv h
+  exact updatePipBoostOnCore_preserves_runQueueOnCore_wellFormed st _ tid c' hwf
 
-/-- **WS-RR RR8.12**: and so does the whole walk. -/
-theorem propagatePipChainCrossCore_getTcb?_isSome :
-    ∀ (fuel : Nat) (st : SystemState) (startTid x : ThreadId) (ec : CoreId),
-      st.objects.invExt → (st.getTcb? x).isSome →
-      (((propagatePipChainCrossCore st startTid ec fuel).1).getTcb? x).isSome
-  | 0, st, startTid, x, ec, _, h => by
-      rw [propagatePipChainCrossCore_zero]; exact h
-  | n + 1, st, startTid, x, ec, hInv, h => by
+/-- `v0.35.158`: ...and the whole walk, by induction on its fuel. -/
+theorem propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec c' : CoreId),
+      (st.scheduler.runQueueOnCore c').wellFormed →
+      ((propagatePipChainCrossCore st startTid ec fuel).1.scheduler.runQueueOnCore c').wellFormed
+  | 0, st, startTid, ec, c', hwf => by
+      rw [propagatePipChainCrossCore_zero]; exact hwf
+  | n + 1, st, startTid, ec, c', hwf => by
       rw [propagatePipChainCrossCore_step]
       simp only
-      have hStepSome := pipBoostWithWake_getTcb?_isSome st startTid x ec hInv h
-      have hStepInv := pipBoostWithWake_preserves_objects_invExt st startTid ec hInv
       cases hb : blockingServer st startTid with
-      | none => simpa using hStepSome
+      | none =>
+          simpa using pipBoostWithWake_preserves_runQueueOnCore_wellFormed st startTid ec c' hwf
       | some nextServer =>
-          simpa using propagatePipChainCrossCore_getTcb?_isSome n
-            (pipBoostWithWake st startTid ec).1 nextServer x ec hStepInv hStepSome
+          have hTail := propagatePipChainCrossCore_preserves_runQueueOnCore_wellFormed n
+            (pipBoostWithWake st startTid ec).1 nextServer ec c'
+            (pipBoostWithWake_preserves_runQueueOnCore_wellFormed st startTid ec c' hwf)
+          simpa using hTail
+
+-- ============================================================================
+-- WS-RR RR8.16 (`v0.35.197`) — the walk keeps every run queue duplicate-free,
+-- and resolves every thread the pre-state resolved
+-- ============================================================================
+--
+-- Register row 85's closure needs `schedulerInvariantBase_smp` across the two
+-- cross-core IPC chains, and the walk is the one step of each that writes a run
+-- queue.  Two of the base invariant's three conjuncts already have their facts
+-- here (`_currentOnCore` gives the current slot, `_mem_runQueueOnCore` gives
+-- membership); these are the two that were missing.
+--
+-- Both are the `wellFormed` family's shape one predicate over, for the same
+-- reason: the boost migrates a bucket by a `remove` followed by an `insert`,
+-- and every other core's queue is untouched.
+
+/-- WS-RR RR8.16 (`v0.35.197`): the per-core boost keeps every core's run queue
+duplicate-free. -/
+theorem updatePipBoostOnCore_runQueueUniqueOnCore (st : SystemState)
+    (c : CoreId) (tid : ThreadId) (c' : CoreId)
+    (h : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((updatePipBoostOnCore st c tid).scheduler.runQueueOnCore c').toList.Nodup := by
+  simp only [updatePipBoostOnCore, SystemState.rewriteObject_scheduler]
+  split
+  · split
+    · exact h
+    · split
+      · split
+        · by_cases hcc : c = c'
+          · subst hcc
+            rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_self]
+            exact RunQueue.insert_preserves_toList_nodup _ _ _
+              (RunQueue.remove_preserves_toList_nodup _ tid h)
+          · rw [SchedulerState.setRunQueueOnCore_runQueueOnCore_ne _ c c' _ hcc]
+            exact h
+        · exact h
+      · exact h
+  · exact h
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_runQueueUniqueOnCore (st : SystemState)
+    (tid : ThreadId) (ec c' : CoreId)
+    (h : (st.scheduler.runQueueOnCore c').toList.Nodup) :
+    ((pipBoostWithWake st tid ec).1.scheduler.runQueueOnCore c').toList.Nodup := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_runQueueUniqueOnCore st _ tid c' h
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk, by induction on its fuel. -/
+theorem propagatePipChainCrossCore_runQueueUniqueOnCore :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec c' : CoreId),
+      (st.scheduler.runQueueOnCore c').toList.Nodup →
+      ((propagatePipChainCrossCore st startTid ec fuel).1.scheduler.runQueueOnCore
+        c').toList.Nodup
+  | 0, st, startTid, ec, c', h => by
+      rw [propagatePipChainCrossCore_zero]; exact h
+  | n + 1, st, startTid, ec, c', h => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_runQueueUniqueOnCore st startTid ec c' h
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_runQueueUniqueOnCore n
+            (pipBoostWithWake st startTid ec).1 nextServer ec c'
+            (pipBoostWithWake_runQueueUniqueOnCore st startTid ec c' h)
+          simpa using hTail
+
+/-- WS-RR RR8.16 (`v0.35.197`): the boost writes no CDT table.  Its two writes are
+a `rewriteObject` (which touches `objects` alone) and a run-queue update (which
+touches `scheduler` alone), so both capability-side CDT conjuncts are framed. -/
+theorem updatePipBoostOnCore_cdtNodeSlot (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    (updatePipBoostOnCore st c tid).cdtNodeSlot = st.cdtNodeSlot := by
+  simp only [updatePipBoostOnCore, SystemState.rewriteObject]
+  split
+  · split
+    · rfl
+    · split
+      · split <;> rfl
+      · rfl
+  · rfl
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and no derivation tree. -/
+theorem updatePipBoostOnCore_cdt (st : SystemState) (c : CoreId) (tid : ThreadId) :
+    (updatePipBoostOnCore st c tid).cdt = st.cdt := by
+  simp only [updatePipBoostOnCore, SystemState.rewriteObject]
+  split
+  · split
+    · rfl
+    · split
+      · split <;> rfl
+      · rfl
+  · rfl
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_cdtNodeSlot (st : SystemState) (tid : ThreadId) (ec : CoreId) :
+    (pipBoostWithWake st tid ec).1.cdtNodeSlot = st.cdtNodeSlot := by
+  rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_cdtNodeSlot st _ tid
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_cdt (st : SystemState) (tid : ThreadId) (ec : CoreId) :
+    (pipBoostWithWake st tid ec).1.cdt = st.cdt := by
+  rw [pipBoostWithWake_state]; exact updatePipBoostOnCore_cdt st _ tid
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk. -/
+theorem propagatePipChainCrossCore_cdtNodeSlot :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId),
+      (propagatePipChainCrossCore st startTid ec fuel).1.cdtNodeSlot = st.cdtNodeSlot
+  | 0, st, startTid, ec => by rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, ec => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_cdtNodeSlot st startTid ec
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_cdtNodeSlot n
+            (pipBoostWithWake st startTid ec).1 nextServer ec
+          simp only at hTail ⊢
+          rw [hTail]; exact pipBoostWithWake_cdtNodeSlot st startTid ec
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk. -/
+theorem propagatePipChainCrossCore_cdt :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId),
+      (propagatePipChainCrossCore st startTid ec fuel).1.cdt = st.cdt
+  | 0, st, startTid, ec => by rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, ec => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_cdt st startTid ec
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_cdt n
+            (pipBoostWithWake st startTid ec).1 nextServer ec
+          simp only at hTail ⊢
+          rw [hTail]; exact pipBoostWithWake_cdt st startTid ec
+
+/-- WS-RR RR8.16 (`v0.35.197`): what the boost does to the object store, **at
+every key**: nothing, or a TCB-for-TCB replacement.
+
+The pointwise form `updatePipBoostOnCore_tcb_backward` cannot supply, and the
+one the capability bundle's frame consumes: that frame asks what the post-state
+holds at a key the *pre*-state may or may not have written, so a backward
+reading (post is a TCB ⟹ pre was) leaves every non-TCB key unaccounted for. -/
+theorem updatePipBoostOnCore_objects_pointwise (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (oid : ObjId) :
+    (updatePipBoostOnCore st c tid).objects[oid]? = st.objects[oid]? ∨
+      ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
+        (updatePipBoostOnCore st c tid).objects[oid]? = some (.tcb post) := by
+  cases hT : st.getTcb? tid with
+  | none =>
+      left; rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]
+  | some tcb =>
+      by_cases hEq : oid = tid.toObjId
+      · subst hEq
+        obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+        rw [SystemState.getTcb?_eq_some_iff] at hAt
+        exact Or.inr ⟨tcb, { tcb with pipBoost := p },
+          (SystemState.getTcb?_eq_some_iff st tid tcb).mp hT, hAt⟩
+      · left
+        exact updatePipBoostOnCore_objects_ne st c tid oid
+          (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_objects_pointwise (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (hInv : st.objects.invExt) (oid : ObjId) :
+    (pipBoostWithWake st tid ec).1.objects[oid]? = st.objects[oid]? ∨
+      ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
+        (pipBoostWithWake st tid ec).1.objects[oid]? = some (.tcb post) := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_objects_pointwise st _ tid hInv oid
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk.  The composition is the
+content: a key the head step rewrote and the tail left alone is still a
+TCB-for-TCB replacement, and so is one the head left alone and the tail
+rewrote. -/
+theorem propagatePipChainCrossCore_objects_pointwise :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId)
+      (_hInv : st.objects.invExt) (oid : ObjId),
+      (propagatePipChainCrossCore st startTid ec fuel).1.objects[oid]? = st.objects[oid]? ∨
+        ∃ pre post : TCB, st.objects[oid]? = some (.tcb pre) ∧
+          (propagatePipChainCrossCore st startTid ec fuel).1.objects[oid]?
+            = some (.tcb post)
+  | 0, st, startTid, ec, _hInv, oid => by
+      left; rw [propagatePipChainCrossCore_zero]
+  | n + 1, st, startTid, ec, hInv, oid => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      have hHead := pipBoostWithWake_objects_pointwise st startTid ec hInv oid
+      cases hb : blockingServer st startTid with
+      | none => simpa using hHead
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_objects_pointwise n
+            (pipBoostWithWake st startTid ec).1 nextServer ec
+            (pipBoostWithWake_preserves_objects_invExt st startTid ec hInv) oid
+          simp only
+          rcases hHead with hH | ⟨preH, postH, hPreH, hPostH⟩
+          · rcases hTail with hT | ⟨preT, postT, hPreT, hPostT⟩
+            · left; rw [hT, hH]
+            · exact Or.inr ⟨preT, postT, by rw [← hH]; exact hPreT, hPostT⟩
+          · rcases hTail with hT | ⟨_, postT, _, hPostT⟩
+            · exact Or.inr ⟨preH, postH, hPreH, by rw [hT]; exact hPostH⟩
+            · exact Or.inr ⟨preH, postT, hPreH, hPostT⟩
+
+/-- WS-RR RR8.16 (`v0.35.197`): the boost resolves every thread the pre-state
+resolved.  Its only object write replaces a TCB with a TCB, so no key stops
+holding one -- the forward reading of `updatePipBoostOnCore_tcb_backward`, which
+`currentThreadValidOnCore` needs and the backward form cannot supply. -/
+theorem updatePipBoostOnCore_getTcb?_isSome (st : SystemState) (c : CoreId)
+    (tid : ThreadId) (hInv : st.objects.invExt) (t : ThreadId)
+    (h : (st.getTcb? t).isSome) :
+    ((updatePipBoostOnCore st c tid).getTcb? t).isSome := by
+  cases hT : st.getTcb? tid with
+  | none => rw [updatePipBoostOnCore_eq_self_of_getTcb?_none st c tid hT]; exact h
+  | some tcb =>
+      by_cases hEq : t.toObjId = tid.toObjId
+      · obtain ⟨p, hAt⟩ := updatePipBoostOnCore_objects_at st c tid tcb hT hInv
+        have : (updatePipBoostOnCore st c tid).getTcb? t
+            = (updatePipBoostOnCore st c tid).getTcb? tid := by
+          unfold SystemState.getTcb?; rw [hEq]
+        rw [this, hAt]; rfl
+      · have hFrame := updatePipBoostOnCore_objects_ne st c tid t.toObjId
+          (by simp only [beq_iff_eq]; exact fun e => hEq e.symm) hInv
+        unfold SystemState.getTcb? at h ⊢
+        rw [hFrame]; exact h
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and so does the boost-with-wake step. -/
+theorem pipBoostWithWake_getTcb?_isSome (st : SystemState) (tid : ThreadId)
+    (ec : CoreId) (hInv : st.objects.invExt) (t : ThreadId)
+    (h : (st.getTcb? t).isSome) :
+    ((pipBoostWithWake st tid ec).1.getTcb? t).isSome := by
+  rw [pipBoostWithWake_state]
+  exact updatePipBoostOnCore_getTcb?_isSome st _ tid hInv t h
+
+/-- WS-RR RR8.16 (`v0.35.197`): ...and the whole walk, by induction on its fuel --
+the `invExt` hypothesis threaded exactly as `_tcb_backward` threads it. -/
+theorem propagatePipChainCrossCore_getTcb?_isSome :
+    ∀ (fuel : Nat) (st : SystemState) (startTid : ThreadId) (ec : CoreId)
+      (_hInv : st.objects.invExt) (t : ThreadId),
+      (st.getTcb? t).isSome →
+      ((propagatePipChainCrossCore st startTid ec fuel).1.getTcb? t).isSome
+  | 0, st, startTid, ec, _hInv, t, h => by
+      rw [propagatePipChainCrossCore_zero]; exact h
+  | n + 1, st, startTid, ec, hInv, t, h => by
+      rw [propagatePipChainCrossCore_step]
+      simp only
+      cases hb : blockingServer st startTid with
+      | none => simpa using pipBoostWithWake_getTcb?_isSome st startTid ec hInv t h
+      | some nextServer =>
+          have hTail := propagatePipChainCrossCore_getTcb?_isSome n
+            (pipBoostWithWake st startTid ec).1 nextServer ec
+            (pipBoostWithWake_preserves_objects_invExt st startTid ec hInv) t
+            (pipBoostWithWake_getTcb?_isSome st startTid ec hInv t h)
+          simpa using hTail
 
 end SeLe4n.Kernel.PriorityInheritance
 

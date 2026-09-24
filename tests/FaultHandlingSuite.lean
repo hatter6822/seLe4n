@@ -1417,12 +1417,23 @@ private def resumeDecoded : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := resumeInfo, syscallId := .reply,
     msgRegs := #[] }
 
+/-- The same reply with the handler's **nonzero** label: "do not continue". -/
+private def abandonDecoded : SyscallDecodeResult :=
+  { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := abandonInfo, syscallId := .reply,
+    msgRegs := restartRegs }
+
 private def replyGate : SyscallGate :=
   { callerId := handler, cspaceRoot := cnRoot, capAddr := SeLe4n.CPtr.ofNat 0,
     capDepth := 2, requiredRight := .write }
 
 private def replyCapH : Capability :=
   { target := .replyCap replyH, rights := AccessRightSet.ofList [.read, .write] }
+
+/-- WS-RR RR8.12 Cut C3a: does a scheduler-domain footprint name this core's run-queue
+write lock? -/
+private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
 
 /-- WS-RR RR4.14/RR4.15: the seam under test — a fault handler answers through
 the **ordinary reply syscall**, which is the only reply a handler has.  Before
@@ -1442,6 +1453,40 @@ private def runReplySeamChecks : IO Unit := do
         ((afterFault.getReply? replyH).bind (·.caller) == some faulter)
       assertBool "pre: the seam's own predicate agrees"
         (threadHasPendingFault afterFault faulter)
+      -- WS-RR RR8.12 Cut C3a: the ARM's scheduler-domain footprint on the fault
+      -- branch -- the dispatch's write set at the empty message plus, on an abandon,
+      -- the faulted thread's own home core, where `faultAbandonOnCore` deschedules it.
+      let dispatchWriteSet := endpointReplyDispatchWriteSet handler faulter IpcMessage.empty c1 afterFault
+      let abandonWriteSet := replyTransferWriteSet handler faulter abandonInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      let restartWriteSet := replyTransferWriteSet handler faulter restartInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      let fpAbandon := schedLockSet_replyTransferOnCore handler faulter abandonInfo restartRegs
+        IpcMessage.empty c1 afterFault
+      assertBool "C3a: the dispatch's own write set opens with the faulted thread's home, where the reply leg wakes it"
+        (decide (dispatchWriteSet.take 1 = [c0]))
+      assertBool "C3a: on the fault branch the arm's write set is the dispatch's plus the outcome's -- nothing on a restart, the faulted thread's home on an abandon"
+        (decide (restartWriteSet = dispatchWriteSet ++ []) && decide (abandonWriteSet = dispatchWriteSet ++ [c0]))
+      assertBool "C3a: an abandon deschedules the faulted thread on its home core, and that run-queue write lock is a member"
+        (hasRunQueueWriteLock fpAbandon c0)
+      -- WS-RR RR8.12 Cut C6d: the measurement the arm's coverage docstring cites
+      -- instead of asserting.  Every arm on which the dispatch succeeds opens its
+      -- write set with the answered thread's home core, and no step of the
+      -- dispatch writes a `cpuAffinity`, so the core the abandon appends is one
+      -- the dispatch ALREADY names.  The arm's write set is derived from the arm
+      -- all the same -- a declaration tightened to this coincidence would become
+      -- false the moment either side moved -- and this line is what makes the
+      -- claim checkable rather than a sentence.
+      assertBool "C6d: the abandon's appended core is already a member of the dispatch's own write set"
+        (decide (abandonWriteSet = dispatchWriteSet ++ [c0]) && dispatchWriteSet.contains c0)
+      -- ...and the control: a RESTART appends nothing, so the two claims cannot
+      -- both be satisfied by a write set that happens to name every core.
+      assertBool "C6d: control -- a restart appends no core at all, so the append is the abandon's"
+        (decide (restartWriteSet = dispatchWriteSet))
+      assertBool "C3a: the fault branch's replenish segment is the dispatch's at the empty message -- here none, the handler holding no loan"
+        (decide (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault
+            = endpointReplyDispatchReplenishCores handler faulter IpcMessage.empty c1 afterFault)
+          && (replyTransferReplenishCores handler faulter IpcMessage.empty c1 afterFault).isEmpty)
       -- The restart reply, through the live dispatch.
       match dispatchWithCap replyDecoded handler replyGate replyCapH afterFault with
       | .ok (_, stD) =>
@@ -1479,6 +1524,139 @@ private def runReplySeamChecks : IO Unit := do
                 afterFault with
              | (st', .ok _) => .ok ((), Architecture.stageDeliveredMessage st' handler 0)
              | (_, .error e) => .error e))
+  | (_, .error e) =>
+      assertBool s!"handler recv failed ({repr e})" false
+
+-- ============================================================================
+-- §7f  A faulted thread's reservation travels to its handler and back
+-- ============================================================================
+--
+-- **WS-RR RR8.16 (`v0.35.195`)**: the measurement behind the fault reply's own
+-- coverage claim.  `faultReplyOnCore_preserves_ipcInvariantFull` used to compose
+-- `endpointReplyCrossCoreDispatch_preserves_ipcInvariantFull`, whose
+-- `hNoDonationOwnedBy` says no thread's binding is `.donated _ faulted` — and
+-- this section exhibits a reachable state where that is **false**, built by
+-- ordinary operations: the delivery composes the live `.call` chain, so a
+-- faulted thread holding a reservation lends it to its handler and the handler's
+-- binding names the faulted thread as owner in exactly the state it replies from.
+-- So the bundle was stated over a premise the path it is named for refutes.  It
+-- composes the `_establishes_` form now, and the reply below is the live
+-- `dispatchWithCap` on that state.
+
+private def scFaulter : SeLe4n.SchedContextId := SchedContextId.ofNat 1135
+
+/-- The faulted thread's own reservation.  Its `priority` and `domain` agree with
+the TCB's, which is what `boundThreadPriorityConsistent` /
+`boundThreadDomainConsistent` require of a `.bound` pair. -/
+private def faulterSc : SchedContext :=
+  { scId := scFaulter, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨40⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some faulter, isActive := true }
+
+/-- `stFault`'s two-thread core, with the faulter **bound** to a reservation. -/
+private def stFaultBound : SystemState :=
+  let base :=
+    (BootstrapBuilder.empty
+      |>.withObject cnRoot (.cnode rootCnode)
+      |>.withObject epHandler (.endpoint {})
+      |>.withObject scFaulter.toObjId (.schedContext faulterSc)
+      |>.withObject faulter.toObjId
+          (.tcb { mkTcb 1121 40 none (some handlerCPtr) with
+                    schedContextBinding := .bound scFaulter })
+      |>.withObject handler.toObjId (.tcb (mkTcb 1122 50 (some c1) none))
+      |>.withObject replyH.toObjId (.reply { replyId := replyH })
+      |>.build)
+  { base with scheduler :=
+      ((base.scheduler.setRunQueueOnCore c0
+          (RunQueue.ofList [(faulter, ⟨40⟩)])).setRunQueueOnCore
+        c1 (RunQueue.ofList [(handler, ⟨50⟩)])) }
+
+private def stBoundRunning : SystemState :=
+  { stFaultBound with scheduler :=
+      ((stFaultBound.scheduler.setCurrentOnCore c0 (some faulter)).setCurrentOnCore
+        c1 (some handler)) }
+
+private def bindingOf (st : SystemState) (tid : SeLe4n.ThreadId) :
+    Option SchedContextBinding :=
+  (st.getTcb? tid).map (·.schedContextBinding)
+
+private def runFaultDonationChecks : IO Unit := do
+  IO.println "--- §7f a faulted thread's reservation travels to its handler and back (WS-RR RR8.16) ---"
+  assertBool "pre: the faulter owns a reservation and the handler owns none"
+    (bindingOf stBoundRunning faulter == some (.bound scFaulter) &&
+      bindingOf stBoundRunning handler == some .unbound)
+  match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stBoundRunning with
+  | (afterRecv, .ok _) =>
+      let fctx := faultContextOfThread afterRecv faulter 0x4_0000 0x3C0
+      -- An **unknown syscall**, so the handler's reply LABEL decides between a
+      -- restart and an abandon and both arms are reachable from one state.  The
+      -- abandon is the arm this cut is about: it deschedules the answered thread,
+      -- so `passiveServerIdle` has to be re-established at it, which is the
+      -- obligation `endpointReplyCrossCoreDispatch_ok_target_ready` now discharges.
+      let (afterFault, resD) :=
+        faultDeliverOnCore afterRecv faulter (.unknownSyscall 0x2A) fctx c0
+      assertBool "the fault is delivered to the waiting handler"
+        (resD.disposition == .delivered epHandler)
+      -- The measurement.  This is the state the handler replies from, and the
+      -- retired hypothesis quantifies over exactly this binding.
+      assertBool "the delivery lends the faulted thread's reservation to its handler"
+        (bindingOf afterFault handler == some (.donated scFaulter faulter))
+      assertBool "…so `hNoDonationOwnedBy` is FALSE here: a binding names the faulted thread as owner"
+        (bindingOf afterFault handler != some .unbound &&
+          (match bindingOf afterFault handler with
+           | some (.donated sc owner) => sc == scFaulter && owner == faulter
+           | _ => false))
+      assertBool "…and the faulted thread holds none while its handler runs on it"
+        (bindingOf afterFault faulter == some .unbound)
+      assertBool "the seam's own branch predicate agrees that this caller is faulted"
+        (threadHasPendingFault afterFault faulter)
+      -- The live reply, on that state: the branch the payoff covers since
+      -- `v0.35.195`, and the reservation comes home.
+      match dispatchWithCap replyDecoded handler replyGate replyCapH afterFault with
+      | .ok (_, stD) =>
+          assertBool "the live .reply dispatch answers a faulted caller that had donated"
+            (pendingFaultOf stD faulter == none)
+          assertBool "…installing the handler's restart pc rather than the faulting one"
+            (savedPcOf stD faulter == some 0x9_9000 && savedPcOf stD faulter != some 0x4_0000)
+          assertBool "…and the reservation is returned to the thread that owns it"
+            (bindingOf stD faulter == some (.bound scFaulter))
+          assertBool "…leaving the handler holding none"
+            (bindingOf stD handler == some .unbound)
+      | .error e =>
+          assertBool s!"the live .reply dispatch must succeed on a donating fault reply (got {repr e})"
+            false
+      -- The **abandon** arm on the same donating state: the outcome whose
+      -- idle-state obligation used to be `faultReplyOnCore_preserves_ipcInvariantFull`'s
+      -- `hTargetIdleAllowed` hypothesis.
+      match dispatchWithCap abandonDecoded handler replyGate replyCapH afterFault with
+      | .ok (_, stA) =>
+          assertBool "the live .reply dispatch abandons a faulted caller that had donated"
+            (pendingFaultOf stA faulter == none && threadStateOf stA faulter == some .Inactive)
+          assertBool "…taking it off every core, which is the write the idle-state obligation guards"
+            (!dispatchableOn stA faulter c0 && !dispatchableOn stA faulter c1)
+          assertBool "…and the reservation is still returned to the thread that owns it"
+            (bindingOf stA faulter == some (.bound scFaulter))
+          -- `decodeFaultReply` returns `.abandon` **without a frame**, so the
+          -- handler's register payload never reaches a thread it has just
+          -- declared unfit to continue -- the fail-closed divergence from seL4's
+          -- `copyMRsFaultReply`-before-the-label-test ordering.
+          assertBool "…with none of the abandoning handler's chosen registers installed"
+            (savedPcOf stA faulter != some 0x9_9000)
+      | .error e =>
+          assertBool s!"the live .reply abandon must succeed on a donating fault reply (got {repr e})"
+            false
+      -- The CONTROL: the same delivery on the **unbound** fixture donates
+      -- nothing, so the assertions above are about the reservation rather than
+      -- about the fault.
+      match endpointReceiveDualOnCore epHandler handler (some replyH) c1 stRunning with
+      | (recvU, .ok _) =>
+          let ctxU := faultContextOfThread recvU faulter 0x4_0000 0x3C0
+          let (faultU, _) :=
+            faultDeliverOnCore recvU faulter (.unknownSyscall 0x2A) ctxU c0
+          assertBool "control: with no reservation to lend, the handler's binding stays `.unbound`"
+            (bindingOf faultU handler == some .unbound)
+      | (_, .error e) =>
+          assertBool s!"control: handler recv failed ({repr e})" false
   | (_, .error e) =>
       assertBool s!"handler recv failed ({repr e})" false
 
@@ -1644,6 +1822,7 @@ def runFaultHandlingChecks : IO Unit := do
   runResumeChecks
   runRestartChecks
   runReplySeamChecks
+  runFaultDonationChecks
   runProgressChecks
   runTraceFixtureCheck
   IO.println "===================================="

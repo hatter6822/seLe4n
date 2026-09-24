@@ -409,15 +409,15 @@ run_gate_check "HYGIENE" "${SCRIPT_DIR}/check_changed_file_anchors.sh" \
 # proves nothing about a cardinality check; all four of its rejecting cases are
 # token-preserving and leave every scalar total identical, which is the
 # statement that the old gate admitted them.
-run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh"
-run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_check_monotonic.sh" --self-test
+run_check "HYGIENE" "${SCRIPT_DIR}/check_store_reader_hygiene_monotonic.sh"
+run_check "HYGIENE" "${SCRIPT_DIR}/check_store_reader_hygiene_monotonic.sh" --self-test
 # ...and the scanner the floors are computed FROM (PR #893 review round 4).  The
 # monotonic gate's own self-test synthesizes baseline files, so it exercises the
 # comparison and never the measurement; a scanner that under-reaches therefore
 # produced floors that were simply lower, and both gates reported PASS.  This
 # runs the shared `RAW_MATCH_AWK` program against Lean fixtures, the one-line
 # discriminator among them.
-run_check "HYGIENE" "${SCRIPT_DIR}/ak7_cascade_baseline.sh" --self-test
+run_check "HYGIENE" "${SCRIPT_DIR}/store_reader_hygiene_baseline.sh" --self-test
 
 # WS-RC R12.B (closes DEEP-ARCH-01 false positive structurally): verify
 # the production/staged module partition. The gate computes the transitive

@@ -13,6 +13,7 @@ import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsPreservation
 import SeLe4n.Kernel.Scheduler.Operations.PerCoreTickCbsAffinity
 import SeLe4n.Kernel.SchedContext.BindingAffinity
 import SeLe4n.Kernel.Concurrency.Locks.LockSetTransitions
+import SeLe4n.Kernel.SyscallSchedFootprint
 import SeLe4n.Testing.StateBuilder
 -- PR #889 review round 20: the declared-core scenario reads the RPi5 and
 -- single-core simulation bindings, so the platform contracts come in here.
@@ -994,6 +995,294 @@ private def runBindingLifecycleScenarios : IO Unit := do
          | some sc => sc.boundThread == (none : Option SeLe4n.ThreadId) && !sc.isActive
          | none => false)
 
+/-- §4.5 (WS-RR RR8.12 Cut C3b-i) an **unbound** thread, pinned to core 1, in the
+same store as `tcb0`.  It is what makes the affinity arm's replenish-segment
+narrowing measurable: `tcb0` runs on a reservation and `tcbUnbound` does not, so
+the two resolve the same footprint's replenish segment to opposite answers on one
+state.  A fixture holding only `tcb0` can exhibit the `some` arm and never the
+`none` one. -/
+private def tidUnbound : SeLe4n.ThreadId := ThreadId.ofNat 130
+
+private def tcbUnbound : TCB :=
+  { tid := tidUnbound, priority := ⟨5⟩, domain := ⟨0⟩, cspaceRoot := ObjId.ofNat 0,
+    vspaceRoot := ObjId.ofNat 0, ipcBuffer := SeLe4n.VAddr.ofNat 0,
+    schedContextBinding := .unbound, cpuAffinity := some core1 }
+
+private def stAffinityFp : SystemState :=
+  let base := (((BootstrapBuilder.empty.withObject scId0.toObjId (.schedContext sc0)).withObject
+    tid0.toObjId (.tcb tcb0)).withObject tidUnbound.toObjId (.tcb tcbUnbound)).build
+  { base with
+    scheduler := base.scheduler.setReplenishQueueOnCore core1
+      (ReplenishQueue.empty.insert scId0 5000) }
+
+/-- Does a scheduler-domain footprint name this core's replenish-queue write lock? -/
+private def hasReplenishWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+/-- ...and this core's run-queue write lock? -/
+private def hasRunQueueWriteLock (fp : List (SchedLockId × Concurrency.AccessMode))
+    (c : CoreId) : Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+/-- §4.5 **WS-RR RR8.12 Cut C3b-i — the live `.tcbSetAffinity` arm's resolved
+scheduler-domain footprint.**
+
+Three things this measures that no theorem in the tree states of a *state*.
+
+1. The resolved footprint's replenish segment follows the **binding**, not the
+   arm: the same migration, core 1 → core 2, declares both cores' replenish write
+   locks for a thread on a reservation and none at all for a thread on none.
+2. The `setThreadCpuAffinityWithMigrationLockSet` the SM5.H.4 form declares is
+   computed **beside** the resolved one on the unbound shape, so the narrowing is
+   known to discriminate rather than merely to pass — the parametric footprint
+   names both replenish locks there, because it takes two cores and no state.
+3. The narrowing is exact in the other direction too: the live transition writes
+   no replenish queue on the unbound shape, and does move the reservation on the
+   bound one. -/
+private def runAffinityFootprintScenarios : IO Unit := do
+  IO.println "--- §4.5 Cut C3b-i: the .tcbSetAffinity arm's resolved scheduler footprint ---"
+  let fpBound := schedLockSet_setThreadCpuAffinityOnCore stAffinityFp tid0 (some core2)
+  let fpUnbound := schedLockSet_setThreadCpuAffinityOnCore stAffinityFp tidUnbound (some core2)
+  let fpParametric := setThreadCpuAffinityWithMigrationLockSet core1 core2
+  -- pre: the fixture really does hold the two shapes the claim distinguishes.
+  assertBool "pre: tid0 runs on scId0 and is homed on core 1"
+    (determineTargetCore stAffinityFp tid0 == core1 &&
+      (match stAffinityFp.getTcb? tid0 with
+       | some t => t.schedContextBinding.scId? == some scId0
+       | none => false))
+  assertBool "pre: tidUnbound is homed on core 1 too and runs on no reservation"
+    (determineTargetCore stAffinityFp tidUnbound == core1 &&
+      (match stAffinityFp.getTcb? tidUnbound with
+       | some t => t.schedContextBinding.scId? == (none : Option SchedContextId)
+       | none => false))
+  -- (1) the run-queue segment is the arm's, and it is the same on both shapes:
+  -- the narrowing is about the replenish segment alone.
+  assertBool "C3b-i: both shapes declare the old home core's run-queue write lock"
+    (hasRunQueueWriteLock fpBound core1 && hasRunQueueWriteLock fpUnbound core1)
+  assertBool "C3b-i: ...and the new one's"
+    (hasRunQueueWriteLock fpBound core2 && hasRunQueueWriteLock fpUnbound core2)
+  -- (2) the replenish segment follows the binding.
+  assertBool "C3b-i: a thread on a reservation declares BOTH cores' replenish write locks"
+    (hasReplenishWriteLock fpBound core1 && hasReplenishWriteLock fpBound core2)
+  assertBool "C3b-i: a thread on NO reservation declares no replenish lock on any core"
+    (allCores.all (fun c => !hasReplenishWriteLock fpUnbound c))
+  -- (3) the parametric SM5.H.4 footprint, computed beside the resolved one, is
+  -- what makes (2) a narrowing rather than a restatement.
+  assertBool "C3b-i: the parametric footprint declares both replenish locks on the SAME migration"
+    (hasReplenishWriteLock fpParametric core1 && hasReplenishWriteLock fpParametric core2)
+  assertBool "C3b-i: so on the unbound shape the two footprints DISAGREE — the narrowing is live"
+    (hasReplenishWriteLock fpParametric core1 && !hasReplenishWriteLock fpUnbound core1)
+  assertBool "C3b-i: and on the bound shape every parametric member is a resolved member (coverage)"
+    (fpParametric.all (fun p => decide (p ∈ fpBound)))
+  -- (4) the live transition agrees with each declaration.
+  match setThreadCpuAffinityWithMigration stAffinityFp tidUnbound (some core2) bootCoreId with
+  | .error e =>
+      assertBool s!"the unbound affinity change must succeed (got {repr e})" false
+  | .ok (stU, _) =>
+      assertBool "C3b-i: ...and the live arm writes no replenish queue on any core there"
+        (allCores.all (fun c =>
+          (stU.scheduler.replenishQueueOnCore c).entries
+            == (stAffinityFp.scheduler.replenishQueueOnCore c).entries))
+  match setThreadCpuAffinityWithMigration stAffinityFp tid0 (some core2) bootCoreId with
+  | .error e =>
+      assertBool s!"the bound affinity change must succeed (got {repr e})" false
+  | .ok (stB, _) =>
+      assertBool "C3b-i: the bound shape's live arm DOES move the reservation, to the new home"
+        ((stB.scheduler.replenishQueueOnCore core2).entries.contains (scId0, 5000) &&
+          !(stB.scheduler.replenishQueueOnCore core1).entries.contains (scId0, 5000))
+
+/-- §4.6 (WS-RR RR8.12 Cut C3b-ii) the reading this cut had to reject: a
+one-core replenish segment for the unbind, keyed on the bound thread's home.
+
+It is right on the arm where the bound TCB resolves and **false** on the arm
+where it does not — with the TCB gone from the store there is no `cpuAffinity`
+left to read, `determineTargetCore` falls back to the boot core, and the
+transition sweeps every core instead (`purgeReplenishmentFromAllCores`).  Spelled
+here and nowhere else, so §4.6's assertions are known to discriminate. -/
+private def homeOnlyUnbindReplenishCores (st : SystemState) (scObjId : ObjId) :
+    List CoreId :=
+  match SchedContextOps.schedContextBoundThread? st scObjId with
+  | some tid => [determineTargetCore st tid]
+  | none => []
+
+/-- §4.6 **WS-RR RR8.12 Cut C3b-ii — the three SchedContext arms' resolved
+scheduler-domain footprints.**
+
+Four things this measures that no theorem states of a *state*.
+
+1. The unbind's replenish segment is `allCores` on the **sweep** arm and one
+   core on the bound arm, and the live transition agrees with each: on the sweep
+   fixture it purges core 2, which the home-only reading above does not declare.
+2. The configure's replenish segment is the SC's **home** core, which is the same
+   core its run segment names whenever the SC is bound — one core for an
+   operation with two scheduling effects.
+3. The bind declares no replenish lock at all, and writes none.
+4. Each footprint is `schedFootprintOfCores` of its arm's own write set, so the
+   run segments are the SM8.B ones rather than a second resolution. -/
+private def runSchedContextFootprintScenarios : IO Unit := do
+  IO.println "--- §4.6 Cut C3b-ii: the three SchedContext arms' scheduler footprints ---"
+  -- ── (1) the unbind, on both arms ──
+  let fpUnbindBound := schedLockSet_schedContextUnbindOnCore stCbs scId0.toObjId bootCoreId
+  let fpUnbindSweep := schedLockSet_schedContextUnbindOnCore stDangling scIdDangling.toObjId
+    bootCoreId
+  assertBool "pre: scId0's bound thread resolves and is homed on core 1"
+    ((SchedContextOps.schedContextBoundThread? stCbs scId0.toObjId == some tid0)
+      && determineTargetCore stCbs tid0 == core1
+      && (stCbs.getTcb? tid0).isSome)
+  assertBool "pre: scIdDangling names a thread with NO TCB — the sweep arm's shape"
+    ((SchedContextOps.schedContextBoundThread? stDangling scIdDangling.toObjId
+        == some tidDangling)
+      && (stDangling.getTcb? tidDangling).isNone)
+  assertBool "C3b-ii: the bound arm declares exactly the home core's replenish write lock"
+    (hasReplenishWriteLock fpUnbindBound core1
+      && allCores.all (fun c => c == core1 || !hasReplenishWriteLock fpUnbindBound c))
+  assertBool "C3b-ii: the SWEEP arm declares EVERY core's"
+    (allCores.all (fun c => hasReplenishWriteLock fpUnbindSweep c))
+  assertBool "C3b-ii: the retired home-only reading declares ONE core on the bound arm..."
+    ((homeOnlyUnbindReplenishCores stCbs scId0.toObjId).length == 1)
+  assertBool "C3b-ii: ...and one on the SWEEP arm too, where the live one names all — the narrowing is live in reverse"
+    ((homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).length == 1
+      && (schedContextUnbindReplenishCores stDangling scIdDangling.toObjId).length
+          == allCores.length)
+  -- ...and the live transition writes the cores the sweep segment names.
+  match SchedContextOps.schedContextUnbindOnCore scIdDanglingValid bootCoreId stDangling with
+  | .error e =>
+      assertBool s!"C3b-ii: the sweep-arm unbind must succeed (got {repr e})" false
+  | .ok (stS, _) =>
+      assertBool "C3b-ii: the live sweep purges core 1's entry"
+        ((stS.scheduler.replenishQueueOnCore core1).entries.isEmpty)
+      assertBool "C3b-ii: ...and core 2's, which the home-only reading never declared"
+        ((stS.scheduler.replenishQueueOnCore core2).entries.isEmpty
+          && !(homeOnlyUnbindReplenishCores stDangling scIdDangling.toObjId).contains core2)
+  match SchedContextOps.schedContextUnbindOnCore scId0Valid bootCoreId stCbs with
+  | .error e =>
+      assertBool s!"C3b-ii: the bound-arm unbind must succeed (got {repr e})" false
+  | .ok (stB, _) =>
+      assertBool "C3b-ii: the bound arm purges the home core and leaves every other alone"
+        ((stB.scheduler.replenishQueueOnCore core1).entries.all (fun e => e.1 != scId0)
+          && allCores.all (fun c => c == core1 ||
+              (stB.scheduler.replenishQueueOnCore c).entries
+                == (stCbs.scheduler.replenishQueueOnCore c).entries))
+  -- ── (2) the configure ──
+  let fpConfigure := schedLockSet_schedContextConfigureOnCore stCbs scId0.toObjId
+  assertBool "C3b-ii: the configure declares the SC's home core's replenish write lock — the purge's"
+    (hasReplenishWriteLock fpConfigure core1)
+  assertBool "C3b-ii: ...and its run segment names the SAME core, so one lock covers both effects"
+    (hasRunQueueWriteLock fpConfigure core1
+      && decide (schedContextConfigureReplenishCores stCbs scId0.toObjId
+          = schedContextWriteSet stCbs scId0.toObjId))
+  match SchedContextOps.schedContextConfigure scId0Valid 100 1000 5 0 0 stCbs with
+  | .error e =>
+      assertBool s!"C3b-ii: the configure must succeed (got {repr e})" false
+  | .ok ((), stC) =>
+      assertBool "C3b-ii: the live configure writes no replenish queue outside the declared core"
+        (allCores.all (fun c => c == core1 ||
+          (stC.scheduler.replenishQueueOnCore c).entries
+            == (stCbs.scheduler.replenishQueueOnCore c).entries))
+  -- ── (3) the bind ──
+  let fpBind := schedLockSet_schedContextBindOnCore stLifecycle tidLifecycle
+  assertBool "C3b-ii: the bind declares the bound thread's home core's run-queue write lock"
+    (hasRunQueueWriteLock fpBind (determineTargetCore stLifecycle tidLifecycle))
+  assertBool "C3b-ii: ...and NO replenish lock on any core"
+    (allCores.all (fun c => !hasReplenishWriteLock fpBind c))
+  match SchedContextOps.schedContextBind scIdLifecycleValid tidLifecycleValid stLifecycle with
+  | .error e =>
+      assertBool s!"C3b-ii: the bind must succeed (got {repr e})" false
+  | .ok ((), stBd) =>
+      assertBool "C3b-ii: ...and the live bind writes no replenish queue on any core"
+        (allCores.all (fun c =>
+          (stBd.scheduler.replenishQueueOnCore c).entries
+            == (stLifecycle.scheduler.replenishQueueOnCore c).entries))
+
+/-- §4.7 **WS-RR RR8.12 Cut C4 — the syscall-level scheduler resolver.**
+
+`schedLockSetForSyscall` is the scheduler domain's `lockSetForSyscall`, and this
+group measures the two things no theorem in the tree states of a *state*: that a
+declared arm's answer IS that arm's own footprint (not a set the test supplied,
+and not a neighbouring arm's), and that the operand each arm needs is the one it
+refuses without.
+
+The negative half — every undeclared arm answers `none` whatever the operands —
+is `schedLockSetForSyscall_undeclared_none`, quantified over all nineteen, so
+what is exercised here is the **declared** side and the per-arm operand
+conditions the theorem cannot reach.
+
+The control matters as much as the cases: `.tcbSetAffinity` is asserted to
+refuse when only its *thread* operand is supplied, which is the one arm whose
+missing operand is itself an `Option` — collapsing the two layers would make an
+unsupplied operand read as an unpin request. -/
+private def runSyscallSchedResolverScenarios : IO Unit := do
+  IO.println "--- §4.7 Cut C4: the syscall-level scheduler footprint resolver ---"
+  let st := stAffinityFp
+  let opsThread : Concurrency.SyscallLockOperands :=
+    { caller := tid0, targetThread := some tid0 }
+  let opsObject : Concurrency.SyscallLockOperands :=
+    { caller := tid0, targetObject := some scId0.toObjId }
+  -- (i) A declared arm's answer IS its own resolved footprint, at the operands
+  -- the caller supplied — the relation, not a presence check.
+  assertBool "the .tcbSetPriority arm answers the priority-control footprint"
+    (match schedLockSetForSyscall .tcbSetPriority opsThread bootCoreId st with
+     | some fp => decide (fp.pairs = schedLockSet_priorityControlOnCore st tid0 bootCoreId)
+     | none => false)
+  assertBool "...and .schedContextUnbind answers the unbind's, at its own operand"
+    (match schedLockSetForSyscall .schedContextUnbind opsObject bootCoreId st with
+     | some fp =>
+         decide (fp.pairs
+           = schedLockSet_schedContextUnbindOnCore st scId0.toObjId bootCoreId)
+     | none => false)
+  assertBool "...and .notificationWait answers the executing core's alone"
+    (match schedLockSetForSyscall .notificationWait opsThread bootCoreId st with
+     | some fp => decide (fp.pairs = schedLockSet_notificationWaitOnCore bootCoreId)
+     | none => false)
+  -- (ii) Two arms do not answer the same set: a resolver that dispatched to one
+  -- footprint for every arm would pass (i) three times over.
+  assertBool "NEGATIVE: the priority arm and the unbind arm declare DIFFERENT sets"
+    (match schedLockSetForSyscall .tcbSetPriority opsThread bootCoreId st,
+           schedLockSetForSyscall .schedContextUnbind opsObject bootCoreId st with
+     | some a, some b => decide (a.pairs ≠ b.pairs)
+     | _, _ => false)
+  -- (iii) The operand each arm needs is the one it refuses without.
+  assertBool "NEGATIVE: a thread-directed arm with no thread operand declares nothing"
+    (decide (schedLockSetForSyscall .tcbSetPriority { caller := tid0 } bootCoreId st = none))
+  assertBool "NEGATIVE: an object-directed arm with no object operand declares nothing"
+    (decide (schedLockSetForSyscall .schedContextUnbind { caller := tid0 } bootCoreId st
+      = none))
+  -- The destination core is a second operand, and its own `none` is an unpin
+  -- request — so an unsupplied operand must not read as one.
+  assertBool "CONTROL: .tcbSetAffinity refuses on the thread operand ALONE"
+    (decide (schedLockSetForSyscall .tcbSetAffinity opsThread bootCoreId st = none) &&
+     (schedLockSetForSyscall .tcbSetAffinity
+        { caller := tid0, targetThread := some tid0, affinity := some (some core2) }
+        bootCoreId st).isSome &&
+     (schedLockSetForSyscall .tcbSetAffinity
+        { caller := tid0, targetThread := some tid0, affinity := some none }
+        bootCoreId st).isSome)
+  -- (iv) The undeclared arms, on a state and operands that would satisfy a
+  -- declared one — so the `none` is the inventory's answer rather than a
+  -- missing operand's.
+  assertBool "NEGATIVE: nineteen arms declare nothing on fully-supplied operands"
+    ([SyscallId.cspaceMint, .cspaceCopy, .cspaceMove, .cspaceDelete, .mintReplyCap,
+      .vspaceMap, .vspaceUnmap, .vspaceUnifyInstruction,
+      .serviceRegister, .serviceRevoke, .serviceQuery,
+      .tcbSetIPCBuffer, .tcbSetFaultHandler,
+      .tcbBindNotification, .tcbUnbindNotification,
+      .declassify, .declassifySignal, .auditRead, .auditDrain].all fun sid =>
+        decide (declaredSchedFootprintSyscall sid = false) &&
+        decide (schedLockSetForSyscall sid
+          { caller := tid0, targetThread := some tid0, targetObject := some scId0.toObjId,
+            affinity := some (some core2) } bootCoreId st = none))
+  -- (v) ...and the sixteen the inventory names are exactly the ones the `match`
+  -- can answer: a declared arm listed here that had become unconditionally
+  -- `none` is what the per-arm `_isSome_iff` family refuses, and this is the
+  -- runtime reading of the same fact for the arms this fixture can supply.
+  assertBool "the inventory names sixteen arms"
+    (decide (([SyscallId.tcbSuspend, .tcbResume, .tcbSetPriority, .tcbSetMCPriority,
+      .tcbSetAffinity, .schedContextConfigure, .schedContextBind, .schedContextUnbind,
+      .lifecycleRetype, .notificationSignal, .notificationWait,
+      .send, .receive, .call, .reply, .replyRecv].filter
+        (fun sid => declaredSchedFootprintSyscall sid)).length = 16))
+
 def main : IO Unit := do
   IO.println "=== WS-SM SM5.H — Per-core CBS suite ==="
   runReplenishScenarios
@@ -1008,6 +1297,9 @@ def main : IO Unit := do
   runSm5iTickCbsChecks
   runInventoryChecks
   runBindingLifecycleScenarios
+  runAffinityFootprintScenarios
+  runSchedContextFootprintScenarios
+  runSyscallSchedResolverScenarios
   IO.println "=== SM5.H suite: all assertions passed ==="
 
 end SeLe4n.Testing.SmpCbs

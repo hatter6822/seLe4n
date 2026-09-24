@@ -22,6 +22,7 @@ import SeLe4n.Kernel.Concurrency.Locks.LockSetForSyscall
 -- decode named once, the operands read off the capability that decode addresses,
 -- and the revalidated acquire / act / unwind.
 import SeLe4n.Kernel.SyscallLockBracket
+import SeLe4n.Kernel.SyscallSchedFootprint
 -- WS-SM SM6.E: the per-core suspend behind `suspendThreadCrossCoreEntry`.
 import SeLe4n.Kernel.IPC.CrossCore.Cancellation
 -- WS-SM SM7.B: the shootdown round's pure transitions + diff recovery
@@ -610,8 +611,8 @@ def syscallDispatchCrossCoreBracketedStep (ctx : LabelingContext) (execCore : Co
     (Architecture.SyscallOutcome × List (CoreId × SgiKind) × List CoreId ×
       List Architecture.TlbInvalidation × (Nat × Nat) ×
       List Architecture.ICacheInvalidation × Option SeLe4n.ThreadId) × SystemState :=
-  match runUnderDeclaredLockSet
-      (declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
+  match Concurrency.runBracketed schedulerLockBracketDomain
+      (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5)
       execCore
       (syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30) st with
@@ -630,13 +631,14 @@ acquiring something on the undeclared path stops this elaborating. -/
 theorem syscallDispatchCrossCoreBracketedStep_undeclared (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (h : declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st = none) :
+    (h : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+      = none) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
       = syscallDispatchCrossCoreStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
           ipcBufferAddr elr spsr spEl0 x30 st := by
   unfold syscallDispatchCrossCoreBracketedStep
-  rw [runUnderDeclaredLockSet_undeclared _ _ _ _ h]
+  rw [Concurrency.runBracketed_undeclared _ _ _ _ st h]
 
 /-- **WS-RR RR7.12 (a refusal commits no transition)**: on the refusal arm the
 committed state is the pre-state with the footprint acquired and then unwound —
@@ -648,20 +650,21 @@ resolution the guard judged stale. -/
 theorem syscallDispatchCrossCoreBracketedStep_refused (ctx : LabelingContext)
     (execCore : CoreId) (syscallId : UInt32) (msgInfo : UInt64)
     (x0 x1 x2 x3 x4 x5 ipcBufferAddr elr spsr spEl0 x30 : UInt64) (st : SystemState)
-    (S : Concurrency.LockSet)
-    (hDecl : declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
+    (S : SchedLockSet)
+    (hDecl : declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5 st
           = some S)
-    (hGuard : ¬ (declaredLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
-          (Concurrency.acquireAll execCore S.lockAcquireSequence st) = some S ∧
-        Concurrency.lockSetHeld execCore S
-          (Concurrency.acquireAll execCore S.lockAcquireSequence st))) :
+    (hGuard : ¬ (declaredUnifiedLockSetForAbiEntry ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
+          (schedAcquireAll execCore S.lockAcquireSequence st) = some S ∧
+        schedLockSetHeld execCore S
+          (schedAcquireAll execCore S.lockAcquireSequence st))) :
     syscallDispatchCrossCoreBracketedStep ctx execCore syscallId msgInfo x0 x1 x2 x3 x4 x5
         ipcBufferAddr elr spsr spEl0 x30 st
       = syscallBracketRefusalResult execCore
-          (Concurrency.unwindAll execCore S.lockAcquireSequence.reverse
-            (Concurrency.acquireAll execCore S.lockAcquireSequence st)) := by
+          (schedUnwindAll execCore S.lockAcquireSequence.reverse
+            (schedAcquireAll execCore S.lockAcquireSequence st)) := by
   unfold syscallDispatchCrossCoreBracketedStep
-  rw [runUnderDeclaredLockSet_refused _ _ _ _ S hDecl hGuard]
+  rw [Concurrency.runBracketed_refused _ _ _ _ st S hDecl hGuard]
+  rfl
 
 /-- **WS-SM SM6.A**: the cross-core-aware syscall dispatch entry — the live
 SGI-dispatch seam.  Reads the deployment labeling context and the executing core

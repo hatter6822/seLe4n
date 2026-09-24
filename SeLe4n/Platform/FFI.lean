@@ -2530,6 +2530,7 @@ def capFaultReceivePhase? : SyscallId → Option Bool
   | .cspaceCopy             => some false
   | .cspaceMove             => some false
   | .cspaceDelete           => some false
+  | .cspaceRevoke           => some false
   | .lifecycleRetype        => some false
   | .vspaceMap              => some false
   | .vspaceUnmap            => some false

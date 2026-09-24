@@ -153,6 +153,41 @@ structure SyscallLockOperands where
   on it — a caps-carrying rendezvous declares the receiver's CSpace root and
   the state-level lock its CDT write needs, and a capless one must not. -/
   message : Option IpcMessage := none
+  /-- **WS-RR RR8.12 Cut C4**: the rights the invoked endpoint capability
+  carries, which `.call`'s SCHEDULER-domain footprint reads.
+
+  The five fields below are the scheduler domain's, and they are here rather
+  than in a record of their own because they are *this syscall's operands* —
+  one syscall, one operand record.  The two domains need different subsets of
+  them because they ask different questions of the same arm: an object-domain
+  footprint names the objects a transition writes, resolved from the capability
+  it was invoked through, while a scheduler-domain footprint names the **cores**
+  it writes, resolved by re-running the transition's own control flow — which
+  needs the transition's own arguments.
+
+  Every one is optional and defaults to absent, so `lockSetForSyscall` is
+  untouched by their addition and an arm that needs one absent answers `none`,
+  which is the fail-closed direction this record has had since RR7.10. -/
+  endpointRights : Option AccessRightSet := none
+  /-- **Cut C4**: the receiving thread's capability-transfer slot base, which
+  `.call`'s and `.replyRecv`'s scheduler footprints read. -/
+  receiverSlotBase : Option SeLe4n.Slot := none
+  /-- **Cut C4**: the `MessageInfo` a `.reply` carries.  The arm's footprint
+  branches on whether the answered caller has a pending fault, and on that
+  branch `decodeFaultReply` reads this and the registers below to tell a
+  *restart* from an *abandon* — which is the one core the dispatch-level
+  footprint never names (`v0.35.163`). -/
+  replyMessageInfo : Option MessageInfo := none
+  /-- **Cut C4**: the register payload a `.reply` carries, read by
+  `decodeFaultReply` beside `replyMessageInfo`. -/
+  replyRegisters : Option (Array SeLe4n.RegValue) := none
+  /-- **Cut C4**: the core `.tcbSetAffinity` pins its target to, which is itself
+  an `Option` — `none` unpins — so this field is doubly optional and the two
+  layers mean different things: the outer says whether the caller supplied the
+  operand at all, the inner what it was.  Collapsing them would make an
+  unsupplied operand read as an unpin request, which is a footprint for a
+  different transition. -/
+  affinity : Option (Option CoreId) := none
 
 /-- **WS-RR RR7.10**: the operands of a thread-directed syscall. -/
 def SyscallLockOperands.ofThreadTarget (caller target : ThreadId) :
@@ -282,6 +317,16 @@ def lockSetForSyscall (sid : SyscallId) (ops : SyscallLockOperands)
   -- these becomes a `some` in a later cut, paired with the coverage
   -- proof that its footprint contains every write the op performs.
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
+  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- state discovers and nothing bounds — while a `LockSet` is capped at
+  -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
+  -- a deep derivation tree.  The unbounded-walk treatment this tree already
+  -- uses is the PIP chain's (`pipChainStart_<τ>` markers plus
+  -- `pipChainSchedFootprint`, declared per walked member), and giving
+  -- revocation one is a cut of its own.
+  | .cspaceRevoke
   | .mintReplyCap
   | .lifecycleRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -931,7 +976,7 @@ theorem lockSetForSyscall_replyRecv_covers_redonation
     (hEp : ops.targetObject = some endpointId)
     (hRid : ops.targetReply = some rid)
     (hAns : replyAnsweredCaller? st rid = some prevCaller)
-    (hNew : receiveRendezvousDonatedSc? st endpointId = some newSc)
+    (hNew : receiveRendezvousDonatedSc? st endpointId ops.caller = some newSc)
     (hDecl : lockSetForSyscall .replyRecv ops st = some S) :
     (schedContextLock newSc, AccessMode.write) ∈ S.pairs ∧
     (stateLevelLock, AccessMode.write) ∈ S.pairs := by
@@ -1118,13 +1163,23 @@ mechanically closed. The other direction — listing an arm that still answers
 and pre-state under which its arm declares, so an arm that had quietly become
 unconditionally `none` could not satisfy its own `iff`.
 
-There are `SyscallId.count = 35` arms; eight are declared and twenty-seven
+There are `SyscallId.count = 36` arms; eight are declared and twenty-eight
 answer `none`. -/
 def declaredFootprintSyscall : SyscallId → Bool
   | .tcbSuspend
   | .send | .receive | .call | .reply | .replyRecv
   | .notificationSignal | .notificationWait => true
   | .cspaceMint | .cspaceCopy | .cspaceMove | .cspaceDelete
+  -- **WS-RR RR8.16 (`v0.35.190`)**: `.cspaceRevoke` cannot be declared, and
+  -- that is structural rather than unfinished work.  `cspaceRevokeCdt` walks
+  -- the source slot's CDT descendants across arbitrary CNodes — a set the
+  -- state discovers and nothing bounds — while a `LockSet` is capped at
+  -- `maxLockSetSize`, so a footprint that enumerated them would be *false* on
+  -- a deep derivation tree.  The unbounded-walk treatment this tree already
+  -- uses is the PIP chain's (`pipChainStart_<τ>` markers plus
+  -- `pipChainSchedFootprint`, declared per walked member), and giving
+  -- revocation one is a cut of its own.
+  | .cspaceRevoke
   | .mintReplyCap
   | .lifecycleRetype
   | .vspaceMap | .vspaceUnmap | .vspaceUnifyInstruction
@@ -1157,6 +1212,31 @@ theorem lockSetForSyscall_ofThreadTarget_undeclared
       | rfl
       | exact absurd rfl h
       | simp [lockSetForSyscall, SyscallLockOperands.ofThreadTarget]
+
+/-- **WS-RR RR8.12 Cut C4b**: the object domain ignores the scheduler domain's
+five operands.
+
+`SyscallLockOperands` is ONE record for one syscall's operands, read by
+`lockSetForSyscall` here and by `schedLockSetForSyscall`
+(`SyscallSchedFootprint.lean`) there — which is what lets the ABI seam resolve
+one decode for both domains rather than two, and what
+`declaredSchedLockSetForAbiEntry_shares_decode` states of the seam.  The cost of
+one record is that a field added for one domain could silently move the other's
+answer; this says it cannot, so `abiEntryLockOperands` supplying the five below
+left every object-domain footprint exactly where Cut C4 found it.
+
+Stated as a congruence over all five at once, so a sixth field added without
+extending it is a field nothing has checked. -/
+theorem lockSetForSyscall_ignores_sched_operands (sid : SyscallId)
+    (ops : SyscallLockOperands) (st : SystemState)
+    (rights : Option AccessRightSet) (slotBase : Option SeLe4n.Slot)
+    (mi : Option MessageInfo) (regs : Option (Array SeLe4n.RegValue))
+    (aff : Option (Option CoreId)) :
+    lockSetForSyscall sid
+        { ops with endpointRights := rights, receiverSlotBase := slotBase,
+                   replyMessageInfo := mi, replyRegisters := regs, affinity := aff } st
+      = lockSetForSyscall sid ops st := by
+  cases sid <;> rfl
 
 /-- **WS-SM SM3.C.9 / WS-RR RR7.11**: every arm this module has not declared is
 undeclared, whatever the operands and whatever the state.

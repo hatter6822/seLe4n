@@ -38,8 +38,9 @@ The donation logic is split across two sibling modules:
   witnesses). Re-exported by `SeLe4n.Kernel.IPC.Operations` (the IPC operations
   hub).
 * This file - donation-aware wrappers around the core transport-layer IPC
-  entry points (`endpointCallWithDonation`, `endpointReplyWithDonation`,
-  `endpointReplyRecvWithDonation`). These unavoidably depend on
+  entry points (`endpointReplyWithDonation`, `endpointReplyRecvWithDonation`;
+  `endpointCallWithDonation` was deleted at `v0.35.192` — see the tombstone
+  below). These unavoidably depend on
   `SeLe4n.Kernel.IPC.DualQueue.Transport`, so re-exporting this file from
   the operations hub would reintroduce the `Operations -> Donation ->
   Transport -> Core -> Operations` import cycle closed by AI4-A.
@@ -69,52 +70,27 @@ open SeLe4n.Kernel.Concurrency (CoreId)
 -- Z7: Donation-aware IPC operation wrappers (transport-dependent subset)
 -- ============================================================================
 
-/-- Z7: Donation-aware endpointCall. Composes the standard `endpointCall` with
-post-call SchedContext donation to passive servers.
-
-Before calling `endpointCall`, checks if the endpoint has a waiting receiver
-(handshake path). If so, records the receiver's ThreadId. After `endpointCall`
-completes, applies donation from the caller to the receiver if the receiver
-was passive (unbound). -/
-def endpointCallWithDonation
-    (endpointId : SeLe4n.ObjId) (caller : SeLe4n.ThreadId)
-    (msg : IpcMessage) : Kernel Unit :=
-  fun st =>
-    -- Pre-check: determine receiver before endpointCall pops it.
-    -- AJ1-C (M-02): `endpointQueuePopHead_returns_head` proves the pre-inspected
-    -- receiver matches the thread actually dequeued by endpointCall, ensuring
-    -- donation targets the correct thread.
-    -- AN10-B (DEF-AK7-F.reader.hygiene): typed-helper migration.
-    let maybeReceiver := match st.getEndpoint? endpointId with
-      | some ep => ep.receiveQ.head
-      | none    => none
-    match endpointCall endpointId caller msg st with
-    | .error e => .error e
-    | .ok ((), st') =>
-      match maybeReceiver with
-      | some receiverTid =>
-        -- Handshake path: a receiver was woken — apply donation.
-        -- AH2-C: Propagate donation errors.
-        -- AN10-residual-1 deep-audit: `applyCallDonation` now requires
-        -- `ValidThreadId` for both caller and receiver.  Promote the raw
-        -- tids via `toValid?` with `.error .invalidArgument` rejection;
-        -- under the AL7 dispatch-gate validators on `caller` and the
-        -- `endpointQueuePopHead_returns_head`-witnessed `receiverTid`
-        -- (which came from a previously-stored TCB), the rejection
-        -- arm is structurally unreachable.
-        match SeLe4n.ThreadId.toValid? caller, SeLe4n.ThreadId.toValid? receiverTid with
-        | some callerVtid, some receiverVtid =>
-          match applyCallDonation st' callerVtid receiverVtid with
-          | .error e => .error e
-          | .ok st'' =>
-            -- D4-L: Apply PIP — propagate priority inheritance from the server
-            -- upward through the blocking chain. The server may itself be blocked
-            -- on another server, requiring transitive propagation.
-            .ok ((), PriorityInheritance.propagatePriorityInheritance st'' receiverTid)
-        | _, _ => .error .invalidArgument
-      | none =>
-        -- Blocking path: no receiver was available, caller blocked
-        .ok ((), st')
+-- **WS-RR RR8.12 follow-on (`v0.35.192`): `endpointCallWithDonation` is DELETED.**
+--
+-- Z7's single-core donation-aware Call — `endpointCall`, then
+-- `applyCallDonation` on the handshake branch, then
+-- `propagatePriorityInheritance` — superseded by `endpointCallCrossCoreDispatch`
+-- (`IPC/CrossCore/EndpointCallDispatch.lean`), which is the same three steps in
+-- the same order at their per-core forms (`endpointCallWithCapsOnCore`,
+-- `applyCallDonationOnCore` with WS-RR RR2.7's replenishment migration, and
+-- `propagatePipChainCrossCore`) and which is what the live `.call` arm
+-- dispatches.
+--
+-- Unlike the single-core reference transitions this tree deliberately keeps, it
+-- was pinned to its successor by **no** equivalence theorem — no
+-- `_eq_single_on_bootCore` names it — and consumed by nothing: no live path, no
+-- theorem, no suite, no gate.  A single-core form kept as a reference earns its
+-- place by being tied to the cross-core one; this one was an orphan.
+--
+-- `endpointReplyWithDonation` below is **not** in that position and is kept: it
+-- is the composite PR #895 review round 22 measured against the cross-core
+-- dispatch, with `endpointReplyWithDonation_refuses_delegated_replier` pinning
+-- the divergence in delegated authority that makes the two non-interchangeable.
 
 /-- Z7: Donation-aware endpointReply. Composes the standard `endpointReply`
 with post-reply SchedContext return from the server. -/
@@ -294,65 +270,24 @@ theorem endpointReplyRecvWithDonation_unfold
 -- SC's CBS replenish queue migrates per SM5.H.4"); until WS-RR RR2 no donation
 -- path did it.  `applyCallDonationOnCore` is that path, built exactly like the
 -- cancellation arm that already migrates
--- (`cancelDonatedDonationOnCore`, `IPC/CrossCore/Cancellation.lean`): the
+-- (`cancelDonatedDonationOnCore`, `Lifecycle/Operations/Cleanup.lean` since
+-- `v0.35.164`, where the destroy path can reach it): the
 -- unchanged single-core donation, then `migrateSchedContextReplenishment` from
 -- the donor's home core to the donee's.
 
-/-- WS-RR RR2.1: the SchedContext a `.call` donation would actually transfer —
-`some scId` exactly when `applyCallDonation` takes its donating arm (the
-receiver is passive and the caller holds a bound SchedContext), `none` on every
-no-op arm.
+/-! ### WS-RR RR8.16 (`v0.35.189`) — `callDonationSchedContext?` moved down
 
-Single-sourced here because three consumers need the same answer and a second
-copy would drift: `applyCallDonationOnCore` names the SchedContext whose
-replenishments migrate, the cross-core `.call` dispatch pre-resolves the
-`lockSet_endpointCall` donation footprint from it, and the affinity proof below
-case-splits on it.  Reading the same function is what keeps the declared lock
-footprint and the executed write the same set. -/
-def callDonationSchedContext? (st : SystemState) (caller receiver : SeLe4n.ThreadId) :
-    Option SeLe4n.SchedContextId :=
-  match lookupTcb st receiver with
-  | some receiverTcb =>
-      match receiverTcb.schedContextBinding with
-      | .unbound =>
-          match lookupTcb st caller with
-          -- **WS-OD OD4.2**: the caller's *effective* context, bound or donated
-          -- (`SchedContextBinding.scId?`), so the resolver and the transition
-          -- widen in the same cut and cannot disagree about whether a call
-          -- donates.
-          | some callerTcb => callerTcb.schedContextBinding.scId?
-          | none => none
-      | _ => none
-  | none => none
-
-/-- **WS-OD OD4.2/OD4.6: the guard fires at call depth ≥ 2.**
-
-The resolver reads the caller's *effective* context, so a caller that is itself
-holding a donation (`.donated scId owner` -- the intermediate server of a chain)
-names `scId` exactly as a `.bound` caller names its own.  This is the fact that
-makes the chain transitive at the resolver, stated rather than read off the
-definition at each of its three consumers.
-
-The receiver's `.unbound` premise is the other half of the guard and is what a
-passive server *is*; without it the call is a no-op at any depth. -/
-theorem callDonationSchedContext?_of_donated_caller
-    (st : SystemState) (caller receiver : SeLe4n.ThreadId)
-    (scId : SeLe4n.SchedContextId) (owner : SeLe4n.ThreadId)
-    (cTcb rTcb : TCB)
-    (hR : lookupTcb st receiver = some rTcb)
-    (hRB : rTcb.schedContextBinding = .unbound)
-    (hC : lookupTcb st caller = some cTcb)
-    (hCB : cTcb.schedContextBinding = .donated scId owner) :
-    callDonationSchedContext? st caller receiver = some scId := by
-  unfold callDonationSchedContext?
-  rw [hR]
-  simp only []
-  rw [hRB]
-  simp only []
-  rw [hC]
-  simp only []
-  rw [hCB]
-  rfl
+The resolver and its four lemmas (`_of_donated_caller`,
+`_some_of_sameSchedContextBindings`, `_none_of_sameSchedContextBindings`,
+`_self`) now live in `IPC/Operations/Endpoint.lean`, beside `lookupTcb` and
+`sameSchedContextBindings`, keeping the `SeLe4n.Kernel` namespace so no call
+site was renamed.  The reason is Cut C1's own, one asker further out: the
+**object**-domain donation members are declared in `IPC/CrossCore/EndpointCall.lean`
+and `IPC/CrossCore/EndpointReply.lean`, and neither module's import closure
+contained this one — so the footprints could not read the guard the transition
+reads, and over-declared a SchedContext write lock for a donation the resolver
+declines.  *When a question has one owner and an asker that cannot see it, the
+owner is in the wrong layer* (`v0.35.59`). -/
 
 /-- WS-RR RR2.1 (characterisation): the single-core call donation *is* the
 `callDonationSchedContext?` case split — `donateSchedContext` on the resolved
@@ -932,6 +867,36 @@ def applyReceiveRendezvousDonation (st : SystemState)
   rw [h]
   rfl
 
+/-- **WS-RR RR8.12 Cut C1**: and on a `Call` rendezvous whose donation the resolver
+DECLINES — the receiver already holds a context, or the dequeued caller holds none —
+the step is the identity too, for a different reason: the guard fires, the donation
+runs, and `applyCallDonationOnCore` is the identity on a `none` resolver in both its
+halves (`applyCallDonation_eq_ok_self_of_no_donation`; the migration arm is the `none`
+arm).  The two promotions are what the donation's own signature demands of the ids,
+and a thread `lookupTcb` resolves has one (`lookupTcb_some_toValid?`).  Stated on the
+guard's own state, so the `.receive` arm instantiates it at the post-receive-leg state
+its footprint's licence transports the resolver's answer to. -/
+theorem applyReceiveRendezvousDonation_of_no_donation (st : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (dequeuedV receiverV : SeLe4n.ValidThreadId)
+    (hDV : dequeued.toValid? = some dequeuedV) (hRV : receiver.toValid? = some receiverV)
+    (hNone : callDonationSchedContext? st dequeued receiver = none) :
+    applyReceiveRendezvousDonation st receiver dequeued = .ok st := by
+  unfold applyReceiveRendezvousDonation
+  cases hCall : rendezvousDequeuedCall st dequeued with
+  | false => simp only [Bool.false_eq_true, if_false]
+  | true =>
+    simp only [if_true]
+    unfold applyRendezvousCallDonation
+    rw [hDV, hRV]
+    simp only []
+    unfold applyCallDonationOnCore
+    have hNoneV : callDonationSchedContext? st dequeuedV.val receiverV.val = none := by
+      rw [SeLe4n.ThreadId.toValid?_some_val_eq dequeued dequeuedV hDV,
+        SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hRV]
+      exact hNone
+    rw [applyCallDonation_eq_ok_self_of_no_donation st dequeuedV receiverV hNoneV]
+    simp only [hNoneV]
+
 /-- WS-OD OD3.6: and on a `Call` rendezvous it is exactly the donation. -/
 @[simp] theorem applyReceiveRendezvousDonation_of_call (st : SystemState)
     (receiver dequeued : SeLe4n.ThreadId)
@@ -967,6 +932,173 @@ theorem applyRendezvousCallDonation_ok_decompose
       exact ⟨donorV, receiverV,
         SeLe4n.ThreadId.toValid?_some_val_eq donor donorV hD,
         SeLe4n.ThreadId.toValid?_some_val_eq receiver receiverV hR, h⟩
+
+-- ============================================================================
+-- WS-RR RR8.12 Cut C2 (`v0.35.162`): the cores the rendezvous hand-off migrates between
+-- ============================================================================
+
+/-- **WS-RR RR8.12 Cut C2**: the replenish-queue cores
+`applyRendezvousCallDonation st receiver donor` migrates between, read at the state
+the donation runs on — the donor's home and the receiver's, exactly when
+`callDonationSchedContext?` resolves, and no core otherwise.
+
+This is the post-state form of the `.receive` footprint's pre-state segment
+(`endpointReceiveHandoffReplenishCores`).  That one is read *before* the receive leg
+runs and licensed across it by a binding frame, because a bracket resolves a
+footprint before the transition; this one is read by a footprint that already
+computes the state its leg runs on (`replyRecvBodyWriteSet`'s discipline, where each
+leg is read at the state it actually runs at), so it asks the donation's OWN guard
+on the donation's OWN state and needs no bridge.  The two are not merged, and
+deliberately: a pre-state reading of `callDonationSchedContext?` at the `.replyRecv`
+arm would be a proxy for the guard the transition reads two legs later, after the
+pop has rewritten the receiver's binding. -/
+def rendezvousCallDonationReplenishCores (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId) : List CoreId :=
+  match callDonationSchedContext? st donor receiver with
+  | some _ => [determineTargetCore st donor, determineTargetCore st receiver]
+  | none => []
+
+/-- Where the resolver declines, no core: the hand-off migrates nothing there
+(`applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation`). -/
+@[simp] theorem rendezvousCallDonationReplenishCores_of_no_donation (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId)
+    (h : callDonationSchedContext? st donor receiver = none) :
+    rendezvousCallDonationReplenishCores st receiver donor = [] := by
+  unfold rendezvousCallDonationReplenishCores; rw [h]
+
+/-- And where it resolves, the donor's home and the receiver's — the migration's
+own two endpoints (`applyRendezvousCallDonation_ok_migrates`). -/
+theorem rendezvousCallDonationReplenishCores_of_donation (st : SystemState)
+    (receiver donor : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (h : callDonationSchedContext? st donor receiver = some scId) :
+    rendezvousCallDonationReplenishCores st receiver donor
+      = [determineTargetCore st donor, determineTargetCore st receiver] := by
+  unfold rendezvousCallDonationReplenishCores; rw [h]
+
+/-- **WS-RR RR8.12 Cut C3a (frame)**: where the donation's own resolver declines, a
+successful cross-core call donation moves no replenishment on any core — the
+single-core donation writes objects alone and the migration arm is not taken.  The
+rendezvous form's `applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation`
+below is this fact at the pair the rendezvous resolves; the `.call` dispatch runs
+this primitive directly, so its empty replenish segment
+(`endpointCallCrossCoreDispatch_replenishQueueOnCore_of_no_donation`) reads this one. -/
+theorem applyCallDonationOnCore_replenishQueueOnCore_of_no_donation
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome : CoreId)
+    (hNone : callDonationSchedContext? st callerVtid.val receiverVtid.val = none)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'')
+    (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨st', hDon, harm⟩ :=
+    applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
+  rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · exact absurd (hNone.symm.trans hSome) (by simp)
+
+/-- **WS-RR RR8.12 Cut C6c: the call donation's exactness frame.**
+
+`…_of_no_donation` above says the hand-off moves nothing when the resolver
+declines; this says *where* it moves when the resolver answers, which is what a
+footprint's replenish clause needs: unchanged at every core outside the
+migration's two endpoints.  The SM5.H migration is the only step that touches a
+replenishment here — `applyCallDonation` writes bindings and the object store —
+so the two arms are its `_other` frame and the donation's own scheduler frame. -/
+theorem applyCallDonationOnCore_replenishQueueOnCore_ne
+    (st st'' : SystemState) (callerVtid receiverVtid : SeLe4n.ValidThreadId)
+    (donorHome doneeHome c : CoreId)
+    (hFrom : c ≠ donorHome) (hTo : c ≠ doneeHome)
+    (h : applyCallDonationOnCore st callerVtid receiverVtid donorHome doneeHome = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨st', hDon, harm⟩ :=
+    applyCallDonationOnCore_ok_decompose st st'' callerVtid receiverVtid donorHome doneeHome h
+  rcases harm with ⟨_, hEq⟩ | ⟨scId, _, hEq⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+  · rw [hEq, migrateSchedContextReplenishment_replenishQueueOnCore_other st' scId donorHome
+      doneeHome c (Ne.symm hFrom) (Ne.symm hTo),
+      applyCallDonation_scheduler_eq st callerVtid receiverVtid st' hDon]
+
+/-- **WS-RR RR8.12 Cut C2 (the licence)**: a successful hand-off whose resolver
+answers `some` **is** the single-core donation followed by the SM5.H migration between
+exactly the two cores `rendezvousCallDonationReplenishCores` names — so a footprint
+declaring that pair declares the migration's own endpoints, not a proxy for them. -/
+theorem applyRendezvousCallDonation_ok_migrates
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId) (scId : SeLe4n.SchedContextId)
+    (hDon : callDonationSchedContext? st donor receiver = some scId)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    ∃ st', st'' = migrateSchedContextReplenishment st' scId
+      (determineTargetCore st donor) (determineTargetCore st receiver) := by
+  obtain ⟨donorV, receiverV, hDv, hRv, hCore⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  obtain ⟨st', _, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
+  rw [hDv, hRv] at harm
+  rcases harm with ⟨hNone, _⟩ | ⟨scId', hSome, hEq⟩
+  · exact absurd (hDon.symm.trans hNone) (by simp)
+  · obtain rfl : scId' = scId := Option.some.inj (hSome.symm.trans hDon)
+    exact ⟨st', hEq⟩
+
+/-- **WS-RR RR8.12 Cut C2**: and where the resolver declines, a successful hand-off
+moves no replenishment on any core — the single-core donation writes objects only,
+and the migration arm is not taken.  The empty segment is therefore exact rather
+than merely narrow. -/
+theorem applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation
+    (st st'' : SystemState) (receiver donor : SeLe4n.ThreadId)
+    (hNone : callDonationSchedContext? st donor receiver = none)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') (c : CoreId) :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  obtain ⟨donorV, receiverV, hDv, hRv, hCore⟩ :=
+    applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+  obtain ⟨st', hDon, harm⟩ := applyCallDonationOnCore_ok_decompose st st'' donorV receiverV _ _ hCore
+  rw [hDv, hRv] at harm
+  rcases harm with ⟨_, hEq⟩ | ⟨scId', hSome, _⟩
+  · rw [hEq, applyCallDonation_scheduler_eq st donorV receiverV st' hDon]
+  · exact absurd (hNone.symm.trans hSome) (by simp)
+
+/-- **WS-RR RR8.12 Cut C6e (the exactness frame)**: a successful rendezvous
+hand-off writes no replenish queue outside `rendezvousCallDonationReplenishCores`
+— the FOOTPRINT's own segment, not a pair of hypotheses about where the migration
+went.
+
+The `_of_no_donation` sibling above says the hand-off moves *nothing* when the
+resolver declines; this says *where* it moves when it answers, which is what the
+replenish clause of `schedFootprintCoversWrites` needs.  Neither implies the
+other, and both directions matter: the first keeps the empty segment exact, the
+second keeps the non-empty one true. -/
+theorem applyRendezvousCallDonation_replenishQueueOnCore_ne (st st'' : SystemState)
+    (receiver donor : SeLe4n.ThreadId) (c : CoreId)
+    (hne : c ∉ rendezvousCallDonationReplenishCores st receiver donor)
+    (h : applyRendezvousCallDonation st receiver donor = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  cases hDon : callDonationSchedContext? st donor receiver with
+  | none =>
+    exact applyRendezvousCallDonation_replenishQueueOnCore_of_no_donation st st'' receiver donor
+      hDon h c
+  | some scId =>
+    have hCores : rendezvousCallDonationReplenishCores st receiver donor
+        = [determineTargetCore st donor, determineTargetCore st receiver] := by
+      unfold rendezvousCallDonationReplenishCores; rw [hDon]
+    rw [hCores] at hne
+    simp only [List.mem_cons, List.not_mem_nil, or_false, not_or] at hne
+    obtain ⟨hFrom, hTo⟩ := hne
+    obtain ⟨donorV, receiverV, _, _, hCore⟩ :=
+      applyRendezvousCallDonation_ok_decompose st st'' receiver donor h
+    exact applyCallDonationOnCore_replenishQueueOnCore_ne st st'' donorV receiverV
+      (determineTargetCore st donor) (determineTargetCore st receiver) c hFrom hTo hCore
+
+/-- **WS-RR RR8.12 Cut C6f (the exactness frame)**: the receive rendezvous'
+donation writes no replenish queue outside `rendezvousCallDonationReplenishCores` —
+the FOOTPRINT's own segment.  The guarded form's `false` arm is the identity, so
+this is the unguarded frame plus one case. -/
+theorem applyReceiveRendezvousDonation_replenishQueueOnCore_ne (st st'' : SystemState)
+    (receiver dequeued : SeLe4n.ThreadId) (c : CoreId)
+    (hne : c ∉ rendezvousCallDonationReplenishCores st receiver dequeued)
+    (h : applyReceiveRendezvousDonation st receiver dequeued = .ok st'') :
+    st''.scheduler.replenishQueueOnCore c = st.scheduler.replenishQueueOnCore c := by
+  unfold applyReceiveRendezvousDonation at h
+  by_cases hCall : rendezvousDequeuedCall st dequeued
+  · rw [if_pos hCall] at h
+    exact applyRendezvousCallDonation_replenishQueueOnCore_ne st st'' receiver dequeued c hne h
+  · rw [if_neg hCall] at h
+    rw [(Except.ok.inj h).symm]
 
 /-- WS-OD OD3.6: the rendezvous hand-off keeps the SM5.H replenish-queue
 affinity, because the primitive it composes does and both home cores are read

@@ -234,6 +234,13 @@ def enforcementBoundary : List EnforcementClass :=
   , .capabilityOnly "cspaceInsertSlot"
   , .capabilityOnly "cspaceDeleteSlot"
   , .capabilityOnly "cspaceRevoke"
+  -- **WS-RR RR8.16 (`v0.35.190`)**: the CDT-traversing revocation, and the entry
+  -- the live `.cspaceRevoke` arm calls.  The local `cspaceRevoke` above is the
+  -- single-CNode primitive it opens with; naming *that* one in the mapping would
+  -- be the PR #870 round-5 defect verbatim — a boundary entry for an inner step
+  -- while the seam a capability actually reaches is the composite that walks the
+  -- derivation tree across arbitrary CSpaces.
+  , .capabilityOnly "cspaceRevokeCdt"
   -- Read-only: no state mutation
   , .readOnly "chooseThread"
   , .readOnly "lookupObject"
@@ -373,6 +380,7 @@ def syscallIdToEnforcementName : SyscallId → String
   | .cspaceCopy => "cspaceCopyChecked"
   | .cspaceMove => "cspaceMoveChecked"
   | .cspaceDelete => "cspaceDeleteSlot"
+  | .cspaceRevoke => "cspaceRevokeCdt"
   | .lifecycleRetype => "lifecycleRetypeObject"
   | .vspaceMap => "vspaceMapPageCheckedWithShootdownFromState"
   | .vspaceUnmap => "vspaceUnmapPageWithShootdown"

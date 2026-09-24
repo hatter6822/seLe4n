@@ -1168,9 +1168,18 @@ structure SchedContextConfigureArgs where
   deriving Repr, DecidableEq
 
 /-- Z5-B: Per-syscall argument structure for `schedContextBind`.
-    Register mapping: msgRegs[0]=threadId (thread to bind to this SchedContext). -/
+    Register mapping: msgRegs[0]=tcbCPtr — the **capability address**, in the
+    caller's own CSpace, of the TCB to bind to this SchedContext.
+
+    **`v0.35.204`**: this was `threadId : Nat`, a raw thread id the arm bound
+    directly, so a holder of an ordinary SchedContext capability could bind that
+    context to any thread it could name and rewrite that thread's base priority
+    through the bind's Z5-G3 propagation.  seL4-MCS's `seL4_SchedContext_Bind`
+    takes the TCB as a capability, and `.tcbBindNotification` already resolved
+    its extra operand that way (`TcbBindNotificationArgs.notificationCPtr`); the
+    bind now does too, through `Kernel.resolveSchedContextBindThread`. -/
 structure SchedContextBindArgs where
-  threadId : Nat
+  tcbCPtr : Nat
   deriving Repr, DecidableEq
 
 /-- Z5-C: Per-syscall argument structure for `schedContextUnbind`.
@@ -1245,11 +1254,12 @@ theorem decodeSchedContextConfigureArgsChecked_invariants
             · omega
 
 /-- Z5-B: Decode schedContextBind arguments from message registers.
-    Requires 1 message register (threadId). -/
+    Requires 1 message register (`tcbCPtr`, the TCB capability's address in
+    the caller's CSpace — `v0.35.204`; a raw thread id until then). -/
 def decodeSchedContextBindArgs (decoded : SyscallDecodeResult)
     : Except KernelError SchedContextBindArgs := do
   let r0 ← requireMsgReg decoded.msgRegs 0
-  pure { threadId := r0.val }
+  pure { tcbCPtr := r0.val }
 
 /-- Z5-C: Decode schedContextUnbind arguments. No message registers needed. -/
 def decodeSchedContextUnbindArgs (_decoded : SyscallDecodeResult)
@@ -1292,7 +1302,7 @@ def decodeTcbUnbindNotificationArgs (_decoded : SyscallDecodeResult)
 
 /-- Z5-B: Encode schedContextBind arguments into message registers. -/
 @[inline] def encodeSchedContextBindArgs (args : SchedContextBindArgs) : Array RegValue :=
-  #[⟨args.threadId⟩]
+  #[⟨args.tcbCPtr⟩]
 
 /-- Z5-C: Encode schedContextUnbind arguments (empty — no message registers). -/
 @[inline] def encodeSchedContextUnbindArgs (_args : SchedContextUnbindArgs) : Array RegValue :=

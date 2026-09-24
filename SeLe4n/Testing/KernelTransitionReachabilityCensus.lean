@@ -928,16 +928,45 @@ reasons would read as justification while asserting nothing, and the obligation
 that does the work falls on whoever adds the next entry, who must either wire it
 or say here why it exists.
 
-**Two known residues inside this list, both registered rather than absorbed.**
-The whole `cspaceRevoke*` / `revokeCdt*` / `streamingRevokeBFS` family is here
-because `API.lean` has no revocation syscall arm at all — verified machinery
-with no ABI path — and four members (`cleanupActiveDonation`, `timerTickChecked`,
-`switchDomainChecked`, `endpointCallWithDonation`) are consumed by nothing in the
-tree: no live path, no theorem, no suite, no gate.  Each needs the wire-or-retire
-judgement `v0.35.78` made for the capability-reference table, which is a
-measurement and a decision rather than a line in a list, so both carry rows in
-`docs/REGISTERED_DEBT.md`.  Naming them here keeps a *known* residue from reading
-like an unexamined one. -/
+**The four-member residue this list named closed at `v0.35.192`**, and the
+judgement went both ways, which is why it was a decision rather than a line.
+`cleanupActiveDonation` and `endpointCallWithDonation` are **deleted**: the first
+was Z7-E's alias for `returnDonatedSchedContext` whose scenario the live
+`cleanupPreReceiveDonation{,Checked,Migrated}` family implements, the second Z7's
+single-core donation-aware Call that `endpointCallCrossCoreDispatch` superseded,
+tied to it by no equivalence theorem.  `timerTickChecked` and
+`switchDomainChecked` are **kept**, because they are two of the four X2-I
+API-boundary wrappers and deleting half of a symmetric family is the asymmetry
+this project's implement-the-improvement rule forbids — so they gained the
+witnesses their two driven siblings have (`tests/NegativeStateSuite.lean`), which
+closes *"no suite drives them"* while leaving *"outside the live closure"* true
+and recorded **here**, where it belongs.
+
+**The revocation family's residue closed at `v0.35.190` (WS-RR RR8.16)**, and
+what is left of it here is a *narrower* claim than the one that was registered.
+`API.lean` gained the `.cspaceRevoke` arm, so `cspaceRevoke`, `cspaceRevokeCdt`,
+`revokeCdtScaffold`, `revokeCdtMaterializedTraversal`, `revokeCdtFoldBody`,
+`processRevokeNode` and the in-flight sweep are all in the live closure and have
+left this list.  What remains are the three **reporting variants**
+(`cspaceRevokeCdtStrict`, `cspaceRevokeCdtStreaming`,
+`cspaceRevokeCdtTransactional`) with their traversals, the streaming BFS and the
+reporting fold step: each is the same scaffold at a different traversal, offered
+to *in-kernel* callers that want a structured failure report or an
+`O(branching-factor)` walk, and the syscall arm dispatches the materialized
+variant because a userspace invocation has no channel to receive a report
+through.  A variant with no in-kernel caller either gains one or is retired;
+that is a smaller question than the one the register row asked, and it is what
+the row was closed down to.
+
+**And the local `cspaceRevoke` is back on this list since `v0.36.1`** (PR #900
+review), for the opposite reason from the variants: it was in the live closure
+only as `revokeCdtScaffold`'s prologue, and that prologue is a read of the source
+slot now, because the local sweep matched on the **target** and so destroyed
+capabilities that were not derivations — an independently rooted capability to
+the same object, and the revoked capability's own parent.  What still runs it is
+`lifecycleRevokeDeleteRetype`, an internal proof helper already on this list, and
+the non-interference operation catalogue, where it is an operation in its own
+right; no syscall reaches it. -/
 def nonExecutedTransitionsPlain : List Name :=
   [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.empty
   , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate
@@ -995,6 +1024,14 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.Concurrency.commitSort
   , `SeLe4n.Kernel.Concurrency.insertByCommitTime
   , `SeLe4n.Kernel.Concurrency.objStoreWriteInstance
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): the OBJECT domain's bracket instance.
+  -- The syscall seam moved to `schedulerLockBracketDomain` over the unified
+  -- footprint, so nothing a committing `@[export]` reaches acquires through this
+  -- one any more.  Not retired: it is the domain `runUnderDeclaredLockSet` is an
+  -- instance of, and the CSpace-walk bracket that still reads it is STAGED, so
+  -- no runtime path executes it.  It becomes live again when that surface is
+  -- promoted, or when a second object-domain seam is bracketed.
+  , `SeLe4n.Kernel.Concurrency.objectLockBracketDomain
   , `SeLe4n.Kernel.Concurrency.readOnlyInstance
   , `SeLe4n.Kernel.Concurrency.runChainExtension
   , `SeLe4n.Kernel.Concurrency.setObjStoreLockAction
@@ -1018,7 +1055,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.PriorityInheritance.propagatePipChainCrossCoreState
   , `SeLe4n.Kernel.PriorityInheritance.propagatePriorityInheritance
   , `SeLe4n.Kernel.PriorityInheritance.withPipChainSchedExtension
-  , `SeLe4n.Kernel.RevokeTraversalOutcome.state
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.migrateRunQueueBucket
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setMCPriorityOp
   , `SeLe4n.Kernel.SchedContext.PriorityManagement.setPriorityOp
@@ -1031,7 +1067,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.chooseThread
   , `SeLe4n.Kernel.chooseThreadEffective
   , `SeLe4n.Kernel.chooseThreadInDomain
-  , `SeLe4n.Kernel.cleanupActiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation
   , `SeLe4n.Kernel.cleanupPreReceiveDonation_never_errors_under_ipcInvariantFull
   , `SeLe4n.Kernel.commitKernelAction
@@ -1041,7 +1076,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceMutate
   , `SeLe4n.Kernel.cspaceResolvePath
   , `SeLe4n.Kernel.cspaceRevoke
-  , `SeLe4n.Kernel.cspaceRevokeCdt
   , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
   , `SeLe4n.Kernel.cspaceRevokeCdtStrict
   , `SeLe4n.Kernel.cspaceRevokeCdtTransactional
@@ -1056,7 +1090,6 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.endpointCall
   , `SeLe4n.Kernel.endpointCallChecked
   , `SeLe4n.Kernel.endpointCallWithCaps
-  , `SeLe4n.Kernel.endpointCallWithDonation
   , `SeLe4n.Kernel.endpointReceiveDual
   , `SeLe4n.Kernel.endpointReceiveDualChecked
   , `SeLe4n.Kernel.endpointReceiveDualWithCaps
@@ -1095,9 +1128,17 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.notificationWaitChecked
   , `SeLe4n.Kernel.notificationWaitCrossCoreDispatch
   , `SeLe4n.Kernel.processReplenishmentsDue
-  , `SeLe4n.Kernel.processRevokeNode
   , `SeLe4n.Kernel.purgedAndRestored
   , `SeLe4n.Kernel.registerInterface
+  -- WS-RR RR8.12 Cut C6h (`v0.35.181`): RR7.12's object-domain bracket at the
+  -- ABI seam, superseded there by `Concurrency.runBracketed schedulerLock\
+  -- BracketDomain` over `declaredUnifiedLockSetForAbiEntry` — the two domains
+  -- write the same lock words, so nesting two brackets would take the
+  -- object-store table lock twice.  Its remaining reader is the STAGED CSpace
+  -- walk (`withCSpaceWalkLocks`), which no committing seam runs; the
+  -- export-commit census still names it a bracket form, so a body that reaches
+  -- it counts as bracketed.
+  , `SeLe4n.Kernel.runUnderDeclaredLockSet
   , `SeLe4n.Kernel.removeRunnable
   , `SeLe4n.Kernel.removeRunnableValid
   , `SeLe4n.Kernel.replenishScOnCore
@@ -1111,15 +1152,11 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.retypeAsidRoundFold
   , `SeLe4n.Kernel.retypeAsidRoundStep
   , `SeLe4n.Kernel.retypeFromUntyped
-  , `SeLe4n.Kernel.revokeCdtFoldBody
-  , `SeLe4n.Kernel.revokeCdtMaterializedTraversal
   , `SeLe4n.Kernel.revokeCdtReportingOutcome
   , `SeLe4n.Kernel.revokeCdtReportingStep
-  , `SeLe4n.Kernel.revokeCdtScaffold
   , `SeLe4n.Kernel.revokeCdtStreamingTraversal
   , `SeLe4n.Kernel.revokeCdtStrictTraversal
   , `SeLe4n.Kernel.revokeCdtTransactionalTraversal
-  , `SeLe4n.Kernel.revokePendingTransfersFrom
   , `SeLe4n.Kernel.saveOutgoingContext
   , `SeLe4n.Kernel.saveOutgoingContextChecked
   , `SeLe4n.Kernel.schedule
@@ -1218,7 +1255,6 @@ def nonExecutedTransitionsPrivate : List Name :=
   [ privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsDetailed
   , privateIn `SeLe4n.Kernel.API `SeLe4n.Kernel.resolveExtraCapsGated
   , privateIn `SeLe4n.Kernel.Capability.Invariant.Defs `SeLe4n.Kernel.ScrubTokenImpl.stPre
-  , privateIn `SeLe4n.Kernel.Capability.Operations `SeLe4n.Kernel.revokePendingTransfersStep
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt1
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt2
   , privateIn `SeLe4n.Kernel.IPC.Invariant.DispatchPayoff `SeLe4n.Kernel.witnessSt3

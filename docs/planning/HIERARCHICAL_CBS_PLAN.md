@@ -1,9 +1,10 @@
 # WS-CB — Hierarchical Constant Bandwidth Servers (HCBS)
 
 > **Workstream**: WS-CB (constant-bandwidth server hierarchy)
-> **Status**: **PLANNED** — registered at v0.34.49; no sub-task started.  Opens
-> after WS-RR closes, or in parallel with RR6–RR8 under the file partition in
-> §2.3.  Not a v1.0.0 blocker: SM10 may cut v1.0.0 with this workstream open,
+> **Status**: **PLANNED** — registered at v0.34.49; no sub-task started.  The
+> WS-RR dependency is discharged: RR8 closed at `v0.35.203`, so the file
+> partition in §2.3 is no longer the reason to wait and this workstream may
+> open whenever the maintainer schedules it.  Not a v1.0.0 blocker: SM10 may cut v1.0.0 with this workstream open,
 > provided the release notes state that scheduling contexts are flat, the root
 > scheduler is fixed-priority, and the CBS refill defect in §1.1 is open.
 > **Relationship to WS-SM**: extends the SM5.A selector, the SM5.D/SM5.H
@@ -1341,7 +1342,7 @@ neither cut's tree is described by the other's values:
 
 | Table | Where | `configureServer` | `bindServer` | `unbindServer` |
 |-------|-------|-------------------|--------------|----------------|
-| `SyscallId.toNat` / `ofNat?` / `ToString` | `Model/Object/Types.lean` | 35 | 36 | 37 |
+| `SyscallId.toNat` / `ofNat?` / `ToString` | `Model/Object/Types.lean` | 36 | 37 | 38 |
 | `syscallRequiredRight` | `Kernel/API.lean` | `.write` | `.write` | `.write` |
 | `syscallChecksTargetFirst` | `Kernel/API.lean` | as `.schedContextBind` | as `.schedContextBind` | as `.schedContextUnbind` |
 | `syscallDelegates` | `Kernel/API.lean` | the `…OnCore` transition | the `…OnCore` transition | the `…OnCore` transition |
@@ -2185,7 +2186,7 @@ rows named.
 | Q2 | Per-window refills (hard CBS), rather than per-consumed-chunk refills? | Yes (D16) | Per-chunk refills need consumption tracking and refill coalescing under the 8-entry bound in CB1.2/CB1.6, and change T4/T5 and T14's demand argument |
 | Q3 | Deadline inheritance stays within a member's server (no bandwidth inheritance)? | Yes (D15) | Lifting the server's deadline for a client in another server is bandwidth inheritance; CB4 and CB7.2 change shape |
 | Q4 | Selection by scan now, the deadline-ordered index later? | Yes (D2) | An index in CB1 adds a per-core structure with its consistency invariant to every transition in CB1.7 and CB4.3 |
-| Q5 | Open after WS-RR, or beside RR6–RR8 under §2.3's partition? | After | CB1 may start once RR7 is quiet in the scheduler and the CBS engine; CB5 onward waits for `API.lean` and the donation primitives |
+| Q5 | Open after WS-RR, or beside RR6–RR8 under §2.3's partition? | After — and the question is settled by events: WS-RR closed at `v0.35.203` | CB1 may start once RR7 is quiet in the scheduler and the CBS engine; CB5 onward waits for `API.lean` and the donation primitives |
 | Q6 | Land CB0.3 as the next cut, ahead of the workstream — and the engine switch (CB1.2 then CB1.6, the refill defect) as the ones after? | Yes to both | The authority gap and the starvation defect stay open until the workstream opens |
 | Q7 | Retire `schedContextYieldTo` in the engine switch (CB1.6), as the plan now schedules? | Retire | Keeping it means redesigning it as an engine rule — the source takes rule (c), the target an activation-shaped credit that respects its window and its pending refill — with its own T3 lemmas and a consumer, since nothing but four harness probes calls it today; as it stands it writes `budgetRemaining` on two contexts outside every rule and would falsify `pendingRefillOnlyWhenExhausted` and T4 |
 | Q8 | Remove `TCB.deadline` in CB1.4 rather than keep it as a dead field? | Remove | Keeping it means a proof that selection never reads it, renewed at every selector change |

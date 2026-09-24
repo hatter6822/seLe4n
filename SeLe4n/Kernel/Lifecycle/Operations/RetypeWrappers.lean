@@ -44,6 +44,66 @@ open Internal
 -- WS-H2/S6-C: Safe lifecycle retype wrapper (cleanup + scrub + retype)
 -- ============================================================================
 
+/-- **`v0.35.187`: what a retype requires of its replacement, in ONE place.**
+
+Two conditions, and the second is why this predicate exists rather than a second
+`if` beside the first.
+
+* `wellFormed` — T5-D's defence in depth, with SM6.D's inert-`Reply` clause and
+  `v0.35.184`'s bound-nobody `SchedContext` clause.
+* **the replacement's own embedded identity is the slot it will occupy.**  A
+  TCB, a SchedContext and a Reply each carry their own id in a field while the
+  object store is keyed by `ObjId`, so the two can disagree —
+  `PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that
+  at **boot** since PR #889 review round 8, and its own docstring states the
+  hazard in terms: *a SchedContext at slot 9 carrying `scId = 12` would have its
+  budget replenished on whatever object 12 is*.  Nothing refused it at the
+  **runtime**, and `objectOfKernelType` — the one builder the live retype
+  installs through — stamps the reserved **sentinel** into all three, so a
+  successful retype broke at the runtime exactly the agreement the boot
+  enforces.
+
+A named predicate rather than two guards because the wrappers are the only
+askers and both must ask the same question: *a named condition beside unnamed
+ones is a subset*, and this tree has paid for that shape before
+(`dualQueueRemovalEnabled`, `v0.35.59`).  `KernelObject.withIdentity` is what
+makes it a discipline a caller can meet rather than a wall; the live dispatch
+stamps with it. -/
+def retypeReplacementAdmissible (newObj : KernelObject) (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) : Prop :=
+  newObj.wellFormed objects ∧ newObj.embeddedIdentityMatches target = true
+
+instance (newObj : KernelObject) (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    Decidable (retypeReplacementAdmissible newObj target objects) := by
+  unfold retypeReplacementAdmissible; exact inferInstance
+
+/-- **`v0.35.187`**: a stamped replacement is admissible exactly when it is
+well-formed — so the identity half costs a caller that stamps nothing, which is
+what keeps the guard from refusing valid retypes. -/
+@[simp] theorem retypeReplacementAdmissible_withIdentity (newObj : KernelObject)
+    (target : SeLe4n.ObjId)
+    (objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject) :
+    retypeReplacementAdmissible (newObj.withIdentity target) target objects ↔
+      newObj.wellFormed objects := by
+  simp [retypeReplacementAdmissible]
+
+/-- **`v0.35.187`**: admissibility entails well-formedness, so every existing
+consumer of the T5-D guard reads it off this one. -/
+theorem retypeReplacementAdmissible.wellFormed' {newObj : KernelObject}
+    {target : SeLe4n.ObjId}
+    {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    (h : retypeReplacementAdmissible newObj target objects) :
+    newObj.wellFormed objects := h.1
+
+/-- **`v0.35.187`**: and the identity agreement, which is the half the boot
+check has always had and the runtime did not. -/
+theorem retypeReplacementAdmissible.identity {newObj : KernelObject}
+    {target : SeLe4n.ObjId}
+    {objects : SeLe4n.Kernel.RobinHood.RHTable SeLe4n.ObjId KernelObject}
+    (h : retypeReplacementAdmissible newObj target objects) :
+    newObj.embeddedIdentityMatches target = true := h.2
+
 /-- WS-H2/S6-C: Safe lifecycle retype with reference cleanup and memory scrubbing.
     Composes three phases:
     1. `lifecyclePreRetypeCleanup` — TCB scheduler dequeue + CNode CDT detach
@@ -71,8 +131,9 @@ def lifecycleRetypeWithCleanup
     (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate new object well-formedness before proceeding
-    if ¬ newObj.wellFormed st.objects then
+    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
       match st.getObject? target with
@@ -125,10 +186,13 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
         intro hRun
         rw [if_pos hRun] at hClean
         exact absurd hClean (by simp))] at hClean
-      cases hDon : cleanupDonatedSchedContext st tcb.tid with
-      | error e => rw [hDon] at hClean; simp at hClean
-      | ok stDon =>
-        rw [hDon] at hClean; simp only [] at hClean
+      -- `v0.35.164`: the pipeline's first step is the reservation arm; the sweep
+      -- that follows removes the thread from the boot queue whatever that arm
+      -- left, which is all this theorem reads.
+      cases hArm : cancelDonationArmOnCore st tcb.tid tcb with
+      | error e => rw [hArm] at hClean; simp at hClean
+      | ok stArm =>
+        rw [hArm] at hClean; simp only [] at hClean
         -- PR #822 review: the final `.tcb` arm rejects a TCB still holding a reply
         -- link (`.error`, vacuous on `.ok`); reduce the reject-`if` on the `.ok` path.
         have hRO : tcb.replyObject.isSome = false := by
@@ -137,8 +201,8 @@ theorem lifecycleRetypeWithCleanup_ok_runnable_no_dangling
           | true => rw [if_pos hr] at hClean; exact absurd hClean (by simp)
         rw [if_neg (by simp [hRO])] at hClean
         injection hClean with hClean; subst hClean
-        -- S-05/PERF-O1: cleanupTcbReferences_removes_from_runnable is polymorphic in
-        -- the input state; use _ to let Lean unify with the scThreadIndex-cleaned state
+        -- `cleanupTcbReferences_removes_from_runnable` is polymorphic in the input
+        -- state; `_` lets Lean unify it with the arm's post-state.
         exact cleanupTcbReferences_removes_from_runnable _ tcb.tid
 
 -- ============================================================================
@@ -273,6 +337,52 @@ def lifecycleRetypeDirect
         else
           .error .illegalState
 
+/-- **`v0.35.185` (register row 63): the direct retype IS a `storeObject`, under
+two guards that commit nothing.**
+
+`lifecycleRetypeObject_ok_as_storeObject`'s sibling for the pre-resolved variant
+— the same decomposition, at a `Capability` rather than a `CSpaceAddr`, so a
+consumer reasoning about what the retype writes has one step to reason about.
+
+Stated because the retype composite's invariant theorems need exactly this: every
+object-level fact about the destroy path's last step is a fact about
+`storeObject`. -/
+theorem lifecycleRetypeDirect_ok_as_storeObject
+    (st st' : SystemState) (authCap : Capability) (target : SeLe4n.ObjId)
+    (newObj : KernelObject)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    storeObject target newObj st = .ok ((), st') := by
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · split at h
+      · exact h
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+
+/-- **WS-RR RR8.12 Cut C6g**: the direct retype is scheduler- and machine-silent —
+it is a `storeObject` under two guards, and the guards commit nothing.
+
+Declared here, beside the step, rather than as the `private` copy that lived in the
+staged non-interference module: a production consumer (the retype footprint's
+replenish exactness frame) needs it, and a private theorem in a staged module is
+one no production asker can reach. -/
+theorem lifecycleRetypeDirect_scheduler_machine_eq
+    (authCap : Capability) (target : SeLe4n.ObjId) (newObj : KernelObject)
+    (st st' : SystemState)
+    (h : lifecycleRetypeDirect authCap target newObj st = .ok ((), st')) :
+    st'.scheduler = st.scheduler ∧ st'.machine = st.machine := by
+  unfold lifecycleRetypeDirect SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · split at h
+    · split at h
+      · exact ⟨storeObject_scheduler_eq st st' target newObj h,
+              storeObject_machine_eq st st' target newObj h⟩
+      · exact absurd h (by simp)
+    · exact absurd h (by simp)
+
 -- ============================================================================
 -- U-H04: lifecycleRetypeDirectWithCleanup — pre-resolved authority + safe path
 -- ============================================================================
@@ -293,8 +403,9 @@ def lifecycleRetypeDirectWithCleanup
     (authCap : Capability) (target : SeLe4n.ObjId)
     (newObj : KernelObject) : Kernel Unit :=
   fun st =>
-    -- T5-D: Validate new object well-formedness before proceeding
-    if ¬ newObj.wellFormed st.objects then
+    -- T5-D: Validate the replacement before proceeding -- well-formedness, and
+    -- (`v0.35.187`) that its own embedded identity is the slot it will occupy.
+    if ¬ retypeReplacementAdmissible newObj target st.objects then
       .error .illegalState
     else
       match st.getObject? target with
@@ -306,6 +417,60 @@ def lifecycleRetypeDirectWithCleanup
           | .ok stClean =>
             let stScrubbed := scrubObjectMemory stClean target currentObj.objectType
             lifecycleRetypeDirect authCap target newObj stScrubbed
+
+/-- **`v0.35.185` (register row 63): what a successful cleanup-composed retype
+did**, in one place.
+
+Three facts, and the composite's invariant theorems each need all three: the
+replacement was **admissible** (which is what makes `v0.35.184`'s `.schedContext`
+clause and `v0.35.187`'s identity clause *runtime refusals* rather than caller
+obligations), the target held some object the cleanup ran on, and the whole of
+the commit is one `storeObject` on the scrubbed post-cleanup state.
+
+The `none` arm of the wrapper's own `getObject?` match is unreachable on `.ok`,
+because `lifecycleRetypeDirect` re-asks the same question and answers
+`.objectNotFound` — so the existential is total on the success path rather than
+a case the caller must still split.
+
+Stated once because two invariant theorems (`…_preserves_schedContextBindingConsistent`
+and `…_preserves_replenishQueueAffinityConsistent_smp`) had the same twenty-line
+decomposition inlined, and a second reading of what a transition does is the
+duplication this project treats as debt.
+`lifecycleRetypeDirectWithCleanup_vspaceRoot_storeObject` is this fact
+specialised to a `.vspaceRoot` current object, where the cleanup is the
+identity. -/
+theorem lifecycleRetypeDirectWithCleanup_ok_decompose
+    {st st' : SystemState} {authCap : Capability} {target : SeLe4n.ObjId}
+    {newObj : KernelObject}
+    (h : lifecycleRetypeDirectWithCleanup authCap target newObj st = .ok ((), st')) :
+    retypeReplacementAdmissible newObj target st.objects ∧
+      ∃ currentObj stClean,
+        st.objects[target]? = some currentObj ∧
+        lifecyclePreRetypeCleanup st target currentObj newObj = .ok stClean ∧
+        storeObject target newObj
+            (scrubObjectMemory stClean target currentObj.objectType) = .ok ((), st') := by
+  unfold lifecycleRetypeDirectWithCleanup SystemState.getObject? at h
+  split at h
+  · exact absurd h (by simp)
+  · rename_i hWF
+    refine ⟨by simpa using hWF, ?_⟩
+    cases hCur : st.objects[target]? with
+    | none =>
+      -- Unreachable: the direct retype re-asks and answers `.objectNotFound`.
+      rw [hCur] at h
+      unfold lifecycleRetypeDirect SystemState.getObject? at h
+      rw [hCur] at h
+      exact absurd h (by simp)
+    | some currentObj =>
+      rw [hCur] at h
+      simp only [] at h
+      cases hClean : lifecyclePreRetypeCleanup st target currentObj newObj with
+      | error e => rw [hClean] at h; exact absurd h (by simp)
+      | ok stClean =>
+        rw [hClean] at h
+        simp only [] at h
+        exact ⟨currentObj, stClean, rfl, hClean,
+          lifecycleRetypeDirect_ok_as_storeObject _ st' authCap target newObj h⟩
 
 -- ============================================================================
 -- WS-SM SM7.B.11 / SM7.F.4(b)(iii): the ASID set a retype owes the TLB
@@ -1083,6 +1248,45 @@ def retypeInitiatorDrain (executingCore : SeLe4n.Kernel.Concurrency.CoreId)
   | _ :: _ =>
       Architecture.drainInitiatorPerCoreView st' executingCore
         (asids.map Architecture.encodeAsidInvalidation)
+
+/-- SM8.B.2: the initiator's own per-core TLB drain is scheduler- and
+machine-silent, on both arms.
+
+Relocated here at **WS-RR RR8.12 Cut C6g** from the staged non-interference
+module, beside the step it frames and beside its sibling
+`retypeAsidRoundFold_scheduler`, so a production consumer — the retype
+footprint's replenish exactness frame — can read it. -/
+@[simp] theorem retypeInitiatorDrain_scheduler
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).scheduler = st.scheduler := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
+
+@[simp] theorem retypeInitiatorDrain_machine
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).machine = st.machine := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
+
+/-- **`v0.35.185` (register row 63): and object-silent**, the third member of the
+drain's frame family.
+
+It existed as the `.1` of a `private` conjunction in
+`IPC/Invariant/DispatchArmPreservation.lean`, whose `.2` duplicated the public
+`retypeInitiatorDrain_scheduler` two lines above — so half of it was a second
+answer to a question this module already owned, and the half that was new was
+unreachable from every module upstream of that one.  Both halves live here now,
+beside the step they frame: `v0.35.59`'s rule, which `v0.35.166` paid for the
+cleanup's two sweeps and Cut C6g for this same step's scheduler and machine
+frames. -/
+@[simp] theorem retypeInitiatorDrain_objects
+    (executingCore : SeLe4n.Kernel.Concurrency.CoreId) (asids : List SeLe4n.ASID)
+    (st : SystemState) :
+    (retypeInitiatorDrain executingCore asids st).objects = st.objects := by
+  unfold retypeInitiatorDrain
+  cases asids <;> rfl
 
 /-- **WS-SM SM7.F.4(b)(iii)**: for a non-empty flush set the initiator drain is
 the per-core view retirement of every operand. -/

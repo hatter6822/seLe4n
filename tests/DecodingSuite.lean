@@ -74,8 +74,9 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
   -- syscall, the first writer of `TCB.faultHandler`)
   let r34 := decodeSyscallId ⟨34⟩
   expect "tcbSetFaultHandler=34" (isOkEq r34 .tcbSetFaultHandler)
+  -- WS-RR RR8.16: cspaceRevoke=35 (`seL4_CNode_Revoke`)
   let r35 := decodeSyscallId ⟨35⟩
-  expect "35 is outside the modeled set" (match r35 with | .error _ => true | .ok _ => false)
+  expect "cspaceRevoke=35" (isOkEq r35 .cspaceRevoke)
   -- WS-SM SM7.D: vspaceUnifyInstruction=29 (the code-publication path)
   let r29 := decodeSyscallId ⟨29⟩
   expect "vspaceUnifyInstruction=29" (isOkEq r29 .vspaceUnifyInstruction)
@@ -93,23 +94,24 @@ private def rd001_decodeSyscallIdValid : IO Unit := do
 
 /-- RD-002: decodeSyscallId — invalid values. -/
 private def rd002_decodeSyscallIdInvalid : IO Unit := do
-  -- First invalid: 35 (the PR #887 review round added tcbSetFaultHandler at
-  -- 34, on top of WS-SM SM9.C's declassifySignal at 33, SM9.A's auditRead at
-  -- 31 and auditDrain at 32, SM8.C's declassify at 30, SM7.D's
-  -- vspaceUnifyInstruction at 29 and PR #822 Phase H's mintReplyCap at 28)
-  let r35 := decodeSyscallId ⟨35⟩
-  expect "invalid=35" (isErrEq r35 .invalidSyscallNumber)
+  -- First invalid: 36 (WS-RR RR8.16 added cspaceRevoke at 35, on top of the
+  -- PR #887 review round's tcbSetFaultHandler at 34, WS-SM SM9.C's
+  -- declassifySignal at 33, SM9.A's auditRead at 31 and auditDrain at 32,
+  -- SM8.C's declassify at 30, SM7.D's vspaceUnifyInstruction at 29 and
+  -- PR #822 Phase H's mintReplyCap at 28)
+  let r36 := decodeSyscallId ⟨36⟩
+  expect "invalid=36" (isErrEq r36 .invalidSyscallNumber)
   -- Large value
   let rLarge := decodeSyscallId ⟨999999⟩
   expect "invalid=999999" (isErrEq rLarge .invalidSyscallNumber)
 
-/-- RD-003: decodeSyscallId — boundary edge 34/35 (PR #887 review round:
-tcbSetFaultHandler=34 is the last valid). -/
+/-- RD-003: decodeSyscallId — boundary edge 35/36 (WS-RR RR8.16:
+cspaceRevoke=35 is the last valid). -/
 private def rd003_decodeSyscallIdBoundary : IO Unit := do
-  let r34 := decodeSyscallId ⟨34⟩
   let r35 := decodeSyscallId ⟨35⟩
-  expect "boundary=34 ok (tcbSetFaultHandler)" (isOkEq r34 .tcbSetFaultHandler)
-  expect "boundary=35 err" (!r35.isOk)
+  let r36 := decodeSyscallId ⟨36⟩
+  expect "boundary=35 ok (cspaceRevoke)" (isOkEq r35 .cspaceRevoke)
+  expect "boundary=36 err" (!r36.isOk)
 
 /-- RD-004: decodeMsgInfo — valid round-trip. -/
 private def rd004_decodeMsgInfoValid : IO Unit := do

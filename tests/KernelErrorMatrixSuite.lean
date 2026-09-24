@@ -54,7 +54,7 @@ row by `scenarioTag`.
 `errorMatrix_covers_at_least_35` is a `decide`-witness theorem that
 locks the row count at the audit's recommended minimum.  The CI
 `KERRORMATRIX_ROWS` monotonicity metric (in
-`scripts/ak7_cascade_baseline.sh`) ensures the count cannot regress.
+`scripts/store_reader_hygiene_baseline.sh`) ensures the count cannot regress.
 
 The matrix is partitioned into four logical bands matching the audit's
 sub-task breakdown:
@@ -1067,7 +1067,7 @@ def errorMatrix : List KernelErrorRejection :=
 
 /-- AN11-A.6: Coverage witness — the matrix has at least 35 rows, meeting
 the audit's recommended floor.  The `KERRORMATRIX_ROWS` CI metric (in
-`scripts/ak7_cascade_baseline.sh`) tracks the actual count over time. -/
+`scripts/store_reader_hygiene_baseline.sh`) tracks the actual count over time. -/
 theorem errorMatrix_covers_at_least_35 :
     errorMatrix.length ≥ 35 := by decide
 

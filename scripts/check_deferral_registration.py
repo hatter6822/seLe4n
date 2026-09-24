@@ -131,6 +131,45 @@ def cited_rows(blob: str) -> list[int]:
 REGISTER_PATH = "docs/REGISTERED_DEBT.md"
 _REGISTER_ROW_RE = re.compile(r"^\|\s*(\d+)\s*\|\s*`([^`]+)`", re.M)
 
+# The enumerated table is section C.1 of the register and nothing else.  Other
+# tables in that file open a row with `| <number> | \`path\` |` too -- the WS-IN
+# remainder table's first column is an *occurrence count* -- and the row pattern
+# cannot tell a debt row from a count, so five of those rows were in the index:
+# a comment in `scripts/test_tier3_invariant_surface.sh` citing "row 292" would
+# have named no debt row at all and satisfied both halves of this gate, existence
+# and file-agreement, at once.  None is written today, so this was a hole rather
+# than a finding.  Found by WS-RR RR8.16's hand-off check (`v0.35.203`).
+# The relation is *the row is in the enumerated table*; matching the number
+# pattern anywhere in the file is a resemblance to it.
+_C1_HEADING_RE = re.compile(r"^####\s+C\.1\b.*$", re.M)
+_NEXT_HEADING_RE = re.compile(r"^#{1,4}\s", re.M)
+
+
+class RegisterUnreadable(Exception):
+    """The register's enumerated table could not be located."""
+
+
+def enumerated_table(text: str) -> str:
+    """The register's section C.1, which is its enumerated debt table.
+
+    Fail-closed in the direction that matters: a register whose C.1 heading is
+    missing or renamed raises rather than falling back to the whole file, since
+    the whole file is exactly what this function exists to stop parsing.  An
+    empty index would be worse still -- every citation would fail with the
+    diagnostic for a *nonexistent row* rather than for an unreadable register,
+    which is this project's "could not read" and "read and clean" collision in
+    the FAIL direction.
+    """
+    m = _C1_HEADING_RE.search(text)
+    if m is None:
+        raise RegisterUnreadable(
+            f"{REGISTER_PATH}: no `#### C.1` heading, so the enumerated debt "
+            "table could not be located and no `row N` citation can be checked"
+        )
+    rest = text[m.end():]
+    nxt = _NEXT_HEADING_RE.search(rest)
+    return rest[: nxt.start()] if nxt else rest
+
 
 class RegisterIndex:
     """The enumerated debt table, parsed from the register.
@@ -151,7 +190,7 @@ class RegisterIndex:
         # The staged register, for the same reason the sources are staged: a
         # commit that adds a citation and the row it cites must be validated
         # against each other, not against whichever half is on disk.
-        return cls(read_indexed(REGISTER_PATH) or "")
+        return cls(enumerated_table(read_indexed(REGISTER_PATH) or ""))
 
 
 CONTEXT_LINES = 6
@@ -301,6 +340,22 @@ def read_indexed(rel: str) -> str | None:
         return _decode(p.read_bytes()) if p.is_file() else None
 
 
+def _raises(exc: type[BaseException], fn, *args) -> bool:
+    """`fn(*args)` raises `exc` -- a self-test case for a fail-closed branch.
+
+    A branch that must refuse its input cannot be witnessed by a return value,
+    and a case that merely calls it and ignores the exception would pass with
+    the refusal deleted.
+    """
+    try:
+        fn(*args)
+    except exc:
+        return True
+    except Exception:
+        return False
+    return False
+
+
 def _self_test() -> int:
     cases: list[tuple[str, bool, str]] = []
 
@@ -405,6 +460,40 @@ def _self_test() -> int:
     check("the register table is parsed into rows",
           reg.rows == {29: "scripts/check_deferral_registration.py"}, repr(reg.rows))
 
+    # ...and only §C.1's rows are.  Another table in the same file opens a row
+    # with `| <number> | `path` |` while its first column is an occurrence
+    # count, so the number pattern alone put six of those in the index and a
+    # citation naming one of their numbers passed both halves of this gate.
+    # The decisive case keeps every token of a numbered row and moves it past
+    # the section boundary -- deleting one would be caught by the old reading
+    # too (WS-RR RR8.16 hand-off check, v0.35.203).
+    _SECTIONED = (
+        "#### C.1 - the enumerated table\n"
+        "| 7 | `a/in.lean` | a deferral |\n"
+        "\n## Another section\n"
+        "| 292 | `a/out.lean` | an occurrence count |\n"
+    )
+    check("a numbered row outside §C.1 is not a register row",
+          RegisterIndex(enumerated_table(_SECTIONED)).rows == {7: "a/in.lean"},
+          repr(RegisterIndex(enumerated_table(_SECTIONED)).rows))
+    check("citing a number that only occurs outside §C.1 is caught",
+          any("does not contain" in f for f in scan_text(
+              "a/out.lean",
+              "-- no currently-active plan tracks it; see REGISTERED_DEBT.md row 292.\n",
+              RegisterIndex(enumerated_table(_SECTIONED)))),
+          "should fire")
+    check("a register with no §C.1 heading is refused, not read whole",
+          _raises(RegisterUnreadable, enumerated_table,
+                  "| 7 | `a/in.lean` | a deferral |\n"),
+          "should raise")
+    # The measurement, on the real register rather than on a fixture: the
+    # occurrence-count numbers must be absent and a real row present.
+    _live = RegisterIndex(enumerated_table(
+        (REPO_ROOT / REGISTER_PATH).read_text(encoding="utf-8")))
+    check("the live register indexes §C.1 alone",
+          1 in _live.rows and not ({63, 78, 88, 94, 104, 292} & set(_live.rows)),
+          repr(sorted(_live.rows)[:3]))
+
     # A range's other members were unchecked: the citation form the comment
     # above ROW_CITE_RE advertises was the one the pattern could not read.
     check("a range citation expands to every member",
@@ -477,7 +566,12 @@ def _self_test() -> int:
         # what the real script imports tests a different program.
         shutil.copy(src.parent / "indexed_source.py",
                     root / "scripts" / "indexed_source.py")
+        # The fixture register carries the C.1 heading because the real one
+        # does and the gate now locates its enumerated table by it: a fixture
+        # thinner than the file it stands for passes checks the real file
+        # would fail, and here it would fail one the real file passes.
         (root / "docs" / "REGISTERED_DEBT.md").write_text(
+            "#### C.1 - the enumerated table\n"
             "| 1 | `scripts/probe.S` | a row |\n", encoding="utf-8")
         probe = root / "scripts" / "probe.S"
         probe.write_text("// clean\n", encoding="utf-8")
@@ -521,7 +615,11 @@ def _self_test() -> int:
 def main(argv: list[str]) -> int:
     if "--self-test" in argv:
         return _self_test()
-    register = RegisterIndex.load(REPO_ROOT)
+    try:
+        register = RegisterIndex.load(REPO_ROOT)
+    except RegisterUnreadable as exc:
+        print(f"FAIL: {exc}")
+        return 1
     findings: list[str] = []
     # Every enumerated row must name a file that still exists; a row pointing
     # at a deleted path is a deferral that has quietly lost its site.

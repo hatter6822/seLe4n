@@ -577,6 +577,51 @@ def frozenWriteTcbRebucketed (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
         .ok (frozenRebucketRunnable st' tid after.boostedPriority)
       else .ok st'
 
+/-- **WS-RR RR8.12 Cut B2 (`v0.35.182`): the frozen mirror of the bind's
+placement guard.**
+
+`SchedContextOps.bindPlacesParkedThread`'s counterpart, clause for clause, with
+the placement test in this surface's own vocabulary: a frozen state has no
+per-core run queues and no per-core current slot, so "on no scheduler slot" is
+`¬ frozenQueuedAnywhere`.  That covers the running case too, because frozen
+dispatch is `current := some tid` with the thread **left in its bucket**
+(`v0.35.134`) — a frozen current thread is queued, which is why this needs no
+`current` conjunct and why adding one would be a condition no state can witness.
+
+The next two conjuncts read the **live** `TCB` fields: `FrozenKernelObject.tcb`
+carries `SeLe4n.Model.TCB` and `Model.freeze` copies it verbatim, so "blocked in
+IPC" and "suspended" are the same questions on both surfaces.  The fourth reads
+the **live** `SchedContext` record the frozen store holds for the same reason:
+the reservation being bound must have budget left (PR #900 review, `v0.36.1`),
+which is the live guard's own fourth conjunct and the selector's own reading.  A
+mirror without it would place a thread the live bind now leaves parked — the
+direction that matters on a differential surface. -/
+def frozenBindPlacesParkedThread (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (sc : SeLe4n.Kernel.SchedContext) : Bool :=
+  !frozenQueuedAnywhere st tid && tcb.ipcState == .ready
+    && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
+    && sc.budgetRemaining.isPositive
+
+/-- **Cut B2**: write a bound TCB, re-bucketing it if it was queued and
+**placing** it if it was parked and runnable.
+
+`frozenWriteTcbRebucketed`'s bind-specific sibling, and deliberately not a
+widening of it: the other two callers of that writer are priority writes
+(`updatePipBoostOnCore`'s and `migrateRunQueueBucketOnCore`'s mirrors), and a
+priority write must not make a parked thread schedulable — only a bind, which
+hands the thread a reservation, may.  Both arms call `frozenRebucketRunnable`,
+which drops `tid` from every bucket (a no-op when it is in none) and appends it
+to the one `newPrio` names, so the placement and the re-bucket are one write with
+two admissions rather than two writes. -/
+def frozenWriteTcbBoundPlaced (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
+    (after : TCB) (sc : SeLe4n.Kernel.SchedContext) : Except KernelError FrozenSystemState :=
+  match frozenWithObjectStored st tid.toObjId (.tcb after) with
+  | .error e => .error e
+  | .ok st' =>
+      if frozenQueuedAnywhere st' tid || frozenBindPlacesParkedThread st' tid after sc then
+        .ok (frozenRebucketRunnable st' tid after.boostedPriority)
+      else .ok st'
+
 -- ============================================================================
 -- **Frozen priority inheritance** (PR #895 review round 15)
 -- ============================================================================
@@ -1141,16 +1186,21 @@ def frozenReturnDonatedSchedContext (st : FrozenSystemState)
                   frozenWithObjectStored st3 serverTid.toObjId
                     (.tcb { serverTcb with schedContextBinding := .unbound })
 
-/-- **WS-HP HP10.7/HP10.8, frozen mirror**: the origin may be rebound without
-invalidating a live donation.
+/-- **WS-HP HP10.7/HP10.8, frozen mirror (`v0.35.157`)**: the origin may be rebound
+without invalidating a live donation -- the bind's own admissibility, asked of the
+reservation's recorded origin.
 
-`donationOriginRebindable`'s counterpart, and it is here for the same reason it
-is live: `frozenDonationRecipientAcceptable` asks that the recipient hold no
-binding of its *own*, which a thread another binding names as its owner can
-satisfy — and `donationOwnerValid` requires such an owner to be `.unbound` **and**
-`.blockedOnReply`, so rebinding a reply-blocked thread falsifies the clause that
-binding depends on.  A thread that is not reply-blocked is named by none, which is
-the contrapositive this decides in O(1).
+`donationOriginRebindable`'s counterpart, and it is here for the same reason it is
+live: `frozenDonationRecipientAcceptable` asks that the recipient hold no binding
+of its *own*, which a thread another binding names as its owner can satisfy -- and
+`donationOwnerValid` requires such an owner to be `.unbound`, so rebinding it
+falsifies the clause that binding depends on.  Until `v0.35.157` both surfaces
+read the origin's `ipcState` and refused a `.blockedOnReply` thread, a PROXY for
+"some live binding names it" that also refused a re-called client whose Call
+donated nothing (PR #897's review, `v0.35.141`); both now ask the question
+`schedContextBind` asks -- is this thread's reply frame on a **live** stack
+(`frozenReplyFrameOnLiveStack`, one-step reciprocity) -- which a live binding's
+owner always is, its frame heading the context, and a re-called client never is.
 
 One reader differs from the live guard's, and it is immaterial: this reads
 `frozenLookupTcb` (this surface's one spelling of "is this id usable") where the
@@ -1162,10 +1212,7 @@ def frozenDonationOriginRebindable (st : FrozenSystemState)
     (origin : SeLe4n.ThreadId) : Bool :=
   match frozenLookupTcb st origin with
   | none => true
-  | some tcb =>
-    match tcb.ipcState with
-    | .blockedOnReply _ _ => false
-    | _ => true
+  | some tcb => !frozenReplyFrameOnLiveStack st tcb
 
 /-- **WS-HP HP10.8, frozen mirror**: the reservation's recorded origin, where the
 pop is at the bottom of its stack and that thread passes both guards.

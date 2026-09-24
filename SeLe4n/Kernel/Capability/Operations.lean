@@ -499,12 +499,73 @@ def cspaceInsertSlot (addr : CSpaceAddr) (cap : Capability) : Kernel Unit :=
   fun st =>
     match st.getCNode? addr.cnode with
     | some cn =>
-        match cn.lookup addr.slot with
-        | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
-        | none =>
-            let cn' := cn.insert addr.slot cap
-            storeObject addr.cnode (.cnode cn') st
+        -- **WS-RR RR8.16** (`v0.35.201`): the destination index must be one this
+        -- CNode can *address*.  `resolveSlot` extracts a slot by masking with
+        -- `2 ^ radixWidth`, so an index at or above `slotCount` can be stored
+        -- and can never be reached by any CPtr — and `CNode.insert` at a fresh
+        -- key grows the slot table, so without this check a holder of a copy- or
+        -- mint-bearing capability grows a *fixed-size* kernel object without
+        -- bound and falsifies `cspaceSlotCountBounded`.
+        --
+        -- The check is here, and only here, because this is the one primitive
+        -- all four installs pass through — `cspaceCopy`, `cspaceMint`,
+        -- `cspaceMove` (each taking `dstSlot` verbatim from a message register)
+        -- and `ipcTransferSingleCap`.  *The creator is exactly one function*,
+        -- which is the reasoning `ipcTransferSingleCap` already records for the
+        -- revocation window; checking at each caller is what let this through.
+        if !cn.slotAddressable addr.slot then .error .invalidArgument
+        else
+          match cn.lookup addr.slot with
+          | some _ => .error .targetSlotOccupied  -- H-02: reject occupied slot
+          | none =>
+              let cn' := cn.insert addr.slot cap
+              storeObject addr.cnode (.cnode cn') st
     | none => .error .objectNotFound
+
+/-- **WS-RR RR8.16** (`v0.35.201`): **what a successful insert consists of.**
+
+One description of the operation, so every frame over it is a citation rather
+than a re-run of its `match` tree — and so the range guard is threaded once
+rather than at each of the six frames below, and at the eight further sites
+across the capability, information-flow and IPC invariant surfaces that split on
+the lookup themselves.  The pattern is
+`returnDonatedSchedContext_ok_storeChain`'s, at a much smaller operation. -/
+theorem cspaceInsertSlot_ok_decompose
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ∃ cn, st.getCNode? addr.cnode = some cn
+      ∧ cn.slotAddressable addr.slot = true
+      ∧ cn.lookup addr.slot = none
+      ∧ storeObject addr.cnode (.cnode (cn.insert addr.slot cap)) st = .ok ((), st') := by
+  unfold cspaceInsertSlot at hStep
+  cases hCn : st.getCNode? addr.cnode with
+  | none => rw [hCn] at hStep; cases hStep
+  | some cn =>
+      rw [hCn] at hStep
+      simp only at hStep
+      by_cases hAddr : cn.slotAddressable addr.slot = true
+      · rw [hAddr] at hStep
+        simp only [Bool.not_true, Bool.false_eq_true, if_false] at hStep
+        cases hLk : cn.lookup addr.slot with
+        | some _ => rw [hLk] at hStep; cases hStep
+        | none =>
+            rw [hLk] at hStep
+            exact ⟨cn, rfl, hAddr, hLk, hStep⟩
+      · simp only [Bool.not_eq_true] at hAddr
+        rw [hAddr] at hStep
+        simp only [Bool.not_false, if_true] at hStep
+        cases hStep
+
+/-- **WS-RR RR8.16** (`v0.35.201`): the guard is the refusal, stated so a caller
+can see what it costs — an out-of-range destination is `.invalidArgument`, never
+an install. -/
+theorem cspaceInsertSlot_rejects_unaddressable_slot
+    (st : SystemState) (addr : CSpaceAddr) (cap : Capability) (cn : CNode)
+    (hObj : st.objects[addr.cnode]? = some (.cnode cn))
+    (hAddr : cn.slotAddressable addr.slot = false) :
+    cspaceInsertSlot addr cap st = .error .invalidArgument := by
+  unfold cspaceInsertSlot SystemState.getCNode?
+  simp [hObj, hAddr]
 
 theorem cspaceInsertSlot_preserves_scheduler
     (st st' : SystemState)
@@ -512,20 +573,9 @@ theorem cspaceInsertSlot_preserves_scheduler
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.scheduler = st.scheduler := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_scheduler_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_scheduler_eq _ _ _ _ hStore
 
 theorem cspaceInsertSlot_preserves_services
     (st st' : SystemState)
@@ -533,20 +583,9 @@ theorem cspaceInsertSlot_preserves_services
     (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.services = st.services := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_preserves_services _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preserves_services _ _ _ _ hStore
 
 theorem cspaceInsertSlot_preserves_objects_ne
     (st st' : SystemState)
@@ -557,20 +596,24 @@ theorem cspaceInsertSlot_preserves_objects_ne
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects[oid]? = st.objects[oid]? := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_objects_ne _ _ _ _ _ hNe hObjInv hStore
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and the CNode it names holds the
+capability afterwards — the "at the key" half of the frame whose "every other
+key" half sits above.  The IPC dispatch surface had its own `private` copy of
+this, which is a second reading of what a successful insert leaves behind. -/
+theorem cspaceInsertSlot_objects_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hObjInv : st.objects.invExt)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    ∃ cn : CNode, st.objects[addr.cnode]? = some (.cnode cn)
+      ∧ st'.objects[addr.cnode]? = some (.cnode (cn.insert addr.slot cap)) := by
+  obtain ⟨cn, hCnOpt, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact ⟨cn, (SystemState.getCNode?_eq_some_iff st addr.cnode cn).mp hCnOpt,
+    storeObject_objects_eq _ _ _ _ hObjInv hStore⟩
 
 /-- `cspaceInsertSlot` preserves `objects.invExt`. -/
 theorem cspaceInsertSlot_preserves_objects_invExt
@@ -578,70 +621,66 @@ theorem cspaceInsertSlot_preserves_objects_invExt
     (hObjInv : st.objects.invExt)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.objects.invExt := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_preserves_objects_invExt _ _ _ _ hObjInv hStore
 
 /-- `cspaceInsertSlot` preserves machine state. -/
 theorem cspaceInsertSlot_preserves_machine
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.machine = st.machine := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_machine_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_machine_eq _ _ _ _ hStore
+
+/-- WS-E4/C-03: `cspaceInsertSlot` preserves the CDT — it only calls
+`storeObject`, which touches objects, the lifecycle table and the object index
+and nothing else.
+
+Relocated here at `v0.35.201` from `Capability/Invariant/Preservation/Insert.lean`,
+where it sat beside its `cdtMapsConsistent` consumer: a *frame over a primitive*
+belongs beside the primitive, so the CDT pair reads like the scheduler, services,
+machine and IRQ frames above rather than like an invariant argument. -/
+theorem cspaceInsertSlot_cdt_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.cdt = st.cdt := by
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_cdt_eq _ _ _ _ hStore
+
+/-- **WS-RR RR8.16** (`v0.35.201`): ...and the CDT node→slot map with it.  The
+copy/move path re-derived this inline from the operation's own `match` tree,
+which is a second reading of what a successful insert consists of; it reads the
+decomposition now, so the two cannot disagree. -/
+theorem cspaceInsertSlot_cdtNodeSlot_eq
+    (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
+    (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
+    st'.cdtNodeSlot = st.cdtNodeSlot := by
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_cdtNodeSlot_eq _ _ _ _ hStore
 
 /-- WS-F3: `cspaceInsertSlot` preserves IRQ handler mappings. -/
 theorem cspaceInsertSlot_preserves_irqHandlers
     (st st' : SystemState) (addr : CSpaceAddr) (cap : Capability)
     (hStep : cspaceInsertSlot addr cap st = .ok ((), st')) :
     st'.irqHandlers = st.irqHandlers := by
-  unfold cspaceInsertSlot SystemState.getCNode? at hStep
-  cases hObj : st.objects[addr.cnode]? with
-  | none => simp [hObj] at hStep
-  | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _
-      | schedContext _ | reply _ => simp [hObj] at hStep
-      | cnode cn =>
-          simp [hObj] at hStep
-          cases hLookup : cn.lookup addr.slot with
-          | some _ => simp [hLookup] at hStep
-          | none =>
-              simp [hLookup] at hStep
-              exact storeObject_irqHandlers_eq _ _ _ _ hStep
+  obtain ⟨cn, _, _, _, hStore⟩ :=
+    cspaceInsertSlot_ok_decompose st st' addr cap hStep
+  exact storeObject_irqHandlers_eq _ _ _ _ hStore
 
 /-- WS-E4/H-02: `cspaceInsertSlot` rejects occupied slots. -/
 theorem cspaceInsertSlot_rejects_occupied_slot
     (st : SystemState) (addr : CSpaceAddr) (cap existingCap : Capability)
     (cn : CNode)
     (hObj : st.objects[addr.cnode]? = some (.cnode cn))
+    (hAddr : cn.slotAddressable addr.slot = true)
     (hOccupied : cn.lookup addr.slot = some existingCap) :
     cspaceInsertSlot addr cap st = .error .targetSlotOccupied := by
   unfold cspaceInsertSlot SystemState.getCNode?
-  simp [hObj, hOccupied]
+  simp [hObj, hAddr, hOccupied]
 
 theorem cspaceLookupSlot_ok_iff_lookupSlotCap
     (st : SystemState)
@@ -1000,16 +1039,59 @@ private theorem revokePendingTransfersStep_cases (nodes : List CdtNodeId)
     (stAcc : SystemState) (key : SeLe4n.ObjId) :
     revokePendingTransfersStep nodes stAcc key = stAcc ∨
       ∃ tcb tcb', stAcc.objects[(SeLe4n.ThreadId.ofNat key.toNat).toObjId]? = some (.tcb tcb) ∧
+        -- **WS-RR RR8.16 (`v0.35.190`)**: and the rewrite is a message *drop* —
+        -- the fact `ipcInvariantFull` needs of this sweep, which "a TCB replaced
+        -- a TCB" does not give.  Stated here rather than at the fold because it
+        -- is a property of the one write, and `TCB.pendingCapsDropped` composes.
+        TCB.pendingCapsDropped tcb tcb' ∧
         revokePendingTransfersStep nodes stAcc key
           = { stAcc with objects :=
               stAcc.objects.insert (SeLe4n.ThreadId.ofNat key.toNat).toObjId (.tcb tcb') } := by
-  unfold revokePendingTransfersStep
-  repeat' split
-  all_goals first
-    | exact Or.inl rfl
-    | exact Or.inr ⟨_, _,
-        (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) _).mp
-          (by assumption), rfl⟩
+  -- Resolve the lookup on the typed accessor first and reduce the site's
+  -- witnessed match with its equation lemma — the recipe every migrated site
+  -- follows (`v0.35.64`, item (4)).  Each arm of the step is then a NAMED case
+  -- split on the field that arm branches on, closed by one tactic: the
+  -- hypotheses a branch needs are the ones its own `cases` introduced, so there
+  -- is nothing for a `first` to search and no inaccessible position to guess.
+  cases hT : stAcc.getTcb? (SeLe4n.ThreadId.ofNat key.toNat) with
+  | none =>
+    exact Or.inl (by
+      simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_none hT])
+  | some tcb =>
+    -- The store fact every `Or.inr` witness carries, read off the typed lookup
+    -- through the accessor's own characterisation rather than respelled.
+    have hKey :=
+      (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) tcb).mp hT
+    cases hS : tcb.ipcState with
+    | blockedOnSend ep | blockedOnCall ep =>
+      cases hM : tcb.pendingMessage with
+      | none =>
+        exact Or.inl (by
+          simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS, hM])
+      | some msg =>
+        cases hAny : msg.caps.any (fun tc => nodes.contains tc.srcNode) with
+        | false =>
+          exact Or.inl (by
+            simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
+              hS, hM, hAny, Bool.false_eq_true, ↓reduceIte])
+        | true =>
+          -- The one write: the parked message keeps its registers and loses the
+          -- capabilities derived from the revoked nodes.
+          refine Or.inr ⟨tcb,
+            { tcb with
+                pendingMessage := some { msg with
+                  caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) } },
+            hKey, ⟨rfl, ?_⟩, ?_⟩
+          · rw [hM]
+            exact ⟨rfl, Array.size_filter_le⟩
+          · simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
+              hS, hM, hAny, ↓reduceIte, SystemState.rewriteObject]
+    | ready | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+      -- Enumerated rather than `_`, on purpose: the definition's own `| _ =>` arm
+      -- would absorb a new `ThreadIpcState` constructor silently, and this proof
+      -- failing to elaborate is what makes somebody decide whether it should.
+      exact Or.inl (by
+        simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS])
 
 /-- **The whole sweep writes only TCBs, and only where one already was.**
 
@@ -1027,43 +1109,51 @@ private theorem revokePendingTransfersGo_frame (nodes : List CdtNodeId) :
       (keys.foldl (revokePendingTransfersStep nodes) st).cdt = st.cdt ∧
       (keys.foldl (revokePendingTransfersStep nodes) st).cdtNodeSlot = st.cdtNodeSlot ∧
       (keys.foldl (revokePendingTransfersStep nodes) st).cdtSlotNode = st.cdtSlotNode ∧
+      (keys.foldl (revokePendingTransfersStep nodes) st).scheduler = st.scheduler ∧
       ∀ (oid : SeLe4n.ObjId), (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
           = st.objects[oid]? ∨
         ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
+          TCB.pendingCapsDropped t t' ∧
           (keys.foldl (revokePendingTransfersStep nodes) st).objects[oid]?
             = some (KernelObject.tcb t') := by
   intro keys
   induction keys with
-  | nil => intro st hExt; exact ⟨hExt, rfl, rfl, rfl, fun _ => Or.inl rfl⟩
+  | nil => intro st hExt; exact ⟨hExt, rfl, rfl, rfl, rfl, fun _ => Or.inl rfl⟩
   | cons key rest ih =>
     intro st hExt
     simp only [List.foldl_cons]
-    rcases revokePendingTransfersStep_cases nodes st key with hEq | ⟨tcb, tcb', hKey, hEq⟩
+    rcases revokePendingTransfersStep_cases nodes st key with hEq | ⟨tcb, tcb', hKey, hDrop, hEq⟩
     · rw [hEq]; exact ih st hExt
     · have hExt' : (revokePendingTransfersStep nodes st key).objects.invExt := by
         rw [hEq]; exact RHTable_insert_preserves_invExt _ key _ hExt
-      obtain ⟨hE, hC, hNS, hSN, hO⟩ := ih (revokePendingTransfersStep nodes st key) hExt'
-      refine ⟨hE, ?_, ?_, ?_, ?_⟩
+      obtain ⟨hE, hC, hNS, hSN, hSch, hO⟩ := ih (revokePendingTransfersStep nodes st key) hExt'
+      refine ⟨hE, ?_, ?_, ?_, ?_, ?_⟩
       · rw [hC, hEq]
       · rw [hNS, hEq]
       · rw [hSN, hEq]
+      · rw [hSch, hEq]
       · intro oid
         have hStep : (revokePendingTransfersStep nodes st key).objects[oid]? = st.objects[oid]? ∨
-            (∃ u u', st.objects[oid]? = some (KernelObject.tcb u) ∧
+            (∃ u u', st.objects[oid]? = some (KernelObject.tcb u) ∧ TCB.pendingCapsDropped u u' ∧
               (revokePendingTransfersStep nodes st key).objects[oid]? = some (KernelObject.tcb u')) := by
           by_cases hOid : key = oid
           · subst hOid
-            exact Or.inr ⟨tcb, tcb', hKey, by rw [hEq]; exact RHTable_get?_insert_self _ key _ hExt⟩
+            exact Or.inr ⟨tcb, tcb', hKey, hDrop,
+              by rw [hEq]; exact RHTable_get?_insert_self _ key _ hExt⟩
           · exact Or.inl (by
               rw [hEq]
               exact RHTable_get?_insert_ne _ key oid _ (by simp [hOid]) hExt)
-        rcases hO oid with hRest | ⟨v, v', hV, hV'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hU'⟩
+        rcases hO oid with hRest | ⟨v, v', hV, hVD, hV'⟩
+        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
           · exact Or.inl (hRest.trans hS)
-          · exact Or.inr ⟨u, u', hU, hRest.trans hU'⟩
-        · rcases hStep with hS | ⟨u, u', hU, hU'⟩
-          · exact Or.inr ⟨v, v', hS ▸ hV, hV'⟩
-          · exact Or.inr ⟨u, v', hU, hV'⟩
+          · exact Or.inr ⟨u, u', hU, hUD, hRest.trans hU'⟩
+        · rcases hStep with hS | ⟨u, u', hU, hUD, hU'⟩
+          · exact Or.inr ⟨v, v', hS ▸ hV, hVD, hV'⟩
+          · refine Or.inr ⟨u, v', hU, ?_, hV'⟩
+            have : u' = v := by
+              rw [hU'] at hV
+              simpa only [Option.some.injEq, KernelObject.tcb.injEq] using hV
+            exact TCB.pendingCapsDropped_trans hUD (this ▸ hVD)
 
 
 /-- The frame in the caller's vocabulary: `revokePendingTransfersFrom` rewrites
@@ -1074,9 +1164,11 @@ theorem revokePendingTransfersFrom_frame (st : SystemState) (nodes : List CdtNod
     (revokePendingTransfersFrom st nodes).cdt = st.cdt ∧
     (revokePendingTransfersFrom st nodes).cdtNodeSlot = st.cdtNodeSlot ∧
     (revokePendingTransfersFrom st nodes).cdtSlotNode = st.cdtSlotNode ∧
+    (revokePendingTransfersFrom st nodes).scheduler = st.scheduler ∧
     ∀ (oid : SeLe4n.ObjId),
       (revokePendingTransfersFrom st nodes).objects[oid]? = st.objects[oid]? ∨
       ∃ t t', st.objects[oid]? = some (KernelObject.tcb t) ∧
+        TCB.pendingCapsDropped t t' ∧
         (revokePendingTransfersFrom st nodes).objects[oid]? = some (KernelObject.tcb t') :=
   revokePendingTransfersGo_frame nodes _ st hExt
 
@@ -1170,15 +1262,22 @@ theorem cspaceDeleteSlot_refuses_existing_children (st : SystemState) (addr : CS
 
 seLe4n provides three revocation entry points for different use cases:
 
-- **`cspaceRevoke`** (this function): Local, single-CNode revocation. Removes
-  sibling capabilities within the same CNode that share the source slot's
-  target. Does NOT traverse the CDT or affect capabilities in other CNodes.
-  Use when revoking derived caps that are known to be co-located.
+- **`cspaceRevoke`** (this function): the local same-TARGET sweep.  Removes
+  every capability in the source's CNode that names the source slot's target,
+  whether or not it was derived from the source, and does NOT traverse the CDT
+  or touch the CDT maps.  **It is not seL4's revoke**: `seL4_CNode_Revoke`
+  destroys exactly the source's derivations, and a target match reaches an
+  independently rooted capability to the same object and the source's own
+  parent as well.  It predates the CDT, and since `v0.36.1` no syscall reaches
+  it — `revokeCdtScaffold` no longer opens with it.  What still calls it is the
+  internal proof helper `lifecycleRevokeDeleteRetype` and the non-interference
+  operation catalogue, where it is an operation in its own right.
 
-- **`cspaceRevokeCdt`**: Cross-CNode revocation via CDT traversal. First
-  performs local revocation (`cspaceRevoke`), then walks all CDT descendants
-  of the source slot and deletes their capabilities from any CNode in the
-  system. This is the **recommended entry point** for general revocation.
+- **`cspaceRevokeCdt`**: revocation of exactly the source slot's CDT
+  descendants, in every CNode including the source's own, and of nothing else.
+  Validates the source slot, walks its descendants and deletes their
+  capabilities, then consumes the derivations still in flight.  This is the
+  **recommended entry point** and the one `seL4_CNode_Revoke` dispatches.
   Errors from descendant deletion are propagated (strict mode).
 
 - **`cspaceRevokeCdtStrict`**: Structured variant of `cspaceRevokeCdt` that
@@ -1548,7 +1647,9 @@ structure RevokeTraversalOutcome (ρ : Type) where
 Every public revocation entry point is this function at a different traversal.
 The shape they share is not a coincidence to be re-typed four times:
 
-1. local revoke of the source slot's same-CNode siblings,
+1. validate the source slot — a read, so a revocation naming an empty or
+   unresolvable slot is refused exactly as the local sweep refused it, and the
+   step destroys nothing (see *what the prologue must not do* below),
 2. look up the source slot's CDT node — no node means nothing was derived,
 3. walk the subtree (the part that differs: materialized fold, streaming BFS,
    strict report, validate-then-apply),
@@ -1564,59 +1665,196 @@ Adding the epilogue to those two as well would have left the next variant to
 remember it.  Here a variant *is* its traversal, so there is nothing to
 remember: the prologue and the epilogue are not the variant's to write.
 
-**Why the root is in the consumed set unconditionally.**  `cspaceRevoke` leaves
-the source slot itself present — it clears siblings naming the same target, not
-the slot the caller named.  Every descendant's slot is deleted by the traversal,
+**Why the root is in the consumed set unconditionally.**  The traversal leaves
+the source slot itself present — it deletes the source's descendants, not the
+slot the caller named.  Every descendant's slot is deleted by the traversal,
 so `ipcTransferSingleCap` declines an in-flight derivation from a descendant on
 its own (`CapTransferResult.sourceRevoked`, "no live slot").  The root is the
 one node that survives its own revocation, so it is the one node the
-install-time guard cannot see. -/
+install-time guard cannot see.
+
+**What the prologue must not do** (PR #900 review, `v0.36.1`).  Step 1 was the
+local `cspaceRevoke` until `v0.36.1`, and that sweep matches on the **target**:
+it deleted every capability in the source's CNode naming the same object — an
+independently rooted capability outside the source's subtree, and the source's
+own **parent** when the two share a CNode — and it stored the swept CNode without
+touching the CDT maps, so each swept slot's node went on mapping to an empty
+slot.  None of that is revocation: seL4-MCS's `cteRevoke` deletes exactly the
+slots `isMDBParentOf` the source (read at `13.0.0`), and step 3 already reaches
+every derivation in every CNode, the source's own included, because each live
+install path records its edge (`cspaceMintWithCdt`, `cspaceCopy`, `cspaceMove`,
+`mintReplyCapWithCdt`, `ipcTransferSingleCap`).  So the prologue is the source
+slot's *validation* and nothing more: `cspaceLookupSlot` refuses on exactly the
+states the sweep refused on (its CNode arm is unreachable once the lookup
+succeeds) and writes nothing (`cspaceLookupSlot_preserves_state`). -/
 def revokeCdtScaffold {ρ : Type} (emptyReport : ρ)
     (traverse : SystemState → CdtNodeId → List CdtNodeId →
       Except KernelError (RevokeTraversalOutcome ρ))
     (addr : CSpaceAddr) : Kernel ρ :=
   fun st =>
-    match cspaceRevoke addr st with
+    match cspaceLookupSlot addr st with
     | .error e => .error e
-    | .ok ((), stLocal) =>
-        match SystemState.lookupCdtNodeOfSlot stLocal addr with
-        | none => .ok (emptyReport, stLocal)
+    | .ok _ =>
+        match SystemState.lookupCdtNodeOfSlot st addr with
+        | none => .ok (emptyReport, st)
         | some rootNode =>
-            match traverse stLocal rootNode (stLocal.cdt.descendantsOf rootNode) with
+            match traverse st rootNode (st.cdt.descendantsOf rootNode) with
             | .error e => .error e
             | .ok out =>
                 .ok (out.report,
                   revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes))
 
-/-- Materialize the descendant list, then fold `processRevokeNode` over it,
-stopping at the first failure.
+/-- **What a successful scaffold run is made of.**
+
+The source slot resolves, and then — when it heads a CDT node and the traversal
+succeeds — the traversal and the consuming sweep; otherwise the state is
+**unchanged**, because the prologue is a read (`v0.36.1`: it was the local
+same-target sweep, which destroyed capabilities that were not derivations).
+
+Every preservation argument over a revocation entry point is a case analysis of
+exactly this shape.  Until `v0.35.190` the capability bundle's was the only one
+and it was spelled inline; the IPC bundle needs the identical analysis, so it is
+stated once here, **predicate-free and beside the definition**, rather than
+re-derived once per predicate.  The report is deliberately not mentioned: no
+invariant reads it, and a decomposition that named it would have to be
+instantiated at the variant's report type to be used.
+-/
+theorem revokeCdtScaffold_ok_decompose {ρ : Type} (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (st st' : SystemState) (addr : CSpaceAddr) (r : ρ)
+    (hStep : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    (∃ cap, cspaceLookupSlot addr st = .ok (cap, st)) ∧
+      (st' = st ∨
+        ∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
+          traverse st rootNode (st.cdt.descendantsOf rootNode) = .ok out ∧
+          st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
+  unfold revokeCdtScaffold at hStep
+  split at hStep
+  · simp at hStep
+  · rename_i res hLookup
+    obtain ⟨cap, stL⟩ := res
+    have hStL : stL = st := cspaceLookupSlot_state_eq st stL addr cap hLookup
+    subst hStL
+    refine ⟨⟨cap, hLookup⟩, ?_⟩
+    split at hStep
+    · simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+      exact Or.inl hStep.2.symm
+    · rename_i rootNode _
+      split at hStep
+      · simp at hStep
+      · rename_i out hTrav
+        simp only [Except.ok.injEq, Prod.mk.injEq] at hStep
+        exact Or.inr ⟨rootNode, out, hTrav, hStep.2.symm⟩
+
+/-- Fold body for the materialized traversal: process one CDT descendant node,
+propagating a failure rather than swallowing it.
+
+Materializing the descendant list and folding this over it is what
+`revokeCdtMaterializedTraversal` below is.
 
 AJ-L10: `descendantsOf` materializes the full descendant list before folding.
 For deep CDT trees this is a performance concern (O(n) allocation), not a
 correctness issue; `revokeCdtStreamingTraversal` is the O(branching-factor)
 alternative. -/
+def revokeCdtFoldBody
+    (acc : Except KernelError (Unit × SystemState)) (node : CdtNodeId) :
+    Except KernelError (Unit × SystemState) :=
+  match acc with
+  | .error e => .error e
+  | .ok ((), stAcc) =>
+      match processRevokeNode stAcc node with
+      | .error e => .error e
+      | .ok stNext => .ok ((), stNext)
+
+/-- Error propagation: `revokeCdtFoldBody` propagates errors unchanged. -/
+theorem revokeCdtFoldBody_error (e : KernelError) (node : CdtNodeId) :
+    revokeCdtFoldBody (.error e) node = .error e := by
+  unfold revokeCdtFoldBody; rfl
+
+/-- Fold error propagation: folding `revokeCdtFoldBody` from an error stays that
+error — the traversal stops at its first failing descendant. -/
+theorem revokeCdtFoldBody_foldl_error
+    (nodes : List CdtNodeId) (e : KernelError) :
+    nodes.foldl revokeCdtFoldBody (.error e) = .error e := by
+  induction nodes with
+  | nil => rfl
+  | cons node rest ih => simp [List.foldl, revokeCdtFoldBody_error, ih]
+
+/-- **The fold's induction, once, over any state predicate.**
+
+Every preservation argument over a revocation traversal is this induction with a
+different `P`.  It was the capability bundle's alone until `v0.35.190`, spelled
+in that bundle's own preservation module; the IPC bundle needs the identical
+induction, so it is stated here — predicate-free and beside the fold — rather
+than run a second time.
+
+`hNode` is the *only* part that differs between predicates, which is the same
+division `revokeCdtScaffold_ok_decompose` makes one level up. -/
+theorem revokeCdtFold_induct {P : SystemState → Prop}
+    (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
+      P stA → processRevokeNode stA node = .ok stB → P stB)
+    (nodes : List CdtNodeId) (stInit stFinal : SystemState) (hP : P stInit)
+    (hFold : nodes.foldl revokeCdtFoldBody (.ok ((), stInit)) = .ok ((), stFinal)) :
+    P stFinal := by
+  induction nodes generalizing stInit with
+  | nil => simp only [List.foldl_nil, Except.ok.injEq, Prod.mk.injEq] at hFold
+           exact hFold.2 ▸ hP
+  | cons node rest ih =>
+    simp only [List.foldl_cons] at hFold
+    cases hProc : processRevokeNode stInit node with
+    | error e =>
+      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .error e by
+            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
+      rw [revokeCdtFoldBody_foldl_error] at hFold
+      simp at hFold
+    | ok stMid =>
+      rw [show revokeCdtFoldBody (.ok ((), stInit)) node = .ok ((), stMid) by
+            unfold revokeCdtFoldBody; simp only []; rw [hProc]] at hFold
+      exact ih stMid (hNode stInit stMid node hP hProc) hFold
+
+/-- The traversal is that fold, with the descendant list reported as revoked.
+
+`v0.35.190` gave the fold body a name here, beside the traversal, so the fold's
+own lemmas are about a function rather than about an inlined lambda a proof has
+to `change` its way into. -/
 def revokeCdtMaterializedTraversal (stLocal : SystemState) (_rootNode : CdtNodeId)
     (descendants : List CdtNodeId)
     : Except KernelError (RevokeTraversalOutcome Unit) :=
-  match descendants.foldl (fun acc node =>
-      match acc with
-      | .error e => .error e
-      | .ok ((), stAcc) =>
-          match processRevokeNode stAcc node with
-          | .error e => .error e
-          | .ok stNext => .ok ((), stNext)
-    ) (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
+  match descendants.foldl revokeCdtFoldBody
+      (.ok ((), stLocal) : Except KernelError (Unit × SystemState)) with
   | .error e => .error e
   | .ok ((), stDone) =>
       -- Reaching `.ok` means every descendant was processed, so the traversal
       -- revoked the whole list it was handed.
       .ok { report := (), revokedNodes := descendants, state := stDone }
 
+/-- **The traversal's induction, over any state predicate.**
+
+`revokeCdtFold_induct` at the traversal's own interface, so a caller need not
+know the traversal is a fold. -/
+theorem revokeCdtMaterializedTraversal_ok_induct {P : SystemState → Prop}
+    (hNode : ∀ (stA stB : SystemState) (node : CdtNodeId),
+      P stA → processRevokeNode stA node = .ok stB → P stB)
+    (stLocal : SystemState) (rootNode : CdtNodeId) (descendants : List CdtNodeId)
+    (out : RevokeTraversalOutcome Unit) (hP : P stLocal)
+    (hTrav : revokeCdtMaterializedTraversal stLocal rootNode descendants = .ok out) :
+    P out.state := by
+  unfold revokeCdtMaterializedTraversal at hTrav
+  split at hTrav
+  · simp at hTrav
+  · rename_i stDone hFold
+    simp only [Except.ok.injEq] at hTrav
+    subst hTrav
+    exact revokeCdtFold_induct hNode descendants stLocal stDone hP hFold
+
 /-- WS-E4/C-04: Revoke all capabilities derived from the source capability
 via CDT traversal, across all CNodes in the system.
 
-Extends local revoke with CDT-based global traversal:
-1. Perform local revocation (same CNode siblings)
+Destroys exactly the source slot's CDT descendants, in every CNode (the
+source's own included), and nothing else — seL4's `cteRevoke`:
+1. Validate the source slot (a read; since `v0.36.1` this step is no longer the
+   local same-target sweep, see `revokeCdtScaffold`)
 2. Walk the CDT to find all descendants of the source slot
 3. Delete each descendant's capability from its CNode
 4. Clean up CDT edges for deleted slots
@@ -1855,24 +2093,27 @@ fold entirely and returns an empty report, witnessing "no dead-branch fire"
 at the one case we can discharge substantively without the full monotonicity
 lemma tracked for AN12-B. -/
 theorem cspaceRevokeCdtTransactional_no_failure_no_cdt_node
-    (addr : CSpaceAddr) (st stLocal : SystemState)
-    (hLocal : cspaceRevoke addr st = .ok ((), stLocal))
-    (hNoRoot : SystemState.lookupCdtNodeOfSlot stLocal addr = none) :
+    (addr : CSpaceAddr) (st : SystemState) (cap : Capability)
+    (hLookup : cspaceLookupSlot addr st = .ok (cap, st))
+    (hNoRoot : SystemState.lookupCdtNodeOfSlot st addr = none) :
     cspaceRevokeCdtTransactional addr st
-      = .ok ({ deletedSlots := [], firstFailure := none }, stLocal) := by
-  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLocal, hNoRoot]
+      = .ok ({ deletedSlots := [], firstFailure := none }, st) := by
+  simp [cspaceRevokeCdtTransactional, revokeCdtScaffold, hLookup, hNoRoot]
 
-/-- AK8-B: The transactional variant's local revoke step matches the strict
-variant's — they share the same local revoke invocation. This witnesses
-behavioural parity on the local phase; the variants diverge only in how
-they treat descendant failures. -/
-theorem cspaceRevokeCdtTransactional_requires_local_revoke_ok
+/-- AK8-B: the transactional variant runs only on a source slot that resolves —
+the scaffold's prologue, shared with every other variant, so the four agree on
+their refusal set and diverge only in how they treat descendant failures.
+
+**Renamed at `v0.36.1`** from `cspaceRevokeCdtTransactional_requires_local_revoke_ok`:
+the prologue it named was the local same-target sweep, which the scaffold no
+longer runs (see `revokeCdtScaffold`, *what the prologue must not do*). -/
+theorem cspaceRevokeCdtTransactional_requires_source_slot
     (addr : CSpaceAddr) (st : SystemState) (r : RevokeCdtStrictReport) (st' : SystemState)
     (hOk : cspaceRevokeCdtTransactional addr st = .ok (r, st')) :
-    (cspaceRevoke addr st).isOk := by
+    (cspaceLookupSlot addr st).isOk := by
   unfold cspaceRevokeCdtTransactional revokeCdtScaffold at hOk
-  cases hRev : cspaceRevoke addr st with
-  | error e => simp [hRev] at hOk
+  cases hLk : cspaceLookupSlot addr st with
+  | error e => simp [hLk] at hOk
   | ok _ => simp [Except.isOk, Except.toBool]
 
 /-- **Every revocation entry point is the scaffold at a traversal.**
@@ -1910,7 +2151,8 @@ theorem cspaceRevokeCdtTransactional_routes_through_scaffold :
 The scaffold's post-state is not the traversal's post-state: it is always
 `revokePendingTransfersFrom` applied to it.  The only escape is the branch where
 the source slot has no CDT node at all — nothing was ever derived from it, so
-there is no in-flight derivation to consume.
+there is no in-flight derivation to consume, and (since `v0.36.1`) nothing is
+destroyed either: that branch is the identity.
 
 Held over an arbitrary traversal, so it covers the variants that exist and the
 ones that do not exist yet. -/
@@ -1920,19 +2162,16 @@ theorem revokeCdtScaffold_ok_consumed_or_nothing_derived {ρ : Type}
       Except KernelError (RevokeTraversalOutcome ρ))
     (addr : CSpaceAddr) (st st' : SystemState) (r : ρ)
     (hOk : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
-    (cspaceRevoke addr st = .ok ((), st') ∧
-        SystemState.lookupCdtNodeOfSlot st' addr = none) ∨
+    (st' = st ∧ SystemState.lookupCdtNodeOfSlot st addr = none) ∨
     (∃ (rootNode : CdtNodeId) (out : RevokeTraversalOutcome ρ),
         st' = revokePendingTransfersFrom out.state (rootNode :: out.revokedNodes)) := by
   unfold revokeCdtScaffold at hOk
   split at hOk
   · simp at hOk
-  · rename_i stLocal hRevoke
-    split at hOk
+  · split at hOk
     · rename_i hNoRoot
       simp only [Except.ok.injEq, Prod.mk.injEq] at hOk
-      obtain ⟨_, hEq⟩ := hOk
-      exact Or.inl ⟨hEq ▸ hRevoke, hEq ▸ hNoRoot⟩
+      exact Or.inl ⟨hOk.2.symm, hNoRoot⟩
     · rename_i rootNode _
       split at hOk
       · simp at hOk
@@ -1948,8 +2187,8 @@ theorem revokeCdtScaffold_ok_consumed_or_nothing_derived {ρ : Type}
 
 The condition `ipcTransferSingleCap` must decline on, defined by what revocation
 *requires* rather than by what the install remembers about it.  Every CDT
-revocation entry point is `revokeCdtScaffold`, which begins with `cspaceRevoke`,
-which begins with `cspaceLookupSlot` — and an empty slot is `.error` there.  So a
+revocation entry point is `revokeCdtScaffold`, which begins with
+`cspaceLookupSlot` — and an empty slot is `.error` there.  So a
 node whose slot has been emptied is a node no revocation path can enter, and a
 capability installed beneath it is authority nothing can destroy.
 
@@ -1963,7 +2202,14 @@ check and installed under a node `cspaceRevokeCdt` cannot enter.  The swept
 sibling is neither the revoked root nor one of its descendants, so the in-flight
 consumption does not cover it either — it is a distinct hole in the same wall.
 
-`cspaceRevoke_ok_implies_slot_occupied` is the tie that keeps this derived: a
+**Since `v0.36.1` no revocation entry point runs that sweep** — it was
+`revokeCdtScaffold`'s prologue, and it destroyed capabilities that were not
+derivations (PR #900 review) — so the syscall can no longer empty a slot a node
+still maps to.  The check stays exactly as it is: *a node whose slot is empty* is
+a question about the store rather than about which writer emptied it, and the
+local `cspaceRevoke` is still an operation (`lifecycleRevokeDeleteRetype` runs it).
+
+`revokeCdtScaffold_ok_implies_slot_occupied` is the tie that keeps this derived: a
 change to what revocation requires breaks that theorem rather than silently
 widening this check. -/
 def cdtNodeIsRevocable (st : SystemState) (node : CdtNodeId) : Bool :=
@@ -1990,18 +2236,44 @@ theorem cspaceRevoke_ok_implies_slot_occupied
     | some _ => simp [hLk, hCn] at h
   | some _ => simp
 
+/-- **A successful revocation witnesses an occupied slot — at every entry point.**
+
+`revokeCdtScaffold` opens with `cspaceLookupSlot`, whose `.ok` is exactly
+`lookupSlotCap = some`.  Stated over an arbitrary traversal, so it covers the four
+variants that exist and any that does not yet; it is what makes
+`cdtNodeIsRevocable` revocation's own precondition rather than a second opinion
+about it.  (`cspaceRevoke_ok_implies_slot_occupied` above carried that role while
+the scaffold opened with the local sweep, until `v0.36.1`.) -/
+theorem revokeCdtScaffold_ok_implies_slot_occupied {ρ : Type} (emptyReport : ρ)
+    (traverse : SystemState → CdtNodeId → List CdtNodeId →
+      Except KernelError (RevokeTraversalOutcome ρ))
+    (addr : CSpaceAddr) (st st' : SystemState) (r : ρ)
+    (h : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
+    (SystemState.lookupSlotCap st addr).isSome := by
+  obtain ⟨⟨cap, hLk⟩, _⟩ :=
+    revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r h
+  rw [(cspaceLookupSlot_ok_iff_lookupSlotCap st addr cap).mp hLk]
+  rfl
+
 /-- **A node this check refuses is a node no revocation can enter.**
 
 The consequence that makes declining the right answer: were the transfer to
 install anyway, the resulting `.ipcTransfer` edge would hang beneath a node whose
-slot cannot be revoked, so nothing could ever destroy the installed capability. -/
+slot cannot be revoked, so nothing could ever destroy the installed capability.
+
+Quantified over **every** revocation entry point — the scaffold at any traversal —
+since `v0.36.1`; it was stated of the local `cspaceRevoke`, which is no longer
+what any of them runs. -/
 theorem cdtNodeIsRevocable_false_revoke_refuses
     (st : SystemState) (node : CdtNodeId) (addr : CSpaceAddr)
     (hMap : SystemState.lookupCdtSlotOfNode st node = some addr)
     (hNot : cdtNodeIsRevocable st node = false) :
-    ∀ st', cspaceRevoke addr st ≠ .ok ((), st') := by
-  intro st' hOk
-  have hOcc := cspaceRevoke_ok_implies_slot_occupied addr st st' hOk
+    ∀ {ρ : Type} (emptyReport : ρ)
+      (traverse : SystemState → CdtNodeId → List CdtNodeId →
+        Except KernelError (RevokeTraversalOutcome ρ)) (r : ρ) (st' : SystemState),
+      revokeCdtScaffold emptyReport traverse addr st ≠ .ok (r, st') := by
+  intro ρ emptyReport traverse r st' hOk
+  have hOcc := revokeCdtScaffold_ok_implies_slot_occupied emptyReport traverse addr st st' r hOk
   have hTrue : cdtNodeIsRevocable st node = true := by
     simp [cdtNodeIsRevocable, hMap, hOcc]
   rw [hTrue] at hNot
@@ -2036,7 +2308,14 @@ def ipcTransferSingleCap
     -- semantics-preserving.
     match st.getCNode? receiverCspaceRoot with
     | some cn =>
-        match cn.findFirstEmptySlot slotBase scanLimit with
+        -- **WS-RR RR8.16** (`v0.35.201`): the **radix-bounded** scan.  The
+        -- unchecked `findFirstEmptySlot` walks `base, base+1, …` without
+        -- consulting `radixWidth`, so on a receiver CNode with no free
+        -- in-range slot it answered an index `cspaceInsertSlot` would then
+        -- install at, outside anything a CPtr can name.  The checked variant
+        -- AK8-F wrote for exactly this hazard answers `none` there, which is
+        -- `.noSlot` — an outcome the transfer summary already models.
+        match cn.findFirstEmptySlotChecked slotBase scanLimit with
         | none => .ok (.noSlot, st)
         | some emptySlot =>
             -- **The source must still be a live slot at the moment the edge is
@@ -2127,7 +2406,7 @@ theorem ipcTransferSingleCap_installed_implies_revocable_source
     | none => simp [hCn] at hStep
     | some cn =>
       simp only [hCn] at hStep
-      cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+      cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
       | none => simp [hSlot] at hStep
       | some _ => simp [hSlot, hSrc] at hStep
   | true => rfl
@@ -2163,7 +2442,7 @@ theorem ipcTransferSingleCap_sourceRevoked_preserves_state
   | none => simp [hCn] at hStep
   | some cn =>
     simp only [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep
     | some emptySlot =>
       simp only [hSlot] at hStep
@@ -2204,7 +2483,7 @@ theorem ipcTransferSingleCap_preserves_scheduler
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2243,7 +2522,7 @@ theorem ipcTransferSingleCap_preserves_machine
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2281,7 +2560,7 @@ theorem ipcTransferSingleCap_preserves_objects_ne
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2316,7 +2595,7 @@ theorem ipcTransferSingleCap_preserves_services
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; rfl
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2352,7 +2631,7 @@ theorem ipcTransferSingleCap_preserves_objects_invExt
   | none => simp [hCn] at hStep
   | some cn =>
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none => simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep; exact hObjInv
     | some emptySlot =>
         simp [hSlot] at hStep
@@ -2421,7 +2700,7 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
     have hObj : st.objects[receiverRoot]? = some (.cnode cn) :=
       (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mp hCn
     simp [hCn] at hStep
-    cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+    cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
     | none =>
       simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
       intro ntfn h; rw [hObj] at h; exact absurd h (by simp)
@@ -2455,15 +2734,12 @@ theorem ipcTransferSingleCap_receiverRoot_not_ntfn
           -- But cspaceInsertSlot stored a CNode at receiverRoot via storeObject,
           -- so pair.2.objects[receiverRoot]? should be some (.cnode cn')
           -- Let's unfold cspaceInsertSlot SystemState.getCNode? at hIns to extract storeObject
-          unfold cspaceInsertSlot SystemState.getCNode? at hIns
-          simp [hObj] at hIns
-          cases hLookup : cn.lookup emptySlot with
-          | some _ => simp [hLookup] at hIns
-          | none =>
-            simp [hLookup] at hIns
-            have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
-            rw [hStoreObj] at h
-            exact absurd h (by simp)
+          obtain ⟨cn', _, _, _, hStore⟩ :=
+            cspaceInsertSlot_ok_decompose st pair.2
+              { cnode := receiverRoot, slot := emptySlot } cap hIns
+          have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
+          rw [hStoreObj] at h
+          exact absurd h (by simp)
 
 /-- M3-E4 helper: ipcTransferSingleCap preserves all endpoint objects.
 When `oid = receiverRoot` and the object is an endpoint, the function
@@ -2600,7 +2876,7 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
     (SystemState.getCNode?_eq_some_iff st receiverRoot cn).mpr hCn
   simp only [ipcTransferSingleCap] at hStep
   simp [hCnTyped] at hStep
-  cases hSlot : cn.findFirstEmptySlot slotBase scanLimit with
+  cases hSlot : cn.findFirstEmptySlotChecked slotBase scanLimit with
   | none =>
     simp [hSlot] at hStep; obtain ⟨_, rfl⟩ := hStep
     exact ⟨cn, hCn⟩
@@ -2619,15 +2895,15 @@ theorem ipcTransferSingleCap_receiverRoot_stays_cnode
       have hObjSrc := SystemState.ensureCdtNodeForSlot_objects_eq pair.2
         { cnode := receiverRoot, slot := emptySlot }
       -- pair.2.objects[receiverRoot]? is a CNode from cspaceInsertSlot
-      unfold cspaceInsertSlot SystemState.getCNode? at hIns
-      simp [hCn] at hIns
-      cases hLookup : cn.lookup emptySlot with
-      | some _ => simp [hLookup] at hIns
-      | none =>
-        simp [hLookup] at hIns
-        have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hIns
-        refine ⟨cn.insert emptySlot cap, ?_⟩
-        simp only [hObjSrc]
-        exact hStoreObj
+      obtain ⟨cn', hCn', _, _, hStore⟩ :=
+        cspaceInsertSlot_ok_decompose st pair.2
+          { cnode := receiverRoot, slot := emptySlot } cap hIns
+      have hCnEq : cn' = cn := by
+        simp only [hCnTyped] at hCn'; exact (Option.some.inj hCn').symm
+      subst hCnEq
+      have hStoreObj := storeObject_objects_eq' st receiverRoot _ pair hObjInv hStore
+      refine ⟨cn'.insert emptySlot cap, ?_⟩
+      simp only [hObjSrc]
+      exact hStoreObj
 
 end SeLe4n.Kernel

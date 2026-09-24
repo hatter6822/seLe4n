@@ -1,7 +1,8 @@
 # SM10 — Boot Path, Documentation, Tests, Version Closure (WS-SM Phase 10)
 
-> **Status**: **PLANNED — BLOCKED on WS-RR.**  SM10 must not open until
-> RR8 closes.  Re-baselined against the pre-SM10 completeness audit at
+> **Status**: **PLANNED — UNBLOCKED at `v0.35.203`**, WS-RR RR8 having closed;
+> **WS-BP opens first**, since SM10.1's content is that workstream's.
+> Re-baselined against the pre-SM10 completeness audit at
 > `v0.34.3`; §1 states what the phase actually owns, which is a boot path
 > as well as a release cut.
 
@@ -10,8 +11,8 @@
 > **Audited cut**: `v0.31.2`; **re-baselined against** the pre-SM10
 > completeness audit at `v0.34.3`
 > ([`UNFINISHED_SMP_WORK.md`](UNFINISHED_SMP_WORK.md) §2.2)
-> **Blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
-> SM10 must not open until RR8 closes
+> **Was blocked on**: **WS-RR** ([`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md)) —
+> RR8 closed at `v0.35.203`
 > **Target releases**: v0.98.0 → **v1.0.0**
 > **Calendar estimate**: **14–24 weeks**, superseding the original 4–6 weeks,
 > which covered documentation only.  Derived in §1.1 from a sized breakdown of
@@ -162,7 +163,7 @@ repurposed ID**.
 
 WS-RR RR7.5 + RR7.15 landed that split at `v0.34.59`:
 [`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md) sequences the port as
-**42 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
+**43 sub-tasks across 9 phases `BP0..BP8`**, in execution order, with
 findings 19, 32 and 40–44 each scheduled to a named row and WS-XV absorbed as
 `BP0` at `v0.34.124`.  Nothing here is
 renumbered: `SM10.1.1` still means the image packaging, and `BP5.3` is the
@@ -220,8 +221,13 @@ lives in the plan that owns the work.
   operations' CDT members; Track C generalised `lockSetForSyscall` to
   decoded-driven resolution, declared eight of the thirty-five arms, made the
   **syscall seam acquire** them, and added the export-commit census that keeps
-  it true.  SM10 may read "the syscall path brackets" as settled and must not
-  read it as covering the scheduler path.
+  it true.  SM10 may read "the syscall path brackets" as settled.  **The
+  qualifier this sentence used to carry — that it must not be read as covering
+  the scheduler path — is retired at `v0.35.181`** (RR8.12 Cut C6h): the seam
+  brackets on `schedulerLockBracketDomain` over one unified footprint spanning
+  both domains, sixteen arms declare a scheduler footprint, and each carries a
+  write-coverage proof.  What SM10 must still not read as covered is the
+  *taint table*, the one `UncoveredLockDomain` entry left.
 - **Fine-lock migration Track D — commit partitioning**
   ([`SMP_FINE_LOCK_MIGRATION_PLAN.md`](SMP_FINE_LOCK_MIGRATION_PLAN.md) §4,
   PRs 10–13), registered in [`../REGISTERED_DEBT.md`](../REGISTERED_DEBT.md)
@@ -254,10 +260,71 @@ lives in the plan that owns the work.
   a *time* until `tCs` is measured on the board, which BP8 is the first point
   that can happen.  The third obligation this block used to name — the
   `SM3.C.9.b` timer-tick bracket — is **closed**: WS-RR RR7.39 landed it at
-  `v0.34.89`.  What survives of the scheduler domain is the syscall seam's own
-  wake targets (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8),
-  and Track D's completion must not be read as covering that either.
+  `v0.34.89`.  The syscall seam's own wake targets
+  (`UncoveredLockDomain.syscallSeamSchedulerDomain`, owner RR8) closed at
+  `v0.35.181` (RR8.12 Cut C6h), so the scheduler domain is covered end to end;
+  Track D's completion must not be read as covering the *taint table*, which is
+  the one entry left.
 - Tier 0..5 tests green at HEAD.
+
+### 2.1 Hand-off check — WS-RR RR8.15, re-measured at `v0.35.186`
+
+RR0.4 and RR1.11 established §1's scope and estimate at `v0.34.26`, and a
+hundred and sixty patch versions of WS-RR have landed since.  **RR8.15 exists
+because a tick taken from that cut would certify a measurement nobody
+repeated**, and it is ordered before the closure entry deliberately: recording
+closure first would advertise the workstream complete for an intervening
+release, and an unmet dependency found afterwards would have to be *retracted*
+rather than simply fixed.
+
+Every row below names the artefact that decides it, so the next reader re-runs
+the evidence rather than re-trusting the tick.  Nothing here is inherited from
+a phase that claimed it.
+
+| §2 dependency | Verdict | What decided it |
+|---------------|---------|-----------------|
+| All of SM0..SM9 complete | **Met** | Every phase row in `CLAUDE.md`'s status index is LANDED or CLOSED, SM9 at `v0.33.100`; SM10 is the only open phase and its content is WS-BP |
+| Acceptance gates for SM0..SM9 green | **Met** | The RR8.1 walk (`v0.35.55`, [`SMP_RELEASE_READINESS_PLAN.md`](SMP_RELEASE_READINESS_PLAN.md) §8), plus the tier stack re-run below |
+| WS-RA complete | **Met, with SM10.1's inherited half named** | `Architecture.timeoutFrame` and `Architecture.cancelledIpcFrame` resolve in the elaborated environment and `KernelError.ipcCancelled` is present, so §9's staging closed at `v0.34.67` as this section records.  What SM10.1 still owes is **delivery** at the context restore (BP7) |
+| WS-DT complete | **Met** | `dispatchCapabilityOnly_preserves_ipcInvariantFull` (production) and the two staged payoffs all resolve; the RR3.1 de-threading gate reports zero post-state bindings over all 178 bundle statements |
+| Fine-lock Tracks B and C landed | **Met** | `declaredFootprintSyscall` answers `true` on exactly **8 of 35** arms and `lockSetForSyscall_undeclared_none` pins the rest; the seam acquires through `runUnderDeclaredLockSet` |
+| Fine-lock Track D re-pointed; the scheduler domain | **Met, and the qualifier retired** | `UncoveredLockDomain` has **one** constructor in the environment — `taintTablePerKeyStore`.  `syscallSeamSchedulerDomain` is gone (RR8.12 Cut C6h, `v0.35.181`), so the bullet above no longer warns SM10 off the scheduler path |
+| Tier 0..5 green at HEAD | **Met, with one gate fixed to get there and one honestly NOT RUN** | `test_full.sh --continue` (Tier 0–3), `test_rust.sh`, `test_aarch64_cross_build.sh`, `test_tier4_nightly_candidates.sh` and `test_tier5_cross_language.sh` all exit 0.  With `NIGHTLY_ENABLE_EXPERIMENTAL=1` Tier 4 exits **77** (`SELE4N_SKIP_EXIT`): every check that can run passes and the QEMU boot-check gate reports **NOT RUN**, `qemu-system-aarch64` not being on this container's `PATH` — which is the "honest about what did not run" the readiness plan's box records, not a failure |
+
+**§1's scope statement matches the tree**, with the one qualification §1 already
+makes: its *"State at the audited cut"* table is a measurement of `v0.34.3` and
+is labelled as one, and every row of it that has since moved carries its closing
+version in place (the aarch64 compile-coverage row at `v0.34.41`).  The
+deliverable list is unchanged in content; the runtime port it names is
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)'s 43 sub-tasks, and `SM10.1.1`
+still means the image packaging.
+
+#### What the check found
+
+Running the dependencies rather than reading them is the whole of the method,
+and it found three things a read would not have.
+
+1. **The Tier 5 gate's central comparison did not decide.**
+   `test_tier5_cross_language.sh` read its mismatch count as
+   `grep -c '^END$' "$LOG" || echo 0`, and on a **clean** run `grep -c` prints
+   `0` *and exits 1* — so the `||` fired, the variable held two lines, `[ -gt ]`
+   died with `integer expression expected`, and the gate took the else arm and
+   printed `PASS`.  The one comparison the gate exists for agreed with the truth
+   by accident of which arm `[`'s failure takes; and the same reading made an
+   **unreadable** log answer exactly as a clean one.  Fixed at `v0.35.186`:
+   `grep`'s status is captured, `>1` is a named gate failure, and the exclusion
+   count refuses an unreadable log rather than defaulting to zero.  Five
+   mutation cases decide it, including one that restores the retired reading and
+   asserts the shell error **with exit 0**.
+2. **The Track B/C bullet's closing qualifier was stale** — it warned SM10 that
+   the syscall bracket does not cover the scheduler path, five patch versions
+   after RR8.12 Cut C6h made it cover exactly that.  Corrected above, naming
+   what is genuinely still uncovered.
+3. **§8's acceptance gate said "README + 10 i18n"** where the tree carries
+   **11** — the identical figure §4 had already recorded as drifted and
+   corrected in the version-site list at `v0.34.29`, unswept onto its sibling
+   eleven lines from the correction.  *A fix applied at one site and not at its
+   sibling*, in a plan that says so about itself.
 
 ## 3. Sub-tasks
 
@@ -328,7 +395,7 @@ image, `SM10.3.10`'s Tier-4 gate reports NOT RUN until one exists, and
 `SM10.5` boots the artefact this phase produces.
 
 **The port itself is planned in
-[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 42 sub-tasks
+[`SMP_BOOT_PATH_PLAN.md`](SMP_BOOT_PATH_PLAN.md)** (WS-BP, 43 sub-tasks
 across `BP0..BP8`), which is where its schedule, its acceptance gate and its
 risk inventory live.  `SM10.1.1` below is unchanged and remains the release
 cut's row for the image *packaging*; `BP5.3` is the sub-task that produces
@@ -768,7 +835,7 @@ sub-task with three of the five markers still absent.  All three now sit in
 
 - [ ] Spec §6.4 rewritten for SMP.
 - [ ] GitBook chapters 16 + 17 published.
-- [ ] README + 10 i18n synced.
+- [ ] README + 11 i18n synced.
 - [ ] DEVELOPMENT.md + CLAIM_EVIDENCE_INDEX.md + REGISTERED_DEBT.md updated.
 - [ ] codebase_map.json regenerated.
 - [ ] All 6 SMP test suites land + run.

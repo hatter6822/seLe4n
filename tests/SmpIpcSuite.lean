@@ -2416,11 +2416,20 @@ private def runDonationPushChecks : IO Unit := do
      | .error _ => false)
   assertBool "HP6.8: the policy this kernel implements is `spliceOutTheCut`"
     (cancelledMiddleCallerPolicy == CancelledMiddleCallerPolicy.spliceOutTheCut)
-  -- OD4.7: the `.call` footprint already declares every object the push writes.
-  assertBool "OD4.7: the resolved `.call` footprint declares the donated context"
-    (((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
+  -- OD4.7: the `.call` footprint declares every object the push writes -- and since
+  -- **WS-RR RR8.16 (`v0.35.189`)** it declares them exactly where the push HAPPENS.
+  -- This assertion used to be taken at `ObjId.ofNat 97`, an endpoint `pushStore`
+  -- does not contain, so it measured the footprint on a state where a `.call` can
+  -- rendezvous with nobody -- and the member was declared all the same, which is
+  -- precisely the over-declaration register row 56 recorded.  The positive moved to
+  -- §3.36 (a), where a passive receiver really is waiting and the donation really
+  -- fires; what stands here is the narrowing itself.
+  assertBool "RR8.16: with no receiver on that endpoint the `.call` footprint declares NO SchedContext lock"
+    (!((lockSet_endpointCallOnCore pushStore (SeLe4n.ObjId.ofNat 97) pushDonor
         (SeLe4n.ObjId.ofNat 0)).pairs.any
         (fun p => p.1 == schedContextLock pushSc && p.2 == AccessMode.write)))
+  assertBool "RR8.16: ...because no receiver resolves there, so the donation cannot fire"
+    (decide (endpointCallDonatedSc? pushStore (SeLe4n.ObjId.ofNat 97) pushDonor = none))
 
 /-- **`v0.35.4`: the middle-caller removal, and the wedge it removes.**
 
@@ -3460,8 +3469,27 @@ store does not hold.  Reachable only through a stale field, which
 the resolver's *contract* -- a candidate resolves -- not the field's reachability. -/
 private def staleOrigin : SeLe4n.ThreadId := ⟨89⟩
 
-/-- **WS-HP HP10.7: the redirect computes a DIFFERENT recipient, and both guards
-decline.**
+/-- The re-called client's fresh frame, the surviving bottom frame, and the shapes
+the `v0.35.157` guard refuses -- ids outside `pushStoreShaped`'s 91..97. -/
+private def redirectHeadReply : SeLe4n.ReplyId := ⟨98⟩
+private def redirectSc2 : SeLe4n.SchedContextId := ⟨99⟩
+private def redirectSc2Holder : SeLe4n.ThreadId := ⟨100⟩
+private def redirectFrameAbove : SeLe4n.ReplyId := ⟨101⟩
+
+/-- The retired reading of `donationOriginRebindable` (`v0.35.51` .. `v0.35.156`):
+refuse an origin that is `.blockedOnReply`.  Computed beside the live guard so the
+assertions below are known to DISCRIMINATE -- a re-called client is reply-blocked
+and on no stack, which is the one input on which the two readings differ. -/
+private def retiredProxyRebindable (st : SystemState) (origin : SeLe4n.ThreadId) : Bool :=
+  match st.getTcb? origin with
+  | none => true
+  | some tcb =>
+    match tcb.ipcState with
+    | .blockedOnReply _ _ => false
+    | _ => true
+
+/-- **WS-HP HP10.7 / `v0.35.157`: the redirect computes a DIFFERENT recipient, and
+the guard is the bind's own admissibility.**
 
 The measurement this phase owes.  Every state the tree reached before HP10.7
 either records no origin or records one that *is* the answered caller, so on all
@@ -3472,143 +3500,185 @@ out-of-order removal of plan §3.2: a client answered by a delegate is woken
 *intermediate* caller — so reachability says one thread and the recorded origin
 says another.
 
-Four assertions, and the last two are why the guard is a conjunction.  A thread
-that is still `.blockedOnReply` is a thread whose own reservation *may* be
-travelling, and rebinding such a thread would falsify the owner clause of whatever
-binding is waiting on it (`donationOriginRebindable`); a thread that already holds
-a binding is the case `donationRecipientAcceptable` has always covered.  Both
-decline to the reachability answer rather than refusing the pop.
+**The PAYOFF group drives the re-called client** (PR #897's review, `v0.35.141`;
+closed `v0.35.157`).  Until `v0.35.157` the rebindability guard read the origin's
+`ipcState` — a PROXY for "some live binding names it" — so a client that was
+answered out of order and simply issued its next Call was refused: it is
+`.unbound`, so that Call donated nothing and pushed no frame, and no binding names
+it, yet it is `.blockedOnReply` again.  The pop then fell back and *transferred*
+the reservation to the answered caller, erasing the origin with it.  The guard now
+asks `schedContextBind`'s question — is the origin's reply frame on a **live**
+stack — which admits that client: its new frame is on no stack.  The retired
+reading is computed beside the live one (`retiredProxyRebindable`) so the group is
+known to decide the guard rather than the fixture.
 
-**And the COST group is what that decline costs** (PR #897's review, `v0.35.141`).
-`.blockedOnReply` is a PROXY for ownership: a client answered out of order and
-re-called is reply-blocked while `.unbound`, so its Call donated nothing and no
-binding names it, and the guard refuses it anyway.  Driving the live pop on a
-three-thread chain shows what the fallback then does — it binds the reservation to
-the *answered caller*, leaves the client holding nothing, and erases the record of
-whose reservation it was.  The CONTROL beside it is the same pop on the same
-fixture with the client awake, which is the one input on which the two outcomes
-differ; without it the COST assertions would read as properties of the fixture. -/
+**The NEGATIVE groups are the two shapes the proxy could not tell apart from it**,
+and each carries the CONTROL that the recipient guard alone admits the thread, so
+the decline is attributable to rebindability: an origin whose frame **heads** a
+context — a live owner, and the fixture plants the binding that names it — and an
+origin whose frame sits **inside** a live stack, owed a pop that a binding made here
+would make refuse.  Both decline to the reachability answer rather than refusing
+the pop.  The three remaining negatives are unchanged from HP10.7: a bound origin
+(the recipient guard's own case), no origin recorded, and a stale origin. -/
 private def runDonationOriginRedirectChecks : IO Unit := do
   IO.println "--- §3.25 WS-HP HP10.7: the reply pop's recipient is the recorded origin ---"
-  -- The context sits at the BOTTOM of its stack (`pushOuterReply.prev = none`),
-  -- held by `pushServer`, and records `pushOuter` as the reservation's origin.
-  let withOrigin (outerTcb : TCB) : SystemState :=
+  -- **The depth-2 out-of-order shape, coherently.**  The chain was
+  -- `pushOuter → pushServer → pushDonor` (client, intermediate caller, holder).  A
+  -- delegate answered `pushOuter` out of order: its frame left the stack, so the
+  -- surviving frame (`redirectHeadReply`, the intermediate caller's) is both the
+  -- head and the BOTTOM of `pushSc`'s stack, `pushDonor` holds the reservation
+  -- `.donated` from `pushServer`, and the context records `pushOuter` as the
+  -- origin.  `outerTcb` is the client's TCB, varied by the groups below.
+  let redirectStore (outerTcb : TCB) : SystemState :=
     { pushStore with
-        objects := (pushStore.objects.insert pushSc.toObjId
+        objects := (((pushStore.objects.insert pushSc.toObjId
           (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some pushServer,
-                             scReply := some pushOuterReply,
+                             boundThread := some pushDonor,
+                             scReply := some redirectHeadReply,
                              donationOrigin := some pushOuter })).insert
-            pushOuter.toObjId (.tcb outerTcb) }
-  -- **The depth-2 shape**: the origin was answered out of order, so it is awake,
-  -- holds nothing, and is on no stack.  Homed on core 1, where `pushServer` is not.
-  let stRedirect : SystemState := withOrigin (mkTcb 93 50 (some c1))
+            redirectHeadReply.toObjId
+            (.reply { replyId := redirectHeadReply, caller := some pushServer,
+                      next := some (.head pushSc) })).insert
+            pushServer.toObjId
+            (.tcb { mkTcb 92 30 none with
+                      ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushDonor),
+                      replyObject := some redirectHeadReply })).insert
+            pushDonor.toObjId
+            (.tcb { mkTcb 91 40 none with
+                      schedContextBinding := .donated pushSc pushServer,
+                      replyObject := some pushDonorReply })
+          |>.insert pushOuter.toObjId (.tcb outerTcb) }
+  -- The re-called client: `.unbound`, reply-blocked on its NEXT call, whose frame
+  -- is `pushOuterReply` re-linked fresh -- the removal cleared its links and the
+  -- re-Call donated nothing, so it pushed none.  Homed on core 1, where nothing
+  -- else in the chain is.
+  let recalledClient : TCB :=
+    { mkTcb 93 50 (some c1) with
+        ipcState := .blockedOnReply (SeLe4n.ObjId.ofNat 97) (some pushServer),
+        replyObject := some pushOuterReply }
+  let withFreshFrame (st : SystemState) : SystemState :=
+    { st with
+        objects := st.objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter }) }
+  let stRedirect : SystemState := withFreshFrame (redirectStore recalledClient)
+  let poppedFrom (st : SystemState) : Option SystemState :=
+    (returnDonatedSchedContextResolved st pushDonor pushSc
+      (replyDonationRecipient st pushSc pushServer)).toOption
   assertBool "pre: the pop is at the BOTTOM of the stack (nothing further out)"
     (match replyStackOuterCaller? stRedirect pushSc with
      | .ok none => true
      | _ => false)
   assertBool "pre: ...and the context records `pushOuter` as the origin"
     ((stRedirect.getSchedContext? pushSc).bind (·.donationOrigin) == some pushOuter)
-  -- **PAYOFF**: reachability names `pushServer`; the origin names `pushOuter`, and
-  -- the redirect follows the origin.  This is the assertion a revert of the flip
-  -- fails.
+  assertBool "pre: the reservation is held by a THIRD thread, the server"
+    ((stRedirect.getSchedContext? pushSc).bind (·.boundThread) == some pushDonor)
+  assertBool "pre: ...whose binding records it as owed to the intermediate caller"
+    (pushBindingOf stRedirect pushDonor == some (.donated pushSc pushServer))
+  assertBool "pre: the origin is reply-blocked on its NEXT call, `.unbound`"
+    ((stRedirect.getTcb? pushOuter).map (fun t =>
+      t.schedContextBinding == .unbound
+        && (match t.ipcState with | .blockedOnReply _ _ => true | _ => false)) == some true)
+  assertBool "pre: ...and its frame is on NO stack -- that Call donated nothing"
+    ((stRedirect.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack stRedirect t)
+      == some false)
+  -- **PAYOFF**: the retired proxy refused this client and the live guard admits it
+  -- -- the one input on which the two readings differ.
+  assertBool "PAYOFF: the retired `.blockedOnReply` proxy REFUSES the re-called client"
+    (retiredProxyRebindable stRedirect pushOuter == false)
+  assertBool "PAYOFF: ...and the live guard, the bind's own admissibility, ADMITS it"
+    (donationOriginRebindable stRedirect pushOuter == true)
   assertBool "PAYOFF: the resolver answers the recorded origin"
     (donationOriginRecipient? stRedirect pushSc == some pushOuter)
   assertBool "PAYOFF: ...and the pop's recipient is that origin, NOT the answered caller"
     (replyDonationRecipient stRedirect pushSc pushServer == pushOuter)
   assertBool "PAYOFF: ...which is a DIFFERENT thread, so the redirect is not vacuous"
     (!(pushOuter == pushServer))
+  -- **PAYOFF, driven through the live pop**: the reservation goes HOME.  This is
+  -- the assertion the retired proxy failed -- under it the same pop bound the
+  -- reservation to `pushServer` and erased the origin.
+  assertBool "PAYOFF: the pop succeeds"
+    (poppedFrom stRedirect).isSome
+  assertBool "PAYOFF: ...and binds the reservation to the ORIGIN, the client that owned it"
+    ((poppedFrom stRedirect).bind
+      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushOuter)
+  assertBool "PAYOFF: ...which now holds it outright, as its own"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushOuter)
+      == some (.bound pushSc))
+  assertBool "PAYOFF: ...while the intermediate caller ends holding nothing"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushServer)
+      == some .unbound)
+  assertBool "PAYOFF: ...and so does the server that held it"
+    ((poppedFrom stRedirect).bind (fun st' => pushBindingOf st' pushDonor)
+      == some .unbound)
   -- **PAYOFF**: and the replenishment migration's DESTINATION follows it too.  A
   -- redirect that moved the reservation without moving the queue would leave
   -- `replenishQueueAffinityConsistentOnCore` false from the instant it committed.
   assertBool "PAYOFF: the migration's destination home is the ORIGIN's core"
-    (replyDonationRecipientHome stRedirect pushOuterReply pushServer
+    (replyDonationRecipientHome stRedirect redirectHeadReply pushServer
       == determineTargetCore stRedirect pushOuter)
   assertBool "PAYOFF: ...and that is core 1, not the answered caller's"
-    (replyDonationRecipientHome stRedirect pushOuterReply pushServer == c1)
-  -- NEGATIVE: a still-reply-blocked origin is one whose own reservation is still
-  -- owed, and some other binding may name it as owner; the redirect declines.
-  let stBlockedOrigin : SystemState := withOrigin pushOuterBlockedTcb
-  assertBool "NEGATIVE: a reply-blocked origin fails the rebindability guard"
-    (donationOriginRebindable stBlockedOrigin pushOuter == false)
-  -- CONTROL: the *recipient* guard admits it, so the decline above is attributable
-  -- to rebindability alone.  Without this the negative would pass under a resolver
-  -- that declined for the other reason, and the guard would read as load-bearing
-  -- while asserting nothing.
-  assertBool "CONTROL: ...while the recipient guard ALONE admits it"
-    (donationRecipientAcceptable stBlockedOrigin pushOuter == true)
-  assertBool "NEGATIVE: ...so the resolver declines it"
-    (donationOriginRecipient? stBlockedOrigin pushSc == none)
-  assertBool "NEGATIVE: ...and the pop FALLS BACK to the answered caller, never refuses"
-    (replyDonationRecipient stBlockedOrigin pushSc pushServer == pushServer)
-  -- **THE COST OF THAT FALLBACK, DRIVEN THROUGH THE LIVE POP** (PR #897's review,
-  -- `v0.35.141`).  The decline is sound and it is **not** conservative: the
-  -- reservation neither stays where it was nor goes home — it is *transferred* to
-  -- the thread the reply answers, which at depth 2 is the intermediate caller and
-  -- owns nothing.  Reading the resolver cannot show that; only the pop can.
-  --
-  -- A THREE-thread shape is what the measurement needs, and the fixture above is
-  -- not one: there the reservation is held by `pushServer` and `pushServer` is also
-  -- the thread the fallback names, so the pop's step 4 overwrites its own step 3 and
-  -- the transfer is invisible.  `heldBy pushDonor` separates the holder from the
-  -- answered caller, giving the chain `pushOuter → pushServer → pushDonor` — the
-  -- client, the intermediate caller, and the server that holds the reservation.
-  let heldBy (holder : SeLe4n.ThreadId) (outerTcb : TCB) : SystemState :=
-    { pushStore with
-        objects := (pushStore.objects.insert pushSc.toObjId
-          (.schedContext { SchedContext.empty pushSc with
-                             boundThread := some holder,
-                             scReply := some pushOuterReply,
-                             donationOrigin := some pushOuter })).insert
-            pushOuter.toObjId (.tcb outerTcb) }
-  let poppedFrom (st : SystemState) : Option SystemState :=
-    (returnDonatedSchedContextResolved st pushDonor pushSc
-      (replyDonationRecipient st pushSc pushServer)).toOption
-  -- The client was answered out of order and has simply issued its next Call: it is
-  -- `.unbound`, so that Call donated nothing and no binding names it as an owner --
-  -- but it is `.blockedOnReply` again, which is all the guard reads.
-  let stCapture : SystemState := heldBy pushDonor pushOuterBlockedTcb
-  let stCaptureControl : SystemState := heldBy pushDonor (mkTcb 93 50 (some c1))
-  assertBool "pre: the reservation is held by a THIRD thread, the server"
-    ((stCapture.getSchedContext? pushSc).bind (·.boundThread) == some pushDonor)
-  assertBool "pre: ...whose binding records it as owed to the intermediate caller"
-    (pushBindingOf stCapture pushDonor == some (.donated pushSc pushOuter))
-  assertBool "COST: the pop succeeds"
-    (poppedFrom stCapture).isSome
-  assertBool "COST: ...and binds the reservation to the ANSWERED CALLER"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushServer)
-  assertBool "COST: ...which now holds it outright, as its own"
-    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushServer)
-      == some (.bound pushSc))
-  assertBool "COST: ...while the client that owns it is left holding nothing"
-    ((poppedFrom stCapture).bind (fun st' => pushBindingOf st' pushOuter) == some .unbound)
-  assertBool "COST: ...and the record of whose reservation it was is ERASED"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).map (·.donationOrigin)) == some none)
-  -- ...and this is what makes the loss unrecoverable BY THE KERNEL, which is the
-  -- precise claim rather than "permanent": the context heads no stack afterwards,
-  -- so there is no later pop to deliver it, and the origin that would have named
-  -- the recipient is gone with it.  What remains is an out-of-band repair by a
-  -- holder of the *SchedContext* capability -- `schedContextUnbind` then
-  -- `schedContextBind` -- which its guards permit (the captor holds `.bound`, not
-  -- `.donated`, so the unbind is not refused) and which requires noticing first.
-  assertBool "COST: ...so no later pop can deliver it -- the context heads no stack"
-    ((poppedFrom stCapture).bind
-      (fun st' => (st'.getSchedContext? pushSc).map (·.scReply)) == some none)
-  -- CONTROL: the same pop, the same fixture, the client AWAKE.  Without it the four
-  -- assertions above would read as properties of the fixture rather than of the
-  -- guard's refusal -- this is the one input on which the two outcomes differ.
-  assertBool "CONTROL: ...where an awake client receives the reservation instead"
-    ((poppedFrom stCaptureControl).bind
-      (fun st' => (st'.getSchedContext? pushSc).bind (·.boundThread)) == some pushOuter)
-  assertBool "CONTROL: ...and the intermediate caller ends holding nothing"
-    ((poppedFrom stCaptureControl).bind (fun st' => pushBindingOf st' pushServer)
-      == some .unbound)
+    (replyDonationRecipientHome stRedirect redirectHeadReply pushServer == c1)
+  -- **NEGATIVE: a live OWNER.**  The origin was bound a second reservation and
+  -- Called with it: its frame now HEADS `redirectSc2`, whose holder's binding
+  -- names it as owner.  Binding `pushSc` to it would falsify that binding's owner
+  -- clause, so the guard refuses -- and this is the shape the proxy refused too,
+  -- for the wrong reason (its `ipcState`) rather than the right one (its frame).
+  let liveOwnerStore : SystemState :=
+    { redirectStore recalledClient with
+        objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+                    next := some (.head redirectSc2) })).insert
+            redirectSc2.toObjId
+            (.schedContext { SchedContext.empty redirectSc2 with
+                               boundThread := some redirectSc2Holder,
+                               scReply := some pushOuterReply })
+          |>.insert redirectSc2Holder.toObjId
+            (.tcb { mkTcb 100 20 none with
+                      schedContextBinding := .donated redirectSc2 pushOuter }) }
+  assertBool "NEGATIVE (live owner): a binding NAMES the origin as owner"
+    (pushBindingOf liveOwnerStore redirectSc2Holder == some (.donated redirectSc2 pushOuter))
+  assertBool "NEGATIVE (live owner): ...its frame heads that context, so it is on a live stack"
+    ((liveOwnerStore.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack liveOwnerStore t)
+      == some true)
+  assertBool "NEGATIVE (live owner): ...and the guard refuses it"
+    (donationOriginRebindable liveOwnerStore pushOuter == false)
+  -- CONTROL: the *recipient* guard admits it, so the decline is attributable to
+  -- rebindability alone.  Without this the negative would pass under a resolver
+  -- that declined for the other reason.
+  assertBool "CONTROL (live owner): ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable liveOwnerStore pushOuter == true)
+  assertBool "NEGATIVE (live owner): ...so the resolver declines it"
+    (donationOriginRecipient? liveOwnerStore pushSc == none)
+  assertBool "NEGATIVE (live owner): ...and the pop FALLS BACK to the answered caller, never refuses"
+    (replyDonationRecipient liveOwnerStore pushSc pushServer == pushServer)
+  -- **NEGATIVE: an INTERIOR frame.**  The origin's frame sits below another on a
+  -- live stack (`redirectFrameAbove` reciprocates its upward link), so the origin
+  -- is owed a context by the pop that reaches its frame -- binding one here would
+  -- make that pop refuse.  The proxy could not tell this shape from the re-called
+  -- client's: both are `.blockedOnReply`.
+  let interiorStore : SystemState :=
+    { redirectStore recalledClient with
+        objects := ((redirectStore recalledClient).objects.insert pushOuterReply.toObjId
+          (.reply { replyId := pushOuterReply, caller := some pushOuter,
+                    next := some (.frame redirectFrameAbove) })).insert
+            redirectFrameAbove.toObjId
+            (.reply { replyId := redirectFrameAbove, caller := some pushServer,
+                      prev := some pushOuterReply, next := some (.head redirectSc2) }) }
+  assertBool "NEGATIVE (interior frame): the origin's frame is inside a live stack"
+    ((interiorStore.getTcb? pushOuter).map (fun t => replyFrameOnLiveStack interiorStore t)
+      == some true)
+  assertBool "NEGATIVE (interior frame): ...and the guard refuses it"
+    (donationOriginRebindable interiorStore pushOuter == false)
+  assertBool "CONTROL (interior frame): ...while the recipient guard ALONE admits it"
+    (donationRecipientAcceptable interiorStore pushOuter == true)
+  assertBool "NEGATIVE (interior frame): ...so the resolver declines it"
+    (donationOriginRecipient? interiorStore pushSc == none)
+  assertBool "NEGATIVE (interior frame): ...and the pop FALLS BACK to the answered caller"
+    (replyDonationRecipient interiorStore pushSc pushServer == pushServer)
   -- NEGATIVE: an origin that already holds a reservation of its own is the case
   -- `donationRecipientAcceptable` has always covered.
   let stBoundOrigin : SystemState :=
-    withOrigin { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
+    redirectStore { mkTcb 93 50 none with schedContextBinding := .bound pushSc }
   assertBool "NEGATIVE: a bound origin fails the recipient guard"
     (donationRecipientAcceptable stBoundOrigin pushOuter == false)
   -- CONTROL: and rebindability admits *it*, so the two guards are known to be
@@ -3754,46 +3824,98 @@ private def runMiddleRemovalDepthFourChecks : IO Unit := do
 
 -- ============================================================================
 -- §3.26 the `.receive` replenish segment is keyed on the donation's own guard
---        (WS-RR RR8.12, PR #897 Codex review)
+--        (WS-RR RR8.12, PR #897 Codex review; the resolver half is Cut C1,
+--        register row 55)
 -- ============================================================================
 
 /-! The narrowing is pinned definitionally — reverting the segment breaks
-`endpointReceiveHandoffReplenishCores_of_blockedOnSend` at elaboration — so what no
-theorem states is that **both shapes are reachable by the live operations and the
+`endpointReceiveHandoffReplenishCores_of_blockedOnSend` and
+`endpointReceiveHandoffReplenishCores_of_no_donation` at elaboration — so what no
+theorem states is that **every shape is reachable by the live operations and the
 segment differs between them**.  That is this section's whole subject.
 
-The retired reading lives here, `private`, and nowhere else: computed beside the
-live one on both shapes, so the assertions are known to discriminate rather than
-merely to pass. -/
+The two retired readings live here, `private`, and nowhere else: computed beside the
+live one on every shape, so the assertions are known to discriminate rather than
+merely to pass.  Three shapes, and each retired reading is wrong on exactly one of
+them: the sender-keyed segment declares two cores on a plain `Send`, the `Call`-keyed
+one on a `Call` whose donation the resolver declines. -/
 
-/-- The superseded segment: keyed on *is there a queued sender at all*, which named
-both cores on every rendezvous including a plain `Send`. -/
+/-- The first superseded segment (`v0.35.107`): keyed on *is there a queued sender at
+all*, which named both cores on every rendezvous including a plain `Send`. -/
 private def senderKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
     (receiver : SeLe4n.ThreadId) : List CoreId :=
   match receiveRendezvousSender? st endpointId with
   | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
   | none        => []
 
+/-- The second superseded segment (`v0.35.112`): keyed on the queued sender carrying a
+`Call`, which named both cores on every `Call` — including one whose donation
+`callDonationSchedContext?` declines because the receiver already holds a context of
+its own, where the donation step is the identity. -/
+private def callKeyedReplenishCores (st : SystemState) (endpointId : SeLe4n.ObjId)
+    (receiver : SeLe4n.ThreadId) : List CoreId :=
+  match receiveRendezvousCallSender? st endpointId with
+  | some sender => [determineTargetCore st sender, determineTargetCore st receiver]
+  | none        => []
+
 private def runReceiveReplenishSegmentChecks : IO Unit := do
   IO.println "--- §3.26 WS-RR RR8.12: the `.receive` replenish segment follows the donation ---"
-  -- (a) a `Call` rendezvous: the donation can migrate, so both cores are declared.
-  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  -- (a) a `Call` rendezvous the donation CARRIES OUT: the server is passive, so the
+  --     resolver answers `some` and both cores are declared.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
   | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
   | some (stCall, _) =>
     assertBool "the caller parks `.blockedOnCall`" (ipcStateIs stCall donClient (.blockedOnCall donEp))
-    assertBool "the pre-state guard fires on a queued Call"
+    assertBool "the pre-state Call guard fires on a queued Call"
       (decide (rendezvousSenderIsCall stCall donClient = true))
-    assertBool "...so the narrowed resolver names the queued caller"
+    assertBool "...so the `Call`-narrowed resolver names the queued caller"
       (decide (receiveRendezvousCallSender? stCall donEp = some donClient))
+    assertBool "...the donation resolver would hand the caller's context to the passive server"
+      (decide (callDonationSchedContext? stCall donClient donServer = some scClient))
+    assertBool "...so the donation-keyed resolver names the caller too"
+      (decide (receiveRendezvousDonatingSender? stCall donEp donServer = some donClient))
     assertBool "...and the segment declares the donor's and the receiver's homes"
       (decide (endpointReceiveHandoffReplenishCores stCall donEp donServer
                  = [determineTargetCore stCall donClient,
                     determineTargetCore stCall donServer]))
-    assertBool "CONTROL: the retired reading agrees here — both name two cores"
+    assertBool "CONTROL: both retired readings agree here — each names two cores"
       (decide (senderKeyedReplenishCores stCall donEp donServer
+                 = endpointReceiveHandoffReplenishCores stCall donEp donServer
+               ∧ callKeyedReplenishCores stCall donEp donServer
                  = endpointReceiveHandoffReplenishCores stCall donEp donServer))
+    -- ...and the reason both cores are needed: at the state the donation runs on the
+    -- resolver still answers `some` (the binding frame, measured) and the step donates.
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall) with
+    | none => assertBool "RR8.12: the passive server's receive completes the Call rendezvous" false
+    | some (stRecv, (sender, _)) =>
+      assertBool "the receive dequeues the parked caller" (sender == donClient)
+      assertBool "the post-state Call guard fires"
+        (decide (rendezvousDequeuedCall stRecv donClient = true))
+      assertBool "the resolver's answer survives the receive leg"
+        (decide (callDonationSchedContext? stRecv donClient donServer = some scClient))
+      assertBool "...and the donation step hands the context over"
+        (match applyReceiveRendezvousDonation stRecv donServer donClient with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .donated scClient donClient
+              | none => false)
+         | .error _ => false)
+      -- WS-RR RR8.12 Cut C6f: the direction the segment assertions cannot see --
+      -- the leg AND the donation together write no replenish queue on a core the
+      -- segment does not name.  `endpointReceiveLegAndDonation_replenishQueueOnCore_ne`
+      -- is the theorem; this is it measured on the shape where the segment is
+      -- widest, so the cores outside it are the only place a stray write could hide.
+      match applyReceiveRendezvousDonation stRecv donServer donClient with
+      | .error e => assertBool s!"(C6f) the donation must succeed (got {reprStr e})" false
+      | .ok stDon =>
+        let recvSeg := endpointReceiveHandoffReplenishCores stCall donEp donServer
+        assertBool "C6f: EVERY core outside the `.receive` segment keeps its replenish queue across leg+donation"
+          (Concurrency.allCores.all (fun d =>
+            recvSeg.contains d || replenishEntriesOn stDon d == replenishEntriesOn stCall d))
+        assertBool "C6f: ...and the segment is a strict subset here, so the claim is not vacuous"
+          (decide (recvSeg = [c0, c1]) && !recvSeg.contains c2 && !recvSeg.contains c3)
   -- (b) a plain `Send` rendezvous: the donation is the identity, so NO replenish
-  --     lock is declared.  This is the shape the superseded segment over-declared.
+  --     lock is declared.  This is the shape the sender-keyed segment over-declared.
   match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
       stHandoffActiveBase) with
   | none => assertBool "RR8.12 setup: the no-receiver send parks the sender" false
@@ -3801,14 +3923,18 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
     assertBool "the sender parks `.blockedOnSend`" (ipcStateIs stSend donClient (.blockedOnSend donEp))
     assertBool "the pre-state guard is false on a queued plain Send"
       (decide (rendezvousSenderIsCall stSend donClient = false))
-    assertBool "...so the narrowed resolver names nobody"
+    assertBool "...so the `Call`-narrowed resolver names nobody"
       (decide (receiveRendezvousCallSender? stSend donEp = none))
+    assertBool "...and so does the donation-keyed one"
+      (decide (receiveRendezvousDonatingSender? stSend donEp donServer = none))
     assertBool "PAYOFF: the segment declares NO replenish-queue lock"
       (decide (endpointReceiveHandoffReplenishCores stSend donEp donServer = []))
     -- The decisive comparison: same state, same endpoint, same receiver; the
-    -- retired reading declares two cores for a migration that does not happen.
-    assertBool "NEGATIVE (the defect): the retired reading declared TWO cores here"
+    -- sender-keyed reading declares two cores for a migration that does not happen.
+    assertBool "NEGATIVE (the defect): the sender-keyed retired reading declared TWO cores here"
       (decide ((senderKeyedReplenishCores stSend donEp donServer).length = 2))
+    assertBool "CONTROL: the `Call`-keyed retired reading already agreed here"
+      (decide (callKeyedReplenishCores stSend donEp donServer = []))
     -- ...and the reason it is sound to declare none: the donation step is the
     -- identity, because the receive leg leaves the dequeued sender `.ready`.
     match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stSend) with
@@ -3829,6 +3955,50 @@ private def runReceiveReplenishSegmentChecks : IO Unit := do
                 == replenishEntriesOn stRecv (determineTargetCore stRecv donClient))
              && (replenishEntriesOn stDon (determineTargetCore stRecv donServer)
                 == replenishEntriesOn stRecv (determineTargetCore stRecv donServer))
+         | .error _ => false)
+  -- (c) a `Call` rendezvous the resolver DECLINES: the receiver already holds a context
+  --     of its own (`stHandoffActiveBase`'s active server), so the donation is the
+  --     identity and NO replenish lock is declared.  This is the shape the
+  --     `Call`-keyed segment still over-declared, and the one Cut C1 closes.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.12 setup: the no-receiver call parks the caller" false
+  | some (stCallActive, _) =>
+    assertBool "the caller parks `.blockedOnCall`"
+      (ipcStateIs stCallActive donClient (.blockedOnCall donEp))
+    assertBool "the pre-state Call guard fires"
+      (decide (rendezvousSenderIsCall stCallActive donClient = true))
+    assertBool "CONTROL: the `Call`-narrowed resolver admits this shape — the decline is the donation resolver's"
+      (decide (receiveRendezvousCallSender? stCallActive donEp = some donClient))
+    assertBool "...but the donation resolver declines: the receiver holds a context of its own"
+      (decide (callDonationSchedContext? stCallActive donClient donServer = none))
+    assertBool "...so the donation-keyed resolver names nobody"
+      (decide (receiveRendezvousDonatingSender? stCallActive donEp donServer = none))
+    assertBool "PAYOFF: the segment declares NO replenish-queue lock"
+      (decide (endpointReceiveHandoffReplenishCores stCallActive donEp donServer = []))
+    assertBool "NEGATIVE (the defect): the `Call`-keyed retired reading declared TWO cores here"
+      (decide ((callKeyedReplenishCores stCallActive donEp donServer).length = 2))
+    match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCallActive) with
+    | none => assertBool "RR8.12: the active server's receive completes the Call rendezvous" false
+    | some (stRecvActive, (sender, _)) =>
+      assertBool "the receive dequeues the parked caller" (sender == donClient)
+      assertBool "the dequeued caller IS `.blockedOnReply`: the post-state Call guard fires"
+        (decide (rendezvousDequeuedCall stRecvActive donClient = true))
+      assertBool "...and the resolver still declines at the state the donation runs on (the licence, measured)"
+        (decide (callDonationSchedContext? stRecvActive donClient donServer = none))
+      assertBool "...so the donation step moves NO replenishment on either core"
+        (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
+         | .ok stDon =>
+             (replenishEntriesOn stDon (determineTargetCore stRecvActive donClient)
+                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donClient))
+             && (replenishEntriesOn stDon (determineTargetCore stRecvActive donServer)
+                == replenishEntriesOn stRecvActive (determineTargetCore stRecvActive donServer))
+         | .error _ => false)
+      assertBool "...and hands no context over: the server keeps its own reservation"
+        (match applyReceiveRendezvousDonation stRecvActive donServer donClient with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .bound scHandoffServer
+              | none => false)
          | .error _ => false)
 
 -- ============================================================================
@@ -3973,6 +4143,1372 @@ private def runReplyRecvHolderDescheduleChecks : IO Unit := do
       assertBool "CONTROL: ...and the bystander is untouched, as it is on the divergent shape"
         (threadPlacedOnSomeCore stOut orphanS1)
 
+-- ============================================================================
+-- §3.28 the pre-receive donation return migrates its replenishments
+--        (register row 57, `v0.35.161`)
+-- ============================================================================
+
+/-! The block arm of the cross-core receive leg returns a `.donated` receiver's
+context to its owner before the receiver parks, and until `v0.35.161` it ran the
+pop bare: `boundThread` moved to the owner and the reservation's replenishments
+stayed on the receiver's home core, so `replenishQueueAffinityConsistent_smp` was
+false on a state three ordinary operations reach.  What the theorems now say
+(`cleanupPreReceiveDonationMigrated_preserves_replenishQueueAffinityConsistent_smp`,
+`endpointReceiveDualOnCore_preserves_replenishQueueAffinityConsistent_smp`) is that
+the migrated return preserves the invariant; what no theorem states is that the
+invariant is *falsifiable* by the bare pop on a reachable state — which is the
+whole content of the defect, and this section's subject.
+
+The retired reading is not a private copy here, because the bare pop is still a
+live definition (`cleanupPreReceiveDonationChecked`, the migrated return's own first
+half): it is computed beside the migrated one on the same state, so the assertions
+are known to discriminate.  Two controls bound the claim: a receiver holding no
+loan, where the migrated return is the identity, and an owner homed on the
+receiver's own core, where the migration is. -/
+
+/-- The decidable reading of `replenishQueueAffinityConsistent_smp`, clause for
+clause: every entry of every core's replenish queue names a context that is either
+unresolvable, unbound, or bound to a thread homed on that core. -/
+private def replenishAffinityConsistentB (st : SystemState) : Bool :=
+  Concurrency.allCores.all fun c =>
+    (replenishEntriesOn st c).all fun e =>
+      match st.getSchedContext? e.1 with
+      | some sc =>
+          match sc.boundThread with
+          | some t => decide (determineTargetCore st t = c)
+          | none => true
+      | none => true
+
+/-- `stDonBase` with one replenishment for the client's context on the client's
+home core — the shape the invariant is about, since a queue holding no entry for the
+context satisfies it vacuously and could witness no migration. -/
+private def stPreReturnBase : SystemState :=
+  { stDonBase with scheduler :=
+      stDonBase.scheduler.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100) }
+
+/-- The same-core CONTROL: the client pinned to the server's own core, its
+replenishment there too, so the return's migration is the identity. -/
+private def stPreReturnSameCore : SystemState :=
+  { stDonBase with
+      objects := stDonBase.objects.insert donClient.toObjId
+        (.tcb { mkTcb 841 60 (some c1) with schedContextBinding := .bound scClient }),
+      scheduler :=
+        stDonBase.scheduler.setReplenishQueueOnCore c1 (ReplenishQueue.empty.insert scClient 100) }
+
+/-- The three-operation prefix the defect needs: the client `Call`s with nobody
+waiting and parks; the passive server takes it with a `Recv`, whose hand-off donates
+the client's context and migrates its replenishment to the server's home; the state
+returned is the one the server then abandons the call from. -/
+private def preReturnHandoffState (base : SystemState) : Option SystemState := do
+  let (stCall, _) ← okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 base)
+  let (stRecv, (dequeued, _)) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stCall)
+  okExcept (applyReceiveRendezvousHandoff stRecv donServer dequeued c1)
+
+private def runPreReceiveReturnMigrationChecks : IO Unit := do
+  IO.println "--- §3.28 register row 57: the pre-receive donation return migrates its replenishments ---"
+  match preReturnHandoffState stPreReturnBase with
+  | none => assertBool "row 57 setup: call, rendezvous and hand-off succeed" false
+  | some stDon =>
+    -- (i) the hand-off left the shape the defect needs: the server holds the loan,
+    --     the context is bound to it, and the replenishment sits on ITS home core.
+    assertBool "setup: the server holds the client's context on loan"
+      (match stDon.getTcb? donServer with
+       | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+    assertBool "setup: the context is bound to the server"
+      (match stDon.getSchedContext? scClient with
+       | some sc => sc.boundThread == some donServer | none => false)
+    assertBool "setup: the hand-off migrated the replenishment to the server's home (core 1)"
+      (replenishCountFor stDon c1 scClient == 1 && replenishCountFor stDon c0 scClient == 0)
+    assertBool "setup: the invariant holds at the hand-off's post-state (the hand-off migrates)"
+      (replenishAffinityConsistentB stDon)
+    assertBool "setup: the pop's own guard resolves the loan and its owner"
+      (decide (preReceiveDonation? stDon donServer = some (scClient, donClient)))
+    -- (ii) NEGATIVE (the defect): the bare pop rebinds the context to the client,
+    --      homed on core 0, and leaves the replenishment on core 1.
+    match okExcept (cleanupPreReceiveDonationChecked stDon donServer) with
+    | none => assertBool "row 57: the bare pop succeeds" false
+    | some stBare =>
+      assertBool "NEGATIVE: the bare pop binds the context back to the client..."
+        (match stBare.getSchedContext? scClient with
+         | some sc => sc.boundThread == some donClient | none => false)
+      assertBool "NEGATIVE: ...whose home is core 0..."
+        (decide (determineTargetCore stBare donClient = c0))
+      assertBool "NEGATIVE: ...while the replenishment stays on core 1"
+        (replenishCountFor stBare c1 scClient == 1 && replenishCountFor stBare c0 scClient == 0)
+      assertBool "NEGATIVE (the defect): the bare pop FALSIFIES the affinity invariant"
+        (!replenishAffinityConsistentB stBare)
+      -- The destination the migrated return reads off the post-pop state IS the
+      -- owner's home (`preReceiveReturnMigration_destination`, measured).
+      assertBool "the post-pop home of the context is the client's home"
+        (decide (replenishHomeOfSchedContext stBare scClient (determineTargetCore stDon donServer)
+                   = determineTargetCore stDon donClient))
+    -- (iii) PAYOFF: the migrated return moves the replenishment with the binding.
+    match okExcept (cleanupPreReceiveDonationMigrated stDon donServer) with
+    | none => assertBool "row 57: the migrated return succeeds" false
+    | some stMig =>
+      assertBool "PAYOFF: the migrated return binds the context back to the client too"
+        (match stMig.getSchedContext? scClient with
+         | some sc => sc.boundThread == some donClient | none => false)
+      assertBool "PAYOFF: ...and the replenishment now sits on the client's home (core 0)"
+        (replenishCountFor stMig c0 scClient == 1 && replenishCountFor stMig c1 scClient == 0)
+      assertBool "PAYOFF: the affinity invariant holds after the migrated return"
+        (replenishAffinityConsistentB stMig)
+      assertBool "the two returns agree on every object: the migration is scheduler-only"
+        (match stMig.getTcb? donServer, stMig.getTcb? donClient with
+         | some s, some c =>
+             s.schedContextBinding == SchedContextBinding.unbound
+               && c.schedContextBinding == .bound scClient
+         | _, _ => false)
+    -- (iv) ...and the LIVE leg runs the migrated one: the server's plain `Recv` on
+    --      the empty endpoint blocks it, and the state it parks in is affinity-consistent.
+    match okPair (endpointReceiveDualOnCore donEp donServer none c1 stDon) with
+    | none => assertBool "row 57: the abandoning receive blocks" false
+    | some (stBlock, (who, _)) =>
+      assertBool "the receive parks the server itself" (who == donServer)
+      assertBool "...`.blockedOnReceive`, holding no context"
+        (ipcStateIs stBlock donServer (.blockedOnReceive donEp)
+          && (match stBlock.getTcb? donServer with
+              | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+      assertBool "PAYOFF: the live leg leaves the replenishment on the client's home"
+        (replenishCountFor stBlock c0 scClient == 1 && replenishCountFor stBlock c1 scClient == 0)
+      assertBool "PAYOFF: the live leg's post-state is affinity-consistent"
+        (replenishAffinityConsistentB stBlock)
+    -- (v) the footprint the object domain and the scheduler domain both read: on this
+    --     block the segment names the receiver's home and the owner's, in that order.
+    assertBool "the block path's replenish segment names the receiver's home and the owner's"
+      (decide (endpointReceiveHandoffReplenishCores stDon donEp donServer
+                 = [determineTargetCore stDon donServer, determineTargetCore stDon donClient]))
+    assertBool "...which are two different cores"
+      (decide (determineTargetCore stDon donServer ≠ determineTargetCore stDon donClient))
+  -- (vi) CONTROL: a receiver holding no loan — the migrated return is the identity
+  --      and the segment is empty, so the payoff above is attributable to the loan.
+  assertBool "CONTROL: the passive server of `stDonBase` holds no loan"
+    (decide (preReceiveDonation? stDonBase donServer = none))
+  assertBool "CONTROL: ...so the migrated return is the identity on it"
+    (match okExcept (cleanupPreReceiveDonationMigrated stDonBase donServer) with
+     | some stOut =>
+         Concurrency.allCores.all fun c =>
+           replenishEntriesOn stOut c == replenishEntriesOn stDonBase c
+     | none => false)
+  assertBool "CONTROL: ...and a block there declares no replenish-queue lock"
+    (decide (endpointReceiveHandoffReplenishCores stDonBase donEp donServer = []))
+  -- (vii) CONTROL: an owner homed on the receiver's own core — the migration is
+  --       the identity, so the fix is keyed on the two homes and not on the pop.
+  match preReturnHandoffState stPreReturnSameCore with
+  | none => assertBool "row 57 same-core setup: call, rendezvous and hand-off succeed" false
+  | some stSame =>
+    assertBool "CONTROL: both homes are core 1"
+      (decide (determineTargetCore stSame donServer = c1
+               ∧ determineTargetCore stSame donClient = c1))
+    match okExcept (cleanupPreReceiveDonationMigrated stSame donServer),
+        okExcept (cleanupPreReceiveDonationChecked stSame donServer) with
+    | some stMigSame, some stBareSame =>
+      assertBool "CONTROL: the migrated and the bare return leave the same replenish queues"
+        (Concurrency.allCores.all fun c =>
+          replenishEntriesOn stMigSame c == replenishEntriesOn stBareSame c)
+      assertBool "CONTROL: ...both on core 1, and both affinity-consistent"
+        (replenishCountFor stMigSame c1 scClient == 1 && replenishAffinityConsistentB stMigSame
+          && replenishAffinityConsistentB stBareSame)
+    | _, _ => assertBool "row 57 same-core: both returns succeed" false
+
+-- ============================================================================
+-- §3.29 the `.replyRecv` scheduler footprint's replenish segment follows the spine
+--        (WS-RR RR8.12 Cut C2, `v0.35.162`)
+-- ============================================================================
+
+/-! The live `.replyRecv` performs up to three SchedContext hand-offs, each migrating
+a reservation's replenishments between two cores — the pop between its legs, the
+receive leg's block-path return, and the re-donation to the receiver when the
+receive leg dequeues a `Call` — and `schedLockSet_endpointReplyRecvOnCore` declares
+their cores by re-running the spine and reading each hand-off at the state it runs
+on, through its own arm selector.  The coverage theorems say the declared cores ARE
+the migrations' endpoints; what no theorem states is that **every hand-off is
+reachable by the live operations and the segment differs between the shapes**,
+which is this section's subject.
+
+Three shapes, each built through the live operations.  (a) The MCS steady state with
+a second client on a third core: the pop and the re-donation both fire, and the
+segment names three cores.  (b) A first client that never donated (a legacy
+`.unbound` thread): the pop hands nothing back and the segment is EMPTY — and this
+is the shape on which the `.receive` arm's pre-state reading, computed beside the
+live one, declares two cores for a migration the `.replyRecv` transition does not
+perform.  That divergence between the two receiving arms is the one
+`docs/REGISTERED_DEBT.md`'s WS-CB row records: on a `.replyRecv` whose pop returned
+nothing, a dequeued `Call` caller's context is not donated to an `.unbound`
+receiver, where `.receive` and seL4-MCS's `receiveIPC` would donate.  The assertion
+that pins it is labelled MEASURED and must flip when that row closes.  (c) A
+delegated invoker that answers another server's client and then blocks holding a
+loan of its own: the pop and the block-path return both fire, on four distinct
+cores, and the post-receive half deschedules the holder the pop unbound. -/
+
+/-- The second client, pinned to core 2, with its own context and a replenishment
+on that core. -/
+private def fpClient2 : SeLe4n.ThreadId := ⟨871⟩
+private def fpClient2Sc : SeLe4n.SchedContextId := SchedContextId.ofNat 872
+
+private def fpClient2SchedContext : SchedContext :=
+  { scId := fpClient2Sc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨55⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some fpClient2, isActive := true }
+
+/-- The shape (c) needs: a second endpoint with its own passive server (home core
+3) and a bound client pinned to core 2. -/
+private def fpEp2 : SeLe4n.ObjId := ⟨874⟩
+private def fpDelegate : SeLe4n.ThreadId := ⟨875⟩
+private def fpClientX : SeLe4n.ThreadId := ⟨876⟩
+private def fpClientXSc : SeLe4n.SchedContextId := SchedContextId.ofNat 877
+private def fpReplyX : SeLe4n.ReplyId := ⟨878⟩
+
+private def fpClientXSchedContext : SchedContext :=
+  { scId := fpClientXSc, budget := ⟨100⟩, period := ⟨1000⟩, priority := ⟨45⟩,
+    deadline := ⟨0⟩, domain := ⟨0⟩, budgetRemaining := ⟨50⟩,
+    boundThread := some fpClientX, isActive := true }
+
+/-- `stDonBase` — a bound client homed on the boot core, a passive server homed on
+core 1 — plus the second client on core 2, with one replenishment per context on
+its holder's home core.  The shape the invariant is about: a queue holding no entry
+for a context satisfies it vacuously and could witness no migration. -/
+private def stFpPassiveBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
+    |>.insert fpClient2.toObjId
+        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
+  { base with scheduler := sched }
+
+/-- The same, with the FIRST client a legacy `.unbound` thread — its `Call` donates
+nothing, so the server's reply hands nothing back. -/
+private def stFpLegacyBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpClient2Sc.toObjId (.schedContext fpClient2SchedContext)
+    |>.insert fpClient2.toObjId
+        (.tcb { mkTcb 871 55 (some c2) with schedContextBinding := .bound fpClient2Sc })
+    |>.insert donClient.toObjId
+        (.tcb { mkTcb 841 60 none with schedContextBinding := SchedContextBinding.unbound })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClient2Sc 100)
+  { base with scheduler := sched }
+
+/-- `stDonBase` plus the second endpoint's pair: a passive delegate homed on core 3
+and a bound client on core 2, each context's replenishment on its holder's home. -/
+private def stFpDelegatedBase : SystemState :=
+  let objs := stDonBase.objects
+    |>.insert fpEp2 (.endpoint {})
+    |>.insert fpClientXSc.toObjId (.schedContext fpClientXSchedContext)
+    |>.insert fpClientX.toObjId
+        (.tcb { mkTcb 876 45 (some c2) with schedContextBinding := .bound fpClientXSc })
+    |>.insert fpDelegate.toObjId
+        (.tcb { mkTcb 875 20 (some c3) with schedContextBinding := SchedContextBinding.unbound })
+    |>.insert fpReplyX.toObjId (.reply { replyId := fpReplyX })
+  let base : SystemState := { stDonBase with objects := objs }
+  let sched := base.scheduler
+    |>.setReplenishQueueOnCore c0 (ReplenishQueue.empty.insert scClient 100)
+    |>.setReplenishQueueOnCore c2 (ReplenishQueue.empty.insert fpClientXSc 100)
+  { base with scheduler := sched }
+
+/-- The MCS steady state, built the way a real one arrives at it: the server blocks
+on `Recv`, the first client `Call`s, the server's home core dispatches it, and the
+second client `Call`s from its own core and queues behind the busy server. -/
+private def fpSteadyState (base : SystemState) : Option SystemState := do
+  let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let _ ← okExcept resCall
+  let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
+  let (stQueued, resQueued) := endpointCallCrossCoreDispatch donEp fpClient2 IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stDispatched
+  let _ ← okExcept resQueued
+  pure stQueued
+
+/-- Shape (c)'s state: the first pair as above (no second client), then the delegate
+blocks on the second endpoint, its client `Call`s from core 2 donating, and core 3
+dispatches the delegate — which then answers the FIRST server's client. -/
+private def fpDelegatedState (base : SystemState) : Option SystemState := do
+  let (stRecv, _) ← okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 base)
+  let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c0 stRecv
+  let _ ← okExcept resCall
+  let stDispatched ← okExcept (handleRescheduleSgiOnCore stCall c1)
+  let (stRecv2, _) ← okPair (endpointReceiveDualOnCore fpEp2 fpDelegate (some fpReplyX) c3
+    stDispatched)
+  let (stCall2, resCall2) := endpointCallCrossCoreDispatch fpEp2 fpClientX IpcMessage.empty
+    AccessRightSet.empty (SeLe4n.Slot.ofNat 0) c2 stRecv2
+  let _ ← okExcept resCall2
+  okExcept (handleRescheduleSgiOnCore stCall2 c3)
+
+/-- How many replenish-queue write locks a footprint names. -/
+private def replenishMemberCount (fp : List (SchedLockId × Concurrency.AccessMode)) : Nat :=
+  (fp.filter (fun p => p.1 matches SchedLockId.replenishQueue _)).length
+
+private def hasReplenishWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+    Bool :=
+  decide ((SchedLockId.replenishQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+private def hasRunQueueWrite (fp : List (SchedLockId × Concurrency.AccessMode)) (c : CoreId) :
+    Bool :=
+  decide ((SchedLockId.runQueue ⟨c⟩, Concurrency.AccessMode.write) ∈ fp)
+
+private def runReplyRecvFootprintChecks : IO Unit := do
+  IO.println "--- §3.29 WS-RR RR8.12 Cut C2: the `.replyRecv` footprint's replenish segment ---"
+  -- (a) the steady state: the pop AND the re-donation fire, on three cores.
+  match fpSteadyState stFpPassiveBase with
+  | none => assertBool "Cut C2 setup (a): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(a) setup: the server holds the first client's context on loan"
+      (match stQ.getTcb? donServer with
+       | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+    assertBool "(a) setup: the first Call's hand-off migrated that context's replenishment to core 1"
+      (replenishCountFor stQ c1 scClient == 1 && replenishCountFor stQ c0 scClient == 0)
+    assertBool "(a) setup: the second client's Call is queued, and its replenishment sits on core 2"
+      (ipcStateIs stQ fpClient2 (.blockedOnCall donEp)
+        && replenishCountFor stQ c2 fpClient2Sc == 1)
+    assertBool "(a) setup: the answered frame heads the loaned context, bound to the server"
+      (replyFrameHeadHolder? stQ donReply == some (scClient, donServer))
+    assertBool "(a) setup: the affinity invariant holds before the ReplyRecv"
+      (replenishAffinityConsistentB stQ)
+    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    -- The segment mirrors the spine: the pop's pair (server's home, client's home),
+    -- nothing for the rendezvousing receive leg, the re-donation's pair (second
+    -- client's home, server's home).
+    assertBool "(a) the segment is the pop's pair, then the re-donation's pair: [1, 0, 2, 1]"
+      (decide (seg = [c1, c0, c2, c1]))
+    assertBool "(a) the footprint names replenish-queue write locks on cores 0, 1 and 2 -- and not 3"
+      (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
+        && !hasReplenishWrite fp c3 && replenishMemberCount fp == 3)
+    assertBool "(a) ...and the run-queue write lock of the answered client's home core"
+      (hasRunQueueWrite fp c0)
+    -- The live arm, end to end: both migrations happen, between exactly those cores.
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(a) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(a) PAYOFF: the pop migrated the first context back to the client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(a) PAYOFF: the re-donation migrated the second context to the server's home (2 -> 1)"
+        (replenishCountFor stOut c1 fpClient2Sc == 1 && replenishCountFor stOut c2 fpClient2Sc == 0)
+      assertBool "(a) PAYOFF: the affinity invariant holds after the ReplyRecv"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(a) the bindings moved with the replenishments"
+        (match stOut.getTcb? donServer, stOut.getTcb? donClient, stOut.getTcb? fpClient2 with
+         | some s, some a, some b =>
+             s.schedContextBinding == .donated fpClient2Sc fpClient2
+               && a.schedContextBinding == .bound scClient
+               && b.schedContextBinding == SchedContextBinding.unbound
+         | _, _, _ => false)
+      -- WS-RR RR8.12 Cut C6e: the OTHER direction, which the segment assertions
+      -- above cannot see -- the arm writes no replenish queue on a core the segment
+      -- does not name.  `replyRecvBody_replenishQueueOnCore_ne` is the theorem; this
+      -- is it measured on the shape where the segment is at its widest, so the one
+      -- core outside it is the only place a stray write could hide.
+      assertBool "(a) C6e: core 3 is outside the segment, and the arm leaves its replenish queue alone"
+        (replenishEntriesOn stOut c3 == replenishEntriesOn stQ c3)
+    -- CONTROL: on THIS shape the `.receive` arm's pre-state reading of the receive
+    -- leg, taken at the pop's post-state, agrees with the re-donation pair -- so an
+    -- implementation that read the `.receive` segment there would pass (a) and be
+    -- caught only by (b).  That is what makes (b) the measurement.
+    let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    match replyRecvPopDonation donReply donClient st1 with
+    | .error e => assertBool s!"(a) the pop must succeed (got {reprStr e})" false
+    | .ok (returned?, st1p) =>
+      assertBool "(a) CONTROL: the pop hands the loaned context back, naming the holder"
+        (returned? == some (scClient, donServer))
+      assertBool "(a) CONTROL: the `.receive` arm's pre-state segment at the pop's post-state agrees here"
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
+  -- (b) a first client that never donated: the pop hands nothing back, the segment
+  --     is EMPTY, and the `.receive` reading declares two cores for a migration the
+  --     `.replyRecv` transition does not perform.
+  match fpSteadyState stFpLegacyBase with
+  | none => assertBool "Cut C2 setup (b): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(b) setup: the server is passive and holds no loan -- the legacy client donated nothing"
+      (match stQ.getTcb? donServer, stQ.getTcb? donClient with
+       | some s, some a =>
+           s.schedContextBinding == SchedContextBinding.unbound
+             && a.schedContextBinding == SchedContextBinding.unbound
+       | _, _ => false)
+    assertBool "(b) setup: the answered frame heads no context"
+      (replyFrameHeadHolder? stQ donReply == none)
+    assertBool "(b) setup: the second client's Call is queued, bound, its replenishment on core 2"
+      (ipcStateIs stQ fpClient2 (.blockedOnCall donEp)
+        && replenishCountFor stQ c2 fpClient2Sc == 1)
+    let seg := replyRecvHandoffReplenishCores donEp donServer donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp donServer donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c1 stQ
+    assertBool "(b) PAYOFF: the segment is EMPTY" (decide (seg = []))
+    assertBool "(b) PAYOFF: the footprint names NO replenish-queue write lock"
+      (replenishMemberCount fp == 0)
+    -- WS-RR RR8.12 Cut C6e: an empty segment is a claim about EVERY core, so this
+    -- is the exactness frame at its strongest -- and the shape that makes the
+    -- measurement decisive, since (a) leaves only one core outside.
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(b) C6e: with an empty segment the arm leaves EVERY core's replenish queue alone"
+        (Concurrency.allCores.all (fun d => replenishEntriesOn stOut d == replenishEntriesOn stQ d))
+    assertBool "(b) ...while it still names the answered client's run queue"
+      (hasRunQueueWrite fp c0)
+    let (st1, _) := endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    match replyRecvPopDonation donReply donClient st1 with
+    | .error e => assertBool s!"(b) the pop must succeed (got {reprStr e})" false
+    | .ok (returned?, st1p) =>
+      assertBool "(b) the pop hands nothing back" (returned? == none)
+      -- The decisive comparison: same state, same endpoint, same receiver -- the
+      -- `.receive` arm's reading names two cores here.
+      assertBool "(b) NEGATIVE: the `.receive` arm's pre-state segment declares TWO cores on this state"
+        (decide (endpointReceiveHandoffReplenishCores st1p donEp donServer = [c2, c1]))
+      -- ...and the reason the `.replyRecv` reading is the right one for THIS arm: at the
+      -- state its post-receive half runs on, the `.receive` step WOULD donate --
+      -- which is the divergence the register records, not a fact about the shape.
+      let st2 := (endpointReceiveDualWithCapsOnCore donEp donServer (some donReply) cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 st1p).1
+      assertBool "(b) the receive leg dequeues the second client's Call"
+        (decide (rendezvousDequeuedCall st2 fpClient2 = true))
+      assertBool "(b) MEASURED (register, WS-CB): the `.receive` arm's donation step WOULD hand the context over here"
+        (match applyReceiveRendezvousDonation st2 donServer fpClient2 with
+         | .ok stDon =>
+             (match stDon.getTcb? donServer with
+              | some t => t.schedContextBinding == .donated fpClient2Sc fpClient2
+              | none => false)
+         | .error _ => false)
+    -- The live arm: no replenishment moves on any core (the exactness licence,
+    -- measured), and no context is handed over (the divergence, measured).
+    match replyRecvBody donEp donServer donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c1 stQ with
+    | .error e => assertBool s!"(b) the live `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(b) PAYOFF: the live `.replyRecv` moves NO replenishment on any core"
+        (Concurrency.allCores.all fun c => replenishEntriesOn stOut c == replenishEntriesOn stQ c)
+      assertBool "(b) MEASURED (register, WS-CB): the `.replyRecv` never-donated arm hands NO context to the passive receiver"
+        (match stOut.getTcb? donServer, stOut.getTcb? fpClient2 with
+         | some s, some b =>
+             s.schedContextBinding == SchedContextBinding.unbound
+               && b.schedContextBinding == .bound fpClient2Sc
+         | _, _ => false)
+      assertBool "(b) ...although the second client IS the one now awaiting the server's reply"
+        (match stOut.getTcb? fpClient2 with
+         | some t => match t.ipcState with
+                     | .blockedOnReply _ _ => true
+                     | _ => false
+         | none => false)
+  -- (c) a delegated invoker: it answers the first server's client (the pop unbinds
+  --     the server and migrates 1 -> 0) and then blocks on the empty endpoint holding
+  --     its own loan (the block-path return migrates 3 -> 2).  Four cores, all named.
+  match fpDelegatedState stFpDelegatedBase with
+  | none => assertBool "Cut C2 setup (c): both pairs' recv, call and dispatch succeed" false
+  | some stD =>
+    assertBool "(c) setup: the server holds the first client's context, the delegate its own client's"
+      (match stD.getTcb? donServer, stD.getTcb? fpDelegate with
+       | some s, some d =>
+           s.schedContextBinding == .donated scClient donClient
+             && d.schedContextBinding == .donated fpClientXSc fpClientX
+       | _, _ => false)
+    assertBool "(c) setup: both replenishments sit on the holders' homes (cores 1 and 3)"
+      (replenishCountFor stD c1 scClient == 1 && replenishCountFor stD c3 fpClientXSc == 1)
+    assertBool "(c) setup: the first endpoint's send queue is empty, so the delegate's receive will block"
+      (receiveRendezvousSender? stD donEp == none)
+    assertBool "(c) setup: the delegate's own guard resolves its loan"
+      (decide (preReceiveDonation? stD fpDelegate = some (fpClientXSc, fpClientX)))
+    let seg := replyRecvHandoffReplenishCores donEp fpDelegate donReply donClient IpcMessage.empty
+      cnRoot (SeLe4n.Slot.ofNat 0) c3 stD
+    let fp := schedLockSet_endpointReplyRecvOnCore donEp fpDelegate donReply donClient
+      IpcMessage.empty cnRoot (SeLe4n.Slot.ofNat 0) c3 stD
+    assertBool "(c) the segment is the pop's pair, then the block-path return's pair: [1, 0, 3, 2]"
+      (decide (seg = [c1, c0, c3, c2]))
+    assertBool "(c) the footprint names replenish-queue write locks on all four cores"
+      (hasReplenishWrite fp c0 && hasReplenishWrite fp c1 && hasReplenishWrite fp c2
+        && hasReplenishWrite fp c3 && replenishMemberCount fp == 4)
+    match replyRecvBody donEp fpDelegate donReply donClient IpcMessage.empty cnRoot
+        (SeLe4n.Slot.ofNat 0) c3 stD with
+    | .error e => assertBool s!"(c) the delegated `.replyRecv` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(c) PAYOFF: the pop migrated the first context back to its client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(c) PAYOFF: the block-path return migrated the delegate's loan to its owner's home (3 -> 2)"
+        (replenishCountFor stOut c2 fpClientXSc == 1 && replenishCountFor stOut c3 fpClientXSc == 0)
+      assertBool "(c) PAYOFF: the affinity invariant holds after the delegated ReplyRecv"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(c) the delegate parks `.blockedOnReceive` on the first endpoint, holding nothing"
+        (ipcStateIs stOut fpDelegate (.blockedOnReceive donEp)
+          && (match stOut.getTcb? fpDelegate with
+              | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+      assertBool "(c) ...its client holds its own context again, and the first client its own"
+        (match stOut.getTcb? fpClientX, stOut.getTcb? donClient with
+         | some x, some a =>
+             x.schedContextBinding == .bound fpClientXSc && a.schedContextBinding == .bound scClient
+         | _, _ => false)
+      assertBool "(c) ...and the server the pop unbound is parked: `.unbound`, on no core"
+        (match stOut.getTcb? donServer with
+         | some s => s.schedContextBinding == SchedContextBinding.unbound
+             && !runnableOnSomeCore stOut donServer && !runningOnSomeCore stOut donServer
+         | none => false)
+
+/-- **WS-RR RR8.12 Cut C3a**: the `.call` and `.reply` footprints, driven through the
+live operations on the shapes where their replenish segments are non-empty, empty by
+the guard, and empty by the path -- with the RR2.4 parametric footprint computed
+beside the derived one on the shape where the two part. -/
+private def runCallReplyFootprintChecks : IO Unit := do
+  IO.println "--- §3.30 WS-RR RR8.12 Cut C3a: the `.call` and `.reply` footprints ---"
+  let slot0 := SeLe4n.Slot.ofNat 0
+  let mi0 : MessageInfo := { length := 0, extraCaps := 0, label := 0 }
+  -- (a) a Call to a waiting passive server homed on another core: the donation
+  --     migrates the client's replenishment 0 -> 1, and the segment names the pair.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stFpPassiveBase) with
+  | none => assertBool "Cut C3a setup (a): the server's recv succeeds" false
+  | some (stRecv, _) =>
+    assertBool "(a) setup: the server waits on the endpoint, passive, homed on core 1"
+      (endpointCallReceiver? stRecv donEp == some donServer
+        && determineTargetCore stRecv donServer == c1
+        && (match stRecv.getTcb? donServer with
+            | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false))
+    let seg := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    let callWriteSet := endpointCallDispatchWriteSet donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    let fp := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    assertBool "(a) the replenish segment is the donation's pair: [caller's home 0, server's home 1]"
+      (decide (seg = [c0, c1]))
+    assertBool "(a) the write set opens with the server's home and the caller's own core"
+      (decide (callWriteSet.take 2 = [c1, c0]))
+    assertBool "(a) the footprint names run-queue write locks on cores 0 and 1 and replenish-queue write locks on 0 and 1, and no other replenish lock"
+      (hasRunQueueWrite fp c0 && hasRunQueueWrite fp c1 && hasReplenishWrite fp c0
+        && hasReplenishWrite fp c1 && replenishMemberCount fp == 2)
+    -- The RR2.4 parametric footprint at the resolved cores, computed beside it.
+    let param := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    assertBool "(a) the derived footprint covers the RR2.4 parametric one at the resolved cores, member for member"
+      (param.all (fun p => decide (p ∈ fp)))
+    let (stCall, resCall) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecv
+    match resCall with
+    | .error e => assertBool s!"(a) the live `.call` must succeed (got {reprStr e})" false
+    | .ok _ =>
+      assertBool "(a) PAYOFF: the live `.call` migrated the client's replenishment to the server's home (0 -> 1)"
+        (replenishCountFor stCall c1 scClient == 1 && replenishCountFor stCall c0 scClient == 0)
+      assertBool "(a) PAYOFF: the affinity invariant holds after the Call"
+        (replenishAffinityConsistentB stCall)
+  -- (b) a Call from a legacy `.unbound` client: the guard declines, so the segment is
+  --     empty -- and the RR2.4 parametric shape is measured WIDER here.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stFpLegacyBase) with
+  | none => assertBool "Cut C3a setup (b): the server's recv succeeds" false
+  | some (stRecvL, _) =>
+    assertBool "(b) setup: the client holds no context to hand on"
+      (endpointCallDonatedSc? stRecvL donEp donClient == none)
+    let segL := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    let fpL := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    assertBool "(b) the guard declines for an unbound caller, so the segment is empty and no replenish lock is declared"
+      (decide (segL = []) && replenishMemberCount fpL == 0)
+    assertBool "(b) ...while the run segment still names the server's home and the caller's core"
+      (hasRunQueueWrite fpL c0 && hasRunQueueWrite fpL c1)
+    let paramL := endpointCallCrossCoreDispatchSchedLockSet c0 c1 c0 c1
+    assertBool "(b) NEGATIVE: the RR2.4 parametric shape declares two replenish locks on this state, the derived one none"
+      (replenishMemberCount paramL == 2 && replenishMemberCount fpL == 0)
+    let (stCallL, resL) := endpointCallCrossCoreDispatch donEp donClient IpcMessage.empty
+      AccessRightSet.empty slot0 c0 stRecvL
+    match resL with
+    | .error e => assertBool s!"(b) the live legacy `.call` must succeed (got {reprStr e})" false
+    | .ok _ =>
+      assertBool "(b) PAYOFF: the live `.call` moves no replenishment on any core"
+        (allCores.all (fun c =>
+          replenishCountFor stCallL c fpClient2Sc == replenishCountFor stRecvL c fpClient2Sc
+            && replenishCountFor stCallL c scClient == replenishCountFor stRecvL c scClient))
+  -- (c) a Call with no receiver waiting: the block path.
+  let segC := endpointCallDispatchReplenishCores donEp donClient IpcMessage.empty
+    AccessRightSet.empty slot0 c0 stFpPassiveBase
+  let fpC := schedLockSet_endpointCallOnCore donEp donClient IpcMessage.empty
+    AccessRightSet.empty slot0 c0 stFpPassiveBase
+  assertBool "(c) with no receiver the segment is empty and the run segment is the caller's own core alone"
+    (endpointCallReceiver? stFpPassiveBase donEp == none && decide (segC = [])
+      && hasRunQueueWrite fpC c0 && !hasRunQueueWrite fpC c1 && replenishMemberCount fpC == 0)
+  -- (d) the `.reply` on the steady state: the server answers the first client from
+  --     core 1, and the pop returns the loaned context 1 -> 0.
+  match fpSteadyState stFpPassiveBase with
+  | none => assertBool "Cut C3a setup (d): recv, call, dispatch and second call succeed" false
+  | some stQ =>
+    assertBool "(d) setup: the server executes on core 1 holding the client's context, and the client carries no fault"
+      (determineExecutingCore stQ donServer == c1
+        && (match stQ.getTcb? donServer with
+            | some t => t.schedContextBinding == .donated scClient donClient | none => false)
+        && !threadHasPendingFault stQ donClient)
+    let segD := endpointReplyDispatchReplenishCores donServer donClient IpcMessage.empty c1 stQ
+    let fpDisp := schedLockSet_endpointReplyOnCore donServer donClient IpcMessage.empty c1 stQ
+    let fpD := schedLockSet_replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stQ
+    assertBool "(d) the replenish segment is the return's pair: [holder's home 1, client's home 0]"
+      (decide (segD = [c1, c0]))
+    assertBool "(d) the arm's footprint IS the dispatch's on an unfaulted caller"
+      (decide (fpD = fpDisp))
+    assertBool "(d) the footprint names replenish-queue write locks on cores 0 and 1, and run-queue write locks on the client's home and the server's placement"
+      (hasReplenishWrite fpD c0 && hasReplenishWrite fpD c1 && replenishMemberCount fpD == 2
+        && hasRunQueueWrite fpD c0 && hasRunQueueWrite fpD c1)
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stQ with
+    | .error e => assertBool s!"(d) the live `.reply` must succeed (got {reprStr e})" false
+    | .ok (_, stOut) =>
+      assertBool "(d) PAYOFF: the live `.reply` migrated the context back to the client's home (1 -> 0)"
+        (replenishCountFor stOut c0 scClient == 1 && replenishCountFor stOut c1 scClient == 0)
+      assertBool "(d) PAYOFF: the affinity invariant holds after the reply"
+        (replenishAffinityConsistentB stOut)
+      assertBool "(d) ...and the server the pop unbound is parked: `.unbound`, on no core"
+        (match stOut.getTcb? donServer with
+         | some s => s.schedContextBinding == SchedContextBinding.unbound
+             && !runnableOnSomeCore stOut donServer && !runningOnSomeCore stOut donServer
+         | none => false)
+  -- (e) the `.reply` on the legacy state: the answered frame heads no context.
+  match fpSteadyState stFpLegacyBase with
+  | none => assertBool "Cut C3a setup (e): recv, call, dispatch and second call succeed" false
+  | some stL =>
+    let segE := endpointReplyDispatchReplenishCores donServer donClient IpcMessage.empty c1 stL
+    let fpE := schedLockSet_replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stL
+    assertBool "(e) the server holds no loan, so the segment is empty and no replenish lock is declared"
+      (decide (segE = []) && replenishMemberCount fpE == 0)
+    assertBool "(e) ...while the run segment names the answered client's home"
+      (hasRunQueueWrite fpE c0)
+    match replyTransferOnCore donServer donClient mi0 #[] IpcMessage.empty c1 stL with
+    | .error e => assertBool s!"(e) the live legacy `.reply` must succeed (got {reprStr e})" false
+    | .ok (_, stOutE) =>
+      assertBool "(e) PAYOFF: the live `.reply` moves no replenishment on any core"
+        (allCores.all (fun c =>
+          replenishCountFor stOutE c fpClient2Sc == replenishCountFor stL c fpClient2Sc))
+
+-- ============================================================================
+-- §3.31 the retype's TCB cleanup ends the thread's reservation the way the
+--        suspend's G3 does (register row 62, `v0.35.164`)
+-- ============================================================================
+
+/-! `lifecyclePreRetypeCleanup`'s TCB arm — the destroy path every `.lifecycleRetype`
+runs — used to run the bare `cleanupDonatedSchedContext` on a `.donated` holder
+(a return that migrates no replenishment: register row 57's class, on the destroy
+path) and, on a `.bound` thread, to remove only the `scThreadIndex` entry, leaving
+the SchedContext bound to a destroyed thread with its replenishment queued on that
+thread's home core.  After a successful retype `replenishQueueAffinityConsistent_smp`
+was false in the first case and both it and `schedContextBindingConsistent` in the
+second — and no theorem claimed either across the retype, which is how both were
+silent rather than wrong.  Since `v0.35.164` the arm is `cancelDonationArmOnCore`,
+the suspend pipeline's G3 match named: seL4's `finaliseCap` → `unbindFromSc`.
+
+Both halves compute the RETIRED reading beside the live retype on the same state
+(`retiredRetypeTcbCleanup`: the bare pop, the index-only removal, then the same
+sweep and the same store), so every assertion is known to discriminate; the
+CONTROL is an `.unbound` target, where the arm is the identity and the two readings
+agree.  The live half drives `lifecycleRetypeDirectWithCleanup` — the wrapper the
+`.lifecycleRetype` arm reaches — with a `.retype` capability on the target, so the
+post-states are the kernel's own. -/
+
+/-- The decidable reading of `schedContextBindingConsistent`, both directions,
+over the object index: every `.bound scId` TCB has a SchedContext naming it back,
+and every SchedContext's `boundThread` resolves to a TCB bound to or holding it. -/
+private def schedContextBindingConsistentB (st : SystemState) : Bool :=
+  st.objectIndex.all fun oid =>
+    match st.getObject? oid with
+    | some (.tcb t) =>
+        match t.schedContextBinding with
+        | .bound scId =>
+            match st.getSchedContext? scId with
+            | some sc => sc.boundThread == some t.tid
+            | none => false
+        | _ => true
+    | some (.schedContext sc) =>
+        match sc.boundThread with
+        | some tid =>
+            match st.getTcb? tid with
+            | some t =>
+                match t.schedContextBinding with
+                | .bound scId' => scId' == SchedContextId.ofObjId oid
+                | .donated scId' _ => scId' == SchedContextId.ofObjId oid
+                | .unbound => false
+            | none => false
+        | none => true
+    | _ => true
+
+/-- `st` with the lifecycle object-type metadata the retype guard reads
+(`lifecycleRetypeDirect` refuses a target whose recorded type disagrees with the
+store), which the fixture builder does not record. -/
+private def withRetypeTypes (st : SystemState)
+    (typed : List (SeLe4n.ObjId × KernelObjectType)) : SystemState :=
+  { st with lifecycle := { objectTypes := RobinHood.RHTable.ofList typed } }
+
+/-- The object types of the donation fixture's five objects. -/
+private def donFixtureTypes : List (SeLe4n.ObjId × KernelObjectType) :=
+  [(donServer.toObjId, .tcb), (donClient.toObjId, .tcb), (scClient.toObjId, .schedContext),
+   (donEp, .endpoint), (donReply.toObjId, .reply)]
+
+/-- The authority a `.lifecycleRetype` presents: a capability on the target with
+the `.retype` right (`lifecycleRetypeAuthority`). -/
+private def retypeCapOn (target : SeLe4n.ObjId) : Capability :=
+  { target := .object target, rights := AccessRightSet.ofList [.retype], badge := none }
+
+/-- The replacement object: an empty endpoint, well-formed in any store. -/
+private def retypeReplacement : KernelObject := .endpoint { sendQ := {}, receiveQ := {} }
+
+/-- The RETIRED reading of the pipeline's TCB arm, followed by the same sweep and
+the same store the live pipeline performs: the bare donated-context return, the
+index-only removal for a `.bound` thread, the reference sweep, the replacement
+stored.  Spelled here and nowhere else, so the assertions can show the live
+pipeline changed something. -/
+private def retiredRetypeTcbCleanup (st : SystemState) (tcb : TCB) : Option SystemState :=
+  match cleanupDonatedSchedContext st tcb.tid with
+  | .error _ => none
+  | .ok st1 =>
+      let st2 : SystemState := match tcb.schedContextBinding with
+        | .bound scId =>
+            { st1 with scThreadIndex := scThreadIndexRemove st1.scThreadIndex scId tcb.tid }
+        | _ => st1
+      some ((cleanupTcbReferences st2 tcb.tid).withObjectStored tcb.tid.toObjId retypeReplacement)
+
+/-- The LIVE retype of a TCB through the wrapper the `.lifecycleRetype` arm reaches. -/
+private def liveRetypeTcb (st : SystemState) (tid : SeLe4n.ThreadId) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn tid.toObjId) tid.toObjId
+    retypeReplacement st)).map Prod.snd
+
+private def boundThreadOf (st : SystemState) (scId : SeLe4n.SchedContextId) :
+    Option SeLe4n.ThreadId :=
+  match st.getSchedContext? scId with
+  | some sc => sc.boundThread
+  | none => none
+
+private def runRetypeReservationChecks : IO Unit := do
+  IO.println "--- §3.31 register row 62: the retype's TCB cleanup ends the thread's reservation ---"
+  -- (a) DONATED: the server holds the client's context on loan, homed on core 1
+  --     with the replenishment there (§3.28's three-operation prefix).
+  match preReturnHandoffState stPreReturnBase with
+  | none => assertBool "row 62 setup: call, rendezvous and hand-off succeed" false
+  | some stDon0 =>
+    let stDon := withRetypeTypes stDon0 donFixtureTypes
+    match stDon.getTcb? donServer with
+    | none => assertBool "row 62 setup: the server resolves" false
+    | some serverTcb =>
+      assertBool "(a) setup: the server holds the client's context on loan"
+        (serverTcb.schedContextBinding == .donated scClient donClient)
+      assertBool "(a) setup: the server is current nowhere and holds no reply object"
+        (!threadCurrentOnSomeCore stDon donServer && serverTcb.replyObject.isNone)
+      assertBool "(a) setup: the replenishment sits on the server's home (core 1)"
+        (replenishCountFor stDon c1 scClient == 1 && replenishCountFor stDon c0 scClient == 0)
+      -- NEGATIVE: the retired arm returns the context and moves nothing.
+      match retiredRetypeTcbCleanup stDon serverTcb with
+      | none => assertBool "(a) NEGATIVE setup: the retired cleanup succeeds" false
+      | some stOld =>
+        assertBool "(a) NEGATIVE: the retired retype binds the context back to the client..."
+          (boundThreadOf stOld scClient == some donClient)
+        assertBool "(a) NEGATIVE: ...whose home is core 0, and leaves the replenishment on core 1"
+          (decide (determineTargetCore stOld donClient = c0)
+            && replenishCountFor stOld c1 scClient == 1 && replenishCountFor stOld c0 scClient == 0)
+        assertBool "(a) NEGATIVE (the defect): the retired retype FALSIFIES the affinity invariant"
+          (!replenishAffinityConsistentB stOld)
+      -- PAYOFF: the live retype migrates with the return.
+      match liveRetypeTcb stDon donServer with
+      | none => assertBool "(a) the live retype of the donated holder succeeds" false
+      | some stNew =>
+        assertBool "(a) PAYOFF: the destroyed slot holds the replacement"
+          (match stNew.getObject? donServer.toObjId with
+           | some (.endpoint _) => true | _ => false)
+        assertBool "(a) PAYOFF: the context is bound back to the client"
+          (boundThreadOf stNew scClient == some donClient
+            && (match stNew.getTcb? donClient with
+                | some t => t.schedContextBinding == .bound scClient | none => false))
+        assertBool "(a) PAYOFF: the retype migrated the replenishment to the client's home (core 0)"
+          (replenishCountFor stNew c0 scClient == 1 && replenishCountFor stNew c1 scClient == 0)
+        assertBool "(a) PAYOFF: the affinity invariant holds after the retype"
+          (replenishAffinityConsistentB stNew)
+        assertBool "(a) PAYOFF: the binding invariant holds after the retype"
+          (schedContextBindingConsistentB stNew)
+        -- The pipeline's first step IS the suspend's G3 arm: the live post-state's
+        -- replenish queues are the arm-then-sweep reading's, core for core.
+        match okExcept (cancelDonationArmOnCore stDon donServer serverTcb) with
+        | none => assertBool "(a) the reservation arm succeeds on the holder" false
+        | some stArm =>
+          let stArmSwept := cleanupTcbReferences stArm donServer
+          assertBool "(a) the live retype's replenish queues are the arm's, then the sweep's, on every core"
+            (allCores.all (fun c =>
+              replenishEntriesOn stNew c == replenishEntriesOn stArmSwept c))
+  -- (b) BOUND: the client owns its context, pinned to core 1 with its replenishment
+  --     there (`stPreReturnSameCore`), and is retyped.
+  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  match stBound.getTcb? donClient with
+  | none => assertBool "(b) setup: the client resolves" false
+  | some clientTcb =>
+    assertBool "(b) setup: the client owns its context, homed on core 1, replenishment on core 1"
+      (clientTcb.schedContextBinding == .bound scClient
+        && decide (determineTargetCore stBound donClient = c1)
+        && replenishCountFor stBound c1 scClient == 1
+        && !threadCurrentOnSomeCore stBound donClient && clientTcb.replyObject.isNone)
+    assertBool "(b) setup: both invariants hold before the retype"
+      (schedContextBindingConsistentB stBound && replenishAffinityConsistentB stBound)
+    -- NEGATIVE: the index-only removal leaves the context bound to a destroyed thread.
+    match retiredRetypeTcbCleanup stBound clientTcb with
+    | none => assertBool "(b) NEGATIVE setup: the retired cleanup succeeds" false
+    | some stOld =>
+      assertBool "(b) NEGATIVE: the retired retype leaves the context bound to the destroyed thread..."
+        (boundThreadOf stOld scClient == some donClient
+          && (match stOld.getObject? donClient.toObjId with
+              | some (.endpoint _) => true | _ => false))
+      assertBool "(b) NEGATIVE: ...with its replenishment still queued on core 1"
+        (replenishCountFor stOld c1 scClient == 1)
+      assertBool "(b) NEGATIVE (the defect): the retired retype FALSIFIES the binding invariant"
+        (!schedContextBindingConsistentB stOld)
+      assertBool "(b) NEGATIVE (the defect): ...and the affinity invariant, a destroyed thread homing on the boot core"
+        (!replenishAffinityConsistentB stOld)
+    -- PAYOFF: the live retype unbinds — seL4's `unbindFromSc` in `finaliseCap`.
+    match liveRetypeTcb stBound donClient with
+    | none => assertBool "(b) the live retype of the bound thread succeeds" false
+    | some stNew =>
+      assertBool "(b) PAYOFF: the context is unbound and inactive after the retype"
+        (match stNew.getSchedContext? scClient with
+         | some sc => sc.boundThread.isNone && !sc.isActive && sc.donationOrigin.isNone
+         | none => false)
+      assertBool "(b) PAYOFF: the replenishment was purged from the destroyed thread's home"
+        (allCores.all (fun c => replenishCountFor stNew c scClient == 0))
+      assertBool "(b) PAYOFF: the binding invariant holds after the retype"
+        (schedContextBindingConsistentB stNew)
+      assertBool "(b) PAYOFF: the affinity invariant holds after the retype"
+        (replenishAffinityConsistentB stNew)
+  -- (c) CONTROL: an `.unbound` target — the arm is the identity, so the live retype
+  --     and the retired reading agree on every replenish queue and both invariants hold.
+  let stCtl := withRetypeTypes stDonBase donFixtureTypes
+  match stCtl.getTcb? donServer with
+  | none => assertBool "(c) setup: the server resolves" false
+  | some serverTcb =>
+    assertBool "(c) setup: the server holds no reservation"
+      (serverTcb.schedContextBinding == SchedContextBinding.unbound)
+    match retiredRetypeTcbCleanup stCtl serverTcb, liveRetypeTcb stCtl donServer with
+    | some stOld, some stNew =>
+      assertBool "(c) CONTROL: on an unbound target the two readings agree on every replenish queue"
+        (allCores.all (fun c => replenishEntriesOn stNew c == replenishEntriesOn stOld c))
+      assertBool "(c) CONTROL: ...and both invariants hold after the retype"
+        (schedContextBindingConsistentB stNew && replenishAffinityConsistentB stNew)
+    | _, _ => assertBool "(c) CONTROL: both retypes of an unbound target succeed" false
+
+-- ============================================================================
+-- §3.32 the retype's SchedContext arm releases the binding the context holds
+--        (register row 63, `v0.35.165`)
+-- ============================================================================
+
+/-! `lifecyclePreRetypeCleanup`'s `.schedContext` arm refused a context that heads
+a reply stack and nothing else, so a context **bound** to a thread passed: the
+retype left that thread `.bound scId` naming an object the slot no longer carries,
+its `scThreadIndex` entry in place and `scId`'s replenish entries queued on its
+home core under an id the slot's next occupant inherits.  seL4's `finaliseCap`
+runs `schedContext_unbindAllTCBs` on a scheduling-context capability; since
+`v0.35.165` `releaseSchedContextBinding` is that, per core.
+
+The RETIRED reading is computed beside the live retype on the same state — the
+stack-head guard alone, then the same scrub and the same store — so every
+assertion is known to discriminate.  The CONTROL is a context bound to nothing,
+where the release is the identity and the two readings agree. -/
+
+/-- The LIVE retype of any object through the wrapper the `.lifecycleRetype` arm
+reaches. -/
+private def liveRetypeObj (st : SystemState) (target : SeLe4n.ObjId) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target
+    retypeReplacement st)).map Prod.snd
+
+/-- The RETIRED reading of the pipeline's SchedContext arm: the stack-head guard
+and nothing else — the cleanup handed the state back unchanged — then the same
+scrub and the same store the live pipeline performs.  Spelled here and nowhere
+else. -/
+private def retiredRetypeSchedContextCleanup (st : SystemState) (target : SeLe4n.ObjId) :
+    Option SystemState :=
+  match st.getObject? target with
+  | none => none
+  | some obj =>
+      some ((scrubObjectMemory st target obj.objectType).withObjectStored target
+        retypeReplacement)
+
+/-- The fixture's client context with its binding cleared — the CONTROL's state,
+where the release is the identity. -/
+private def withUnboundSchedContext (st : SystemState) : Option SystemState :=
+  match st.getSchedContext? scClient with
+  | none => none
+  | some sc =>
+      some (st.withObjectStored scClient.toObjId (.schedContext { sc with boundThread := none }))
+
+private def runRetypeSchedContextChecks : IO Unit := do
+  IO.println "--- §3.32 register row 63: the retype's SchedContext arm releases the binding ---"
+  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  match stSc.getSchedContext? scClient, stSc.getTcb? donClient with
+  | some sc, some clientTcb =>
+    assertBool "(a) setup: the context is bound to the client, which is bound to it"
+      (sc.boundThread == some donClient && clientTcb.schedContextBinding == .bound scClient)
+    assertBool "(a) setup: the context heads no reply stack, so the arm's guard admits it"
+      sc.scReply.isNone
+    assertBool "(a) setup: its replenishment sits on the client's home (core 1)"
+      (decide (determineTargetCore stSc donClient = c1)
+        && replenishCountFor stSc c1 scClient == 1)
+    assertBool "(a) setup: both invariants hold before the retype"
+      (schedContextBindingConsistentB stSc && replenishAffinityConsistentB stSc)
+    -- NEGATIVE: the retired arm stores the replacement over a context that is
+    -- still bound, and releases nothing.
+    match retiredRetypeSchedContextCleanup stSc scClient.toObjId with
+    | none => assertBool "(b) NEGATIVE setup: the retired cleanup succeeds" false
+    | some stOld =>
+      assertBool "(b) NEGATIVE: the retired retype leaves the client bound to the destroyed context..."
+        ((match stOld.getTcb? donClient with
+          | some t => t.schedContextBinding == .bound scClient | none => false)
+         && (stOld.getSchedContext? scClient).isNone)
+      assertBool "(b) NEGATIVE (the defect): ...so the binding invariant is FALSIFIED"
+        (!schedContextBindingConsistentB stOld)
+      assertBool "(b) NEGATIVE: ...and the replenishment stays queued under the destroyed id"
+        (replenishCountFor stOld c1 scClient == 1)
+    -- PAYOFF: the live retype releases the binding — seL4's `unbindFromSc`.
+    match liveRetypeObj stSc scClient.toObjId with
+    | none => assertBool "(c) the live retype of the bound context succeeds" false
+    | some stNew =>
+      assertBool "(c) PAYOFF: the destroyed slot holds the replacement"
+        (match stNew.getObject? scClient.toObjId with
+         | some (.endpoint _) => true | _ => false)
+      assertBool "(c) PAYOFF: the client is unbound after the retype"
+        (match stNew.getTcb? donClient with
+         | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
+      assertBool "(c) PAYOFF: the replenishment was purged from every core"
+        (allCores.all (fun c => replenishCountFor stNew c scClient == 0))
+      assertBool "(c) PAYOFF: the binding invariant holds after the retype"
+        (schedContextBindingConsistentB stNew)
+      assertBool "(c) PAYOFF: the affinity invariant holds after the retype"
+        (replenishAffinityConsistentB stNew)
+    -- CONTROL: a context bound to nothing — the release is the identity, so the
+    -- two readings agree on every replenish queue and on the client's binding.
+    match withUnboundSchedContext stSc with
+    | none => assertBool "(d) CONTROL setup: the context resolves" false
+    | some stCtl =>
+      match retiredRetypeSchedContextCleanup stCtl scClient.toObjId,
+            liveRetypeObj stCtl scClient.toObjId with
+      | some stOldCtl, some stNewCtl =>
+        assertBool "(d) CONTROL: on a context bound to nothing the two readings agree on every replenish queue"
+          (allCores.all (fun c => replenishEntriesOn stNewCtl c == replenishEntriesOn stOldCtl c))
+        assertBool "(d) CONTROL: ...and neither touches the client's own binding"
+          ((match stNewCtl.getTcb? donClient, stOldCtl.getTcb? donClient with
+            | some a, some b => a.schedContextBinding == b.schedContextBinding
+            | _, _ => false))
+      | _, _ => assertBool "(d) CONTROL: both retypes of an unbound context succeed" false
+  | _, _ => assertBool "(a) setup: the context and the client resolve" false
+
+-- ============================================================================
+-- §3.33 the `.lifecycleRetype` arm's resolved scheduler-domain footprint
+--       (WS-RR RR8.12 Cut C3b-iii, `v0.35.169`)
+-- ============================================================================
+
+/-! The destroy path's replenish writes are the cleanup's two reservation arms —
+`cancelDonationArmOnCore` on a TCB target (`v0.35.164`) and
+`releaseSchedContextBinding` on a SchedContext target (`v0.35.165`) — and SM8.B's
+`lifecycleRetypeWriteSet` is **silent** about them: `observableSlotsConfinedToCores`
+covers six per-core slots and the replenish queue is not one of them.
+
+So a footprint built from that write set alone would be **false** of the
+operation, and that is the retired reading computed beside the live footprint
+here: on both target shapes it declares no replenish lock while the live arm
+moves a replenishment.  The CONTROL is an endpoint target, where the two agree
+because the destroy path has no scheduling effect at all. -/
+
+/-- The RETIRED reading: SM8.B's write set as a whole footprint, with no
+replenish segment.  Spelled here and nowhere else. -/
+private def runOnlyRetypeFootprint (st : SystemState) (target : SeLe4n.ObjId) :
+    List (SchedLockId × Concurrency.AccessMode) :=
+  schedFootprintOfCores (lifecycleRetypeWriteSet st target) []
+
+/-- **WS-RR RR8.12 Cut C6g**: the arm the syscall dispatches, rather than the
+retype core the segment assertions above drive.
+
+The coverage claim's unit is this program — the retype with its cleanup, the
+`.aside1` shootdown round, the initiator's own TLB drain and the domain-wide
+`IC IALLUIS` — because those two cached-structure layers each write kernel state,
+and a claim taken at the core would be a claim about a program the arm does not
+run.  Both are scheduler-silent by theorem; this is that measured. -/
+private def liveRetypeArm (st : SystemState) (target : SeLe4n.ObjId) :
+    Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanupShootdownPerCoreIcache c0
+    (retypeCapOn target) target retypeReplacement st)).map Prod.snd
+
+private def runRetypeFootprintChecks : IO Unit := do
+  IO.println "--- §3.33 Cut C3b-iii: the .lifecycleRetype arm's scheduler footprint ---"
+  -- (a) a BOUND TCB target: the arm purges on the thread's home core.
+  let stBound := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  let fpTcb := schedLockSet_lifecycleRetypeOnCore stBound donClient.toObjId
+  assertBool "(a) setup: the client owns its context and is homed on core 1"
+    (decide (determineTargetCore stBound donClient = c1)
+      && replenishCountFor stBound c1 scClient == 1)
+  assertBool "(a) the footprint declares the home core's replenish write lock"
+    (hasReplenishWrite fpTcb c1)
+  assertBool "(a) NEGATIVE: the run-only reading declares none, on any core"
+    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stBound
+      donClient.toObjId) c))
+  match liveRetypeTcb stBound donClient with
+  | none => assertBool "(a) the live retype of the bound owner succeeds" false
+  | some stNew =>
+    assertBool "(a) ...and the live retype really does write that queue"
+      (replenishCountFor stNew c1 scClient == 0)
+    assertBool "(a) ...and no other core's"
+      (allCores.all (fun c => c == c1 ||
+        replenishEntriesOn stNew c == replenishEntriesOn stBound c))
+  -- (b) a SCHEDCONTEXT target bound to a resolving thread: the release purges on
+  --     that thread's home core.
+  let stSc := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  let fpSc := schedLockSet_lifecycleRetypeOnCore stSc scClient.toObjId
+  assertBool "(b) the footprint declares the bound thread's home core's replenish write lock"
+    (hasReplenishWrite fpSc c1)
+  assertBool "(b) NEGATIVE: the run-only reading declares none there either"
+    (allCores.all (fun c => !hasReplenishWrite (runOnlyRetypeFootprint stSc
+      scClient.toObjId) c))
+  match liveRetypeObj stSc scClient.toObjId with
+  | none => assertBool "(b) the live retype of the bound context succeeds" false
+  | some stNew =>
+    assertBool "(b) ...and the live retype really does purge that queue"
+      (replenishCountFor stNew c1 scClient == 0)
+  -- (c) the CONTROL: an endpoint target has no scheduling effect at all, so the
+  --     two readings agree and both are the object-store lock alone.
+  let fpEp := schedLockSet_lifecycleRetypeOnCore stSc donEp
+  assertBool "(c) CONTROL: an endpoint target's footprint is the object-store write lock alone"
+    (decide (fpEp = [(SchedLockId.object schedObjStoreLockId, Concurrency.AccessMode.write)]))
+  assertBool "(c) CONTROL: ...which is exactly what the run-only reading gives too"
+    (decide (fpEp = runOnlyRetypeFootprint stSc donEp))
+  -- (d) WS-RR RR8.12 Cut C6g: COVERAGE, on the arm the syscall dispatches.  The
+  --     segment assertions above say the footprint names the cores the arm moves;
+  --     this is the other direction, which they cannot see — that the arm moves
+  --     NOTHING outside them.  `schedLockSet_lifecycleRetypeOnCore_coversWrites`
+  --     is the theorem, over the icache-layered program rather than the retype
+  --     core, so the two cached-structure layers are inside the measurement.
+  --
+  --     Every mutation of the production footprint here fails to ELABORATE
+  --     rather than failing this suite — `schedLockSet_lifecycleRetypeOnCore`'s
+  --     own membership theorems unfold it — which is §3.23's situation for the
+  --     splice's store shape.  So what makes these assertions discriminate is a
+  --     differential WITHIN the suite: the same measurement is taken over
+  --     `runOnlyRetypeFootprint`, and it must FAIL there.
+  match liveRetypeArm stBound donClient.toObjId with
+  | none => assertBool "(d) C6g: the live `.lifecycleRetype` arm succeeds on a bound owner" false
+  | some stArm =>
+    let retired := runOnlyRetypeFootprint stBound donClient.toObjId
+    assertBool "(d) C6g: EVERY core outside the declared replenish segment keeps its replenish queue"
+      (allCores.all (fun d =>
+        hasReplenishWrite fpTcb d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
+    assertBool "(d) C6g: EVERY core outside the declared run segment keeps its run queue"
+      (allCores.all (fun d =>
+        hasRunQueueWrite fpTcb d ||
+          (stArm.scheduler.runQueueOnCore d).toList
+            == (stBound.scheduler.runQueueOnCore d).toList))
+    assertBool "(d) C6g NEGATIVE: the retired reading FAILS the same replenish measurement"
+      (!allCores.all (fun d =>
+        hasReplenishWrite retired d || replenishEntriesOn stArm d == replenishEntriesOn stBound d))
+    assertBool "(d) C6g: ...and both segments are strict subsets here, so neither claim is vacuous"
+      (allCores.any (fun d => !hasReplenishWrite fpTcb d)
+        && allCores.any (fun d => !hasRunQueueWrite fpTcb d))
+    assertBool "(d) C6g: ...and the domain-wide instruction-cache layer really did run"
+      (stArm.pendingIcacheMaintenance.length > stBound.pendingIcacheMaintenance.length)
+
+-- ============================================================================
+-- §3.34 the retype refuses a replacement SchedContext that claims a thread
+--       (register row 63, `v0.35.184`)
+-- ============================================================================
+
+/-! `lifecycleRetypeDirectWithCleanup` validates the replacement with
+`newObj.wellFormed` and nothing else, and that predicate's `.schedContext` arm was
+`True` — so the model admitted a retype installing a scheduling context claiming a
+thread which does not name it back, which is exactly the state
+`schedContextBindingConsistent` forbids.  It is the class WS-SM SM6.D closed
+for `Reply` one field over, on the same guard and for the same stated reason.
+
+The live dispatch never built such a replacement (`objectOfKernelType` installs
+`SchedContext.empty`, whose `boundThread` is at its `none` default), so this is the
+*model's* admissible space rather than a reachable defect — and a guard that refuses
+nothing the kernel does is exactly the one worth having, because the next replacement
+builder need not be that one. -/
+
+/-- The pristine replacement `objectOfKernelType .schedContext` builds, at the key
+the retype targets. -/
+private def freshScReplacement : KernelObject :=
+  .schedContext (SchedContext.empty (SchedContextId.ofObjId donEp))
+
+/-- The same replacement CLAIMING `donServer`, which is `.unbound` and names no
+context — one field apart from the pristine one, so an assertion that separates
+them is about `boundThread` and nothing else. -/
+private def boundScReplacement : KernelObject :=
+  .schedContext { SchedContext.empty (SchedContextId.ofObjId donEp) with
+    boundThread := some donServer }
+
+/-- The LIVE retype into a caller-supplied replacement. -/
+private def liveRetypeInto (st : SystemState) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Option SystemState :=
+  (okExcept (lifecycleRetypeDirectWithCleanup (retypeCapOn target) target newObj st)).map
+    Prod.snd
+
+/-- The RETIRED guard: `wellFormed`'s `.schedContext` arm as `True`, so the
+replacement is stored whatever it claims — the cleanup, the scrub and the store the
+live pipeline performs, with the validation dropped.  Spelled here and nowhere
+else. -/
+private def retiredWellFormedRetype (st : SystemState) (target : SeLe4n.ObjId)
+    (newObj : KernelObject) : Option SystemState :=
+  match st.getObject? target with
+  | none => none
+  | some obj =>
+      match lifecyclePreRetypeCleanup st target obj newObj with
+      | .error _ => none
+      | .ok stClean =>
+          some ((scrubObjectMemory stClean target obj.objectType).withObjectStored target newObj)
+
+private def runRetypeReplacementGuardChecks : IO Unit := do
+  IO.println "--- §3.34 register row 63: the retype refuses a replacement SchedContext that claims a thread ---"
+  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  assertBool "(a) setup: the target holds an endpoint whose recorded type matches"
+    ((match stEp.getObject? donEp with | some (.endpoint _) => true | _ => false)
+      && stEp.lifecycle.objectTypes[donEp]? == some KernelObjectType.endpoint)
+  assertBool "(a) setup: the thread the bad replacement claims is `.unbound`"
+    (match stEp.getTcb? donServer with
+     | some t => t.schedContextBinding == SchedContextBinding.unbound | none => false)
+  assertBool "(a) setup: the binding invariant holds before the retype"
+    (schedContextBindingConsistentB stEp)
+  -- (b) PAYOFF: the pristine replacement is accepted and Z4-O survives.
+  match liveRetypeInto stEp donEp freshScReplacement with
+  | none => assertBool "(b) PAYOFF: the pristine SchedContext replacement is accepted" false
+  | some stFresh =>
+    assertBool "(b) PAYOFF: the slot holds the fresh context, bound to nobody"
+      (match stFresh.getObject? donEp with
+       | some (.schedContext sc) => sc.boundThread.isNone | _ => false)
+    assertBool "(b) PAYOFF: the binding invariant holds after it"
+      (schedContextBindingConsistentB stFresh)
+  -- (c) PAYOFF: the claiming replacement is REFUSED, and nothing is committed.
+  assertBool "(c) PAYOFF: the claiming replacement is refused"
+    (liveRetypeInto stEp donEp boundScReplacement).isNone
+  assertBool "(c) PAYOFF: ...with `.illegalState`, which is the `wellFormed` guard's own arm"
+    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp boundScReplacement stEp with
+     | .error e => e == KernelError.illegalState | .ok _ => false)
+  -- (d) NEGATIVE: the retired guard stores it, and the result FALSIFIES Z4-O.
+  match retiredWellFormedRetype stEp donEp boundScReplacement with
+  | none => assertBool "(d) NEGATIVE setup: the retired guard stores the claiming replacement" false
+  | some stBad =>
+    assertBool "(d) NEGATIVE: the retired guard leaves a context claiming an `.unbound` thread..."
+      (match stBad.getObject? donEp with
+       | some (.schedContext sc) => sc.boundThread == some donServer | _ => false)
+    assertBool "(d) NEGATIVE (the defect): ...so the binding invariant is FALSIFIED"
+      (!schedContextBindingConsistentB stBad)
+  -- (e) CONTROL: the retired guard stores the PRISTINE replacement too, and there
+  -- Z4-O survives — so (d) is about `boundThread` rather than about the retype.
+  match retiredWellFormedRetype stEp donEp freshScReplacement with
+  | none => assertBool "(e) CONTROL setup: the retired guard stores the pristine replacement" false
+  | some stCtl =>
+    assertBool "(e) CONTROL: on the pristine replacement the retired guard breaks nothing"
+      (schedContextBindingConsistentB stCtl)
+    assertBool "(e) CONTROL: ...and the two replacements differ in `boundThread` alone"
+      (match freshScReplacement, boundScReplacement with
+       | .schedContext a, .schedContext b =>
+           a.boundThread.isNone && b.boundThread == some donServer
+             && { a with boundThread := some donServer } == b
+       | _, _ => false)
+
+/-! ### §3.35 (`v0.35.187`) — a retyped object carries the slot's identity
+
+A TCB, a SchedContext and a Reply each carry their own id in a field while the
+object store is keyed by `ObjId`, so the two can disagree.
+`PlatformConfig.wellFormed`'s `embeddedIdentitiesMatchSlots` has refused that at
+**boot** since PR #889 review round 8; nothing refused it at the **runtime**, and
+`objectOfKernelType` — the one builder the live retype installs through — stamps
+the reserved **sentinel** into all three.  So a successful retype broke at the
+runtime exactly the agreement the boot enforces.
+
+The fixtures are the live builder's own output, unstamped and stamped, so the
+measurement is of the kernel's replacement rather than of a hand-built one. -/
+
+/-- The live builder's SchedContext replacement, **unstamped** — it carries
+`SchedContextId.sentinel`, which is not the slot the retype targets. -/
+private def unstampedScReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .schedContext 0
+
+/-- The same replacement with the slot's identity stamped in — the live dispatch's
+own `withIdentity`, so this is what the kernel now builds. -/
+private def stampedScReplacement : KernelObject :=
+  (SeLe4n.Kernel.objectOfKernelType .schedContext 0).withIdentity donEp
+
+/-- And the Reply pair, because the field differs and the guard must see both. -/
+private def unstampedReplyReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .reply 0
+
+private def stampedReplyReplacement : KernelObject :=
+  (SeLe4n.Kernel.objectOfKernelType .reply 0).withIdentity donEp
+
+/-- An endpoint carries no identity of its own, so it is admissible unstamped —
+the control that keeps the refusals below about the identity field rather than
+about the retype. -/
+private def endpointReplacement : KernelObject :=
+  SeLe4n.Kernel.objectOfKernelType .endpoint 0
+
+private def runRetypeIdentityStampChecks : IO Unit := do
+  IO.println "--- §3.35 (`v0.35.187`): a retyped object carries the slot's identity ---"
+  let stEp := withRetypeTypes stPreReturnSameCore donFixtureTypes
+  -- (a) setup, MEASURED: the live builder stamps the reserved sentinel, and the
+  -- slot the retype targets is not it.
+  assertBool "(a) setup: the live builder's SchedContext carries the SENTINEL id"
+    (match unstampedScReplacement with
+     | .schedContext sc => sc.scId == SchedContextId.sentinel | _ => false)
+  assertBool "(a) setup: ...and the live builder's Reply does too"
+    (match unstampedReplyReplacement with
+     | .reply r => r.replyId == ReplyId.sentinel | _ => false)
+  assertBool "(a) setup: the target slot is not the sentinel"
+    (donEp != SeLe4n.ObjId.sentinel)
+  -- (b) NEGATIVE (the defect): the unstamped replacement is REFUSED, and with the
+  -- guard's own error, so nothing is committed.
+  assertBool "(b) NEGATIVE: the unstamped SchedContext replacement is refused"
+    (liveRetypeInto stEp donEp unstampedScReplacement).isNone
+  assertBool "(b) NEGATIVE: ...with `.illegalState`, the admissibility guard's own arm"
+    (match lifecycleRetypeDirectWithCleanup (retypeCapOn donEp) donEp
+        unstampedScReplacement stEp with
+     | .error e => e == KernelError.illegalState | .ok _ => false)
+  assertBool "(b) NEGATIVE: ...and so is the unstamped Reply replacement"
+    (liveRetypeInto stEp donEp unstampedReplyReplacement).isNone
+  -- (c) PAYOFF: the stamped replacement is accepted, and the stored object's own
+  -- id IS the slot — the runtime counterpart of the boot's check.
+  match liveRetypeInto stEp donEp stampedScReplacement with
+  | none => assertBool "(c) PAYOFF: the stamped SchedContext replacement is accepted" false
+  | some stOk =>
+    assertBool "(c) PAYOFF: the slot holds a context whose own `scId` IS the slot"
+      (match stOk.getObject? donEp with
+       | some (.schedContext sc) => sc.scId.toObjId == donEp | _ => false)
+  match liveRetypeInto stEp donEp stampedReplyReplacement with
+  | none => assertBool "(c) PAYOFF: the stamped Reply replacement is accepted" false
+  | some stOk =>
+    assertBool "(c) PAYOFF: the slot holds a reply whose own `replyId` IS the slot"
+      (match stOk.getObject? donEp with
+       | some (.reply r) => r.replyId.toObjId == donEp | _ => false)
+  -- (d) CONTROL: a kind that carries no identity is accepted UNSTAMPED, so (b) is
+  -- about the identity field rather than about the retype refusing replacements.
+  assertBool "(d) CONTROL: an unstamped endpoint replacement is accepted"
+    (liveRetypeInto stEp donEp endpointReplacement).isSome
+  -- (e) CONTROL: the stamped and unstamped replacements differ in the identity
+  -- field ALONE, asserted rather than left to the reader.
+  assertBool "(e) CONTROL: the two SchedContext replacements differ in `scId` alone"
+    (match unstampedScReplacement, stampedScReplacement with
+     | .schedContext a, .schedContext b =>
+         a.scId == SchedContextId.sentinel && b.scId == SchedContextId.ofObjId donEp
+           && { a with scId := SchedContextId.ofObjId donEp } == b
+     | _, _ => false)
+  -- (f) the boot's question and the runtime's are ONE question: the shared
+  -- predicate answers `false` for the unstamped replacement at this slot and
+  -- `true` for the stamped one.
+  assertBool "(f) the shared predicate refuses the unstamped replacement at this slot"
+    (!unstampedScReplacement.embeddedIdentityMatches donEp)
+  assertBool "(f) ...and accepts the stamped one"
+    (stampedScReplacement.embeddedIdentityMatches donEp)
+  assertBool "(f) ...and is vacuously true for a kind that carries no identity"
+    (endpointReplacement.embeddedIdentityMatches donEp)
+
+
+
+-- ============================================================================
+-- §3.36 the OBJECT-domain donation members follow the donation's own guard
+--        (WS-RR RR8.16, `v0.35.189`; register row 56 — the sweep Cut C1 owed)
+-- ============================================================================
+
+/-! Cut C1 (`v0.35.160`) keyed the `.receive` **replenish** segment on
+`callDonationSchedContext?` and recorded that the **object**-domain members had the
+same two gaps one lock domain over.  This section is that narrowing measured.
+
+The soundness half is proved (`endpointCallDonatedSc?_some_of_post`,
+`receiveRendezvousDonatedSc?_some_of_post`: the transition donates ⟹ the footprint
+declares); what no theorem states is that the narrowing is **not vacuous** — that
+every shape is reachable by the live operations and the declared member differs
+between them.  So the two retired readings live here, `private`, and nowhere else,
+computed beside the live resolver on every shape, and each is wrong on exactly one
+of them. -/
+
+/-- The superseded `.call` member (before `v0.35.189`): the caller's own effective
+context, with no test that a receiver is waiting or that it is passive. -/
+private def callerKeyedCallDonatedSc? (st : SystemState) (caller : SeLe4n.ThreadId) :
+    Option SeLe4n.SchedContextId :=
+  match st.getTcb? caller with
+  | some tcb => tcb.schedContextBinding.scId?
+  | none => none
+
+/-- The superseded receive-side member (before `v0.35.189`): the queued sender's own
+effective context, through the retired `.call` reading — so a plain `Send` and a
+`Call` to a bound receiver both declared a SchedContext write lock. -/
+private def senderKeyedDonatedSc? (st : SystemState) (endpointObjId : SeLe4n.ObjId) :
+    Option SeLe4n.SchedContextId :=
+  (receiveRendezvousSender? st endpointObjId).bind (callerKeyedCallDonatedSc? st)
+
+private def runObjectDomainDonationMemberChecks : IO Unit := do
+  IO.println "--- §3.36 WS-RR RR8.16: the object-domain donation members follow the donation ---"
+  -- ---- the `.call` arm -------------------------------------------------------
+  -- (a) CONTROL: a receiver waiting and PASSIVE — the donation fires, so both the
+  --     live member and the retired one name the context.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1 stDonBase) with
+  | none => assertBool "RR8.16 setup (a): the passive server's Recv parks it" false
+  | some (stWaitPassive, _) =>
+    assertBool "(a) the endpoint now has a waiting receiver"
+      (decide (endpointCallReceiver? stWaitPassive donEp = some donServer))
+    assertBool "(a) ...which is passive, so the donation's own guard fires"
+      (decide (callDonationSchedContext? stWaitPassive donClient donServer = some scClient))
+    assertBool "(a) CONTROL: the live member names the context"
+      (decide (endpointCallDonatedSc? stWaitPassive donEp donClient = some scClient))
+    assertBool "(a) CONTROL: the retired caller-keyed reading agrees here"
+      (decide (callerKeyedCallDonatedSc? stWaitPassive donClient = some scClient))
+    assertBool "(a) ...and the resolved `.call` footprint declares the SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore stWaitPassive donEp donClient cnRoot).pairs))
+  -- (b) THE DEFECT: a receiver waiting and already BOUND — the donation declines,
+  --     and the retired reading declared a SchedContext write lock all the same.
+  match okPair (endpointReceiveDualOnCore donEp donServer (some donReply) c1
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (b): the active server's Recv parks it" false
+  | some (stWaitActive, _) =>
+    assertBool "(b) the endpoint has a waiting receiver"
+      (decide (endpointCallReceiver? stWaitActive donEp = some donServer))
+    assertBool "(b) ...which already holds a context, so the guard declines"
+      (decide (callDonationSchedContext? stWaitActive donClient donServer = none))
+    assertBool "(b) PAYOFF: the live member names nothing"
+      (decide (endpointCallDonatedSc? stWaitActive donEp donClient = none))
+    assertBool "(b) NEGATIVE (the defect): the retired caller-keyed reading named the context"
+      (decide (callerKeyedCallDonatedSc? stWaitActive donClient = some scClient))
+    assertBool "(b) PAYOFF: the resolved `.call` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointCallOnCore stWaitActive donEp donClient cnRoot).pairs))
+    assertBool "(b) ...and the caller's own TCB write lock is still declared, so the narrowing is local"
+      (decide ((Concurrency.tcbLock donClient, AccessMode.write)
+        ∈ (lockSet_endpointCallOnCore stWaitActive donEp donClient cnRoot).pairs))
+  -- ---- the `.receive` / `.replyRecv` arms ------------------------------------
+  -- (c) CONTROL: a queued `Call` from a bound client to a passive server.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stDonBase) with
+  | none => assertBool "RR8.16 setup (c): the no-receiver call parks the caller" false
+  | some (stCallQ, _) =>
+    assertBool "(c) CONTROL: the live receive-side member names the context"
+      (decide (receiveRendezvousDonatedSc? stCallQ donEp donServer = some scClient))
+    assertBool "(c) CONTROL: the retired sender-keyed reading agrees here"
+      (decide (senderKeyedDonatedSc? stCallQ donEp = some scClient))
+    assertBool "(c) ...and the resolved `.receive` footprint declares the SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∈ (lockSet_endpointReceiveOnCore stCallQ donEp donServer cnRoot (some donReply)).pairs))
+  -- (d) THE FIRST DEFECT: a queued plain `Send` — no donation at any depth.
+  match okPair (endpointSendDualOnCore donEp donClient IpcMessage.empty c0
+      stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (d): the no-receiver send parks the sender" false
+  | some (stSendQ, _) =>
+    assertBool "(d) PAYOFF: the live receive-side member names nothing"
+      (decide (receiveRendezvousDonatedSc? stSendQ donEp donServer = none))
+    assertBool "(d) NEGATIVE (the defect): the retired sender-keyed reading named the context"
+      (decide (senderKeyedDonatedSc? stSendQ donEp = some scClient))
+    assertBool "(d) PAYOFF: the resolved `.receive` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReceiveOnCore stSendQ donEp donServer cnRoot (some donReply)).pairs))
+  -- (e) THE SECOND DEFECT: a queued `Call` whose receiver already holds a context.
+  match okPair (endpointCallOnCore donEp donClient IpcMessage.empty c0 stHandoffActiveBase) with
+  | none => assertBool "RR8.16 setup (e): the no-receiver call parks the caller" false
+  | some (stCallQActive, _) =>
+    assertBool "(e) the `Call`-narrowed sender resolver still names the caller"
+      (decide (receiveRendezvousCallSender? stCallQActive donEp = some donClient))
+    assertBool "(e) PAYOFF: the live receive-side member names nothing"
+      (decide (receiveRendezvousDonatedSc? stCallQActive donEp donServer = none))
+    assertBool "(e) NEGATIVE (the defect): the retired sender-keyed reading named the context"
+      (decide (senderKeyedDonatedSc? stCallQActive donEp = some scClient))
+    assertBool "(e) PAYOFF: the resolved `.replyRecv` footprint declares NO SchedContext write lock"
+      (decide ((Concurrency.schedContextLock scClient, AccessMode.write)
+        ∉ (lockSet_endpointReplyRecvOnCore stCallQActive donServer cnRoot donClient
+             donEp).pairs))
+
+
 def runSmpIpcChecks : IO Unit := do
   IO.println "WS-SM SM6.F.1 — Aggregate SMP cross-core IPC suite (4 threads / 4 cores)"
   IO.println "===================================="
@@ -4005,6 +5541,15 @@ def runSmpIpcChecks : IO Unit := do
   runReceivePriorityHandoffChecks
   runReceiveReplenishSegmentChecks
   runReplyRecvHolderDescheduleChecks
+  runPreReceiveReturnMigrationChecks
+  runReplyRecvFootprintChecks
+  runCallReplyFootprintChecks
+  runRetypeReservationChecks
+  runRetypeSchedContextChecks
+  runRetypeFootprintChecks
+  runRetypeReplacementGuardChecks
+  runRetypeIdentityStampChecks
+  runObjectDomainDonationMemberChecks
   runTraceFixtureCheck
   IO.println "===================================="
   IO.println "All SM6.F cross-core IPC checks PASS."
