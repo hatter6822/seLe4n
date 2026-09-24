@@ -3835,9 +3835,13 @@ run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$'
 # The cacheable window is the one guaranteed interval, a pure constant question.
 run_check "INVARIANT" rg -n -U '^pub const fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{\n    if size == 0 \{\n        return true;\n    \}\n    match base\.checked_add\(size\) \{\n        Some\(end\) => end <= GUARANTEED_RAM_TOP,' rust/sele4n-hal/src/mmu.rs
 # The device tree's window is the readers' own bound, taken from the pointer,
-# and admitted only inside guaranteed RAM and outside the image.
+# and admitted only inside the kernel's reserved extent (WS-BP BP3.2) and
+# outside the image.
 run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image\(window, &\[kernel\]\),' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'Some\(end\) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image\(window, &\[kernel\]\),' rust/sele4n-hal/src/mmu.rs
+# NEGATIVE: the BP2.6 bound, under which a blob could lie in RAM a boot untyped
+# describes and a user retype would then overwrite.
+run_negative_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image' rust/sele4n-hal/src/mmu.rs
 # WS-BP BP2.6: W^X at EL1.  `SCTLR_EL1.WXN` makes a writable page execute-never,
 # so the kernel text needs a read-only descriptor of its own and writable data
 # states PXN outright.  NEGATIVE: the retired single Normal descriptor — writable
@@ -3850,6 +3854,41 @@ run_negative_check "INVARIANT" rg -n 'const BLOCK_NORMAL: u64 = DESC_VALID \| AF
 # and the read-only data begins where the text ends (no orphan between them).
 run_prose_check "INVARIANT" rg -n -U '    \.text : ALIGN\(4096\) \{\n        \*\(\.text \.text\.\*\)\n        \. = ALIGN\(4096\);\n        __text_end = \.;' rust/sele4n-hal/link.ld
 run_prose_check "INVARIANT" rg -n -F 'ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")' rust/sele4n-hal/link.ld
+# WS-BP BP3: the deployment's boot configuration.
+# BP3.1 — one install step: every boot object, the binding's root included,
+# goes through `createBootObject`, which registers a VSpace root's ASID.
+run_check "INVARIANT" rg -n '^def createBootObject \(ist : IntermediateState\) \(entry : ObjectEntry\) : IntermediateState :=' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  objs\.foldl createBootObject ist$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootEntryAsidTable\b' SeLe4n/Platform/Boot.lean
+# BP3.1 — a configured VSpace root is admitted under the USER check (an ASID
+# and no mappings); the kernel root's check no longer judges config objects.
+run_check "INVARIANT" rg -n -U '^  \| \.vspaceRoot vsr =>\n    SeLe4n\.Platform\.RPi5\.VSpaceBoot\.bootSafeUserVSpaceRootCheck vsr$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootSafeUserVSpaceRootCheck\b' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot\b' SeLe4n/Platform/Boot.lean
+# NEGATIVE: WS-RC R3's refusal of every configured root, and the two theorems
+# that admitted the kernel root as a config object.
+run_negative_check "INVARIANT" rg -n '\bnoVSpaceRootsInInitialObjects\b' SeLe4n/
+run_negative_check "INVARIANT" rg -n '\b(bootSafeObjectCheck_admits_rpi5BootVSpaceRoot|bootSafeObject_rpi5BootVSpaceRoot)\b' SeLe4n/ tests/
+# BP3.1 — two roots the boot installs may not share an ASID.
+run_check "INVARIANT" rg -n '^def bootVSpaceAsidsDistinct \(config : PlatformConfig\) : Bool :=' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^      if bootVSpaceAsidsDistinct config then$' SeLe4n/Platform/Boot.lean
+# BP3.2 — untyped placement is a conjunct of `wellFormed`, with its own row.
+run_check "INVARIANT" rg -n -U 'objectBudgetRespected config && declaredCoreCountInRange config &&\n    untypedPlacementRespected config$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n -F '(untypedPlacementRespected config, untypedPlacementBootError)' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def untypedClearOfKernel\b' SeLe4n/Platform/Boot.lean
+# BP3.2 — the kernel's reserved extent, stated in three places and held equal.
+run_check "INVARIANT" rg -n '^def rpi5KernelReservedEnd : Nat := 0x1000_0000$' SeLe4n/Platform/RPi5/Board.lean
+run_check "INVARIANT" rg -n '^pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;$' rust/sele4n-hal/src/mmu.rs
+run_prose_check "INVARIANT" rg -n '^KERNEL_RESERVED_END = 0x10000000;$' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(__lean_heap_end <= KERNEL_RESERVED_END,' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000,' rust/sele4n-hal/link.ld
+run_check "INVARIANT" rg -n 'fn the_kernel_reserved_extent_is_the_lean_and_linker_one\(\)' rust/sele4n-hal/src/mmu.rs
+# BP3.3/BP3.4 — the deployment config boots, installs both separation
+# witnesses, and is what the hardware entry boots.
+run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfig_checked($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootState_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Deployment$' SeLe4n.lean
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.

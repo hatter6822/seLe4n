@@ -1,11 +1,13 @@
 # WS-BP — The bare-metal boot path, and the cross-implementation
 # agreement it ends
 
-> **Status**: **IN FLIGHT — BP0, BP1 and BP2 LANDED at `v0.36.2`**; BP3..BP8 not started.
+> **Status**: **IN FLIGHT — BP0, BP1, BP2 and BP3.1–BP3.4 LANDED at `v0.36.2`**; BP3.5 and BP4..BP8 not started.
 > Unblocked at `v0.35.203`, WS-RR RR8 having closed.  Registered at `v0.34.59`
 > by WS-RR RR7.5 + RR7.15 (register §6 findings 19, 40–44).  BP7.8 was added at `v0.35.203` by WS-RR
 > RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 > IPC-buffer write here rather than leave it owned by a finished phase.
+> BP3.5 was added at `v0.36.2` by BP3's own cut, which found the production
+> boot state's proof-layer bundle stated nowhere (see the row).
 >
 > **Workstream**: WS-BP.  **Absorbs WS-XV** (cross-implementation
 > behavioural agreement), which was register-only and is now this plan's
@@ -25,7 +27,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 46 across 9 phases (BP0..BP8), each phase numbered in
+> **Sub-task count**: 47 across 9 phases (BP0..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -114,7 +116,7 @@ Every other phase pair here is strictly sequential.
 | BP0 | Cross-implementation agreement — the pairs held while this path removes one of them | 4 | M |
 | BP1 | aarch64 Lean object code — the cross-compile lane and `libsele4n.a` | 4 | L |
 | BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization, and the boot map the arena lives in | 6 | XL |
-| BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling | 4 | L |
+| BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling, the boot state's proof-layer bundle | 5 | L |
 | BP4 | The boot seam — `lean_kernel_main`, its install ordering, and the board's RAM | 6 | L |
 | BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img`, the firmware's entry state | 5 | M |
 | BP6 | Per-core readiness — the five dormant seams go live | 3 | M |
@@ -254,7 +256,7 @@ supplies none of them.
 `init_mmu` names no device-tree entry point — the boot map is built from
 linker symbols and board constants alone.
 
-### BP3 — The RPi5 deployment (4 sub-tasks)
+### BP3 — The RPi5 deployment (5 sub-tasks)
 
 Register finding 44: there is no `rpi5PlatformConfig`, no root task, and no
 initial objects.  The boot seam in BP4 boots *a configuration*; this phase
@@ -263,20 +265,22 @@ nothing to boot cannot be reviewed.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP3.1 | `rpi5PlatformConfig`: the IRQ table from `rpi5InterruptContract`, `bootVSpaceRoot = rpi5BootVSpaceRootEntry`, and `machineConfig` from the binding — the last two supplied by `bindPlatformConfig`, so this row states the *caller's* half | `SeLe4n/Platform/RPi5/` | M |
-| BP3.2 | The initial objects: a root-task TCB, its CSpace and its VSpace, each `.Inactive`, stored under its own id, with all three queue links empty — the shape `bootSafeObjectCheck` requires.  **And the root task's untypeds, with the boot refusing one over memory it may not describe** (registered at `v0.36.2`, `docs/REGISTERED_DEBT.md` table B): the binding declares the kernel's reserved extent `[_start, __lean_heap_end)` — held to `link.ld` by `scripts/check_link_script.py` — and `PlatformConfig.wellFormed` gains the conjunct that every boot untyped lies inside one declared region of its own kind and outside that extent, since `bootSafeUntypedCheck` accepts every region today | `SeLe4n/Platform/RPi5/`, `SeLe4n/Platform/Boot.lean` | L |
-| BP3.3 | Discharge `PlatformConfig.wellFormed`'s conjuncts (six, and BP3.2's untyped-placement conjunct) by evaluation, including `idleSlotsReserved`, `embeddedIdentitiesMatchSlots` and `declaredCoreCountInRange`.  Consumes BP3.1 and BP3.2 | `SeLe4n/Platform/RPi5/` | M |
-| BP3.4 | Install the two threads `confinedDeploymentLabeling` declares as separated, so `declaredWitnessesInstalled` holds of the boot state and the deployment boots at all.  Consumes BP3.2 | `SeLe4n/Platform/RPi5/` | M |
+| BP3.1 | **LANDED `v0.36.2`** (`SeLe4n/Platform/RPi5/Deployment.lean`).  `rpi5PlatformConfig`, the caller's half: the IRQ table routes every SPI the interrupt contract supports (INTIDs 32–223) to the root task's notification, badged by INTID — SGIs are the kernel's inter-processor channel and PPIs are per-core, so neither is delegated — and the machine configuration is the board account (the smallest board's), which `bindPlatformConfig` binds to a variant alongside the binding's boot root | `SeLe4n/Platform/RPi5/` | M |
+| BP3.2 | **LANDED `v0.36.2`**.  The initial objects, in two domains as `confinedDeploymentLabeling` declares them: the root task (TCB `2`, CNode `3`, VSpace `4` on ASID 1, notification `5`, untypeds `6`/`7` over `[256 MiB, 1 GiB)`) and the untrusted initial thread (TCB `0x10_0000`, its CNode and VSpace on ASID 2), each `.Inactive`, stored under its own id, with all three queue links empty, and no capability crossing the boundary.  **"Its VSpace" needed the boot to admit one**: the checked boot refused every configured VSpace root (`noVSpaceRootsInInitialObjects`) because the builder registered no ASID, so the only VSpace it could install was the kernel's EL1-only map; the write is made (`createBootObject`, `bootEntryAsidTable`), a collision is refused (`bootVSpaceAsidsDistinct`), and a configured root is checked as a thread's — a user ASID and no mappings (`bootSafeUserVSpaceRootCheck`).  **And the untypeds, with the boot refusing one over memory it may not describe** (closes `docs/REGISTERED_DEBT.md` table B's row): `PlatformConfig.wellFormed`'s seventh conjunct `untypedPlacementRespected` — inside one declared region of its own kind, clear of `MachineConfig.kernelReserved`, and pairwise disjoint (the runtime check of the proof bridge's `untypedRegionsDisjoint`).  The RPi5 reserved extent is `[0, 0x1000_0000)`, one number in three places — `rpi5KernelReservedEnd`, `link.ld`'s `KERNEL_RESERVED_END` (whose `ASSERT` refuses an image that outgrows it) and `mmu::KERNEL_RESERVED_END` — held together through `tests/fixtures/boot_map.expected` by the HAL's test and `scripts/check_link_script.py`; the device-tree window must lie in it (`dtb_window_admissible`), so no untyped can describe the blob | `SeLe4n/Platform/RPi5/`, `SeLe4n/Platform/Boot.lean`, `rust/sele4n-hal/` | L |
+| BP3.3 | **LANDED `v0.36.2`**.  Every gate of the checked boot discharged **by evaluation**, with no `native_decide`: the boot's hash-set duplicate checks are proved equal to their transparent forms (`irqsUnique_eq_transparent`, `objectIdsUnique_eq_transparent`), after which `rpi5BoundPlatformConfig_wellFormed` (all seven conjuncts) and the nine other gates are `decide`; `rpi5BoundPlatformConfig_checked` and `rpi5BoundPlatformConfig_boot` pin the success arms.  Consumes BP3.1 and BP3.2 | `SeLe4n/Platform/RPi5/` | M |
+| BP3.4 | **LANDED `v0.36.2`**.  Both separated threads are TCBs of the boot state (`rpi5DeploymentBootState_witnessesInstalled`), read off the configuration through the new general `bootFromPlatformChecked_ok_objects_of_mem` — every configured object is in a successful boot's state at its own id — rather than evaluated out of the boot.  The acceptance: `bootAndInitialiseRPi5_rpi5PlatformConfig` (the hardware entry commits the state and labeling and returns `.ok`) and `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` (the halting entry is exactly the two installs).  Consumes BP3.2 | `SeLe4n/Platform/RPi5/` | M |
+| BP3.5 | **The production boot state's proof-layer bundle.**  `bootFromPlatform_proofLayerInvariantBundle_general` and `bootToRuntime_invariantBridge_general` are stated over the *unchecked* `bootFromPlatform` of a config carrying no VSpace root, and the state the hardware boot installs is neither: it carries the binding's root (since WS-RC R3) and the threads' roots (since BP3.2), and the checked boot enqueues idle threads on top.  So no theorem states `proofLayerInvariantBundle` — or its freeze — of `rpi5DeploymentBootState`, and the bridge's docstring called that "a post-R3 hardening item" registered nowhere.  State and prove it for the checked, idle-enqueued boot of any well-formed config (the RPi5 deployment an instance), which needs the VSpace bundle over installed roots: the ASIDs `bootVSpaceAsidsDistinct` keeps apart are what `vspaceAsidRootsUnique` and `asidTableConsistent` read, and a thread's root maps nothing.  **Before the boot seam**: the next phase's first row makes this boot live, and a transition goes live only after the proofs that cover it.  Registered in `docs/REGISTERED_DEBT.md` table C.  Consumes BP3.4 | `SeLe4n/Platform/Boot.lean`, `SeLe4n/Platform/RPi5/` | L |
 
 **Acceptance**: `bootAndInitialiseRPi5OrHalt rpi5PlatformConfig` evaluates to
 `.ok` in Lean, with every refusal arm shown unreachable for this
-configuration.
+configuration (met at `v0.36.2`: `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`),
+and the state it installs satisfies the proof-layer invariant bundle (BP3.5).
 
 ### BP4 — The boot seam, its install ordering and the board's RAM (6 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP4.1 | `@[export lean_kernel_main]` calling `Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to BP3's configuration — the exact program `SeLe4n/Testing/BootEntryContract.lean` requires, decided by a head-directed reduction (`Meta.whnfUntil`) and one reducible `Meta.isDefEq`.  Consumes BP3.3 | `SeLe4n/Platform/FFI.lean` (or a new entry module in the production closure) | M |
+| BP4.1 | `@[export lean_kernel_main]` calling `Platform.FFI.bootAndInitialiseRPi5OrHalt` applied to BP3's configuration — the exact program `SeLe4n/Testing/BootEntryContract.lean` requires, decided by a head-directed reduction (`Meta.whnfUntil`) and one reducible `Meta.isDefEq`.  The configuration is BP3's `rpi5PlatformConfig`.  Consumes BP3.3 and BP3.5 — the second because this row makes the boot live | `SeLe4n/Platform/FFI.lean` (or a new entry module in the production closure) | M |
 | BP4.2 | The install ordering: perform the kernel-state install **before** `apply_cmdline_and_start_smp` releases any secondary, so no bracketed committer exists during the unbracketed install (option 1 of the two `SMP_RELEASE_CLOSURE_PLAN.md` §3 records).  The lost-commit shape `kernel_entry.rs` documents is closed by construction rather than by a lock | `rust/sele4n-hal/src/boot.rs`, `rust/sele4n-hal/src/smp.rs` | M |
 | BP4.3 | Turn `rust_boot_main`'s `dtb_ptr` into the `ByteArray` `bootAndInitialiseRPi5FromDtbOrHalt` takes — a Lean-runtime allocation, hence the dependency on BP2.  This is what gives WS-RR RR7.27's board-versus-binding check a hardware caller | `rust/sele4n-hal/src/boot.rs`, `SeLe4n/Platform/FFI.lean` | M |
 | BP4.4 | Move the boot entry to the DTB wrapper and `BootEntryContract.lean`'s `approvedBootCall` with it — the one-line change that file anticipates by name.  Consumes BP4.3 | `SeLe4n/Testing/BootEntryContract.lean` | S |
@@ -293,7 +297,7 @@ defined by the archive rather than reconciled as expected-unresolved, and
 |-----|-------------|-------|-----|
 | BP5.1 | A `[[bin]]` `no_std` / `no_main` target whose entry is `_start` from `boot.S` under `link.ld` | `rust/Cargo.toml`, `rust/sele4n-hal/` | M |
 | BP5.2 | Link `libsele4n.a` and the HAL together into that binary, **with `--gc-sections` rooted at the same symbols the archive lane's reachable link uses** (the library initializer and every production `@[export]`): the archive references 111 upstream runtime functions the kernel's runtime does not define, and the lane's proof that none is reachable is a proof about that link.  **Run `scripts/check_fp_simd_free_objects.py` over the linked image**, which is where it becomes conclusive: the target's `compiler_builtins` is **not** FP-free even for `aarch64-unknown-none-softfloat` (measured at `v0.36.2`: `__mulsc3`, `__muldc3`, `__multc3`, `__divsc3`, `__divdc3`, `__negsf2` and `__negdf2` use `d`/`v` registers, and `__negdf2` takes its argument in `d0`, a hard-float ABI a soft-float caller cannot satisfy), so what the gate decides on the objects BP1.2 and the cross gate check is necessary and not sufficient — only the image shows which members the link pulled in.  Consumes BP1.3, BP2.2, BP4.1 | `rust/`, `link.ld`, `scripts/` | M |
-| BP5.3 | `scripts/build_rpi5_image.sh` — `kernel8.img` plus `config.txt`.  **This is the deliverable `SM10.1.1` names**; the release cut consumes it from here.  `config.txt` sets `device_tree_address` inside the guaranteed gigabyte and above the image's `__lean_heap_end`, because BP2.6's `init_mmu` refuses a device tree anywhere else | `scripts/build_rpi5_image.sh` | M |
+| BP5.3 | `scripts/build_rpi5_image.sh` — `kernel8.img` plus `config.txt`.  **This is the deliverable `SM10.1.1` names**; the release cut consumes it from here.  `config.txt` sets `device_tree_address` inside the kernel's reserved extent (below `KERNEL_RESERVED_END`, 256 MiB) and above the image's `__lean_heap_end`, because `init_mmu` refuses a device tree anywhere else — the extent is where no boot untyped may reach (BP3.2) | `scripts/build_rpi5_image.sh` | M |
 | BP5.4 | Build the image in CI, and publish its size and section map so a regression in either is visible in the run rather than on the board | `.github/workflows/` | S |
 | BP5.5 | **The firmware's entry state.**  `boot.S` assumes it is entered at EL1: it never reads `CurrentEL` and has no EL2-to-EL1 drop, while the RPi5 firmware enters a 64-bit kernel at **EL2**.  Both entries (`_start`, `secondary_entry` — PSCI `CPU_ON` enters at the caller's EL) read `CurrentEL` after the FP-trap prologue and, at EL2, program `HCR_EL2.RW` (EL1 is AArch64), `CPTR_EL2` so FP/SIMD is **not** trapped to EL2 (the EL1 trap `CPACR_EL1` sets must be the one that fires, or an EL0 FP access traps to an EL with no handler), `CNTHCTL_EL2` / `CNTVOFF_EL2` so EL1 owns the generic timer, and `SPSR_EL2` / `ELR_EL2` for an `eret` to EL1h with DAIF masked; an entry at EL3 or an unrecognised EL halts.  Pinned by a `build.rs` scanner beside `scan_fp_trap_prologue`, as a canonical sequence.  QEMU's `virt` machine enters at EL1 unless `virtualization=on`, so no current harness reaches the EL2 path; the first-boot phase runs it both ways.  Consumes nothing in this plan | `rust/sele4n-hal/src/boot.S`, `rust/sele4n-hal/build.rs` | M |
 

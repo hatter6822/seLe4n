@@ -7146,18 +7146,18 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2 and BP3.1–BP3.4 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **46 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+sequences **47 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants); BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3.1–BP3.4** (the RPi5 deployment, which boots); BP3.5 and BP4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7431,6 +7431,66 @@ parser's alone.  Retired with a Tier 3 negative each: `ram_top_from_dtb`, the
 `/memory` walk, fold and contiguity machinery, `clamp_ram_top`, `boot_ram_top`,
 `dtb_dereferenced_range`, `boot_ranges_mapped_under`, `boot_critical_ranges_mapped`
 and the RAM-top constants.
+
+**BP3 — the RPi5 deployment boots, proved by evaluation** (`v0.36.2`,
+`SeLe4n/Platform/RPi5/Deployment.lean`, in the library root).
+`rpi5PlatformConfig` has two domains as `confinedDeploymentLabeling` declares
+them. The root task sits at the lower witness `2`, with its CNode, a VSpace on
+ASID 1, the notification every SPI signals, and untypeds over
+`[256 MiB, 1 GiB)`. The untrusted initial thread sits at the upper witness
+`0x10_0000`, with its own CNode and VSpace on ASID 2. No capability crosses the
+boundary. Six things new code must respect.
+
+(1) **The boot admits a configured VSpace root, and installs every object one
+way.** `createBootObject` is `createObject` plus the ASID registration the
+runtime store performs (`bootEntryAsidTable`), and both `foldObjects` and
+`installBootVSpaceRoot` are it. The retired `noVSpaceRootsInInitialObjects`
+refused every configured root because the builder omitted that write — a refusal
+standing in for a missing write. Its replacement at the same cascade position is
+`bootVSpaceAsidsDistinct`, since a registration is an insert. A new boot install
+path goes through `createBootObject`.
+
+(2) **A configured root is a thread's, never the kernel's.**
+`bootSafeObjectCheck`'s `.vspaceRoot` arm is `bootSafeUserVSpaceRootCheck`: a
+user ASID and **no mappings**, because a configured mapping would name physical
+memory no boot check places. The binding's root keeps `bootSafeVSpaceRootCheck`,
+and `bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot` pins that the two cannot
+stand in for each other. A later cut that maps a root task image widens the user
+check with a placement check for its frames, never by reusing the kernel's.
+
+(3) **A boot untyped describes only memory it may.** `untypedPlacementRespected`
+is `wellFormed`'s seventh conjunct: every untyped lies inside one declared region
+of its own kind, clear of `MachineConfig.kernelReserved`, and disjoint from every
+other boot untyped. It also discharges the proof bridge's `untypedRegionsDisjoint`
+(`PlatformConfig.wellFormed_untypedRegionsDisjoint`). A projection path into
+`wellFormed` must use the named accessors, which absorbed the new conjunct
+without moving.
+
+(4) **The reserved extent is one number in three places, held by a shared
+fixture.** The three are `rpi5KernelReservedEnd`, `link.ld`'s
+`KERNEL_RESERVED_END` and `mmu::KERNEL_RESERVED_END`. The Lean suite writes the
+value into `tests/fixtures/boot_map.expected`, and the HAL test and
+`scripts/check_link_script.py` read it back. The image must end inside the
+extent, which a live-by-mutation `ASSERT` checks. The device-tree window must too
+(`dtb_window_admissible`), so no untyped can describe the blob. Growing the image
+past 256 MiB means moving all three together.
+
+(5) **A concrete configuration's gates are decided, never asserted.** The boot's
+duplicate checks run an opaque hash set, so `irqsUnique_eq_transparent` and
+`objectIdsUnique_eq_transparent` rewrite them to the transparent forms, and
+everything after that is `decide`. No `native_decide` anywhere.
+`bootFromPlatformChecked_ok_objects_of_mem` — every configured object is in a
+successful boot's state, at its own id — is how a deployment's threads are read
+off the configuration rather than evaluated out of the boot. `BaseIO` has no
+`LawfulMonad` instance in this toolchain, so an IO equation closes by `rfl`
+(`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`), not by rewriting.
+
+(6) **No theorem yet states the proof-layer bundle of the state the hardware
+boot installs.** `bootFromPlatform_proofLayerInvariantBundle_general` and
+`bootToRuntime_invariantBridge_general` cover the *unchecked* boot of a
+VSpace-free config. Every RPi5 boot carries roots and idle threads, so it is
+outside them. **BP3.5** owns this, before BP4.1 makes the boot live. New prose
+must not cite the bridge as covering the RPi5 boot.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

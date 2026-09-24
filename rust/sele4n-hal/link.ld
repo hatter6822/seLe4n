@@ -22,6 +22,16 @@ ENTRY(_start)
  * value the smallest Raspberry Pi 5 cannot hold. */
 LEAN_HEAP_SIZE = 64M;
 
+/* WS-BP BP3.2: the end of the kernel's reserved extent [0, KERNEL_RESERVED_END)
+ * — the firmware's stub below the image, the image, both stack regions, the
+ * Lean heap arena, and the window the image build places the device tree in.
+ * The boot refuses a boot untyped that overlaps it, so none of this memory is
+ * ever handed to a thread.  The Lean `rpi5KernelReservedEnd` and
+ * `mmu::KERNEL_RESERVED_END` state the same number; the HAL's test and
+ * scripts/check_link_script.py hold all three together.  Written in hex on one
+ * line, which is the form both of those read. */
+KERNEL_RESERVED_END = 0x10000000;
+
 MEMORY
 {
     RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0x3FF80000
@@ -151,6 +161,11 @@ SECTIONS
 ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
 ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned")
 ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end inside the smallest RPi5's 1 GiB of RAM")
+
+/* WS-BP BP3.2: the whole image, arena included, lies inside the kernel's
+ * reserved extent, which is page aligned and inside the guaranteed RAM. */
+ASSERT(__lean_heap_end <= KERNEL_RESERVED_END, "the image, Lean heap included, must end inside the kernel's reserved extent")
+ASSERT(KERNEL_RESERVED_END % 4096 == 0 && KERNEL_RESERVED_END <= 0x40000000, "the kernel's reserved extent must be whole pages inside the smallest RPi5's RAM")
 
 /* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
  * requires — each on a page, the text non-empty and ahead of the read-only

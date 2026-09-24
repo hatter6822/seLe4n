@@ -20,7 +20,13 @@ relations the Rust side depends on:
      and `__rodata_end` are page aligned and ordered, and the read-only data
      begins where the text ends (`__rodata_start`) — which
      `mmu::ImageLayout::is_well_formed` requires of the layout it builds tables
-     from.
+     from;
+  5. (WS-BP BP3.2) the arena ends inside the kernel's reserved extent
+     `[0, KERNEL_RESERVED_END)`, which is page aligned inside the smallest
+     board's RAM, and `KERNEL_RESERVED_END` is the number the Lean side states
+     — read from the line `tests/Ak9PlatformSuite.lean` writes into
+     `tests/fixtures/boot_map.expected`, so the extent the boot refuses
+     untypeds over is the extent this link actually reserved.
 
 Undefined symbols are ignored in the probe link: it is a layout check, and the
 objects' references into the Rust and Lean code are BP5.2's link to resolve.
@@ -55,6 +61,18 @@ PAGE = 4096
 # The smallest Raspberry Pi 5 is the 1 GiB board, whose RAM is [0, 1 GiB):
 # `rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean.
 SMALLEST_BOARD_RAM_TOP = 0x4000_0000
+BOOT_MAP_FIXTURE = REPO / "tests" / "fixtures" / "boot_map.expected"
+
+
+def lean_reserved_extent(text: str) -> tuple[int, int]:
+    """The `kernelReserved <base> <end>` line the Lean suite writes.  Exactly
+    one, or the gate cannot say what the Lean side reserves."""
+    rows = [line.split() for line in text.splitlines()
+            if line.split()[:1] == ["kernelReserved"]]
+    if len(rows) != 1 or len(rows[0]) != 3:
+        raise GateFailure(f"{BOOT_MAP_FIXTURE} states the kernel's reserved extent "
+                          f"{len(rows)} times; exactly one `kernelReserved base end` line")
+    return int(rows[0][1], 16), int(rows[0][2], 16)
 
 # The assertions, each with the one-edit mutation that must trip it and a
 # fragment of the message it must fail with.  Every edit is applied to the real
@@ -102,6 +120,16 @@ ASSERTION_WITNESSES = (
           "        . = ALIGN(4096) + 8;\n        __rodata_end = .;"),),
         "read-only data must end on a 4 KiB page",
     ),
+    (
+        "an image that outgrows the kernel's reserved extent",
+        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x1000000;"),),
+        "must end inside the kernel's reserved extent",
+    ),
+    (
+        "a reserved extent past the smallest board",
+        (("KERNEL_RESERVED_END = 0x10000000;", "KERNEL_RESERVED_END = 0x50000000;"),),
+        "whole pages inside the smallest RPi5's RAM",
+    ),
 )
 
 
@@ -138,11 +166,12 @@ def symbols(elf: Path) -> dict[str, int]:
     return table
 
 
-def check_layout(table: dict[str, int]) -> list[str]:
-    """The four relations, over one link's symbol table."""
+def check_layout(table: dict[str, int], reserved: tuple[int, int]) -> list[str]:
+    """The five relations, over one link's symbol table and the reserved extent
+    the Lean side states."""
     need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__bss_end",
             "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
-            "__lean_heap_end", "LEAN_HEAP_SIZE")
+            "__lean_heap_end", "LEAN_HEAP_SIZE", "KERNEL_RESERVED_END")
     missing = [n for n in need if n not in table]
     if missing:
         return [f"the link defines no {', '.join(missing)}"]
@@ -171,6 +200,13 @@ def check_layout(table: dict[str, int]) -> list[str]:
     if not text_start < text_end <= rodata_end <= table["__bss_end"]:
         problems.append(f"the permission boundaries {text_start:#x} < {text_end:#x} <= "
                         f"{rodata_end:#x} are not ordered inside the image")
+    reserved_end = table["KERNEL_RESERVED_END"]
+    if reserved != (0, reserved_end):
+        problems.append(f"link.ld reserves [0, {reserved_end:#x}), the Lean side "
+                        f"[{reserved[0]:#x}, {reserved[1]:#x})")
+    if end > reserved_end:
+        problems.append(f"the arena ends at {end:#x}, past the kernel's reserved extent "
+                        f"({reserved_end:#x})")
     return problems
 
 
@@ -189,6 +225,7 @@ _GOOD = {
     "__bss_end": 0x83000, "__stack_top": 0x91000,
     "__smp_secondary_stack_top": 0xC1000, "__lean_heap_start": 0xC2000,
     "__lean_heap_end": 0xC2000 + 0x400_0000, "LEAN_HEAP_SIZE": 0x400_0000,
+    "KERNEL_RESERVED_END": 0x1000_0000,
 }
 
 
@@ -206,7 +243,9 @@ def self_test() -> int:
                                                   "__lean_heap_end": 0xC0000 + 0x400_0000},
          "inside the image or its stacks"),
         ("an arena past the smallest board", {"__lean_heap_start": 0x3FF0_0000,
-                                               "__lean_heap_end": 0x43F0_0000}, "past the smallest"),
+                                               "__lean_heap_end": 0x43F0_0000,
+                                               "KERNEL_RESERVED_END": 0x5000_0000},
+         "past the smallest"),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
         ("a text end off its page", {"__text_end": 0x81008, "__rodata_start": 0x81008},
          "not all 4 KiB aligned"),
@@ -214,11 +253,18 @@ def self_test() -> int:
          "not ordered inside the image"),
         ("a gap between the text and the read-only data", {"__rodata_start": 0x82000},
          "not where the text ends"),
+        ("an arena past the reserved extent", {"KERNEL_RESERVED_END": 0x200_0000},
+         "past the kernel's reserved extent"),
+        ("a Lean extent that differs", {}, "the Lean side"),
     ]
     failures = 0
     for name, edits, expect in cases:
         table = {k: v for k, v in {**_GOOD, **edits}.items() if v is not None}
-        problems = check_layout(table)
+        # The Lean side states the link's own extent, except in the case whose
+        # subject is that they differ.
+        reserved = ((0, 0x2000_0000) if name == "a Lean extent that differs"
+                    else (0, table.get("KERNEL_RESERVED_END", 0)))
+        problems = check_layout(table, reserved)
         if expect is None:
             ok = not problems
         else:
@@ -252,7 +298,7 @@ def main(argv: list[str]) -> int:
             if linked.returncode != 0:
                 raise GateFailure(f"link.ld does not link:\n{linked.stderr}")
             table = symbols(work / "probe.elf")
-            problems = check_layout(table)
+            problems = check_layout(table, lean_reserved_extent(BOOT_MAP_FIXTURE.read_text()))
             if problems:
                 raise GateFailure("; ".join(problems))
             print(f"  link.ld: arena [{table['__lean_heap_start']:#x}, "

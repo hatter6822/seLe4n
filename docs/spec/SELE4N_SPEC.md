@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 418,122 across 341 Lean files |
-| **Test LoC** | 85,243 across 71 Lean test suites |
-| **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 419,009 across 342 Lean files |
+| **Test LoC** | 85,328 across 71 Lean test suites |
+| **Proved declarations** | 13,871 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), and **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7); BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3.1–BP3.4 (the RPi5 deployment, which boots)** at v0.36.2 (§6.2.8); BP3.5 and BP4..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -430,10 +430,64 @@ no size.
   `scripts/check_link_script.py` proves each assertion live by mutation.
 - **The device tree is not read.**  `init_mmu` checks only the window a reader
   may dereference: `MAX_DTB_SIZE` bytes from the pointer, the bound every
-  reader enforces.  The window must lie in guaranteed RAM and outside
-  `[_start, __lean_heap_end)`; otherwise the boot is refused.
+  reader enforces.  The window must lie in the kernel's reserved extent
+  `[0, KERNEL_RESERVED_END)` (since BP3.2, §6.2.8; before it, anywhere in
+  guaranteed RAM) and outside `[_start, __lean_heap_end)`; otherwise the boot
+  is refused.
 - **Cache maintenance.**  `is_boot_cacheable_range` is one interval,
   `[0, GUARANTEED_RAM_TOP)`.  An operand outside it fails closed.
+
+### 6.2.8 The RPi5 deployment (WS-BP BP3.1–BP3.4, v0.36.2)
+
+`SeLe4n/Platform/RPi5/Deployment.lean` is the configuration the hardware boot
+installs, `rpi5PlatformConfig`, and the proof that it boots.
+
+| Object | Id | Domain | Holds |
+|---|---|---|---|
+| root task TCB (lower separation witness) | `2` | boot | CNode `3`, VSpace `4` |
+| root task CNode | `3` | boot | its TCB, CNode, VSpace; notification `5`; untypeds `6`, `7` |
+| root task VSpace | `4` | boot | ASID 1, no mappings |
+| interrupt notification | `5` | boot | signalled by every SPI (INTIDs 32–223), badged by INTID |
+| untypeds | `6`, `7` | boot | `[256 MiB, 512 MiB)`, `[512 MiB, 1 GiB)` |
+| untrusted initial TCB (upper witness) | `0x10_0000` | untrusted | CNode `0x10_0001`, VSpace `0x10_0002` (ASID 2) |
+
+No capability crosses the boundary between the two domains, which
+`confinedLabelingContext` confines in both directions.  SGIs and PPIs are the
+kernel's and are not delegated.  Both threads are `.Inactive`.
+
+Three boot rules changed to admit it:
+
+- **A configured VSpace root is admitted, and every boot install registers
+  its ASID.**  `createBootObject` is `Builder.createObject` plus the runtime
+  store's ASID registration; `foldObjects` and `installBootVSpaceRoot` are both
+  it.  `bootVSpaceAsidsDistinct` replaced `noVSpaceRootsInInitialObjects`,
+  refusing two roots on one ASID.  A configured root must pass
+  `bootSafeUserVSpaceRootCheck` — a user ASID and no mappings — so the kernel's
+  root is refused as a configured object
+  (`bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot`).
+- **A boot untyped describes only memory it may.**  `untypedPlacementRespected`,
+  `PlatformConfig.wellFormed`'s seventh conjunct, requires every untyped inside
+  a declared region of its own kind, clear of `MachineConfig.kernelReserved`,
+  and disjoint from every other.  It decides the proof bridge's
+  `untypedRegionsDisjoint` (`PlatformConfig.wellFormed_untypedRegionsDisjoint`).
+- **The kernel's reserved extent is `[0, 0x1000_0000)` on the RPi5**, stated
+  as `rpi5KernelReservedEnd`, `link.ld`'s `KERNEL_RESERVED_END` and
+  `mmu::KERNEL_RESERVED_END`, held equal through
+  `tests/fixtures/boot_map.expected`.
+
+Every gate of the checked boot is decided by evaluation
+(`rpi5BoundPlatformConfig_wellFormed` and nine siblings, after
+`irqsUnique_eq_transparent` / `objectIdsUnique_eq_transparent` make the
+duplicate checks kernel-reducible).  Both witnesses are installed
+(`rpi5DeploymentBootState_witnessesInstalled`, through the general
+`bootFromPlatformChecked_ok_objects_of_mem`).  The acceptance is
+`bootAndInitialiseRPi5_rpi5PlatformConfig` and
+`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`: the hardware entry installs
+this deployment and never halts on it.
+
+**Open (BP3.5):** no theorem states the proof-layer invariant bundle of the
+state this boot installs.  The boot invariant bridge covers the unchecked boot
+of a VSpace-free configuration only.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
@@ -6883,9 +6937,10 @@ time.  R3 (with post-landing audit fixes) closes the gap by:
    after boot, mirroring the runtime `storeObject` semantics.
 4. Adding the `bootVSpaceRoot : Option BootVSpaceRootEntry := none`
    field to `PlatformConfig`, plus four runtime gates
-   (`noVSpaceRootsInInitialObjects` — forbids VSpaceRoots in
-   `initialObjects` since `Builder.createObject` doesn't update
-   `asidTable`; `bootVSpaceRootObjIdDistinct` — forbids ObjId
+   (`noVSpaceRootsInInitialObjects` — forbade VSpaceRoots in
+   `initialObjects` since `Builder.createObject` didn't update
+   `asidTable`; retired at WS-BP BP3.2 for `bootVSpaceAsidsDistinct`,
+   when every boot install began registering its ASID, §6.2.8; `bootVSpaceRootObjIdDistinct` — forbids ObjId
    collision with `initialObjects`; `bootVSpaceRootObjIdNonSentinel` —
    forbids the `ObjId.sentinel` value (`⟨0⟩` per Prelude.lean
    H-06/WS-E3); `bootVSpaceRootSafe` — requires the boot root passes

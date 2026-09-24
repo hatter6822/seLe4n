@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1 and BP2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, and the boot map is built from constants with nothing parsed before the MMU is on
+## v0.36.2 — WS-BP BP0, BP1, BP2 and BP3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -571,7 +571,122 @@ not need.  It reads nothing of the blob now.
   inclusion against `tests/fixtures/boot_map.expected`, and covers the L3 slot
   assignment, layout well-formedness and the device-tree window.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6)
+
+**BP3 — the RPi5 deployment the hardware boot installs.**  Register finding 44
+was that there was no `rpi5PlatformConfig`, no root task and no initial
+objects, so the boot seam had nothing to boot.
+`SeLe4n/Platform/RPi5/Deployment.lean` (in the library root) is that
+configuration, and the proof that it boots.
+
+- **The configuration (BP3.1, BP3.2).**  The caller's half of a
+  `PlatformConfig`; `bindPlatformConfig` supplies the binding's boot root and
+  binds the machine configuration from the board account, which is the smallest
+  board's.  There are two domains, as `confinedDeploymentLabeling` declares them,
+  each with one initial thread, its CNode and its own VSpace:
+  - the root task, at the lower witness `2`: CNode `3`, VSpace `4` on ASID 1, an
+    interrupt notification `5`, and untypeds `6` and `7` over
+    `[256 MiB, 512 MiB)` and `[512 MiB, 1 GiB)`;
+  - the untrusted initial thread, at the upper witness `0x10_0000`, with CNode
+    and VSpace (ASID 2) beside it.
+
+  Each CNode names only its own domain's objects, since the labeling forbids a
+  flow either way.  The IRQ table routes every SPI the contract supports (INTIDs
+  32–223) to the root task's notification, badged by INTID.  SGIs (the kernel's
+  inter-processor channel) and PPIs (per-core, the timer among them) are not
+  delegated.  Both threads are `.Inactive`, as the boot requires.
+- **A root task gets an address space of its own — the boot admits a
+  configured VSpace root.**  The checked boot refused *every* VSpace root in
+  `initialObjects` (`noVSpaceRootsInInitialObjects`) because
+  `Builder.createObject` did not register an ASID, so the only VSpace the boot
+  could install was the kernel's EL1-only map.  That refusal stood in for a
+  missing write, and the write is made now:
+  - `createBootObject` is the one install step. It is `createObject` plus the
+    ASID registration the runtime store performs (`bootEntryAsidTable`), and
+    both `foldObjects` and `installBootVSpaceRoot` are it.
+  - The retired gate is replaced at the same cascade position by
+    `bootVSpaceAsidsDistinct`: no two roots the boot installs share an ASID,
+    because a registration is an insert and a collision would re-point the first
+    root's ASID at the second.
+  - A configured root is checked as a *thread's* by
+    `bootSafeUserVSpaceRootCheck`: a user ASID (`1 ≤ asid ≤ maxAsidValue`) and
+    **no mappings**.  A configured mapping would name physical memory no boot
+    check places, the kernel image among it.
+  - `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` and its Prop mirror said the
+    sweep admits the kernel's root. They were true only while the sweep's
+    `.vspaceRoot` arm was dead code. They are replaced by the opposite facts,
+    `bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot` and
+    `not_bootSafeObject_rpi5BootVSpaceRoot`: a configuration cannot hand a
+    thread the kernel's translation map.
+- **A boot untyped describes only memory it may (closes table B's row).**
+  `untypedPlacementRespected` is `PlatformConfig.wellFormed`'s **seventh**
+  conjunct, with its own diagnostic. Every boot untyped must satisfy three
+  conditions:
+  - it lies inside one declared region of its own kind (a normal untyped in
+    `.ram`, a device untyped in `.device`);
+  - it overlaps nothing in the new `MachineConfig.kernelReserved`;
+  - it is disjoint from every other boot untyped.
+
+  The last is the runtime check of the config-level `untypedRegionsDisjoint`
+  that the proof bridge took as a hypothesis nothing on the live path decided
+  (`untypedPlacementRespected_untypedRegionsDisjoint`,
+  `PlatformConfig.wellFormed_untypedRegionsDisjoint`).
+- **The kernel's reserved extent is one number in three places.**
+  `[0, 0x1000_0000)` covers the firmware stub, the image, both stacks, the Lean
+  heap arena and the device-tree window.
+  - The three places are `rpi5KernelReservedEnd` (Lean, carried by every RPi5
+    variant's machine configuration), `link.ld`'s `KERNEL_RESERVED_END` and
+    `mmu::KERNEL_RESERVED_END`.
+  - `tests/Ak9PlatformSuite.lean` writes the Lean value into
+    `tests/fixtures/boot_map.expected` as a `kernelReserved` line.
+  - The HAL's `the_kernel_reserved_extent_is_the_lean_and_linker_one` and
+    `scripts/check_link_script.py` hold the other two to it.
+  - Two new `ASSERT`s refuse an image that outgrows the extent and an extent
+    past the smallest board, and both are proved live by mutation.
+  - `dtb_window_admissible` now requires the device-tree window inside the
+    reserved extent rather than anywhere in the guaranteed gigabyte, so no boot
+    untyped can describe the blob. BP5.3's `config.txt` places it there.
+- **Every gate discharged by evaluation (BP3.3), with no `native_decide`.**
+  - `natKeysNoDup` runs an opaque hash set the kernel cannot reduce, so
+    `irqsUnique_eq_transparent` and `objectIdsUnique_eq_transparent` prove the
+    boot's O(n) duplicate checks equal their transparent O(n²) forms.
+  - After that rewrite, `rpi5BoundPlatformConfig_wellFormed` (all seven
+    conjuncts) and the nine other gates are `decide`.
+  - `rpi5BoundPlatformConfig_checked` pins the checked boot's success arm, and
+    `rpi5BoundPlatformConfig_boot` pins the idle-thread boot's.
+- **Every configured object is in the boot state (new, general).**
+  `bootFromPlatformChecked_ok_objects_of_mem` and its idle-boot sibling are
+  built on `foldObjects_objects_of_mem`, `foldObjects_objects_ne` and
+  `PlatformConfig.wellFormed_objectIds_pairwise`. A deployment's threads, root
+  task and untypeds are therefore read off the configuration rather than
+  evaluated out of the boot.
+- **The witnesses are installed (BP3.4) — the acceptance.**
+  `rpi5DeploymentBootState_witnessesInstalled` shows both threads the labeling
+  separates are TCBs of the boot state, so every refusal arm is unreachable.
+  `bootAndInitialiseRPi5_rpi5PlatformConfig` states that the hardware entry
+  commits the state and the labeling and returns `.ok`.
+  `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig` states that the halting entry
+  the boot seam calls is exactly the two installs and never reaches
+  `ffiFatalHaltAll`. Its proof is `rfl`: `BaseIO` has no `LawfulMonad` instance
+  in this toolchain, but its bind reduces.
+- **Registered, not closed: the production boot state's proof-layer bundle.**
+  `bootFromPlatform_proofLayerInvariantBundle_general` and
+  `bootToRuntime_invariantBridge_general` are stated over the *unchecked*
+  `bootFromPlatform` of a config carrying no VSpace root. The RPi5 boot installs
+  the binding's root (since WS-RC R3) and, since this cut, a thread's, and the
+  checked boot then enqueues idle threads. So no theorem states the twelve-part
+  bundle of the state the hardware boot installs. Recorded as a docstring's
+  "post-R3 hardening item" and registered nowhere, it is registered now
+  (`docs/REGISTERED_DEBT.md` table B) and scheduled as **BP3.5**. That row must
+  land before BP4.1 makes the boot live — the numbering rule's semantic half.
+- **Tests.**
+  - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
+    admitted with its ASID registered, beside the binding's; ASID collisions are
+    refused both between configured roots and against the binding's root, with a
+    distinct-ASID control; a root on ASID 0 or carrying a mapping is refused.
+  - TPH-015g/h/i and `An9HardwareBindingSuite` R3-5 are restated to the inverted
+    per-object fact.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.4)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

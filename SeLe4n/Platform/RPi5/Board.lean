@@ -131,6 +131,29 @@ def rpi5MemoryMap : List SeLe4n.MemoryRegion :=
 -- ARM64 architectural constants
 -- ============================================================================
 
+/-- **WS-BP BP3.2**: the end of the kernel's reserved extent on the RPi5 —
+    `[0, rpi5KernelReservedEnd)` holds the firmware's stub below the image
+    (`_start` is `0x80000`), the image, both stack regions, the Lean heap
+    arena, and the window the image build places the device tree in.
+
+    256 MiB, inside the guaranteed gigabyte.  The same number is `link.ld`'s
+    `KERNEL_RESERVED_END` — whose `ASSERT` refuses an image that outgrows it —
+    and the HAL's `mmu::KERNEL_RESERVED_END`, which refuses a device tree
+    outside it; `tests/Ak9PlatformSuite.lean` writes this constant into
+    `tests/fixtures/boot_map.expected`, and the HAL's test and
+    `scripts/check_link_script.py` read it back, so the three cannot drift. -/
+def rpi5KernelReservedEnd : Nat := 0x1000_0000
+
+/-- **WS-BP BP3.2**: the kernel's reserved extent as a region list — what the
+    boot refuses a boot untyped over (`Boot.untypedClearOfKernel`). -/
+def rpi5KernelReserved : List SeLe4n.MemoryRegion :=
+  [{ base := SeLe4n.PAddr.ofNat 0, size := rpi5KernelReservedEnd, kind := .reserved }]
+
+/-- **WS-BP BP3.2**: the reserved extent lies inside the RAM every Raspberry
+    Pi 5 has — the smallest board's gigabyte. -/
+theorem rpi5KernelReservedEnd_le_guaranteedRam : rpi5KernelReservedEnd ≤ 0x4000_0000 := by
+  decide
+
 /-- ARMv8-A machine configuration for Raspberry Pi 5. -/
 def rpi5MachineConfig : SeLe4n.MachineConfig :=
   {
@@ -146,6 +169,9 @@ def rpi5MachineConfig : SeLe4n.MachineConfig :=
     -- holds the two together, and this is the copy the *live* affinity
     -- transitions read out of `SystemState.machine`.
     declaredCoreCount := 4
+    -- WS-BP BP3.2: the kernel's reserved extent, identical on every variant
+    -- (`rpi5MachineConfigForVariant` keeps it), since it is the image's.
+    kernelReserved := rpi5KernelReserved
   }
 
 -- ============================================================================
@@ -458,6 +484,11 @@ theorem rpi5MachineConfigForVariant_default :
 `bindMachineConfig_declaredCoreCount` obligation is discharged by. -/
 theorem rpi5MachineConfigForVariant_declaredCoreCount (v : BCM2712Config) :
     (rpi5MachineConfigForVariant v).declaredCoreCount = 4 := rfl
+
+/-- **WS-BP BP3.2**: every member reserves the kernel's extent — it is the
+image's, not the board's. -/
+theorem rpi5MachineConfigForVariant_kernelReserved (v : BCM2712Config) :
+    (rpi5MachineConfigForVariant v).kernelReserved = rpi5KernelReserved := rfl
 
 /-- Every member has the BCM2712's physical address width. -/
 theorem rpi5MachineConfigForVariant_physicalAddressWidth (v : BCM2712Config) :

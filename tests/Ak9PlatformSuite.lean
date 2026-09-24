@@ -2154,7 +2154,13 @@ private def bootMapProbes (map : List SeLe4n.MemoryRegion) : List Nat :=
 
 private def bootMapTableLines : List String :=
   "# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)"
-    :: rpi5Variants.flatMap fun v =>
+    -- WS-BP BP3.2: the kernel's reserved extent the bound machine configuration
+    -- carries, as `kernelReserved <base> <end>` — read back by the HAL's
+    -- `the_kernel_reserved_extent_is_the_lean_and_linker_one` and by
+    -- `scripts/check_link_script.py` against `link.ld`'s `KERNEL_RESERVED_END`.
+    :: rpi5MachineConfig.kernelReserved.map (fun r =>
+        s!"kernelReserved {bootMapHex r.base.toNat} {bootMapHex r.endAddr}")
+    ++ rpi5Variants.flatMap fun v =>
       let map := rpi5MemoryMapForConfig v
       let ramTop := (map.filter (·.kind == .ram)).foldl (fun acc r => max acc r.endAddr) 0
       s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"

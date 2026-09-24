@@ -172,6 +172,42 @@ def irqsUnique (irqs : List IrqEntry) : Bool :=
 def objectIdsUnique (objs : List ObjectEntry) : Bool :=
   natKeysNoDup (objs.map (·.id.toNat))
 
+/-- **WS-BP BP3.3**: the hash-set scan answers exactly what the transparent
+    scan answers, from any starting set — the scan is `listAllDistinct` of the
+    keys, and none of them already seen. -/
+private theorem natKeysNoDup_go_eq (keys : List Nat) (seen : Std.HashSet Nat) :
+    natKeysNoDup.go keys seen =
+      (listAllDistinct keys && keys.all (fun k => !seen.contains k)) := by
+  induction keys generalizing seen with
+  | nil => rfl
+  | cons k rest ih =>
+      simp only [natKeysNoDup.go, listAllDistinct, List.all_cons]
+      by_cases h : seen.contains k
+      · simp [h]
+      · simp only [h, Bool.false_eq_true, ↓reduceIte, ih, Std.HashSet.contains_insert]
+        cases hr : rest.contains k <;> simp_all
+        all_goals grind
+
+/-- **WS-BP BP3.3**: the boot's O(n) duplicate check is the transparent O(n²)
+    one.  `natKeysNoDup` is what the boot *runs*; `listAllDistinct` is what a
+    kernel-evaluated proof can reduce, since `Std.HashSet` is opaque to it.  The
+    equation is what lets a concrete configuration's `wellFormed` be decided by
+    evaluation rather than asserted. -/
+private theorem natKeysNoDup_eq_listAllDistinct (keys : List Nat) :
+    natKeysNoDup keys = listAllDistinct keys := by
+  rw [natKeysNoDup, natKeysNoDup_go_eq]
+  simp
+
+/-- **WS-BP BP3.3**: `irqsUnique` is its transparent variant. -/
+theorem irqsUnique_eq_transparent (irqs : List IrqEntry) :
+    irqsUnique irqs = irqsUniqueTransparent irqs :=
+  natKeysNoDup_eq_listAllDistinct _
+
+/-- **WS-BP BP3.3**: `objectIdsUnique` is its transparent variant. -/
+theorem objectIdsUnique_eq_transparent (objs : List ObjectEntry) :
+    objectIdsUnique objs = objectIdsUniqueTransparent objs :=
+  natKeysNoDup_eq_listAllDistinct _
+
 /-- Q3-C: Fold IRQ entries into the builder state.
 
     **U6-E (U-M12) — Duplicate IRQ semantics**: `registerIrq` uses
@@ -183,17 +219,76 @@ def foldIrqs (irqs : List IrqEntry) (ist : IntermediateState)
     : IntermediateState :=
   irqs.foldl (fun acc entry => registerIrq acc entry.irq entry.handler) ist
 
+/-- **WS-BP BP3.2**: the `asidTable` an object's boot install leaves — the
+    table with the object's ASID registered at its id when the object is a
+    VSpace root, and unchanged otherwise.
+
+    The runtime `storeObject` registers a `.vspaceRoot`'s ASID whenever it
+    stores one; `Builder.createObject` does not, which is why the boot used to
+    refuse every VSpace root in `initialObjects` (`noVSpaceRootsInInitialObjects`,
+    retired at BP3.2).  Refusing the object was the wrong remedy for a builder
+    that omitted a write: a root task needs an address space of its own, and
+    the only VSpace the boot could install was the kernel's.  So every boot
+    install of an object — the binding's VSpace root (`installBootVSpaceRoot`)
+    and each configured object (`foldObjects`) — is `createBootObject`, and the
+    boot refuses a configuration whose ASIDs collide (`bootVSpaceAsidsDistinct`),
+    since an insert on a repeated key would re-point the first root's ASID at
+    the second. -/
+def bootEntryAsidTable (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId) (entry : ObjectEntry) :
+    RHTable SeLe4n.ASID SeLe4n.ObjId :=
+  match entry.obj with
+  | .vspaceRoot vsr => tbl.insert vsr.asid entry.id
+  | _ => tbl
+
+/-- **WS-BP BP3.2**: the ASID registration keeps the table's extension
+    invariant. -/
+theorem bootEntryAsidTable_invExtK (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId)
+    (entry : ObjectEntry) (h : tbl.invExtK) : (bootEntryAsidTable tbl entry).invExtK := by
+  unfold bootEntryAsidTable
+  split
+  · exact RHTable.insert_preserves_invExtK _ _ _ h
+  · exact h
+
+/-- **WS-BP BP3.2**: install one configured object — `Builder.createObject`,
+    and for a VSpace root the ASID registration the runtime store performs
+    (`bootEntryAsidTable`).  The one step `foldObjects` takes per entry and the
+    whole of `installBootVSpaceRoot`, so every object the boot installs is
+    installed the way the kernel stores one. -/
+def createBootObject (ist : IntermediateState) (entry : ObjectEntry) : IntermediateState :=
+  let created := createObject ist entry.id entry.obj entry.hSlots entry.hMappings
+  { state := { created.state with
+      asidTable := bootEntryAsidTable created.state.asidTable entry }
+    hAllTables := by
+      have h := created.hAllTables
+      unfold SystemState.allTablesInvExtK at h ⊢
+      refine ⟨h.1, h.2.1,
+              bootEntryAsidTable_invExtK _ _ h.2.2.1,
+              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
+              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
+    hPerObjectSlots := fun oid cn hLookup => created.hPerObjectSlots oid cn hLookup
+    hPerObjectMappings := fun oid vs hLookup => created.hPerObjectMappings oid vs hLookup
+    hLifecycleConsistent := created.hLifecycleConsistent }
+
 /-- Q3-C: Fold initial objects into the builder state.
 
     **U6-F (U-M13) — Duplicate object ID semantics**: `createObject` uses
     `RHTable.insert` which implements last-wins on duplicate keys. If the same
     ObjId appears multiple times in `objs`, only the final object is retained
     and earlier objects are silently lost. Use `objectIdsUnique` to validate
-    before folding to prevent silent object loss. -/
+    before folding to prevent silent object loss.
+
+    **WS-BP BP3.2**: each entry is installed by `createBootObject`, so a
+    configured VSpace root has its ASID registered as the runtime store would
+    register it. -/
 def foldObjects (objs : List ObjectEntry) (ist : IntermediateState)
     : IntermediateState :=
-  objs.foldl (fun acc entry =>
-    createObject acc entry.id entry.obj entry.hSlots entry.hMappings) ist
+  objs.foldl createBootObject ist
 
 -- ============================================================================
 -- X2-D: Post-boot machine configuration
@@ -527,32 +622,10 @@ def installBootVSpaceRoot (ist : IntermediateState)
     (id : SeLe4n.ObjId) (vsr : VSpaceRoot)
     (hMappings : vsr.mappings.invExt)
     : IntermediateState :=
-  let withObj : IntermediateState :=
-    Builder.createObject ist id (KernelObject.vspaceRoot vsr)
-      (fun _ hEq => by cases hEq)
-      (fun vs hEq => by cases hEq; exact hMappings)
-  { state := { withObj.state with
-      asidTable := withObj.state.asidTable.insert vsr.asid id }
-    hAllTables := by
-      have h := withObj.hAllTables
-      unfold SystemState.allTablesInvExtK at h ⊢
-      refine ⟨h.1, h.2.1,
-              RHTable.insert_preserves_invExtK _ _ _ h.2.2.1,
-              h.2.2.2.1, h.2.2.2.2.1, h.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.1, h.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.1,
-              h.2.2.2.2.2.2.2.2.2.2.2.2.2.2.2⟩
-    hPerObjectSlots := by
-      intro oid cn hLookup
-      exact withObj.hPerObjectSlots oid cn hLookup
-    hPerObjectMappings := by
-      intro oid vs hLookup
-      exact withObj.hPerObjectMappings oid vs hLookup
-    hLifecycleConsistent := withObj.hLifecycleConsistent }
+  createBootObject ist
+    { id := id, obj := KernelObject.vspaceRoot vsr
+      hSlots := fun _ hEq => by cases hEq
+      hMappings := fun vs hEq => by cases hEq; exact hMappings }
 
 /-- **WS-RC R3**: `installBootVSpaceRoot` registers `vsr` in the object
     store at `id`.  Witnesses the post-state object-store entry for
@@ -1124,15 +1197,140 @@ def declaredCoreCountInRange (config : PlatformConfig) : Bool :=
   0 < config.machineConfig.declaredCoreCount &&
     config.machineConfig.declaredCoreCount ≤ SeLe4n.Kernel.Concurrency.numCores
 
+/-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
+boot configs. For any two distinct `.untyped` entries in `initialObjects`
+where **neither is a direct child of the other**, their physical ranges
+must not overlap.
+
+The `children` side-conditions mirror the runtime
+`Kernel.untypedRegionsDisjoint` invariant so a config-level witness
+transports cleanly to the runtime post-state. At boot, configurations
+typically list only top-level untypeds (no `children`), so the
+side-conditions are vacuous and this reduces to pairwise region
+disjointness across the whole untyped set — the case the audit §C-M01
+finding was motivating.
+
+This mirrors the existing `mmioRegionDisjointCheck` pattern (which validates
+MMIO region disjointness at boot) and is the config-level precondition that
+discharges the runtime `Kernel.untypedRegionsDisjoint` invariant. -/
+def PlatformConfig.untypedRegionsDisjoint (config : PlatformConfig) : Prop :=
+  ∀ (e₁ e₂ : ObjectEntry) (ut₁ ut₂ : UntypedObject),
+    e₁ ∈ config.initialObjects →
+    e₂ ∈ config.initialObjects →
+    e₁.id ≠ e₂.id →
+    e₁.obj = .untyped ut₁ →
+    e₂.obj = .untyped ut₂ →
+    (∀ c ∈ ut₁.children, c.objId ≠ e₂.id) →
+    (∀ c ∈ ut₂.children, c.objId ≠ e₁.id) →
+    ut₁.regionBase.val + ut₁.regionSize ≤ ut₂.regionBase.val ∨
+    ut₂.regionBase.val + ut₂.regionSize ≤ ut₁.regionBase.val
+
+/-- AK8-A: Empty config trivially satisfies `untypedRegionsDisjoint`. -/
+theorem PlatformConfig.untypedRegionsDisjoint_empty :
+    PlatformConfig.untypedRegionsDisjoint { irqTable := [], initialObjects := [] } := by
+  intro _ _ _ _ hMem _ _ _ _ _ _; exact absurd hMem (by simp)
+
+/-- **WS-BP BP3.2**: the kind of memory an untyped of this flavour may
+    describe — device memory for a device untyped, RAM otherwise. -/
+def untypedRegionKind (ut : UntypedObject) : MemoryKind :=
+  if ut.isDevice then .device else .ram
+
+/-- **WS-BP BP3.2**: the untyped lies inside one region the machine declares,
+    of its own kind. -/
+def untypedWithinDeclaredRegion (mc : MachineConfig) (ut : UntypedObject) : Bool :=
+  mc.memoryMap.any (fun r =>
+    r.kind == untypedRegionKind ut &&
+      decide (r.base.toNat ≤ ut.regionBase.toNat) &&
+      decide (ut.regionBase.toNat + ut.regionSize ≤ r.endAddr))
+
+/-- **WS-BP BP3.2**: the untyped overlaps nothing the kernel keeps for
+    itself (`MachineConfig.kernelReserved`). -/
+def untypedClearOfKernel (mc : MachineConfig) (ut : UntypedObject) : Bool :=
+  mc.kernelReserved.all (fun k =>
+    decide (ut.regionBase.toNat + ut.regionSize ≤ k.base.toNat) ||
+      decide (k.endAddr ≤ ut.regionBase.toNat))
+
+/-- **WS-BP BP3.2**: two entries do not describe overlapping untyped memory —
+    vacuous unless both are untypeds, and for one entry compared with
+    itself. -/
+def untypedEntriesDisjoint (e₁ e₂ : ObjectEntry) : Bool :=
+  match e₁.obj, e₂.obj with
+  | .untyped u₁, .untyped u₂ =>
+      e₁.id == e₂.id ||
+        decide (u₁.regionBase.val + u₁.regionSize ≤ u₂.regionBase.val) ||
+        decide (u₂.regionBase.val + u₂.regionSize ≤ u₁.regionBase.val)
+  | _, _ => true
+
+/-- **WS-BP BP3.2**: the seventh `wellFormed` conjunct — **a boot untyped
+    describes only memory it may.**
+
+    An untyped is authority over physical memory: its holder retypes it into
+    frames, page tables and kernel objects.  `bootSafeUntypedCheck` accepts
+    every region by design, and before this conjunct nothing else read an
+    untyped's extent, so a configuration could hand the root task an untyped
+    over the kernel's own image, a normal untyped over the GIC's registers, one
+    over RAM the board does not have, or two untypeds over one range — each a
+    route to memory the kernel never meant to give out.  seL4's boot derives
+    the root task's untypeds from free memory with the kernel image removed;
+    this kernel takes them from the integrator's configuration, so it refuses
+    the configurations seL4's derivation cannot produce.  Three conditions:
+
+    * **inside one declared region of its own kind** — a normal untyped in
+      `.ram`, a device untyped in `.device` (`untypedWithinDeclaredRegion`);
+    * **clear of the kernel's reserved extent** (`untypedClearOfKernel`, over
+      the bound machine configuration's `kernelReserved`);
+    * **disjoint from every other boot untyped** (`untypedEntriesDisjoint`) —
+      the runtime check of the config-level `untypedRegionsDisjoint` the proof
+      bridge takes as a hypothesis, which nothing on the live path decided
+      before (`untypedPlacementRespected_untypedRegionsDisjoint`).
+
+    Registered at `v0.36.2` in `docs/REGISTERED_DEBT.md` table B and closed
+    here.  Not attacker-reachable — untypeds come only from the integrator's
+    compiled configuration — so it closes a misconfiguration class and a model
+    gap against seL4, not an exploit. -/
+def untypedPlacementRespected (config : PlatformConfig) : Bool :=
+  config.initialObjects.all (fun e =>
+    match e.obj with
+    | .untyped ut =>
+        untypedWithinDeclaredRegion config.machineConfig ut &&
+          untypedClearOfKernel config.machineConfig ut
+    | _ => true) &&
+  config.initialObjects.all (fun e₁ =>
+    config.initialObjects.all (fun e₂ => untypedEntriesDisjoint e₁ e₂))
+
+/-- The seventh conjunct's diagnostic. -/
+def untypedPlacementBootError : String :=
+  "boot: an untyped lies outside every declared region of its kind, overlaps the " ++
+    "kernel's reserved extent, or overlaps another boot untyped (WS-BP BP3.2)"
+
+/-- **WS-BP BP3.2**: the runtime conjunct decides the config-level
+    disjointness the proof bridge takes as a hypothesis — strictly more, since
+    it ignores the `children` carve-out the Prop grants a parent and its direct
+    child (a boot untyped has no children to carve). -/
+theorem untypedPlacementRespected_untypedRegionsDisjoint (config : PlatformConfig)
+    (h : untypedPlacementRespected config = true) : config.untypedRegionsDisjoint := by
+  intro e₁ e₂ u₁ u₂ h₁ h₂ hNe hO₁ hO₂ _ _
+  simp only [untypedPlacementRespected, Bool.and_eq_true, List.all_eq_true] at h
+  have hPair := h.2 e₁ h₁ e₂ h₂
+  simp only [untypedEntriesDisjoint, hO₁, hO₂, Bool.or_eq_true, beq_iff_eq,
+    decide_eq_true_eq] at hPair
+  rcases hPair with (hId | hLe) | hLe
+  · exact absurd hId hNe
+  · exact Or.inl hLe
+  · exact Or.inr hLe
+
 /-- U6-E/F: A well-formed PlatformConfig has unique IRQs, unique object IDs,
     (WS-RR RR5.13, PR #889 review) keeps the per-core idle slots free,
     (PR #889 review rounds 7 and 8) stores every TCB, SchedContext and Reply
-    under its own id, and (round 18) leaves object-index room for the boot
-    root and the per-core idle threads. -/
+    under its own id, (round 18) leaves object-index room for the boot
+    root and the per-core idle threads, (round 23) declares between one and
+    `numCores` PEs, and (WS-BP BP3.2) places every boot untyped over memory it
+    may describe. -/
 def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
   irqsUnique config.irqTable && objectIdsUnique config.initialObjects &&
     idleSlotsReserved config && embeddedIdentitiesMatchSlots config &&
-    objectBudgetRespected config && declaredCoreCountInRange config
+    objectBudgetRespected config && declaredCoreCountInRange config &&
+    untypedPlacementRespected config
 
 /-- **PR #889 review round 23**: a well-formed config declares at least one PE
     and no more than the model has.  Zero is what this refuses: the derivation
@@ -1141,6 +1339,19 @@ def PlatformConfig.wellFormed (config : PlatformConfig) : Bool :=
 theorem PlatformConfig.wellFormed_declaredCoreCountInRange (config : PlatformConfig)
     (h : config.wellFormed = true) : declaredCoreCountInRange config = true := by
   simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-BP BP3.2**: a well-formed config places every boot untyped over
+    memory it may describe. -/
+theorem PlatformConfig.wellFormed_untypedPlacementRespected (config : PlatformConfig)
+    (h : config.wellFormed = true) : untypedPlacementRespected config = true := by
+  simp_all only [PlatformConfig.wellFormed, Bool.and_eq_true]
+
+/-- **WS-BP BP3.2**: ...so a well-formed config discharges the proof bridge's
+    untyped-disjointness hypothesis. -/
+theorem PlatformConfig.wellFormed_untypedRegionsDisjoint (config : PlatformConfig)
+    (h : config.wellFormed = true) : config.untypedRegionsDisjoint :=
+  untypedPlacementRespected_untypedRegionsDisjoint config
+    (config.wellFormed_untypedPlacementRespected h)
 
 /-- PR #889 review round 18: a well-formed config leaves room for the boot
     root and the idle threads. -/
@@ -1165,7 +1376,8 @@ def wellFormedConjuncts (config : PlatformConfig) : List (Bool × String) :=
    (idleSlotsReserved config, idleSlotReservationBootError),
    (embeddedIdentitiesMatchSlots config, embeddedIdentityBootError),
    (objectBudgetRespected config, objectBudgetBootError),
-   (declaredCoreCountInRange config, declaredCoreCountBootError)]
+   (declaredCoreCountInRange config, declaredCoreCountBootError),
+   (untypedPlacementRespected config, untypedPlacementBootError)]
 
 /-- The first conjunct `config` fails, reported in its own words. -/
 def wellFormedDiagnostic (config : PlatformConfig) : String :=
@@ -1531,7 +1743,15 @@ def bootSafeReplyCheck (r : Reply) : Bool :=
     the third-audit hardening — every virtual address is canonical
     (< 2^48)).  Previously the boot path rejected ALL VSpaceRoots,
     rendering the proven-W^X-compliant `rpi5BootVSpaceRoot` data
-    structure inert at runtime. -/
+    structure inert at runtime.
+
+    **WS-BP BP3.2**: a VSpace root in `initialObjects` is a *thread's* address
+    space, not the binding's, so it is checked by
+    `bootSafeUserVSpaceRootCheck` — a user ASID and no mappings — while the
+    binding's root keeps `bootSafeVSpaceRootCheck` (`bootVSpaceRootSafe`).  The
+    arm used to name the kernel root's check, and was dead: the retired
+    `noVSpaceRootsInInitialObjects` gate refused every configured VSpace root
+    before the arm could admit one. -/
 def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   match obj with
   | .endpoint ep => bootSafeEndpointCheck ep
@@ -1539,7 +1759,7 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   | .cnode cn => bootSafeCnodeCheck cn
   | .tcb tcb => bootSafeTcbCheck tcb
   | .vspaceRoot vsr =>
-    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck vsr
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRootCheck vsr
   | .untyped ut => bootSafeUntypedCheck ut
   | .schedContext sc => bootSafeSchedContextCheck sc
   | .reply r => bootSafeReplyCheck r
@@ -1573,9 +1793,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
       tcb.replyObject = none ∧
       tcb.pendingReceiveReply = none ∧
       tcb.threadState = .Inactive) ∧
-    -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
+    -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
+    -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
     (∀ vs, obj = .vspaceRoot vs →
-      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
+      SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
     -- SchedContexts: well-formed, unbound, and (WS-OD OD2.1) with an empty
     -- reply stack
     (∀ sc, obj = .schedContext sc →
@@ -1622,10 +1843,10 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he⟩
   | vspaceRoot vsr =>
-    -- WS-RC R3: bootSafeObjectCheck for VSpaceRoot reduces to
-    -- `bootSafeVSpaceRootCheck vsr = true`, which is iff `bootSafeVSpaceRoot vsr`.
+    -- WS-BP BP3.2: bootSafeObjectCheck for VSpaceRoot reduces to
+    -- `bootSafeUserVSpaceRootCheck vsr = true`, iff `bootSafeUserVSpaceRoot vsr`.
     simp only [bootSafeObjectCheck] at h
-    have hBoot := (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck_iff vsr).mp h
+    have hBoot := (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRootCheck_iff vsr).mp h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he,
            fun v hv => by injection hv; subst_vars; exact hBoot,
@@ -1666,30 +1887,23 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
 -- WS-RC R3 (DEEP-BOOT-01) — Boot-safety admission witness theorems
 -- ============================================================================
 
-/-- **WS-RC R3 (DEEP-BOOT-01)**: The canonical RPi5 boot VSpaceRoot
-    passes the runtime-decidable `bootSafeObjectCheck`.  Direct
-    consequence of `rpi5BootVSpaceRoot_bootSafeCheck` via the matching
-    `.vspaceRoot` arm of `bootSafeObjectCheck`.
+/-- **WS-BP BP3.2**: the object sweep **refuses** the kernel's own boot root
+    as a configured object — its ASID is the kernel's, and it maps the kernel.
 
-    This theorem witnesses at the boot-pipeline layer the connection
-    between the proven-W^X-compliant boot VSpaceRoot data structure
-    (`Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot`) and its admission
-    into the boot path's runtime check.  Previously the
-    `.vspaceRoot _ => false` arm of `bootSafeObjectCheck` rendered the
-    structure inert; per the implement-the-improvement rule, the
-    verified structure is the better state and the boot path now
-    consumes it. -/
-theorem bootSafeObjectCheck_admits_rpi5BootVSpaceRoot :
+    This replaces `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` (WS-RC R3),
+    which stated the opposite and was true only while the sweep's `.vspaceRoot`
+    arm was dead code behind a gate refusing every configured VSpace root.  With
+    that gate retired the arm is live and asks the *thread's* question
+    (`bootSafeUserVSpaceRootCheck`); the binding's root is checked where it is
+    installed (`bootVSpaceRootSafe`).  The refusal is the point: a
+    configuration cannot hand a thread the kernel's translation map. -/
+theorem bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot :
     bootSafeObjectCheck
         (KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot) =
-      true := by
+      false := by
   unfold bootSafeObjectCheck
-  exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafeCheck
+  exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_not_bootSafeUser
 
--- The Prop-level mirror `bootSafeObject_admits_rpi5BootVSpaceRoot`
--- lives further down the file, immediately after the `bootSafeObject`
--- definition (which is itself defined later in this module — see
--- the V4-A4 section).
 
 -- ============================================================================
 -- AK9-C (P-M01): IRQ Handler Existence Validation
@@ -1765,36 +1979,63 @@ theorem bootVSpaceRootSafe_none
     bootVSpaceRootSafe config = true := by
   unfold bootVSpaceRootSafe; rw [h]
 
-/-- **WS-RC R3 (DEEP-BOOT-01) — security/correctness audit fix**: gate
-    forbidding VSpaceRoot kernel objects in `initialObjects`.
-
-    **Why this gate exists.**  R3.1 admits boot-safe VSpaceRoots into the
-    `bootSafeObjectCheck` predicate so the proven-W^X-compliant boot
-    root can be witnessed at the boot-pipeline layer.  However,
-    `Builder.createObject` (the function that processes
-    `initialObjects` entries) does NOT update `asidTable`, while the
-    runtime `storeObject` semantics for `.vspaceRoot` inserts DO
-    update `asidTable`.  If a config placed a VSpaceRoot in
-    `initialObjects`, the post-state would have an entry in `objects`
-    with no corresponding entry in `asidTable`, violating the
-    runtime `asidTableConsistent` invariant.  The dedicated
-    `bootVSpaceRoot` field + `installBootVSpaceRoot` builder operation
-    is the ONLY path that maintains the asidTable/objects
-    correspondence at boot.
-
-    Returns `true` iff no entry in `initialObjects` is a VSpaceRoot
-    kernel object. -/
-def noVSpaceRootsInInitialObjects (config : PlatformConfig) : Bool :=
-  ! config.initialObjects.any (fun entry =>
+/-- **WS-BP BP3.2**: the ASID of every VSpace root the checked boot installs —
+    each configured root's (`initialObjects`, in order) and then the binding's
+    (`bootVSpaceRoot`). -/
+def bootVSpaceAsids (config : PlatformConfig) : List SeLe4n.ASID :=
+  config.initialObjects.filterMap (fun entry =>
     match entry.obj with
-    | .vspaceRoot _ => true
-    | _ => false)
+    | .vspaceRoot vsr => some vsr.asid
+    | _ => none) ++
+  (match config.bootVSpaceRoot with
+   | none => []
+   | some entry => [entry.root.asid])
 
-/-- **WS-RC R3**: Empty initialObjects trivially has no VSpaceRoots. -/
-theorem noVSpaceRootsInInitialObjects_empty (config : PlatformConfig)
+/-- **WS-BP BP3.2**: no two VSpace roots the boot installs share an ASID.
+
+    Every boot install of a VSpace root registers its ASID
+    (`createBootObject`), and a registration is an `RHTable.insert`: on a
+    repeated key it re-points the ASID at the later root, so the earlier root
+    would sit in the object store unreachable by `resolveAsidRoot` and a TLB
+    tagged with its ASID would be read as the other's.  The runtime refuses a
+    second root on a live ASID (the ASID manager allocates), and this is the
+    boot's refusal of the same thing.
+
+    **What it replaced.**  `noVSpaceRootsInInitialObjects` (WS-RC R3) refused
+    *every* configured VSpace root, because `Builder.createObject` did not
+    register an ASID and a root installed without one violates
+    `asidTableConsistent`.  That was a refusal standing in for a missing write:
+    with the write made (`bootEntryAsidTable`), the one remaining way a
+    configured root can break the table is a collision, which is what this
+    refuses.  A tombstone for the retired gate: the thread's own root is checked
+    by `bootSafeUserVSpaceRootCheck` in the object sweep, the binding's by
+    `bootVSpaceRootSafe`. -/
+def bootVSpaceAsidsDistinct (config : PlatformConfig) : Bool :=
+  decide (bootVSpaceAsids config).Nodup
+
+/-- **WS-BP BP3.2**: a configuration installing no VSpace root but the
+    binding's passes the ASID gate. -/
+theorem bootVSpaceAsidsDistinct_of_no_configured_roots (config : PlatformConfig)
+    (h : ∀ e ∈ config.initialObjects, ∀ vs, e.obj ≠ KernelObject.vspaceRoot vs) :
+    bootVSpaceAsidsDistinct config = true := by
+  have hNil : config.initialObjects.filterMap (fun entry =>
+      match entry.obj with
+      | .vspaceRoot vsr => some vsr.asid
+      | _ => none) = [] := by
+    rw [List.filterMap_eq_nil_iff]
+    intro e hMem
+    cases hObj : e.obj with
+    | vspaceRoot vs => exact absurd hObj (h e hMem vs)
+    | _ => rfl
+  unfold bootVSpaceAsidsDistinct bootVSpaceAsids
+  rw [hNil]
+  cases config.bootVSpaceRoot <;> simp
+
+/-- **WS-BP BP3.2**: an empty configuration passes the ASID gate. -/
+theorem bootVSpaceAsidsDistinct_empty (config : PlatformConfig)
     (h : config.initialObjects = []) :
-    noVSpaceRootsInInitialObjects config = true := by
-  unfold noVSpaceRootsInInitialObjects; rw [h]; rfl
+    bootVSpaceAsidsDistinct config = true :=
+  bootVSpaceAsidsDistinct_of_no_configured_roots config (by simp [h])
 
 /-- **WS-RC R3 — security/correctness audit fix**: gate forbidding the
     boot VSpaceRoot ObjId from being the reserved `ObjId.sentinel`
@@ -1843,15 +2084,11 @@ def bootFromPlatformChecked (config : PlatformConfig) :
     Except String IntermediateState :=
   if config.wellFormed then
     if config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) then
-      -- WS-RC R3 (DEEP-BOOT-01) — audit fix: forbid VSpaceRoot
-      -- kernel objects in `initialObjects`.  The dedicated
-      -- `bootVSpaceRoot` field + `installBootVSpaceRoot` is the ONLY
-      -- path that maintains the asidTable/objects correspondence at
-      -- boot (Builder.createObject does NOT update asidTable, but
-      -- the runtime semantics for `.vspaceRoot` inserts do — letting
-      -- VSpaceRoots flow through `initialObjects` would create an
-      -- inconsistency).
-      if noVSpaceRootsInInitialObjects config then
+      -- WS-BP BP3.2: every VSpace root the boot installs registers its
+      -- ASID (`createBootObject`), so the one way a configured root can
+      -- break the ASID table is a collision — refused here.  This gate
+      -- replaced WS-RC R3's refusal of every configured VSpace root.
+      if bootVSpaceAsidsDistinct config then
         -- AK9-C (P-M01): Validate that every IRQ handler ObjId references a
         -- notification object in the config. This is verified as a final step
         -- after the per-object bootSafe check so the error message identifies
@@ -1909,7 +2146,7 @@ def bootFromPlatformChecked (config : PlatformConfig) :
         else
           .error "boot: IRQ handler does not reference a notification object in initialObjects (AK9-C)"
       else
-        .error "boot: VSpaceRoot kernel object found in initialObjects — boot VSpaceRoots must use the dedicated PlatformConfig.bootVSpaceRoot field so asidTable consistency is maintained (WS-RC R3 / DEEP-BOOT-01 audit fix)"
+        .error "boot: two VSpace roots the boot installs share an ASID (WS-BP BP3.2)"
     else
       .error "boot: object fails bootSafe check (invalid state for boot)"
   else
@@ -1943,7 +2180,7 @@ def bootFromPlatformChecked (config : PlatformConfig) :
 theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
-    (hNoVSpaceObj : noVSpaceRootsInInitialObjects config = true)
+    (hAsids : bootVSpaceAsidsDistinct config = true)
     (hIrq : irqHandlersReferenceNotifications config = true)
     (hMc : config.machineConfig.wellFormed = true)
     (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
@@ -1956,7 +2193,7 @@ theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
     bootVSpaceRootObjIdNonSentinel_none config hNoBootVSpace
   have hSafeBVR : bootVSpaceRootSafe config = true :=
     bootVSpaceRootSafe_none config hNoBootVSpace
-  simp [bootFromPlatformChecked, hWf, hSafe, hNoVSpaceObj, hIrq, hMc, hPa,
+  simp [bootFromPlatformChecked, hWf, hSafe, hAsids, hIrq, hMc, hPa,
         hDistinct, hNonSentinel, hSafeBVR, hNoBootVSpace]
 
 /-- **WS-RC R3 (DEEP-BOOT-01)**: Checked boot with a boot VSpaceRoot
@@ -1971,7 +2208,7 @@ theorem bootFromPlatformChecked_eq_bootFromPlatform (config : PlatformConfig)
 theorem bootFromPlatformChecked_admits_bootVSpace (config : PlatformConfig)
     (hWf : config.wellFormed = true)
     (hSafe : config.initialObjects.all (fun entry => bootSafeObjectCheck entry.obj) = true)
-    (hNoVSpaceObj : noVSpaceRootsInInitialObjects config = true)
+    (hAsids : bootVSpaceAsidsDistinct config = true)
     (hIrq : irqHandlersReferenceNotifications config = true)
     (hMc : config.machineConfig.wellFormed = true)
     (hPa : config.machineConfig.physicalAddressWidth ≤ 52)
@@ -1984,14 +2221,14 @@ theorem bootFromPlatformChecked_admits_bootVSpace (config : PlatformConfig)
       .ok (bootEnableInterruptsOp
         (installBootVSpaceRoot (bootFromPlatform config)
           entry.id entry.root entry.hMappings)) := by
-  simp [bootFromPlatformChecked, hWf, hSafe, hNoVSpaceObj, hIrq, hMc, hPa,
+  simp [bootFromPlatformChecked, hWf, hSafe, hAsids, hIrq, hMc, hPa,
         hDistinct, hNonSentinel, hSafeBVR, hEntry]
 
 /-- AK9-C: Successful checked boot implies IRQ handlers reference notifications.
     If `bootFromPlatformChecked` returns `.ok`, the `irqHandlersReferenceNotifications`
     predicate was true — a key witness for downstream interrupt dispatch proofs.
 
-    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    WS-RC R3 audit fix: traverse the ASID gate (`bootVSpaceAsidsDistinct`, WS-BP BP3.2)
     gate that precedes `irqHandlersReferenceNotifications`. -/
 theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformConfig)
     (ist : IntermediateState)
@@ -2010,7 +2247,7 @@ theorem bootFromPlatformChecked_ok_implies_irqHandlersValid (config : PlatformCo
 
 /-- AK9-F (P-M05): Successful checked boot implies `MachineConfig.wellFormed`.
 
-    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    WS-RC R3 audit fix: traverse the ASID gate (`bootVSpaceAsidsDistinct`, WS-BP BP3.2)
     gate that precedes `machineConfig.wellFormed`. -/
 theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
     (config : PlatformConfig) (ist : IntermediateState)
@@ -2036,7 +2273,7 @@ theorem bootFromPlatformChecked_ok_implies_machineConfigWellFormed
 
 /-- AK9-F (P-M05): Successful checked boot implies `physicalAddressWidth ≤ 52`.
 
-    WS-RC R3 audit fix: traverse the new `noVSpaceRootsInInitialObjects`
+    WS-RC R3 audit fix: traverse the ASID gate (`bootVSpaceAsidsDistinct`, WS-BP BP3.2)
     gate that precedes `physicalAddressWidth`. -/
 theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
     (config : PlatformConfig) (ist : IntermediateState)
@@ -2061,7 +2298,7 @@ theorem bootFromPlatformChecked_ok_implies_physicalAddressWidth_bound
     enabled. Matches the post-HAL hardware state.
 
     WS-RC R3: Updated to traverse the four new boot-VSpace gates
-    (`noVSpaceRootsInInitialObjects`, `bootVSpaceRootObjIdDistinct`,
+    (`bootVSpaceAsidsDistinct`, `bootVSpaceRootObjIdDistinct`,
     `bootVSpaceRootObjIdNonSentinel`, `bootVSpaceRootSafe`) and the
     inner `match` on `config.bootVSpaceRoot`. -/
 theorem bootFromPlatformChecked_ok_interruptsEnabled (config : PlatformConfig)
@@ -2419,6 +2656,47 @@ or satisfy the boot preconditions.
 @[simp] private theorem createObject_objects (ist : IntermediateState) id obj hS hM :
     (createObject ist id obj hS hM).state.objects = ist.state.objects.insert id obj := rfl
 
+-- Step 2b (WS-BP BP3.2): per-field preservation for `createBootObject` — every
+-- field but `asidTable` is `createObject`'s, and that one is `bootEntryAsidTable`.
+@[simp] private theorem createBootObject_scheduler (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.scheduler = ist.state.scheduler := rfl
+@[simp] private theorem createBootObject_cdt (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.cdt = ist.state.cdt := rfl
+@[simp] private theorem createBootObject_services (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.services = ist.state.services := rfl
+@[simp] private theorem createBootObject_serviceRegistry (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.serviceRegistry = ist.state.serviceRegistry := rfl
+@[simp] private theorem createBootObject_interfaceRegistry (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.interfaceRegistry = ist.state.interfaceRegistry := rfl
+@[simp] private theorem createBootObject_tlb (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.tlb = ist.state.tlb := rfl
+@[simp] private theorem createBootObject_machine (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.machine = ist.state.machine := rfl
+@[simp] private theorem createBootObject_irqHandlers (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.irqHandlers = ist.state.irqHandlers := rfl
+@[simp] private theorem createBootObject_cdtNodeSlot (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.cdtNodeSlot = ist.state.cdtNodeSlot := rfl
+@[simp] private theorem createBootObject_tlbShootdown (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.tlbShootdown = ist.state.tlbShootdown := rfl
+@[simp] private theorem createBootObject_perCoreTlb (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.perCoreTlb = ist.state.perCoreTlb := rfl
+@[simp] private theorem createBootObject_perCoreICache (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.perCoreICache = ist.state.perCoreICache := rfl
+@[simp] private theorem createBootObject_pendingIcacheMaintenance (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.pendingIcacheMaintenance = ist.state.pendingIcacheMaintenance := rfl
+@[simp] private theorem createBootObject_declassificationAuditLog (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.declassificationAuditLog = ist.state.declassificationAuditLog := rfl
+@[simp] private theorem createBootObject_declassificationAuditEpoch (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.declassificationAuditEpoch = ist.state.declassificationAuditEpoch := rfl
+@[simp] private theorem createBootObject_declassificationRefusals (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.declassificationRefusals = ist.state.declassificationRefusals := rfl
+@[simp] private theorem createBootObject_declassificationTaint (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.declassificationTaint = ist.state.declassificationTaint := rfl
+@[simp] private theorem createBootObject_objects (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.objects = ist.state.objects.insert e.id e.obj := rfl
+@[simp] private theorem createBootObject_asidTable (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.asidTable = bootEntryAsidTable ist.state.asidTable e := rfl
+
 -- Step 3: Fold-level field preservation (foldIrqs)
 private theorem foldIrqs_scheduler (irqs : List IrqEntry) (ist : IntermediateState) :
     (foldIrqs irqs ist).state.scheduler = ist.state.scheduler := by
@@ -2587,11 +2865,24 @@ private theorem foldObjects_interfaceRegistry (objs : List ObjectEntry) (ist : I
   | nil => rfl
   | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
 
-private theorem foldObjects_asidTable (objs : List ObjectEntry) (ist : IntermediateState) :
+/-- **WS-BP BP3.2**: the fold leaves `asidTable` alone when it installs no
+    VSpace root — which is the only case the proof-layer bridge below covers
+    (`bootFromPlatform_proofLayerInvariantBundle_general`'s
+    `hNoVSpaceInInitial`). -/
+private theorem foldObjects_asidTable (objs : List ObjectEntry) (ist : IntermediateState)
+    (hNoVSpace : ∀ e ∈ objs, ∀ vs, e.obj ≠ KernelObject.vspaceRoot vs) :
     (foldObjects objs ist).state.asidTable = ist.state.asidTable := by
   induction objs generalizing ist with
   | nil => rfl
-  | cons _ _ ih => simp [foldObjects, List.foldl] at ih ⊢; exact ih _
+  | cons e rest ih =>
+      have hStep : (createBootObject ist e).state.asidTable = ist.state.asidTable := by
+        rw [createBootObject_asidTable]; unfold bootEntryAsidTable
+        split
+        · rename_i vs hObj
+          exact absurd hObj (hNoVSpace e (List.mem_cons_self ..) vs)
+        · rfl
+      show (foldObjects rest (createBootObject ist e)).state.asidTable = _
+      rw [ih _ (fun e' h => hNoVSpace e' (List.mem_cons_of_mem _ h)), hStep]
 
 private theorem foldObjects_tlb (objs : List ObjectEntry) (ist : IntermediateState) :
     (foldObjects objs ist).state.tlb = ist.state.tlb := by
@@ -3821,6 +4112,12 @@ theorem createObject_objectIndex_length_le (ist : IntermediateState)
   · simp [h]
   · simp [h]
 
+/-- **WS-BP BP3.2**: a boot install adds at most one index entry — the ASID
+    registration writes `asidTable` only. -/
+theorem createBootObject_objectIndex_length_le (ist : IntermediateState) (e : ObjectEntry) :
+    (createBootObject ist e).state.objectIndex.length ≤ ist.state.objectIndex.length + 1 :=
+  createObject_objectIndex_length_le ist e.id e.obj e.hSlots e.hMappings
+
 /-- Folding the config's objects adds at most one index entry each. -/
 theorem foldObjects_objectIndex_length_le (objs : List ObjectEntry)
     (ist : IntermediateState) :
@@ -3832,8 +4129,7 @@ theorem foldObjects_objectIndex_length_le (objs : List ObjectEntry)
   | cons entry rest ih =>
       simp only [List.foldl_cons, List.length_cons]
       refine Nat.le_trans (ih _) ?_
-      have := createObject_objectIndex_length_le ist entry.id entry.obj entry.hSlots
-        entry.hMappings
+      have := createBootObject_objectIndex_length_le ist entry
       omega
 
 /-- The raw boot installs one index entry per config object at most. -/
@@ -3861,7 +4157,7 @@ theorem bootFromPlatformChecked_ok_objectIndex_length_le (config : PlatformConfi
   · subst hEq; simpa using Nat.le_trans hBase (Nat.le_succ _)
   · subst hEq
     simp only [bootEnableInterruptsOp_objectIndex, installBootVSpaceRoot]
-    exact Nat.le_trans (createObject_objectIndex_length_le _ _ _ _ _) (by omega)
+    exact Nat.le_trans (createBootObject_objectIndex_length_le _ _) (by omega)
 
 /-- **PR #889 review round 20**: the unchecked boot installs the config's
     declared PE count.  `applyMachineConfig` is the only writer of `machine`
@@ -4225,12 +4521,16 @@ theorem bootFromPlatform_interfaceRegistry_eq (config : PlatformConfig) :
   show _ = _; unfold bootFromPlatform
   rw [applyMachineConfig_interfaceRegistry_eq, foldObjects_interfaceRegistry, foldIrqs_interfaceRegistry, mkEmpty_state_eq_default]
 
-/-- V4-A6: The post-boot state preserves asidTable from default. -/
-theorem bootFromPlatform_asidTable_eq (config : PlatformConfig) :
+/-- V4-A6: The post-boot state preserves asidTable from default — when the
+    config installs no VSpace root (WS-BP BP3.2: one it does install has its
+    ASID registered, as the runtime store registers it). -/
+theorem bootFromPlatform_asidTable_eq (config : PlatformConfig)
+    (hNoVSpace : ∀ e ∈ config.initialObjects, ∀ vs, e.obj ≠ KernelObject.vspaceRoot vs) :
     (bootFromPlatform config).state.asidTable =
     (default : SystemState).asidTable := by
   show _ = _; unfold bootFromPlatform
-  rw [applyMachineConfig_asidTable_eq, foldObjects_asidTable, foldIrqs_asidTable, mkEmpty_state_eq_default]
+  rw [applyMachineConfig_asidTable_eq, foldObjects_asidTable _ _ hNoVSpace, foldIrqs_asidTable,
+    mkEmpty_state_eq_default]
 
 /-- V4-A7: The post-boot state preserves TLB from default. -/
 theorem bootFromPlatform_tlb_eq (config : PlatformConfig) :
@@ -4542,9 +4842,10 @@ def bootSafeObject (obj : KernelObject) : Prop :=
     tcb.pendingReceiveReply = none ∧
     -- PR #889 review: neither current nor queued at boot ⟹ `.Inactive`.
     tcb.threadState = .Inactive) ∧
-  -- WS-RC R3 (DEEP-BOOT-01): VSpaceRoots admitted iff bootSafeVSpaceRoot
+  -- WS-BP BP3.2: a configured VSpaceRoot is a thread's — admitted iff
+  -- bootSafeUserVSpaceRoot (a user ASID, no mappings)
   (∀ vs, obj = .vspaceRoot vs →
-    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) ∧
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot vs) ∧
   -- Z9-I: SchedContexts must be well-formed and unbound at boot, and — WS-OD
   -- OD2.1 — must head no reply stack: every admissible boot Reply is inert,
   -- so a config-supplied `scReply` could only dangle.
@@ -4571,59 +4872,19 @@ def bootSafeObject (obj : KernelObject) : Prop :=
 def PlatformConfig.bootSafe (config : PlatformConfig) : Prop :=
   ∀ entry, entry ∈ config.initialObjects → bootSafeObject entry.obj
 
-/-- **WS-RC R3 (DEEP-BOOT-01)**: Prop-level admission witness for the
-    canonical RPi5 boot VSpaceRoot.  Every conjunct of `bootSafeObject`
-    discharges either by absurdity (object-kind mismatch with `vspaceRoot`)
-    or, for the `.vspaceRoot` clause, by appealing to the W^X-compliant
-    `rpi5BootVSpaceRoot_bootSafe` proof in `Platform.RPi5.VSpaceBoot`. -/
-theorem bootSafeObject_admits_rpi5BootVSpaceRoot :
-    bootSafeObject
+/-- **WS-BP BP3.2**: the Prop-level mirror of
+    `bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot` — the kernel's boot root is
+    not a boot-safe *configured* object, since its ASID is the kernel's.
+    Replaces `bootSafeObject_admits_rpi5BootVSpaceRoot` (WS-RC R3). -/
+theorem not_bootSafeObject_rpi5BootVSpaceRoot :
+    ¬ bootSafeObject
         (KernelObject.vspaceRoot
           SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot) := by
-  unfold bootSafeObject
-  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-  · intro _ he; cases he
-  · intro _ he; cases he
-  · intro _ he; cases he
-  · intro _ he; cases he
-  · intro vs hv
-    cases hv
-    exact SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_bootSafe
-  · intro _ he; cases he
-  · intro _ he; cases he
-
-/-- AK8-A (WS-AK / C-M01): Cross-untyped physical-region disjointness for
-boot configs. For any two distinct `.untyped` entries in `initialObjects`
-where **neither is a direct child of the other**, their physical ranges
-must not overlap.
-
-The `children` side-conditions mirror the runtime
-`Kernel.untypedRegionsDisjoint` invariant so a config-level witness
-transports cleanly to the runtime post-state. At boot, configurations
-typically list only top-level untypeds (no `children`), so the
-side-conditions are vacuous and this reduces to pairwise region
-disjointness across the whole untyped set — the case the audit §C-M01
-finding was motivating.
-
-This mirrors the existing `mmioRegionDisjointCheck` pattern (which validates
-MMIO region disjointness at boot) and is the config-level precondition that
-discharges the runtime `Kernel.untypedRegionsDisjoint` invariant. -/
-def PlatformConfig.untypedRegionsDisjoint (config : PlatformConfig) : Prop :=
-  ∀ (e₁ e₂ : ObjectEntry) (ut₁ ut₂ : UntypedObject),
-    e₁ ∈ config.initialObjects →
-    e₂ ∈ config.initialObjects →
-    e₁.id ≠ e₂.id →
-    e₁.obj = .untyped ut₁ →
-    e₂.obj = .untyped ut₂ →
-    (∀ c ∈ ut₁.children, c.objId ≠ e₂.id) →
-    (∀ c ∈ ut₂.children, c.objId ≠ e₁.id) →
-    ut₁.regionBase.val + ut₁.regionSize ≤ ut₂.regionBase.val ∨
-    ut₂.regionBase.val + ut₂.regionSize ≤ ut₁.regionBase.val
-
-/-- AK8-A: Empty config trivially satisfies `untypedRegionsDisjoint`. -/
-theorem PlatformConfig.untypedRegionsDisjoint_empty :
-    PlatformConfig.untypedRegionsDisjoint { irqTable := [], initialObjects := [] } := by
-  intro _ _ _ _ hMem _ _ _ _ _ _; exact absurd hMem (by simp)
+  intro h
+  have hUser := h.2.2.2.2.1 _ rfl
+  rw [← SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRootCheck_iff,
+    SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_not_bootSafeUser] at hUser
+  exact Bool.false_ne_true hUser
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -4646,10 +4907,10 @@ private theorem foldObjects_objects_bootSafe
     have heSafe : bootSafeObject e.obj := hObjs e (List.mem_cons_self ..)
     have hRestSafe : ∀ e', e' ∈ rest → bootSafeObject e'.obj :=
       fun e' hMem => hObjs e' (List.mem_cons_of_mem _ hMem)
-    have hNewBase : ∀ (oid : SeLe4n.ObjId) (obj' : KernelObject), (createObject ist e.id e.obj e.hSlots e.hMappings).state.objects[oid]? = some obj' → bootSafeObject obj' := by
+    have hNewBase : ∀ (oid : SeLe4n.ObjId) (obj' : KernelObject), (createBootObject ist e).state.objects[oid]? = some obj' → bootSafeObject obj' := by
       intro oid₂ obj₂ hLookup₂
       have hObjInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
-      simp only [createObject_objects, RHTable_getElem?_eq_get?] at hLookup₂
+      simp only [createBootObject_objects, RHTable_getElem?_eq_get?] at hLookup₂
       by_cases hEq : e.id = oid₂
       · subst hEq
         rw [RHTable.getElem?_insert_self ist.state.objects e.id e.obj hObjInvExt] at hLookup₂
@@ -4657,7 +4918,7 @@ private theorem foldObjects_objects_bootSafe
       · have hNe : ¬((e.id == oid₂) = true) := by intro heq; exact hEq (eq_of_beq heq)
         rw [RHTable.getElem?_insert_ne ist.state.objects e.id oid₂ e.obj hNe hObjInvExt] at hLookup₂
         exact hBase oid₂ obj₂ (by simp only [RHTable_getElem?_eq_get?]; exact hLookup₂)
-    exact ih (createObject ist e.id e.obj e.hSlots e.hMappings) hNewBase hRestSafe
+    exact ih (createBootObject ist e) hNewBase hRestSafe
 
 /-- V4-A4b: Every object in the post-boot state satisfies bootSafeObject. -/
 private theorem bootFromPlatform_objects_bootSafe
@@ -4692,12 +4953,12 @@ private theorem foldObjects_objects_reachable
   | cons e rest ih =>
     intro ist oid obj hLookup
     have hInvExt : ist.state.objects.invExt := ist.hAllTables.1.1
-    rcases ih (createObject ist e.id e.obj e.hSlots e.hMappings) oid obj hLookup with
+    rcases ih (createBootObject ist e) oid obj hLookup with
       ⟨e', hMem, hId, hObj⟩ | hBase
     · -- Entry e' is in rest; lift membership to (e :: rest)
       exact Or.inl ⟨e', List.mem_cons_of_mem _ hMem, hId, hObj⟩
-    · -- Reached base via createObject; case-split on whether oid = e.id
-      simp only [createObject_objects, RHTable_getElem?_eq_get?] at hBase
+    · -- Reached base via createBootObject; case-split on whether oid = e.id
+      simp only [createBootObject_objects, RHTable_getElem?_eq_get?] at hBase
       by_cases hEq : e.id = oid
       · subst hEq
         rw [RHTable.getElem?_insert_self ist.state.objects e.id e.obj hInvExt] at hBase
@@ -4891,6 +5152,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   have hSvcR := bootFromPlatform_serviceRegistry_eq config
   have hIfR := bootFromPlatform_interfaceRegistry_eq config
   have hAsid := bootFromPlatform_asidTable_eq config
+    (fun e hMem vs => hNoVSpaceInInitial e hMem vs)
   have hTlb := bootFromPlatform_tlb_eq config
   have hShoot := bootFromPlatform_tlbShootdown_eq config
   -- Builder structural invariants
@@ -5438,10 +5700,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     `crossSubsystemInvariant`.
 
     WS-RC R3 (DEEP-BOOT-01): Threads the new `hNoVSpaceInInitial`
-    precondition through the bridge composition.  Boot VSpaceRoots
-    are not introduced via `initialObjects` (the
-    `noVSpaceRootsInInitialObjects` runtime gate in
-    `bootFromPlatformChecked` enforces this); they are installed by
+    precondition through the bridge composition.  The bridge covers
+    configs whose `initialObjects` carry no VSpace root — since WS-BP BP3.2
+    the checked boot *admits* a configured thread's root (registering its
+    ASID; `bootVSpaceAsidsDistinct` refuses a collision), so a config that
+    carries one, like the RPi5 deployment's, is outside this bridge, as a
+    config carrying a binding root already was.  Binding roots are installed by
     `installBootVSpaceRoot` consumed by the gated boot path
     `bootFromPlatformChecked` via the dedicated
     `PlatformConfig.bootVSpaceRoot` field.  Substantive proof of
@@ -5550,6 +5814,133 @@ theorem bootFromPlatformCheckedWithIdleThreadsFor_undeclared_idle_absent
     rw [foldl_enqueueIdleThread_objects_frame cores base c
       (fun c' hc' hEq => hc (hEq ▸ hc'))]
     exact bootFromPlatformChecked_ok_idleSlotsFreshAt config base hChecked c
+
+-- ============================================================================
+-- WS-BP BP3.3: every configured object is in the boot state, at its own id
+-- ============================================================================
+
+/-- **WS-BP BP3.3**: the transparent duplicate check is `List.Nodup`. -/
+private theorem listAllDistinct_eq_true_iff {α : Type} [DecidableEq α] (l : List α) :
+    listAllDistinct l = true ↔ l.Nodup := by
+  induction l with
+  | nil => simp [listAllDistinct]
+  | cons x xs ih =>
+      simp only [listAllDistinct, Bool.and_eq_true, Bool.not_eq_true', List.nodup_cons, ih]
+      simp
+
+/-- **WS-BP BP3.3**: a well-formed config's object ids are pairwise distinct. -/
+theorem PlatformConfig.wellFormed_objectIds_pairwise (config : PlatformConfig)
+    (h : config.wellFormed = true) :
+    config.initialObjects.Pairwise (fun a b => a.id ≠ b.id) := by
+  have hU := config.wellFormed_objectIdsUnique h
+  rw [objectIdsUnique_eq_transparent, objectIdsUniqueTransparent,
+    listAllDistinct_eq_true_iff, List.Nodup, List.pairwise_map] at hU
+  exact hU.imp fun hNe hEq => hNe (congrArg SeLe4n.ObjId.toNat hEq)
+
+/-- **WS-BP BP3.3**: the object fold leaves a key no entry names alone. -/
+theorem foldObjects_objects_ne (objs : List ObjectEntry) (ist : IntermediateState)
+    (oid : SeLe4n.ObjId) (h : ∀ e ∈ objs, e.id ≠ oid) :
+    (foldObjects objs ist).state.objects[oid]? = ist.state.objects[oid]? := by
+  induction objs generalizing ist with
+  | nil => rfl
+  | cons e rest ih =>
+      show (foldObjects rest (createBootObject ist e)).state.objects[oid]? = _
+      rw [ih _ (fun e' hMem => h e' (List.mem_cons_of_mem _ hMem)), createBootObject_objects]
+      have hNe : ¬((e.id == oid) = true) := fun hEq => h e List.mem_cons_self (eq_of_beq hEq)
+      exact RHTable.getElem?_insert_ne _ _ _ _ hNe ist.hAllTables.1.1
+
+/-- **WS-BP BP3.3**: over entries with pairwise-distinct ids, the object fold
+    leaves every entry at its own id. -/
+theorem foldObjects_objects_of_mem (objs : List ObjectEntry) (ist : IntermediateState)
+    (hUniq : objs.Pairwise (fun a b => a.id ≠ b.id)) (e : ObjectEntry) (hMem : e ∈ objs) :
+    (foldObjects objs ist).state.objects[e.id]? = some e.obj := by
+  induction objs generalizing ist with
+  | nil => cases hMem
+  | cons x rest ih =>
+      rw [List.pairwise_cons] at hUniq
+      show (foldObjects rest (createBootObject ist x)).state.objects[e.id]? = _
+      rcases List.mem_cons.mp hMem with rfl | hRest
+      · rw [foldObjects_objects_ne _ _ _ (fun e' hE' => (hUniq.1 e' hE').symm),
+          createBootObject_objects]
+        exact RHTable.getElem?_insert_self _ _ _ ist.hAllTables.1.1
+      · exact ih _ hUniq.2 hRest
+
+/-- **WS-BP BP3.3**: a successful checked boot rejected no colliding boot root
+    — the gate's fact, read off the result. -/
+theorem bootFromPlatformChecked_ok_bootVSpaceRootObjIdDistinct (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    bootVSpaceRootObjIdDistinct config = true := by
+  unfold bootFromPlatformChecked at h
+  split at h
+  · split at h
+    · split at h
+      · split at h
+        · split at h
+          · split at h
+            · split at h
+              · rename_i hD; exact hD
+              · cases h
+            · cases h
+          · cases h
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+/-- **WS-BP BP3.3**: **every configured object is in a successful checked
+    boot's state, at its own id.**  The object ids are distinct
+    (`wellFormed`), the fold installs each (`foldObjects_objects_of_mem`), the
+    binding's root is installed at an id no entry names
+    (`bootVSpaceRootObjIdDistinct`), and enabling interrupts touches no object.
+    What a configuration names is what the boot built — the fact a deployment's
+    witness threads, root task and untypeds are read off. -/
+theorem bootFromPlatformChecked_ok_objects_of_mem (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (e : ObjectEntry) (hMem : e ∈ config.initialObjects) :
+    ist.state.objects[e.id]? = some e.obj := by
+  have hDist := bootFromPlatformChecked_ok_bootVSpaceRootObjIdDistinct config ist h
+  obtain ⟨hWf, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  have hBase : (bootFromPlatform config).state.objects[e.id]? = some e.obj := by
+    unfold bootFromPlatform
+    rw [applyMachineConfig_objects_eq]
+    exact foldObjects_objects_of_mem _ _ (config.wellFormed_objectIds_pairwise hWf) e hMem
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, hSome, rfl⟩
+  · rw [bootEnableInterruptsOp_objects_eq]; exact hBase
+  · rw [bootEnableInterruptsOp_objects_eq, installBootVSpaceRoot_objects_ne]
+    · exact hBase
+    · intro hEq
+      unfold bootVSpaceRootObjIdDistinct at hDist
+      rw [hSome] at hDist
+      simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hDist
+      exact hDist e hMem hEq.symm
+
+/-- **WS-BP BP3.3**: ...and the idle enqueue on any core list keeps it there —
+    a configured object is never at an idle slot (`idleSlotsReserved`). -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_ok_objects_of_mem
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (config : PlatformConfig)
+    (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist)
+    (e : ObjectEntry) (hMem : e ∈ config.initialObjects) :
+    ist.state.objects[e.id]? = some e.obj := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error err =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config err hChecked] at h
+    cases h
+  | ok base =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)] at h
+    injection h with h
+    subst h
+    obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config base hChecked
+    have hRes := PlatformConfig.wellFormed_idleSlotsReserved config hWf
+    have hNotIdle : SeLe4n.Kernel.isIdleObjId e.id = false := by
+      unfold idleSlotsReserved at hRes
+      simp only [Bool.and_eq_true, List.all_eq_true, Bool.not_eq_true'] at hRes
+      exact (hRes.1 e hMem).1
+    rw [foldl_enqueueIdleThread_objects_frame_of_not_idle cores base e.id
+      (fun c _ => SeLe4n.Kernel.idleThreadId_toObjId_ne_of_not_isIdleObjId e.id hNotIdle c)]
+    exact bootFromPlatformChecked_ok_objects_of_mem config base hChecked e hMem
+
 
 -- ============================================================================
 -- PR #889 review: the boot state is `threadStateConsistent`

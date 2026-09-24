@@ -609,16 +609,18 @@ private def tph015f_objIdCollisionRejected : IO Unit := do
   | .error _ =>
       expect "TPH-015g ObjId collision between initialObjects and bootVSpaceRoot rejected" true
 
-/-- TPH-015i (audit fix for Issue #2): VSpaceRoot in `initialObjects`
-    rejected.  The `noVSpaceRootsInInitialObjects` gate forbids
-    putting any VSpaceRoot kernel object in the `initialObjects` list
-    because `Builder.createObject` does NOT update `asidTable` —
-    the dedicated `bootVSpaceRoot` field + `installBootVSpaceRoot` is
-    the ONLY path that maintains asidTable/objects consistency. -/
+/-- TPH-015i (audit fix for Issue #2; WS-BP BP3.2): the *kernel's* boot
+    VSpaceRoot in `initialObjects` is rejected.  Since BP3.2 a configured
+    VSpace root is admitted as a thread's address space — its ASID is
+    registered as the runtime store registers one — but it must be a *user*
+    root (`bootSafeUserVSpaceRootCheck`: a user ASID, no mappings), and the
+    kernel's map is neither.  The retired `noVSpaceRootsInInitialObjects` gate
+    refused this for a different reason (no ASID registration); the refusal
+    survives it because the object is the wrong kind of root. -/
 private def tph015i_vspaceRootInInitialObjectsRejected : IO Unit := do
   -- Place the canonical RPi5 boot VSpace in `initialObjects` (instead
-  -- of in the dedicated `bootVSpaceRoot` field).  The new gate must
-  -- reject this misconfiguration.
+  -- of in the dedicated `bootVSpaceRoot` field).  The user-root check
+  -- must reject this misconfiguration.
   let entry : ObjectEntry := {
     id := SeLe4n.ObjId.ofNat 7  -- arbitrary non-sentinel ObjId
     obj := KernelObject.vspaceRoot SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot
@@ -714,24 +716,96 @@ private def tph015l_nonCanonicalVAddrRejected : IO Unit := do
   | .error _ =>
       expect "TPH-015k non-canonical vaddr boot VSpace rejected by vaddrCanonical conjunct" true
 
-/-- TPH-015g: Witness theorem connection.  The Bool-level admission
-    witness `bootSafeObjectCheck_admits_rpi5BootVSpaceRoot` evaluates
-    to `true` at runtime, providing executable evidence that the
-    proven-W^X-compliant boot VSpaceRoot is admitted by the boot
-    pipeline's runtime gate. -/
+/-- TPH-015g (WS-BP BP3.2): the object sweep refuses the kernel's boot
+    VSpaceRoot as a *configured* object — the runtime evaluation of
+    `bootSafeObjectCheck_refuses_rpi5BootVSpaceRoot`.  The binding's root is
+    admitted where it is installed (`bootVSpaceRootSafe`, TPH-015a); the sweep
+    asks the thread's question, and the kernel's map is not a thread's. -/
 private def tph015g_admissionWitness : IO Unit := do
-  expect "TPH-015l bootSafeObjectCheck admits rpi5BootVSpaceRoot at runtime"
-    (bootSafeObjectCheck (KernelObject.vspaceRoot
+  expect "TPH-015l bootSafeObjectCheck refuses rpi5BootVSpaceRoot as a configured object"
+    (!bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot))
 
-/-- TPH-015h: Sim-platform parity.  The simulation boot VSpaceRoot
-    (defined in `Platform.Sim.Contract`) also passes the runtime
-    boot-safety check, providing parity between the RPi5 hardware
-    binding and the simulation harness. -/
+/-- TPH-015h: Sim-platform parity.  The simulation boot VSpaceRoot passes
+    the binding-root check (`bootSafeVSpaceRootCheck`) and — like the RPi5
+    root — is refused by the configured-object sweep. -/
 private def tph015h_simBootVSpaceRoot : IO Unit := do
-  expect "TPH-015m bootSafeObjectCheck admits simBootVSpaceRoot"
-    (bootSafeObjectCheck (KernelObject.vspaceRoot
+  expect "TPH-015m simBootVSpaceRoot passes the binding-root check"
+    (SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck
+      SeLe4n.Platform.Sim.simBootVSpaceRoot)
+  expect "TPH-015m bootSafeObjectCheck refuses simBootVSpaceRoot as a configured object"
+    (!bootSafeObjectCheck (KernelObject.vspaceRoot
       SeLe4n.Platform.Sim.simBootVSpaceRoot))
+
+/-- WS-BP BP3.2: an empty user VSpace root on `asid`, as a configured entry
+    at `id`. -/
+private def userRootEntry (id asid : Nat) : ObjectEntry :=
+  { id := SeLe4n.ObjId.ofNat id
+    obj := KernelObject.vspaceRoot
+      { asid := SeLe4n.ASID.ofNat asid, mappings := SeLe4n.Kernel.RobinHood.RHTable.empty 16 }
+    hSlots := fun _ h => nomatch h
+    hMappings := fun _ h => by
+      cases h; exact SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega) }
+
+/-- WS-BP BP3.2: a config carrying the RPi5 binding root and `objs`. -/
+private def withRpi5Root (objs : List ObjectEntry) : PlatformConfig :=
+  { irqTable := [], initialObjects := objs,
+    machineConfig := SeLe4n.defaultMachineConfig
+    bootVSpaceRoot := some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry }
+
+/-- TPH-015n (WS-BP BP3.2): a configured thread's VSpace root is admitted
+    **and its ASID is registered** — the write whose absence was the whole
+    reason the retired gate refused every configured root.  The binding's root
+    keeps its own ASID alongside it. -/
+private def tph015n_userVSpaceAdmittedAndRegistered : IO Unit := do
+  match bootFromPlatformChecked (withRpi5Root [userRootEntry 9 1]) with
+  | .error e => throw <| IO.userError s!"tph015n: user VSpace root refused: {e}"
+  | .ok ist =>
+      expect "TPH-015n configured user VSpace root admitted with its ASID registered"
+        (ist.state.asidTable[SeLe4n.ASID.ofNat 1]? == some (SeLe4n.ObjId.ofNat 9))
+      expect "TPH-015n binding root keeps ASID 0 beside it"
+        (ist.state.asidTable[SeLe4n.ASID.ofNat 0]? ==
+          some SeLe4n.Platform.RPi5.rpi5BootVSpaceRootObjId)
+
+/-- TPH-015o (WS-BP BP3.2): two VSpace roots on one ASID are refused —
+    between two configured roots, and between a configured root and the
+    binding's.  A registration is an insert, so a collision would re-point
+    the first root's ASID at the second. -/
+private def tph015o_asidCollisionRefused : IO Unit := do
+  expect "TPH-015o two configured roots on one ASID refused"
+    (!(bootFromPlatformChecked (withRpi5Root [userRootEntry 9 1, userRootEntry 10 1])).isOk)
+  expect "TPH-015o distinct ASIDs admitted (control)"
+    ((bootFromPlatformChecked (withRpi5Root [userRootEntry 9 1, userRootEntry 10 2])).isOk)
+  expect "TPH-015o configured root on the binding root's ASID refused"
+    (!bootVSpaceAsidsDistinct
+      { withRpi5Root [userRootEntry 9 1] with
+        bootVSpaceRoot := some { SeLe4n.Platform.RPi5.rpi5BootVSpaceRootEntry with
+          root := { SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot with
+            asid := SeLe4n.ASID.ofNat 1 } } })
+
+/-- TPH-015p (WS-BP BP3.2): a configured root on the kernel's ASID, or one
+    carrying a mapping, is refused by the user-root check — the mapping because
+    no boot check places the physical memory it names. -/
+private def tph015p_userRootShapeRefused : IO Unit := do
+  expect "TPH-015p configured root on ASID 0 refused"
+    (!(bootFromPlatformChecked (withRpi5Root [userRootEntry 9 0])).isOk)
+  let mapped : ObjectEntry :=
+    { id := SeLe4n.ObjId.ofNat 9
+      obj := KernelObject.vspaceRoot
+        { asid := SeLe4n.ASID.ofNat 1
+          mappings := (SeLe4n.Kernel.RobinHood.RHTable.empty 16
+              : SeLe4n.Kernel.RobinHood.RHTable VAddr (PAddr × PagePermissions)).insert
+            (VAddr.ofNat 0x1000)
+            (PAddr.ofNat 0x80000,
+              { read := true, write := false, execute := true, user := true,
+                cacheable := true }) }
+      hSlots := fun _ h => nomatch h
+      hMappings := fun _ h => by
+        cases h
+        exact SeLe4n.Kernel.RobinHood.RHTable.insert_preserves_invExt _ _ _
+          (SeLe4n.Kernel.RobinHood.RHTable.empty_invExt 16 (by omega)) }
+  expect "TPH-015p configured root carrying a mapping (here: the kernel image) refused"
+    (!(bootFromPlatformChecked (withRpi5Root [mapped])).isOk)
 
 end SeLe4n.Testing.TwoPhaseArchSuite
 
@@ -784,6 +858,9 @@ def main : IO Unit := do
   tph015g_admissionWitness
   tph015h_simBootVSpaceRoot
   tph015i_vspaceRootInInitialObjectsRejected
+  tph015n_userVSpaceAdmittedAndRegistered
+  tph015o_asidCollisionRefused
+  tph015p_userRootShapeRefused
   tph015j_sentinelBootVSpaceObjIdRejected
   tph015k_unsafeBootVSpaceRejected
   tph015l_nonCanonicalVAddrRejected

@@ -39,6 +39,11 @@ import SeLe4n.Platform.Boot
 import SeLe4n.Platform.FFI
 import SeLe4n.Platform.Sim.Contract
 import SeLe4n.Platform.RPi5.Contract
+-- WS-BP BP3: the RPi5 deployment the hardware boot installs — the root task,
+-- the untrusted domain's initial thread, their untypeds and IRQ table — with
+-- every gate of the checked boot discharged by evaluation.  In the production
+-- closure because the boot seam (BP4.1) boots it.
+import SeLe4n.Platform.RPi5.Deployment
 -- WS-SM SM6.A (live cross-core `.call` completion): the cross-core syscall
 -- dispatch entry `syscallDispatchCrossCoreEntry`
 -- (`@[export lean_syscall_dispatch_cross_core]`) — the live seam the Rust SVC

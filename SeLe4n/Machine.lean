@@ -1035,6 +1035,22 @@ structure MachineConfig where
       keeps the full-width model and the affinity refusal below is inert on
       them; only a binding that declares fewer narrows it. -/
   declaredCoreCount : Nat := SeLe4n.Kernel.Concurrency.numCores
+  /-- **WS-BP BP3.2**: the physical ranges the kernel keeps for itself — the
+      firmware's stub below the image, the image, its stacks, the Lean heap
+      arena, and the window the boot places the device tree in.
+
+      The memory map says what the *hardware* has; this says which of that
+      RAM the kernel will never hand out.  The boot refuses an untyped that
+      overlaps any of it (`Platform.Boot.untypedPlacementRespected`), since an
+      untyped over kernel memory lets its holder retype the kernel's own
+      pages.  A platform binding supplies it with its bound configuration
+      (`PlatformBinding.bindMachineConfig`), because the image's extent is a
+      fact about the binding's image — on the RPi5 it is `link.ld`'s
+      `KERNEL_RESERVED_END`, held to the Lean constant by
+      `scripts/check_link_script.py`.  The default is empty: a configuration
+      with no image (the simulation bindings, the trace harness) reserves
+      nothing. -/
+  kernelReserved : List MemoryRegion := []
   deriving Repr
 
 /-- AH2-E: Default machine configuration for use as a `PlatformConfig` default.

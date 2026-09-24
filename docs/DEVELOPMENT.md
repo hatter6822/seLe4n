@@ -185,6 +185,12 @@ against `tests/fixtures/boot_map.expected`.  A section added to `link.ld`
 between `.text` and `.rodata` fails `__rodata_start == __text_end`; section
 boundary symbols are assigned *inside* their sections, since lld attaches a
 location-counter change between sections to the following one.
+**The kernel's reserved extent** (WS-BP BP3.2) is one number in three places —
+`link.ld`'s `KERNEL_RESERVED_END`, `mmu::KERNEL_RESERVED_END` and the Lean
+`rpi5KernelReservedEnd` — held together through the fixture's `kernelReserved`
+line; the image must end inside it (an `ASSERT`) and so must the device-tree
+window, and the boot refuses an untyped over it.  Moving it is a three-file
+change that the HAL test and `check_link_script.py` refuse to see half done.
 It runs in CI as the
 `aarch64 Cross Build` job.
 

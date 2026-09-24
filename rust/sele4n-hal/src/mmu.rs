@@ -303,6 +303,30 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
 /// image — the Lean heap arena included — outside the memory the boot maps.
 pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;
 
+/// **WS-BP BP3.2**: the end of the kernel's reserved extent
+/// `[0, KERNEL_RESERVED_END)` — the firmware's stub below `_start`, the image,
+/// both stack regions, the Lean heap arena, and the window the firmware
+/// places the device tree in.
+///
+/// The boot refuses an untyped that overlaps it (the Lean side's
+/// `Platform.Boot.untypedPlacementRespected`, over
+/// `MachineConfig.kernelReserved`), so nothing here is ever handed to a
+/// thread.  Three artefacts state the number and are held to one another:
+/// `link.ld`'s `KERNEL_RESERVED_END`, whose `ASSERT` refuses an image that
+/// outgrows it; the Lean `rpi5KernelReservedEnd`, which
+/// `tests/Ak9PlatformSuite.lean` writes into `tests/fixtures/boot_map.expected`;
+/// and this constant, which
+/// `tests::the_kernel_reserved_extent_is_the_lean_and_linker_one` compares with
+/// both.  `scripts/check_link_script.py` reads the linked symbol against the
+/// same fixture line.
+pub const KERNEL_RESERVED_END: u64 = 0x1000_0000;
+
+// The reserved extent is whole pages inside the RAM every board has — a fact
+// about two constants, so the compiler decides it rather than a test.
+const _: () = assert!(
+    KERNEL_RESERVED_END <= GUARANTEED_RAM_TOP && KERNEL_RESERVED_END.is_multiple_of(L3_PAGE_SIZE)
+);
+
 /// Base of the device (peripheral) window: BCM2712 legacy peripherals at
 /// `0xFE00_0000` through the GIC-400 at `0xFF84_1000` / `0xFF84_2000`.
 ///
@@ -922,10 +946,11 @@ fn enable_mmu() {
 /// - **a device-tree window the map does not cover**
 ///   ([`dtb_window_admissible`]): the bootargs reader and the boot seam read at
 ///   most [`crate::cmdline::MAX_DTB_SIZE`] bytes from the pointer, so that
-///   window must lie in guaranteed RAM and outside the image, its stacks and
-///   the Lean heap arena — the firmware places the blob by the image *file*'s
-///   size, and everything past the file is `NOLOAD` (WS-BP BP2.1).  A null
-///   pointer reads nothing and is accepted.
+///   window must lie in the kernel's reserved extent (below
+///   [`KERNEL_RESERVED_END`], so no boot untyped can describe it — WS-BP BP3.2)
+///   and outside the image, its stacks and the Lean heap arena — the firmware
+///   places the blob by the image *file*'s size, and everything past the file
+///   is `NOLOAD` (WS-BP BP2.1).  A null pointer reads nothing and is accepted.
 ///
 /// `cpu::fatal_halt` rather than `gic::halt_all`: Phase 2 runs on the boot core
 /// alone before the GIC exists — there is no other PE to halt, and the barrier
@@ -942,10 +967,10 @@ pub fn init_mmu(dtb_ptr: u64) {
     }
     if !dtb_window_admissible(dtb_window(dtb_ptr), kernel_extent()) {
         crate::kprintln!(
-            "[boot] FATAL: the device tree at {:#x} is not in the first {:#x} bytes of RAM \
-             outside the image, its stacks and the Lean heap arena; refusing to read it",
+            "[boot] FATAL: the device tree at {:#x} is not in the kernel's reserved extent \
+             [0, {:#x}) outside the image, its stacks and the Lean heap arena; refusing to read it",
             dtb_ptr,
-            GUARANTEED_RAM_TOP
+            KERNEL_RESERVED_END
         );
         crate::cpu::fatal_halt();
     }
@@ -1027,10 +1052,12 @@ pub const fn dtb_window(dtb_ptr: u64) -> (u64, u64) {
 
 /// **WS-BP BP2.6**: may the boot read the device tree at `window`?
 ///
-/// The window must lie wholly inside guaranteed RAM — so the boot map covers
-/// it — and be disjoint from `kernel`, the memory the image owns.  An empty
-/// window (a null pointer) reads nothing and is accepted; a window whose end
-/// overflows is refused.
+/// The window must lie wholly inside the kernel's reserved extent —
+/// `[0, KERNEL_RESERVED_END)`, which the boot map covers and no boot untyped
+/// may describe (WS-BP BP3.2), so the blob is never memory a thread was handed
+/// — and be disjoint from `kernel`, the memory the image owns.  An empty window
+/// (a null pointer) reads nothing and is accepted; a window whose end overflows
+/// is refused.
 #[must_use]
 pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bool {
     let (base, size) = window;
@@ -1038,7 +1065,7 @@ pub const fn dtb_window_admissible(window: (u64, u64), kernel: (u64, u64)) -> bo
         return true;
     }
     match base.checked_add(size) {
-        Some(end) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image(window, &[kernel]),
+        Some(end) if end <= KERNEL_RESERVED_END => dtb_disjoint_from_image(window, &[kernel]),
         _ => false,
     }
 }
@@ -1597,6 +1624,9 @@ mod boot_map_tests {
                     .expect("a probe belongs to a variant")
                     .probes
                     .push((hex(addr), kind)),
+                // WS-BP BP3.2: the reserved extent, which
+                // `the_kernel_reserved_extent_is_the_lean_and_linker_one` reads.
+                ["kernelReserved", _, _] => {}
                 _ => panic!("unrecognised boot-map line {line:?}"),
             }
         }
@@ -1997,13 +2027,13 @@ mod boot_map_tests {
     #[test]
     fn the_device_tree_window_is_the_readers_bound() {
         assert_eq!(dtb_window(0), (0, 0), "a null pointer reads nothing");
-        let p = 0x2EFF_0000u64;
+        let p = 0x0EFF_0000u64;
         assert_eq!(dtb_window(p), (p, crate::cmdline::MAX_DTB_SIZE as u64));
     }
 
-    /// **WS-BP BP2.6**: the window must lie in guaranteed RAM and outside the
-    /// memory the image owns.  Each refused case keeps the window's size and
-    /// moves it across exactly one of those edges.
+    /// **WS-BP BP2.6 / BP3.2**: the window must lie in the kernel's reserved
+    /// extent and outside the memory the image owns.  Each refused case keeps
+    /// the window's size and moves it across exactly one of those edges.
     #[test]
     fn a_device_tree_window_outside_the_map_or_inside_the_image_is_refused() {
         let kernel = (0x8_0000u64, 0x440_0000u64);
@@ -2011,16 +2041,20 @@ mod boot_map_tests {
         let size = crate::cmdline::MAX_DTB_SIZE as u64;
         // A null pointer reads nothing.
         assert!(dtb_window_admissible((0, 0), kernel));
-        // Where the firmware usually puts it, touching the image's end, and
-        // ending exactly at the guaranteed top.
-        for base in [0x2EFF_0000u64, kernel_end, GUARANTEED_RAM_TOP - size] {
+        // Where the image build places it, touching the image's end, and
+        // ending exactly at the reserved extent's end.
+        for base in [0x0EFF_0000u64, kernel_end, KERNEL_RESERVED_END - size] {
             assert!(dtb_window_admissible((base, size), kernel), "{base:#x}");
         }
-        // One byte into the image, straddling the guaranteed top, above it,
+        // One byte into the image, straddling the reserved extent's end,
+        // in guaranteed RAM a boot untyped may describe (the pre-BP3.2
+        // admissible placement), straddling the guaranteed top, above it,
         // in the device window, and overflowing.
         for base in [
             kernel_end - 1,
             kernel.0 - 0x1000,
+            KERNEL_RESERVED_END - size + 1,
+            0x2EFF_0000,
             GUARANTEED_RAM_TOP - size + 1,
             0x8000_0000,
             DEVICE_WINDOW_BASE,
@@ -2058,6 +2092,47 @@ mod boot_map_tests {
         }
         assert!(dtb_disjoint_from_image((0, 0), &image));
         assert!(!dtb_disjoint_from_image((u64::MAX - 4, 0x10), &image));
+    }
+
+    /// **WS-BP BP3.2**: the reserved extent is one number in three places —
+    /// this constant, the Lean `rpi5KernelReservedEnd` (read here out of the
+    /// fixture the Lean suite writes), and `link.ld`'s `KERNEL_RESERVED_END`
+    /// (read out of the script).  It lies inside guaranteed RAM and is page
+    /// aligned, so the boot map covers it and a frame boundary never cuts it.
+    #[test]
+    fn the_kernel_reserved_extent_is_the_lean_and_linker_one() {
+        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+        const LINK_SCRIPT: &str = include_str!("../link.ld");
+        let lean: Vec<(u64, u64)> = LEAN_TABLE
+            .lines()
+            .filter_map(
+                |l| match l.split_whitespace().collect::<Vec<_>>().as_slice() {
+                    ["kernelReserved", base, end] => Some((
+                        u64::from_str_radix(base.trim_start_matches("0x"), 16).expect("hex"),
+                        u64::from_str_radix(end.trim_start_matches("0x"), 16).expect("hex"),
+                    )),
+                    _ => None,
+                },
+            )
+            .collect();
+        assert_eq!(
+            lean,
+            std::vec![(0, KERNEL_RESERVED_END)],
+            "the Lean reserved extent"
+        );
+        let linker: Vec<u64> = LINK_SCRIPT
+            .lines()
+            .filter_map(|l| {
+                let rest = l.trim().strip_prefix("KERNEL_RESERVED_END = ")?;
+                let hex = rest.strip_suffix(';')?.trim_start_matches("0x");
+                Some(u64::from_str_radix(hex, 16).expect("hex in link.ld"))
+            })
+            .collect();
+        assert_eq!(
+            linker,
+            std::vec![KERNEL_RESERVED_END],
+            "link.ld's reserved extent"
+        );
     }
 
     #[test]

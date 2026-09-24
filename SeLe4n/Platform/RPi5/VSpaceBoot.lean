@@ -392,6 +392,53 @@ theorem rpi5BootVSpaceRoot_bootSafeCheck :
   (bootSafeVSpaceRootCheck_iff rpi5BootVSpaceRoot).mpr rpi5BootVSpaceRoot_bootSafe
 
 -- ============================================================================
+-- WS-BP BP3.2 — a configured (user) VSpace root at boot
+-- ============================================================================
+
+/-- **WS-BP BP3.2**: a VSpace root a boot configuration may install for a
+    thread — the root task's, or any other boot thread's — as opposed to the
+    binding's own boot root (`bootSafeVSpaceRoot`).
+
+    Two conditions, and why each differs from the kernel root's:
+
+    * **Its ASID is a user ASID**, `1 ≤ asid ≤ maxAsidValue`.  ASID 0 is the
+      kernel's (`rpi5BootVSpaceRoot_asid`), and the boot refuses two roots on
+      one ASID (`Boot.bootVSpaceAsidsDistinct`), so a user root on ASID 0 would
+      be refused anyway; saying so here names the fault.
+    * **It maps nothing.**  The kernel root must map something — an empty table
+      cannot serve the first instruction fetch after the MMU is enabled — but a
+      thread's address space is populated by the thread, from frames it retypes
+      out of its own untypeds.  A configured mapping would name physical memory
+      no boot check has placed: it could map the kernel image, or a frame an
+      untyped also describes, and nothing here could see either.  Refusing every
+      mapping is exact rather than conservative for the root task this
+      configuration boots, which has no image to map until the bootable image
+      exists, and a later cut that maps one widens this predicate with the
+      placement check its frames need. -/
+def bootSafeUserVSpaceRoot (root : VSpaceRoot) : Prop :=
+  0 < root.asid.val ∧ root.asid.val ≤ maxAsidValue ∧ root.mappings.size = 0
+
+/-- **WS-BP BP3.2**: the Bool form the boot's object sweep evaluates. -/
+def bootSafeUserVSpaceRootCheck (root : VSpaceRoot) : Bool :=
+  decide (0 < root.asid.val) && decide (root.asid.val ≤ maxAsidValue) &&
+    decide (root.mappings.size = 0)
+
+/-- **WS-BP BP3.2**: the Bool check decides the predicate. -/
+theorem bootSafeUserVSpaceRootCheck_iff (root : VSpaceRoot) :
+    bootSafeUserVSpaceRootCheck root = true ↔ bootSafeUserVSpaceRoot root := by
+  unfold bootSafeUserVSpaceRootCheck bootSafeUserVSpaceRoot
+  simp only [Bool.and_eq_true, decide_eq_true_eq, and_assoc]
+
+/-- **WS-BP BP3.2**: the kernel's own boot root is not a user root — its ASID
+    is the kernel's.  So the two checks cannot be substituted for each other,
+    and a configuration cannot pass the kernel's map off as a thread's. -/
+theorem rpi5BootVSpaceRoot_not_bootSafeUser :
+    bootSafeUserVSpaceRootCheck rpi5BootVSpaceRoot = false := by
+  unfold bootSafeUserVSpaceRootCheck
+  rw [rpi5BootVSpaceRoot_asid]
+  decide
+
+-- ============================================================================
 -- WS-RC R3 — RHTable.invExt witness for the boot root's mappings
 -- ============================================================================
 

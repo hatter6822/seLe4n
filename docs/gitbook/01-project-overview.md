@@ -66,7 +66,7 @@ it had made false.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
 path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
-became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 46
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 47
 sub-tasks across nine phases.  **BP0 landed at v0.36.2**: the three Lean/Rust
 pairs — the device-tree readers, the ABI encoder and decoder, the boot map and
 the Lean memory map — are driven through shared fixtures, so a divergence fails
@@ -95,7 +95,14 @@ system if it fails.  **BP2.6** builds the boot map from linker symbols and
 board constants — the image's text read-only and executable at EL1 alone, its
 read-only data and everything else never executable, the guaranteed first GiB of RAM and the
 device window — so nothing parses the device tree before the MMU is on.
-BP3..BP8 have not started.
+**BP3.1–BP3.4** give the hardware boot a deployment to install: a root task
+with its own address space, an interrupt notification and untypeds over the
+guaranteed gigabyte minus the kernel's reserved extent, and an untrusted
+initial thread, with no capability between them.  The boot now admits a
+thread's VSpace root (registering its ASID), refuses an untyped over memory it
+may not describe, and every gate of the checked boot on this configuration is
+decided by evaluation, so the hardware entry provably boots it.  BP3.5 (the
+proof-layer bundle of the booted state) and BP4..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core
