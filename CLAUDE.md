@@ -7146,7 +7146,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0 and BP1 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7156,8 +7156,8 @@ sequences **45 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
-an *executed run* rather than by an artefact existing.  **BP0 landed at
-`v0.36.2`**; BP1..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
+`v0.36.2`**; BP2..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7256,6 +7256,39 @@ conclusive only on the linked image**: the target's own `compiler_builtins` is
 caller supplies), so BP5.2 runs the gate over the image, where the link decides
 which members are in.  And the firmware enters the RPi5 at **EL2**, which
 `boot.S` does not handle at all — BP5.5.
+
+**BP1 — the kernel's Lean object code for the target is built and checked**
+(`v0.36.2`, `scripts/build_lean_aarch64_archive.py`, lane
+`scripts/test_lean_aarch64_archive.sh`, CI job `Lean aarch64 Archive`).  Five
+things new code must respect.  (1) **The image's Lean is the elaborator's
+closure of `SeLe4n`**, refused unless it equals Lake's `SeLe4n:modules`, holds
+nothing outside `SeLe4n`/`Init`/`Std` and is disjoint from the staged allowlist
+and `SeLe4n.Testing` — so importing `Lean.*` from a production module, or a
+staged module, fails the lane rather than putting the elaborator in the kernel.
+(2) **The allocator is a relation**: every object is compiled against
+`rust/sele4n-hal/lean_include/lean/config.h`, the toolchain's with
+`LEAN_MIMALLOC` swapped for `LEAN_SMALL_ALLOCATOR` and nothing else, and the
+archive must call `lean_alloc_small` and no `mi_*`; BP2's runtime is compiled
+against the same file.  A macro the toolchain adds to its `config.h` stops the
+build until it is classified.  (3) **The compile is soft-float and `-Werror`**
+(`-mgeneral-regs-only -mabi=aapcs-soft`, the toolchain's own clang), and the
+generator's two by-construction diagnostics are classified per instance — an
+`x_N` temporary holding a discarded `BaseIO Unit`, an import-less initializer's
+`res` — so any other warning, or either kind in another shape, fails.  (4) **The
+stdlib C is regenerated, and proved to be the toolchain's**: each of the 609
+closure stdlib modules must define exactly the global symbols the toolchain's
+own `libInit.a`/`libStd.a` object for it defines — keyed by the member's
+initializer, never its name, since `libInit.a` holds two `Grind.o`.  (5)
+**Every unresolved symbol is attributed to a provider derived from that
+provider's own object code or declarations** — allocator, runtime
+(`libleanrt.a`), Rust `compiler_builtins` for the target, the HAL (a production
+module's `@[extern]`), a stdlib `@[extern]` nobody supplies — and an
+unattributed one stops the build.  Measured: 381 unresolved, **no libc symbol
+at all**, six libm functions (`acosh`/`asinh`/`atanh`, both widths) no provider
+has; the report (`libsele4n.unresolved`) is BP2.2's input.  And
+`check_kernel_entry_exports.py` decides on **both** archives: a requirement is
+met where both define it, an exemption stale where either does, and
+`--require-cross` makes an absent cross archive a failure.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

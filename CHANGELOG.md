@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, and the kernel is FP-free
+## v0.36.2 — WS-BP BP0 and BP1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, and its Lean object code is built for the target
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -197,9 +197,96 @@ target's own `compiler_builtins` is not FP-free — seven functions use `d`/`v`
 registers and `__negdf2` takes a hard-float `d0` argument no soft-float caller
 supplies.  WS-BP is 45 sub-tasks.  The `lib.rs` lint measurement was re-run on
 the new target (0 host findings, 1 cross) rather than carried over.
-BP1.2..BP1.4 and BP2..BP8 have not started.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0)
+**BP1 — the kernel's Lean object code for `aarch64-unknown-none`.**
+`scripts/build_lean_aarch64_archive.py` builds `libsele4n.a` — the archive
+`rust/sele4n-hal/src/boot.rs` has always asserted is linked — and every set it
+depends on is derived and then checked against an independent answer:
+
+- *The closure is the elaborator's* (BP1.1): a probe prints
+  `Environment.header.moduleNames` of `SeLe4n` — 256 package and 609 stdlib
+  modules — and the build refuses unless the package half equals Lake's
+  `SeLe4n:modules`, nothing outside `SeLe4n`/`Init`/`Std` appears (the
+  elaborator left the closure in this same version, above), and it is disjoint
+  from the staged allowlist and `SeLe4n.Testing`.  Package C is Lake's module
+  `c` facet over exactly those modules; `lakefile.toml` cannot declare a custom
+  target, so the plan row's file column is corrected rather than satisfied.
+  Stdlib C is regenerated with the toolchain's own `lean -c` — it ships
+  `libInit.a`/`libStd.a` for the host and no C — and cached per toolchain hash.
+- *The compile* (BP1.2) is the toolchain's own clang with `-ffreestanding
+  -nostdlibinc -mgeneral-regs-only -mabi=aapcs-soft -mstrict-align
+  -mno-outline-atomics -fno-pic`, matching Rust's `aarch64-unknown-none-softfloat`
+  (`+v8a,+strict-align,-neon`, static relocation).  `-mabi=aapcs-soft` was
+  measured necessary, not chosen for tidiness: clang 19 refuses a `double`
+  parameter under `-mgeneral-regs-only` without it.  `lean.h`'s allocator is
+  selected by `rust/sele4n-hal/lean_include/lean/config.h` — the toolchain's
+  file with `LEAN_MIMALLOC` replaced by `LEAN_SMALL_ALLOCATOR`, held to exactly
+  that relation (a macro the toolchain adds stops the build) and confirmed on the
+  objects, which call `lean_alloc_small` and no `mi_*` symbol.
+- *Every warning is understood, per instance.*  `-Wall -Wextra -Werror` stopped
+  the first build.  Two shapes, both the
+  generator's by construction: an IR temporary `x_N` bound to a discarded
+  `BaseIO Unit` result (the scalar `lean_box(0)`, so no reference count is owed
+  — the generated header disables this diagnostic for GCC, and its clang branch
+  predates clang's implementation), and the unused `res` of `Init.Prelude`'s
+  initializer, which has no imports to check.  Rather than disable them, the two
+  are warnings and a census classifies every line of stderr: 87 and 1 on the
+  whole closure, and a diagnostic of any other kind — or either kind in another
+  shape (`count`, `x_3` as an unused variable, a `note:`) — fails the module.
+  The census's first run caught its own defect: clang's `N warnings generated.`
+  summary read as an unexplained line, so the compile runs with
+  `-fno-caret-diagnostics` and every stderr line must be a diagnostic or that
+  summary.
+- *The archive is checked, not trusted* (BP1.3): one initializer per object and
+  per closure module, every initializer referenced defined, no symbol defined
+  twice, and **each of the 609 regenerated stdlib modules defines exactly the
+  global symbols the toolchain's own object for it defines** — the evidence
+  that regeneration reproduced the toolchain's library rather than a drifted
+  re-elaboration.  The first run refused on a real defect in the comparison:
+  `libInit.a` holds two members named `Grind.o` (`Init/Grind` and
+  `Init/Data/String/Grind`), and keyed by name they merged into one object
+  defining two initializers; units are keyed by member *instance* now.
+  `scripts/check_fp_simd_free_objects.py` then reads 3,670,048 instructions and
+  finds no FP/SIMD register operand.
+- *Its unresolved set is attributed, not listed*: each of the 381 symbols is
+  assigned to a provider derived from that provider's own object code or
+  declarations — 1 to the small allocator (`lean_alloc_small`, which the
+  mimalloc host runtime does not define), 221 to `libleanrt.a`, 80 to Rust's
+  `compiler_builtins` for the target (the soft-float helpers and most of libm),
+  73 to the HAL (the production modules' `@[extern]`s, refused if any other
+  provider also defines one), and 6 to stdlib `@[extern]`s no provider supplies
+  (`acosh`, `asinh`, `atanh` and their `f` forms).  An unattributed symbol stops
+  the build.  The measurement worth keeping: **the kernel's Lean objects call no
+  libc symbol at all**, so BP2.2's libc surface is the runtime's, and it is
+  measured when BP2 builds the runtime — whose sources the toolchain does not
+  ship (recorded in the BP2.2 row).  `libsele4n.unresolved` is BP2.2's input.
+- *The lane* is `scripts/test_lean_aarch64_archive.sh` (the host static archive,
+  the cross archive, then the reconciliation) in a new CI job, `Lean aarch64
+  Archive`, which uploads the archive and its report.
+  `check_aarch64_cross_target.py` holds it as relations: the lane executes the
+  builder (not echoed, not `--self-test`), runs the reconciliation with
+  `--require-cross` on the same command and after the build, discards neither
+  failure with `&&`/`||`, keeps `set -e` and `pipefail`, and some workflow job
+  executes it with `llvm-tools` installed.  Eleven preserving cases.  Extending
+  the gate's job matcher to a second script found a shadowing bug in the
+  extension itself — `job_runs_gate`'s loop variable was named like the new
+  parameter, so every job matched every script — which the existing clean
+  baseline caught.
+- *BP1.4*: `check_kernel_entry_exports.py` decides on both archives through one
+  owner, `combine_archive_definitions`: a requirement is met where **every**
+  archive defines it, an exemption is stale where **any** does, and
+  `--require-cross` makes an absent cross archive a failure instead of a
+  narrower check.  That reading is fail-closed for a stale cross archive.  Three
+  mutations (each direction of the combination, and the exemption's reading)
+  are each caught by the new cases.  Executed: all 8 HAL kernel-entry
+  declarations are defined in both archives.
+
+`check_fp_simd_free_objects.py` gained `rust_llvm_tool`, the one owner for which
+LLVM binutil a gate reads object code with, and its docstring's reference to
+the image-level run is corrected to BP5.2.  Both new scripts self-test in Tier 0
+(51 and 95 cases).  BP2..BP8 have not started.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

@@ -101,6 +101,14 @@ ASM_COMPILE_CALL = '.compile("sele4n_hal_asm")'
 CPP_CONDITIONAL_OPEN = re.compile(r"^\s*#\s*(?:if|ifdef|ifndef)\b", re.MULTILINE)
 CPP_CONDITIONAL_CLOSE = re.compile(r"^\s*#\s*endif\b", re.MULTILINE)
 ARCHIVE = REPO / ".lake" / "build" / "lib" / "libseLe4n_SeLe4n.a"
+# The kernel's Lean archive for the hardware target (WS-BP BP1.3), built by
+# `scripts/build_lean_aarch64_archive.py`.  It is what the image links, so the
+# reconciliation below is decided on it as well as on the host archive: a
+# requirement is resolved only when BOTH define it, and an expected-unresolved
+# entry either one defines is stale.  Reading the pair that way is fail-closed
+# for a stale cross archive -- an out-of-date one can only add failures.
+CROSS_ARCHIVE = REPO / ".lake" / "build" / "aarch64-unknown-none-softfloat" / "libsele4n.a"
+REQUIRE_CROSS_FLAG = "--require-cross"
 
 #: HAL `extern "C"` declarations that no provider defines **yet**, with the
 #: reason.  Reconciled in both directions by `classify_link_requirements`: an
@@ -820,8 +828,15 @@ def classify_link_requirements(
     expected_unresolved: dict[str, str],
     defined: set[str],
     exports: set[str] = frozenset(),
+    defined_anywhere: set[str] | None = None,
 ) -> tuple[list[str], list[str], list[str], list[str]]:
     """Decide the gate from the five derived sets.
+
+    With several archives (WS-BP BP1.4: the host one and the image's),
+    `defined` is what **every** archive defines and `defined_anywhere` what
+    **any** does: a requirement is met only where each archive meets it, and an
+    exemption is stale the moment one archive defines its symbol.  Omitted, the
+    two coincide (one archive).
 
     Returns `(missing, stale_undeclared, stale_defined, stale_exported)`:
 
@@ -847,7 +862,8 @@ def classify_link_requirements(
     required = link_requirements(externs, asm_globals, expected_unresolved, exports)
     missing = [symbol for symbol in required if symbol not in defined]
     stale_undeclared = sorted(s for s in expected_unresolved if s not in externs)
-    stale_defined = sorted(s for s in expected_unresolved if s in defined)
+    anywhere = defined if defined_anywhere is None else defined_anywhere
+    stale_defined = sorted(s for s in expected_unresolved if s in anywhere)
     stale_exported = sorted(s for s in expected_unresolved if s in exports)
     return missing, stale_undeclared, stale_defined, stale_exported
 
@@ -1657,6 +1673,41 @@ def self_test() -> int:
     if stale_undeclared != ["lean_kernel_main"]:
         failures.append("an expected-unresolved entry the HAL no longer declares was not reported")
 
+    # WS-BP BP1.4: two archives, one reconciliation.  The token stays in the
+    # host archive while the image's archive loses it, which a check over the
+    # host archive alone passes; and an exemption the image's archive alone
+    # has outlived is stale all the same.
+    everywhere, anywhere = combine_archive_definitions(
+        {"host": {"lean_alpha", "lean_kernel_main"}, "aarch64": {"lean_kernel_main"}}
+    )
+    missing, _, stale_defined, _ = classify_link_requirements(
+        externs={"lean_alpha", "lean_kernel_main"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined=everywhere,
+        defined_anywhere=anywhere,
+    )
+    if missing != ["lean_alpha"]:
+        failures.append("a requirement only the host archive meets was not reported missing")
+    if stale_defined != ["lean_kernel_main"]:
+        failures.append("an exemption stale in both archives was not reported")
+    _, _, stale_defined, _ = classify_link_requirements(
+        externs={"lean_kernel_main"},
+        asm_globals=set(),
+        expected_unresolved={"lean_kernel_main": "SM10.1"},
+        defined=combine_archive_definitions({"host": set(), "aarch64": {"lean_kernel_main"}})[0],
+        defined_anywhere=combine_archive_definitions(
+            {"host": set(), "aarch64": {"lean_kernel_main"}}
+        )[1],
+    )
+    if stale_defined != ["lean_kernel_main"]:
+        failures.append("an exemption only the image's archive has outlived was not reported stale")
+    try:
+        combine_archive_definitions({})
+        failures.append("combining no archive decided something")
+    except ValueError:
+        pass
+
     if failures:
         print("[FAIL] check_kernel_entry_exports self-test:")
         for line in failures:
@@ -1678,6 +1729,32 @@ def archive_defined_symbols(archive: Path) -> set[str]:
     return executable_definitions(out)
 
 
+def combine_archive_definitions(
+    per_archive: dict[str, set[str]],
+) -> tuple[set[str], set[str]]:
+    """(defined by every archive, defined by any archive).  One owner for how
+    several archives' symbol tables combine, read by `main` and the self-test."""
+    if not per_archive:
+        raise ValueError("no archive to combine: a gate over nothing decides nothing")
+    tables = list(per_archive.values())
+    return set.intersection(*tables), set.union(*tables)
+
+
+def checked_archives(require_cross: bool) -> list[tuple[str, Path]]:
+    """The archives the reconciliation is decided on: the host archive always,
+    the cross archive when present -- and when `--require-cross` is passed,
+    its absence is a failure rather than a narrower check."""
+    archives = [("host", ARCHIVE)]
+    if CROSS_ARCHIVE.exists():
+        archives.append(("aarch64", CROSS_ARCHIVE))
+    elif require_cross:
+        sys.exit(
+            f"[FAIL] {CROSS_ARCHIVE} does not exist and {REQUIRE_CROSS_FLAG} was passed. "
+            "Build it first: `python3 scripts/build_lean_aarch64_archive.py`"
+        )
+    return archives
+
+
 def main() -> int:
     if "--self-test" in sys.argv[1:]:
         return self_test()
@@ -1688,6 +1765,7 @@ def main() -> int:
         sys.exit(
             f"[FAIL] {ARCHIVE} does not exist. Build it first: `lake build SeLe4n:static`"
         )
+    archives = checked_archives(REQUIRE_CROSS_FLAG in sys.argv[1:])
 
     sources = lean_sources()
     if str(LEAN_LIBRARY_ROOT_MODULE.relative_to(REPO)) not in sources:
@@ -1736,10 +1814,14 @@ def main() -> int:
             "vacuously"
         )
 
-    defined = archive_defined_symbols(ARCHIVE)
-    shadowed = sorted(lean_externs & defined)
+    # A requirement is met only where every checked archive defines it; an
+    # expected-unresolved entry is stale where any does; a shadowing host
+    # stand-in is a defect in whichever archive carries it.
+    per_archive = {label: archive_defined_symbols(path) for label, path in archives}
+    defined, defined_anywhere = combine_archive_definitions(per_archive)
+    shadowed = sorted(lean_externs & defined_anywhere)
     missing, stale_undeclared, stale_defined, stale_exported = classify_link_requirements(
-        externs, asm_globals, EXPECTED_UNRESOLVED, defined, exports
+        externs, asm_globals, EXPECTED_UNRESOLVED, defined, exports, defined_anywhere
     )
     failed = False
     if shadowed:
@@ -1768,7 +1850,8 @@ def main() -> int:
                 "seam, or a declaration with no provider (SM10.1 seams go in "
                 "`EXPECTED_UNRESOLVED` with their reason)"
             )
-            print(f"         {symbol}: {side}")
+            lacking = [label for label, syms in per_archive.items() if symbol not in syms]
+            print(f"         {symbol} (not defined by: {', '.join(lacking)}): {side}")
     if stale_undeclared:
         failed = True
         print("[FAIL] EXPECTED_UNRESOLVED entries the HAL no longer declares (remove them):")
@@ -1796,8 +1879,10 @@ def main() -> int:
         if BOOT_ENTRY_SYMBOL in exports
         else "not yet exported (SM10.1), reconciled as expected unresolved"
     )
+    checked = " and ".join(f"{label} ({path.relative_to(REPO)})" for label, path in archives)
     print(
-        f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in the archive "
+        f"[PASS] all {len(required)} HAL kernel-entry declarations are defined in "
+        f"{'both archives' if len(archives) > 1 else 'the archive'} — {checked} "
         f"({len(externs & asm_globals)} resolved by the HAL's assembly — {provider_basis}; "
         f"{len(EXPECTED_UNRESOLVED)} expected unresolved and reconciled); boot entry "
         f"`{BOOT_ENTRY_SYMBOL}`: {boot_entry}"

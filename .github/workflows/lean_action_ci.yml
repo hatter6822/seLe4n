@@ -374,3 +374,63 @@ jobs:
       # assembled, and the cross-target clippy pass.
       - name: Build sele4n-hal for aarch64-unknown-none-softfloat
         run: ./scripts/test_aarch64_cross_build.sh
+
+  test-lean-aarch64-archive:
+    name: Lean aarch64 Archive
+    runs-on: ubuntu-latest
+
+    # WS-BP BP1: the kernel's Lean object code for the hardware target.
+    # `aarch64 Cross Build` compiles the HAL; nothing compiled the Lean half
+    # for the image until this job.  It builds `libsele4n.a` from the
+    # production closure's C (the elaborator's `SeLe4n` closure, checked
+    # against Lake and the staged allowlist), compiled freestanding with the
+    # soft-float ABI the HAL uses, and then decides the kernel-entry
+    # reconciliation on it as well as on the host archive.  The builder's own
+    # checks -- one initializer per module, the stdlib against the
+    # toolchain's objects, the small-allocator configuration, no FP/SIMD
+    # register operand -- are in its module docs.
+    #
+    # The C compiler is the Lean toolchain's own clang; rustup's `llvm-tools`
+    # supplies the `llvm-nm` / `llvm-objdump` the archive is read with.  The
+    # regenerated stdlib C is cached under `.lake/build` keyed by the
+    # toolchain, so only the first run on a new toolchain pays for it.
+
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+
+      - name: Restore Lean and Lake caches
+        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: |
+            ~/.elan
+            .lake/packages
+            .lake/build
+          key: ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-${{ hashFiles('lean-toolchain', 'lake-manifest.json', 'lakefile.toml', 'scripts/setup_lean_env.sh', 'rust/sele4n-hal/lean_include/lean/config.h') }}
+          restore-keys: |
+            ${{ runner.os }}-${{ runner.arch }}-lean-aarch64-
+            ${{ runner.os }}-${{ runner.arch }}-lean-
+
+      - name: Setup Lean toolchain
+        run: ./scripts/setup_lean_env.sh --skip-test-deps
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
+        with:
+          toolchain: 1.94.1
+          components: llvm-tools
+
+      - name: Build and reconcile the kernel's Lean archive for aarch64
+        run: ./scripts/test_lean_aarch64_archive.sh
+
+      # BP2.2 derives the libc and runtime surface from this report rather
+      # than from a guessed list, so the archive and its unresolved set are
+      # kept with the run.
+      - name: Upload the archive and its unresolved-symbol report
+        if: always()
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        with:
+          name: lean-aarch64-archive
+          path: |
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.a
+            .lake/build/aarch64-unknown-none-softfloat/libsele4n.unresolved
+          if-no-files-found: warn

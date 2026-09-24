@@ -105,6 +105,15 @@ FP_CHECKED_OBJECTS = (
 # Toolchain components the gate needs: clippy for the cross lint lane,
 # llvm-tools for the pinned llvm-objdump the FP/SIMD check disassembles with.
 REQUIRED_COMPONENTS = ("clippy", "llvm-tools")
+# WS-BP BP1: the kernel's Lean object code for the same target.  The lane
+# script builds the cross archive and then decides the kernel-entry
+# reconciliation on it; it reads object code with llvm-tools' llvm-nm and
+# llvm-objdump, so its job must install that component too.
+LEAN_ARCHIVE_LANE = "scripts/test_lean_aarch64_archive.sh"
+LEAN_ARCHIVE_BUILDER = "scripts/build_lean_aarch64_archive.py"
+ENTRY_GATE = "scripts/check_kernel_entry_exports.py"
+ENTRY_GATE_CROSS_FLAG = "--require-cross"
+LEAN_ARCHIVE_COMPONENTS = ("llvm-tools",)
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
 ORACLE_BIN = "rw_lock_oracle"
@@ -1078,11 +1087,11 @@ def run_scripts(body: str) -> list[str]:
     return scripts
 
 
-def _names_gate(token: str) -> bool:
-    """Is `token` a path referring to the gate script?"""
-    basename = os.path.basename(GATE_SCRIPT)
+def _names_gate(token: str, script: str = GATE_SCRIPT) -> bool:
+    """Is `token` a path referring to the gate script (or to `script`)?"""
+    basename = os.path.basename(script)
     return (
-        token.lstrip("./") == GATE_SCRIPT.lstrip("./")
+        token.lstrip("./") == script.lstrip("./")
         or token.endswith("/" + basename)
         or token == basename
     )
@@ -1097,7 +1106,7 @@ def _names_gate(token: str) -> bool:
 NON_EXECUTING_SHELL_OPTIONS = frozenset("n")
 
 
-def interpreter_executes(argv: list[str]) -> bool:
+def interpreter_executes(argv: list[str], script: str = GATE_SCRIPT) -> bool:
     """Does this interpreter invocation actually run the gate script?
 
     Options are read as options -- short clusters expanded, `--` ending
@@ -1129,22 +1138,81 @@ def interpreter_executes(argv: list[str]) -> bool:
             index += 1
             continue
         break
-    return any(_names_gate(token) for token in argv[index:])
+    return any(_names_gate(token, script) for token in argv[index:])
 
 
-def job_runs_gate(body: str) -> bool:
-    """Does some `run:` step of this job actually execute the gate script?"""
+def job_runs_gate(body: str, gate: str = GATE_SCRIPT) -> bool:
+    """Does some `run:` step of this job actually execute the gate script
+    (or the script `gate` names)?"""
     for script in run_scripts(body):
         wrappers = executing_wrappers(script)
         for command in shell_commands(script):
             argv = executed_argv(command, wrappers)
             if not argv:
                 continue
-            if _names_gate(argv[0]):
+            if _names_gate(argv[0], gate):
                 return True
-            if argv[0] in SCRIPT_INTERPRETERS and interpreter_executes(argv):
+            if argv[0] in SCRIPT_INTERPRETERS and interpreter_executes(argv, gate):
                 return True
     return False
+
+
+def check_lean_archive_lane(root: str) -> list[str]:
+    """The lane builds the cross archive, then reconciles the kernel entries on
+    it, and a failure of either fails the lane.
+
+    Relations rather than tokens: each script must be EXECUTED (not echoed,
+    not `--self-test`, which builds and decides nothing), the reconciliation
+    must carry `--require-cross` on the same command (an absent archive is
+    otherwise a narrower check that passes), it must run AFTER the build (a
+    reconciliation read before the archive is written decides on the last
+    run's), and neither may be exempted from `set -e` by `&&` / `||`."""
+    text = read(root, LEAN_ARCHIVE_LANE)
+    if text is None:
+        return [f"{LEAN_ARCHIVE_LANE}: missing. It is the one place the kernel's "
+                f"Lean archive for {CROSS_TARGET} is built and reconciled."]
+    problems: list[str] = []
+    if not os.access(os.path.join(root, LEAN_ARCHIVE_LANE), os.X_OK):
+        problems.append(f"{LEAN_ARCHIVE_LANE}: not executable (chmod +x).")
+    code = code_view(text)
+    wrappers = executing_wrappers(code)
+    builds: list[int] = []
+    reconciles: list[int] = []
+    for position, (command, operator) in enumerate(shell_command_list(code)):
+        argv = executed_argv(command, wrappers)
+        if argv and argv[0] in ("python3", "python") and len(argv) > 1:
+            argv = argv[1:]
+        if not argv or "--self-test" in argv[1:]:
+            continue
+        builder = argv[0].endswith(LEAN_ARCHIVE_BUILDER.split("/")[-1])
+        gate = argv[0].endswith(ENTRY_GATE.split("/")[-1])
+        if builder:
+            builds.append(position)
+        if gate and ENTRY_GATE_CROSS_FLAG in argv[1:]:
+            reconciles.append(position)
+        if (builder or gate) and operator in ERREXIT_EXEMPTING_OPERATORS:
+            problems.append(
+                f"{LEAN_ARCHIVE_LANE}: `{command}` is followed by `{operator}`, "
+                f"which exempts it from `set -e`: it runs and its failure is "
+                f"discarded."
+            )
+    if not builds:
+        problems.append(f"{LEAN_ARCHIVE_LANE}: no executed `{LEAN_ARCHIVE_BUILDER}`.")
+    if not reconciles:
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: no executed `{ENTRY_GATE} {ENTRY_GATE_CROSS_FLAG}`. "
+            f"Without the flag an absent cross archive narrows the check to the "
+            f"host archive and passes."
+        )
+    if builds and reconciles and max(reconciles) < min(builds):
+        problems.append(
+            f"{LEAN_ARCHIVE_LANE}: the reconciliation runs before the archive is "
+            f"built, so it decides on whatever a previous run left behind."
+        )
+    enabled = shell_option_state(code)
+    if not (enabled.get("errexit") and enabled.get("pipefail")):
+        problems.append(f"{LEAN_ARCHIVE_LANE}: needs `set -e` and `set -o pipefail`.")
+    return problems
 
 
 def check_workflow(root: str) -> list[str]:
@@ -1186,13 +1254,41 @@ def check_workflow(root: str) -> list[str]:
         rf"^\s*targets\s*:\s*.*\b{re.escape(CROSS_TARGET)}\b", re.MULTILINE
     )
     components_key = re.compile(r"^\s*components\s*:\s*(.*)$", re.MULTILINE)
-    for name in runners:
-        body = "\n".join(jobs[name])
-        declared = {
+
+    def declared_components(body: str) -> set[str]:
+        return {
             item.strip()
             for match in components_key.finditer(body)
             for item in match.group(1).split(",")
         }
+
+    lean_runners = [
+        name for name, body in jobs.items()
+        if job_runs_gate("\n".join(body), LEAN_ARCHIVE_LANE)
+    ]
+    if not lean_runners:
+        problems.append(
+            f"{WORKFLOW_FILE}: no job runs `{LEAN_ARCHIVE_LANE}`. The kernel's "
+            f"Lean object code for {CROSS_TARGET} would go unbuilt, and the "
+            f"kernel-entry reconciliation would be decided on the host "
+            f"archive alone."
+        )
+    for name in lean_runners:
+        missing = [
+            c for c in LEAN_ARCHIVE_COMPONENTS
+            if c not in declared_components("\n".join(jobs[name]))
+        ]
+        if missing:
+            problems.append(
+                f"{WORKFLOW_FILE}: job `{name}` runs `{LEAN_ARCHIVE_LANE}` but "
+                f"its rust-toolchain step does not install "
+                f"{', '.join(f'`{c}`' for c in missing)}: the archive's "
+                f"symbols and instructions are read with llvm-tools' llvm-nm "
+                f"and llvm-objdump."
+            )
+    for name in runners:
+        body = "\n".join(jobs[name])
+        declared = declared_components(body)
         missing = [c for c in REQUIRED_COMPONENTS if c not in declared]
         if missing:
             problems.append(
@@ -1487,6 +1583,7 @@ def run_checks(root: str) -> list[str]:
     problems += check_workflow(root)
     problems += check_build_script(root)
     problems += check_host_lane(root)
+    problems += check_lean_archive_lane(root)
     return problems
 
 
@@ -1548,6 +1645,22 @@ jobs:
           targets: {CROSS_TARGET}
       - name: Build sele4n-hal for {CROSS_TARGET}
         run: ./{GATE_SCRIPT}
+  test-lean-aarch64-archive:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: dtolnay/rust-toolchain@0000000000000000000000000000000000000000
+        with:
+          toolchain: 1.94.1
+          components: llvm-tools
+      - name: Build and reconcile {LEAN_ARCHIVE_LANE}
+        run: ./{LEAN_ARCHIVE_LANE}
+"""
+
+GOOD_LEAN_LANE = f"""#!/usr/bin/env bash
+set -euo pipefail
+lake build SeLe4n:static
+python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split('/')[-1]}"
+python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split('/')[-1]}" {ENTRY_GATE_CROSS_FLAG}
 """
 
 GOOD_HOST_LANE = """#!/usr/bin/env bash
@@ -1582,9 +1695,10 @@ def write_tree(root: str, files: dict[str, str]) -> None:
         os.makedirs(os.path.dirname(path), exist_ok=True)
         with open(path, "w", encoding="utf-8") as handle:
             handle.write(content)
-    gate = os.path.join(root, GATE_SCRIPT)
-    if os.path.exists(gate):
-        os.chmod(gate, 0o755)
+    for script in (GATE_SCRIPT, LEAN_ARCHIVE_LANE):
+        path = os.path.join(root, script)
+        if os.path.exists(path):
+            os.chmod(path, 0o755)
 
 
 def baseline() -> dict[str, str]:
@@ -1594,12 +1708,13 @@ def baseline() -> dict[str, str]:
         WORKFLOW_FILE: GOOD_WORKFLOW,
         BUILD_SCRIPT: GOOD_BUILD_RS,
         HOST_LANE: GOOD_HOST_LANE,
+        LEAN_ARCHIVE_LANE: GOOD_LEAN_LANE,
     }
 
 
 # The checks `run_checks` performs, by id.  Each must be exercised by at
 # least one PRESERVING negative case below; the harness enforces it.
-CHECKS = ("toolchain", "gate_script", "workflow", "build_script", "host_lane")
+CHECKS = ("toolchain", "gate_script", "workflow", "build_script", "host_lane", "lean_archive_lane")
 
 
 class Case:
@@ -2441,6 +2556,34 @@ def self_test() -> int:
     # nothing while reading as coverage.  That happened here once already,
     # so it is checked rather than trusted.
     clean = baseline()
+    # WS-BP BP1: the Lean archive lane.  Every case keeps the tokens.
+    lane = GOOD_LEAN_LANE
+    builder_line = f'python3 "${{SCRIPT_DIR}}/{LEAN_ARCHIVE_BUILDER.split("/")[-1]}"\n'
+    gate_line = f'python3 "${{SCRIPT_DIR}}/{ENTRY_GATE.split("/")[-1]}" {ENTRY_GATE_CROSS_FLAG}\n'
+    for label, mutated in [
+        ("lane echoes the builder", lane.replace(builder_line, "echo " + builder_line)),
+        ("lane runs the builder's self-test only",
+         lane.replace(builder_line, builder_line.replace('"\n', '" --self-test\n'))),
+        ("lane keeps --require-cross on another command",
+         lane.replace(gate_line, gate_line.replace(f" {ENTRY_GATE_CROSS_FLAG}", "")
+                      + f"echo {ENTRY_GATE_CROSS_FLAG}\n")),
+        ("lane reconciles before it builds", lane.replace(builder_line + gate_line, gate_line + builder_line)),
+        ("lane discards the reconciliation's failure", lane.replace(gate_line, gate_line.rstrip("\n") + " || true\n")),
+        ("lane turns errexit back off", lane + "set +e\n"),
+    ]:
+        files = baseline()
+        files[LEAN_ARCHIVE_LANE] = mutated
+        cases.append(Case(label, files, True, check="lean_archive_lane", mutation="preserving"))
+    files = baseline()
+    files[WORKFLOW_FILE] = GOOD_WORKFLOW.replace(f"run: ./{LEAN_ARCHIVE_LANE}", f"run: echo ./{LEAN_ARCHIVE_LANE}")
+    cases.append(Case("workflow echoes the Lean archive lane", files, True, check="workflow", mutation="preserving"))
+    files = baseline()
+    files[WORKFLOW_FILE] = GOOD_WORKFLOW.replace("          components: llvm-tools\n", "          components: clippy\n")
+    cases.append(Case("Lean archive job lacks llvm-tools", files, True, check="workflow", mutation="preserving"))
+    files = baseline()
+    del files[LEAN_ARCHIVE_LANE]
+    cases.append(Case("Lean archive lane missing", files, True, check="lean_archive_lane"))
+
     failures = 0
     for case in cases:
         if case.expect and case.files == clean:

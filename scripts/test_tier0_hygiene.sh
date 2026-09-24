@@ -523,6 +523,12 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 # and its refusal of input it cannot decide, are what make a PASS on the
 # objects mean the kernel touches no FP/SIMD register.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fp_simd_free_objects.py" --self-test
+# WS-BP BP1: the kernel's Lean archive builder.  The build itself needs the
+# toolchain and runs in the `Lean aarch64 Archive` CI lane
+# (`test_lean_aarch64_archive.sh`); its checks -- the closure classification,
+# the allocator-configuration relation, the per-archive symbol relations and
+# the stdlib fidelity comparison -- are pure and self-tested here.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py" --self-test
 
 # WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
 # said tier 0 enforced.  It did not, and the sketch in §5.6 would not have

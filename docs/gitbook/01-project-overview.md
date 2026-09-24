@@ -74,7 +74,12 @@ a gate rather than waiting for a reviewer.  In the same version the kernel becam
 **FP-free**: the HAL builds for `aarch64-unknown-none-softfloat`, both boot
 entries trap FP/SIMD at EL0 and EL1 from their first instruction, and the cross
 gate disassembles the release objects to prove it; user FP/SIMD traps until
-threads carry an FP context (BP7.9).  BP1..BP8 have not started.
+threads carry an FP context (BP7.9).  **BP1 landed at v0.36.2 as well**: the
+kernel's Lean object code is built for the target as `libsele4n.a` from the
+elaborator's closure of `SeLe4n`, compiled freestanding and soft-float, with
+every unresolved symbol attributed to its provider and the kernel-entry gate
+deciding on both archives (the `Lean aarch64 Archive` CI lane).  BP2..BP8 have
+not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

@@ -1319,6 +1319,14 @@ def strip_asm(t: str) -> str:
     return strip_pairs(t, "//", ("/*", "*/"))
 
 
+def strip_c_header(t: str) -> str:
+    """C headers (`rust/sele4n-hal/lean_include/lean/config.h`, WS-BP BP1):
+    `//` and `/* */`, and `"`-quoted strings -- the grammar the `.S` sources
+    already have, since both reach the compiler through cpp.  `#` directives
+    are code: a `#define`'s macro name is an identifier and stays in scope."""
+    return strip_pairs(t, "//", ("/*", "*/"))
+
+
 def strip_block_only(t: str) -> str:
     """Linker scripts: `/* */` only.  `//` is not a comment there, and
     treating it as one would blank real content to end of line."""
@@ -1365,6 +1373,7 @@ CONTENT_STRIPPERS = {
     ".sh": strip_shell,
     ".bash": strip_shell,
     ".S": strip_asm,
+    ".h": strip_c_header,
     ".ld": strip_block_only,
     ".toml": strip_config,
     ".yml": strip_config,

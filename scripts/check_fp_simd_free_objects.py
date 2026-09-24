@@ -30,7 +30,7 @@ Scope.  It decides the files it is handed.  The linked image additionally
 contains whatever members of the target's `compiler_builtins` the link pulls
 in, and that library is **not** FP-free even for the softfloat target (its
 complex-arithmetic helpers and `__negsf2` / `__negdf2` use `d` registers), so
-the image-level run is WS-BP BP5.1's, where it decides what was actually
+the image-level run is WS-BP BP5.2's, where it decides what was actually
 linked.
 
     check_fp_simd_free_objects.py [--objdump PATH] FILE...
@@ -103,8 +103,11 @@ def fp_findings(disassembly: str) -> tuple[int, list[str]]:
     return count, findings
 
 
-def default_objdump() -> str:
-    """The toolchain-pinned `llvm-objdump` (rustup's `llvm-tools`), else PATH."""
+def rust_llvm_tool(name: str) -> str:
+    """A tool from the toolchain-pinned `llvm-tools` component (rustup), else PATH.
+
+    One owner for "which LLVM binutil does a gate read object code with", so
+    the FP gate and the Lean cross-archive driver cannot disagree about it."""
     rustc = shutil.which("rustc")
     if rustc:
         try:
@@ -118,18 +121,23 @@ def default_objdump() -> str:
             ).stdout
             triple = re.search(r"^host: (\S+)$", host, re.MULTILINE)
             if triple:
-                pinned = Path(sysroot) / "lib/rustlib" / triple.group(1) / "bin/llvm-objdump"
+                pinned = Path(sysroot) / "lib/rustlib" / triple.group(1) / "bin" / name
                 if pinned.is_file():
                     return str(pinned)
         except (OSError, subprocess.CalledProcessError):
             pass
-    found = shutil.which("llvm-objdump")
+    found = shutil.which(name)
     if found:
         return found
     raise Unreadable(
-        "no llvm-objdump: install the `llvm-tools` component "
-        "(listed in rust/rust-toolchain.toml) or put llvm-objdump on PATH"
+        f"no {name}: install the `llvm-tools` component "
+        f"(listed in rust/rust-toolchain.toml) or put {name} on PATH"
     )
+
+
+def default_objdump() -> str:
+    """The toolchain-pinned `llvm-objdump` (rustup's `llvm-tools`), else PATH."""
+    return rust_llvm_tool("llvm-objdump")
 
 
 def disassemble(objdump: str, path: Path) -> str:

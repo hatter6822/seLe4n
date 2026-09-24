@@ -158,6 +158,7 @@ mismatch too.
 ```bash
 ./scripts/test_rust.sh                 # host: build, tests, fmt, clippy
 ./scripts/test_aarch64_cross_build.sh  # the kernel's real target
+./scripts/test_lean_aarch64_archive.sh # the kernel's Lean for that target
 ```
 
 **Run the cross build after any change under `rust/`.** The tier scripts and
@@ -169,6 +170,17 @@ in both profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually
 assembled, lints the cross target with `-D warnings`, and disassembles the
 release objects with `scripts/check_fp_simd_free_objects.py`. It runs in CI as the
 `aarch64 Cross Build` job.
+
+**The Lean half has its own lane** (WS-BP BP1): `test_lean_aarch64_archive.sh`
+builds `libsele4n.a` — the elaborator's closure of `SeLe4n`, compiled
+freestanding and soft-float by the Lean toolchain's clang — and decides the
+kernel-entry reconciliation on it as well as on the host archive.  The first run
+on a new toolchain regenerates the stdlib C (several minutes, cached under
+`.lake/build/aarch64-unknown-none-softfloat/`).  It fails when a production
+module imports `Lean.*` or a staged module, when a generated file carries a
+warning outside the generator's two known shapes, or when the archive references
+a symbol no provider accounts for; `libsele4n.unresolved` lists what the archive
+needs, by provider.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
@@ -787,6 +799,7 @@ lake env lean --run tests/<Suite>.lean       # interpret a suite
 NIGHTLY_ENABLE_EXPERIMENTAL=1 ./scripts/test_nightly.sh   # tiers 0-4
 ./scripts/test_rust.sh                       # host Rust
 ./scripts/test_aarch64_cross_build.sh        # cross target (after any rust/ change)
+./scripts/test_lean_aarch64_archive.sh       # the kernel's Lean for the cross target
 ./scripts/test_tier5_cross_language.sh       # Lean <-> Rust lock oracle
 SELE4N_REQUIRE_GATES=1 ./scripts/test_tier4_smp_bootcheck.sh   # gate honesty
 
