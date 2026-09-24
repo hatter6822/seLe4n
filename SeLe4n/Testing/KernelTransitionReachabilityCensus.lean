@@ -1218,6 +1218,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.Boot.bootFromPlatformWithIdleThreads
   , `SeLe4n.Platform.Boot.bootFromPlatformWithInterrupts
   , `SeLe4n.Platform.Boot.bootFromPlatformWithWarnings
+  , `SeLe4n.Platform.Boot.createBootObject
   , `SeLe4n.Platform.Boot.enqueueIdleThread
   , `SeLe4n.Platform.Boot.foldIrqs
   , `SeLe4n.Platform.Boot.foldObjects
@@ -1236,6 +1237,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Platform.RPi5.mmioWrite32
   , `SeLe4n.Platform.RPi5.mmioWrite32W1C
   , `SeLe4n.Platform.RPi5.mmioWrite64
+  , `SeLe4n.Platform.RPi5.rpi5DeploymentBootState
   , `SeLe4n.Testing.KernelTransitionReachabilityCensus._cstage1.censusWitnessMintedTransformer
   ]
 
