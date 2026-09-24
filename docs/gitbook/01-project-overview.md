@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 418,119 lines of production Lean across 341 files, 85,250 lines across 71 Lean test suites,
+Current state (as of v0.36.2): 418,122 lines of production Lean across 341 files, 85,243 lines across 71 Lean test suites,
 13,815 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -66,7 +66,7 @@ it had made false.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
 path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
-became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 45
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 46
 sub-tasks across nine phases.  **BP0 landed at v0.36.2**: the three Lean/Rust
 pairs — the device-tree readers, the ABI encoder and decoder, the boot map and
 the Lean memory map — are driven through shared fixtures, so a divergence fails
@@ -91,7 +91,11 @@ kernel's, and a Tier 1 census proves no kernel entry reaches the environmental
 answers.  **BP2.3/BP2.4** run the Lean library initializer before the kernel
 is entered — the entry takes a token only a successful initialization
 constructs, so the order is checked by the compiler — and halt the whole
-system if it fails.  BP2.6 and BP3..BP8 have not started.
+system if it fails.  **BP2.6** builds the boot map from linker symbols and
+board constants — the image's text read-only and executable at EL1 alone, its
+read-only data and everything else never executable, the guaranteed first GiB of RAM and the
+device window — so nothing parses the device tree before the MMU is on.
+BP3..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

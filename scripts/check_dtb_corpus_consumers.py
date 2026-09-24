@@ -7,7 +7,7 @@
 """WS-BP BP0.2: both sides consume every fixture of the device-tree corpus.
 
 The shared corpus (`tests/fixtures/dtb/`, BP0.1) is worth something only while
-**both** the Rust walker's suite and the Lean parser's suite read **all** of it.
+**both** the Rust walk's suite and the Lean parser's suite read **all** of it.
 A case added to one suite alone — a blob the other side never parses — is the
 silent gap the corpus exists to close, so this Tier 0 gate refuses it before any
 build runs.  What it holds:
@@ -22,16 +22,19 @@ build runs.  What it holds:
 3. **The Rust consumer is live**: `every_corpus_fixture_agrees_with_the_manifest`
    is a `#[test]` with no other attribute between it and its `fn` (so no
    `#[ignore]`), inside `mod dtb_corpus_tests`, which is `#[cfg(test)]`; and its
-   body drives the manifest through both walker entry points.
+   body drives the manifest through the structure check the bootargs reader
+   runs first (`fdt_layout`, `fdt_structure_check`) and through that reader.
 4. **The Lean consumer is live**: `main`'s body in `tests/Ak9PlatformSuite.lean`
    carries the runner as a statement of its own, and the runner reads the
-   manifest and the parse path.
+   manifest and asks both the structural question and the `/memory` one.
 5. **Both suites are run by a gate**: Tier 2 executes `ak9_platform_suite`, and
    `scripts/test_rust.sh` runs the workspace's unit tests.
 
 Every source is read through its code view (`rust_code_view`, `lean_code_view`),
-so a comment naming the runner can neither satisfy nor trip a check.  The gate
-is **interim**, like the corpus: WS-BP BP2.6 retires the Rust walker and both.
+so a comment naming the runner can neither satisfy nor trip a check.  **WS-BP
+BP2.6** retired the Rust `/memory` walk, so the question both suites still share
+is the structural one; the corpus and this gate stay for as long as the bootargs
+reader walks the structure block in Rust.
 """
 
 from __future__ import annotations
@@ -55,10 +58,11 @@ RUST_SCRIPT = ROOT / "scripts" / "test_rust.sh"
 
 RUST_MODULE = "dtb_corpus_tests"
 RUST_TEST = "every_corpus_fixture_agrees_with_the_manifest"
-RUST_BODY_CALLS = ("manifest", "memory_extents_from_blob", "ram_top_from_blob",
+RUST_BODY_CALLS = ("manifest", "fdt_layout", "fdt_structure_check",
                    "find_bootargs_in_dtb", "read_dir")
 LEAN_RUNNER = "dtbCorpus_every_fixture_agrees_with_the_manifest"
-LEAN_BODY_TOKENS = ('"MANIFEST"', "corpusDeclaredRegions", "readDir")
+LEAN_BODY_TOKENS = ('"MANIFEST"', "corpusStructureReadable", "corpusDeclaredRegions",
+                    "readDir")
 
 
 def manifest_names(text: str) -> list[str]:
@@ -217,9 +221,13 @@ def self_test() -> int:
         ("the module no longer #[cfg(test)]",
          lambda: check_rust_consumer(rust.replace(
              "#[cfg(test)]\nmod " + RUST_MODULE, "mod " + RUST_MODULE)), True),
-        ("the body stops driving the RAM top",
+        ("the body stops running the structure check",
          lambda: check_rust_consumer(rust.replace(
-             "let got_top = ram_top_from_blob(&blob);", "let got_top = *top;")), True),
+             "fdt_structure_check(&blob, &layout).is_some()", "true")), True),
+        ("the runner stops asking the structural question",
+         lambda: check_lean_consumer(lean.replace(
+             "let gotReadable := corpusStructureReadable blob", "let gotReadable := readable")),
+         True),
         ("the runner named in main only in a comment",
          lambda: check_lean_consumer(lean.replace(
              "\n  " + LEAN_RUNNER + "\n", "\n  -- " + LEAN_RUNNER + "\n")), True),
@@ -240,7 +248,7 @@ def self_test() -> int:
         ("a row with no blob",
          lambda: check_bijection(manifest, names - {sorted(names)[0]}), True),
         ("a row named twice",
-         lambda: check_bijection(manifest + "four_gib_low_aperture | - | refused\n", names),
+         lambda: check_bijection(manifest + "four_gib_low_aperture | refused | refused\n", names),
          True),
     ]
     failed = 0

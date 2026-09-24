@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 418,119 across 341 Lean files |
-| **Test LoC** | 85,250 across 71 Lean test suites |
+| **Production LoC** | 418,122 across 341 Lean files |
+| **Test LoC** | 85,243 across 71 Lean test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), and **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6); BP2.6 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), and **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7); BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -207,7 +207,7 @@ never behaviour.  BP0 makes a divergence fail a gate:
 
 | Pair | Shared artefact | Consumers |
 |------|-----------------|-----------|
-| Rust `cmdline` FDT walker / Lean `DeviceTree` parser — *which `/memory` extents does this blob declare?* | `tests/fixtures/dtb/` — 58 blobs and a hand-written `MANIFEST` (regions, RAM top), rendered by `scripts/generate_dtb_corpus.py` | `cmdline::dtb_corpus_tests`, `tests/Ak9PlatformSuite.lean`; Tier 0 `check_dtb_corpus_consumers.py` |
+| Rust `cmdline` structure walk / Lean `DeviceTree` parser — *is this structure block readable at all?* (and, until BP2.6, *which `/memory` extents does it declare?*) | `tests/fixtures/dtb/` — 58 blobs and a hand-written `MANIFEST` (structure verdict; `/memory` regions, read by the Lean parser alone since BP2.6), rendered by `scripts/generate_dtb_corpus.py` | `cmdline::dtb_corpus_tests`, `tests/Ak9PlatformSuite.lean`; Tier 0 `check_dtb_corpus_consumers.py` |
 | `sele4n-abi` encoder / kernel decoder — *which bits and registers carry which field, within which bounds?* | `tests/fixtures/abi_layout.expected`, emitted from `MessageInfo.decode`/`encode`, `arm64DefaultLayout` and the ABI constants | `tests/SyscallReturnAbiSuite.lean`, `rust/sele4n-abi/tests/conformance.rs` |
 | `mmu::boot_mapping_for` / `rpi5MemoryMapForConfig` — *what does the boot map install at this address?* | `tests/fixtures/boot_map.expected`, the Lean map's kind at every boundary probe of every RAM variant | `tests/Ak9PlatformSuite.lean`, `mmu::boot_map_tests` |
 
@@ -215,8 +215,8 @@ The corpus's first run found **thirteen** divergences on the Rust side and
 **eight** on the Lean side; each was fixed on the side that was wrong, so the
 two readers now share one set of refusals:
 
-- **Structure** (Rust gained `fdt_structure_check`, which both Rust walks run
-  first): exactly one top-level node, named by the empty string; properties
+- **Structure** (Rust gained `fdt_structure_check`, which the Rust walks ran
+  first — the bootargs walk still does): exactly one top-level node, named by the empty string; properties
   before children; unique property names and unique sibling names; node and
   property names of at most 255 bytes; nesting of at most 32 levels (the Lean
   parser gained `fdtMaxDepth`); a reservation block inside `totalsize`, and the structure and strings
@@ -233,11 +233,14 @@ The boot-map pair found the device window mapped Device up to `0xFFA0_0000`,
 the Lean extent rounded up to a 2 MiB block, over space the Lean map reserves.
 `DEVICE_WINDOW_TOP` is the Lean extent `0xFF85_0000` exactly, and the one block
 straddling it is described by a level-3 table of 4 KiB pages
-(`DEVICE_TAIL_BLOCK_BASE`); the boot tables are seven 4 KiB tables.
+(`DEVICE_TAIL_BLOCK_BASE`).
 
-The device-tree pair is **interim**: BP2.6 removes the Rust walker from the
-boot path, which makes the Lean parse the blob's only parse, and retires the
-corpus and its gate with it.  The ABI and boot-map pairs are permanent.
+The device-tree pair was written as **interim**.  BP2.6 (§6.2.7) removed the
+Rust `/memory` walk from the boot path, so the Lean parser is the only reader of
+the blob's memory; it kept the Rust bootargs reader, whose structure walk still
+answers "is this block readable" beside the Lean parser, so the corpus and its
+gate were **retargeted** onto that question rather than retired.  The ABI and
+boot-map pairs are permanent.
 
 ### 6.2.3 The kernel's Lean object code for the target (WS-BP BP1, v0.36.2)
 
@@ -289,8 +292,8 @@ places, by an allocator in the HAL (`rust/sele4n-hal/src/lean_heap.rs`).
   regions, bounded by `__lean_heap_start` / `__lean_heap_end`, and asserts that
   it is a whole number of 4 KiB pages, page-aligned, and ends inside the
   smallest Raspberry Pi 5's RAM `[0, 1 GiB)`.  No firmware value or device-tree
-  field sizes it.  The boot map's critical ranges include it, so translation
-  is never enabled over tables that leave it unmapped.
+  field sizes it.  It lies in the guaranteed RAM the boot map covers
+  (§6.2.7), so translation is never enabled over tables that leave it unmapped.
 - **The contract.**  The HAL exports `lean.h`'s small-allocator API under
   `hw_target` — `lean_alloc_small(sz, slot_idx)`, `lean_free_small(p)`,
   `lean_small_mem_size(p)` — with the 512 size classes indexed exactly as
@@ -388,6 +391,49 @@ once with `builtin = 1`, before any Lean code runs, in
   `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its reason.
   `scripts/check_kernel_entry_exports.py` requires both archives to define the
   initializer.
+
+### 6.2.7 The boot map (WS-BP BP2.6, v0.36.2)
+
+The identity map `rust/sele4n-hal/src/mmu.rs` installs before the kernel runs is
+built from the image's own layout and board constants.  Nothing is parsed
+before translation is enabled.  Until BP2.6, `init_mmu` walked the firmware's
+device tree with the MMU off to size the map by the board's RAM.  That was an
+attacker-influenced parser with no memory protection, sizing a map that needs
+no size.
+
+- **The map.**  `boot_mapping_for(addr, layout)` is a function of the address
+  and the image's layout alone:
+  - `[0, GUARANTEED_RAM_TOP)` (`0x4000_0000`, the RAM every Raspberry Pi 5 has)
+    is Normal;
+  - the device window `[0xFE00_0000, 0xFF85_0000)` is Device;
+  - everything else is unmapped.
+
+  The driven BP0.4 comparison (§6.2.2) requires every Normal address to be RAM
+  in **every** RAM variant's Lean map, and the Normal window to equal the
+  smallest variant's RAM.  RAM above the gigabyte is to be mapped after the
+  verified Lean parse has chosen the board (BP4.6, not started).  Until then it is unmapped: a lost
+  resource, never a false claim.
+- **W^X at EL1.**  Inside guaranteed RAM:
+  - the kernel text `[_start, __text_end)` is read-only and executable;
+  - its read-only data `[__rodata_start, __rodata_end)` is read-only and never
+    executable;
+  - every other page is writable and never executable.
+
+  The map this replaced used one writable, PXN-clear descriptor for all RAM
+  while `SCTLR_EL1.WXN` is set, and WXN makes a writable page execute-never.
+  So the kernel's first instruction fetch after enabling translation would
+  have faulted; no image had yet run far enough to show it.
+- **The section boundaries are the linker's.**  They are assigned inside the
+  sections they bound.  `link.ld` asserts that they are page aligned and that
+  the read-only data begins where the text ends, so no orphan section can be
+  mapped executable.  Its RAM region ends at `GUARANTEED_RAM_TOP`.
+  `scripts/check_link_script.py` proves each assertion live by mutation.
+- **The device tree is not read.**  `init_mmu` checks only the window a reader
+  may dereference: `MAX_DTB_SIZE` bytes from the pointer, the bound every
+  reader enforces.  The window must lie in guaranteed RAM and outside
+  `[_start, __lean_heap_end)`; otherwise the boot is refused.
+- **Cache maintenance.**  `is_boot_cacheable_range` is one interval,
+  `[0, GUARANTEED_RAM_TOP)`.  An operand outside it fails closed.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

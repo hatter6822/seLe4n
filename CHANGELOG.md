@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1 and BP2.1..BP2.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, and the kernel is entered only after its library initializer succeeds
+## v0.36.2 — WS-BP BP0, BP1 and BP2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, and the boot map is built from constants with nothing parsed before the MMU is on
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -506,10 +506,72 @@ initializer that must run before its definitions are used; the library root's,
   initializer is not called again), and the release of exactly the one
   reference handed over.
 
-BP2.5's two halves landed with BP2.1 and BP2.2.  BP2.6 and BP3..BP8 have not
-started.
+BP2.5's two halves landed with BP2.1 and BP2.2.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.5)
+**BP2.6 — the boot map is built from constants, and nothing is parsed before
+the MMU is on.**  `init_mmu` used to parse the firmware's device tree before
+translation was enabled — an attacker-influenced parser running with no memory
+protection and no recovery but a halt — to learn a RAM *size* the boot map did
+not need.  It reads nothing of the blob now.
+
+- **What is mapped.**  The guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`,
+  `0x4000_0000`: the smallest shipped board, and `link.ld`'s `RAM` region, which
+  ends there) and the device window, both from board constants; the image's
+  permission boundaries from linker symbols (`_start`, `__text_end`,
+  `__rodata_end`).  `boot_mapping_for(addr, &layout)` is the one answer to what an
+  address is mapped as, and `is_boot_cacheable_range` is a stateless `const`
+  check against it — the mutable RAM-top the cache maintenance read is gone.
+  RAM above the first GiB is left unmapped until BP4.3 has verified the board;
+  mapping it is the new **BP4.6**.
+- **W^X, and a latent boot-blocking defect.**  The old map installed one
+  descriptor for all of RAM: writable, and with `PXN` clear so the image could
+  run — while `enable_mmu` sets `SCTLR_EL1.WXN`, which makes every writable page
+  non-executable.  The first instruction fetched after translation was enabled
+  would therefore have faulted.  Latent (nothing boots the image yet), not a
+  security exposure, and closed: text is read-only and executable at EL1 alone
+  (`BLOCK_KERNEL_TEXT`), read-only data is read-only and never executable
+  (`BLOCK_KERNEL_RODATA`), and everything else is writable and never executable
+  (`BLOCK_NORMAL` carries `PXN`).  The image's GiB is refined through three L3
+  tables so the boundaries fall on pages; eight tables in all.
+- **The device tree is placed, not parsed.**  `dtb_window(dtb_ptr)` is the
+  `MAX_DTB_SIZE` bytes any reader may dereference, decided from the pointer
+  alone, and `dtb_window_admissible` requires it inside guaranteed RAM and
+  disjoint from the image, its stacks and the Lean heap arena; `init_mmu` halts
+  the core otherwise, and on an image layout the tables cannot describe.
+- **Retired.**  The Rust `/memory` walker and everything it fed:
+  `ram_top_from_dtb`, `ram_top_from_blob`, `dtb_extent_from_dtb`,
+  `dtb_dereferenced_range`, `clamp_ram_top`, `boot_ram_top`,
+  `boot_critical_ranges_mapped`, `LOW_RAM_TOP`, `HIGH_RAM_BASE` and
+  `UNDESCRIBED_RAM_TOP`, with their tests.  Tier 3 refuses each coming back, and
+  refuses `init_mmu` calling into `cmdline` at all.
+- **The corpus is retargeted, not retired.**  The pair it tied still exists: the
+  bootargs reader the QEMU lanes use runs behind a Rust structure check.  The
+  `MANIFEST` is `name | structure | regions`: the `structure` column holds the
+  Rust check and the Lean parser to one verdict on all 58 blobs (23 refused),
+  and `regions` is the Lean parser's alone (8 readable blobs whose regions it
+  refuses).  `check_dtb_corpus_consumers.py` follows the new Rust calls.
+- **`link.ld`.**  `.text` and `.rodata` end page-aligned, the boundary symbols
+  are assigned *inside* their sections — lld attaches a location-counter change
+  between sections to the following section, so a symbol assigned between them
+  moved with any section inserted there — and four new `ASSERT`s hold the
+  layout, among them `__rodata_start == __text_end`.  `check_link_script.py`
+  proves each live by mutation, an inserted section included.
+- **A gate that could not see a `const fn`.**  The claim index's new row names
+  `boot_mapping_for` and `dtb_window_admissible`, and
+  `check_claim_evidence_citations.py` reported both as missing artefacts: its
+  Rust declaration pattern matched `const` and captured `fn` as the name,
+  consuming the `fn` that declares the function, so no `const fn` in the tree
+  had ever been a declaration to it.  It failed closed and no earlier row cited
+  one, so nothing had passed wrongly.  The pattern is a zero-width lookahead now
+  (every keyword position is tried, and `static mut` skips its `mut`), with
+  four self-test cases: `const fn`, `const unsafe fn` and `static mut`
+  declarations resolve, and a renamed `const fn` still fails.
+- **Tests.**  `boot_map_tests` walks every table entry against
+  `boot_mapping_for`, checks W^X on every page of the guaranteed GiB, checks
+  inclusion against `tests/fixtures/boot_map.expected`, and covers the L3 slot
+  assignment, layout well-formedness and the device-tree window.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

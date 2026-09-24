@@ -3815,61 +3815,41 @@ run_negative_check "INVARIANT" bash -lc 'rg -U -n "^@\[inline\] def effectiveSch
 # Relation, not presence: the mutation keeps `clearCurrentThreadHw` in the file
 # and drops the guard, so an anchor on the call alone would still pass.
 run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw[^\n]*(\n([ \t][^\n]*)?)*let status ← recordCurrentThreadHw cur\? c\n      if status == switchToThreadHwRejected then\n        let _ ← clearCurrentThreadHw c" SeLe4n/Kernel/Concurrency/Runtime.lean'
-# PR #892 review: the RAM-top walk accepts its accumulated total only from a
-# parse that reached a top-level FDT_END with every node closed.  It
-# *accumulates* where its `find_bootargs_in_dtb` twin *searches*, so an early
-# exit is fail-open here and fail-closed there — which is why only this one
-# needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
-# read out of a prefix the walk never validated.
-run_check "INVARIANT" rg -U -n '^fn find_memory_extents_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let mut terminated = false;[^\n]*(\n([ \t][^\n]*)?)*\n    if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    Some\(extents\)\n\}' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -U -n '^fn find_ram_top_in_dtb\(blob: &\[u8\]\) -> Option<u64> \{\n    let extents = find_memory_extents_in_dtb\(blob\)\?;\n    if extents\.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)' rust/sele4n-hal/src/cmdline.rs
-# PR #892 review round 3: the RAM top is the end of the CONTIGUOUS run of
-# reported extents from address 0, decided over all of them at once, and the
-# peripheral window is the one gap the walk may cross — only from a cursor that
-# has reached the low aperture's top.  A maximum fold (the pre-round shape)
-# mapped every hole between two claims Normal-cacheable.
-run_check "INVARIANT" rg -n -U 'fn contiguous_ram_top\(extents: &MemoryExtents\) -> u64 \{\n    let mut cursor: u64 = 0;' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -n -U 'if let Some\(end\) = extents\.furthest_end_containing\(cursor\) \{\n            if end > cursor \{\n                cursor = end;\n                continue;' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -n -U 'if \(crate::mmu::LOW_RAM_TOP\.\.crate::mmu::HIGH_RAM_BASE\)\.contains\(&cursor\) \{\n            if let Some\(end\) = extents\.furthest_end_containing\(crate::mmu::HIGH_RAM_BASE\) \{' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -n -U 'let top = base\.checked_add\(size\)\?;\n        extents\.push\(base, top\)\?;' rust/sele4n-hal/src/cmdline.rs
-# NEGATIVE: the maximum fold, in the `reg` walk or anywhere the top is decided.
-run_negative_check "INVARIANT" rg -n -U 'let top = base\.checked_add\(size\)\?;\n\s+\*best = Some\(' rust/sele4n-hal/src/cmdline.rs
-run_negative_check "INVARIANT" rg -n 'best: &mut Option<u64>,' rust/sele4n-hal/src/cmdline.rs
-# PR #892 review round 2: a RAM top the boot tables cannot map is CAPPED before
-# it is aligned.  The level-0 table has one valid entry, so the walk reaches
-# `BOOT_TABLE_COVERAGE` and no further; a `/memory` top above it, merely
-# aligned, left `boot_mapping_for` calling addresses Normal RAM that no
-# descriptor describes.  The relation: the cap is the first statement of the
-# clamp, the alignment is applied to the CAPPED value, and the coverage
-# constant is derived from the table geometry rather than written as a number.
-run_check "INVARIANT" rg -n -U 'pub const fn clamp_ram_top\(raw: u64\) -> u64 \{\n    let capped = if raw > BOOT_TABLE_COVERAGE \{\n        BOOT_TABLE_COVERAGE\n    \} else \{\n        raw\n    \};\n    if capped >= HIGH_RAM_BASE \{\n        capped & !\(L1_BLOCK_SIZE - 1\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const BOOT_TABLE_COVERAGE: u64 = \(TABLE_ENTRIES as u64\) \* L1_BLOCK_SIZE;' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n 'const _: \(\) = assert!\(HIGH_RAM_BASE < BOOT_TABLE_COVERAGE\);' rust/sele4n-hal/src/mmu.rs
-# NEGATIVE: the pre-round clamp — alignment applied to the RAW value.
-run_negative_check "INVARIANT" rg -n -U 'pub const fn clamp_ram_top\(raw: u64\) -> u64 \{\n    if raw >= HIGH_RAM_BASE' rust/sele4n-hal/src/mmu.rs
-run_negative_check "INVARIANT" rg -n 'raw & !\(L1_BLOCK_SIZE - 1\)' rust/sele4n-hal/src/mmu.rs
-# PR #892 review round 4: a `/memory` node whose `status` is not `okay`/`ok`
-# describes DRAM the firmware has withheld, and its `reg` must not reach the
-# walk.  The relation: the fold at the node's end is gated on BOTH node-scoped
-# verdicts, and the `status` verdict is decided against the two operational
-# spellings alone — every other value, defined by the specification or not,
-# withholds the bank.  A `!= disabled` test would keep the token and pass
-# `reserved`, `fail` and `fail-sss` through.
-run_check "INVARIANT" rg -n -U 'if device_type_ok && status_ok \{\n\s+if let Some\(\(value_start, value_len\)\) = memory_reg \{' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -n 'status_ok = trimmed == b"okay" \|\| trimmed == b"ok";' rust/sele4n-hal/src/cmdline.rs
-# NEGATIVE: the pre-round gate, on the device type alone.
-run_negative_check "INVARIANT" rg -n -U 'if device_type_ok \{\n\s+if let Some\(\(value_start, value_len\)\) = memory_reg' rust/sele4n-hal/src/cmdline.rs
-# PR #892 review round 4: a parsed RAM top is not trusted past what the boot
-# stands on.  Before translation is enabled the CLAMPED top is held to the
-# image, its stacks and the blob's own extent, and a top that fails parks the
-# PE.  The relation is the order: the refusal — its branch ending in
-# `fatal_halt` — dominates the table build, and the check reads the clamped
-# top the tables are built for, not the raw one.  The pure core is a
-# conjunction over every range, with `false` the fold's only early exit.
-run_check "INVARIANT" rg -n -U 'let mapped_top = clamp_ram_top\(ram_top\);\n(\s*\n)*    let dtb_extent = crate::cmdline::dtb_dereferenced_range\(dtb_ptr\);\n    if !boot_ranges_mapped_under\(mapped_top, dtb_extent\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n -U 'pub const fn boot_critical_ranges_mapped\(ram_top: u64, ranges: &\[\(u64, u64\)\]\) -> bool \{\n    let mut i = 0;\n    while i < ranges\.len\(\) \{\n        let \(base, size\) = ranges\[i\];\n        if !boot_cacheable_range_in\(base, size, ram_top\) \{\n            return false;' rust/sele4n-hal/src/mmu.rs
-# NEGATIVE: the pre-round entry — the tables built straight from the parsed top.
-run_negative_check "INVARIANT" rg -n -U 'let ram_top = crate::cmdline::ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(LOW_RAM_TOP\);\n    build_identity_tables\(ram_top\);' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP2.6: the boot map is built from the image's layout and board
+# constants, so everything that sized it from the device tree before translation
+# was enabled is RETIRED — the `/memory` walk and its contiguity fold, the RAM-top
+# clamp and its table-coverage cap, the fallback top, and the ram-top-keyed
+# refusal.  PR #892 review rounds 2, 3, 4 and 6 each hardened one of these; the
+# hardening is moot because the question is no longer asked.  They must not come
+# back, in the HAL's code (the view strips the comments that record them).
+run_negative_check "INVARIANT" rg -n '\bfn (find_memory_extents_in_dtb|find_ram_top_in_dtb|contiguous_ram_top|fold_memory_reg|ram_top_from_dtb|ram_top_from_blob|memory_extents_from_blob|dtb_extent_from_dtb|dtb_dereferenced_range)\b' rust/sele4n-hal/src/
+run_negative_check "INVARIANT" rg -n '\bfn (clamp_ram_top|boot_ram_top|set_boot_ram_top|boot_ranges_mapped_under|boot_critical_ranges_mapped|boot_cacheable_range_in)\b' rust/sele4n-hal/src/
+run_negative_check "INVARIANT" rg -n '\b(UNDESCRIBED_RAM_TOP|BOOT_TABLE_COVERAGE|LOW_RAM_TOP|HIGH_RAM_BASE|BOOT_RAM_TOP|MAX_MEMORY_EXTENTS|REFINED_GIB_COUNT)\b' rust/sele4n-hal/src/
+# The relation that replaces them: `init_mmu` reads NOTHING of the blob — no
+# call into `cmdline` in its body — and its two refusals, each ending in
+# `fatal_halt`, dominate the table build, which is built from the layout alone.
+run_negative_check "INVARIANT" rg -U -n '^pub fn init_mmu\(dtb_ptr: u64\) \{[^\n]*(\n([ \t][^\n]*)?)*crate::cmdline::' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n -U '^pub fn init_mmu\(dtb_ptr: u64\) \{\n    let layout = image_layout\(\);\n    if !layout\.is_well_formed\(\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    if !dtb_window_admissible\(dtb_window\(dtb_ptr\), kernel_extent\(\)\) \{\n(.*\n)*?        crate::cpu::fatal_halt\(\);\n    \}\n    build_identity_tables\(&layout\);' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const fn boot_mapping_for\(addr: u64, layout: &ImageLayout\) -> BootMapping \{' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^pub const GUARANTEED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
+# The cacheable window is the one guaranteed interval, a pure constant question.
+run_check "INVARIANT" rg -n -U '^pub const fn is_boot_cacheable_range\(base: u64, size: u64\) -> bool \{\n    if size == 0 \{\n        return true;\n    \}\n    match base\.checked_add\(size\) \{\n        Some\(end\) => end <= GUARANTEED_RAM_TOP,' rust/sele4n-hal/src/mmu.rs
+# The device tree's window is the readers' own bound, taken from the pointer,
+# and admitted only inside guaranteed RAM and outside the image.
+run_check "INVARIANT" rg -n -U '^pub const fn dtb_window\(dtb_ptr: u64\) -> \(u64, u64\) \{\n    if dtb_ptr == 0 \{\n        \(0, 0\)\n    \} else \{\n        \(dtb_ptr, crate::cmdline::MAX_DTB_SIZE as u64\)' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'Some\(end\) if end <= GUARANTEED_RAM_TOP => dtb_disjoint_from_image\(window, &\[kernel\]\),' rust/sele4n-hal/src/mmu.rs
+# WS-BP BP2.6: W^X at EL1.  `SCTLR_EL1.WXN` makes a writable page execute-never,
+# so the kernel text needs a read-only descriptor of its own and writable data
+# states PXN outright.  NEGATIVE: the retired single Normal descriptor — writable
+# and PXN-clear — under which the first fetch after the enable would fault.
+run_check "INVARIANT" rg -n '^const BLOCK_NORMAL: u64 = NORMAL_BASE \| AP_RW_EL1 \| PXN;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^const BLOCK_KERNEL_TEXT: u64 = NORMAL_BASE \| AP_RO_EL1;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n '^const BLOCK_KERNEL_RODATA: u64 = NORMAL_BASE \| AP_RO_EL1 \| PXN;$' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'const BLOCK_NORMAL: u64 = DESC_VALID \| AF \| SH_INNER \| ATTR_IDX_NORMAL \| AP_RW_EL1 \| UXN;' rust/sele4n-hal/src/mmu.rs
+# The permission boundaries are the linker's, inside the sections they bound,
+# and the read-only data begins where the text ends (no orphan between them).
+run_prose_check "INVARIANT" rg -n -U '    \.text : ALIGN\(4096\) \{\n        \*\(\.text \.text\.\*\)\n        \. = ALIGN\(4096\);\n        __text_end = \.;' rust/sele4n-hal/link.ld
+run_prose_check "INVARIANT" rg -n -F 'ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")' rust/sele4n-hal/link.ld
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.
@@ -4228,17 +4208,9 @@ run_check "INVARIANT" rg -n -U 'match ctx\.translate childBase size with' SeLe4n
 # NEGATIVE: the base-only containment test, which reported a region running past
 # the end of the window it started in.
 run_negative_check "INVARIANT" rg -n -U 'decide \(r\.childBase ≤ addr ∧ addr < r\.childBase \+ r\.length\)' SeLe4n/Platform/DeviceTree.lean
-# PR #892 review round 6: an unusable device tree does not license the low
-# aperture — the boot map falls back to the smallest supported variant, the same
-# direction `rpi5VariantFor` takes for an account it cannot place.
-run_check "INVARIANT" rg -n 'ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(UNDESCRIBED_RAM_TOP\)' rust/sele4n-hal/src/mmu.rs
-run_check "INVARIANT" rg -n '^pub const UNDESCRIBED_RAM_TOP: u64 = 0x4000_0000;$' rust/sele4n-hal/src/mmu.rs
-# The relation is a compile-time refusal, and it is STRICT: the fallback must
-# not license the low aperture, so widening the constant fails the build.
-run_check "INVARIANT" rg -n 'const _: \(\) = assert!\(UNDESCRIBED_RAM_TOP < LOW_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
-run_negative_check "INVARIANT" rg -n 'const _: \(\) = assert!\(UNDESCRIBED_RAM_TOP <= LOW_RAM_TOP\);' rust/sele4n-hal/src/mmu.rs
-# NEGATIVE: the linker-extent fallback, which claimed nearly 4 GiB on a 1 GiB board.
-run_negative_check "INVARIANT" rg -n 'ram_top_from_dtb\(dtb_ptr\)\.unwrap_or\(LOW_RAM_TOP\)' rust/sele4n-hal/src/mmu.rs
+# PR #892 review round 6's fallback top (`UNDESCRIBED_RAM_TOP`, 1 GiB) is the
+# boot map's ONLY RAM since WS-BP BP2.6 — `GUARANTEED_RAM_TOP`, anchored with the
+# map above; the fallback and the parsed top it fell back from are retired.
 # The round's Lean surface resolves.
 run_check "INVARIANT" bash -lc 'source ~/.elan/env && lake env lean --stdin <<"EOF"
 import SeLe4n.Platform.DeviceTree
@@ -15194,14 +15166,10 @@ lake env lean /tmp/fdt_bounded_view_probe.lean'
 # ---------------------------------------------------------------------------
 # PR #892 review round 8.
 # ---------------------------------------------------------------------------
-# A non-null device-tree pointer whose extent cannot be recovered is still
-# dereferenced by Phase 5, so it is still checked before translation is enabled.
-run_check "INVARIANT" rg -n -U 'pub fn dtb_dereferenced_range\(dtb_ptr: u64\) -> Option<\(u64, u64\)> \{\n    if dtb_ptr == 0 \{\n        return None;\n    \}\n    Some\(dtb_extent_from_dtb\(dtb_ptr\)\.unwrap_or\(\(dtb_ptr, FDT_HEADER_SIZE as u64\)\)\)' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -n 'let dtb_extent = crate::cmdline::dtb_dereferenced_range\(dtb_ptr\);' rust/sele4n-hal/src/mmu.rs
-# NEGATIVE: the extent reader, which conflates "no device tree" with "a device
-# tree whose header this parser cannot read".
-run_negative_check "INVARIANT" rg -n 'let dtb_extent = crate::cmdline::dtb_extent_from_dtb\(dtb_ptr\);' rust/sele4n-hal/src/mmu.rs
-run_negative_check "INVARIANT" rg -n 'let dtb = dtb_extent\.unwrap_or_default\(\);' rust/sele4n-hal/src/mmu.rs
+# A non-null device-tree pointer is checked before translation is enabled even
+# when its header cannot be read.  WS-BP BP2.6 made that structural: the window
+# is taken from the pointer alone (`dtb_window`, anchored above), so no header is
+# read to size it and an unreadable one cannot shrink it.
 
 # A cell-tuple property is read whole or not at all, and ONE function decides
 # it — the relation was answered three different ways at four sites.
@@ -21167,16 +21135,16 @@ run_check "INVARIANT" rg -n 'an unreadable adoption input fails the scan' script
 # fixtures, and the divergences that exposed stay fixed
 # ============================================================================
 #
-# The device-tree readers share one rule set.  Both Rust walks read only a blob
-# the structure check accepts, and the walk bound is the block's own size — the
+# The device-tree readers share one rule set.  The Rust bootargs walk reads only
+# a blob the structure check accepts (the `/memory` walk beside it is retired at
+# WS-BP BP2.6), and the walk bound is the block's own size — the
 # fixed fuel that refused a large, well-formed device tree must not come back.
 run_check "INVARIANT" rg -n '^fn fdt_structure_check\(blob: &\[u8\], layout: &FdtLayout\) -> Option<\(\)> \{' rust/sele4n-hal/src/cmdline.rs
 run_check "INVARIANT" rg -U -n '^fn find_bootargs_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let layout = fdt_layout\(blob\)\?;\n    fdt_structure_check\(blob, &layout\)\?;' rust/sele4n-hal/src/cmdline.rs
-run_check "INVARIANT" rg -U -n '^fn find_memory_extents_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let layout = fdt_layout\(blob\)\?;\n    fdt_structure_check\(blob, &layout\)\?;' rust/sele4n-hal/src/cmdline.rs
 run_check "INVARIANT" rg -n 'let mut fuel = fdt_token_bound\(&layout\);' rust/sele4n-hal/src/cmdline.rs
 run_negative_check "INVARIANT" rg -n 'FDT_WALK_FUEL' rust/sele4n-hal/src/
 # ...and the Lean parser bounds depth over the finished tree, reads a `reg`
-# whole or not at all, and refuses more extents than the Rust store holds.
+# whole or not at all, and refuses more extents than `fdtMaxMemoryExtents`.
 run_check "INVARIANT" rg -n 'if fdtNodesWithinDepth fdtMaxDepth nodes then \.ok nodes else \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n 'if regions\.length == count && regions\.all \(fun r => r\.base \+ r\.size < fdtAddressLimit\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n 'some regions => if regions\.length ≤ fdtMaxMemoryExtents then some regions else none' SeLe4n/Platform/DeviceTree.lean

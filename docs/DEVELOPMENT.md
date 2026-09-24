@@ -170,8 +170,21 @@ in both profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually
 assembled, lints the cross target with `-D warnings`, disassembles the
 release objects with `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1)
 links a probe under `link.ld` with `scripts/check_link_script.py` — nothing else
-links the script before the image exists, so its Lean heap arena and three
-`ASSERT`s are checked on an ELF and each assertion is proved live by mutation.
+links the script before the image exists, so its Lean heap arena, the section
+boundaries the boot map reads (`__text_end`, `__rodata_start`, `__rodata_end`)
+and every `ASSERT` are checked on an ELF and each assertion is proved live by
+mutation.
+
+**The boot map is built from constants** (WS-BP BP2.6): `mmu::init_mmu` reads
+no device tree.  It maps the guaranteed first GiB of RAM (`GUARANTEED_RAM_TOP`)
+and the device window, with the image's text read-only and executable at EL1,
+its read-only data read-only and never executable, and everything else
+writable and never executable.  `boot_mapping_for` is the one answer to what an
+address is mapped as, and `boot_map_tests` walks every table against it and
+against `tests/fixtures/boot_map.expected`.  A section added to `link.ld`
+between `.text` and `.rodata` fails `__rodata_start == __text_end`; section
+boundary symbols are assigned *inside* their sections, since lld attaches a
+location-counter change between sections to the following one.
 It runs in CI as the
 `aarch64 Cross Build` job.
 
@@ -675,7 +688,8 @@ lake exe ak9_platform_suite                 # prints the live boot_map.expected 
 ```
 
 Expectations for the device-tree corpus are written by hand in the generator's
-case table; the two tables are emitted by Lean and must then be matched by the
+case table — per blob, whether its structure is readable and which memory
+regions it declares (or that the region read refuses it); the two tables are emitted by Lean and must then be matched by the
 Rust side, never edited to match it.  A divergence one of them exposes is fixed
 on the side that is wrong.
 

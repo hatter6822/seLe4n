@@ -1,7 +1,10 @@
 /* seLe4n Kernel Linker Script for Raspberry Pi 5
  *
  * Memory layout:
- *   0x00000000 – 0xFC000000 : RAM (4032 MiB, BCM2712 4GB model)
+ *   0x00000000 – 0x40000000 : RAM every Raspberry Pi 5 has (the smallest
+ *                             board's 1 GiB) — the image, arena included,
+ *                             must lie inside it, because it is the RAM the
+ *                             boot map covers (`mmu::GUARANTEED_RAM_TOP`)
  *   0xFE000000 – 0xFF850000 : Peripherals (BCM2712 + GIC-400)
  *
  * Kernel load address: 0x80000 (standard RPi5 kernel entry point, matching
@@ -21,7 +24,7 @@ LEAN_HEAP_SIZE = 64M;
 
 MEMORY
 {
-    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0xFBF80000
+    RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0x3FF80000
 }
 
 SECTIONS
@@ -36,14 +39,31 @@ SECTIONS
         KEEP(*(.text.vectors))
     } > RAM
 
-    /* Kernel code */
+    /* Kernel code.  WS-BP BP2.6: the boot map's permission boundaries are
+     * assigned inside the sections they bound.  `[_start, __text_end)` is
+     * mapped read-only and executable, `[__rodata_start, __rodata_end)`
+     * read-only and never executable, and everything after it writable and
+     * never executable (`mmu::image_layout`).  Each is page aligned, because a
+     * permission cannot change inside a 4 KiB page, and the read-only data must
+     * begin exactly where the text ends — so no section between the two (an
+     * orphan the linker places on its own) can be mapped executable.  Inside
+     * the sections, because `lld` attaches a location-counter change written
+     * *between* sections to the section that follows, which would move a
+     * boundary with the very gap it exists to detect; and an assignment inside
+     * `.rodata` keeps that section and its address even when it holds no
+     * input. */
     .text : ALIGN(4096) {
         *(.text .text.*)
+        . = ALIGN(4096);
+        __text_end = .;
     } > RAM
 
     /* Read-only data */
     .rodata : ALIGN(4096) {
+        __rodata_start = .;
         *(.rodata .rodata.*)
+        . = ALIGN(4096);
+        __rodata_end = .;
     } > RAM
 
     /* Initialized data */
@@ -126,9 +146,16 @@ SECTIONS
 /* WS-BP BP2.1: the arena is a whole number of pages, and the whole image —
  * arena included — ends inside the smallest Raspberry Pi 5's RAM, which is
  * [0, 1 GiB) (`rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean, and
- * `mmu::UNDESCRIBED_RAM_TOP`, the map built when no device tree describes the
- * board).  A heap that does not fit is a link error, never a boot-time
- * surprise. */
+ * `mmu::GUARANTEED_RAM_TOP`, the RAM the boot map covers).  A heap that does
+ * not fit is a link error, never a boot-time surprise. */
 ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
 ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned")
 ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end inside the smallest RPi5's 1 GiB of RAM")
+
+/* WS-BP BP2.6: the permission boundaries `mmu::ImageLayout::is_well_formed`
+ * requires — each on a page, the text non-empty and ahead of the read-only
+ * data, which starts where the text ends. */
+ASSERT(_start % 4096 == 0, "the kernel text must start on a 4 KiB page")
+ASSERT(__text_end % 4096 == 0 && __text_end > _start, "the kernel text must end on a 4 KiB page after it starts")
+ASSERT(__rodata_start == __text_end, "the read-only data must begin where the kernel text ends")
+ASSERT(__rodata_end % 4096 == 0 && __rodata_end >= __text_end, "the read-only data must end on a 4 KiB page")

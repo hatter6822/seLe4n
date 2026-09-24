@@ -2465,6 +2465,6 @@ mod tests {
     fn cleaning_a_pagetable_range_that_runs_past_the_ram_top_halts() {
         // The base is a good RAM frame and the range is not — the relation a
         // base-address check would miss.
-        clean_pagetable_range_within_identity_map(crate::mmu::LOW_RAM_TOP - 0x1000, 0x2000);
+        clean_pagetable_range_within_identity_map(crate::mmu::GUARANTEED_RAM_TOP - 0x1000, 0x2000);
     }
 }

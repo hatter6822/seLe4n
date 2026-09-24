@@ -87,15 +87,16 @@ two are checked in Tier 0, before any build.
 ## The shared device-tree corpus (`dtb/`)
 
 `tests/fixtures/dtb/` is **input**, not golden output: 58 device-tree blobs as
-annotated hex (`<name>.dtb.hex`) and a `MANIFEST` stating, for each, the
-`/memory` extents it declares and the RAM top they imply (WS-BP BP0.1).  Both
-readers of a device tree consume **all** of it against the one manifest — the
-Rust walker in `rust/sele4n-hal/src/cmdline.rs` (`dtb_corpus_tests`) and the Lean
-parser in `tests/Ak9PlatformSuite.lean`
-(`dtbCorpus_every_fixture_agrees_with_the_manifest`) — so a filter added to one
-side alone fails that side's assertion instead of passing silently.  Its first
-run found thirteen divergences on the Rust side and eight on the Lean side, all
-fixed on the side that was wrong.
+annotated hex (`<name>.dtb.hex`) and a `MANIFEST` stating, for each, whether its
+structure is readable and the memory regions it declares — or that the region
+read refuses it (WS-BP BP0.1).  Both readers of a device tree consume **all** of
+it against the one manifest — the Rust structure checks in
+`rust/sele4n-hal/src/cmdline.rs` (`dtb_corpus_tests`, over `fdt_layout` and
+`fdt_structure_check`) and the Lean parser in `tests/Ak9PlatformSuite.lean`
+(`dtbCorpus_every_fixture_agrees_with_the_manifest`), which answers both
+columns — so a filter added to one side alone fails that side's assertion
+instead of passing silently.  Its first run found thirteen divergences on the
+Rust side and eight on the Lean side, all fixed on the side that was wrong.
 
 The expectations are **hand-written** in `scripts/generate_dtb_corpus.py`'s case
 table beside the case that produces them; the script renders the bytes and the
@@ -108,9 +109,13 @@ stops reading the corpus; both suites also assert at run time that the manifest
 names exactly the blobs on disk.  No `.sha256` companion: the generator's
 `--check` already pins every byte against its source.
 
-The corpus is **interim**.  WS-BP BP2.6 deletes the Rust walker from the boot
-path, which makes the Lean parse the blob's only parse; the corpus and its gate
-retire with the pair they tie.
+**What it ties since WS-BP BP2.6.**  The boot map is built from linker symbols
+and board constants, so the Rust `/memory` walker is gone and the Lean parse is
+the blob's only reading of memory.  The corpus stays because the pair it ties
+still exists: the Rust side keeps a structure check — the bootargs reader the
+QEMU lanes use runs behind it — and the `structure` column holds that check and
+the Lean parser to one verdict on every blob.  The `regions` column is the Lean
+parser's alone.
 
 ## Regeneration workflow (when a fixture changes intentionally)
 

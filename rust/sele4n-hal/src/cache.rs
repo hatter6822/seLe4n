@@ -956,13 +956,13 @@ mod tests {
 mod identity_map_operand_tests {
     use super::*;
 
-    /// An address inside the low RAM aperture the boot tables map Normal.
+    /// An address inside the guaranteed RAM the boot tables map Normal.
     const IN_WINDOW: u64 = 0x0010_0000;
     /// An address inside the BCM2712 peripheral window — mapped Device, so
     /// `IC IVAU` against it maintains nothing the kernel meant.
     const IN_DEVICE_WINDOW: u64 = 0xFE20_1000;
-    /// An address above the RAM top a 4 GiB board reports — unmapped, so the
-    /// instruction takes a translation fault at EL1.
+    /// An address above the guaranteed RAM the boot tables map — unmapped, so
+    /// the instruction takes a translation fault at EL1.
     const ABOVE_RAM: u64 = 0x1_0000_0000;
 
     #[test]
@@ -1008,12 +1008,12 @@ mod identity_map_operand_tests {
         // the extent is the page, not the byte.  An address in the last page
         // of RAM is in range; one just past the RAM top is not, even though
         // its containing page starts inside RAM.
-        let last_page = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        let last_page = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::IvauPage(last_page + 0x40)
         ));
         assert!(!icache_operand_within_identity_map(
-            ICacheInvalidation::IvauPage(crate::mmu::LOW_RAM_TOP)
+            ICacheInvalidation::IvauPage(crate::mmu::GUARANTEED_RAM_TOP)
         ));
     }
 
@@ -1021,7 +1021,7 @@ mod identity_map_operand_tests {
     fn a_range_that_starts_in_ram_and_runs_past_its_end_is_refused() {
         // The relation a base-address check would miss.  The base is a
         // perfectly good RAM frame; the range is not.
-        let base = crate::mmu::LOW_RAM_TOP - PAGE_SIZE;
+        let base = crate::mmu::GUARANTEED_RAM_TOP - PAGE_SIZE;
         assert!(icache_operand_within_identity_map(
             ICacheInvalidation::CleanRangeIallu(base, PAGE_SIZE)
         ));

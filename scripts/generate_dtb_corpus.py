@@ -6,43 +6,45 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 """WS-BP BP0.1: the shared device-tree fixture corpus, rendered.
 
-Two implementations read a device tree's `/memory` extents: the Rust walker in
-`rust/sele4n-hal/src/cmdline.rs` (pre-MMU, for the boot map's RAM top) and the
-Lean parser in `SeLe4n/Platform/DeviceTree.lean` (the boot seam's bridge).  Each
-used to be tested only against blobs its own suite built, so a filter added to
-one side alone passed silently.  This corpus is the one set of blobs **both**
-suites consume, against one manifest.
+Two implementations read a device tree's structure block: the Rust walk in
+`rust/sele4n-hal/src/cmdline.rs` (`fdt_structure_check`, which the bootargs
+reader runs before it reads anything) and the Lean parser in
+`SeLe4n/Platform/DeviceTree.lean` (`parseFdtNodes` and `fdtRoot?`, the boot
+seam's bridge).  Each used to be tested only against blobs its own suite built,
+so a refusal added to one side alone passed silently.  This corpus is the one
+set of blobs **both** suites consume, against one manifest.
 
 ## What is hand-written and what is generated
 
 The **expectations** are written by hand, in `CASES` below, beside the case that
-produces them — the regions a blob declares and the RAM top they imply.  The
-generator only renders bytes and copies those expectations into the manifest.
-It deliberately does **not** compute them: a third implementation of the walk
-here would make the manifest agree with whatever this script believes, which is
-the drift the corpus exists to catch.
+produces them.  The generator only renders bytes and copies those expectations
+into the manifest.  It deliberately does **not** compute them: a third
+implementation of the walk here would make the manifest agree with whatever this
+script believes, which is the drift the corpus exists to catch.
 
-## The question both sides answer
+## The questions
 
-`regions`: the `(base, size)` extents of every operational, `device_type`
-compatible, top-level `/memory` node, in blob order — or `refused` when the blob
-is not read at all (malformed header or structure, a malformed `reg` or cell
-width, an extent ending past 2^64, more than 16 extents), or `-` for none.
+`structure` — asked of **both** sides: `readable` when the header validates and
+the structure block is one well-formed tree under a single unnamed root, or
+`refused`.
 
-`ram_top`: the exclusive top of the contiguous run of reported RAM from address
-0, crossing the peripheral window `[0xFC00_0000, 0x1_0000_0000)` only from a
-fully reported low aperture — or `refused` when `regions` is `refused` or `-`.
+`regions` — asked of the **Lean** side: the `(base, size)` extents of every
+operational, `device_type` compatible, top-level `/memory` node, in blob order —
+or `refused` when the blob is not read at all (every structural refusal, plus a
+malformed `reg` or cell width, an extent ending past 2^64, or more than 16
+extents), or `-` for none.  **WS-BP BP2.6** retired the Rust `/memory` walk
+(the boot map no longer needs a RAM size), so this column is the Lean parser's
+regression corpus; it had a Rust `ram_top` companion column until then.
 
 ## Files
 
 * `tests/fixtures/dtb/<name>.dtb.hex` — each blob as annotated hex: `#` starts
   a comment, every other hex digit pair is a byte.
-* `tests/fixtures/dtb/MANIFEST` — `name | regions | ram_top`, one per line.
+* `tests/fixtures/dtb/MANIFEST` — `name | structure | regions`, one per line.
 
 `--check` regenerates in memory and fails on any difference, including a stale
 or orphaned `.dtb.hex` file (Tier 0, `scripts/check_dtb_corpus_consumers.py`
-runs it).  This corpus is **interim** (WS-BP BP0.1): BP2.6 deletes the Rust
-walker from the boot path and retires the corpus with the pair it ties.
+runs it).
 """
 
 from __future__ import annotations
@@ -512,73 +514,67 @@ def c_rsvmap_past_totalsize() -> Fdt:
     return f
 
 
-# (name, builder, regions, ram_top) — regions: None = refused, [] = none.
-CASES: list[tuple[str, object, list[tuple[int, int]] | None, int | None]] = [
-    ("four_gib_low_aperture", c_four_gib, [(0, LOW)], LOW),
-    ("eight_gib_two_pairs", c_eight_gib, [(0, LOW), (0x1_0000_0000, 0x1_0000_0000)],
-     0x2_0000_0000),
-    ("eight_gib_as_firmware_reports_it", c_eight_gib_firmware,
-     [(0, LOW), (0x1_0000_0000, 0x1_0400_0000)], 0x2_0400_0000),
-    ("low_aperture_short_forfeits_high", c_two_nodes_low_short,
-     [(0, GIB), (0x1_0000_0000, 2 * GIB)], GIB),
-    ("discontiguous_high_stops_at_hole", c_discontiguous_high,
-     [(0, LOW), (0x1_0000_0000, GIB), (0x2_0000_0000, GIB)], 0x1_4000_0000),
-    ("split_low_aperture", c_split_low, [(0, 0x8000_0000), (0x8000_0000, 0x7C00_0000)], LOW),
-    ("extents_out_of_order", c_out_of_order, [(0x1_0000_0000, 0x1_0000_0000), (0, LOW)],
-     0x2_0000_0000),
-    ("ram_only_at_foreign_base", c_foreign_base, [(GIB, GIB)], 0),
-    ("single_cell_widths", c_single_cells, [(0, 0x3C00_0000)], 0x3C00_0000),
-    ("default_cell_widths", c_default_cells, [(0, GIB)], GIB),
-    ("address_cells_only_size_default", c_address_cells_only, [(0, 0x2000_0000)],
-     0x2000_0000),
-    ("memory_without_unit_address", c_no_unit_address, [(0, 0x2000_0000)], 0x2000_0000),
-    ("memory_named_other_device_type", c_other_device_type, [], None),
-    ("memory_status_disabled", c_status_disabled, [], None),
-    ("memory_status_ok_spelling", c_status_ok_spelling, [(0, LOW)], LOW),
-    ("second_node_disabled", c_second_node_disabled, [(0, LOW)], LOW),
-    ("reserved_memory_child_not_ram", c_reserved_memory_child, [(0, GIB)], GIB),
-    ("memory_controller_not_memory", c_memory_controller, [], None),
-    ("nested_memory_not_top_level", c_nested_memory, [], None),
-    ("no_memory_node", c_no_memory, [], None),
-    ("memory_node_without_reg", c_memory_without_reg, [], None),
-    ("memory_node_empty_reg", c_empty_reg, [], None),
-    ("nops_interleaved", c_nop_interleaved, [(0, LOW)], LOW),
-    ("more_tokens_than_fixed_fuel", c_many_nops, [(0, LOW)], LOW),
-    ("sixteen_extents_fit", c_sixteen_extents,
-     [(i * 0x0100_0000, 0x0100_0000) for i in range(16)], 0x1000_0000),
-    ("seventeen_extents_refused", c_seventeen_extents, None, None),
-    ("extent_overflows_64_bits", c_extent_overflows, None, None),
-    ("extent_ends_at_2_pow_64", c_extent_ends_at_2_64, None, None),
-    ("reg_partial_pair", c_reg_partial_pair, None, None),
-    ("three_address_cells", c_three_address_cells, None, None),
-    ("zero_size_cells", c_zero_size_cells, None, None),
-    ("short_cells_property", c_short_cells_property, None, None),
-    ("long_cells_property", c_long_cells_property, None, None),
-    ("duplicate_reg_property", c_duplicate_reg, None, None),
-    ("duplicate_status_property", c_duplicate_status, None, None),
-    ("property_after_child", c_property_after_child, None, None),
-    ("duplicate_sibling_memory", c_duplicate_sibling, None, None),
-    ("duplicate_nested_sibling", c_duplicate_nested_sibling, None, None),
-    ("named_root", c_named_root, None, None),
-    ("two_top_level_nodes", c_two_roots, None, None),
-    ("property_before_root", c_property_before_root, None, None),
-    ("nesting_depth_thirty_two", c_deep_nesting_ok, [(0, LOW)], LOW),
-    ("nesting_depth_thirty_three", c_deep_nesting_refused, None, None),
-    ("node_name_255_bytes", c_long_name_ok, [(0, LOW)], LOW),
-    ("node_name_256_bytes", c_long_name_refused, None, None),
-    ("property_name_256_bytes", c_long_property_name_refused, None, None),
-    ("duplicate_chosen_with_bootargs", c_duplicate_chosen, None, None),
-    ("chosen_under_named_root", c_chosen_under_named_root, None, None),
-    ("empty_strings_block_at_totalsize", c_strings_block_at_totalsize, None, None),
-    ("truncated_structure_block", c_truncated_structure, None, None),
-    ("terminator_inside_open_node", c_unbalanced_terminator, None, None),
-    ("unknown_token", c_unknown_token, None, None),
-    ("end_node_at_top_level", c_end_node_at_top_level, None, None),
-    ("no_terminator", c_no_terminator, None, None),
-    ("bad_magic", c_bad_magic, None, None),
-    ("version_sixteen", c_version_sixteen, None, None),
-    ("last_comp_version_too_new", c_last_comp_too_new, None, None),
-    ("reservation_block_past_totalsize", c_rsvmap_past_totalsize, None, None),
+# (name, builder, structure, regions) — structure: True = readable;
+# regions: None = refused, [] = none.
+CASES: list[tuple[str, object, bool, list[tuple[int, int]] | None]] = [
+    ("four_gib_low_aperture", c_four_gib, True, [(0, LOW)]),
+    ("eight_gib_two_pairs", c_eight_gib, True, [(0, LOW), (0x1_0000_0000, 0x1_0000_0000)]),
+    ("eight_gib_as_firmware_reports_it", c_eight_gib_firmware, True, [(0, LOW), (0x1_0000_0000, 0x1_0400_0000)]),
+    ("low_aperture_short_forfeits_high", c_two_nodes_low_short, True, [(0, GIB), (0x1_0000_0000, 2 * GIB)]),
+    ("discontiguous_high_stops_at_hole", c_discontiguous_high, True, [(0, LOW), (0x1_0000_0000, GIB), (0x2_0000_0000, GIB)]),
+    ("split_low_aperture", c_split_low, True, [(0, 0x8000_0000), (0x8000_0000, 0x7C00_0000)]),
+    ("extents_out_of_order", c_out_of_order, True, [(0x1_0000_0000, 0x1_0000_0000), (0, LOW)]),
+    ("ram_only_at_foreign_base", c_foreign_base, True, [(GIB, GIB)]),
+    ("single_cell_widths", c_single_cells, True, [(0, 0x3C00_0000)]),
+    ("default_cell_widths", c_default_cells, True, [(0, GIB)]),
+    ("address_cells_only_size_default", c_address_cells_only, True, [(0, 0x2000_0000)]),
+    ("memory_without_unit_address", c_no_unit_address, True, [(0, 0x2000_0000)]),
+    ("memory_named_other_device_type", c_other_device_type, True, []),
+    ("memory_status_disabled", c_status_disabled, True, []),
+    ("memory_status_ok_spelling", c_status_ok_spelling, True, [(0, LOW)]),
+    ("second_node_disabled", c_second_node_disabled, True, [(0, LOW)]),
+    ("reserved_memory_child_not_ram", c_reserved_memory_child, True, [(0, GIB)]),
+    ("memory_controller_not_memory", c_memory_controller, True, []),
+    ("nested_memory_not_top_level", c_nested_memory, True, []),
+    ("no_memory_node", c_no_memory, True, []),
+    ("memory_node_without_reg", c_memory_without_reg, True, []),
+    ("memory_node_empty_reg", c_empty_reg, True, []),
+    ("nops_interleaved", c_nop_interleaved, True, [(0, LOW)]),
+    ("more_tokens_than_fixed_fuel", c_many_nops, True, [(0, LOW)]),
+    ("sixteen_extents_fit", c_sixteen_extents, True, [(i * 0x0100_0000, 0x0100_0000) for i in range(16)]),
+    ("seventeen_extents_refused", c_seventeen_extents, True, None),
+    ("extent_overflows_64_bits", c_extent_overflows, True, None),
+    ("extent_ends_at_2_pow_64", c_extent_ends_at_2_64, True, None),
+    ("reg_partial_pair", c_reg_partial_pair, True, None),
+    ("three_address_cells", c_three_address_cells, True, None),
+    ("zero_size_cells", c_zero_size_cells, True, None),
+    ("short_cells_property", c_short_cells_property, True, None),
+    ("long_cells_property", c_long_cells_property, True, None),
+    ("duplicate_reg_property", c_duplicate_reg, False, None),
+    ("duplicate_status_property", c_duplicate_status, False, None),
+    ("property_after_child", c_property_after_child, False, None),
+    ("duplicate_sibling_memory", c_duplicate_sibling, False, None),
+    ("duplicate_nested_sibling", c_duplicate_nested_sibling, False, None),
+    ("named_root", c_named_root, False, None),
+    ("two_top_level_nodes", c_two_roots, False, None),
+    ("property_before_root", c_property_before_root, False, None),
+    ("nesting_depth_thirty_two", c_deep_nesting_ok, True, [(0, LOW)]),
+    ("nesting_depth_thirty_three", c_deep_nesting_refused, False, None),
+    ("node_name_255_bytes", c_long_name_ok, True, [(0, LOW)]),
+    ("node_name_256_bytes", c_long_name_refused, False, None),
+    ("property_name_256_bytes", c_long_property_name_refused, False, None),
+    ("duplicate_chosen_with_bootargs", c_duplicate_chosen, False, None),
+    ("chosen_under_named_root", c_chosen_under_named_root, False, None),
+    ("empty_strings_block_at_totalsize", c_strings_block_at_totalsize, False, None),
+    ("truncated_structure_block", c_truncated_structure, False, None),
+    ("terminator_inside_open_node", c_unbalanced_terminator, False, None),
+    ("unknown_token", c_unknown_token, False, None),
+    ("end_node_at_top_level", c_end_node_at_top_level, False, None),
+    ("no_terminator", c_no_terminator, False, None),
+    ("bad_magic", c_bad_magic, False, None),
+    ("version_sixteen", c_version_sixteen, False, None),
+    ("last_comp_version_too_new", c_last_comp_too_new, False, None),
+    ("reservation_block_past_totalsize", c_rsvmap_past_totalsize, False, None),
 ]
 
 
@@ -612,8 +608,8 @@ def fmt_regions(regions: list[tuple[int, int]] | None) -> str:
     return ",".join(f"{b:#x}+{s:#x}" for b, s in regions)
 
 
-def fmt_top(top: int | None) -> str:
-    return "refused" if top is None else f"{top:#x}"
+def fmt_structure(readable: bool) -> str:
+    return "readable" if readable else "refused"
 
 
 def render_all() -> dict[str, str]:
@@ -624,15 +620,15 @@ def render_all() -> dict[str, str]:
     manifest = [
         "# WS-BP BP0.1 shared device-tree corpus -- generated by",
         "# scripts/generate_dtb_corpus.py from hand-written expectations.",
-        "# name | regions | ram_top",
-        "#   regions: base+size,... | - (none) | refused",
-        "#   ram_top: exclusive top of the contiguous RAM run from 0 | refused",
+        "# name | structure | regions",
+        "#   structure: readable | refused (both the Rust and the Lean walk)",
+        "#   regions: base+size,... | - (none) | refused (the Lean parser)",
     ]
-    for name, build, regions, top in CASES:
-        if (top is None) != (regions is None or regions == []):
-            raise SystemExit(f"{name}: ram_top must be refused exactly when regions are")
+    for name, build, readable, regions in CASES:
+        if not readable and regions is not None:
+            raise SystemExit(f"{name}: a structurally refused blob declares no regions")
         files[name + HEX_SUFFIX] = render_hex(build().render())
-        manifest.append(f"{name} | {fmt_regions(regions)} | {fmt_top(top)}")
+        manifest.append(f"{name} | {fmt_structure(readable)} | {fmt_regions(regions)}")
     files["MANIFEST"] = "\n".join(manifest) + "\n"
     return files
 

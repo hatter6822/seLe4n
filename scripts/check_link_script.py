@@ -15,15 +15,21 @@ relations the Rust side depends on:
      allocation on the board);
   2. the arena lies above the image and both stack regions, so it overlaps
      nothing the boot writes;
-  3. the arena ends inside the smallest Raspberry Pi 5's RAM, `[0, 1 GiB)`.
+  3. the arena ends inside the smallest Raspberry Pi 5's RAM, `[0, 1 GiB)`;
+  4. (WS-BP BP2.6) the boot map's permission boundaries `_start`, `__text_end`
+     and `__rodata_end` are page aligned and ordered, and the read-only data
+     begins where the text ends (`__rodata_start`) — which
+     `mmu::ImageLayout::is_well_formed` requires of the layout it builds tables
+     from.
 
 Undefined symbols are ignored in the probe link: it is a layout check, and the
 objects' references into the Rust and Lean code are BP5.2's link to resolve.
 
-Each of the script's three `ASSERT`s is then proved *live* rather than present:
-the script is mutated so exactly that assertion's relation breaks — a size that
-is not a whole page, an arena that is not page-aligned, an arena too big for the
-smallest board — and the link must fail naming that assertion's message.  An
+Each of the script's `ASSERT`s is then proved *live* rather than present: the
+script is mutated so exactly that assertion's relation breaks — a size that is
+not a whole page, an arena that is not page-aligned, an arena too big for the
+smallest board, and (BP2.6) each permission boundary moved off its page, or a
+section placed between the text and the read-only data — and the link must fail naming that assertion's message.  An
 `ASSERT` that a mutation cannot trip reads exactly like one that protects
 something.
 
@@ -50,7 +56,7 @@ PAGE = 4096
 # `rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean.
 SMALLEST_BOARD_RAM_TOP = 0x4000_0000
 
-# The three assertions, each with the one-edit mutation that must trip it and a
+# The assertions, each with the one-edit mutation that must trip it and a
 # fragment of the message it must fail with.  Every edit is applied to the real
 # script and must match exactly once, so a script that stops matching the
 # mutation fails the gate rather than making the witness inert.
@@ -72,6 +78,29 @@ ASSERTION_WITNESSES = (
         "an arena too big for the smallest board",
         (("LEAN_HEAP_SIZE = 64M;", "LEAN_HEAP_SIZE = 1024M;"),),
         "smallest RPi5's 1 GiB",
+    ),
+    (
+        "kernel text that starts off a page",
+        (("ORIGIN = 0x80000, LENGTH = 0x3FF80000", "ORIGIN = 0x80010, LENGTH = 0x3FF7FFF0"),),
+        "must start on a 4 KiB page",
+    ),
+    (
+        "kernel text that ends off a page",
+        (("        . = ALIGN(4096);\n        __text_end = .;",
+          "        . = ALIGN(4096) + 8;\n        __text_end = .;"),),
+        "must end on a 4 KiB page after it starts",
+    ),
+    (
+        "a section between the kernel text and the read-only data",
+        (("    /* Read-only data */\n",
+          "    .gap : ALIGN(4096) { . += 4096; } > RAM\n\n    /* Read-only data */\n"),),
+        "must begin where the kernel text ends",
+    ),
+    (
+        "read-only data that ends off a page",
+        (("        . = ALIGN(4096);\n        __rodata_end = .;",
+          "        . = ALIGN(4096) + 8;\n        __rodata_end = .;"),),
+        "read-only data must end on a 4 KiB page",
     ),
 )
 
@@ -110,9 +139,10 @@ def symbols(elf: Path) -> dict[str, int]:
 
 
 def check_layout(table: dict[str, int]) -> list[str]:
-    """The three relations, over one link's symbol table."""
-    need = ("_start", "__bss_end", "__stack_top", "__smp_secondary_stack_top",
-            "__lean_heap_start", "__lean_heap_end", "LEAN_HEAP_SIZE")
+    """The four relations, over one link's symbol table."""
+    need = ("_start", "__text_end", "__rodata_start", "__rodata_end", "__bss_end",
+            "__stack_top", "__smp_secondary_stack_top", "__lean_heap_start",
+            "__lean_heap_end", "LEAN_HEAP_SIZE")
     missing = [n for n in need if n not in table]
     if missing:
         return [f"the link defines no {', '.join(missing)}"]
@@ -130,6 +160,17 @@ def check_layout(table: dict[str, int]) -> list[str]:
     if end > SMALLEST_BOARD_RAM_TOP:
         problems.append(f"the arena ends at {end:#x}, past the smallest board's RAM "
                         f"({SMALLEST_BOARD_RAM_TOP:#x})")
+    text_start, text_end, rodata_end = (table["_start"], table["__text_end"],
+                                        table["__rodata_end"])
+    if text_start % PAGE or text_end % PAGE or rodata_end % PAGE:
+        problems.append(f"the permission boundaries {text_start:#x}, {text_end:#x}, "
+                        f"{rodata_end:#x} are not all 4 KiB aligned")
+    if table["__rodata_start"] != text_end:
+        problems.append(f"the read-only data begins at {table['__rodata_start']:#x}, not "
+                        f"where the text ends ({text_end:#x})")
+    if not text_start < text_end <= rodata_end <= table["__bss_end"]:
+        problems.append(f"the permission boundaries {text_start:#x} < {text_end:#x} <= "
+                        f"{rodata_end:#x} are not ordered inside the image")
     return problems
 
 
@@ -143,7 +184,9 @@ def mutate(text: str, edits) -> str:
 
 
 _GOOD = {
-    "_start": 0x80000, "__bss_end": 0x81000, "__stack_top": 0x91000,
+    "_start": 0x80000, "__text_end": 0x81000, "__rodata_start": 0x81000,
+    "__rodata_end": 0x82000,
+    "__bss_end": 0x83000, "__stack_top": 0x91000,
     "__smp_secondary_stack_top": 0xC1000, "__lean_heap_start": 0xC2000,
     "__lean_heap_end": 0xC2000 + 0x400_0000, "LEAN_HEAP_SIZE": 0x400_0000,
 }
@@ -165,6 +208,12 @@ def self_test() -> int:
         ("an arena past the smallest board", {"__lean_heap_start": 0x3FF0_0000,
                                                "__lean_heap_end": 0x43F0_0000}, "past the smallest"),
         ("a missing symbol", {"__lean_heap_end": None}, "defines no __lean_heap_end"),
+        ("a text end off its page", {"__text_end": 0x81008, "__rodata_start": 0x81008},
+         "not all 4 KiB aligned"),
+        ("read-only data ending before the text", {"__rodata_end": 0x80000},
+         "not ordered inside the image"),
+        ("a gap between the text and the read-only data", {"__rodata_start": 0x82000},
+         "not where the text ends"),
     ]
     failures = 0
     for name, edits, expect in cases:

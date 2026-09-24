@@ -139,15 +139,14 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
     // Phase 2: MMU initialization
     // -----------------------------------------------------------------------
     crate::kprintln!("[boot] Configuring MMU...");
-    // **WS-RR RR7.1**: the device tree pointer sizes the identity map.  RAM
-    // above the 4 GiB boundary is mapped only on a board whose `/memory` node
-    // claims it, and absent DRAM below `mmu::LOW_RAM_TOP` is not mapped at
-    // all — Normal memory is speculatively accessible, so mapping DRAM that
-    // is not installed is not a harmless over-approximation.
+    // **WS-BP BP2.6**: the identity map is built from the image's layout and
+    // board constants — nothing is parsed before translation is enabled.  The
+    // device-tree pointer is only checked: the window a reader may dereference
+    // must lie in guaranteed RAM and outside the image.
     crate::mmu::init_mmu(dtb_ptr);
     crate::kprintln!(
-        "[boot] MMU enabled (identity map, RAM top {:#x})",
-        crate::mmu::boot_ram_top()
+        "[boot] MMU enabled (identity map, guaranteed RAM to {:#x})",
+        crate::mmu::GUARANTEED_RAM_TOP
     );
 
     // Set VBAR_EL1 to exception vector table.  WS-SM SM1.C.2 extracted

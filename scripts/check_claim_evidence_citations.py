@@ -155,12 +155,26 @@ LEAN_DECL = re.compile(
 # `foo`.  The keywords this gate scans for are the ones `rust_code_view`
 # already spells; `macro_rules!` is not a keyword at all (it is a macro name
 # ending in `!`) so it keeps its own boundary, which the `!` makes exact.
+#
+# **A qualifier is not a name, and a match must not consume the keyword that
+# follows it** (WS-BP BP2.6).  `const` and `static` are both declaration
+# keywords and item qualifiers: in `const fn f`, `const unsafe fn f` and
+# `static mut X` the token after the keyword is another keyword.  Read with a
+# consuming `findall`, `const fn f` declared `fn` and swallowed the `fn` that
+# declares `f`, so no `const fn` anywhere in the tree was a declaration and a
+# citation of one failed as a missing artefact.  The pattern is a zero-width
+# lookahead, so every keyword position is tried and a `static`'s `mut` is
+# skipped in place.  The keyword a qualified match captures (`fn`, `unsafe`)
+# lands in the declared set harmlessly and is not filtered: no Rust keyword has
+# the shape `is_citation` accepts, so no citation can resolve to one, and a
+# filter no input can reach would be a condition nothing decides.
 RUST_DECL = re.compile(
-    "(?:"
+    "(?=(?:"
     + "|".join(rust_code_view.keyword(word) for word in
                ("fn", "struct", "enum", "trait", "const", "static", "type", "mod"))
     + r"|(?<![A-Za-z0-9_])macro_rules!)"
-    + r"\s+([A-Za-z_][A-Za-z0-9_]*)")
+    + r"(?:\s+mut(?![A-Za-z0-9_]))?"
+    + r"\s+([A-Za-z_][A-Za-z0-9_]*))")
 PY_DECL = re.compile(r"^\s*(?:def|class)\s+([A-Za-z_][A-Za-z0-9_]*)"
                      r"|^([A-Za-z_][A-Za-z0-9_]*)\s*[:=]", re.M)
 SH_DECL = re.compile(r"^\s*(?:function\s+)?([A-Za-z_][A-Za-z0-9_]*)\s*\(\)"
@@ -513,6 +527,21 @@ def self_test() -> int:
     rust_renamed = _tree()
     rust_renamed["rust/sample/src/lib.rs"] = CLEAN_RUST.replace("a_rust_fn", "a_renamed_fn")
     case("a renamed Rust artefact fails its citation", rust_renamed, True)
+
+    # **WS-BP BP2.6**: a `const fn` is a declaration.  A consuming match read
+    # `const fn a_rust_fn` as declaring `fn`, so the citation failed as a
+    # missing artefact; the qualified spellings are cases because each one puts
+    # a keyword where the name used to be read.  The last is the control: the
+    # widening must not make a renamed `const fn` resolve.
+    for label, decl in (("`const fn`", "pub const fn a_rust_fn() {}\n"),
+                        ("`const unsafe fn`", "pub(crate) const unsafe fn a_rust_fn() {}\n"),
+                        ("`static mut`", "static mut a_rust_fn: u8 = 0;\n")):
+        qualified = _tree()
+        qualified["rust/sample/src/lib.rs"] = decl
+        case(f"a {label} declaration resolves", qualified, False)
+    const_renamed = _tree()
+    const_renamed["rust/sample/src/lib.rs"] = "pub const fn a_renamed_fn() {}\n"
+    case("a renamed `const fn` fails its citation", const_renamed, True)
 
     # **The `v0.35.194` instance.**  Lean's convention is lowerCamelCase for
     # `def`s, so before the widening every definition name was outside the

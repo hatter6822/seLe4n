@@ -738,7 +738,8 @@ def review5_untranslatable_address_is_refused : IO Unit := do
 
 /-- **PR #892 review round 5**: a node the firmware marked `disabled` is
 hardware that is not there, and the classifier drops it — the Lean twin of the
-round-4 `status` filter in `cmdline::find_ram_top_in_dtb`.  `okay` and `ok` are
+round-4 `status` filter in the Rust `/memory` walker (retired at WS-BP BP2.6).
+`okay` and `ok` are
 the two operational spellings; every other value withholds the node. -/
 def review5_disabled_peripheral_is_not_discovered : IO Unit := do
   let disabled := extractPeripherals
@@ -1593,7 +1594,7 @@ def deviceTreeBridge_19_root_cell_widths_are_honoured : IO Unit := do
       (ram.any (fun r => r.base.toNat == 0 && r.size == 0xFC000000))
 
 /-- **PR #892 review round 5 audit**: a `reg` that is not a whole number of
-pairs fails the whole query closed, as `fold_memory_reg` does — rather than
+pairs fails the whole query closed, as the retired Rust walker's did — rather than
 contributing the entries before the partial one. -/
 def deviceTreeBridge_20_partial_reg_pair_refused : IO Unit := do
   match DeviceTree.fromDtbFull truncatedRegBoardDtb rpi5MachineConfig.physicalAddressWidth with
@@ -1649,8 +1650,8 @@ def deviceTreeBridge_16_disabled_memory_refused : IO Unit := do
 
 /-- **PR #892 review round 5**: a `memory@…` under `/reserved-memory` is a
 carve-out at depth 2, not an aperture, and is not read as the machine's RAM —
-the depth restriction `cmdline::find_ram_top_in_dtb` has always applied and the
-Lean selector did not. -/
+the depth restriction the Rust `/memory` walker applied (retired at WS-BP BP2.6)
+and the Lean selector did not. -/
 def deviceTreeBridge_17_reserved_memory_child_is_not_ram : IO Unit := do
   match DeviceTree.fromDtbFull reservedMemoryOnlyDtb rpi5MachineConfig.physicalAddressWidth with
   | .ok _ => expect "RR892-17 a reserved-memory child is not the machine's RAM" false
@@ -1991,14 +1992,16 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
 
 /-! ## WS-BP BP0.1 — the shared device-tree fixture corpus
 
-`tests/fixtures/dtb/` holds blobs the Rust walker's suite
+`tests/fixtures/dtb/` holds blobs the Rust walk's suite
 (`rust/sele4n-hal/src/cmdline.rs`, `dtb_corpus_tests`) consumes too, against one
 hand-written manifest rendered by `scripts/generate_dtb_corpus.py`.  Every
-fixture the manifest names is read here through the production parse path and
-its `/memory` extents compared with the manifest, so a filter added to the Lean
-parser alone, or to the Rust walker alone, fails that side's assertion rather
-than passing silently.  Every divergence is collected before the check fails, so
-one run names all of them. -/
+fixture the manifest names is read here through the production parse path: its
+`structure` verdict is the question both sides answer (the Rust side's
+`fdt_structure_check`, which the bootargs reader runs first), and its `/memory`
+extents are this parser's alone — WS-BP BP2.6 retired the Rust `/memory` walk.
+A refusal added to either side alone fails that side's assertion rather than
+passing silently.  Every divergence is collected before the check fails, so one
+run names all of them. -/
 
 private def dtbCorpusDir : System.FilePath := "tests/fixtures/dtb"
 
@@ -2064,22 +2067,17 @@ def corpusDeclaredRegions (blob : ByteArray) : Option (List (Nat × Nat)) :=
       | none => none
       | some root => (memoryRegionsFromNodes root).map (·.map fun r => (r.base, r.size))
 
-/-- Does a manifest RAM top claim only reported memory?  The Rust walk may cross
-the peripheral window `[0xFC00_0000, 0x1_0000_0000)` from a fully reported low
-aperture, so what the top asserts is that `[0, min top 0xFC00_0000)` and — when
-it reaches past the window — `[0x1_0000_0000, top)` are covered by the union of
-the reported extents.  Decided by `memoryRegionCoveredByUnion`, the predicate the
-RPi5 device-tree bridge validates a board with, so a top the Rust side derives
-is checked against the Lean side's own notion of "reported". -/
-private def corpusTopIsReported (regions : List (Nat × Nat)) (top : Nat) : Bool :=
-  let lowTop := 0xFC000000
-  let highBase := 0x100000000
-  let rams : List SeLe4n.MemoryRegion := regions.map fun (b, sz) =>
-    { base := SeLe4n.PAddr.ofNat b, size := sz, kind := .ram }
-  let covers := fun (lo hi : Nat) =>
-    hi ≤ lo || memoryRegionCoveredByUnion rams
-      { base := SeLe4n.PAddr.ofNat lo, size := hi - lo, kind := .ram }
-  covers 0 (min top lowTop) && (top ≤ highBase || covers highBase top)
+/-- The Lean parser's answer to the structural question both sides share: the
+header validates, the structure block parses whole, and it holds a single
+unnamed root — the steps `corpusDeclaredRegions` takes before it looks for
+memory. -/
+def corpusStructureReadable (blob : ByteArray) : Bool :=
+  match parseAndValidateFdtHeader blob with
+  | none => false
+  | some hdr =>
+    match parseFdtNodes blob hdr with
+    | .error _ => false
+    | .ok nodes => (fdtRoot? nodes).isSome
 
 def dtbCorpus_every_fixture_agrees_with_the_manifest : IO Unit := do
   let manifest ← IO.FS.readFile (dtbCorpusDir / "MANIFEST")
@@ -2088,32 +2086,27 @@ def dtbCorpus_every_fixture_agrees_with_the_manifest : IO Unit := do
   let mut checked := 0
   for row in rows do
     match row.splitOn "|" |>.map (fun (x : String) => x.trimAscii.toString) with
-    | [name, regionsCell, topCell] =>
+    | [name, structureCell, regionsCell] =>
       let hexText ← IO.FS.readFile (dtbCorpusDir / s!"{name}.dtb.hex")
-      match parseCorpusHex hexText, parseCorpusRegions? regionsCell with
-      | .error e, _ => failures := failures.push s!"{name}: {e}"
-      | _, none => failures := failures.push s!"{name}: malformed regions cell {regionsCell}"
-      | .ok blob, some expected =>
+      let readable? : Option Bool := match structureCell with
+        | "readable" => some true
+        | "refused" => some false
+        | _ => none
+      match parseCorpusHex hexText, readable?, parseCorpusRegions? regionsCell with
+      | .error e, _, _ => failures := failures.push s!"{name}: {e}"
+      | _, none, _ => failures := failures.push s!"{name}: malformed structure cell {structureCell}"
+      | _, _, none => failures := failures.push s!"{name}: malformed regions cell {regionsCell}"
+      | .ok blob, some readable, some expected =>
         checked := checked + 1
+        let gotReadable := corpusStructureReadable blob
+        if gotReadable != readable then
+          failures := failures.push s!"{name}: structure {gotReadable}, manifest {readable}"
         let got := corpusDeclaredRegions blob
         if got != expected then
           failures := failures.push s!"{name}: regions {repr got}, manifest {repr expected}"
-        -- The top is refused exactly when there are no regions to walk, and a
-        -- stated top claims only memory the regions report.
-        match expected, topCell with
-        | some (_ :: _), "refused" =>
-          failures := failures.push s!"{name}: regions but no top"
-        | some (_ :: _), t =>
-          match parseCorpusNat? t with
-          | some top =>
-            match expected with
-            | some rs =>
-              if !corpusTopIsReported rs top then
-                failures := failures.push s!"{name}: top {t} claims unreported memory"
-            | none => pure ()
-          | none => failures := failures.push s!"{name}: malformed top {t}"
-        | _, "refused" => pure ()
-        | _, t => failures := failures.push s!"{name}: top {t} with no regions"
+        -- A blob refused structurally declares no regions.
+        if !readable && expected.isSome then
+          failures := failures.push s!"{name}: refused structure with regions"
     | _ => failures := failures.push s!"malformed manifest row: {row}"
   for f in failures do IO.println s!"  corpus divergence: {f}"
   expect s!"WS-BP BP0.1 corpus: {checked} fixtures agree with the manifest"

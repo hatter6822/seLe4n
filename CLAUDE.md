@@ -428,6 +428,7 @@ To find files that need pagination today, run:
 - `tests/SuspendResumeSuite.lean` (~910 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
 - `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~900 lines)
+- `docs/DEVELOPMENT.md` (~899 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
@@ -449,7 +450,6 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreWcrt.lean` (~812 lines)
 - `SeLe4n/Kernel/InformationFlow/AuditRecord.lean` (~811 lines)
-- `docs/DEVELOPMENT.md` (~808 lines)
 - `docs/dev_history/AUDIT_v0.21.7_WORKSTREAM_PLAN.md` (~808 lines)
 - `docs/dev_history/audits/AUDIT_CODEBASE_v0.11.6.md` (~806 lines)
 This bullet block is a **curated snapshot**, not a static enumeration.
@@ -7146,18 +7146,18 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2.1..BP2.5 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **45 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+sequences **46 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed) and **BP2.5** (the host witnesses, which landed with the first two); BP2.6 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants); BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7175,31 +7175,26 @@ spills only x0–x5 and x7 today), `BP7.4` (per-core staging), with `BP7.6` the
 flip they gate.
 
 And **the boot map is BP2.6's, not the device tree's** (the maintainer's
-correction, recorded as a scheduled row rather than as prose).  `init_mmu`
-parses the firmware blob *before* translation is enabled — an
-attacker-influenced parser running in the window with no memory protection and
-no recovery but a halt — and it does so to obtain a RAM *size* the boot map does
-not need.  BP2.6 builds the map from the image, both stacks, BP2.1's arena, a
-bounded window at the firmware's DTB pointer and the board's device window,
-every one a linker symbol or a board constant, and retires `ram_top_from_dtb`,
-`clamp_ram_top`, `dtb_dereferenced_range` and `boot_ranges_mapped_under` with
-it.  That deletes the Rust FDT walker from the boot path, so the boot seam's
-Lean parse is the blob's only parse and the device-tree half of the WS-XV pair
-stops existing rather than being gated — which is what
-[`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md) table C names as that
-pair's remedy.
+correction, recorded as a scheduled row rather than as prose, and landed at
+`v0.36.2` — the BP2.6 paragraph below).  `init_mmu` used to parse the firmware
+blob *before* translation was enabled, to obtain a RAM *size* the boot map does
+not need; the verified Lean parser is now the only reader of the blob's memory,
+so the device-tree half of the WS-XV pair stopped existing rather than being
+gated — which is what [`docs/REGISTERED_DEBT.md`](docs/REGISTERED_DEBT.md)
+table C named as that pair's remedy.
 
 And **WS-XV is BP0, not a workstream** (`v0.34.124`).  The cross-implementation
 findings registered at `v0.34.114` were never given a plan file, and reading
 their five rows back showed why: XV1 was always a WS-BP obligation and became
-**BP2.6**; XV2 and XV3 are interim *by their own text* ("only if XV1 is far
-off") and are retired by BP2.6; XV4 and XV5 sit on surfaces this plan modifies
+**BP2.6**; XV2 and XV3 were interim *by their own text* ("only if XV1 is far
+off"), and BP2.6 retargeted them onto the half of the pair it kept (the Rust
+structure walk the bootargs reader runs); XV4 and XV5 sit on surfaces this plan modifies
 — the ABI BP7's context restore delivers, and the boot map BP2.6 rebuilds.
 Half of WS-XV is deleted by WS-BP's own work and the other half is a harness
 over what WS-BP changes.  BP0 is first because its value decays as the rest
 lands, and it is the one phase that may run **in parallel** with any other:
-nothing in BP1..BP8 consumes it, and the only coupling is BP2.6 retiring two of
-its rows and updating a third.  `docs/REGISTERED_DEBT.md` keeps the WS-XV
+nothing in BP1..BP8 consumes it, and the only coupling was BP2.6 retargeting two
+of its rows and updating a third.  `docs/REGISTERED_DEBT.md` keeps the WS-XV
 *finding* — the evidence that nominal gates miss behavioural drift — and no
 longer a work list.
 
@@ -7215,14 +7210,16 @@ Both Lean tables go through `SeLe4n.Testing.checkSharedFixture`, and a new
 two-sided table does too.  (2) **A divergence the fixtures expose is fixed on the
 side that is wrong, never recorded as an exception**: the first run fixed thirteen
 Rust and eight Lean refusals, so both readers now share one rule set — the Rust
-walks run `fdt_structure_check` first, the Lean parser bounds depth
+walk runs `fdt_structure_check` first, the Lean parser bounds depth
 (`fdtMaxDepth`), extent count (`fdtMaxMemoryExtents`) and 64-bit ends, and neither
 reads a cell width that is not one `<u32>`.  (3) **A Rust FDT walk's bound is the
 structure block's size** (`fdt_token_bound`), never a fixed fuel: 4096 tokens
 refused a large well-formed device tree the Lean parser reads whole.  (4) **The
-boot map installs exactly the Lean map**: `DEVICE_WINDOW_TOP` is the Lean extent,
-the straddling block is an L3 table, and `check_physical_address_width.sh` no
-longer regex-parses `Board.lean` — the driven test decides it.
+boot map is held to the Lean map**: every address it maps Normal is RAM in every
+variant, its device window is exactly the Lean one (`DEVICE_WINDOW_TOP` is the
+Lean extent, the straddling block an L3 table), and on the smallest variant its
+RAM is exactly the variant's; `check_physical_address_width.sh` no longer
+regex-parses `Board.lean` — the driven test decides it.
 
 **The kernel is FP-free, and FP/SIMD traps at EL1** (`v0.36.2`, found while
 scoping BP1).  Rust's `aarch64-unknown-none` enables `neon` and `fp-armv8`, and
@@ -7312,9 +7309,9 @@ allocator feature must keep its state in the metadata pages, never inside an
 object.  (4) **The C entry points halt** on a refusal and on exhaustion, after
 releasing the heap's leaf lock — `lean.h`'s inline paths do not test the result,
 so there is no error to return.  (5) **The boot map covers the arena, and a
-device tree inside the image is refused**: `mmu::image_ranges` includes it, and
-`init_mmu` refuses a blob overlapping the image, its stacks or the arena
-(`dtb_disjoint_from_image`) — the firmware places the blob by the image *file*'s
+device tree inside the image is refused**: the arena lies in the guaranteed RAM
+the map covers, and `init_mmu` refuses a device-tree window overlapping
+`[_start, __lean_heap_end)` (`mmu::kernel_extent`, `dtb_disjoint_from_image`) — the firmware places the blob by the image *file*'s
 size, and everything past it is `NOLOAD`.  Placing the arena also found that no
 boot refusal stops an untyped over kernel memory (`bootSafeUntypedCheck` accepts
 every region); not attacker-reachable, registered in `docs/REGISTERED_DEBT.md`
@@ -7394,6 +7391,46 @@ both archives to define it.  Upstream's `lean_initialize_runtime_module` and
 `lean_io_mark_end_initialization` are not called: the kernel's runtime has no
 per-thread heap, task manager or initialization flag, and the reachable link
 names neither.
+
+**BP2.6 — the boot map is built from constants, and nothing is parsed before
+translation is on** (`v0.36.2`, `rust/sele4n-hal/src/mmu.rs`, `link.ld`).  Five
+things new code must respect.  (1) **The map is a function of the address and
+the image's layout, nothing else** (`boot_mapping_for(addr, layout)`):
+`[0, GUARANTEED_RAM_TOP)` — the 1 GiB every Raspberry Pi 5 has — is Normal, the
+device window Device, everything else unmapped.  The driven BP0.4 test requires
+every Normal address to be RAM in **every** variant's Lean map and the Normal
+window to equal the smallest variant's RAM.  RAM above the gigabyte is BP4.6's,
+after the verified Lean parse; until then it is unmapped (a lost resource, never
+a false claim) and cache maintenance there fails closed.  `is_boot_cacheable_range`
+is a pure constant question.  (2) **W^X at EL1**: the text `[_start, __text_end)`
+is read-only and executable, the read-only data read-only and never executable,
+and every writable page never executable.  The retired single Normal descriptor
+was writable and PXN-clear while `SCTLR_EL1.WXN` is set — which makes a writable
+page execute-never — so the first fetch after `enable_mmu` would have faulted,
+invisible only because no image had run.  A new mapping picks one of
+`BLOCK_KERNEL_TEXT` / `BLOCK_KERNEL_RODATA` / `BLOCK_NORMAL` by what it maps;
+`no_page_is_writable_and_executable_and_the_text_executes` walks every page.
+(3) **The section boundaries are `link.ld`'s, assigned inside the sections they
+bound**: `lld` attaches a location-counter change written *between* sections to
+the section that follows, so a boundary written there moves with the gap it
+exists to detect.  `__rodata_start == __text_end` is an `ASSERT`, so no orphan
+section can land between them and be mapped executable, and
+`scripts/check_link_script.py` proves each boundary `ASSERT` live by mutation.
+`link.ld`'s RAM region ends at `GUARANTEED_RAM_TOP`, so the linker cannot place
+the image where the map does not reach.  (4) **`init_mmu` reads nothing of the
+blob** (a Tier 3 negative refuses any `cmdline` call in its body).  It only
+checks that `dtb_window` — `MAX_DTB_SIZE` from the pointer, the bound every
+reader enforces before forming a slice — lies in guaranteed RAM and outside
+`[_start, __lean_heap_end)`, and refuses otherwise; BP5.3's `config.txt` is to
+pin the placement.  (5) **The bootargs reader stays, in Rust, with translation on**:
+it is a Rust-only question with no Lean counterpart, and the QEMU lanes use it.
+So "is this structure block readable" is still two-sided, and the shared corpus
+was **retargeted rather than retired**: its manifest carries a hand-written
+`structure` verdict both suites drive, and its `regions` column is the Lean
+parser's alone.  Retired with a Tier 3 negative each: `ram_top_from_dtb`, the
+`/memory` walk, fold and contiguity machinery, `clamp_ram_top`, `boot_ram_top`,
+`dtb_dereferenced_range`, `boot_ranges_mapped_under`, `boot_critical_ranges_mapped`
+and the RAM-top constants.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -11575,7 +11612,8 @@ code may assume:
   header — and both require **version ≥ 17**, the version at which
   `size_dt_struct` enters the header, since both read that field
   unconditionally.  Four of those conditions were Rust-only, with Lean the
-  permissive side and Lean the side `BP2.6` makes the only reader; the
+  permissive side and Lean the side `BP2.6` made the only reader of the blob's
+  memory; the
   reservation-block pair and the version floor were missing from both.  A
   strings block over the header is the sharpest of them: a property's `nameoff`
   then resolves into header bytes, and every field there is the blob author's to

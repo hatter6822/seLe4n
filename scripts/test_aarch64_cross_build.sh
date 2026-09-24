@@ -193,21 +193,24 @@ echo "      ✓ no FP/SIMD register operand in the HAL's object code"
 echo ""
 
 # --------------------------------------------------------------------------
-# [6/6] The linker script links, and the Lean heap arena is where it must be.
+# [6/6] The linker script links, the Lean heap arena is where it must be, and
+# the boot map's section boundaries are ones it can describe.
 #
 # `link.ld` places the Lean heap arena (WS-BP BP2.1) and asserts that it is a
 # whole number of pages, page-aligned, and inside the smallest Raspberry Pi
-# 5's 1 GiB of RAM — and nothing else links the script until the kernel image
+# 5's 1 GiB of RAM; and (WS-BP BP2.6) it bounds the kernel text and read-only
+# data on pages, adjacent, which the boot map's W^X permissions are built from
+# — and nothing else links the script until the kernel image
 # exists (BP5).  The probe links this run's RELEASE assembly archive, the real
 # `.text.boot`, under the script, checks the arena's relations on the ELF's
 # symbol table, and proves each ASSERT live by mutating the script until it
 # fires.  `scripts/check_aarch64_cross_target.py` requires this command over
 # exactly this archive.
 # --------------------------------------------------------------------------
-echo "[6/6] Linking a probe under link.ld and checking the Lean heap arena..."
+echo "[6/6] Linking a probe under link.ld and checking the arena and the boot map's section boundaries..."
 python3 "${PROJECT_ROOT}/scripts/check_link_script.py" \
     target/"${CROSS_TARGET}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
-echo "      ✓ link.ld links; the arena and its three ASSERTs hold"
+echo "      ✓ link.ld links; the arena, the section boundaries and every ASSERT hold"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

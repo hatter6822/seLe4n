@@ -88,8 +88,8 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.36.2` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 418,119 across 341 files |
-| **Test Lean LoC** | 85,250 across 71 test suites |
+| **Production Lean LoC** | 418,122 across 341 files |
+| **Test Lean LoC** | 85,243 across 71 test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -271,7 +271,7 @@ can now act.
 
 **SM10 is blocked on WS-BP** (the bare-metal boot path,
 [`SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)), which became
-SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 45 sub-tasks
+SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 46 sub-tasks
 across nine phases — cross-implementation agreement and aarch64 Lean object
 code (BP0 and BP1, both landed at v0.36.2), bare-metal runtime
 hosting, the RPi5 deployment, the image, per-core readiness, the context

@@ -97,8 +97,8 @@ provas do Lean 4:
 |----------|-------|
 | **Versão** | `0.36.2` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 418.119 em 341 arquivos |
-| **LoC Lean de testes** | 85.250 em 71 suítes de testes |
+| **LoC Lean de produção** | 418.122 em 341 arquivos |
+| **LoC Lean de testes** | 85.243 em 71 suítes de testes |
 | **Declarações provadas** | 13.815 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Auditoria canônica** | [`AUDIT_v0.29.0_COMPREHENSIVE`](../../../docs/dev_history/audits/AUDIT_v0.29.0_COMPREHENSIVE.md) — auditoria abrangente pré-1.0 (202 achados; remediados por WS-AK AK1–AK10; arquivada) |
