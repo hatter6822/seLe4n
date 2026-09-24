@@ -418,10 +418,12 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       -- the scheduler domain does.  Each names its target the way its own live
       -- dispatch arm names it — the capability's object read as a thread for the
       -- five TCB-directed ones, as a SchedContext for the two SchedContext ones
-      -- that are directed at it, and `.schedContextBind`'s bound thread from the
-      -- decoded `threadId` argument, which is a raw operand its own lift
-      -- validates.  `lockSetForSyscall` answers `none` at every one of them
-      -- whatever these fields hold, so the object domain is untouched.
+      -- that are directed at it, and `.schedContextBind`'s bound thread through
+      -- the SAME resolver the live arm binds through
+      -- (`resolveSchedContextBindThread`, `v0.35.204`: a TCB capability at MR0
+      -- in the caller's CSpace, where a raw thread id used to be read).
+      -- `lockSetForSyscall` answers `none` at every one of them whatever these
+      -- fields hold, so the object domain is untouched.
       | .tcbResume, .object objId =>
           some (.ofThreadTarget tid (SeLe4n.ThreadId.ofNat objId.toNat))
       | .tcbSetPriority, .object objId
@@ -440,10 +442,9 @@ def abiEntryLockOperands (decoded : SyscallDecodeResult) (tid : SeLe4n.ThreadId)
       | .schedContextConfigure, .object scId
       | .schedContextUnbind, .object scId => some (.ofObjectTarget tid scId)
       | .schedContextBind, .object _ =>
-          match Architecture.SyscallArgDecode.decodeSchedContextBindArgs decoded with
+          match resolveSchedContextBindThread tid decoded s with
           | .error _ => none
-          | .ok args =>
-              some (.ofThreadTarget tid (SeLe4n.ThreadId.ofNat args.threadId))
+          | .ok v => some (.ofThreadTarget tid v.val)
       | .lifecycleRetype, .object _ =>
           match Architecture.SyscallArgDecode.decodeLifecycleRetypeArgs decoded with
           | .error _ => none

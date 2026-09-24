@@ -2099,7 +2099,7 @@ private theorem witnessCapOnly :
     simp only [decodeLifecycleRetypeArgs, witnessDecoded, requireMsgReg, bind,
       Except.bind] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -2244,10 +2244,8 @@ private theorem witnessCapOnlySignal :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedSignal, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedSignal, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedSignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2409,7 +2407,7 @@ private theorem witnessCapOnlyRetype :
       bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
     cases hDec
     exact witnessSt3_detached_of _ (by decide) (by decide)
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -2482,10 +2480,10 @@ private theorem witnessCapOnlyEndpointOf (decoded : SyscallDecodeResult)
     simp only [decodeLifecycleRetypeArgs, hRegs, requireMsgReg, bind,
       Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, hRegs, requireMsgReg, bind,
-      Except.bind] at hDec
-    cases hDec
+  · intro _ _ _ hRes
+    simp only [resolveSchedContextBindThread, decodeSchedContextBindArgs, hRegs,
+      requireMsgReg, bind, Except.bind] at hRes
+    cases hRes
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2672,13 +2670,8 @@ private theorem witnessCapOnlyMint :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedMint, requireMsgReg,
       bind, Except.bind, pure, Except.pure, KernelObjectType.ofNat?] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal
-    simp only [decodeSchedContextBindArgs, witnessDecodedMint, requireMsgReg,
-      bind, Except.bind, pure, Except.pure] at hDec
-    cases hDec
-    simp only [validateThreadIdArg, SeLe4n.ThreadId.toValid?] at hVal
-    rw [dif_pos (by decide)] at hVal
-    cases hVal
+  · intro _ _ hSy _
+    simp [witnessDecodedMint] at hSy
   · intro scObj _ hTgt
     simp [witnessCap] at hTgt
   · intro objId _ hTgt
@@ -2737,10 +2730,8 @@ private theorem witnessCapOnlyDeclassifySignal :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedDeclassifySignal,
       requireMsgReg, bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedDeclassifySignal,
-      requireMsgReg, bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedDeclassifySignal] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -2960,10 +2951,8 @@ private theorem witnessCapOnlyReply :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedReply, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedReply, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedReply] at hSy
   · intro scObj _ hTgt
     simp [witnessCapReply] at hTgt
   · intro objId _ hTgt
@@ -3007,9 +2996,12 @@ theorem syscallDispatchQuiescence_inhabited_reply :
     -- the fact it rested on is unchanged and still consumed here.
     exact absurd (witnessSt4_no_pendingFault callerTid) (by rw [hF]; simp)
 
-/-- A `.schedContextBind` decode whose one register decodes (thread id 5,
-valid): the bind field's donation conclusion is read off the stored binding
-under its own arm. -/
+/-- A `.schedContextBind` decode whose one register decodes (capability address
+5 — `v0.35.204`; a raw thread id until then): the bind field's donation
+conclusion is read off the stored binding under its own arm, for **every** thread
+the resolver could name, since the witness store holds no `.donated` binding at
+all.  That is why the witness needs no CSpace: the field is inhabited by its
+conclusion, not by refuting its antecedent. -/
 private def witnessDecodedBind : SyscallDecodeResult :=
   { capAddr := SeLe4n.CPtr.ofNat 0, msgInfo := default,
     syscallId := .schedContextBind, msgRegs := #[⟨5⟩] }
@@ -3027,7 +3019,7 @@ private theorem witnessCapOnlyBind :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedBind, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec vThreadId hVal s sTcb sc0 hLk
+  · intro _ vThreadId _ _ s sTcb sc0 hLk
     rw [witnessSt3_lookup] at hLk
     split at hLk
     · cases hLk
@@ -3041,8 +3033,9 @@ private theorem witnessCapOnlyBind :
     simp [witnessCap] at hTgt
 
 /-- **The bind donation field is exercised under its own arm**: the
-`.schedContextBind` decode fires, the register decodes, and the conclusion
-is read off the stored binding. -/
+`.schedContextBind` decode fires, the register decodes, and the conclusion is
+read off the stored binding for every thread a caller's CSpace could resolve
+MR0 to (`v0.35.204`: the operand is a TCB capability address now). -/
 theorem syscallDispatchQuiescence_inhabited_bind :
     syscallDispatchQuiescence witnessDecodedBind witnessTid witnessGateBind
       witnessCap witnessSt3 := by
@@ -3088,10 +3081,8 @@ private theorem witnessCapOnlyUnbind :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedUnbind, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedUnbind, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedUnbind] at hSy
   · intro scObj _ hTgt vScId hVal scX t tcbX hScLk
     injection hTgt with hObj
     subst hObj
@@ -3154,10 +3145,8 @@ private theorem witnessCapOnlySuspend :
     simp only [decodeLifecycleRetypeArgs, witnessDecodedSuspend, requireMsgReg,
       bind, Except.bind] at hDec
     cases hDec
-  · intro args _ hDec
-    simp only [decodeSchedContextBindArgs, witnessDecodedSuspend, requireMsgReg,
-      bind, Except.bind] at hDec
-    cases hDec
+  · intro _ _ hSy _
+    simp [witnessDecodedSuspend] at hSy
   · intro scObj hSy hTgt
     simp [witnessDecodedSuspend] at hSy
   · intro objId _ hTgt vtid hVal

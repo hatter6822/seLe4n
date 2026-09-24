@@ -5,7 +5,7 @@
 //! Three capability-controlled operations for scheduling context management
 //! added in WS-Z Phase Z5.
 
-use sele4n_types::{KernelError, KernelResult, ThreadId};
+use sele4n_types::{CPtr, KernelError, KernelResult};
 
 /// Maximum configurable priority value (8-bit, matching Lean scheduler).
 pub const MAX_PRIORITY: u64 = 255;
@@ -62,20 +62,27 @@ impl SchedContextConfigureArgs {
 }
 
 /// Arguments for `schedContextBind` (syscall 18).
-/// Register mapping: regs[0]=threadId.
+/// Register mapping: regs[0]=tcbCPtr — the **capability address**, in the
+/// caller's own CSpace, of the TCB to bind to the invoked SchedContext.
 ///
-/// AK4-C (R-ABI-H01): `thread_id` is now typed as `ThreadId` (was raw `u64`)
-/// so compile-time checks prevent accidental cross-typed-id confusion.
+/// `v0.35.204`: this was `thread_id: ThreadId`, a raw thread id the kernel
+/// bound directly under the SchedContext capability alone — so a holder of one
+/// could bind it to any thread it could name and, through the bind's priority
+/// propagation, rewrite that thread's base priority.  seL4-MCS's
+/// `seL4_SchedContext_Bind` takes the TCB as a capability; the kernel's
+/// `resolveSchedContextBindThread` now resolves MR0 through the caller's CSpace
+/// requiring `.write`, exactly as `tcbBindNotification` resolves its
+/// notification.  Typed `CPtr` so the wrapper cannot be handed a thread id.
 ///
-/// Lean: `SchedContextBindArgs` (SyscallArgDecode.lean:904–906)
+/// Lean: `SchedContextBindArgs` (`SyscallArgDecode.lean`)
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct SchedContextBindArgs {
-    pub thread_id: ThreadId,
+    pub tcb_cap: CPtr,
 }
 
 impl SchedContextBindArgs {
     pub const fn encode(&self) -> [u64; 1] {
-        [self.thread_id.raw()]
+        [self.tcb_cap.raw()]
     }
 
     /// Decode from message registers. Requires 1 register.
@@ -84,7 +91,7 @@ impl SchedContextBindArgs {
             return Err(KernelError::InvalidMessageInfo);
         }
         Ok(Self {
-            thread_id: ThreadId::from(regs[0]),
+            tcb_cap: CPtr::from(regs[0]),
         })
     }
 }
@@ -167,7 +174,7 @@ mod tests {
     #[test]
     fn bind_roundtrip() {
         let args = SchedContextBindArgs {
-            thread_id: ThreadId::from(42u64),
+            tcb_cap: CPtr::from(42u64),
         };
         assert_eq!(SchedContextBindArgs::decode(&args.encode()).unwrap(), args);
     }

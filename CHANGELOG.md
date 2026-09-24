@@ -1,3 +1,97 @@
+## v0.35.204 — `.schedContextBind` binds only a thread the caller holds a writable TCB capability to
+
+**The finding, from the post-closure audit of this PR.**  `.schedContextBind`
+resolved its capability to the *SchedContext* and took the thread to bind from
+MR0 as a **raw thread id**, refusing only the reserved idle range
+(`validateThreadIdArg`, PR #889 review round 11).  No TCB capability was
+presented and no TCB right was checked, so a holder of a writable SchedContext
+capability could bind that context to **any** unbound same-domain thread it
+could name — and `schedContextBind` then wrote `sc.priority` into that thread's
+base priority (Z5-G3) and, since WS-RR RR8.12 Cut B2 (`v0.35.182`), placed it on
+its home core's run queue if it was parked.  That is an authority crossing this
+tree's own `tcbBindNotification` arm (SD-050) already refuses for its extra
+operand, and one seL4-MCS never admits: `seL4_SchedContext_Bind` takes the TCB
+as a capability.  Severity Medium: it needs a SchedContext capability and a
+thread in the caller's own domain, and it changes scheduling parameters rather
+than crossing an information-flow boundary — but a client could re-band a
+server it holds no TCB authority over, which is what the MCP ceiling and the
+TCB write right exist to prevent.  Reported before it was fixed, per the
+vulnerability rule; the register row records it with its severity.
+
+**MR0 is a TCB capability address now.**  `SchedContextBindArgs.tcbCPtr`
+replaces `threadId`, and `resolveSchedContextBindThread` resolves it through
+the caller's own CSpace with `.write` required, through the same
+`syscallLookupCap` chokepoint every invoked capability passes — so the idle TCB
+is unreachable through the bind because the *capability* is refused
+(`resolveSchedContextBindThread_refuses_idle_capability`,
+`dispatchCapabilityOnly_schedContextBind_idle_capability_refused`, the
+successors of the retired
+`dispatchCapabilityOnly_schedContextBind_idle_operand_refused`), and a
+successful bind carries the authority it consumed
+(`resolveSchedContextBindThread_ok_authorised`: the decoded operand, the
+caller's TCB and root CNode, a capability the lookup resolved with `.write`
+whose target is the thread bound, and that thread's TCB).  The validator still
+runs on the resolved thread, for the promotion to `ValidThreadId` and as the
+same defence in depth the capability-derived arms get.  Four things the cut
+records.
+
+1. **One resolver, two askers.**  The live arm and the scheduler-domain operand
+   builder (`abiEntryLockOperands`) both read `resolveSchedContextBindThread`,
+   so the footprint and the transition cannot name different threads — the
+   shape `.tcbBindNotification` already had, and the one `v0.35.59`'s rule
+   (*one question, one owner*) requires.
+2. **The payoff pack quantifies over the resolver's answer, for every caller.**
+   `capabilityDispatchQuiescence` carries no caller id, so
+   `boundThreadNotDonationOwner` is stated for every `callerTid` and every
+   thread the resolver answers with, and the payoff's `.schedContextBind` case
+   splits on the resolver rather than on a decoded id.  The §7b witnesses
+   discharge it by its conclusion (their stores hold no `.donated` binding);
+   the six whose syscall is not the bind refute it by `syscallId`, and the
+   endpoint witness by the resolver's own decode failing on an empty register
+   file.
+3. **The ABI moves with the model.**  `sele4n-abi`'s `SchedContextBindArgs`
+   carries `tcb_cap: CPtr`, `sele4n-sys`'s wrapper is
+   `sched_context_bind(sc_cap, tcb_cap)`, the conformance sweep and the
+   roundtrip test drive the new shape, and the HAL's `svc_dispatch` comment
+   says what MR0 means.  The decoder still reads exactly one register, so the
+   argument-count prefilter is untouched.
+4. **The witness computes the retired reading beside the live one.**
+   `tests/SyscallDispatchSuite.lean` SD-060: a writable TCB capability binds
+   (the SchedContext names the thread and the thread names it back, at the
+   reservation's band); a read-only one is `.illegalAuthority`; a non-TCB
+   capability and an empty slot are `.invalidCapability`; and the RETIRED
+   reading — the target's raw thread id in MR0 — is refused, because `70` is
+   an address in the caller's CSpace and no capability sits there: *naming a
+   thread is not holding it*.  SD-054's two idle halves are restated over the
+   capability: a slot holding an idle TCB capability is refused at the
+   chokepoint, and a raw idle id in MR0 resolves nothing.
+
+**A gate defect found by the cut's own re-anchoring.**  `SENTINEL_CHECK_DISPATCH`
+— the should-grow count of `validate*Arg` lines in `API.lean` — fell 57 → 55,
+because the arm's raw-operand lift is gone by design: the operand it guarded no
+longer exists, the capability chokepoint refuses what that lift refused, and the
+resolver still runs the resolved thread through `validateThreadIdArg` for the
+promotion.  The baseline is re-anchored, as its own epilogue prescribes for a
+documented refactor (three adoption floors rose in the same regeneration).
+Reading the line that produces the count found it still on the `|| echo 0`
+fallback `v0.35.186` retired for its two siblings — two lines above the
+`count_lines_matching` helper written to replace it — so on a zero-match or
+unreadable run the variable would have held two lines and the comparison would
+have died rather than decided.  It reads through the helper now.  And the
+tree-wide Tier 3 negative that was to *stop a fifth* could not see this fourth:
+the command was split over a backslash continuation and the anchor was
+single-line.  It is `rg -U` now, with a run that may cross a continuation and
+hold a grep alternation's `\|` but stops at a `;` or an unescaped newline,
+mutation-tested on the one-line and the two-line shapes; `CLAUDE.md` records
+the instance under the rule it belongs to.
+
+Tier 3 pins the resolver's shape (the `.write` requirement inside its
+declaration, the arm's match on it, the operand builder's), the successor
+theorems, the operand's type on both sides of the ABI and the witness, and
+refuses the retired theorem name, `args.threadId` on either side of the seam and
+`threadId : Nat` in the decoder.  The golden trace is byte-identical: its
+SCO-007/008/013/018 scenarios call the operation, not the syscall.
+
 ## v0.35.203 — WS-RR RR8.16: the closure entry, and the register read against the tree
 
 **WS-RR is complete** (v0.34.26 → v0.35.203; 198 sub-tasks across RR0..RR8).

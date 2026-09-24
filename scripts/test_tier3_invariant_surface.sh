@@ -9614,7 +9614,33 @@ run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleThreadId tid then .error .in
 run_check "INVARIANT" rg -n 'if SeLe4n.Kernel.isIdleObjId oid then .error .invalidArgument' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem validateThreadIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
 run_check "INVARIANT" rg -n '^theorem validateObjIdArg_ok_not_reserved($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
-run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+# `v0.35.204`: the bind's operand is a TCB CAPABILITY, so the idle refusal it
+# used to repeat at the operand's lift point is the chokepoint's own.
+run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_refuses_idle_capability($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'dispatchCapabilityOnly_schedContextBind_idle_operand_refused' SeLe4n/Kernel/API.lean
+# `v0.35.204`: `.schedContextBind` names the thread it binds through a TCB
+# capability the caller holds, resolved through its own CSpace with `.write`
+# (`resolveSchedContextBindThread`) — seL4-MCS's `seL4_SchedContext_Bind`, and
+# the shape `.tcbBindNotification` already had.  The live arm and the
+# scheduler-domain operand builder read that ONE resolver, the authority fact
+# and the arm's characterisation are theorems, and the raw-operand reading
+# (`args.threadId`) must not come back on either side of the ABI.
+run_check "INVARIANT" rg -n '^def resolveSchedContextBindThread($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^def resolveSchedContextBindThread[^\n]*(\n([ \t][^\n]*)?)*          requiredRight := \.write" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind =>\n    some <\| match cap\.target with\n    \| \.object scId =>\n      fun st => match resolveSchedContextBindThread tid decoded st with" SeLe4n/Kernel/API.lean'
+run_check "INVARIANT" rg -n '^theorem resolveSchedContextBindThread_ok_authorised($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^theorem dispatchCapabilityOnly_schedContextBind_eq($|[ ({:\[\]])' SeLe4n/Kernel/API.lean
+run_check "INVARIANT" rg -n '^  tcbCPtr : Nat$' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/API.lean
+run_negative_check "INVARIANT" rg -n 'args\.threadId' SeLe4n/Kernel/SyscallLockBracket.lean
+run_negative_check "INVARIANT" rg -n 'threadId : Nat' SeLe4n/Kernel/Architecture/SyscallArgDecode.lean
+run_check "INVARIANT" rg -n '^    pub tcb_cap: CPtr,$' rust/sele4n-abi/src/args/sched_context.rs
+run_check "INVARIANT" rg -n '^pub fn sched_context_bind\(sc_cap: CPtr, tcb_cap: CPtr\)' rust/sele4n-sys/src/sched_context.rs
+run_negative_check "INVARIANT" rg -n 'thread_id' rust/sele4n-abi/src/args/sched_context.rs
+run_check "INVARIANT" rg -n '^private def sd060_schedContextBind_requires_tcb_capability($|[ ({:\[\]])' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n '^  sd060_schedContextBind_requires_tcb_capability$' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd060_raw_thread_id_in_mr0_is_not_a_capability' tests/SyscallDispatchSuite.lean
 run_check "INVARIANT" rg -n '^def binding_statement_before($|[ ({:\[\]])' scripts/rust_code_view.py
 run_check "INVARIANT" rg -n 'objectIdsUnique config.initialObjects, objectIdDuplicateBootError' SeLe4n/Platform/Boot.lean
 run_check "INVARIANT" rg -n '^  auditMonitorClearance : Option SecurityDomain := none' SeLe4n/Kernel/InformationFlow/Policy.lean
@@ -10781,14 +10807,20 @@ run_check "INVARIANT" rg -F -n 'if [ ! -r "$EXCLUDED_LOG" ]; then' scripts/test_
 run_negative_check "INVARIANT" rg -F -n '"$MISMATCH_LOG" 2>/dev/null || echo 0)' scripts/test_tier5_cross_language.sh
 # shellcheck disable=SC2016
 run_negative_check "INVARIANT" rg -F -n 'excluded=$(wc -l < "$EXCLUDED_LOG" 2>/dev/null || echo 0)' scripts/test_tier5_cross_language.sh
-# NEGATIVE, tree-wide: and no FOURTH asker of the idiom.  `grep -c` prints its
+# NEGATIVE, tree-wide: and no FIFTH asker of the idiom.  `grep -c` prints its
 # count on the failing path too, so ANY `|| <something that prints>` appends a
 # second line -- the sweep off the Tier 5 gate found three more sites
-# (`store_reader_hygiene_baseline.sh` twice, the commit hook once), all latent, and this
-# is what stops a fifth.  Scoped away from this file, whose own negatives above
-# quote the retired expressions in order to refuse them.  Mutation: restore the
-# idiom at any of the four sites.
-run_negative_check "INVARIANT" bash -lc 'rg -n -g "!test_tier3_invariant_surface.sh" "grep -c[^|]*\|\|[^|]*echo" scripts/'
+# (`store_reader_hygiene_baseline.sh` twice, the commit hook once), all latent,
+# and the `v0.35.204` audit a FOURTH in that same baseline script
+# (`SENTINEL_CHECK_DISPATCH`), hidden from the single-line form this anchor used
+# to take by a backslash continuation between its `grep -c` and the fallback: a
+# line is not the command.  Multi-line now: the run between the two may cross a
+# continuation and may hold the `\|` of a grep alternation, and stops at a `;`
+# or an unescaped newline, so a `|| rc=$?` status read is not reported.  Scoped
+# away from this file, whose own negatives above quote the retired expressions in
+# order to refuse them.  Mutation: restore the idiom at any of the five sites, on
+# one line or across a continuation.
+run_negative_check "INVARIANT" bash -lc 'rg -U -n -g "!test_tier3_invariant_surface.sh" "grep -c(?:[^\n;]|\\\\\n)*?\|\|[^\n;]*echo" scripts/'
 
 # ---------------------------------------------------------------------------
 # Register row 63 (`v0.35.185`): the retype COMPOSITE's two invariant theorems.
@@ -20115,11 +20147,12 @@ run_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId =>(\n {8
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "\| \.replyRecv, \.object epId =>(\n {8,}[^\n]*)*\n {8,}badge := cap\.badge" SeLe4n/Kernel/SyscallLockBracket.lean'
 # Three of the eight arms the OBJECT domain declares nothing for, each naming its
 # target the way its own live dispatch arm names it: the affinity through both
-# decoders (its `Option` layer is the unpin request), the bind through the
-# decoded `threadId` argument rather than the capability's object, the retype
-# through the decoded `targetObj`.
+# decoders (its `Option` layer is the unpin request), the bind through the SAME
+# TCB-capability resolver the live arm binds through (`v0.35.204`; the decoded
+# raw `threadId` argument until then), the retype through the decoded
+# `targetObj`.
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.tcbSetAffinity, \.object objId =>(\n {8,}[^\n]*)*\n {8,}match decodeAffinity args\.affinityRaw with" SeLe4n/Kernel/SyscallLockBracket.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>(\n {8,}[^\n]*)*\n {8,}some \(\.ofThreadTarget tid \(SeLe4n\.ThreadId\.ofNat args\.threadId\)\)" SeLe4n/Kernel/SyscallLockBracket.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "\| \.schedContextBind, \.object _ =>\n          match resolveSchedContextBindThread tid decoded s with\n          \| \.error _ => none\n          \| \.ok v => some \(\.ofThreadTarget tid v\.val\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "\| \.lifecycleRetype, \.object _ =>(\n {8,}[^\n]*)*\n {8,}\| \.ok args => some \(\.ofObjectTarget tid args\.targetObj\)" SeLe4n/Kernel/SyscallLockBracket.lean'
 # The witness: both domains at ONE entry, the object domain's answer measured to
 # be unmoved by the five new operands, and the scheduler footprint read off the

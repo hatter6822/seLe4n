@@ -703,9 +703,12 @@ than on a rebinding of its name.
 **Review round 11 (PR #889, same version).**  Two: a **P1 in the kernel** — a
 raw thread-id operand (`.schedContextBind`'s `args.threadId`) escaped the
 capability chokepoint, so an ordinary SchedContext capability could bind and
-re-prioritise a core's idle TCB; the refusal is at the raw-operand lift points
-`validateThreadIdArg` / `validateObjIdArg` — and the boot entry's `.error` arm
-must halt as its terminal action rather than merely mention a halt.
+re-prioritise a core's idle TCB; the refusal was placed at the raw-operand lift
+points `validateThreadIdArg` / `validateObjIdArg`, and `v0.35.204` then retired
+the raw operand itself (MR0 is a TCB capability address, resolved through the
+caller's CSpace with `.write`, so a bind carries TCB authority rather than a
+name) — and the boot entry's `.error` arm must halt as its terminal action
+rather than merely mention a halt.
 
 **Review round 12 (PR #889, same version).**  Four, all against
 `check_kernel_entry_exports.py` and all one shape — *a name is not a

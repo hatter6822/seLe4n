@@ -590,10 +590,6 @@ GETCNODE_ADOPTION=$(count_adoption "getCNode\?")
 GETVSPACEROOT_ADOPTION=$(count_adoption "getVSpaceRoot\?")
 STOREOBJECTCHECKED_ADOPTION=$(count_adoption "storeObjectKindChecked")
 
-# Dispatch-boundary sentinel guard adoption (production API only).
-SENTINEL_CHECK_DISPATCH=$(grep -c "validateThreadIdArg\|validateSchedContextIdArg\|validateObjIdArg" \
-  SeLe4n/Kernel/API.lean 2>/dev/null || echo 0)
-
 # Count matching lines, failing closed.  `grep -c` exits 1 for "no matches" and
 # >1 for an I/O failure, and the two must NOT answer the same: an unreadable
 # file is this baseline failing to measure, never a file with nothing in it.
@@ -614,6 +610,16 @@ count_lines_matching() {
   fi
   printf '%s\n' "${n}"
 }
+
+# Dispatch-boundary sentinel guard adoption (production API only), read off the
+# code view like every counter here (the script is `cd`'d into the overlay) and
+# counted fail-closed through the helper above.  It was the one unswept sibling
+# of the `v0.35.186` fix: the `|| echo 0` fallback it kept behind its `grep -c`
+# sat two lines above the helper written to retire that idiom, and the RR8.15
+# tree-wide negative could not see it because the command was split over a line
+# continuation and the anchor was single-line (`v0.35.204`).
+SENTINEL_CHECK_DISPATCH=$(count_lines_matching \
+  "validateThreadIdArg\|validateSchedContextIdArg\|validateObjIdArg" SeLe4n/Kernel/API.lean)
 
 # AN10 regression suite test count (cascades into the post-AN10 floor).
 READER_HYGIENE_SUITE_TESTS=0

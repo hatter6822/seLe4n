@@ -1339,10 +1339,10 @@ fn sched_context_configure_roundtrip() {
 #[test]
 fn sched_context_bind_roundtrip() {
     use sele4n_abi::args::sched_context::SchedContextBindArgs;
-    use sele4n_types::ThreadId;
-    // AK4-C (R-ABI-H01): `thread_id` is typed `ThreadId` (was raw `u64`).
+    // `v0.35.204`: the operand is the TCB capability's address (`CPtr`), no
+    // longer a raw `ThreadId` — see `resolveSchedContextBindThread`.
     let args = SchedContextBindArgs {
-        thread_id: ThreadId::from(42u64),
+        tcb_cap: CPtr::from(42u64),
     };
     let encoded = args.encode();
     let decoded = SchedContextBindArgs::decode(&encoded).unwrap();
@@ -1852,7 +1852,6 @@ fn invalid_domains_rejected() {
 /// AG2-B: sele4n-sys SchedContext wrapper module exists and exports all 3 operations.
 #[test]
 fn sys_sched_context_module_exports() {
-    use sele4n_types::ThreadId;
     let _configure: fn(
         CPtr,
         u64,
@@ -1862,9 +1861,11 @@ fn sys_sched_context_module_exports() {
         u64,
         &mut IpcBuffer,
     ) -> KernelResult<SyscallResponse> = sele4n_sys::sched_context::sched_context_configure;
-    // AK4-C: `sched_context_bind` now takes a typed `ThreadId`, matching the
-    // Lean `SchedContextBindArgs.threadId : ThreadId` signature.
-    let _bind: fn(CPtr, ThreadId) -> KernelResult<SyscallResponse> =
+    // `v0.35.204`: `sched_context_bind` takes the TCB **capability** (`CPtr`),
+    // matching the Lean `SchedContextBindArgs.tcbCPtr` operand; the typed
+    // `ThreadId` it took until then was the raw operand the kernel no longer
+    // binds through.
+    let _bind: fn(CPtr, CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_bind;
     let _unbind: fn(CPtr) -> KernelResult<SyscallResponse> =
         sele4n_sys::sched_context::sched_context_unbind;
@@ -2309,7 +2310,7 @@ fn wrapper_lengths_clear_prefilter_minimums() {
 
     let _ = sele4n_sys::sched_context::sched_context_configure(cap, 1, 1, 1, 1, 1, &mut buf);
     assert_clears("sched_context_configure", SyscallId::SchedContextConfigure);
-    let _ = sele4n_sys::sched_context::sched_context_bind(cap, ThreadId::from(1u64));
+    let _ = sele4n_sys::sched_context::sched_context_bind(cap, CPtr::from(1u64));
     assert_clears("sched_context_bind", SyscallId::SchedContextBind);
     let _ = sele4n_sys::sched_context::sched_context_unbind(cap);
     assert_clears("sched_context_unbind", SyscallId::SchedContextUnbind);

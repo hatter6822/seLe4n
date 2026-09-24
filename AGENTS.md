@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.35.203.
+Lean 4.28.0 toolchain, Lake build system, version 0.35.204.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -1494,7 +1494,15 @@ Edit("SeLe4n/Kernel/Scheduler/Invariant.lean", ...)
   (`n=$(grep -c …) || rc=$?`), make `rc > 1` a named gate failure, and refuse an
   unreadable input rather than defaulting it.  The sweep off that one found
   **three** more, all latent — `store_reader_hygiene_baseline.sh` twice and the commit
-  hook once — and a Tier 3 negative refuses a fifth.  Two things this cut
+  hook once — and a Tier 3 negative refuses a fifth.
+  **And a FOURTH sat two lines above the helper that sweep wrote** (`v0.35.204`,
+  found while re-anchoring the metric it produces): the baseline script's
+  `SENTINEL_CHECK_DISPATCH` kept the idiom with its `grep -c` on one line and the
+  fallback on the next, behind a backslash continuation, and the tree-wide
+  negative was single-line — so *a line is not the command*, and a sweep that
+  reads lines misses exactly the instance a contributor wrapped.  The anchor
+  reads the continued command now, and its mutation set has the two-line shape
+  beside the one-line one.  Two things this cut
   measured about its own method.  `shellcheck` passes every one of them, and the
   shell's error line sat *above* the gate's `PASS`, so only **running** the gate
   found it; this is the second consecutive cut where running an artefact found
@@ -11210,14 +11218,24 @@ code may assume:
   carried one yields a slot that resolves like an empty one and no
   `.tcbSuspend` can remove a core's only guaranteed runnable thread.  That
   chokepoint decides on the **resolved capability's target**, so an arm whose
-  operand is a raw id from a message register escapes it: `.schedContextBind`
-  resolves its capability to the SchedContext and takes the thread from
-  `args.threadId`, which let an ordinary SchedContext capability bind the idle
-  TCB and re-prioritise it (round 11, P1).  Raw operands are therefore refused
+  operand is a raw id from a message register escapes it: until `v0.35.204`
+  `.schedContextBind` resolved its capability to the SchedContext and took the
+  thread from a raw `args.threadId`, which let an ordinary SchedContext
+  capability bind the idle TCB and re-prioritise it (round 11, P1) — and, more
+  generally, bind and re-prioritise **any** unbound same-domain thread the
+  caller could name, with no TCB authority at all.  Raw operands are refused
   at their lift points — `validateThreadIdArg` and `validateObjIdArg` reject a
-  reserved idle id (`validateThreadIdArg_ok_not_reserved`,
-  `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`) — so a new
-  arm taking a bare id is covered the day it is written.  `.lifecycleRetype`'s
+  reserved idle id (`validateThreadIdArg_ok_not_reserved`) — so a new arm
+  taking a bare id is covered the day it is written; and the bind takes **no
+  raw thread operand any more**: MR0 is a TCB capability address
+  (`SchedContextBindArgs.tcbCPtr`), resolved through the caller's own CSpace
+  with `.write` by `resolveSchedContextBindThread` — one resolver read by the
+  live arm and by the scheduler-domain operand builder, the shape
+  `.tcbBindNotification` already had — so the thread a bind names is one the
+  caller holds a writable capability to
+  (`resolveSchedContextBindThread_ok_authorised`) and the idle TCB is refused
+  at the chokepoint (`resolveSchedContextBindThread_refuses_idle_capability`,
+  `dispatchCapabilityOnly_schedContextBind_idle_capability_refused`).  `.lifecycleRetype`'s
   raw `targetObj` needs no separate guard: `lifecycleRetypeAuthority` binds it
   to the capability.  The
   one live seam that takes a **raw** id, `suspend_thread_cross_core`,

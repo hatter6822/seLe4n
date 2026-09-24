@@ -7,7 +7,7 @@
 
 use sele4n_abi::args::sched_context::*;
 use sele4n_abi::{invoke_syscall, IpcBuffer, MessageInfo, SyscallRequest, SyscallResponse};
-use sele4n_types::{CPtr, KernelResult, SyscallId, ThreadId};
+use sele4n_types::{CPtr, KernelResult, SyscallId};
 
 /// Configure a scheduling context's CBS parameters.
 ///
@@ -62,11 +62,16 @@ pub fn sched_context_configure(
 
 /// Bind a scheduling context to a thread.
 ///
-/// Lean: `apiSchedContextBind` (API.lean) — requires `.write` right.
-/// The thread is identified by its ThreadId passed in MR[0].
+/// Lean: the `.schedContextBind` arm (API.lean) — requires `.write` on the
+/// SchedContext capability **and** `.write` on a TCB capability the caller
+/// holds: `tcb_cap` (MR\[0\]) is the capability address, in the caller's own
+/// CSpace, of the thread to bind, resolved by the kernel through
+/// `resolveSchedContextBindThread` (`v0.35.204`; a raw `ThreadId` until then,
+/// which let a SchedContext-capability holder bind — and re-prioritise — any
+/// thread it could name).  Same shape as `tcb_bind_notification`.
 #[inline]
-pub fn sched_context_bind(sc_cap: CPtr, thread_id: ThreadId) -> KernelResult<SyscallResponse> {
-    let args = SchedContextBindArgs { thread_id };
+pub fn sched_context_bind(sc_cap: CPtr, tcb_cap: CPtr) -> KernelResult<SyscallResponse> {
+    let args = SchedContextBindArgs { tcb_cap };
     let encoded = args.encode();
     invoke_syscall(SyscallRequest {
         cap_addr: sc_cap,

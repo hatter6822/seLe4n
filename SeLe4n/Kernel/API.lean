@@ -3539,7 +3539,19 @@ arms, which pass `cap.target`'s object id) can never see an idle id anyway,
 since the chokepoint refused their capability first; refusing again costs
 them nothing and holds if that order ever changes.  The idle threads are the
 kernel's own scheduling reserve — no user operand may name one
-(`validateThreadIdArg_ok_not_reserved`). -/
+(`validateThreadIdArg_ok_not_reserved`).
+
+**`v0.35.204`: the bind takes no raw thread operand any more.**  The round-11
+narrative above describes `.schedContextBind` as it was.  MR0 is a TCB
+capability address now (`SchedContextBindArgs.tcbCPtr`), resolved through the
+caller's own CSpace by `resolveSchedContextBindThread`, so the idle TCB is
+unreachable through the bind because the chokepoint refuses the *capability*
+(`resolveSchedContextBindThread_refuses_idle_capability`); the resolver runs
+the thread that capability names through this validator for the promotion to
+`ValidThreadId`, with the idle refusal kept as the same defence in depth the
+capability-derived arms get.  This is still the one lift point for every bare
+thread id — the caller's own, which the priority arms pass through it, and any
+operand a future arm reads out of a message register. -/
 @[inline] def validateThreadIdArg (tid : SeLe4n.ThreadId) :
     Except KernelError SeLe4n.ValidThreadId :=
   if SeLe4n.Kernel.isIdleThreadId tid then .error .invalidArgument
@@ -3682,6 +3694,180 @@ theorem vspaceCapAuthorizesAsid_false_of_not_object {cap : Capability}
   cases hc : cap.target
   case object rid => exact absurd hc (hcap rid)
   all_goals cases Architecture.resolveAsidRoot st asid <;> rfl
+
+/-- **`v0.35.204`: the thread a `.schedContextBind` binds is a CAPABILITY the
+caller holds, resolved through the caller's own CSpace — never a raw thread id.**
+
+Until this version the arm read MR0 as a bare `ThreadId`
+(`SchedContextBindArgs.threadId`), validated it against the reserved idle range
+and the sentinel, and bound whatever thread it named.  A holder of an ordinary
+SchedContext capability could therefore bind that context to any unbound thread
+in the same domain — and `schedContextBind` then writes `sc.priority` into that
+thread's own base priority (Z5-G3) and, since WS-RR RR8.12 Cut B2, places a
+parked thread on a run queue: an integrity write on a thread the caller holds no
+authority over, composable with the registered CB0.3 gap (a SchedContext's
+priority and domain are set under its own write right).  seL4-MCS's
+`seL4_SchedContext_Bind` takes the TCB as a capability, and this tree had already
+refused the same shape one arm over: `.tcbBindNotification` resolves its
+notification through a capability *"not a raw ObjId — a TCB-cap holder must also
+hold a notification capability to redirect that notification's signals"*.  The
+rule was applied at one site and not at its sibling; this is the sibling.
+
+MR0 is `SchedContextBindArgs.tcbCPtr` now, resolved exactly as that arm resolves
+its extra capability: `syscallLookupCap` on a gate at the caller's CSpace root and
+depth, requiring `.write` — so the reserved-idle refusal is the chokepoint's own
+(`syscallResolveCap_ok_not_reserved`) rather than a second lift-point check — and
+the resolved capability must target a **TCB** the store holds (a capability to any
+other kind of object is `.invalidCapability`, the answer `bindNotification` gives a
+non-notification target).  `validateThreadIdArg` still promotes the id, so the
+sentinel is refused where every raw operand is and `schedContextBind`'s
+`ValidThreadId` signature is met without a second proof.
+
+**One resolver, two askers.**  The live arm (`dispatchCapabilityOnly`) and the
+scheduler-domain operand builder (`abiEntryLockOperands`) both read this
+definition, so the thread the footprint declares a run-queue lock for and the
+thread the transition binds cannot be two readings of one register.
+`resolveSchedContextBindThread_ok_authorised` is the fact the arm rests on, stated
+so a revert to a raw operand has to break a proof rather than a review. -/
+def resolveSchedContextBindThread (callerTid : SeLe4n.ThreadId)
+    (decoded : SyscallDecodeResult) (st : SystemState) :
+    Except KernelError SeLe4n.ValidThreadId :=
+  match decodeSchedContextBindArgs decoded with
+  | .error e => .error e
+  | .ok args =>
+    match st.getTcb? callerTid with
+    | none => .error .objectNotFound
+    | some callerTcb =>
+      match st.getCNode? callerTcb.cspaceRoot with
+      | none => .error .invalidCapability
+      | some rootCn =>
+        let tcbGate : SyscallGate := {
+          callerId      := callerTid
+          cspaceRoot    := callerTcb.cspaceRoot
+          capAddr       := SeLe4n.CPtr.ofNat args.tcbCPtr
+          capDepth      := rootCn.depth
+          requiredRight := .write
+        }
+        match syscallLookupCap tcbGate st with
+        | .error e => .error e
+        | .ok (tcbCap, _) =>
+          match tcbCap.target with
+          | .object tcbObjId =>
+            match st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+            | none => .error .invalidCapability
+            | some _ => validateThreadIdArg (SeLe4n.ThreadId.ofNat tcbObjId.toNat)
+          | _ => .error .invalidCapability
+
+/-- **`v0.35.204` (the authority fact)**: a thread the resolver answers is one
+the caller holds a **writable capability** to, found at MR0's address in the
+caller's own CSpace, and it is a TCB the store holds.  The read-only lookup
+returns the state it was given (`syscallLookupCap_preserves_state`), so the
+capability is exhibited at `st` itself. -/
+theorem resolveSchedContextBindThread_ok_authorised
+    (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (st : SystemState)
+    (v : SeLe4n.ValidThreadId)
+    (h : resolveSchedContextBindThread callerTid decoded st = .ok v) :
+    ∃ (args : SchedContextBindArgs) (callerTcb : TCB) (rootCn : CNode)
+      (tcbCap : Capability),
+      decodeSchedContextBindArgs decoded = .ok args ∧
+      st.getTcb? callerTid = some callerTcb ∧
+      st.getCNode? callerTcb.cspaceRoot = some rootCn ∧
+      syscallLookupCap
+        { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+          capAddr := SeLe4n.CPtr.ofNat args.tcbCPtr, capDepth := rootCn.depth,
+          requiredRight := .write } st = .ok (tcbCap, st) ∧
+      tcbCap.hasRight .write = true ∧
+      tcbCap.target = .object v.val.toObjId ∧
+      (∃ tcb, st.getTcb? v.val = some tcb) := by
+  unfold resolveSchedContextBindThread at h
+  cases hArgs : decodeSchedContextBindArgs decoded with
+  | error e => rw [hArgs] at h; cases h
+  | ok args =>
+    rw [hArgs] at h
+    simp only at h
+    cases hCaller : st.getTcb? callerTid with
+    | none => rw [hCaller] at h; cases h
+    | some callerTcb =>
+      rw [hCaller] at h
+      simp only at h
+      cases hRoot : st.getCNode? callerTcb.cspaceRoot with
+      | none => rw [hRoot] at h; cases h
+      | some rootCn =>
+        rw [hRoot] at h
+        simp only at h
+        cases hLk : syscallLookupCap
+            { callerId := callerTid, cspaceRoot := callerTcb.cspaceRoot,
+              capAddr := SeLe4n.CPtr.ofNat args.tcbCPtr, capDepth := rootCn.depth,
+              requiredRight := .write } st with
+        | error e => rw [hLk] at h; cases h
+        | ok pair =>
+          obtain ⟨tcbCap, s'⟩ := pair
+          rw [hLk] at h
+          simp only at h
+          obtain ⟨_, _, _, hRight, hSt⟩ :=
+            syscallLookupCap_implies_capability_held _ st tcbCap s' hLk
+          rw [hSt] at hLk
+          cases hTgt : tcbCap.target
+          case object tcbObjId =>
+            rw [hTgt] at h
+            simp only at h
+            cases hTcb : st.getTcb? (SeLe4n.ThreadId.ofNat tcbObjId.toNat) with
+            | none => rw [hTcb] at h; cases h
+            | some tcb =>
+              rw [hTcb] at h
+              simp only at h
+              have hVal : v.val = SeLe4n.ThreadId.ofNat tcbObjId.toNat := by
+                unfold validateThreadIdArg at h
+                split at h
+                · cases h
+                · split at h
+                  · cases h
+                  · rename_i v' hV
+                    have hvv : v' = v := Except.ok.inj h
+                    subst hvv
+                    exact SeLe4n.ThreadId.toValid?_some_val_eq _ v' hV
+              -- `cases h : e` rewrites `e` in the goal, so the conjuncts the
+              -- scrutinees appear in are closed by `rfl` where they were
+              -- rewritten and by the hypothesis where they were not.
+              refine ⟨args, callerTcb, rootCn, tcbCap,
+                by first | exact hArgs | rfl,
+                by first | exact hCaller | rfl,
+                by first | exact hRoot | rfl,
+                by first | exact hLk | rw [hSt],
+                hRight, ?_, ⟨tcb, by rw [hVal]; exact hTcb⟩⟩
+              rw [hVal]
+              first
+                | exact hTgt
+                | exact congrArg CapTarget.object rfl
+          all_goals (rw [hTgt] at h; cases h)
+
+/-- **`v0.35.204`**: a TCB capability naming a reserved idle object is refused at
+the capability chokepoint — `syscallResolveCap`'s own refusal, reached through
+the resolver's lookup — with `.invalidCapability`, the answer an empty slot gives.
+The successor of `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`
+(retired with the raw operand it was about): the idle threads are the kernel's
+own scheduling reserve, and no capability a thread can hold names one. -/
+theorem resolveSchedContextBindThread_refuses_idle_capability
+    (callerTid : SeLe4n.ThreadId) (decoded : SyscallDecodeResult) (st : SystemState)
+    (args : SchedContextBindArgs) (callerTcb : TCB) (rootCn : CNode) (ref : SlotRef)
+    (idleCap : Capability)
+    (hArgs : decodeSchedContextBindArgs decoded = .ok args)
+    (hCaller : st.getTcb? callerTid = some callerTcb)
+    (hRoot : st.getCNode? callerTcb.cspaceRoot = some rootCn)
+    (hRef : resolveCapAddress callerTcb.cspaceRoot (SeLe4n.CPtr.ofNat args.tcbCPtr)
+      rootCn.depth st = .ok ref)
+    (hSlot : SystemState.lookupSlotCap st ref = some idleCap)
+    (hIdle : SeLe4n.Kernel.capTargetsReservedIdleObject idleCap = true) :
+    resolveSchedContextBindThread callerTid decoded st = .error .invalidCapability := by
+  unfold resolveSchedContextBindThread
+  rw [hArgs]
+  simp only
+  rw [hCaller]
+  simp only
+  rw [hRoot]
+  simp only
+  unfold syscallLookupCap syscallResolveCap
+  simp only [hRef, hSlot, hIdle, if_true]
 
 /-- V8-H/Z5-J/D1/AE1-A/AE1-B: Shared dispatch for capability-only syscalls — these 14 arms
 derive authority entirely from capability possession and require no
@@ -3928,22 +4114,23 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
               SchedContextOps.schedContextConfigure vScId args.budget args.period
                 args.priority args.deadline args.domain st
     | _ => fun _ => .error .invalidCapability
-  -- Z5-J: SchedContext bind — decode threadId, bind thread to SchedContext
+  -- Z5-J: SchedContext bind — the SchedContext from the capability target, the
+  -- thread from a TCB CAPABILITY the caller holds (`v0.35.204`; a raw thread id
+  -- until then — see `resolveSchedContextBindThread` for what that let a
+  -- SchedContext-capability holder do to a thread it held no authority over).
   | .schedContextBind =>
     some <| match cap.target with
     | .object scId =>
-      fun st => match decodeSchedContextBindArgs decoded with
+      fun st => match resolveSchedContextBindThread tid decoded st with
       | .error e => .error e
-      | .ok args =>
+      | .ok vThreadId =>
           -- AL7-H / AL8 (WS-AL / AK7-E.cascade): type-level sentinel rejection
-          -- via ValidObjId + ValidThreadId signatures on schedContextBind.
+          -- via the ValidObjId signature on schedContextBind; the thread's
+          -- promotion is the resolver's.
           match validateObjIdArg scId with
           | .error e => .error e
           | .ok vScId =>
-              match validateThreadIdArg (ThreadId.ofNat args.threadId) with
-              | .error e => .error e
-              | .ok vThreadId =>
-                  SchedContextOps.schedContextBind vScId vThreadId st
+              SchedContextOps.schedContextBind vScId vThreadId st
     | _ => fun _ => .error .invalidCapability
   -- Z5-J: SchedContext unbind — no extra args, SchedContext from cap target
   | .schedContextUnbind =>
@@ -4215,9 +4402,13 @@ structure capabilityDispatchQuiescence (decoded : SyscallDecodeResult)
   retypeDetached : ∀ args, decoded.syscallId = .lifecycleRetype →
     decodeLifecycleRetypeArgs decoded = .ok args →
     retypeTargetDetached st args.targetObj
-  boundThreadNotDonationOwner : ∀ args, decoded.syscallId = .schedContextBind →
-    decodeSchedContextBindArgs decoded = .ok args →
-    ∀ vThreadId, validateThreadIdArg (ThreadId.ofNat args.threadId) = .ok vThreadId →
+  /-- **`v0.35.204`**: keyed to the resolver the arm binds through, quantified
+  over the caller — the pack carries no caller, and a fact about *every* thread
+  any caller's CSpace resolves MR0 to is a pre-state fact all the same. -/
+  boundThreadNotDonationOwner : ∀ (callerTid : SeLe4n.ThreadId)
+      (vThreadId : SeLe4n.ValidThreadId),
+    decoded.syscallId = .schedContextBind →
+    resolveSchedContextBindThread callerTid decoded st = .ok vThreadId →
     ∀ (s : SeLe4n.ThreadId) (sTcb : TCB) (sc0 : SeLe4n.SchedContextId),
       st.objects[s.toObjId]? = some (.tcb sTcb) →
       sTcb.schedContextBinding ≠ .donated sc0 vThreadId.val
@@ -4399,21 +4590,17 @@ theorem dispatchCapabilityOnly_preserves_ipcInvariantFull
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
     case object scId =>
       try dsimp only [] at hStep
-      cases hDec : decodeSchedContextBindArgs decoded with
-      | error e => simp only [hDec] at hStep; cases hStep
-      | ok args =>
-          simp only [hDec] at hStep
+      cases hRes : resolveSchedContextBindThread tid decoded st with
+      | error e => simp only [hRes] at hStep; cases hStep
+      | ok vThreadId =>
+          simp only [hRes] at hStep
           cases hVal : validateObjIdArg scId with
           | error e => simp only [hVal] at hStep; cases hStep
           | ok vScId =>
               simp only [hVal] at hStep
-              cases hValT : validateThreadIdArg (ThreadId.ofNat args.threadId) with
-              | error e => simp only [hValT] at hStep; cases hStep
-              | ok vThreadId =>
-                  simp only [hValT] at hStep
-                  exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
-                    hObjInv hInv hPack.bindingBidirectional
-                    (hPack.boundThreadNotDonationOwner args hSy hDec vThreadId hValT) hStep
+              exact schedContextBind_preserves_ipcInvariantFull st st' vScId vThreadId
+                hObjInv hInv hPack.bindingBidirectional
+                (hPack.boundThreadNotDonationOwner tid vThreadId hSy hRes) hStep
     all_goals try cases hStep
   case schedContextUnbind =>
     cases hTgt : cap.target <;> simp only [hTgt] at hStep
@@ -8987,26 +9174,42 @@ theorem syscallDelegates_schedContextUnbind : syscallDelegates .schedContextUnbi
   exact dispatchWithCap_schedContextUnbind_delegates decoded tid gate cap scId vScId st
     hSyscall hTarget hDecode hValid
 
-/-- **PR #889 review round 11**: the dispatch-level consequence — a
-`.schedContextBind` whose raw thread operand names a reserved idle thread is
-refused, whatever SchedContext capability the caller holds.  This is the arm
-the review found: its capability resolves to the SchedContext, so the
-chokepoint never sees the thread. -/
-theorem dispatchCapabilityOnly_schedContextBind_idle_operand_refused
+/-- **`v0.35.204`: the bind arm IS the resolved bind.**  Under a SchedContext
+capability and a thread the caller's CSpace resolves MR0 to, the arm's answer is
+`schedContextBind` of exactly that pair — so what the arm binds is what
+`resolveSchedContextBindThread_ok_authorised` says the caller holds a writable
+TCB capability to.  Stated at the state, because the resolver reads it. -/
+theorem dispatchCapabilityOnly_schedContextBind_eq
     (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
-    (st : SystemState) (scId : SeLe4n.ObjId) (args : SchedContextBindArgs)
-    (vScId : SeLe4n.ValidObjId)
+    (st : SystemState) (scId : SeLe4n.ObjId) (vScId : SeLe4n.ValidObjId)
+    (vThreadId : SeLe4n.ValidThreadId)
     (hSyscall : decoded.syscallId = .schedContextBind)
     (hTarget : cap.target = .object scId)
-    (hArgs : decodeSchedContextBindArgs decoded = .ok args)
-    (hSc : validateObjIdArg scId = .ok vScId)
-    (hIdle : SeLe4n.Kernel.isIdleThreadId (SeLe4n.ThreadId.ofNat args.threadId) = true) :
+    (hRes : resolveSchedContextBindThread tid decoded st = .ok vThreadId)
+    (hSc : validateObjIdArg scId = .ok vScId) :
     (dispatchCapabilityOnly decoded cap tid).map (fun f => f st)
-      = some (.error .invalidArgument) := by
+      = some (SchedContextOps.schedContextBind vScId vThreadId st) := by
   unfold dispatchCapabilityOnly
   rw [hSyscall, hTarget]
-  simp only [Option.map_some, hArgs, hSc,
-    validateThreadIdArg_idle_refused _ hIdle]
+  simp only [Option.map_some, hRes, hSc]
+
+/-- **`v0.35.204`**: the dispatch-level consequence of the resolver's refusal —
+a `.schedContextBind` whose TCB capability the resolver refuses commits nothing
+and answers that refusal, whatever SchedContext capability the caller holds.
+With `resolveSchedContextBindThread_refuses_idle_capability` this is the successor
+of PR #889 review round 11's `dispatchCapabilityOnly_schedContextBind_idle_operand_refused`:
+the idle TCB is unreachable through the bind because the chokepoint refuses the
+capability, not because a raw operand was checked at its lift point. -/
+theorem dispatchCapabilityOnly_schedContextBind_idle_capability_refused
+    (decoded : SyscallDecodeResult) (cap : Capability) (tid : SeLe4n.ThreadId)
+    (st : SystemState) (scId : SeLe4n.ObjId) (e : KernelError)
+    (hSyscall : decoded.syscallId = .schedContextBind)
+    (hTarget : cap.target = .object scId)
+    (hRes : resolveSchedContextBindThread tid decoded st = .error e) :
+    (dispatchCapabilityOnly decoded cap tid).map (fun f => f st) = some (.error e) := by
+  unfold dispatchCapabilityOnly
+  rw [hSyscall, hTarget]
+  simp only [Option.map_some, hRes]
 
 
 

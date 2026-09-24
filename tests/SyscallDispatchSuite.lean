@@ -897,32 +897,40 @@ private def sd054_idleTargetCapabilityUnresolvable : IO Unit := do
      | .error .invalidCapability => true
      | _ => false)
     "a suspend aimed at an idle TCB must be refused at resolution"
-  -- PR #889 review round 11 (P1): the chokepoint decides on the *resolved
-  -- capability's* target, so an arm whose operand is a RAW id from a message
-  -- register escapes it.  `.schedContextBind` resolves its capability to the
-  -- SchedContext and takes the thread from `args.threadId`: with an ordinary
-  -- writable SchedContext capability a caller could name `idleThreadId c`,
-  -- and `schedContextBind` would bind the idle TCB, overwrite its priority
-  -- with the SchedContext's and re-bucket it — a high-priority SchedContext
-  -- making idle outrank ordinary runnable threads.  The refusal is at the
-  -- one lift point every raw thread operand passes through.
+  -- PR #889 review round 11 (P1), re-based at `v0.35.204`: the chokepoint
+  -- decides on the *resolved capability's* target.  Until `v0.35.204`
+  -- `.schedContextBind` read its thread from a RAW message-register id, so the
+  -- idle refusal had to be repeated at the operand's lift point
+  -- (`validateThreadIdArg`); the operand is a TCB **capability address** now
+  -- (`resolveSchedContextBindThread`), so the bind reaches the idle TCB only
+  -- through a capability naming it — which the chokepoint refuses exactly as
+  -- it refuses the `.tcbSuspend` above.  Slot 0 of the caller's CNode holds
+  -- such a capability.
   let scObj : SeLe4n.ObjId := ⟨60⟩
   let scCap : Capability :=
     { target := .object scObj, rights := AccessRightSet.ofList [.write] }
-  let bindDecoded (threadId : Nat) : SyscallDecodeResult :=
+  let bindDecoded (tcbCPtr : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 2,
       msgInfo := { length := 1, extraCaps := 0, label := 0 },
       syscallId := .schedContextBind,
-      msgRegs := #[⟨threadId⟩], inlineCount := 1, overflowCount := 0 }
+      msgRegs := #[⟨tcbCPtr⟩], inlineCount := 1, overflowCount := 0 }
   let idle0Tid : SeLe4n.ThreadId := SeLe4n.Kernel.idleThreadId ⟨0, by decide⟩
-  expect "sd054_raw_thread_operand_naming_idle_is_refused"
-    (match dispatchCapabilityOnly (bindDecoded idle0Tid.toNat) scCap caller with
+  expect "sd054_tcb_capability_naming_idle_is_refused_at_the_chokepoint"
+    (match dispatchCapabilityOnly (bindDecoded 0) scCap caller with
      | some f =>
        match f st with
-       | .error .invalidArgument => true
+       | .error .invalidCapability => true
        | _ => false
      | none => false)
-    "a schedContextBind whose raw thread operand names an idle thread must be refused"
+    "a schedContextBind whose TCB capability names an idle thread must be refused like an empty slot"
+  -- The retired reading, computed beside the live one: the idle thread's raw
+  -- id in MR0 is an ADDRESS in the caller's CSpace now, and whatever slot it
+  -- masks to, the resolver never answers the idle thread.
+  expect "sd054_raw_idle_id_in_mr0_never_resolves_the_idle_thread"
+    (match resolveSchedContextBindThread caller (bindDecoded idle0Tid.toNat) st with
+     | .ok v => decide (v.val ≠ idle0Tid)
+     | .error _ => true)
+    "a raw idle id in MR0 is a capability address and must resolve to no idle thread"
   expect "sd054_raw_thread_operand_validator_refuses_every_core"
     (SeLe4n.Kernel.Concurrency.allCores.all (fun c =>
       match validateThreadIdArg (SeLe4n.Kernel.idleThreadId c) with
@@ -1518,6 +1526,95 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
      | _ => false)
     "a primary capability that is not an `.object` must be refused"
 
+/-- SD-060 (`v0.35.204`): **`.schedContextBind` binds only a thread the caller
+holds a WRITABLE TCB capability to.**
+
+Until `v0.35.204` the arm read MR0 as a raw thread id under the SchedContext
+capability alone, so a holder of one could bind that context to any unbound
+same-domain thread it could name — and `schedContextBind` writes `sc.priority`
+into the bound thread's base priority (Z5-G3) and, since WS-RR RR8.12 Cut B2,
+places a parked thread.  seL4-MCS's `seL4_SchedContext_Bind` takes the TCB as a
+capability, and `tcbBindNotification` (SD-050) already resolved its extra
+operand that way.
+
+The caller's CNode holds the SchedContext capability at slot 0, a writable TCB
+capability at slot 1, a **read-only** one to the same TCB at slot 2 and a
+capability to the CNode itself at slot 3.  Through `dispatchSyscall`: slot 1
+binds (the SchedContext names the thread and the thread names it back); slot 2
+is `.illegalAuthority`; slot 3 is `.invalidCapability` (not a TCB); and the
+RETIRED reading — the target's raw thread id in MR0 — is refused, because `70`
+is an address in the caller's CSpace and no capability sits there: *naming a
+thread is not holding it*. -/
+private def sd060_schedContextBind_requires_tcb_capability : IO Unit := do
+  let caller : SeLe4n.ThreadId := ⟨1⟩
+  let cnId   : SeLe4n.ObjId := ⟨50⟩
+  let scObj  : SeLe4n.ObjId := ⟨60⟩
+  let scId   : SeLe4n.SchedContextId := SeLe4n.SchedContextId.ofObjId scObj
+  let tgtTcb : SeLe4n.ObjId := ⟨70⟩
+  let tgtTid : SeLe4n.ThreadId := ⟨70⟩
+  let scCap    : Capability := { target := .object scObj, rights := AccessRightSet.ofList [.write] }
+  let tcbCap   : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.write] }
+  let tcbCapRO : Capability := { target := .object tgtTcb, rights := AccessRightSet.ofList [.read] }
+  let cnCap    : Capability := { target := .object cnId, rights := AccessRightSet.ofList [.write] }
+  let st : SystemState :=
+    mkState [
+      (caller.toObjId, .tcb { (mkTcb 1) with cspaceRoot := cnId }),
+      (tgtTcb, .tcb { (mkTcb 70) with cspaceRoot := cnId }),
+      (scObj, .schedContext { SeLe4n.Kernel.SchedContext.empty scId with priority := ⟨20⟩ }),
+      (cnId, .cnode {
+          depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
+          slots := SeLe4n.UniqueSlotMap.ofListWF
+            [(SeLe4n.Slot.ofNat 0, scCap), (SeLe4n.Slot.ofNat 1, tcbCap),
+             (SeLe4n.Slot.ofNat 2, tcbCapRO), (SeLe4n.Slot.ofNat 3, cnCap)] })
+    ]
+  let decoded (tcbCPtr : Nat) : SyscallDecodeResult :=
+    { capAddr := SeLe4n.CPtr.ofNat 0,                 -- the SchedContext cap at slot 0
+      msgInfo := { length := 1, extraCaps := 0, label := 0 },
+      syscallId := .schedContextBind,
+      msgRegs := #[SeLe4n.RegValue.ofNat tcbCPtr], inlineCount := 1, overflowCount := 0 }
+  -- The resolver: slot 1 IS the target thread, answered as a promoted id.
+  expect "sd060_resolver_answers_the_held_tcb"
+    (match resolveSchedContextBindThread caller (decoded 1) st with
+     | .ok v => decide (v.val = tgtTid)
+     | .error _ => false)
+    "MR0 = 1 names a writable TCB capability at slot 1, so the resolver answers thread 70"
+  -- Positive: bound both ways, at the SchedContext's configured band.
+  match dispatchSyscall (decoded 1) caller st with
+  | .ok ((), st') =>
+      expect "sd060_bind_through_tcb_capability_binds_the_target"
+        ((st'.getTcb? tgtTid).any (fun t =>
+            decide (t.schedContextBinding = .bound scId) && decide (t.priority = ⟨20⟩)) &&
+         (st'.getSchedContext? scId).any (fun sc => decide (sc.boundThread = some tgtTid)))
+        "a bind through a writable TCB capability must bind the target both ways"
+  | .error e =>
+      failLine "sd060_bind_through_tcb_capability_binds_the_target"
+        s!"unexpected refusal: {repr e}"
+  -- Negative 1: a read-only TCB capability -> illegalAuthority.
+  expect "sd060_readonly_tcb_capability_rejected"
+    (match dispatchSyscall (decoded 2) caller st with
+     | .error .illegalAuthority => true
+     | _ => false)
+    "a read-only TCB capability must fail with illegalAuthority"
+  -- Negative 2: a writable capability to a non-TCB object -> invalidCapability.
+  expect "sd060_non_tcb_capability_rejected"
+    (match dispatchSyscall (decoded 3) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "a capability to a CNode is not a TCB capability and must fail with invalidCapability"
+  -- Negative 3 — the retired reading: the target's raw thread id in MR0.  `70`
+  -- is an address, it masks to an empty slot, and the chokepoint refuses it.
+  expect "sd060_raw_thread_id_in_mr0_is_not_a_capability"
+    (match dispatchSyscall (decoded tgtTid.toNat) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "naming the thread's id is not holding a capability to it"
+  -- Negative 4: an empty slot beside the held ones.
+  expect "sd060_empty_slot_rejected"
+    (match dispatchSyscall (decoded 9) caller st with
+     | .error .invalidCapability => true
+     | _ => false)
+    "an empty CSpace slot must fail with invalidCapability"
+
 /-- SD-051: faithful seL4-MCS receive linkage, folded into `endpointReceiveDual`
     itself (#7.2; formerly the separate `linkReceivedCaller` `.receive`-arm step).
     After `endpointReceiveDual` rendezvouses a `Call` (moving the caller to
@@ -1973,4 +2070,6 @@ def main : IO Unit := do
   IO.println "--- WS-RR RR7.29: .mintReplyCap through the syscall gate ---"
   sd058_mintReplyCapThroughTheSyscallGate
   sd059_cspaceRevokeThroughTheSyscallGate
+  IO.println "--- v0.35.204: .schedContextBind takes a TCB capability, not a thread id ---"
+  sd060_schedContextBind_requires_tcb_capability
   IO.println "=== All WS-RC R2.C SyscallDispatch tests passed ==="

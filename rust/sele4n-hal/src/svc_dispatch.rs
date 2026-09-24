@@ -247,7 +247,8 @@ impl SyscallId {
             // PR #866 round-3 review (the RA.D.1 unreachable-wrapper class,
             // four MORE instances): reconciled with the Lean decoders, the
             // authority.  `decodeSchedContextBindArgs` reads exactly ONE
-            // register (`requireMsgReg msgRegs 0`, the thread id);
+            // register (`requireMsgReg msgRegs 0` — the TCB capability's
+            // address since `v0.35.204`, a raw thread id before);
             // `decodeSchedContextUnbindArgs`, `decodeSuspendArgs` and
             // `decodeResumeArgs` read NONE (`pure {}` — the target comes
             // from the capability).  The previous minimums (2 / 1 / 1 / 1)

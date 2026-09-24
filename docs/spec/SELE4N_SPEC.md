@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.35.203` (`lakefile.toml`) |
+| **Package version** | `0.35.204` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 417,409 across 340 Lean files |
-| **Test LoC** | 84,545 across 70 Lean test suites |
-| **Proved declarations** | 13,810 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 417,612 across 340 Lean files |
+| **Test LoC** | 84,644 across 70 Lean test suites |
+| **Proved declarations** | 13,813 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203, no sub-task started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -2810,14 +2810,30 @@ must halt; a diverging statement before the handling match, or a rebinding of
 the result's name, is refused (review round 10), and the halt must be the
 arm's terminal action rather than a token inside it (review round 11).
 
-**A raw id operand is refused at its lift point** (PR #889 review round 11).
+**A raw id operand is refused at its lift point** (PR #889 review round 11),
+**and since `v0.35.204` the bind has no raw thread operand at all.**
 `syscallResolveCap` refuses a *capability* naming a reserved idle object,
 which covers every arm whose operand is the resolved capability's target;
-`.schedContextBind` resolves its capability to the SchedContext and takes the
-thread from `args.threadId`, so `validateThreadIdArg` and `validateObjIdArg` —
-the lift points every raw operand passes through — refuse a reserved idle id
-(`validateThreadIdArg_ok_not_reserved`,
-`dispatchCapabilityOnly_schedContextBind_idle_operand_refused`).
+`validateThreadIdArg` and `validateObjIdArg` — the lift points every raw
+operand passes through — refuse a reserved idle id
+(`validateThreadIdArg_ok_not_reserved`).  Until `v0.35.204` `.schedContextBind`
+resolved its capability to the SchedContext and took the thread from a raw
+`args.threadId`, which is why the idle refusal had to be repeated at that lift
+point — and why a holder of an ordinary SchedContext capability could bind it
+to any unbound same-domain thread it could name, rewriting that thread's base
+priority through the bind's Z5-G3 propagation with no TCB authority at all
+(seL4-MCS's `seL4_SchedContext_Bind` takes the TCB as a capability).  MR0 is a
+TCB **capability address** now (`SchedContextBindArgs.tcbCPtr`), resolved
+through the caller's own CSpace with `.write` by
+`resolveSchedContextBindThread` — one resolver read by the live arm and by the
+scheduler-domain operand builder — exactly as `.tcbBindNotification` resolves
+its notification.  `resolveSchedContextBindThread_ok_authorised` is the
+authority fact (the thread bound is one the caller holds a writable TCB
+capability to), `dispatchCapabilityOnly_schedContextBind_eq` pins the arm to
+the resolved bind, and the idle TCB is unreachable through the bind because the
+chokepoint refuses the capability
+(`resolveSchedContextBindThread_refuses_idle_capability`,
+`dispatchCapabilityOnly_schedContextBind_idle_capability_refused`).
 
 **The raw suspend seam refuses idle ids, and the reservation is pinned by
 constructor arity** (PR #889 review round 8).  `suspend_thread_cross_core`
@@ -5030,8 +5046,9 @@ retired the `uniqueWaiters` state-level slot to a structural witness on
   `.replyRecv` payload is MR0-stripped and badged with the **reply** capability's
   badge, SM6.D's own distinction, refused in the wrong spelling by a negative);
   eight more are there because the scheduler domain declares for them, with
-  `.schedContextBind` naming the decoded `threadId` argument rather than the
-  capability's object.  `abiEntryGate_cspaceRoot` and
+  `.schedContextBind` naming the thread its TCB-capability operand resolves to
+  (`resolveSchedContextBindThread`, `v0.35.204`; the decoded raw `threadId`
+  argument until then) rather than the capability's object.  `abiEntryGate_cspaceRoot` and
   `abiEntrySchedReceiverCspaceRoot` make the `.replyRecv` footprint's CSpace root
   and the gate's one lookup.  `tests/SmpCrossCoreCallSuite.lean` is the witness,
   state-dependent by construction: an `.Inactive` victim declares the
