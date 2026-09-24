@@ -2159,19 +2159,30 @@ const LEAN_READY_GATED_SEAMS: &[(&str, &str, &str)] = &[
 /// entry's count has to change in the same diff as the call.
 const LEAN_UPCALLS_OUTSIDE_THE_GATE: &[(&str, &str, &str, usize, &str)] = &[
     (
-        "src/boot.rs",
-        "rust_boot_main",
+        "src/lean_entry.rs",
+        "enter_lean_kernel",
         "lean_kernel_main",
         1,
-        "the primary core's boot install: this call is the one that initializes \
-         the Lean runtime the gate stands for, so it cannot sit behind the gate; \
-         the boot core is marked ready after it, the image target's obligation",
+        "the primary core's boot install: this call is the one that marks the \
+         boot core ready, so it cannot sit behind the gate; it is reachable only \
+         with the token a successful library initialization returns",
+    ),
+    // WS-BP BP2.3: the library initializer runs before any Lean code, on the
+    // primary, so it precedes every readiness decision there is.  Its caller
+    // refuses a second run and halts the system on a failed one.
+    (
+        "src/lean_entry.rs",
+        "initialise_lean_library",
+        "initialize_seLe4n_SeLe4n",
+        1,
+        "the Lean library initializer: it must run before any Lean definition \
+         is used, which is before the boot core can be marked ready",
     ),
     // WS-RR RR5.6/RR5.7 shrank this table from three entries to one: the SVC
     // dispatch seam and the cross-core suspend seam now consult the gate and
-    // have moved to `LEAN_READY_GATED_SEAMS`.  What remains is the boot
-    // install, which cannot sit behind the gate because it is the call that
-    // initializes the runtime the gate stands for.
+    // have moved to `LEAN_READY_GATED_SEAMS`.  What remained was the boot
+    // install; WS-BP BP2.3 split the library initializer out of it, so the
+    // table holds the two calls that precede the boot core being ready.
 ];
 
 /// **WS-RR RR5.18**: the two safety tripwires that must survive a release
@@ -3469,7 +3480,7 @@ fn lean_link_name_aliases(
                 continue;
             };
             let value = &strings_kept[start..start + close];
-            if value.starts_with("lean_") || exports.contains(&value) {
+            if is_hal_declared_lean_symbol(value) || exports.contains(&value) {
                 found.push((path.clone(), value.to_string()));
             }
         }
@@ -5688,14 +5699,23 @@ fn collect_rust_sources(dir: &std::path::Path, out: &mut Vec<std::path::PathBuf>
 /// `scan_lean_ready_gates_intact` checks the seams it is told about; this
 /// scanner finds them.  The Lean symbol set is derived from the Lean tree —
 /// every `@[export name]` attribute under `../../SeLe4n` — plus the
-/// `lean_`-prefixed functions the HAL itself declares in `extern "C"` blocks
-/// (the image's `lean_kernel_main` entry is emitted by the Lean toolchain
-/// rather than an attribute).  Every `.rs` file under `src/` is read through
+/// functions the HAL itself declares in `extern "C"` blocks under a Lean naming
+/// convention (`is_hal_declared_lean_symbol`: the image's `lean_kernel_main`
+/// entry and the `initialize_…` module initializers, which Lean emits without
+/// an attribute).  Every `.rs` file under `src/` is read through
 /// the strings-blanked code view, each call is attributed to its enclosing
 /// function, and the gate must precede the call in that body.  The set of
 /// gated seams found must then equal `LEAN_READY_GATED_SEAMS`, so a new seam
 /// forces a table entry with its docstring and a stale entry fails the build.
 /// `verify_lean_upcall_scanner` runs the token-preserving mutations first.
+/// Whether a name the HAL declares in an `extern` block is a symbol Lean
+/// emits.  Two conventions: the toolchain-emitted entry points (`lean_…`) and
+/// the module initializers (`initialize_…`, WS-BP BP2.3).  The Lean tree's
+/// `@[export]`s are the third source and are collected separately.
+fn is_hal_declared_lean_symbol(name: &str) -> bool {
+    name.starts_with("lean_") || name.starts_with("initialize_")
+}
+
 fn scan_lean_upcalls_readiness_gated() {
     verify_lean_extern_gating_scanner();
     verify_lean_export_collector();
@@ -5738,8 +5758,11 @@ fn scan_lean_upcalls_readiness_gated() {
         let (strings_kept, code) = rust_code_views(&contents);
         // HAL-declared `lean_*` externs join the set: the toolchain-emitted
         // entry is declared here and nowhere in the Lean sources.
+        // WS-BP BP2.3: so does a Lean module initializer.  Lean names every
+        // module's initializer `initialize_<package>_<module>`; one declared
+        // here is a call into Lean-generated code like any other upcall.
         for name in extern_block_declarations(&code) {
-            if name.starts_with("lean_") && !exports.contains(&name) {
+            if is_hal_declared_lean_symbol(&name) && !exports.contains(&name) {
                 exports.push(name);
             }
         }

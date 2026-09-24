@@ -7146,7 +7146,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2.1 and BP2.2 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2.1..BP2.5 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7157,7 +7157,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap) and **BP2.2** (the kernel's own Lean runtime, in Rust); BP2.3..BP2.6 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed) and **BP2.5** (the host witnesses, which landed with the first two); BP2.6 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7370,6 +7370,30 @@ compiler then lets any safe caller break, and which no gate sees —
 justification scanner asks whether a block is *commented*, not whether the
 comment discharges anything.  A helper over state it owns (`Building`, the
 persistence `WorkStack`, the `apply` argument buffer) stays safe.
+
+**BP2.3/BP2.4 — the library initializer runs first, and the order is a type**
+(`v0.36.2`, `rust/sele4n-hal/src/lean_entry.rs`).  Four things new code must
+respect.  (1) **`lean_kernel_main` is reachable only through
+`enter_lean_kernel`**, which consumes a `LeanLibraryInitialised` token that only
+a successful `initialise_with` constructs — private field, neither `Clone` nor
+`Copy` — so entering the kernel uninitialised, or twice from one
+initialization, does not compile.  A new Lean entry on the primary takes the
+token too.  (2) **A second initialization is refused by a guard set before the
+initializer runs**, because Lean's generated initializer marks itself done
+before it calls anything: a retry after a failure would answer `ok` without
+re-running what failed.  (3) **Success is exactly a heap constructor of tag
+0**; a scalar or any other tag is *malformed* and refused rather than read as
+success, and the result's reference is released on every path.  A failure
+halts the **system** (`gic::halt_all`), not the PE, since the secondaries are
+already servicing interrupts — the topology refusal's reason.  (4) **A
+HAL-declared `initialize_…` symbol is Lean code** to `build.rs`'s readiness
+derivation (`is_hal_declared_lean_symbol`, shared with the `link_name` alias
+scan), so the initializer call is one of the two entries in
+`LEAN_UPCALLS_OUTSIDE_THE_GATE`, and `check_kernel_entry_exports.py` requires
+both archives to define it.  Upstream's `lean_initialize_runtime_module` and
+`lean_io_mark_end_initialization` are not called: the kernel's runtime has no
+per-thread heap, task manager or initialization flag, and the reachable link
+names neither.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
@@ -11144,10 +11168,11 @@ code may assume:
   of its own (`bare_ready_call_resolves`, threaded through every scanner that
   asks — the condition parsers, the classifier, the SVC arm and the
   site-table's `gate_call_offset`), since a same-scope helper of that name
-  satisfied every other readiness question while being a different predicate, and the **one** upcall that runs
-  ungated — the primary's `lean_kernel_main` boot install, which cannot sit
-  behind the gate because it is the call that initializes the runtime the gate
-  stands for — is `LEAN_UPCALLS_OUTSIDE_THE_GATE`, with its occurrence count
+  satisfied every other readiness question while being a different predicate, and the **two** upcalls that run
+  ungated — the Lean library initializer `initialize_seLe4n_SeLe4n`, which must
+  run before any Lean definition is used, and the primary's `lean_kernel_main`
+  boot install, which marks the boot core ready and so cannot sit behind the
+  gate — are `LEAN_UPCALLS_OUTSIDE_THE_GATE`, each with its occurrence count
   and reason, reconciled in both directions
   (`reconcile_upcall_exemptions`, round 6: a second call in an exempt
   function is a count mismatch, not a free pass).  A reference to a Lean

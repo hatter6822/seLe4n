@@ -208,6 +208,16 @@ recomputes.  An environmental or fail-closed one joins
 test holds them equal.  A helper that dereferences an object pointer it was
 handed is an `unsafe fn` with a `# Safety` section, private ones included.
 
+**Entering the Lean kernel** (WS-BP BP2.3/BP2.4) is
+`rust/sele4n-hal/src/lean_entry.rs`: the library initializer runs once, its
+`IO` result is checked, and a refusal halts the system.  `lean_kernel_main` is
+reachable only through `enter_lean_kernel`, which consumes the
+`LeanLibraryInitialised` token a successful initialization returns; a new Lean
+entry on the primary takes that token too, rather than declaring its own
+`extern`.  A HAL-declared `initialize_…` symbol is Lean code to `build.rs`'s
+readiness scan, so a call to one must be registered in
+`LEAN_UPCALLS_OUTSIDE_THE_GATE` or sit behind the gate.
+
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.

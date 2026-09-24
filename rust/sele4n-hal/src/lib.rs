@@ -360,3 +360,10 @@ pub mod lean_heap;
 // exported under `hw_target`; the set it must provide is derived from the Lean
 // archive's link and checked by the archive lane.
 pub mod lean_runtime;
+
+// WS-BP BP2.3/BP2.4: the primary's entry into the Lean kernel.  The library
+// initializer runs first, its `IO` result is checked, and a refusal halts the
+// system.  `lean_kernel_main` is reachable only by handing over the token a
+// successful initialization returns, so the order is a type rather than a
+// convention.
+pub mod lean_entry;

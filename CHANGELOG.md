@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2.1 and BP2.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, and the kernel carries its own Lean runtime in Rust
+## v0.36.2 — WS-BP BP0, BP1 and BP2.1..BP2.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, and the kernel is entered only after its library initializer succeeds
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -460,10 +460,56 @@ BP2.1's heap.  Object layouts are byte-identical to `lean.h`'s and pinned by
 Wired into the tiers: the census builds in Tier 1, the conformance suite runs in
 Tier 2, and the archive lane's step [7/8] performs the reachable link.  BP2.3
 changes as a consequence: this runtime needs no module initialization of its
-own, so the boot seam calls the library initializer directly.  BP2.3..BP2.6 and
-BP3..BP8 have not started.
+own, so the boot seam calls the library initializer directly.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1, BP2.2)
+**BP2.3/BP2.4 — the library initializer runs first, and the order is a type**
+(`rust/sele4n-hal/src/lean_entry.rs`).  Every Lean module compiles to an
+initializer that must run before its definitions are used; the library root's,
+`initialize_seLe4n_SeLe4n`, initializes the whole kernel, and nothing called it.
+
+- **Entering the kernel requires proof of initialization.**
+  `lean_kernel_main` is now reachable only through `enter_lean_kernel`, which
+  consumes a `LeanLibraryInitialised` token.  Only a successful
+  `initialise_with` constructs one; the token has a private field and is
+  neither `Clone` nor `Copy`.  Entering the kernel uninitialised, or twice from
+  one initialization, is a compile error rather than a scanner finding.
+- **A second initialization is refused before it runs.**  The guard is set
+  before the initializer is called, because Lean's generated initializer marks
+  itself done before it calls anything: a retry after a failure would report
+  success without redoing what failed.
+- **Success is exactly an `IO` `ok`.**  A heap constructor of tag 0 is success
+  and tag 1 is an error.  A scalar or any other tag is refused as malformed,
+  never read as success.  The result's reference is released on every path.
+  The error is not read, because reading it would call back into Lean.
+- **Failure halts the system, not the PE (BP2.4).**  The row named
+  `cpu::fatal_halt()`; it is `gic::halt_all()`.  The secondaries are already
+  running and servicing interrupts by then, so halting only the boot PE would
+  leave them working for a kernel that was never entered.  The topology refusal
+  beside it halts the same way, for the same reason.
+- **The derivation sees it.**  `build.rs`'s readiness scan collected
+  HAL-declared Lean symbols by their `lean_` prefix, so a declared
+  `initialize_…` symbol would have been a Lean upcall no gate could attribute.
+  `is_hal_declared_lean_symbol` now covers both conventions.  It is shared with
+  the `link_name` alias scan, which asked the same question with its own copy
+  of the test.
+  - The initializer call is the second entry in `LEAN_UPCALLS_OUTSIDE_THE_GATE`.
+  - Dropping the new prefix from the predicate fails the build through that
+    entry.
+  - `check_kernel_entry_exports.py` now requires both archives to define the
+    initializer; they do.
+- **Not called.**  Upstream's `lean_initialize_runtime_module` and
+  `lean_io_mark_end_initialization` are not called.  The kernel's runtime has no
+  per-thread heap, task manager or initialization flag, and the reachable link
+  names neither function.
+- **Tests.**  Seven host tests cover `ok`, error, scalar and foreign-tag
+  results, refusal of a second run after success and after failure (the
+  initializer is not called again), and the release of exactly the one
+  reference handed over.
+
+BP2.5's two halves landed with BP2.1 and BP2.2.  BP2.6 and BP3..BP8 have not
+started.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.5)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

@@ -436,20 +436,10 @@ pub extern "C" fn rust_boot_main(dtb_ptr: u64) -> ! {
             // for a per-PE fault — the VBAR check below is one.
             crate::gic::halt_all();
         }
-        extern "C" {
-            /// # Safety
-            ///
-            /// The primary PE's one-time boot install, and the only Lean upcall
-            /// that runs *outside* the readiness gate — it is the call that
-            /// initialises the runtime the gate stands for, so it must happen
-            /// exactly once, on the boot core, before any other Lean upcall on
-            /// any PE.  `dtb_ptr` must be the firmware's device-tree pointer.
-            fn lean_kernel_main(dtb_ptr: u64);
-        }
-        // SAFETY: lean_kernel_main is the Lean-compiled entry point linked from
-        // libsele4n.a. The DTB pointer from U-Boot is passed through. The
-        // function should not return; if it does, we fall through to idle.
-        unsafe { lean_kernel_main(dtb_ptr) };
+        // WS-BP BP2.3/BP2.4: initialize the Lean library, halting the system
+        // if it refuses, then enter the kernel with the proof that it ran.
+        let initialised = crate::lean_entry::initialise_lean_library();
+        crate::lean_entry::enter_lean_kernel(initialised, dtb_ptr);
     }
 
     // Idle fallback: enter WFE loop when no kernel main is linked (simulation)

@@ -88,7 +88,10 @@ archive's reachable link needs (144, 118 of them the runtime's) is provided, eac
 one faithful to upstream, answering for a machine with no operating system, or
 halting; 9 215 results computed on upstream's runtime are recomputed by the
 kernel's, and a Tier 1 census proves no kernel entry reaches the environmental
-answers.  BP2.3..BP2.6 and BP3..BP8 have not started.
+answers.  **BP2.3/BP2.4** run the Lean library initializer before the kernel
+is entered — the entry takes a token only a successful initialization
+constructs, so the order is checked by the compiler — and halt the whole
+system if it fails.  BP2.6 and BP3..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

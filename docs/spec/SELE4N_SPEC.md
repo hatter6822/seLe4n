@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), and **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5); BP2.3..BP2.6 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), and **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6); BP2.6 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -353,6 +353,41 @@ carries its own, in Rust (`rust/sele4n-hal/src/lean_runtime/`), over the heap of
 - **Single-threaded by construction.**  No object is marked multi-threaded and
   no task or promise exists; a path that would meet one halts.  `panic!`
   returns `default` and reports, as the proofs describe.
+
+### 6.2.6 Entering the Lean kernel (WS-BP BP2.3/BP2.4, v0.36.2)
+
+Every Lean module compiles to an initializer that evaluates its top-level
+constants and runs its imports' initializers; the library root's,
+`initialize_seLe4n_SeLe4n`, initializes the whole kernel.  The primary calls it
+once with `builtin = 1`, before any Lean code runs, in
+`rust/sele4n-hal/src/lean_entry.rs`.
+
+- **The order is a type.**  `lean_kernel_main` is reachable only through
+  `enter_lean_kernel`, which consumes a `LeanLibraryInitialised` token that only
+  a successful initialization constructs.  The token has a private field and is
+  neither `Clone` nor `Copy`, so entering the kernel uninitialised, or twice
+  from one initialization, does not compile.
+- **One initialization.**  A guard set *before* the initializer runs refuses a
+  second call.  The generated initializer marks itself done before it calls
+  anything, so a retry after a failure would report success without redoing
+  what failed.
+- **Success is exactly an `IO` `ok`.**  A heap constructor of tag 0 is success;
+  tag 1 is an error; a scalar or any other tag is malformed and refused.  The
+  result's reference is released on every path, and the error is not read,
+  because reading it would mean calling back into Lean.
+- **Failure halts the system.**  Any refusal is reported on the boot UART and
+  calls `gic::halt_all()`: the secondaries are already running and servicing
+  interrupts, so halting only the boot PE would leave them working for a kernel
+  that was never entered.
+- **Not called.**  Upstream's `lean_initialize_runtime_module` and
+  `lean_io_mark_end_initialization` set up per-thread heaps, a task manager and
+  an initialization flag.  The kernel's runtime has none of these, and the
+  reachable link names neither function.
+- **Checked.**  `build.rs`'s readiness derivation treats a HAL-declared
+  `initialize_…` symbol as Lean code, so the call is registered in
+  `LEAN_UPCALLS_OUTSIDE_THE_GATE` with its reason.
+  `scripts/check_kernel_entry_exports.py` requires both archives to define the
+  initializer.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
