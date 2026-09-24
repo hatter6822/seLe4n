@@ -7146,7 +7146,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0 and BP1 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2.1 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7157,7 +7157,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**; BP2..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap); the rest of BP2 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7244,7 +7244,7 @@ other write to `CPACR_EL1` in either spelling (`S3_0_C1_C0_2` included) in any
 **user** FP instruction traps too and is delivered as a `userException` fault
 until BP7.9 gives threads an FP context — fail-closed, and the known cost.  (3)
 **`scripts/check_fp_simd_free_objects.py` is the evidence rather than the flag**:
-the cross gate's step [5/5] disassembles the release rlib and the assembly
+the cross gate's step [5/6] disassembles the release rlib and the assembly
 archive and refuses any FP/SIMD/SVE register operand or `FPCR`/`FPSR` access,
 reading operands only and refusing input it cannot decide, and
 `check_aarch64_cross_target.py` requires that step — executed, over those two
@@ -7288,7 +7288,38 @@ at all**, six libm functions (`acosh`/`asinh`/`atanh`, both widths) no provider
 has; the report (`libsele4n.unresolved`) is BP2.2's input.  And
 `check_kernel_entry_exports.py` decides on **both** archives: a requirement is
 met where both define it, an exemption stale where either does, and
-`--require-cross` makes an absent cross archive a failure.
+`--require-cross` makes an absent cross archive a failure.  Since BP2.1 the
+lane also holds the two HAL-provided classes to the HAL's own object code: every
+`allocator` and `hal` symbol, and the whole small-allocator API, must be a global
+**function** of `sele4n-hal`'s rlib for the target (74 of 74 at `v0.36.2`).
+
+**BP2.1 — the Lean heap is one arena the linker places** (`v0.36.2`,
+`rust/sele4n-hal/src/lean_heap.rs`).  Five things new code must respect.  (1)
+**The arena's extent is `link.ld`'s, and nothing else's**: a `NOLOAD`
+`.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stacks, three
+`ASSERT`s (whole pages, page-aligned, inside the smallest board's `[0, 1 GiB)`),
+each proved live by `scripts/check_link_script.py` — the cross lane's step
+[6/6], which links a probe under the script and mutates it until every
+assertion fires, because nothing else links `link.ld` before BP5.  (2) **One
+heap, one exhaustion condition**: the HAL exports `lean.h`'s `lean_alloc_small`
+/ `lean_free_small` / `lean_small_mem_size` under `hw_target`, and the runtime's
+big-object path and BP2.2's libc surface go through `Heap::alloc` / `Heap::free`
+on the same arena — the runtime BP2.2 builds replaces `alloc.cpp`'s
+small-allocator block with forwards here rather than linking a second
+allocator.  (3) **All allocator state is out of band**, so the allocator never
+touches the memory it serves, every free is validated in release builds (a
+double free is refused, not absorbed), and every operation is bounded; a new
+allocator feature must keep its state in the metadata pages, never inside an
+object.  (4) **The C entry points halt** on a refusal and on exhaustion, after
+releasing the heap's leaf lock — `lean.h`'s inline paths do not test the result,
+so there is no error to return.  (5) **The boot map covers the arena, and a
+device tree inside the image is refused**: `mmu::image_ranges` includes it, and
+`init_mmu` refuses a blob overlapping the image, its stacks or the arena
+(`dtb_disjoint_from_image`) — the firmware places the blob by the image *file*'s
+size, and everything past it is `NOLOAD`.  Placing the arena also found that no
+boot refusal stops an untyped over kernel memory (`bootSafeUntypedCheck` accepts
+every region); not attacker-reachable, registered in `docs/REGISTERED_DEBT.md`
+table B, owned by BP3.2.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

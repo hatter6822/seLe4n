@@ -518,7 +518,7 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py" --self
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 
 # The FP/SIMD disassembly gate the cross build runs over the kernel's
-# release objects (`test_aarch64_cross_build.sh` step [5/5]).  Tier 0 runs
+# release objects (`test_aarch64_cross_build.sh` step [5/6]).  Tier 0 runs
 # before any build, so here it pins the scanner only: its operand reading,
 # and its refusal of input it cannot decide, are what make a PASS on the
 # objects mean the kernel touches no FP/SIMD register.
@@ -529,6 +529,12 @@ run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fp_simd_free_objects.py" --self
 # the allocator-configuration relation, the per-archive symbol relations and
 # the stdlib fidelity comparison -- are pure and self-tested here.
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/build_lean_aarch64_archive.py" --self-test
+# WS-BP BP2.1: the linker-script probe the cross build runs as step [6/6].
+# Tier 0 has no linker, so it pins the pure half: the arena relations over
+# synthetic symbol tables, and that every ASSERT witness still matches the
+# real `link.ld` exactly once -- a script edit that orphans a witness would
+# otherwise leave that ASSERT unproved while the cross lane stays green.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_link_script.py" --self-test
 
 # WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
 # said tier 0 enforced.  It did not, and the sketch in §5.6 would not have

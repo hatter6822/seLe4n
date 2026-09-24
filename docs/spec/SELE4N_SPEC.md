@@ -56,7 +56,7 @@ enforcement, and scheduling.
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3); BP2..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), and **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4); the rest of BP2 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -274,6 +274,48 @@ Archive` CI lane (`scripts/test_lean_aarch64_archive.sh`).  Its contract:
 - **Entries.**  `scripts/check_kernel_entry_exports.py` decides the HAL's
   kernel-entry requirements on this archive and the host one together: a
   requirement is met only where both define it.
+- **Providers checked.**  The two classes that name the HAL — the small
+  allocator and the production `@[extern]`s — are held to the HAL's own
+  object code: the lane builds `sele4n-hal` for the target and requires every
+  symbol in either class, and the whole small-allocator API, to be a global
+  function of its rlib (at v0.36.2: 1 + 73, all met).
+
+### 6.2.4 The Lean heap (WS-BP BP2.1, v0.36.2)
+
+Every Lean allocation on the target is served from one arena the linker script
+places, by an allocator in the HAL (`rust/sele4n-hal/src/lean_heap.rs`).
+
+- **The arena is a link-time constant.**  `link.ld` places a `NOLOAD` section
+  `.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stack
+  regions, bounded by `__lean_heap_start` / `__lean_heap_end`, and asserts that
+  it is a whole number of 4 KiB pages, page-aligned, and ends inside the
+  smallest Raspberry Pi 5's RAM `[0, 1 GiB)`.  No firmware value or device-tree
+  field sizes it.  The boot map's critical ranges include it, so translation
+  is never enabled over tables that leave it unmapped.
+- **The contract.**  The HAL exports `lean.h`'s small-allocator API under
+  `hw_target` — `lean_alloc_small(sz, slot_idx)`, `lean_free_small(p)`,
+  `lean_small_mem_size(p)` — with the 512 size classes indexed exactly as
+  `lean_get_slot_idx` indexes them, and a general `malloc`-shaped interface
+  (any size, any power-of-two alignment up to 4 KiB) over the same arena for
+  BP2.2's libc surface.  One heap, one exhaustion condition.
+- **All allocator state is out of band.**  A page map, a free-page bitmap and
+  per-page occupancy bitmaps live in the arena's leading metadata pages; the
+  allocator never reads or writes the memory it serves, so an object that
+  overruns corrupts its neighbour and never the allocator.  Every free is
+  validated — an address outside the arena, in a free page, off an object
+  boundary, or naming an object that is not live (a double free) is refused —
+  and the C entry points **halt** on a refusal and on exhaustion, since
+  `lean.h`'s inline paths do not test the result.
+- **Bounded.**  A small allocation scans at most eight words of one page's
+  occupancy map; a page allocation scans the free-page bitmap from the first
+  word with a free page.  A small page whose last object is freed returns to
+  the pool.  One heap serves every core behind a leaf ticket lock.
+- **Checked.**  `Heap::check_invariants` states the five invariants the
+  operations maintain; the host witness suite runs it after every mutation,
+  including a 30 000-step random trace against a model of the live set, and
+  `scripts/check_link_script.py` (the cross lane's step 6) links a probe under
+  `link.ld`, checks the arena's relations on the ELF, and proves each `ASSERT`
+  live by mutating the script until it fires.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

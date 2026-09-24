@@ -40,6 +40,8 @@
 //!   SM5.I serialised kernel entry at v0.32.142)
 //! - `per_cpu` — Per-CPU data block + TPIDR_EL1 accessors
 //!   (WS-SM SM1.B; closes SMP-M4)
+//! - `lean_heap` — the Lean heap: the linker-placed arena and the
+//!   allocator behind `lean.h`'s small-object API (WS-BP BP2.1)
 
 #![no_std]
 // HAL crate requires unsafe code for hardware instructions (MRS/MSR, MMIO,
@@ -49,7 +51,7 @@
 //
 // An `unsafe fn` is a contract on the CALLER; edition 2021 additionally makes
 // its body an implicit unsafe context, which would let a hardware operation
-// sit in one of these thirteen functions with no block and no `// SAFETY:`
+// sit in one of these functions with no block and no `// SAFETY:`
 // comment — the discipline above says every unsafe block carries one, and
 // without this lint that sentence is unenforceable exactly where the hardware
 // access happens. The crate already writes the blocks explicitly on both the
@@ -344,3 +346,11 @@ pub mod lock_bridge;
 // `feature = "hw_target"`, so a host build compiles no call path to a
 // bare-metal symbol at all.
 pub mod lean_ready;
+
+// WS-BP BP2.1: the Lean heap.  The arena is the linker's `.lean_heap` section
+// and the allocator serves `lean.h`'s small-object API (`lean_alloc_small`,
+// `lean_free_small`, `lean_small_mem_size`, exported under `hw_target`) and the
+// general `malloc`-shaped interface BP2.2's libc surface is built on, from the
+// same arena.  All allocator state is out of band, so it never dereferences the
+// memory it hands out.
+pub mod lean_heap;

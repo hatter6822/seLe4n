@@ -73,7 +73,10 @@ cover disjoint halves of the same crate:
   assembled, `cargo clippy -D warnings` on the same target, and (since
   `v0.36.2`) a disassembly of the release objects that refuses any FP/SIMD
   register operand (`scripts/check_fp_simd_free_objects.py`) — the kernel
-  is FP-free and traps FP/SIMD at EL1.  CI job *aarch64 Cross Build*.
+  is FP-free and traps FP/SIMD at EL1 — and (WS-BP BP2.1) a probe link under
+  `link.ld` that checks the Lean heap arena and proves the script's three
+  `ASSERT`s live (`scripts/check_link_script.py`).  CI job *aarch64 Cross
+  Build*.
 - `scripts/test_lean_aarch64_archive.sh` — the **Lean cross** lane (WS-BP
   BP1, `v0.36.2`): `libsele4n.a`, the elaborator's closure of `SeLe4n`
   compiled freestanding and soft-float for the same target by
@@ -81,7 +84,8 @@ cover disjoint halves of the same crate:
   testing module in the closure, any warning outside the C generator's two
   known shapes, a regenerated stdlib module whose symbols differ from the
   toolchain's own object, an FP/SIMD register operand, and an unresolved symbol
-  no provider accounts for; then the kernel-entry reconciliation over both
+  no provider accounts for, or one attributed to the HAL that the HAL's own
+  object code does not define as a function; then the kernel-entry reconciliation over both
   archives (`check_kernel_entry_exports.py --require-cross`).  CI job *Lean
   aarch64 Archive*.
 

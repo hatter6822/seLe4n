@@ -20,7 +20,7 @@ These checks are produced by `.github/workflows/lean_action_ci.yml`. Each CI job
 
 The hardware target has two lanes of its own, also on every PR/push:
 
-- `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the three `.S` sources verified assembled, the cross target linted with `-D warnings`, and the release objects disassembled by `scripts/check_fp_simd_free_objects.py`.
+- `test-aarch64-cross` (`aarch64 Cross Build`): `./scripts/test_aarch64_cross_build.sh` — `sele4n-hal` for `aarch64-unknown-none-softfloat` in both profiles, the three `.S` sources verified assembled, the cross target linted with `-D warnings`, the release objects disassembled by `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1) a probe linked under `link.ld` by `scripts/check_link_script.py`, which checks the Lean heap arena's placement on the ELF and proves each of the script's `ASSERT`s live by mutation.
 - `test-lean-aarch64-archive` (`Lean aarch64 Archive`, WS-BP BP1): `./scripts/test_lean_aarch64_archive.sh` — `libsele4n.a`, the kernel's Lean object code for the same target, built from the elaborator's closure of `SeLe4n` by `scripts/build_lean_aarch64_archive.py` and checked there (closure, allocator configuration, per-module initializers, stdlib fidelity, attributed unresolved symbols, no FP/SIMD register); then `check_kernel_entry_exports.py --require-cross` decides the kernel-entry reconciliation on it and the host archive together.  Uploads the archive and `libsele4n.unresolved`.
 
 `scripts/check_aarch64_cross_target.py` (Tier 0) requires both jobs to execute their scripts and install the toolchain components they read object code with.

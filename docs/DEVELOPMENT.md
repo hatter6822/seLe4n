@@ -167,8 +167,12 @@ mismatch too.
 it — so the hardware half of the HAL, which is most of it, is invisible to
 them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none-softfloat`
 in both profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually
-assembled, lints the cross target with `-D warnings`, and disassembles the
-release objects with `scripts/check_fp_simd_free_objects.py`. It runs in CI as the
+assembled, lints the cross target with `-D warnings`, disassembles the
+release objects with `scripts/check_fp_simd_free_objects.py`, and (WS-BP BP2.1)
+links a probe under `link.ld` with `scripts/check_link_script.py` — nothing else
+links the script before the image exists, so its Lean heap arena and three
+`ASSERT`s are checked on an ELF and each assertion is proved live by mutation.
+It runs in CI as the
 `aarch64 Cross Build` job.
 
 **The Lean half has its own lane** (WS-BP BP1): `test_lean_aarch64_archive.sh`
@@ -179,8 +183,16 @@ on a new toolchain regenerates the stdlib C (several minutes, cached under
 `.lake/build/aarch64-unknown-none-softfloat/`).  It fails when a production
 module imports `Lean.*` or a staged module, when a generated file carries a
 warning outside the generator's two known shapes, or when the archive references
-a symbol no provider accounts for; `libsele4n.unresolved` lists what the archive
-needs, by provider.
+a symbol no provider accounts for, or when the HAL's object code for the target
+does not define a symbol the archive attributes to it; `libsele4n.unresolved`
+lists what the archive needs, by provider.
+
+**The Lean heap** (WS-BP BP2.1) is `rust/sele4n-hal/src/lean_heap.rs` over
+`link.ld`'s `.lean_heap` section: one arena, sized by `LEAN_HEAP_SIZE`, serving
+`lean.h`'s small-allocator API and a general `malloc`-shaped interface.  Its state
+lives in the arena's metadata pages and never inside an object, so keep it there;
+`Heap::check_invariants` states the invariants and the host witness suite
+(`cargo test -p sele4n-hal lean_heap`) runs it after every mutation.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
@@ -192,7 +204,7 @@ saves general-purpose registers only, so kernel code must never touch a vector
 register. The hard-float `aarch64-unknown-none` target lets the compiler use
 them for zeroing, copies and spills — it put 129 such instructions in the HAL —
 so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
-step [5/5] checks the generated code rather than trusting the flag. Do not
+step [5/6] checks the generated code rather than trusting the flag. Do not
 write `neon`/`fp-armv8` target features, FP inline assembly or a second
 `CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
 FP/SIMD traps and is delivered as a fault until per-thread FP state lands

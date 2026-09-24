@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0 and BP1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, and its Lean object code is built for the target
+## v0.36.2 — WS-BP BP0, BP1 and BP2.1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, and the Lean heap has an arena and an allocator
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -284,9 +284,102 @@ depends on is derived and then checked against an independent answer:
 `check_fp_simd_free_objects.py` gained `rust_llvm_tool`, the one owner for which
 LLVM binutil a gate reads object code with, and its docstring's reference to
 the image-level run is corrected to BP5.2.  Both new scripts self-test in Tier 0
-(51 and 95 cases).  BP2..BP8 have not started.
+(51 and 95 cases at BP1; the builder's is 57 after BP2.1's provider cases).
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1)
+**BP2.1 — the Lean heap: an arena the linker places, and the allocator behind
+`lean.h`'s small-object API.**  `rust/sele4n-hal/src/lean_heap.rs` is the one
+heap every Lean allocation on the target is served from.
+
+- *The arena is a link-time constant.*  `link.ld` places a `NOLOAD` section
+  `.lean_heap` of `LEAN_HEAP_SIZE` (64 MiB) above the image and both stack
+  regions, named by `__lean_heap_start` / `__lean_heap_end`, and three `ASSERT`s
+  refuse an arena that is not whole pages, not page-aligned, or not inside the
+  smallest Raspberry Pi 5's `[0, 1 GiB)`.  No firmware value or device-tree field
+  sizes it; the allocator derives its whole layout from the two symbols,
+  carving its metadata from the arena's leading pages and proving (by test) that
+  the layout is maximal and disjoint.
+- *The contract.*  The HAL exports `lean_alloc_small`, `lean_free_small` and
+  `lean_small_mem_size` under `hw_target`, with the 512 size classes indexed
+  exactly as `lean_get_slot_idx` indexes them, and a general `malloc`-shaped
+  interface — any size, any power-of-two alignment up to a page — over the same
+  arena, for the runtime's big-object path and BP2.2's libc surface.  One heap,
+  one exhaustion condition.  A size that is not its slot's size is a fault, not a
+  rounding: `lean.h` computes both from one aligned size.
+- *All allocator state is out of band.*  A page map, a free-page bitmap and a
+  per-page occupancy bitmap live in the metadata pages, and no allocator state is
+  stored inside an object.  So the allocator never reads or writes the memory it
+  serves — the only `unsafe` in the module forms the metadata slices, once —
+  every free is validated in release builds (outside the arena, a free page, off
+  an object boundary, and **a double free** are each refused rather than
+  corrupting a free list), and every operation is bounded: eight words of one
+  page's occupancy map per small allocation, a bitmap scan from the first word
+  with a free page per page run.  A small page whose last object is freed
+  returns to the pool, so memory is not pinned to the class that first used it;
+  freed runs coalesce by construction, since freeness is a bit per page.  The C
+  entry points halt on a refusal and on exhaustion — `lean.h`'s inline paths do
+  not test the result — after releasing the heap's leaf lock.
+- *One heap for every core*, behind a leaf `TicketLock`, taken into service on
+  first use under that lock.  Kernel entry is already serialised; the lock is
+  there so the allocator's soundness does not depend on it (the boot install runs
+  outside the entry lock).
+- *The witnesses* (BP2.5's allocator half): `Heap::check_invariants` states five
+  invariants and the host suite runs it after every mutation — the layout, every
+  size class, every alignment to a page, capacity and page recycling, every
+  refused free, run coalescing, a run that must not span a fully-used bitmap
+  word, exhaustion and recovery on a private heap and on the kernel heap, and a
+  30 000-step random trace against a model of the live set.  Ten
+  token-preserving mutations of the allocator are each caught; the first run of
+  that set missed two, which were fixed rather than excused: the hint invariant
+  was one-sided (now exact: the first word with a free page), and a bound on the
+  full-word skip was implied by the bitmap invariant, so it was deleted rather
+  than kept as a condition no input could reach.
+
+What the arena changed around it:
+
+- *The linker script is read by a tool for the first time.*  Nothing links
+  `link.ld` until BP5 builds the image, so its sections and `ASSERT`s were text.
+  `scripts/check_link_script.py` — the cross lane's new step [6/6] — links the
+  release assembly archive's real `.text.boot` under the script with `rust-lld`,
+  checks the arena's relations on the ELF's symbol table, and proves each
+  `ASSERT` live by mutating the script until it fires with its own message.  Its
+  pure half self-tests in Tier 0 (nine cases, including that every mutation still
+  matches the script), and `check_aarch64_cross_target.py` requires the step —
+  executed, over this target's release archive, its failure not discarded (three
+  new preserving cases, each confirmed caught only by the new requirement).
+- *The boot map covers the arena*: `mmu::image_ranges` includes it, so
+  translation is never enabled over tables that leave the heap unmapped.
+- *And a device tree inside the image is refused.*  The firmware places the blob
+  by the image **file**'s size, and `.bss`, both stacks and the arena are
+  `NOLOAD` past the file's end — so a blob placed there is zeroed by `boot.S` or
+  overwritten by the first Lean allocation before the boot seam reads it.
+  `init_mmu` now refuses a pointer whose dereferenced range overlaps any of them
+  (`mmu::dtb_disjoint_from_image`), and BP2.6's map keeps that refusal.
+- *The Lean lane checks its providers.*  BP1 attributed 1 symbol to the
+  allocator and 73 to the HAL by declaration; step [7/8] of the builder now
+  builds `sele4n-hal` for the target (the rlib path read off cargo's own
+  artifact message, never a glob) and requires every symbol in both classes,
+  and the whole small-allocator API, to be a global **function** of it — all 74
+  are.  A symbol the HAL defines only as data does not count.
+
+**Registered, not fixed: a boot untyped is not checked against the memory it
+may describe.**  Placing the arena showed that `bootSafeUntypedCheck` accepts
+every region and `untypedRegionsDisjoint` relates untypeds only to each other,
+so no boot refusal stops an untyped over the kernel image, the stacks, the
+arena, or a device window.  Not attacker-reachable — untypeds come only from the
+integrator's compiled-in `initialObjects`, never from the device tree — so it is
+a misconfiguration class and a model gap against seL4, which removes the kernel
+image from the root task's untypeds.  Registered in `docs/REGISTERED_DEBT.md`
+table B with its remedy (a binding-declared reserved extent held to `link.ld`,
+and a `PlatformConfig.wellFormed` conjunct), owned by BP3.2, which chooses the
+first untypeds any configuration carries.
+
+What BP2.2 inherits is recorded in the BP2.1 row: the runtime's `alloc.cpp`
+defines the same three functions over per-thread heaps built on `new` and
+`std::vector`, and the runtime BP2.2 builds replaces that block with forwards to
+this heap rather than linking two allocators.  BP2.2..BP2.6 and BP3..BP8 have
+not started.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

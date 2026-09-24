@@ -63,6 +63,7 @@ from __future__ import annotations
 import argparse
 import concurrent.futures
 import hashlib
+import json
 import os
 import re
 import shutil
@@ -107,10 +108,10 @@ RUST_TARGET = "aarch64-unknown-none-softfloat"
 # and a symbol no class accounts for stops the build: the report is BP2.2's
 # input, and an unattributed symbol is a link failure nobody has planned for.
 PROVIDERS = (
-    ("allocator", "the small-allocator API the kernel's config.h selects (BP2.1)"),
+    ("allocator", "the small-allocator API the kernel's config.h selects -- the HAL's lean_heap defines it (BP2.1)"),
     ("runtime", "defined by the toolchain's libleanrt.a -- the runtime BP2 builds for the target"),
     ("compiler-builtins", f"defined by Rust's compiler_builtins for {RUST_TARGET} (linked at BP5)"),
-    ("hal", "declared @[extern] by a production kernel module -- the HAL provides it"),
+    ("hal", "declared @[extern] by a production kernel module -- the HAL's object code defines it"),
     ("stdlib-extern", "declared @[extern] by a closure stdlib module and provided by none of the above (BP2.2)"),
 )
 MIMALLOC_SYMBOL = re.compile(r"^_?mi_")
@@ -619,6 +620,51 @@ def rust_target_builtins() -> Path:
     return found[0]
 
 
+def hal_rlib() -> Path:
+    """The HAL built for the target, release, with its hardware exports: the
+    rlib path cargo's own `compiler-artifact` message names, never a glob over
+    `target/`, so a stale rlib from another profile or target cannot answer."""
+    out = run(["cargo", "build", "--release", "--target", RUST_TARGET, "-p", "sele4n-hal",
+               "--features", "hw_target", "--message-format=json-render-diagnostics"],
+              cwd=REPO / "rust").stdout
+    rlibs = []
+    for line in out.splitlines():
+        try:
+            msg = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if msg.get("reason") == "compiler-artifact" and msg.get("target", {}).get("name") == "sele4n_hal":
+            rlibs += [f for f in msg.get("filenames", []) if f.endswith(".rlib")]
+    if len(rlibs) != 1:
+        raise Refused(f"expected one sele4n_hal rlib for {RUST_TARGET}, cargo reported {rlibs}")
+    return Path(rlibs[0])
+
+
+def global_text(output: str) -> set[str]:
+    """The global TEXT symbols in `llvm-nm -g -P` output: functions.  A data
+    object under a function's name would satisfy a call at the link and send
+    it into data, so only `T` counts as a provider."""
+    names = set()
+    for line in output.splitlines():
+        fields = line.split()
+        if len(fields) >= 2 and not line.endswith(":") and fields[1] == "T":
+            names.add(fields[0])
+    return names
+
+
+def check_hal_providers(classes: dict[str, list[str]], hal_text: set[str]) -> None:
+    """The `allocator` and `hal` classes name the HAL as provider; hold that
+    to the HAL's object code.  Every symbol in either class, and the whole
+    small-allocator API whether or not this archive calls each member (the
+    runtime's free paths call the rest), must be a global function of the
+    HAL's rlib."""
+    wanted = set(classes["allocator"]) | set(classes["hal"]) | ALLOCATOR_API
+    missing = sorted(wanted - hal_text)
+    if missing:
+        raise Refused(f"{len(missing)} symbol(s) attributed to the HAL that its object code does "
+                      f"not define as a function: {missing[:12]}")
+
+
 def extern_symbols(paths: list[Path]) -> set[str]:
     symbols: set[str] = set()
     for path in paths:
@@ -643,24 +689,24 @@ def write_unresolved_report(classes: dict[str, list[str]]) -> None:
 
 def build(jobs: int) -> int:
     tc = toolchain()
-    print(f"[1/7] toolchain {tc['version']} ({tc['githash'][:12]})")
+    print(f"[1/8] toolchain {tc['version']} ({tc['githash'][:12]})")
     closure = elaborator_closure()
     package, stdlib = classify_closure(closure, lake_modules(), staged_modules())
-    print(f"[2/7] closure: {len(package)} package + {len(stdlib)} stdlib modules "
+    print(f"[2/8] closure: {len(package)} package + {len(stdlib)} stdlib modules "
           f"(elaborator and Lake agree; no staged, testing or Lean.* module)")
     check_config((Path(tc["prefix"]) / "include/lean/config.h").read_text(),
                  (SHIM_INCLUDE / "lean/config.h").read_text())
-    print("[3/7] allocator configuration: toolchain config.h with LEAN_MIMALLOC -> LEAN_SMALL_ALLOCATOR")
+    print("[3/8] allocator configuration: toolchain config.h with LEAN_MIMALLOC -> LEAN_SMALL_ALLOCATOR")
     build_package_c(package)
     parallel(lambda m: generate_one_stdlib_c(m, tc), stdlib, jobs)
-    print(f"[4/7] C: Lake `c` facet for the package, regenerated stdlib C cached under {tc['githash'][:12]}")
+    print(f"[4/8] C: Lake `c` facet for the package, regenerated stdlib C cached under {tc['githash'][:12]}")
     flags = compile_flags(tc)
     prepare_objects(hashlib.sha256("\n".join([tc["githash"], tc["clang"], *flags]).encode()).hexdigest())
     sources = [(m, package_c(m)) for m in package] + [(m, stdlib_c(m, tc)) for m in stdlib]
     parallel(lambda item: compile_one(item, tc, flags), sources, jobs)
     build_archive(package + stdlib, tc)
     census = diagnostic_census(package + stdlib)
-    print(f"[5/7] compiled {len(sources)} modules and archived {ARCHIVE.relative_to(REPO)}; "
+    print(f"[5/8] compiled {len(sources)} modules and archived {ARCHIVE.relative_to(REPO)}; "
           "diagnostics: " + ", ".join(f"{n} {name} (generator shape)" for name, n in census.items())
           + ", nothing else")
     units = nm(ARCHIVE)
@@ -683,13 +729,19 @@ def build(jobs: int) -> int:
             [prefix / "src/lean" / (m.replace(".", "/") + ".lean") for m in stdlib]),
     )
     write_unresolved_report(classes)
-    print(f"[6/7] symbols: one initializer per module, all resolved, no duplicate definition, "
+    print(f"[6/8] symbols: one initializer per module, all resolved, no duplicate definition, "
           f"small allocator; {len(stdlib)} stdlib modules match the toolchain's objects; "
           f"{len(unresolved)} unresolved, every one attributed ("
           + ", ".join(f"{len(v)} {k}" for k, v in classes.items())
           + f") -> {UNRESOLVED_REPORT.relative_to(REPO)}")
+    rlib = hal_rlib()
+    hal_text = global_text(run([fp_gate.rust_llvm_tool("llvm-nm"), "-g", "-P", str(rlib)]).stdout)
+    check_hal_providers(classes, hal_text)
+    print(f"[7/8] providers: the HAL's {RUST_TARGET} object code defines every allocator and hal "
+          f"symbol ({len(classes['allocator'])} + {len(classes['hal'])}) and the whole "
+          f"small-allocator API as functions")
     status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
-    print("[7/7] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
+    print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
     return status
 
 
@@ -830,6 +882,21 @@ def self_test() -> int:
            _refused(classify_unresolved, {"ffi_x"}, {"ffi_x"}, set(), {"ffi_x"}, set()))
     expect("a HAL symbol compiler_builtins also defines refused",
            _refused(classify_unresolved, {"ffi_x"}, set(), {"ffi_x"}, {"ffi_x"}, set()))
+
+    nm_out = ("lib.rmeta:\nx.rcgu.o:\nlean_alloc_small T 0 160\nlean_free_small T 0 8\n"
+              "lean_small_mem_size T 0 8\nffi_x T 0 4\nffi_data D 0 8\nffi_ref U\n")
+    expect("only global text symbols are providers", global_text(nm_out) ==
+           {"lean_alloc_small", "lean_free_small", "lean_small_mem_size", "ffi_x"})
+    provided = global_text(nm_out)
+    called = {"allocator": ["lean_alloc_small"], "hal": ["ffi_x"]}
+    expect("a HAL that defines its classes passes", not _refused(check_hal_providers, called, provided))
+    for label, classes, text in [
+        ("a hal symbol the HAL does not define", {**called, "hal": ["ffi_x", "ffi_y"]}, provided),
+        ("a hal symbol the HAL defines only as data", {**called, "hal": ["ffi_data"]}, provided),
+        ("an allocator call the HAL does not define", called, provided - {"lean_alloc_small"}),
+        ("an allocator entry no object calls but the runtime will", called, provided - {"lean_small_mem_size"}),
+    ]:
+        expect(f"providers refused: {label}", _refused(check_hal_providers, classes, text))
 
     expect("the probe asks the elaborator for the header's module names of the root",
            "env.header.moduleNames" in CLOSURE_PROBE_TEMPLATE

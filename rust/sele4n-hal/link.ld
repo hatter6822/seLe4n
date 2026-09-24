@@ -12,6 +12,13 @@
 
 ENTRY(_start)
 
+/* WS-BP BP2.1: the Lean heap arena's size.  A link-time constant: the kernel's
+ * Lean runtime is served from `.lean_heap` below and from nothing else, so the
+ * heap is exactly this big on every board and no firmware or device tree can
+ * change it.  Raising it is this one line; the ASSERTs at the end refuse a
+ * value the smallest Raspberry Pi 5 cannot hold. */
+LEAN_HEAP_SIZE = 64M;
+
 MEMORY
 {
     RAM (rwx) : ORIGIN = 0x80000, LENGTH = 0xFBF80000
@@ -93,6 +100,21 @@ SECTIONS
         __smp_secondary_stack_top = .;
     } > RAM
 
+    /* WS-BP BP2.1: the Lean heap arena.  `NOLOAD`, so it costs the image
+     * file nothing and the firmware copies nothing into it; `boot.S` does not
+     * zero it either — `lean_heap::Heap::from_arena` initialises every
+     * metadata byte it reads and never reads the pages it serves.  4 KiB
+     * aligned, because the allocator's pages are MMU granules.  Its bounds are
+     * the only way the Rust side learns the extent
+     * (`lean_heap::arena_extent`), and the boot map's critical ranges include
+     * it (`mmu::image_ranges`), so translation is never enabled over tables
+     * that leave the heap unmapped. */
+    .lean_heap (NOLOAD) : ALIGN(4096) {
+        __lean_heap_start = .;
+        . += LEAN_HEAP_SIZE;
+        __lean_heap_end = .;
+    } > RAM
+
     /* Discard unneeded sections */
     /DISCARD/ : {
         *(.comment)
@@ -100,3 +122,13 @@ SECTIONS
         *(.eh_frame*)
     }
 }
+
+/* WS-BP BP2.1: the arena is a whole number of pages, and the whole image —
+ * arena included — ends inside the smallest Raspberry Pi 5's RAM, which is
+ * [0, 1 GiB) (`rpi5Variants` in SeLe4n/Platform/RPi5/Board.lean, and
+ * `mmu::UNDESCRIBED_RAM_TOP`, the map built when no device tree describes the
+ * board).  A heap that does not fit is a link error, never a boot-time
+ * surprise. */
+ASSERT(LEAN_HEAP_SIZE % 4096 == 0, "LEAN_HEAP_SIZE must be a whole number of 4 KiB pages")
+ASSERT(__lean_heap_start % 4096 == 0, "the Lean heap arena must be 4 KiB aligned")
+ASSERT(__lean_heap_end <= 0x40000000, "the image, Lean heap included, must end inside the smallest RPi5's 1 GiB of RAM")

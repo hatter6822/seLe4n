@@ -102,6 +102,10 @@ FP_CHECKED_OBJECTS = (
     f"target/{CROSS_TARGET}/release/deps/libsele4n_hal-*.rlib",
     f"target/{CROSS_TARGET}/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a",
 )
+# WS-BP BP2.1: the linker-script gate, over the RELEASE assembly archive of
+# THIS target -- the real `.text.boot` the probe link places under `link.ld`.
+LINK_CHECK_SCRIPT = "scripts/check_link_script.py"
+LINK_CHECKED_ARCHIVE = FP_CHECKED_OBJECTS[1]
 # Toolchain components the gate needs: clippy for the cross lint lane,
 # llvm-tools for the pinned llvm-objdump the FP/SIMD check disassembles with.
 REQUIRED_COMPONENTS = ("clippy", "llvm-tools")
@@ -942,13 +946,19 @@ def check_gate_script(root: str) -> list[str]:
     # proves nothing about what is deployed -- and handed both the Rust
     # code and the assembly.
     wrappers = executing_wrappers(code)
-    fp_runs: list[list[str]] = []
-    for command in shell_commands(code):
-        argv = executed_argv(command, wrappers)
-        if argv and argv[0] in ("python3", "python") and len(argv) > 1:
-            argv = argv[1:]
-        if argv and argv[0].endswith(FP_CHECK_SCRIPT):
-            fp_runs.append(argv[1:])
+
+    def gate_runs(script: str) -> list[list[str]]:
+        """The argument lists of every EXECUTED run of `script`."""
+        runs: list[list[str]] = []
+        for command in shell_commands(code):
+            argv = executed_argv(command, wrappers)
+            if argv and argv[0] in ("python3", "python") and len(argv) > 1:
+                argv = argv[1:]
+            if argv and argv[0].endswith(script):
+                runs.append(argv[1:])
+        return runs
+
+    fp_runs = gate_runs(FP_CHECK_SCRIPT)
     if not any(set(FP_CHECKED_OBJECTS) <= set(args) for args in fp_runs):
         problems.append(
             f"{GATE_SCRIPT}: no executed `{FP_CHECK_SCRIPT}` over both "
@@ -960,6 +970,20 @@ def check_gate_script(root: str) -> list[str]:
             f"silent clobber of user state."
         )
 
+    # WS-BP BP2.1: the linker script is linked by nothing else until the
+    # kernel image exists, so the probe link is the only tool that reads it.
+    # Executed, and over the RELEASE assembly archive of THIS target: the
+    # probe places the real `.text.boot` under the script.
+    link_runs = gate_runs(LINK_CHECK_SCRIPT)
+    if not any(args == [LINK_CHECKED_ARCHIVE] for args in link_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{LINK_CHECK_SCRIPT}` over "
+            f"{LINK_CHECKED_ARCHIVE}; found {link_runs or 'no invocation'}. "
+            f"`link.ld` places the Lean heap arena and asserts it fits the "
+            f"smallest board, and nothing else links it before the kernel "
+            f"image exists."
+        )
+
     # A load-bearing command must be able to FAIL the script.  Under
     # `set -e` a command followed by `&&` or `||` is exempt from errexit, so
     # it runs, its failure is discarded, and every token above stays put.
@@ -969,7 +993,10 @@ def check_gate_script(root: str) -> list[str]:
             argv[:1] == ["cargo"]
             and argv[1:2] in (["build"], ["clippy"])
             and CROSS_TARGET in option_values(argv, "target")
-        ) or any(token.endswith(FP_CHECK_SCRIPT) for token in argv[:2])
+        ) or any(
+            token.endswith(FP_CHECK_SCRIPT) or token.endswith(LINK_CHECK_SCRIPT)
+            for token in argv[:2]
+        )
         if load_bearing and operator in ERREXIT_EXEMPTING_OPERATORS:
             problems.append(
                 f"{GATE_SCRIPT}: `{command}` is followed by `{operator}`, "
@@ -1625,6 +1652,8 @@ cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features hw_targe
 cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target -- -D warnings
 python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
     target/"${{CROSS_TARGET}}"/release/deps/libsele4n_hal-*.rlib \\
+    target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
+python3 "${{PROJECT_ROOT}}/{LINK_CHECK_SCRIPT}" \\
     target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
 """
 
@@ -2531,6 +2560,19 @@ def self_test() -> int:
     ]:
         fixture = baseline()
         fixture[GATE_SCRIPT] = mutated
+        cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
+    # --- The linker-script probe.  Each keeps the check-script token. ---
+    link_line = f'python3 "${{PROJECT_ROOT}}/{LINK_CHECK_SCRIPT}" \\\n'
+    link_tail = link_line + '    target/"${CROSS_TARGET}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a\n'
+    assert GOOD_GATE.count(link_tail) == 1
+    for label, replacement in [
+        ("the link-script check is echoed, not run", "echo " + link_tail),
+        ("the link-script check reads the debug archive", link_tail.replace("/release/", "/debug/")),
+        ("the link-script check's failure is discarded by `|| true`",
+         link_tail.replace("asm.a\n", "asm.a || true\n")),
+    ]:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = GOOD_GATE.replace(link_tail, replacement)
         cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
     for label, old, new, target in [
         ("the toolchain drops llvm-tools",

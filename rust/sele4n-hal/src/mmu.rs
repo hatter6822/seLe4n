@@ -923,8 +923,9 @@ fn enable_mmu() {
 /// the blob sat in the discarded tail, and neither is a diagnosis.  So before
 /// translation is enabled the clamped top is held to
 /// [`boot_critical_ranges_mapped`]: the image `[_start, __bss_end)` (which
-/// contains the boot tables), the primary stack, the secondary stacks, and the
-/// blob's own extent must all be Normal RAM under the tables about to be
+/// contains the boot tables), the primary stack, the secondary stacks, the
+/// Lean heap arena (WS-BP BP2.1), and the blob's own extent must all be Normal
+/// RAM under the tables about to be
 /// built.  A top that fails is refused and the PE parks with the reason on the
 /// UART: `cpu::fatal_halt` rather than `gic::halt_all`, because Phase 2 runs
 /// on the boot core alone before the GIC exists — there is no other PE to
@@ -942,6 +943,20 @@ pub fn init_mmu(dtb_ptr: u64) {
             "[boot] FATAL: the device tree's RAM (top {:#x}) does not cover the image, its \
              stacks or the blob at {:#x}; refusing to enable translation",
             mapped_top,
+            dtb_ptr
+        );
+        crate::cpu::fatal_halt();
+    }
+    // WS-BP BP2.1: the firmware places the blob by the image FILE's size, and
+    // `.bss`, both stack regions and the 64 MiB Lean heap arena are `NOLOAD`,
+    // past the file's end — so a blob placed there has been zeroed by `boot.S`
+    // or will be overwritten by the first Lean allocation before the boot seam
+    // reads it.  Refused, not read: a parse of memory the image owns is a parse
+    // of the kernel's own state.
+    if !dtb_disjoint_from_image(dtb_extent.unwrap_or((0, 0)), &image_ranges()) {
+        crate::kprintln!(
+            "[boot] FATAL: the device tree at {:#x} overlaps the image, its stacks or the \
+             Lean heap arena; refusing to read it",
             dtb_ptr
         );
         crate::cpu::fatal_halt();
@@ -1008,15 +1023,16 @@ pub const fn boot_critical_ranges_mapped(ram_top: u64, ranges: &[(u64, u64)]) ->
 
 /// **PR #892 review round 4**: the ranges the running image occupies, read off
 /// the linker's own symbols — the image from `_start` to `__bss_end` (the boot
-/// page tables live in `.bss`), the primary stack, and the secondary stacks,
-/// which the secondaries run on under these same tables.
+/// page tables live in `.bss`), the primary stack, the secondary stacks, which
+/// the secondaries run on under these same tables, and (WS-BP BP2.1) the Lean
+/// heap arena, which every Lean allocation is served from.
 ///
 /// Only the symbols' *addresses* are taken, which forms no access.  The host
 /// has no link script, so it reports no ranges and the check reduces to the
 /// blob's extent there; the linker-symbol half is exercised by the cross build
 /// and on hardware.
 #[must_use]
-fn image_ranges() -> [(u64, u64); 3] {
+fn image_ranges() -> [(u64, u64); 4] {
     #[cfg(target_arch = "aarch64")]
     {
         extern "C" {
@@ -1033,16 +1049,49 @@ fn image_ranges() -> [(u64, u64); 3] {
         let stack_top = &raw const __stack_top as u64;
         let smp_bottom = &raw const __smp_secondary_stacks_bottom as u64;
         let smp_top = &raw const __smp_secondary_stack_top as u64;
+        let (heap_start, heap_len) = crate::lean_heap::arena_extent();
         [
             (image_start, image_end.saturating_sub(image_start)),
             (stack_bottom, stack_top.saturating_sub(stack_bottom)),
             (smp_bottom, smp_top.saturating_sub(smp_bottom)),
+            (heap_start as u64, heap_len as u64),
         ]
     }
     #[cfg(not(target_arch = "aarch64"))]
     {
-        [(0, 0), (0, 0), (0, 0)]
+        [(0, 0), (0, 0), (0, 0), (0, 0)]
     }
+}
+
+/// **WS-BP BP2.1**: is the device tree's dereferenced range disjoint from
+/// every range the image occupies?
+///
+/// Stated over explicit ranges so the host decides it.  An empty range
+/// overlaps nothing — a null pointer is dereferenced by nothing — and a range
+/// whose end overflows is refused, since its extent is not a range at all.
+#[must_use]
+pub const fn dtb_disjoint_from_image(dtb: (u64, u64), image: &[(u64, u64)]) -> bool {
+    let (base, size) = dtb;
+    if size == 0 {
+        return true;
+    }
+    let Some(end) = base.checked_add(size) else {
+        return false;
+    };
+    let mut i = 0;
+    while i < image.len() {
+        let (image_base, image_size) = image[i];
+        if image_size != 0 {
+            let Some(image_end) = image_base.checked_add(image_size) else {
+                return false;
+            };
+            if base < image_end && image_base < end {
+                return false;
+            }
+        }
+        i += 1;
+    }
+    true
 }
 
 /// **PR #892 review round 4**: [`boot_critical_ranges_mapped`] over the image's
@@ -1055,7 +1104,7 @@ fn boot_ranges_mapped_under(ram_top: u64, dtb_extent: Option<(u64, u64)>) -> boo
     // nothing, so the empty range is the honest encoding rather than a silent
     // pass — `boot_cacheable_range_in` accepts it by design.
     let dtb = dtb_extent.unwrap_or((0, 0));
-    boot_critical_ranges_mapped(ram_top, &[image[0], image[1], image[2], dtb])
+    boot_critical_ranges_mapped(ram_top, &[image[0], image[1], image[2], image[3], dtb])
 }
 
 /// **WS-SM SM1.C.1** (closes SMP-C2 MMU step): Per-core MMU enable
@@ -2066,6 +2115,42 @@ mod boot_map_tests {
             UNDESCRIBED_RAM_TOP,
             &[(0x8000_0000, 0x1_0000)]
         ));
+    }
+
+    /// **WS-BP BP2.1**: a device tree inside the image, its stacks or the
+    /// Lean heap arena is refused; one beside them is not.  The ranges are the
+    /// shape `link.ld` produces: the image, the two stack regions, then the
+    /// 64 MiB arena.
+    #[test]
+    fn a_device_tree_inside_the_image_or_the_arena_is_refused() {
+        let image = [
+            (0x8_0000u64, 0x1000u64),
+            (0x8_1000, 0x1_0000),
+            (0x9_1000, 0x3_0000),
+            (0xC_2000, 0x400_0000),
+        ];
+        let arena_end = 0xC_2000 + 0x400_0000;
+        // Beside every range, below and above, and touching the arena's end.
+        for dtb in [
+            (0x100u64, 0x2000u64),
+            (arena_end, 0x1_0000),
+            (0x2000_0000, 0x1_0000),
+        ] {
+            assert!(dtb_disjoint_from_image(dtb, &image), "{dtb:#x?}");
+        }
+        // Inside the arena, straddling its start, inside a stack, and one byte
+        // into the image.
+        for dtb in [
+            (0x100_0000u64, 0x1_0000u64),
+            (0xC_1000, 0x2000),
+            (0x9_2000, 0x40),
+            (0x7_F000, 0x1001),
+        ] {
+            assert!(!dtb_disjoint_from_image(dtb, &image), "{dtb:#x?}");
+        }
+        // No blob overlaps nothing; an overflowing range is refused.
+        assert!(dtb_disjoint_from_image((0, 0), &image));
+        assert!(!dtb_disjoint_from_image((u64::MAX - 4, 0x10), &image));
     }
 
     #[test]

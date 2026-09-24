@@ -78,8 +78,12 @@ threads carry an FP context (BP7.9).  **BP1 landed at v0.36.2 as well**: the
 kernel's Lean object code is built for the target as `libsele4n.a` from the
 elaborator's closure of `SeLe4n`, compiled freestanding and soft-float, with
 every unresolved symbol attributed to its provider and the kernel-entry gate
-deciding on both archives (the `Lean aarch64 Archive` CI lane).  BP2..BP8 have
-not started.
+deciding on both archives (the `Lean aarch64 Archive` CI lane).  **BP2.1** gave
+the Lean runtime its heap: one arena the linker script places (64 MiB, asserted
+to fit the smallest board) and an allocator in the HAL behind `lean.h`'s
+small-object API, whose state is all out of band so it never touches the memory
+it serves and refuses every invalid free.  The rest of BP2 and BP3..BP8 have not
+started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core
