@@ -780,11 +780,18 @@ theorem findFirstEmptySlot_none_iff
         have hEq : base.toNat + 1 + j = base.toNat + (j + 1) := by omega
         rw [hEq] at this; exact this
 
-/-- Local revoke helper for the current modeled slice.
+/-- The local same-TARGET sweep: keep the source slot, delete every other slot in
+this CNode that names the same capability target.
 
-This keeps the authority-bearing source slot while deleting sibling slots in the same CNode that
-name the same capability target. Full cross-CNode revoke requires an explicit derivation graph and
-is intentionally deferred.
+**This is not revocation**, and nothing on a syscall path runs it since `v0.36.1`
+(PR #900 review).  It predates the capability derivation tree: it was written when
+a target match was the only available stand-in for "derived from the source", and
+it keeps that meaning — so it also deletes an independently rooted capability to
+the same object and the source's own parent when the two share a CNode.  The
+derivation tree the old docstring deferred exists (`SystemState.cdt`), and
+`revokeCdtScaffold` destroys exactly the source's CDT descendants, which is
+seL4's `cteRevoke` (read at `13.0.0`).  What still calls this is the local
+`cspaceRevoke`, an internal operation.
 
 WS-G5/F-P03: Inherently O(m) (filter-by-target), uses `RHTable.filter`. -/
 def revokeTargetLocal (node : CNode) (sourceSlot : SeLe4n.Slot) (target : CapTarget) : CNode :=

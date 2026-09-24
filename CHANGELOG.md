@@ -1,3 +1,107 @@
+## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
+
+Two P1 findings from Codex's review of PR #900, both verified on the tree before
+fixing, both measured on the live operations and on a witness that computes the
+retired reading beside the live one.
+
+**The revocation syscall over-revoked, and it could make derivations
+unrevocable.**  `revokeCdtScaffold` — the one body behind all four revocation
+entry points, and since `v0.35.190` behind `seL4_CNode_Revoke` — opened with the
+local `cspaceRevoke`, whose `CNode.revokeTargetLocal` matches on the **target**:
+it deleted every capability in the source's CNode naming the same object, which
+reaches an independently rooted capability outside the source's subtree and the
+source's own **parent** when the two share a CNode.  And it stored the swept
+CNode without touching the CDT maps, so each swept slot's node went on mapping
+to an empty slot: a swept capability's own derivations then had no slot to be
+revoked from, and `cspaceDeleteSlot`'s refusal of a slot with children was
+bypassed on the way.  None of that is revocation.  seL4's `cteRevoke` (read at
+`13.0.0`) deletes exactly the slots `isMDBParentOf` the source and keeps the
+source; `invokeCNodeRevoke` is that call and nothing else.  The traversal
+already reaches every derivation in every CNode, the source's own included,
+because each live install path records its edge (`cspaceMintWithCdt`,
+`cspaceCopy`, `cspaceMove`, `mintReplyCapWithCdt`, `ipcTransferSingleCap`), so
+the prologue is now the source slot's *validation* and nothing more:
+`cspaceLookupSlot`, which refuses on exactly the states the sweep refused on and
+writes nothing.  A source slot with no CDT node is therefore revoked to the
+identity rather than to the sweep's state.  Five things changed with it.
+`revokeCdtScaffold_ok_decompose` concludes that the slot resolves and the state
+is unchanged or is the traversal and the sweep; `revokeCdtScaffold_ok_implies_slot_occupied`
+is new, and `cdtNodeIsRevocable_false_revoke_refuses` is stated over the scaffold
+rather than over the retired prologue; `cspaceRevokeCdtTransactional_requires_local_revoke_ok`
+is renamed `cspaceRevokeCdtTransactional_requires_source_slot` for what it now
+says; `cspaceRevoke_preserves_cdtNodeSlot` is deleted with a tombstone, having no
+consumer once no revocation path runs the sweep; and `cspaceRevoke` itself is
+back on `KernelTransitionReachabilityCensus`'s non-executed pin, since no seam
+reaches it.  Its remaining callers are the internal `lifecycleRevokeDeleteRetype`
+helper and the non-interference operation catalogue, where it is an operation in
+its own right, and its docstring now says it is not seL4's revoke.
+
+The witnesses are decisive in both directions.  `tests/OperationChainSuite.lean`'s
+SCN-CAP-REVOKE-INDEPENDENT-SIBLING (`revokeLeavesIndependentSibling`, which
+replaces the fixture that *demonstrated* the defect) drives all four entry
+points and asserts that the revoked slot and an independent same-target sibling
+survive, that the sibling's node stays revocable, and that the sibling's parked
+transfer still lands and adds its edge; beside it the retired sweep empties the
+sibling, leaves its mapping and makes the install guard decline.
+`tests/SyscallDispatchSuite.lean` SD-059 gains a same-CNode derivation and an
+independent sibling, and asserts that the live arm removes the first, keeps the
+second, and that the local-only reading destroys the sibling.
+
+**Security note (my estimate: Medium).**  Reachable by any thread holding a
+`.write` CNode capability to a CNode that holds a derived capability beside
+another capability to the same object.  No authority is gained, but the sweep
+bypassed the delete-with-children refusal and left CDT nodes naming empty slots,
+so derivations of a swept capability — another component's badged copies, for
+one — could no longer be revoked by anyone: the grantor permanently lost the
+ability to withdraw authority it had granted.  Introduced in this PR at
+`v0.35.190`, the first ABI path to revocation; `main` never had a revocation
+syscall, so no released version carried it.
+
+**A bind placed a parked thread on a reservation with no budget.**  Cut B2's arm
+(`v0.35.182`) placed a parked runnable thread whatever its reservation's budget.
+A reservation exhausted mid-period, then unbound — which keeps
+`budgetRemaining = 0` and `sc.replenishments` and purges the per-core
+replenish-queue entry that would have refilled it — and rebound to a parked
+thread therefore put that thread on a run queue the selector skips forever.
+`budgetPositiveOnCore` was false on the post-state and the bind reported
+success.  `bindPlacesParkedThread` has a fourth conjunct,
+`sc.budgetRemaining.isPositive` of the reservation being bound.  That is the
+selector's own reading (`bindPlacesParkedThread_budget_eq_hasSufficientBudget`:
+`hasSufficientBudget` of a bound thread *is* it) and seL4-MCS's, where
+`isSchedulable` requires an active context and `schedContext_resume` postpones a
+thread whose refill is not ready (both read at `13.0.0`).  The guard takes the
+reservation as an argument, so every asker — the bind, its four refusal lemmas,
+the congruence the transition relies on, and the frozen mirror
+`frozenBindPlacesParkedThread` through `frozenWriteTcbBoundPlaced` — reads the
+same record.  `schedContextBind_leaves_unplaced_of_exhausted` is the payoff: a
+thread the bind finds on no scheduler slot stays on none when the reservation's
+budget is zero.  `tests/SmpCancellationSuite.lean` §3.26c drives the reported
+sequence through the live operations — unbind of an exhausted reservation, then
+a bind of the parked holder — and `tests/FrozenOpsSuite.lean` FO-050 (3) does
+the same on both surfaces, each computing the retired three-conjunct guard
+beside the live one, with the budgeted reservation as the control.
+
+Against `main` the gated bind is a strict improvement, since `main`'s bind
+placed no parked thread at all, so no sequence regresses.  What it does not do
+is seL4's `postpone`, and the class that leaves open is **registered rather than
+widened into this cut** (`docs/REGISTERED_DEBT.md` table C, owner WS-CB): the
+unbind drops the refill trigger and nothing re-derives it, so the same
+trigger-less state is reachable through the bind's re-bucket arm, a `.tcbResume`
+of a bound suspended thread, and a configure that places nothing where upstream's
+`invokeSchedControl_ConfigureFlags` places a runnable bound thread — all
+inherited from `main`, and all confined to a thread its own manager controls.
+**Security note: Low** — availability of the caller's own thread only, since a
+bind needs the reservation's capability and, since `v0.35.204`, a writable TCB
+capability to the thread.
+
+Documentation follows the code: the spec's §8.11.1 and GitBook chapter 12 state
+the descendant-only revoke, §8.12.4 the bind's placement and its budget gate, and
+CLAUDE.md / AGENTS.md record both in the sections that already carried the
+retired readings.  Tier 3 anchors pin the scaffold's new prologue and refuse the
+old one, pin the fourth conjunct inside each guard by name, and refuse the
+retired guard outside the witness that refutes it; every new negative was
+mutation-tested by restoring the relation it forbids.
+
 ## v0.36.0 — The minor bump: WS-RR is closed and audited, and the one proof the audit called brittle is deterministic
 
 **Why a minor version.**  Every cut since `v0.35.55` has been WS-RR RR8 or the

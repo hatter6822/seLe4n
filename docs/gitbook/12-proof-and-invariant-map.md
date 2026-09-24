@@ -100,7 +100,11 @@ Since `v0.35.190` (WS-RR RR8.16) a thread can actually *reach* that machinery:
 `seL4_CNode_Revoke` has a dispatch arm (`SyscallId.cspaceRevoke`), which routes
 `cspaceRevokeCdt` — the variant that walks the derivation tree across arbitrary
 CSpaces, not the local `cspaceRevoke` that reaches only the invoked CNode.
-Before it, the whole family was verified and unreachable.  The arm carries the
+Before it, the whole family was verified and unreachable.  Since `v0.36.1` the
+walk is also all the revocation does: the shared scaffold no longer opens with
+the local same-target sweep, which had destroyed capabilities the source never
+derived, so a revocation destroys exactly the source's CDT descendants — seL4's
+`cteRevoke` — as the canonical spec's §8.11.1 records.  The arm carries the
 capability-only dispatch payoff (`cspaceRevokeCdt_preserves_ipcInvariantFull`),
 whose scaffold and fold arguments are stated **predicate-free** beside their
 definitions (`revokeCdtScaffold_ok_decompose`, `revokeCdtFold_induct`) so this

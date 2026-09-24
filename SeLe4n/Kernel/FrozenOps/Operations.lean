@@ -1504,7 +1504,7 @@ def frozenSchedContextBind (scId : SeLe4n.ObjId) (threadId : SeLe4n.ThreadId)
               -- priority writes, and a priority write must not make a parked
               -- thread schedulable — only a bind, which hands it a reservation,
               -- may.
-              match frozenWriteTcbBoundPlaced st1 threadId updatedTcb with
+              match frozenWriteTcbBoundPlaced st1 threadId updatedTcb sc with
               | .ok st2 => .ok ((), st2)
               | .error e => .error e
             | .error e => .error e

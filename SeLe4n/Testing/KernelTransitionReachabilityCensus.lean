@@ -956,7 +956,17 @@ to *in-kernel* callers that want a structured failure report or an
 variant because a userspace invocation has no channel to receive a report
 through.  A variant with no in-kernel caller either gains one or is retired;
 that is a smaller question than the one the register row asked, and it is what
-the row was closed down to. -/
+the row was closed down to.
+
+**And the local `cspaceRevoke` is back on this list since `v0.36.1`** (PR #900
+review), for the opposite reason from the variants: it was in the live closure
+only as `revokeCdtScaffold`'s prologue, and that prologue is a read of the source
+slot now, because the local sweep matched on the **target** and so destroyed
+capabilities that were not derivations — an independently rooted capability to
+the same object, and the revoked capability's own parent.  What still runs it is
+`lifecycleRevokeDeleteRetype`, an internal proof helper already on this list, and
+the non-interference operation catalogue, where it is an operation in its own
+right; no syscall reaches it. -/
 def nonExecutedTransitionsPlain : List Name :=
   [ `SeLe4n.Kernel.Architecture.TlbCacheJointState.empty
   , `SeLe4n.Kernel.Architecture.TlbCacheJointState.pageTableUpdate
@@ -1065,6 +1075,7 @@ def nonExecutedTransitionsPlain : List Name :=
   , `SeLe4n.Kernel.cspaceLookupPath
   , `SeLe4n.Kernel.cspaceMutate
   , `SeLe4n.Kernel.cspaceResolvePath
+  , `SeLe4n.Kernel.cspaceRevoke
   , `SeLe4n.Kernel.cspaceRevokeCdtStreaming
   , `SeLe4n.Kernel.cspaceRevokeCdtStrict
   , `SeLe4n.Kernel.cspaceRevokeCdtTransactional

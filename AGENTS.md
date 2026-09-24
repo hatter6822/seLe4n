@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.0.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.1.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -222,14 +222,14 @@ To find files that need pagination today, run:
 ```
 
 **Known large files** (read in ≤500-line chunks, threshold ~800 lines):
-- `CHANGELOG.md` (~81058 lines)
+- `CHANGELOG.md` (~81487 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/DualQueueMembership.lean` (~23845 lines)
 - `tests/SmpInformationFlowSuite.lean` (~12507 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/RwLock.lean` (~9581 lines)
-- `SeLe4n/Kernel/API.lean` (~9013 lines)
+- `SeLe4n/Kernel/API.lean` (~9220 lines)
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
-- `docs/spec/SELE4N_SPEC.md` (~7313 lines)
+- `docs/spec/SELE4N_SPEC.md` (~7358 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Model/State.lean` (~6153 lines)
 - `SeLe4n/Platform/Boot.lean` (~6000 lines)
@@ -256,28 +256,28 @@ To find files that need pagination today, run:
 - `docs/audits/AUDIT_v0.30.11_WORKSTREAM_PLAN.md` (~3388 lines)
 - `tests/SmpTlbShootdownSuite.lean` (~3354 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/CancellationReplyShape.lean` (~3328 lines)
-- `tests/OperationChainSuite.lean` (~3289 lines)
+- `tests/OperationChainSuite.lean` (~3320 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean` (~3281 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreTimerTick.lean` (~3275 lines)
-- `SeLe4n/Model/Object/Structures.lean` (~3253 lines)
+- `SeLe4n/Model/Object/Structures.lean` (~3260 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Transport.lean` (~3249 lines)
-- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3199 lines)
-- `tests/FrozenOpsSuite.lean` (~3142 lines)
+- `SeLe4n/Kernel/IPC/Invariant/DispatchPayoff.lean` (~3188 lines)
+- `tests/FrozenOpsSuite.lean` (~3180 lines)
 - `docs/dev_history/audits/AUDIT_v0.12.15_WORKSTREAM_PLAN.md` (~3140 lines)
 - `docs/dev_history/audits/AUDIT_v0.15.10_SYSCALL_COMPLETION_WORKSTREAM_PLAN.md` (~3134 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferencePerCore.lean` (~3087 lines)
 - `SeLe4n/Model/Object/Types.lean` (~3021 lines)
+- `tests/SmpCancellationSuite.lean` (~2988 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCallInvariant.lean` (~2934 lines)
-- `tests/SmpCancellationSuite.lean` (~2904 lines)
+- `SeLe4n/Kernel/Capability/Operations.lean` (~2909 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/StoreObjectFrame.lean` (~2833 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/Core.lean` (~2820 lines)
-- `SeLe4n/Kernel/Capability/Operations.lean` (~2815 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Structural/PerOperation.lean` (~2778 lines)
 - `SeLe4n/Kernel/SyscallSchedFootprint.lean` (~2749 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointCall.lean` (~2714 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreTlbModel.lean` (~2639 lines)
 - `SeLe4n/Kernel/InformationFlow/DeclassifiedSignal.lean` (~2637 lines)
-- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2605 lines)
+- `docs/planning/HIERARCHICAL_CBS_PLAN.md` (~2606 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreChooseThread.lean` (~2604 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdownProtocol.lean` (~2602 lines)
 - `SeLe4n/Kernel/Architecture/TlbShootdown.lean` (~2562 lines)
@@ -300,6 +300,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Prelude.lean` (~2187 lines)
 - `SeLe4n/Kernel/Lifecycle/Invariant/SuspendPreservation.lean` (~2176 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueMembership.lean` (~2115 lines)
+- `tests/SyscallDispatchSuite.lean` (~2112 lines)
 - `SeLe4n/Kernel/Lifecycle/Suspend.lean` (~2086 lines)
 - `tests/Ak9PlatformSuite.lean` (~2079 lines)
 - `SeLe4n/Kernel/InformationFlow/Policy.lean` (~2066 lines)
@@ -310,7 +311,6 @@ To find files that need pagination today, run:
 - `docs/planning/UNFINISHED_SMP_WORK.md` (~2018 lines)
 - `SeLe4n/Kernel/FrozenOps/Operations.lean` (~1996 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyInvariant.lean` (~1979 lines)
-- `tests/SyscallDispatchSuite.lean` (~1976 lines)
 - `SeLe4n/Kernel/Architecture/PerCoreCacheModel.lean` (~1967 lines)
 - `docs/dev_history/planning/V3_PROOF_CHAIN_HARDENING_E_G6_PLAN.md` (~1966 lines)
 - `SeLe4n/Kernel/IPC/DualQueue/Core.lean` (~1962 lines)
@@ -326,7 +326,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/Serializability.lean` (~1878 lines)
 - `tests/FaultHandlingSuite.lean` (~1839 lines)
 - `SeLe4n/Kernel/InformationFlow/CovertChannelPerCore.lean` (~1834 lines)
-- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1822 lines)
+- `SeLe4n/Kernel/Architecture/SyscallArgDecode.lean` (~1832 lines)
 - `SeLe4n/Model/FreezeProofs.lean` (~1819 lines)
 - `SeLe4n/Kernel/InformationFlow/Invariant/Composition.lean` (~1815 lines)
 - `docs/dev_history/audits/AUDIT_v0.27.6_WORKSTREAM_PLAN.md` (~1801 lines)
@@ -338,13 +338,13 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Concurrency/Locks/RwLockRefinement.lean` (~1702 lines)
 - `SeLe4n/Kernel/Architecture/SyscallReturn.lean` (~1695 lines)
 - `docs/dev_history/AUDIT_v0.22.10_WORKSTREAM_PLAN.md` (~1674 lines)
-- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1650 lines)
+- `SeLe4n/Kernel/FrozenOps/Core.lean` (~1656 lines)
 - `tests/SmpCrossCoreCallSuite.lean` (~1632 lines)
 - `tests/PriorityManagementSuite.lean` (~1605 lines)
 - `tests/SmpSurfaceAnchors.lean` (~1600 lines)
 - `SeLe4n/Kernel/IPC/Invariant/LookupCongruence.lean` (~1593 lines)
-- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1542 lines)
-- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1518 lines)
+- `SeLe4n/Testing/KernelTransitionReachabilityCensus.lean` (~1553 lines)
+- `docs/planning/SMP_RELEASE_READINESS_PLAN.md` (~1521 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatch.lean` (~1511 lines)
 - `docs/dev_history/audits/AUDIT_v0.28.0_WORKSTREAM_PLAN.md` (~1480 lines)
 - `docs/dev_history/planning/V3B_LOAD_FACTOR_BOUNDED_MIGRATION_PLAN.md` (~1457 lines)
@@ -377,6 +377,7 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/Capability/Invariant/Defs.lean` (~1242 lines)
 - `SeLe4n/Kernel/Scheduler/Operations/PerCoreDomain.lean` (~1241 lines)
 - `SeLe4n/Testing/ReplyStackWriteCensus.lean` (~1240 lines)
+- `SeLe4n/Kernel/SchedContext/Operations.lean` (~1210 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/EndpointReplyDispatchInvariant.lean` (~1207 lines)
 - `SeLe4n/Kernel/Scheduler/Invariant/PerCorePreservation.lean` (~1200 lines)
 - `docs/dev_history/audits/AUDIT_v0.14.9_IMPROVEMENT_WORKSTREAM_PLAN.md` (~1178 lines)
@@ -398,7 +399,6 @@ To find files that need pagination today, run:
 - `tests/PerObjectLockSuite.lean` (~1104 lines)
 - `SeLe4n/Kernel/IPC/CrossCore/CancellationNI.lean` (~1099 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet.lean` (~1084 lines)
-- `SeLe4n/Kernel/SchedContext/Operations.lean` (~1078 lines)
 - `docs/dev_history/audits/AUDIT_COMPREHENSIVE_v0.18.7_PRE_BENCHMARK.md` (~1071 lines)
 - `SeLe4n/Kernel/IPC/Invariant/CancellationBundle.lean` (~1068 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetHeld.lean` (~1063 lines)
@@ -427,7 +427,7 @@ To find files that need pagination today, run:
 - `docs/dev_history/audits/AUDIT_H3_HARDWARE_BINDING_v0.25.27.md` (~911 lines)
 - `tests/SuspendResumeSuite.lean` (~910 lines)
 - `docs/dev_history/audits/AUDIT_v0.25.10_WORKSTREAM_PLAN.md` (~909 lines)
-- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~899 lines)
+- `docs/planning/SMP_RELEASE_CLOSURE_PLAN.md` (~900 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSet2PL.lean` (~897 lines)
 - `SeLe4n/Kernel/IPC/Invariant/NotificationPreservation/Signal.lean` (~891 lines)
 - `docs/dev_history/planning/WS_Z_COMPOSABLE_PERFORMANCE_OBJECTS.md` (~884 lines)
@@ -438,12 +438,12 @@ To find files that need pagination today, run:
 - `tests/An10CascadeSuite.lean` (~866 lines)
 - `SeLe4n/Kernel/Capability/Invariant/Authority.lean` (~861 lines)
 - `docs/dev_history/audits/KERNEL_PERFORMANCE_WORKSTREAM_PLAN.md` (~859 lines)
+- `docs/REGISTERED_DEBT.md` (~849 lines)
 - `docs/planning/SMP_FINE_LOCK_MIGRATION_PLAN.md` (~841 lines)
-- `docs/gitbook/12-proof-and-invariant-map.md` (~836 lines)
+- `docs/gitbook/12-proof-and-invariant-map.md` (~840 lines)
 - `tests/DecodingSuite.lean` (~835 lines)
 - `SeLe4n/Kernel/InformationFlow/Enforcement/Wrappers.lean` (~825 lines)
 - `SeLe4n/Kernel/Lifecycle/Operations/ScrubAndUntyped.lean` (~824 lines)
-- `docs/REGISTERED_DEBT.md` (~822 lines)
 - `tests/WithLockSetSuite.lean` (~820 lines)
 - `docs/dev_history/audits/WS_RC_R4_CLOSEOUT_PLAN.md` (~818 lines)
 - `SeLe4n/Kernel/IPC/Invariant/QueueNoDup.lean` (~812 lines)
@@ -8106,14 +8106,30 @@ code may assume:
   code must respect.
 
   (1) **It dispatches `cspaceRevokeCdt`, and that is its whole security
-  content.**  The local `cspaceRevoke` the scaffold opens with reaches only the
-  *containing* CNode, so a derived capability copied into any other CSpace
-  survives it; the CDT walk follows the derivation tree across arbitrary CNodes.
+  content.**  The local `cspaceRevoke` reaches only the *containing* CNode, so a
+  derived capability copied into any other CSpace survives it; the CDT walk
+  follows the derivation tree across arbitrary CNodes.
   `tests/SyscallDispatchSuite.lean` SD-059 computes the local-only reading beside
   the live arm on a state whose derivation lives in a **second** CNode — spelled
   in the suite and nowhere else — so its assertions are known to discriminate,
   and a mutation of the arm to the local variant fails exactly the one that names
-  the claim.
+  the claim.  **And since `v0.36.1` no entry point opens with that local sweep**
+  (PR #900 review).  It matches on the **target**, so as `revokeCdtScaffold`'s
+  prologue it destroyed an independently rooted capability to the same object
+  and the source's own parent in the same CNode, and left their CDT nodes mapped
+  to emptied slots — which made *their* derivations unrevocable by anyone, since
+  every revocation begins with a lookup of its slot.  The prologue is a read of
+  the source slot now (`cspaceLookupSlot`: the same refusal set, no writes), so
+  every entry point destroys exactly the source's CDT descendants, in every
+  CNode, which is seL4's `cteRevoke` (read at `13.0.0`).  Every live install path
+  records its edge, which is what makes dropping the sweep safe in the direction
+  that matters: SD-059 asserts a same-CNode derivation is still destroyed and an
+  independent sibling is not, and `tests/OperationChainSuite.lean`'s
+  `revokeLeavesIndependentSibling` is PR #873 round 18's scenario inverted, at
+  all four entry points, with the retired sweep computed beside it.  The local
+  `cspaceRevoke` stays an operation — `lifecycleRevokeDeleteRetype` runs it and
+  the non-interference catalogue carries it — and is recorded in the
+  reachability census as reaching no syscall.
 
   (2) **The source slot survives, and that is what makes the delete's refusal
   dischargeable.**  Revocation destroys a capability's derivations, not the
@@ -8141,8 +8157,8 @@ code may assume:
   (4) **The scaffold's case analysis and the traversal's induction are
   predicate-free and live beside their definitions.**
   `revokeCdtScaffold_ok_decompose` says what a successful revocation *consists
-  of* (local revoke, then the traversal and the sweep, or the local revoke's own
-  state), and `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`
+  of* (the source slot resolves, then the traversal and the sweep, or the state
+  unchanged), and `revokeCdtFold_induct` / `revokeCdtMaterializedTraversal_ok_induct`
   carry any `P` through the fold — so the capability bundle's argument and the
   IPC bundle's are **one** answer.  Each was the capability bundle's alone,
   spelled inside its preservation module; a second copy per predicate is the
@@ -9117,13 +9133,14 @@ code may assume:
   thread on its home core, which is seL4-MCS's `schedContext_bindTCB` tail
   (`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); rescheduleRequired(); }`, read
   at `13.0.0`) and which this kernel did not do — it re-bucketed only a thread
-  already queued, so what the reclaim parked stayed parked.  Three things new
-  code must respect.  (a) **The guard is `bindPlacesParkedThread`**, three
-  conjuncts excluding a placed thread, a thread blocked in IPC and a suspended
-  one, and its third reads the **stored** `threadState` rather than
-  `inferThreadState` — which answers `.Inactive` for *any* unplaced, unblocked
-  thread, so the inferred reading would refuse exactly the parked shape the
-  guard exists to admit.  (b) **The declared footprint did not move**: its run
+  already queued, so what the reclaim parked stayed parked.  Four things new
+  code must respect.  (a) **The guard is `bindPlacesParkedThread`**, four
+  conjuncts excluding a placed thread, a thread blocked in IPC, a suspended one
+  and — since `v0.36.1`, (d) below — a reservation with no budget left, and its
+  third reads the **stored** `threadState` rather than `inferThreadState` —
+  which answers `.Inactive` for *any* unplaced, unblocked thread, so the
+  inferred reading would refuse exactly the parked shape the guard exists to
+  admit.  (b) **The declared footprint did not move**: its run
   segment was already the bound thread's home core, which is the core the
   placement inserts on — a declaration written for the *operation* rather than
   for the branch it happened to take is what makes a behavioural widening free,
@@ -9133,7 +9150,27 @@ code may assume:
   (`frozenWriteTcbBoundPlaced`), never by widening `frozenWriteTcbRebucketed`:
   that one's other callers are priority writes, and a priority write must not
   make a parked thread schedulable — only a bind, which hands the thread a
-  reservation, may.
+  reservation, may.  (d) **A bind places a thread only on a reservation that can
+  run it** (PR #900 review, `v0.36.1`).  The fourth conjunct is
+  `sc.budgetRemaining.isPositive` of the reservation being bound, which is the
+  selector's own reading — `hasSufficientBudget` of a bound thread *is* that
+  (`bindPlacesParkedThread_budget_eq_hasSufficientBudget`) — and seL4-MCS's:
+  `isSchedulable` requires an active context and `schedContext_resume` postpones
+  a thread whose refill is not ready, both read at `13.0.0`.  Without it a
+  reservation exhausted mid-period, then unbound — which keeps `budgetRemaining`
+  and purges the per-core replenish entry — and rebound to a parked thread put
+  that thread on a run queue the selector skips forever, since nothing is left
+  to refill it; `budgetPositiveOnCore` was false on the bind's post-state and
+  the bind reported success.  With it the thread stays parked
+  (`schedContextBind_leaves_unplaced_of_exhausted`), and the frozen mirror
+  (`frozenBindPlacesParkedThread`) carries the same conjunct.  **What it does
+  not do is postpone**: seL4 re-derives the refill trigger at every
+  `schedContext_resume`, and this kernel re-derives it nowhere, so the parked
+  thread waits for its manager (unbind, configure, rebind), and the same
+  trigger-less state is reachable through the re-bucket arm, a resume of a
+  bound thread and a configure that places nothing — all inherited from `main`,
+  registered in `docs/REGISTERED_DEBT.md` table C, owner WS-CB.  New code must
+  not read a successful bind as evidence that the thread will run.
 
   **One instance of the class remains**, measured by the post-merge audit
   (`v0.35.156`): a plain-`Send` rendezvous is decided by the two readings on two

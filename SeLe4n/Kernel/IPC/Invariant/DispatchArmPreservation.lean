@@ -1258,21 +1258,21 @@ theorem revokeCdtScaffold_preserves_ipcInvariantFull {ρ : Type}
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)
     (hStep : revokeCdtScaffold emptyReport traverse addr st = .ok (r, st')) :
     ipcInvariantFull st' ∧ st'.objects.invExt := by
-  obtain ⟨stLocal, hRevoke, hRest⟩ :=
+  -- Since `v0.36.1` the scaffold's first step is a read of the source slot, so
+  -- the walk starts from `st` itself and there is no local-revoke leg to carry.
+  obtain ⟨_, hRest⟩ :=
     revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
-  obtain ⟨_, _, _, _, _, _, hExtL⟩ := cspaceRevoke_shape st stLocal addr hObjInv hRevoke
-  have hLocal := cspaceRevoke_preserves_ipcInvariantFull st stLocal addr hObjInv hInv hRevoke
   rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
-  · exact ⟨hLocal, hExtL⟩
-  · obtain ⟨hOut, hOutExt⟩ := hTraverse stLocal rootNode _ out hLocal hExtL hTrav
+  · exact ⟨hInv, hObjInv⟩
+  · obtain ⟨hOut, hOutExt⟩ := hTraverse st rootNode _ out hInv hObjInv hTrav
     exact ⟨revokePendingTransfersFrom_preserves_ipcInvariantFull _ _ hOutExt hOut,
       (revokePendingTransfersFrom_frame _ _ hOutExt).1⟩
 
 /-- `.cspaceRevoke`: `seL4_CNode_Revoke` preserves the whole bundle.
 
-The arm the dispatcher routes — local revoke, the materialized descendant walk,
-and the in-flight sweep — with every step's obligation discharged by the theorem
-that owns it. -/
+The arm the dispatcher routes — a read of the source slot, the materialized
+descendant walk, and the in-flight sweep — with every step's obligation
+discharged by the theorem that owns it. -/
 theorem cspaceRevokeCdt_preserves_ipcInvariantFull
     (st st' : SystemState) (addr : CSpaceAddr)
     (hObjInv : st.objects.invExt) (hInv : ipcInvariantFull st)

@@ -2591,13 +2591,16 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   | none => expect "FO-050 setup: the parked thread resolves" false
   | some t =>
     expect "FO-050: the live placement guard admits it"
-      (SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t)
+      (SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t scFree)
     expect "FO-050 NEGATIVE: ...and refuses it once BLOCKED"
       (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
-        { t with ipcState := .blockedOnReceive diffEpId })
+        { t with ipcState := .blockedOnReceive diffEpId } scFree)
     expect "FO-050 NEGATIVE: ...and once SUSPENDED"
       (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA
-        { t with threadState := .Inactive })
+        { t with threadState := .Inactive } scFree)
+    expect "FO-050 NEGATIVE: ...and on a reservation with NO BUDGET (PR #900 review)"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stParked diffA t
+        { scFree with budgetRemaining := ⟨0⟩ })
   match liveSchedContextBindState stParked diffScId diffA with
   | none => expect "FO-050: the live bind succeeds on the parked thread" false
   | some stBound =>
@@ -2609,7 +2612,7 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
   | none => expect "FO-050 setup: the frozen store holds the parked thread" false
   | some ft =>
     expect "FO-050: the FROZEN placement guard admits it, and the retired reading does not place"
-      (SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread fz diffA ft
+      (SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread fz diffA ft scFree
         && !SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fz diffA)
   match frozenSchedContextBind diffScId.toObjId diffA fz with
   | .error e => expect s!"FO-050: the frozen bind succeeds (error: {reprStr e})" false
@@ -2634,6 +2637,41 @@ private def differentialSchedContextBindPlacesParked : IO Unit := do
             schedContextBinding := SeLe4n.Kernel.SchedContextBinding.bound diffScId } with
        | .ok fzR => SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzR diffA
        | .error _ => false)
+  -- (3) PR #900 review (`v0.36.1`): the SAME parked thread on an EXHAUSTED
+  -- reservation is placed by NEITHER surface.  Cut B2's guard admitted it whatever
+  -- the budget, so it landed on a run queue the selector skips it on; the fourth
+  -- conjunct is the selector's own reading, and the frozen mirror carries it
+  -- clause for clause.  The RETIRED three-conjunct guard is computed beside it.
+  let scSpent : SeLe4n.Kernel.SchedContext := { scFree with budgetRemaining := ⟨0⟩ }
+  let istSpent := diffAddSchedContext
+    (Builder.createObject (diffAddTcb mkEmptyIntermediateState (diffTcb 63))
+      parkedTcb.tid.toObjId (.tcb parkedTcb) (fun _ h => nomatch h) (fun _ h => nomatch h))
+    diffScId scSpent
+  let stSpent := istSpent.state
+  match stSpent.getTcb? diffA with
+  | none => expect "FO-050 (3) setup: the parked thread resolves" false
+  | some t =>
+    expect "FO-050 (3) NEGATIVE: the RETIRED three-conjunct guard admits the spent reservation"
+      ((SeLe4n.Kernel.placedCoreOf? stSpent diffA).isNone && t.ipcState == .ready
+        && t.threadState != SeLe4n.Model.ThreadState.Inactive)
+    expect "FO-050 (3): the live guard refuses it"
+      (!SeLe4n.Kernel.SchedContextOps.bindPlacesParkedThread stSpent diffA t scSpent)
+  match liveSchedContextBindState stSpent diffScId diffA with
+  | none => expect "FO-050 (3): the live bind of the spent reservation succeeds" false
+  | some stBound =>
+    expect "FO-050 (3): the live bind leaves the thread on NO scheduler slot"
+      (SeLe4n.Kernel.placedCoreOf? stBound diffA == none)
+  let fzSpent := freeze istSpent
+  match fzSpent.getTcb? diffA with
+  | none => expect "FO-050 (3) setup: the frozen store holds the parked thread" false
+  | some ft =>
+    expect "FO-050 (3): the FROZEN guard refuses it too"
+      (!SeLe4n.Kernel.FrozenOps.frozenBindPlacesParkedThread fzSpent diffA ft scSpent)
+  match frozenSchedContextBind diffScId.toObjId diffA fzSpent with
+  | .error e => expect s!"FO-050 (3): the frozen bind succeeds (error: {reprStr e})" false
+  | .ok (_, fzBound) =>
+    expect "FO-050 (3): the frozen bind leaves it in NO bucket"
+      (!SeLe4n.Kernel.FrozenOps.frozenQueuedAnywhere fzBound diffA)
 
 /-- FO-047c: the three refusals the frozen bind did not carry.
 

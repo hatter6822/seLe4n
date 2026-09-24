@@ -555,7 +555,7 @@ so it stops running on nobody's budget, and names *"its own manager recovers it 
 or a `schedContextBind` once that arm places a parked thread"* as the recovery.
 That recovery was closed.  This predicate is what opens it.
 
-Three conjuncts, and each excludes a thread a bind must **not** place:
+Four conjuncts, and each excludes a thread a bind must **not** place:
 
 * `placedCoreOf? st tid = none` — a thread already queued is re-bucketed by the
   step below, and one that is **current** on some core is running, so enqueuing
@@ -567,7 +567,25 @@ Three conjuncts, and each excludes a thread a bind must **not** place:
   is outstanding, which is `queueHeadBlockedConsistent`'s negation;
 * `tcb.threadState ≠ .Inactive` — a suspended thread is recovered by
   `.tcbResume`, which demands exactly that flag, so a bind that placed one would
-  resurrect a thread its own manager suspended.
+  resurrect a thread its own manager suspended;
+* `sc.budgetRemaining.isPositive` — the reservation being bound can run the
+  thread **now** (PR #900 review, `v0.36.1`).  This is the selector's own reading:
+  for a bound thread `hasSufficientBudget` is exactly `budgetRemaining.isPositive`
+  of its reservation (`bindPlacesParkedThread_budget_eq_hasSufficientBudget`), so
+  a thread this guard admits is one `chooseBestRunnableEffective` does not skip
+  for budget.  Without it, binding an **exhausted** reservation — reachable by
+  unbinding one mid-period, which preserves `budgetRemaining = 0` and purges its
+  replenishment entry — placed the thread on a run queue it could never be chosen
+  from, with no refill ever due to change that, and the bind reported success.
+  seL4-MCS refuses the same placement: `schedContext_bindTCB` runs
+  `schedContext_resume`, which **postpones** a thread whose head refill is not
+  ready and sufficient into the release queue, and `isSchedulable` is false of a
+  thread in the release queue, so the `SCHED_ENQUEUE` above does not fire (read at
+  `13.0.0`).  What this kernel does not yet do is the postponement itself — the
+  thread is left parked rather than scheduled to wake at the refill, because the
+  unbind discarded the refill trigger — and that half is registered debt
+  (`docs/REGISTERED_DEBT.md` table C, owner WS-CB, whose plan moves refills into
+  the reservation where a release-queue analogue has a home).
 
 The third conjunct reads the **stored** flag and deliberately not
 `inferThreadState`, which answers `.Inactive` for *any* thread that is unplaced
@@ -580,43 +598,70 @@ the live parked holder (`tests/SmpCancellationSuite.lean` §3.26b).
 Stated as a definition rather than inline because the footprint, the step and
 the witness all have to ask the *same* question, and because a conjunct added to
 it must reach every asker. -/
-def bindPlacesParkedThread (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB) : Bool :=
+def bindPlacesParkedThread (st : SystemState) (tid : SeLe4n.ThreadId) (tcb : TCB)
+    (sc : SchedContext) : Bool :=
   (placedCoreOf? st tid).isNone && tcb.ipcState == .ready
     && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
+    && sc.budgetRemaining.isPositive
 
 /-- **Cut B2**: a thread already placed is not placed again — the re-bucket arm's
 subject, and the conjunct that keeps a running thread off a run queue. -/
 @[simp] theorem bindPlacesParkedThread_of_placed (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (c : Concurrency.CoreId) (h : placedCoreOf? st tid = some c) :
-    bindPlacesParkedThread st tid tcb = false := by
+    (tcb : TCB) (sc : SchedContext) (c : Concurrency.CoreId)
+    (h : placedCoreOf? st tid = some c) :
+    bindPlacesParkedThread st tid tcb sc = false := by
   unfold bindPlacesParkedThread
   rw [h]
   simp
 
 /-- **Cut B2**: nor is a thread blocked in IPC. -/
 @[simp] theorem bindPlacesParkedThread_of_blocked (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (h : tcb.ipcState ≠ .ready) :
-    bindPlacesParkedThread st tid tcb = false := by
+    (tcb : TCB) (sc : SchedContext) (h : tcb.ipcState ≠ .ready) :
+    bindPlacesParkedThread st tid tcb sc = false := by
   unfold bindPlacesParkedThread
   simp [h]
 
 /-- **Cut B2**: nor a suspended one. -/
 @[simp] theorem bindPlacesParkedThread_of_inactive (st : SystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (h : tcb.threadState = SeLe4n.Model.ThreadState.Inactive) :
-    bindPlacesParkedThread st tid tcb = false := by
+    (tcb : TCB) (sc : SchedContext) (h : tcb.threadState = SeLe4n.Model.ThreadState.Inactive) :
+    bindPlacesParkedThread st tid tcb sc = false := by
   unfold bindPlacesParkedThread
   simp [h]
 
-/-- **Cut B2**: the guard reads only the SCHEDULER and two TCB fields, so it is
-insensitive to the bind's own object writes.
+/-- **PR #900 review (`v0.36.1`)**: nor a thread whose reservation has no budget
+left — it would sit on a run queue the selector skips it on, with nothing due to
+refill it. -/
+@[simp] theorem bindPlacesParkedThread_of_exhausted (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) (sc : SchedContext) (h : sc.budgetRemaining.isPositive = false) :
+    bindPlacesParkedThread st tid tcb sc = false := by
+  unfold bindPlacesParkedThread
+  simp [h]
+
+/-- **The budget conjunct IS the selector's question.**  For a thread bound to a
+reservation the store holds, `hasSufficientBudget` answers exactly
+`budgetRemaining.isPositive` of that reservation — so the guard and
+`chooseBestRunnableEffective`'s budget filter cannot disagree about which thread
+a bind may place; a Tier 3 anchor pins the conjunct's spelling in the guard. -/
+theorem bindPlacesParkedThread_budget_eq_hasSufficientBudget (st : SystemState) (tcb : TCB)
+    (scId : SeLe4n.SchedContextId) (sc : SchedContext)
+    (hBind : tcb.schedContextBinding = .bound scId) (hSc : st.getSchedContext? scId = some sc) :
+    hasSufficientBudget st tcb = sc.budgetRemaining.isPositive := by
+  simp [hasSufficientBudget, hBind, hSc]
+
+/-- **Cut B2**: the guard reads only the SCHEDULER, two fields of the TCB it is
+handed and the budget of the reservation it is handed, so it is insensitive to
+the bind's own object writes.
 
 Which is what lets the transition evaluate it at its intermediate state and a
 caller check it at the pre-state: the bind rewrites a SchedContext and the
-thread's `schedContextBinding` / `priority`, and none of the three conjuncts
-reads any of them. -/
+thread's `schedContextBinding` / `priority`, and none of the four conjuncts reads
+any of them.  The fourth reads `sc` — the record the bind resolved before either
+write, an *argument* rather than a store lookup — and the bind's own rewrite of
+that SchedContext changes `boundThread` and `donationOrigin`, never
+`budgetRemaining`. -/
 theorem bindPlacesParkedThread_congr {st st' : SystemState} (tid : SeLe4n.ThreadId)
-    (tcb : TCB) (h : st'.scheduler = st.scheduler) :
-    bindPlacesParkedThread st' tid tcb = bindPlacesParkedThread st tid tcb := by
+    (tcb : TCB) (sc : SchedContext) (h : st'.scheduler = st.scheduler) :
+    bindPlacesParkedThread st' tid tcb sc = bindPlacesParkedThread st tid tcb sc := by
   unfold bindPlacesParkedThread placedCoreOf?
   rw [h]
 
@@ -735,16 +780,18 @@ def schedContextBind (vScId : ValidObjId) (vThreadId : ValidThreadId) : Kernel U
             -- exactly what Cut B1's reclaim parks — kept a reservation it could
             -- never spend: `chooseThreadOnCore` selects only from
             -- `runQueueOnCore`.  `bindPlacesParkedThread` is the guard, and its
-            -- three conjuncts are why placing is safe here (see its docstring);
-            -- the insert priority is `resolveInsertPriority`, the SAME one the
-            -- re-bucket arm uses, so the two arms cannot disagree about which
-            -- bucket a bound thread belongs in.
+            -- four conjuncts are why placing is safe here (see its docstring):
+            -- the fourth (PR #900 review, `v0.36.1`) is the reservation's own
+            -- budget, so a bind never places a thread the selector would then
+            -- skip forever.  The insert priority is `resolveInsertPriority`, the
+            -- SAME one the re-bucket arm uses, so the two arms cannot disagree
+            -- about which bucket a bound thread belongs in.
             let bindHome := determineTargetCore st2 vThreadId.val
             let st3 := if vThreadId.val ∈ (st2.scheduler.runQueueOnCore bindHome) then
               let rqRemoved := (st2.scheduler.runQueueOnCore bindHome).remove vThreadId.val
               let rqInserted := rqRemoved.insert vThreadId.val (resolveInsertPriority st2 vThreadId.val sc)
               { st2 with scheduler := st2.scheduler.setRunQueueOnCore bindHome rqInserted }
-            else if bindPlacesParkedThread st2 vThreadId.val tcb then
+            else if bindPlacesParkedThread st2 vThreadId.val tcb sc then
               let rqInserted := (st2.scheduler.runQueueOnCore bindHome).insert vThreadId.val
                 (resolveInsertPriority st2 vThreadId.val sc)
               { st2 with scheduler := st2.scheduler.setRunQueueOnCore bindHome rqInserted }
@@ -1027,13 +1074,16 @@ what the claim is about.  `schedContextBind_confinedToCores` already pins the
 core, at the write set the footprint declares. -/
 theorem schedContextBind_places_parked_thread
     (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState) (tcb : TCB)
+    (scB : SchedContext)
     (hTcb : st.getTcb? vThreadId.val = some tcb)
-    (hPark : bindPlacesParkedThread st vThreadId.val tcb = true)
+    (hScB : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some scB)
+    (hPark : bindPlacesParkedThread st vThreadId.val tcb scB = true)
     (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
     runnableOnSomeCore st' vThreadId.val = true := by
   unfold schedContextBind at h
   split at h
   · rename_i sc hSc _
+    obtain rfl : sc = scB := by rw [hSc] at hScB; exact Option.some.inj hScB
     split at h
     · exact absurd h (by simp)
     · split at h
@@ -1068,9 +1118,91 @@ theorem schedContextBind_places_parked_thread
                     -- guard is the pre-state's, which this arm's condition denies.
                     rename_i hParkArm
                     exfalso
-                    rw [bindPlacesParkedThread_congr _ _ (hSched _ _ _ _ _)] at hParkArm
+                    rw [bindPlacesParkedThread_congr _ _ _ (hSched _ _ _ _ _)] at hParkArm
                     rw [hPark] at hParkArm
                     simp at hParkArm
+              · exact absurd h (by simp)
+        · exact absurd h (by simp)
+  · exact absurd h (by simp)
+
+/-- **PR #900 review (`v0.36.1`): a bind places no thread on a reservation with no
+budget.**
+
+The negation Cut B2 left open: the placement arm admitted a parked thread whatever
+the reservation's budget, so binding an **exhausted** one — reachable by unbinding
+it mid-period, which keeps `budgetRemaining = 0` and purges its replenishment
+entry — put the thread on a run queue `chooseBestRunnableEffective` skips it on,
+with no refill ever due, while the bind reported success.  Here a thread the bind
+finds on no scheduler slot stays on none when the reservation's budget is zero;
+the re-bucket arm cannot fire (the thread is on no run queue), the placement arm
+cannot (its fourth conjunct is false), and the identity arm moves no slot.
+
+Stated over `placedCoreOf?`, which reads the scheduler alone, so the claim covers
+the current slots as well as the run queues and needs no object-store invariant. -/
+theorem schedContextBind_leaves_unplaced_of_exhausted
+    (vScId : ValidObjId) (vThreadId : ValidThreadId) (st st' : SystemState)
+    (scB : SchedContext)
+    (hScB : st.getSchedContext? (SchedContextId.ofObjId vScId.val) = some scB)
+    (hExhausted : scB.budgetRemaining.isPositive = false)
+    (hUnplaced : placedCoreOf? st vThreadId.val = none)
+    (h : schedContextBind vScId vThreadId st = .ok ((), st')) :
+    placedCoreOf? st' vThreadId.val = none := by
+  -- `placedCoreOf?` reads the scheduler alone.
+  have hPlacedCongr : ∀ (a b : SystemState), a.scheduler = b.scheduler →
+      placedCoreOf? a vThreadId.val = placedCoreOf? b vThreadId.val := by
+    intro a b hab
+    unfold placedCoreOf?
+    rw [hab]
+  -- A thread placed nowhere is on no run queue.
+  have hNotQueued : ∀ c, vThreadId.val ∉ st.scheduler.runQueueOnCore c := by
+    intro c hMem
+    unfold placedCoreOf? at hUnplaced
+    rw [List.find?_eq_none] at hUnplaced
+    have := hUnplaced c (SeLe4n.Kernel.Concurrency.mem_allCores c)
+    have hContains : (st.scheduler.runQueueOnCore c).contains vThreadId.val = true :=
+      RunQueue.mem_iff_contains.mp hMem
+    simp [hContains] at this
+  unfold schedContextBind at h
+  split at h
+  · rename_i sc hSc _
+    obtain rfl : sc = scB := by rw [hSc] at hScB; exact Option.some.inj hScB
+    split at h
+    · exact absurd h (by simp)
+    · split at h
+      · exact absurd h (by simp)
+      · split at h
+        · rename_i tcb _
+          split at h
+          · exact absurd h (by simp)
+          · split at h
+            · exact absurd h (by simp)
+            · split at h
+              · dsimp only at h
+                rw [Except.ok.injEq, Prod.mk.injEq] at h
+                rw [← h.2]
+                have hSched : ∀ (a : SystemState) (b : SeLe4n.ObjId) (o : KernelObject)
+                    (pf : _) (f : TCB → TCB),
+                    ((a.rewriteObject b o pf).updateTcb vThreadId.val f).scheduler
+                      = a.scheduler := by
+                  intro a b o pf f
+                  rw [SystemState.updateTcb_scheduler, SystemState.rewriteObject_scheduler]
+                split
+                · -- The re-bucket arm needs the thread on a run queue, which it is not.
+                  rename_i hMem
+                  exfalso
+                  rw [hSched] at hMem
+                  exact hNotQueued _ hMem
+                · split
+                  · -- The placement arm needs the guard, whose budget conjunct is false.
+                    rename_i hParkArm
+                    exfalso
+                    rw [bindPlacesParkedThread_of_exhausted _ _ _ _ hExhausted] at hParkArm
+                    exact Bool.false_ne_true hParkArm
+                  · -- The identity arm moves no scheduler slot.
+                    rw [hPlacedCongr _ st (by
+                      show (((st.rewriteObject _ _ _).updateTcb _ _).scheduler) = st.scheduler
+                      exact hSched _ _ _ _ _)]
+                    exact hUnplaced
               · exact absurd h (by simp)
         · exact absurd h (by simp)
   · exact absurd h (by simp)

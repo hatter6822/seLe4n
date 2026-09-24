@@ -8787,14 +8787,24 @@ run_check "INVARIANT" rg -n '^theorem ipcTransferSingleCap_installed_implies_rev
 # a change to what revocation requires breaks these rather than widening the check.
 run_check "INVARIANT" rg -n '^theorem cspaceRevoke_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
 run_check "INVARIANT" rg -n '^theorem cdtNodeIsRevocable_false_revoke_refuses($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+# v0.36.1 (PR #900 review): the tie is stated over EVERY revocation entry point --
+# the scaffold at an arbitrary traversal -- since none of them runs the local
+# sweep any more, and the refusal theorem quantifies over the scaffold.
+run_check "INVARIANT" rg -n '^theorem revokeCdtScaffold_ok_implies_slot_occupied($|[ ({:\[\]])' SeLe4n/Kernel/Capability/Operations.lean
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem cdtNodeIsRevocable_false_revoke_refuses[^\n]*(\n([ \t][^\n]*)?)*revokeCdtScaffold emptyReport traverse addr st" SeLe4n/Kernel/Capability/Operations.lean'
 # The mapping-only test must not come back at the install site.
 run_negative_check "INVARIANT" rg -n 'match SystemState.lookupCdtSlotOfNode st srcNode with' SeLe4n/Kernel/Capability/Operations.lean
-# The regression carries both load-bearing negatives: the mapping survives the
-# sweep (so the old check would have passed) and the in-flight consumption does
-# not reach a swept sibling (so this is a second hole, not the first restated).
-run_check "INVARIANT" rg -n '^private def revokeSweptSiblingBlocksPendingTransfer($|[ ({:\[\]])' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'the CDT mapping outlived the capability' tests/OperationChainSuite.lean
-run_check "INVARIANT" rg -n 'the consumption sweep did not reach it' tests/OperationChainSuite.lean
+# v0.36.1 (PR #900 review): the swept-sibling regression INVERTED.  Revocation no
+# longer opens with the local same-target sweep, so an independent capability to
+# the same object -- the one PR #873 round 18's scenario swept -- survives at every
+# entry point, its node stays revocable and its in-flight transfer lands.  The
+# retired sweep is computed beside it, and the install guard is still exercised on
+# the state that sweep leaves.  The old scenario name must not come back.
+run_check "INVARIANT" rg -n '^private def revokeLeavesIndependentSibling($|[ ({:\[\]])' tests/OperationChainSuite.lean
+run_negative_check "INVARIANT" rg -n 'revokeSweptSiblingBlocksPendingTransfer' tests/
+run_check "INVARIANT" rg -n 'leaves the independent sibling' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'RETIRED — the local sweep emptied the independent sibling' tests/OperationChainSuite.lean
+run_check "INVARIANT" rg -n 'the install guard declines a transfer whose source slot was emptied' tests/OperationChainSuite.lean
 # NEGATIVE: the CNode retype arm must not go back to branching on the
 # replacement's shape — both shapes destroy the old slots, so both must detach.
 run_negative_check "INVARIANT" rg -n 'CNode → CNode: no CDT cleanup needed' SeLe4n/Kernel/Lifecycle/Operations/CleanupPreservation.lean
@@ -20490,10 +20500,10 @@ run_check "INVARIANT" rg -n 'the one uncovered lock domain is registered, with a
 run_check "INVARIANT" rg -n '^def bindPlacesParkedThread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread[^\n]*(\n([ \t][^\n]*)?)*\(placedCoreOf\? st tid\).isNone && tcb.ipcState == .ready" SeLe4n/Kernel/SchedContext/Operations.lean'
 # RELATION: the bind's own body reads that guard, on the state its writes reach.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb then" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def schedContextBind[^\n]*(\n([ \t][^\n]*)?)*else if bindPlacesParkedThread st2 vThreadId.val tcb sc then" SeLe4n/Kernel/SchedContext/Operations.lean'
 # ...and the placement uses the SAME insert priority as the re-bucket arm, so the
 # two cannot disagree about which bucket a bound thread belongs in.
-run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "else if bindPlacesParkedThread st2 vThreadId.val tcb sc then[^\n]*(\n([ \t][^\n]*)?)*resolveInsertPriority st2 vThreadId.val sc" SeLe4n/Kernel/SchedContext/Operations.lean'
 # The payoff, and the three refusals that keep the guard from admitting anything.
 run_check "INVARIANT" rg -n '^theorem schedContextBind_places_parked_thread($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
 run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_placed' SeLe4n/Kernel/SchedContext/Operations.lean
@@ -20506,14 +20516,42 @@ run_check "INVARIANT" rg -n '^def frozenWriteTcbBoundPlaced($|[ ({:\[\]])' SeLe4
 # RELATION, not presence: the bind-specific writer is the SHARED mechanics under a
 # widened admission, so `v0.35.101`'s "one re-bucket, three askers" still holds of
 # it -- a second fold spelled inline here would be that cut's own defect returning.
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid .. frozenBindPlacesParkedThread st. tid after" SeLe4n/Kernel/FrozenOps/Core.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenQueuedAnywhere st. tid .. frozenBindPlacesParkedThread st. tid after sc then" SeLe4n/Kernel/FrozenOps/Core.lean'
 run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenWriteTcbBoundPlaced[^\n]*(\n([ \t][^\n]*)?)*frozenRebucketRunnable st. tid after.boostedPriority" SeLe4n/Kernel/FrozenOps/Core.lean'
-run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbBoundPlaced st1 threadId updatedTcb" SeLe4n/Kernel/FrozenOps/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbBoundPlaced st1 threadId updatedTcb sc with" SeLe4n/Kernel/FrozenOps/Operations.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def frozenSchedContextBind[^\n]*(\n([ \t][^\n]*)?)*frozenWriteTcbRebucketed st1 threadId" SeLe4n/Kernel/FrozenOps/Operations.lean'
 # Measured on both surfaces, each against the RETIRED queued-only reading.
 run_check "INVARIANT" rg -n 'B2: a bind places the parked holder' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n 'the RETIRED queued-only reading leaves it on no core at all' tests/SmpCancellationSuite.lean
 run_check "INVARIANT" rg -n 'FO-050 NEGATIVE: the RETIRED frozen writer leaves it in none' tests/FrozenOpsSuite.lean
+
+# ----------------------------------------------------------------------------
+# v0.36.1 -- PR #900 review: a bind places a parked thread only on a reservation
+# that has BUDGET.  The guard's fourth conjunct is the selector's own reading
+# (`hasSufficientBudget` of a bound thread IS `budgetRemaining.isPositive` of its
+# reservation), which is seL4-MCS's `isSchedulable` / `schedContext_resume` read
+# at `13.0.0`: a thread on an exhausted reservation is postponed, never enqueued.
+# ----------------------------------------------------------------------------
+# The conjunct, bounded inside each guard -- and NAME-bounded, since a suffix
+# rename would otherwise leave either anchor pinning a different declaration.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread \(st : SystemState\)[^\n]*(\n([ \t][^\n]*)?)*    && sc.budgetRemaining.isPositive" SeLe4n/Kernel/SchedContext/Operations.lean'
+run_check "INVARIANT" bash -lc 'rg -U -n "^def frozenBindPlacesParkedThread \(st : FrozenSystemState\)[^\n]*(\n([ \t][^\n]*)?)*    && sc.budgetRemaining.isPositive" SeLe4n/Kernel/FrozenOps/Core.lean'
+# The guard takes the RESERVATION being bound, so the budget it reads is that one's.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def bindPlacesParkedThread \(st : SystemState\) \(tid : SeLe4n.ThreadId\) \(tcb : TCB\)\n    \(sc : SchedContext\) : Bool :=" SeLe4n/Kernel/SchedContext/Operations.lean'
+# The refusal, the tie to the selector, and the payoff: an exhausted bind parks.
+run_check "INVARIANT" rg -n '^@\[simp\] theorem bindPlacesParkedThread_of_exhausted($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^theorem bindPlacesParkedThread_budget_eq_hasSufficientBudget($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
+run_check "INVARIANT" rg -n '^theorem schedContextBind_leaves_unplaced_of_exhausted($|[ ({:\[\]])' SeLe4n/Kernel/SchedContext/Operations.lean
+# RELATION: the payoff's premise is the RESERVATION's budget at the pre-state, not
+# a fact about the thread -- which is what makes it a statement about the guard.
+run_check "INVARIANT" bash -lc 'rg -U -n "^theorem schedContextBind_leaves_unplaced_of_exhausted[^\n]*(\n([ \t][^\n]*)?)*\(hExhausted : scB.budgetRemaining.isPositive = false\)" SeLe4n/Kernel/SchedContext/Operations.lean'
+# Measured on both surfaces, each with the RETIRED three-conjunct guard beside it.
+run_check "INVARIANT" rg -n '§3.26c PR #900 review: a bind does not place a thread on an exhausted reservation' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n '\(b\) NEGATIVE: the RETIRED three-conjunct guard admits it' tests/SmpCancellationSuite.lean
+run_check "INVARIANT" rg -n 'FO-050 \(3\): the frozen bind leaves it in NO bucket' tests/FrozenOpsSuite.lean
+run_check "INVARIANT" rg -n 'FO-050 \(3\) NEGATIVE: the RETIRED three-conjunct guard admits the spent reservation' tests/FrozenOpsSuite.lean
+# The retired reading lives in the witness that refutes it, and nowhere else.
+run_negative_check "INVARIANT" rg -n 'retiredBindPlacesParkedThread' SeLe4n/
 
 # ---------------------------------------------------------------------------
 # v0.35.189 -- WS-RR RR8.16: the OBJECT-domain donation members follow the
@@ -20596,9 +20634,9 @@ run_negative_check "INVARIANT" rg -n 'callerKeyedCallDonatedSc\?|senderKeyedDona
 # implement-the-improvement rule: wire the syscall.
 #
 # 1. THE ARM DISPATCHES THE CDT-TRAVERSING VARIANT, which is its whole security
-# content -- the local `cspaceRevoke` the scaffold opens with reaches only the
-# CONTAINING CNode, so a derived capability copied into any other CSpace would
-# survive a revocation that claimed to destroy it.
+# content -- the local `cspaceRevoke` reaches only the CONTAINING CNode, so a
+# derived capability copied into any other CSpace would survive a revocation that
+# claimed to destroy it.
 run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevokeCdt addr st" SeLe4n/Kernel/API.lean'
 run_negative_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st$" SeLe4n/Kernel/API.lean'
 # ...and it takes the DELETE's decoder, since both name one slot of the invoked
@@ -20607,6 +20645,19 @@ run_check "INVARIANT" bash -lc 'rg -U -n "^  \| \.cspaceRevoke =>[^\n]*(\n([ \t]
 # 2. THE AUTHORITY IS `.write`, not `.grant`: grant authorises CREATING a
 # derivation (mint/copy/move), and destroying one is not that authority.
 run_check "INVARIANT" rg -n '^  \| \.cspaceRevoke    => \.write' SeLe4n/Kernel/API.lean
+# 1b. v0.36.1 (PR #900 review): WHAT THE REVOCATION DESTROYS IS EXACTLY THE
+# SOURCE'S CDT DESCENDANTS.  The scaffold every entry point shares opened with the
+# local `cspaceRevoke`, which matches on the TARGET and so destroyed an
+# independently rooted capability to the same object, and the source's own parent
+# in the same CNode, leaving their nodes mapped to empty slots.  Its prologue is a
+# read of the source slot now; the negative refuses the sweep coming back into the
+# scaffold's own declaration, and the witnesses are SD-059 and
+# `revokeLeavesIndependentSibling`.
+run_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtScaffold[^\n]*(\n([ \t][^\n]*)?)*    match cspaceLookupSlot addr st with" SeLe4n/Kernel/Capability/Operations.lean'
+run_negative_check "INVARIANT" bash -lc 'rg -U -n "^def revokeCdtScaffold[^\n]*(\n([ \t][^\n]*)?)*cspaceRevoke addr st" SeLe4n/Kernel/Capability/Operations.lean'
+run_check "INVARIANT" rg -n 'sd059_dispatch_leaves_the_independent_sibling' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd059_dispatch_removes_the_same_cnode_derivation' tests/SyscallDispatchSuite.lean
+run_check "INVARIANT" rg -n 'sd059_local_only_destroys_the_independent_sibling' tests/SyscallDispatchSuite.lean
 # 3. THE DISPATCH PAYOFF covers it -- the arm is in
 # `dispatchCapabilityOnly_preserves_ipcInvariantFull`, whose chain this cut built
 # from nothing (the family's preservation surface was `capabilityInvariantBundle`

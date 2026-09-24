@@ -3898,9 +3898,13 @@ def dispatchCapabilityOnly (decoded : SyscallDecodeResult)
   --
   -- Three things this arm decides.  It dispatches **`cspaceRevokeCdt`**, the
   -- CDT-traversing variant, because that is the correct default for an
-  -- untrusted userspace invocation: the local `cspaceRevoke` it opens with
-  -- reaches only the containing CNode, so a derived capability copied into any
-  -- other CSpace would survive a revocation that claimed to destroy it.  It
+  -- untrusted userspace invocation: the local `cspaceRevoke` reaches only the
+  -- containing CNode, so a derived capability copied into any other CSpace would
+  -- survive a revocation that claimed to destroy it — and it matches on the
+  -- **target**, so it also destroys capabilities that are not derivations at
+  -- all.  Since `v0.36.1` (PR #900 review) `cspaceRevokeCdt` no longer opens
+  -- with it: the revocation destroys exactly the source's CDT descendants, in
+  -- every CNode, which is seL4's `cteRevoke` (read at `13.0.0`).  It
   -- takes the **delete's** ABI (`decodeCSpaceDeleteArgs`, one message register
   -- naming the slot), since both name one slot of the invoked CNode and a
   -- second decoder for one operand is a spelling nobody needs.  And the source

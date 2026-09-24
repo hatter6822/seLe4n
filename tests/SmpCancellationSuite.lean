@@ -2689,19 +2689,22 @@ private def runBindPlacesParkedChecks : IO Unit := do
   | none => assertBool "(a) the parked holder resolves" false
   | some parkedTcb =>
     assertBool "(a) the placement guard admits the parked holder"
-      (SchedContextOps.bindPlacesParkedThread parked serverTid parkedTcb)
+      (SchedContextOps.bindPlacesParkedThread parked serverTid parkedTcb spareSc)
     -- ...and refuses each thing it is written to refuse, measured on this state.
     assertBool "(a) NEGATIVE: it refuses a thread that is PLACED — the victim, which the reclaim bound and left queued"
       (match parked.getTcb? victimTid with
-       | some vt => !SchedContextOps.bindPlacesParkedThread parked victimTid vt
+       | some vt => !SchedContextOps.bindPlacesParkedThread parked victimTid vt spareSc
                       || decide (placedCoreOf? parked victimTid = none)
        | none => false)
     assertBool "(a) NEGATIVE: it refuses a BLOCKED thread"
       (!SchedContextOps.bindPlacesParkedThread parked serverTid
-        { parkedTcb with ipcState := .blockedOnReceive epId })
+        { parkedTcb with ipcState := .blockedOnReceive epId } spareSc)
     assertBool "(a) NEGATIVE: it refuses a SUSPENDED thread"
       (!SchedContextOps.bindPlacesParkedThread parked serverTid
-        { parkedTcb with threadState := .Inactive })
+        { parkedTcb with threadState := .Inactive } spareSc)
+    assertBool "(a) NEGATIVE: it refuses a reservation with NO BUDGET (PR #900 review, §3.26c)"
+      (!SchedContextOps.bindPlacesParkedThread parked serverTid parkedTcb
+        { spareSc with budgetRemaining := ⟨0⟩ })
   -- (b) the live bind places it; the retired reading leaves it parked.
   match SeLe4n.ObjId.toValid? scIdOther.toObjId, SeLe4n.ThreadId.toValid? serverTid with
   | some vSc, some vTid =>
@@ -2729,6 +2732,86 @@ private def runBindPlacesParkedChecks : IO Unit := do
          runnableOnSomeCore (retiredBindPlacement stQ serverTid) serverTid
            && runnableOnSomeCore stQ serverTid)
   | _, _ => assertBool "(b) the spare reservation's id and the holder's id are valid" false
+
+-- ----------------------------------------------------------------------------
+-- §3.26c (PR #900 review, `v0.36.1`): a bind does NOT place a parked thread on
+--        an EXHAUSTED reservation.
+-- ----------------------------------------------------------------------------
+
+/-! Cut B2's guard admitted a parked thread whatever the reservation's budget, so
+the reported sequence — a reservation exhausted mid-period, unbound (which keeps
+`budgetRemaining = 0` and purges its replenishment entry), then bound to a parked
+thread — put the thread on a run queue the selector skips it on, with no refill
+ever due to change that, while the bind reported success.  seL4-MCS postpones such
+a thread instead (`schedContext_bindTCB` → `schedContext_resume`, and
+`isSchedulable` is false of a thread in the release queue, read at `13.0.0`).
+This group drives the sequence through the live unbind and the live bind, and
+computes the RETIRED three-conjunct guard beside the live one. -/
+
+/-- A thread the exhausted reservation is bound to before the unbind. -/
+private def auxTid : SeLe4n.ThreadId := ⟨717⟩
+
+/-- A reservation exhausted mid-period and still bound to `auxTid`, with the
+refill it is owed recorded in its own list: what the live tick's exhaustion arm
+leaves behind. -/
+private def exhaustedSc : SchedContext :=
+  { mkSc (some auxTid) false with
+    scId := scIdOther, priority := ⟨50⟩, budgetRemaining := ⟨0⟩,
+    replenishments := [{ amount := ⟨1000⟩, eligibleAt := 5000 }] }
+
+/-- **The RETIRED placement guard, computed here and nowhere else**: Cut B2's
+three conjuncts, before the reservation's budget was one of them. -/
+private def retiredBindPlacesParkedThread (st : SystemState) (tid : SeLe4n.ThreadId)
+    (tcb : TCB) : Bool :=
+  (placedCoreOf? st tid).isNone && tcb.ipcState == .ready
+    && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
+
+private def runBindExhaustedReservationChecks : IO Unit := do
+  IO.println "--- §3.26c PR #900 review: a bind does not place a thread on an exhausted reservation ---"
+  let st := stStrandedHolderReclaim
+  let tcb := victimTcb st
+  let parked :=
+    ((cancelIpcBlockingReclaimed victimTid tcb st).withObjectStored auxTid.toObjId
+        (.tcb { mkTcb 717 20 none with schedContextBinding := .bound scIdOther })).withObjectStored
+      scIdOther.toObjId (.schedContext exhaustedSc)
+  assertBool "setup: the holder is parked and the reservation is exhausted, bound to another thread"
+    (decide (placedCoreOf? parked serverTid = none)
+      && decide ((parked.getSchedContext? scIdOther).map (·.budgetRemaining.val) = some 0)
+      && decide ((parked.getSchedContext? scIdOther).map (·.boundThread) = some (some auxTid)))
+  match SeLe4n.ObjId.toValid? scIdOther.toObjId, SeLe4n.ThreadId.toValid? serverTid with
+  | some vSc, some vTid =>
+    -- (a) the live UNBIND frees the reservation and keeps its budget at zero.
+    match SchedContextOps.schedContextUnbind vSc parked with
+    | .error e => assertBool s!"(a) the unbind of the exhausted reservation succeeds (error: {reprStr e})" false
+    | .ok ((), stUnbound) =>
+      assertBool "(a) the live unbind leaves the reservation UNBOUND with NO budget"
+        (decide ((stUnbound.getSchedContext? scIdOther).map (·.boundThread) = some none)
+          && decide ((stUnbound.getSchedContext? scIdOther).map (·.budgetRemaining.val) = some 0))
+      -- (b) the guard: the live one refuses, the retired one admits.
+      match stUnbound.getTcb? serverTid, stUnbound.getSchedContext? scIdOther with
+      | some parkedTcb, some sc =>
+        assertBool "(b) the LIVE guard refuses the parked holder on the exhausted reservation"
+          (!SchedContextOps.bindPlacesParkedThread stUnbound serverTid parkedTcb sc)
+        assertBool "(b) NEGATIVE: the RETIRED three-conjunct guard admits it"
+          (retiredBindPlacesParkedThread stUnbound serverTid parkedTcb)
+        assertBool "(b) CONTROL: the live guard admits the same thread on a reservation WITH budget"
+          (SchedContextOps.bindPlacesParkedThread stUnbound serverTid parkedTcb
+            { sc with budgetRemaining := ⟨1000⟩ })
+      | _, _ => assertBool "(b) the parked holder and the reservation resolve" false
+      -- (c) the live BIND leaves the holder parked, bound to the reservation.
+      match SchedContextOps.schedContextBind vSc vTid stUnbound with
+      | .error e => assertBool s!"(c) the bind of the exhausted reservation succeeds (error: {reprStr e})" false
+      | .ok ((), stBound) =>
+        assertBool "(c) the LIVE bind leaves the holder on NO scheduler slot"
+          (decide (placedCoreOf? stBound serverTid = none))
+        assertBool "(c) ...bound to the reservation it was handed"
+          (decide ((stBound.getTcb? serverTid).map (·.schedContextBinding)
+            = some (SchedContextBinding.bound scIdOther)))
+        assertBool "(c) ...which the selector's budget filter refuses, so placing it would have stranded it"
+          (match stBound.getTcb? serverTid with
+           | some t => !hasSufficientBudget stBound t
+           | none => false)
+  | _, _ => assertBool "(c) the reservation's id and the holder's id are valid" false
 
 -- ----------------------------------------------------------------------------
 -- §3.27 (WS-RR RR8.12, Cut C3b-iv, `v0.35.170`): the reclaim's MIGRATION is a
@@ -2895,6 +2978,7 @@ def runSmpCancellationChecks : IO Unit := do
   runReplenishDestinationChecks
   runReclaimCompleteSuspendChecks
   runBindPlacesParkedChecks
+  runBindExhaustedReservationChecks
   runReclaimMigrationFootprintChecks
   IO.println "SmpCancellationSuite: all checks passed."
 

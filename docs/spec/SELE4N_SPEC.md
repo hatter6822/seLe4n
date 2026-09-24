@@ -49,11 +49,11 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.0` (`lakefile.toml`) |
+| **Package version** | `0.36.1` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 417,640 across 340 Lean files |
-| **Test LoC** | 84,644 across 70 Lean test suites |
-| **Proved declarations** | 13,813 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 417,841 across 340 Lean files |
+| **Test LoC** | 84,834 across 70 Lean test suites |
+| **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
 | **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203, no sub-task started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
@@ -4086,12 +4086,26 @@ implement-the-improvement rule says to close by wiring the syscall rather than
 documenting its absence.
 
 **What the arm dispatches, and why.**  `cspaceRevokeCdt`, the CDT-traversing
-variant, not the local `cspaceRevoke` it opens with.  The local primitive
-reaches only the *containing* CNode, so a derived capability copied into any
-other CSpace would survive a revocation that claimed to destroy it; the CDT
-walk follows the derivation tree across arbitrary CNodes and ends with the
-in-flight sweep (`revokePendingTransfersFrom`), which consumes derivations
-parked in senders' `pendingMessage` and have therefore not landed yet.  The
+variant, not the local `cspaceRevoke`.  The local primitive reaches only the
+*containing* CNode, so a derived capability copied into any other CSpace would
+survive a revocation that claimed to destroy it; the CDT walk follows the
+derivation tree across arbitrary CNodes and ends with the in-flight sweep
+(`revokePendingTransfersFrom`), which consumes derivations parked in senders'
+`pendingMessage` and have therefore not landed yet.
+
+**What it destroys: exactly the source's derivations (`v0.36.1`).**  Until
+`v0.36.1` every entry point opened with the local `cspaceRevoke`, which matches
+on the capability's **target**: it deleted an independently rooted capability to
+the same object and the source's own parent when they shared the CNode, and it
+left their CDT nodes mapped to the emptied slots, so their own derivations could
+no longer be revoked by anyone.  `revokeCdtScaffold` now opens with a read of the
+source slot (`cspaceLookupSlot`, with the same refusal set and no writes), so the
+revocation destroys exactly the source's CDT descendants, in every CNode
+including its own, which is seL4's `cteRevoke` (read at `13.0.0`).  Every live
+capability-install path records its derivation edge, so nothing derived escapes
+the walk; `tests/SyscallDispatchSuite.lean` SD-059 and
+`tests/OperationChainSuite.lean`'s `revokeLeavesIndependentSibling` are the
+witnesses.  The
 three *reporting* variants (`cspaceRevokeCdtStrict`, `…Streaming`,
 `…Transactional`) are the same scaffold at a different traversal and are
 offered to **in-kernel** callers: a userspace invocation has no channel to
@@ -4248,6 +4262,20 @@ removal), `schedContextYieldTo` (kernel-internal budget transfer). 7
 preservation theorems including `schedContextBind_output_bidirectional` and
 `schedContextConfigure_admission_excludes_eq`. API dispatch via
 `dispatchCapabilityOnly` shared path.
+
+Since `v0.35.182` (WS-RR RR8.12 Cut B2) the bind also **places** a parked
+runnable thread on its home core — seL4-MCS's `schedContext_bindTCB` tail
+(`if (isSchedulable(tcb)) { SCHED_ENQUEUE(tcb); … }`, read at `13.0.0`) — under
+`bindPlacesParkedThread`, and since `v0.36.1` (PR #900 review) only when the
+reservation being bound has budget left: the guard's fourth conjunct is
+`sc.budgetRemaining.isPositive`, which is the selector's own reading
+(`bindPlacesParkedThread_budget_eq_hasSufficientBudget`).  A thread bound to an
+exhausted reservation therefore stays parked
+(`schedContextBind_leaves_unplaced_of_exhausted`) rather than joining a run
+queue the selector would skip forever.  What the bind does not do is seL4's
+`postpone`: the unbind purges the reservation's replenish-queue entry and nothing
+re-arms it, so the parked thread waits for its manager — the WS-CB residual in
+[`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) table C.
 
 #### 8.12.5 API Surface & Syscall Wiring
 3 error-exclusivity theorems (`decodeSchedContextConfigureArgs_error_iff`,

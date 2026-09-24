@@ -588,13 +588,19 @@ dispatch is `current := some tid` with the thread **left in its bucket**
 (`v0.35.134`) — a frozen current thread is queued, which is why this needs no
 `current` conjunct and why adding one would be a condition no state can witness.
 
-The other two conjuncts read the **live** `TCB` fields: `FrozenKernelObject.tcb`
+The next two conjuncts read the **live** `TCB` fields: `FrozenKernelObject.tcb`
 carries `SeLe4n.Model.TCB` and `Model.freeze` copies it verbatim, so "blocked in
-IPC" and "suspended" are the same questions on both surfaces. -/
+IPC" and "suspended" are the same questions on both surfaces.  The fourth reads
+the **live** `SchedContext` record the frozen store holds for the same reason:
+the reservation being bound must have budget left (PR #900 review, `v0.36.1`),
+which is the live guard's own fourth conjunct and the selector's own reading.  A
+mirror without it would place a thread the live bind now leaves parked — the
+direction that matters on a differential surface. -/
 def frozenBindPlacesParkedThread (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
-    (tcb : TCB) : Bool :=
+    (tcb : TCB) (sc : SeLe4n.Kernel.SchedContext) : Bool :=
   !frozenQueuedAnywhere st tid && tcb.ipcState == .ready
     && tcb.threadState != SeLe4n.Model.ThreadState.Inactive
+    && sc.budgetRemaining.isPositive
 
 /-- **Cut B2**: write a bound TCB, re-bucketing it if it was queued and
 **placing** it if it was parked and runnable.
@@ -608,11 +614,11 @@ which drops `tid` from every bucket (a no-op when it is in none) and appends it
 to the one `newPrio` names, so the placement and the re-bucket are one write with
 two admissions rather than two writes. -/
 def frozenWriteTcbBoundPlaced (st : FrozenSystemState) (tid : SeLe4n.ThreadId)
-    (after : TCB) : Except KernelError FrozenSystemState :=
+    (after : TCB) (sc : SeLe4n.Kernel.SchedContext) : Except KernelError FrozenSystemState :=
   match frozenWithObjectStored st tid.toObjId (.tcb after) with
   | .error e => .error e
   | .ok st' =>
-      if frozenQueuedAnywhere st' tid || frozenBindPlacesParkedThread st' tid after then
+      if frozenQueuedAnywhere st' tid || frozenBindPlacesParkedThread st' tid after sc then
         .ok (frozenRebucketRunnable st' tid after.boostedPriority)
       else .ok st'
 

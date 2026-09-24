@@ -209,41 +209,22 @@ theorem revokePendingTransfersFrom_preserves_capabilityInvariantBundle
     · rw [hEq]; exact hOrig
     · rw [hT] at hOrig; simp at hOrig
 
-/-- **The local revoke leaves `cdtNodeSlot` alone.**
-
-`storeObject` preserves it, so the node→slot map a caller carried into
-`cspaceRevoke` is the one it carries out.
-
-Extracted from the three revocation preservation theorems that each held a
-verbatim copy of this derivation. -/
-theorem cspaceRevoke_preserves_cdtNodeSlot
-    (st stLocal : SystemState) (addr : CSpaceAddr)
-    (hRevoke : cspaceRevoke addr st = .ok ((), stLocal)) :
-    stLocal.cdtNodeSlot = st.cdtNodeSlot := by
-  unfold cspaceRevoke SystemState.getCNode? at hRevoke
-  cases hLookup : cspaceLookupSlot addr st with
-  | error e => simp [hLookup] at hRevoke
-  | ok pair =>
-    rcases pair with ⟨parent, st1⟩
-    have hSt1 : st1 = st := cspaceLookupSlot_preserves_state st st1 addr parent hLookup
-    subst st1; simp [hLookup] at hRevoke
-    cases hObj : st.objects[addr.cnode]? with
-    | none => simp [hObj] at hRevoke
-    | some obj =>
-      cases obj with
-      | tcb _ | endpoint _ | notification _ | vspaceRoot _ | untyped _ | schedContext _ | reply _ =>
-        simp [hObj] at hRevoke
-      | cnode preCn =>
-        simp [hObj] at hRevoke
-        exact (storeObject_cdtNodeSlot_eq st stLocal addr.cnode _ hRevoke).1
+-- **Tombstone (`v0.36.1`)**: `cspaceRevoke_preserves_cdtNodeSlot` — the local
+-- revoke leaves `cdtNodeSlot` alone — is deleted.  It existed to carry the
+-- node→slot map across `revokeCdtScaffold`'s prologue, and since `v0.36.1` that
+-- prologue is a read of the source slot rather than the local same-target sweep
+-- (PR #900 review), so the walk starts from the pre-state and no revocation proof
+-- needs the fact.  `storeObject_cdtNodeSlot_eq` is where it came from.
 
 /-- **The scaffold preserves the bundle whenever its traversal does.**
 
 The revocation entry points shared a preservation *argument* as well as a
-transition: local revoke, then a walk, then (since the in-flight fix) the
-consuming sweep, with the same two framing steps at either end.  Each variant's
-theorem re-derived all of it.  Proved once here, a variant's obligation is
-exactly its traversal's — which is the only part that differs.
+transition: a read of the source slot, then a walk, then (since the in-flight
+fix) the consuming sweep.  Each variant's theorem re-derived all of it.  Proved
+once here, a variant's obligation is exactly its traversal's — which is the only
+part that differs.  Since `v0.36.1` the first step writes nothing (it was the
+local same-target sweep), so the walk starts from the pre-state itself and the
+bundle needs no local-revoke leg at all.
 
 `hTraverse` is stated over an arbitrary traversal, so this covers the four
 variants that exist and any that do not exist yet. -/
@@ -263,16 +244,12 @@ theorem revokeCdtScaffold_preserves_capabilityInvariantBundle {ρ : Type}
     capabilityInvariantBundle st' := by
   -- `v0.35.190`: the case analysis is `revokeCdtScaffold_ok_decompose`'s, beside
   -- the definition, so this proof and the IPC bundle's read one answer.
-  obtain ⟨stLocal, hRevoke, hRest⟩ :=
+  obtain ⟨_, hRest⟩ :=
     revokeCdtScaffold_ok_decompose emptyReport traverse st st' addr r hStep
-  have hLocalInv :=
-    cspaceRevoke_preserves_capabilityInvariantBundle st stLocal addr hInv hRevoke
-  have hLocalK : stLocal.cdtNodeSlot.invExtK :=
-    cspaceRevoke_preserves_cdtNodeSlot st stLocal addr hRevoke ▸ hNodeSlotK
   rcases hRest with rfl | ⟨rootNode, out, hTrav, rfl⟩
-  · exact hLocalInv
+  · exact hInv
   · exact revokePendingTransfersFrom_preserves_capabilityInvariantBundle _ _
-      (hTraverse stLocal rootNode _ out hLocalInv hLocalK hTrav)
+      (hTraverse st rootNode _ out hInv hNodeSlotK hTrav)
 
 /-- The materialized traversal preserves the bundle: it is `revokeCdtFoldBody`
 under a different spelling. -/

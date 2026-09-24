@@ -1422,7 +1422,15 @@ the three the arm's own docstring decides:
 3. **The authority is `.write` on the invoked CNode**, and a primary capability
    that is not an `.object` is refused, so the arm's fail-closed
    `| _ => fun _ => .error .invalidCapability` is exercised rather than
-   asserted. -/
+   asserted.
+4. **Only derivations are destroyed** (PR #900 review, `v0.36.1`).  The invoked
+   CNode also holds an **independent** capability to the same object (slot 2,
+   the root of nothing the source derived) and a derivation of the source in the
+   *same* CNode (slot 4).  Until `v0.36.1` the revocation opened with the local
+   same-target sweep, which destroyed slot 2 as well; now slot 2 survives and slot
+   4 is still destroyed — the second half is the direction that matters, since it
+   is what removing the sweep could have broken.  The local reading computed
+   below destroys both, which is what makes the pair discriminate. -/
 private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
   let caller  : SeLe4n.ThreadId := ⟨1⟩
   let cnA     : SeLe4n.ObjId := ⟨70⟩   -- the invoked CNode: holds the source slot
@@ -1442,6 +1450,9 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
           slots := SeLe4n.UniqueSlotMap.ofListWF
             [ (SeLe4n.Slot.ofNat 0, primary)
             , (SeLe4n.Slot.ofNat 1, ntfnCap)
+            -- An INDEPENDENT capability to the same object: no CDT edge links it
+            -- to slot 1, so revoking slot 1 must leave it alone.
+            , (SeLe4n.Slot.ofNat 2, ntfnCap)
             , (SeLe4n.Slot.ofNat 3, cnBCap) ] }),
       (cnB, .cnode {
           depth := 4, guardWidth := 0, guardValue := 0, radixWidth := 4,
@@ -1458,6 +1469,12 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
   -- The derived capability lands in the OTHER CNode, which is the only place the
   -- two readings of "revoke" can disagree.
   let derived : SeLe4n.Kernel.CSpaceAddr := { cnode := cnB, slot := SeLe4n.Slot.ofNat 0 }
+  -- A derivation in the SAME CNode as the source, and the independent sibling.
+  let derivedLocal : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 4 }
+  let sibling : SeLe4n.Kernel.CSpaceAddr := { cnode := cnA, slot := SeLe4n.Slot.ofNat 2 }
+  let present (addr : SeLe4n.Kernel.CSpaceAddr) (st : SystemState) : Bool :=
+    match SeLe4n.Kernel.cspaceLookupSlot addr st with
+    | .ok _ => true | .error _ => false
   let decoded (slot : Nat) : SyscallDecodeResult :=
     { capAddr := SeLe4n.CPtr.ofNat 0,
       msgInfo := { length := 1, extraCaps := 0, label := 0 },
@@ -1471,11 +1488,16 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
   -- Build the cross-CNode derivation with the live mint, so the fixture is a
   -- state the kernel reaches rather than one written by hand.
   match SeLe4n.Kernel.cspaceMintWithCdt src derived
-      (AccessRightSet.ofList [.read]) none (mkSt cnodeCapWrite) with
+      (AccessRightSet.ofList [.read]) none (mkSt cnodeCapWrite) >>= fun ((), stCross) =>
+      SeLe4n.Kernel.cspaceMintWithCdt src derivedLocal
+        (AccessRightSet.ofList [.read]) none stCross with
   | .error e =>
       failLine "sd059_cross_cnode_mint"
-        s!"minting a derivation into the second CNode must succeed; got: {repr e}"
+        s!"minting a derivation into each CNode must succeed; got: {repr e}"
   | .ok ((), stMinted) =>
+      expect "sd059_fixture_holds_both_derivations_and_the_sibling"
+        (present derivedLocal stMinted && present sibling stMinted)
+        "the same-CNode derivation and the independent sibling must exist before the revoke"
       expect "sd059_derivation_starts_present"
         (match SeLe4n.Kernel.cspaceLookupSlot derived stMinted with
          | .ok _ => true | .error _ => false)
@@ -1492,6 +1514,13 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
              | .ok _ => true | .error _ => false)
             "the local revoke must NOT reach a derivation in another CNode \
              (this is what makes the dispatched variant the security content)"
+          -- 4a. …and it destroys the INDEPENDENT sibling, because it matches on
+          -- the target rather than on the derivation tree.  This is the reading
+          -- the dispatched revoke opened with until `v0.36.1`.
+          expect "sd059_local_only_destroys_the_independent_sibling"
+            (!(present sibling stLocalOnly))
+            "the local same-target sweep must destroy the independent sibling \
+             (this is the over-revocation the dispatched revoke no longer performs)"
       -- 1b. The LIVE arm, through the dispatcher, removes it.
       match dispatchSyscall (decoded 1) caller stMinted with
       | .error e =>
@@ -1502,6 +1531,14 @@ private def sd059_cspaceRevokeThroughTheSyscallGate : IO Unit := do
             (match SeLe4n.Kernel.cspaceLookupSlot derived stRevoked with
              | .error _ => true | .ok _ => false)
             "the dispatched revoke must remove a derivation held in another CNode"
+          -- 4b. The same-CNode derivation is still destroyed — by the walk, not
+          -- by a sweep — and the independent sibling survives.
+          expect "sd059_dispatch_removes_the_same_cnode_derivation"
+            (!(present derivedLocal stRevoked))
+            "the dispatched revoke must remove a derivation held in the source's own CNode"
+          expect "sd059_dispatch_leaves_the_independent_sibling"
+            (present sibling stRevoked)
+            "the dispatched revoke must not destroy a capability the source did not derive"
           -- 2. The source survives, and is then deletable.
           expect "sd059_source_slot_survives"
             (match SeLe4n.Kernel.cspaceLookupSlot src stRevoked with
