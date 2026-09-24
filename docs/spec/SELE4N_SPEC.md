@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 419,011 across 342 Lean files |
-| **Test LoC** | 85,328 across 71 Lean test suites |
-| **Proved declarations** | 13,871 theorem/lemma declarations (zero sorry/axiom) |
+| **Production LoC** | 420,033 across 342 Lean files |
+| **Test LoC** | 85,359 across 71 Lean test suites |
+| **Proved declarations** | 13,905 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3.1–BP3.4 (the RPi5 deployment, which boots)** at v0.36.2 (§6.2.8); BP3.5 and BP4..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5), **BP2.3/BP2.4 (the library initializer, failing closed)** at v0.36.2 (§6.2.6), **BP2.6 (the boot map built from constants)** at v0.36.2 (§6.2.7), and **BP3 (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs)** at v0.36.2 (§6.2.8, §8.14.2); BP4..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -437,7 +437,7 @@ no size.
 - **Cache maintenance.**  `is_boot_cacheable_range` is one interval,
   `[0, GUARANTEED_RAM_TOP)`.  An operand outside it fails closed.
 
-### 6.2.8 The RPi5 deployment (WS-BP BP3.1–BP3.4, v0.36.2)
+### 6.2.8 The RPi5 deployment (WS-BP BP3, v0.36.2)
 
 `SeLe4n/Platform/RPi5/Deployment.lean` is the configuration the hardware boot
 installs, `rpi5PlatformConfig`, and the proof that it boots.
@@ -485,9 +485,12 @@ duplicate checks kernel-reducible).  Both witnesses are installed
 `bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`: the hardware entry installs
 this deployment and never halts on it.
 
-**Open (BP3.5):** no theorem states the proof-layer invariant bundle of the
-state this boot installs.  The boot invariant bridge covers the unchecked boot
-of a VSpace-free configuration only.
+**The bundle (BP3.5):** the state this boot installs satisfies the proof-layer
+invariant bundle, and its freeze the frozen one —
+`rpi5DeploymentBootState_invariantBridge`, an instance of
+`bootToRuntime_invariantBridge_checked`, which covers every configuration the
+checked boot accepts.  §8.14.2 has the argument and the CNode-check gap it
+closed.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
@@ -6899,17 +6902,42 @@ anchors + 5 runtime witnesses in `tests/LivenessSuite.lean`.
 `bootToRuntime_invariantBridge_empty` (Boot.lean) proves that the full
 `proofLayerInvariantBundle` (16 conjuncts) holds after booting with an empty
 `PlatformConfig`. For non-empty configs (real hardware with IRQ tables,
-pre-allocated objects), the full bundle is NOT proven to hold.
+pre-allocated objects) the unchecked boot's bundle is conditional (below), and
+**the production boot's is unconditional since WS-BP BP3.5**:
+`bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` proves the
+bundle of the state the checked, idle-enqueued boot installs, for every
+configuration the checked boot accepts and every duplicate-free core list, and
+`bootToRuntime_invariantBridge_checked` adds its freeze.  Both boots are
+instances of one argument, `proofLayerInvariantBundle_of_bootShape`, over a
+*boot-shaped* state: every object satisfies `bootObjectShape` (a boot-safe
+configured object, the binding's VSpace root read per mapping, or an enqueued
+idle TCB), the quiescent fields are their defaults (`bootQuiescentFields`),
+the ASID table is consistent with the roots — each install registers its
+root's ASID at a key nothing else holds, which `wellFormed`,
+`bootVSpaceRootObjIdDistinct` and `bootVSpaceAsidsDistinct` decide — and the
+scheduler supplies its run-queue facts (the boot core's queue holds its idle
+thread at priority `0`, or nothing).  The RPi5 deployment's instance is
+`rpi5DeploymentBootState_invariantBridge`, stated of the state
+`bootAndInitialiseRPi5OrHalt` installs.
+
+Proving it found a gap in the checked boot itself: the runtime CNode check
+did not look at slot contents, so a configuration whose CNode held a reply
+capability — which can only dangle at boot — or an out-of-range badge was
+accepted, and the state it installed violated `replyCapPointsToValidReply`
+and `capabilityBadgesWellFormed`.  `bootSafeCapCheck` now refuses both.
 
 The checked boot path `bootFromPlatformChecked` validates per-object
 well-formedness (uniqueness via `wellFormed`) AND structural boot safety
 (via `bootSafeObjectCheck`, added in AJ3-C). The `bootSafeObjectCheck`
 Bool-valued function verifies empty endpoint queues, idle notifications,
-CNode bounds, clean TCB state, **boot-safe VSpaceRoot admission**
-(WS-RC R3 / DEEP-BOOT-01), and SchedContext well-formedness. A
-soundness bridge theorem `bootSafeObjectCheck_sound_structural` proves
-the Bool check implies the structural conjuncts of `bootSafeObject`
-(all except CNode badge validity). The full
+CNode bounds and — since WS-BP BP3.5 — the capabilities a CNode holds
+(a valid badge, no reply capability: `bootSafeCapCheck`), clean TCB state,
+**boot-safe VSpaceRoot admission** (WS-RC R3 / DEEP-BOOT-01), and
+SchedContext well-formedness. The soundness bridge theorem
+`bootSafeObjectCheck_sound` proves the Bool check implies **every** conjunct
+of `bootSafeObject`; it was `bootSafeObjectCheck_sound_structural` and
+partial until BP3.5, which found the CNode arm skipping the two clauses about
+slot contents while the invariant bundle read both. The full
 `bootFromPlatform_proofLayerInvariantBundle_general` theorem composes
 `bootSafe` with boot preservation to discharge the complete 16-conjunct
 invariant bundle (with the WS-RC R3 precondition that no VSpaceRoots are

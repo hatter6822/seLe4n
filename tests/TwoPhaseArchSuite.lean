@@ -807,6 +807,36 @@ private def tph015p_userRootShapeRefused : IO Unit := do
   expect "TPH-015p configured root carrying a mapping (here: the kernel image) refused"
     (!(bootFromPlatformChecked (withRpi5Root [mapped])).isOk)
 
+/-- WS-BP BP3.5: a configured CNode at `id` holding `cap` in slot 1. -/
+private def cnodeHolding (id : Nat) (cap : Capability) : ObjectEntry :=
+  { id := SeLe4n.ObjId.ofNat id
+    obj := .cnode (SeLe4n.Platform.RPi5.rpi5InitialCNode [(SeLe4n.Slot.ofNat 1, cap)])
+    hSlots := fun _ h => by cases h; exact CNode.slotsUnique_holds _
+    hMappings := fun _ h => nomatch h }
+
+/-- TPH-015q (WS-BP BP3.5): a configured CNode holding a **reply capability**
+    is refused.  At boot a reply capability can only dangle — reply capabilities
+    are minted at runtime from retyped Reply objects — and the state it would
+    install violates `replyCapPointsToValidReply`.  Until BP3.5 the runtime CNode
+    check looked at the CNode's shape and at nothing its slots held, so this
+    configuration booted.  The control is the same CNode holding an object
+    capability, which boots: the refusal is about the reply capability, not the
+    CNode.  (The check's badge half has no runtime witness: every public `Badge`
+    constructor yields a valid badge.) -/
+private def tph015q_replyCapInBootCNodeRefused : IO Unit := do
+  let replyCap : Capability :=
+    { target := .replyCap (SeLe4n.ReplyId.ofNat 20), rights := AccessRightSet.ofList [.grant] }
+  let objectCap : Capability :=
+    SeLe4n.Platform.RPi5.rpi5InitialCap (SeLe4n.ObjId.ofNat 12) [.read]
+  expect "TPH-015q CNode check refuses a slot holding a reply capability"
+    (!bootSafeObjectCheck (cnodeHolding 9 replyCap).obj)
+  expect "TPH-015q CNode check admits a slot holding an object capability (control)"
+    (bootSafeObjectCheck (cnodeHolding 9 objectCap).obj)
+  expect "TPH-015q checked boot refuses a configured CNode holding a reply capability"
+    (!(bootFromPlatformChecked (withRpi5Root [cnodeHolding 9 replyCap])).isOk)
+  expect "TPH-015q checked boot admits the same CNode holding an object capability (control)"
+    ((bootFromPlatformChecked (withRpi5Root [cnodeHolding 9 objectCap])).isOk)
+
 end SeLe4n.Testing.TwoPhaseArchSuite
 
 -- ============================================================================
@@ -861,10 +891,11 @@ def main : IO Unit := do
   tph015n_userVSpaceAdmittedAndRegistered
   tph015o_asidCollisionRefused
   tph015p_userRootShapeRefused
+  tph015q_replyCapInBootCNodeRefused
   tph015j_sentinelBootVSpaceObjIdRejected
   tph015k_unsafeBootVSpaceRejected
   tph015l_nonCanonicalVAddrRejected
 
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
-  IO.println "  All 27 two-phase architecture tests passed!"
+  IO.println "  All 28 two-phase architecture tests passed!"
   IO.println "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"

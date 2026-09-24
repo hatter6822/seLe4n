@@ -230,9 +230,9 @@ To find files that need pagination today, run:
 - `SeLe4n/Kernel/IPC/Operations/Endpoint.lean` (~8709 lines)
 - `SeLe4n/Kernel/IPC/Invariant/Defs.lean` (~8235 lines)
 - `docs/spec/SELE4N_SPEC.md` (~7358 lines)
+- `SeLe4n/Platform/Boot.lean` (~7278 lines)
 - `SeLe4n/Kernel/Concurrency/Locks/LockSetTransitions.lean` (~6360 lines)
 - `SeLe4n/Model/State.lean` (~6153 lines)
-- `SeLe4n/Platform/Boot.lean` (~6000 lines)
 - `SeLe4n/Kernel/InformationFlow/NonInterferenceCrossCore.lean` (~5753 lines)
 - `tests/SmpIpcSuite.lean` (~5560 lines)
 - `SeLe4n/Kernel/IPC/Invariant/DispatchArmPreservation.lean` (~5439 lines)
@@ -7147,7 +7147,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2 and BP3.1–BP3.4 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2 and BP3 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7158,7 +7158,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3.1–BP3.4** (the RPi5 deployment, which boots); BP3.5 and BP4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap), **BP2.2** (the kernel's own Lean runtime, in Rust), **BP2.3**/**BP2.4** (the library initializer, failing closed), **BP2.5** (the host witnesses, which landed with the first two) and **BP2.6** (the boot map built from constants), and **BP3** (the RPi5 deployment, which boots, and the proof-layer bundle of the state it installs); BP4..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7486,12 +7486,22 @@ off the configuration rather than evaluated out of the boot. `BaseIO` has no
 `LawfulMonad` instance in this toolchain, so an IO equation closes by `rfl`
 (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`), not by rewriting.
 
-(6) **No theorem yet states the proof-layer bundle of the state the hardware
-boot installs.** `bootFromPlatform_proofLayerInvariantBundle_general` and
-`bootToRuntime_invariantBridge_general` cover the *unchecked* boot of a
-VSpace-free config. Every RPi5 boot carries roots and idle threads, so it is
-outside them. **BP3.5** owns this, before BP4.1 makes the boot live. New prose
-must not cite the bridge as covering the RPi5 boot.
+(6) **The state the hardware boot installs satisfies the proof-layer bundle,
+and there is one argument for it** (BP3.5).
+`bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` covers the
+checked, idle-enqueued boot of every configuration the checked boot accepts,
+`bootToRuntime_invariantBridge_checked` adds the freeze, and
+`rpi5DeploymentBootState_invariantBridge` is the deployment's instance. Both
+boots, checked and unchecked, are instances of
+`proofLayerInvariantBundle_of_bootShape`: every object is `bootObjectShape`,
+the quiescent fields are defaults, the ASID table is consistent, and the
+scheduler supplies its run-queue facts. A new boot install step must keep all
+four, or say which it breaks. And **a runtime check must decide every clause
+the Prop-level predicate states**: `bootSafeCnodeCheck` looked at a CNode's
+shape and not at its slots, so a reply capability or an out-of-range badge
+booted, and the soundness bridge was partial under a docstring saying the
+clauses were checked elsewhere. `bootSafeCapCheck` refuses both, and
+`bootSafeObjectCheck_sound` concludes all of `bootSafeObject`.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

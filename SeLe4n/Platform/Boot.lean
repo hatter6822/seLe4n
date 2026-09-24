@@ -240,6 +240,16 @@ def bootEntryAsidTable (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId) (entry : ObjectE
   | .vspaceRoot vsr => tbl.insert vsr.asid entry.id
   | _ => tbl
 
+/-- **WS-BP BP3.5**: the ASID an entry registers — its root's, if it is a
+    VSpace root.  One definition for the two places that ask: the boot's ASID
+    gate (`bootVSpaceAsids`) and the proof that the table the boot builds is
+    consistent with its roots, so the list the gate checks is the list the
+    proof consumes. -/
+def bootEntryAsid? (entry : ObjectEntry) : Option SeLe4n.ASID :=
+  match entry.obj with
+  | .vspaceRoot vsr => some vsr.asid
+  | _ => none
+
 /-- **WS-BP BP3.2**: the ASID registration keeps the table's extension
     invariant. -/
 theorem bootEntryAsidTable_invExtK (tbl : RHTable SeLe4n.ASID SeLe4n.ObjId)
@@ -1603,22 +1613,64 @@ def bootSafeNotificationCheck (notif : Notification) : Bool :=
       (decide (notif.state = .idle) && notif.waitingThreads.isEmpty &&
        notif.pendingBadge.isNone) := rfl
 
-/-- A boot **CNode** is structurally well-formed.  The conditions are over
-    derived projections (`slotCount`, `bitsConsumed`, `guardBounded`), which
-    the pattern's fields determine. -/
+/-- **WS-BP BP3.5**: a boot **capability** carries a valid badge if it carries
+    one, and is not a reply capability.
+
+    Both are clauses of `bootSafeObject`'s CNode arm, and until BP3.5 neither
+    was checked: the runtime sweep checked a CNode's shape and nothing about
+    what its slots hold, so a configuration whose CNode held a reply capability
+    — which can only dangle at boot, since reply capabilities are minted at
+    runtime from retyped Reply objects — or an out-of-range badge passed the
+    checked boot, and the state it installed violated the capability bundle's
+    `replyCapPointsToValidReply` and `capabilityBadgesWellFormed`.  The
+    Prop-level predicate stated the rule and the validator did not enforce it;
+    the proof bridge assumed it (`PlatformConfig.bootSafe`) and the production
+    boot never established it.  Now the check decides it, per capability. -/
+def bootSafeCapCheck (cap : Capability) : Bool :=
+  (match cap.badge with
+   | some b => b.isValid
+   | none => true) &&
+  (match cap.target with
+   | .replyCap _ => false
+   | _ => true)
+
+/-- A boot **CNode** is structurally well-formed, and every capability it holds
+    passes `bootSafeCapCheck`.  The structural conditions are over derived
+    projections (`slotCount`, `bitsConsumed`, `guardBounded`), which the
+    pattern's fields determine; the per-capability condition is a fold over the
+    slots, read back per lookup by `RHTable.fold_and_true_of_get?`. -/
 def bootSafeCnodeCheck (cn : CNode) : Bool :=
   match cn with
   | ⟨_depth, _guardWidth, _guardValue, _radixWidth, _slots, _lock⟩ =>
     decide (cn.slots.size ≤ cn.slotCount) &&
     decide (cn.depth ≤ maxCSpaceDepth) &&
-    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)
+    decide (cn.bitsConsumed > 0 → cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
+    cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap)
 
 @[simp] theorem bootSafeCnodeCheck_def (cn : CNode) :
     bootSafeCnodeCheck cn =
       (decide (cn.slots.size ≤ cn.slotCount) &&
        decide (cn.depth ≤ maxCSpaceDepth) &&
        decide (cn.bitsConsumed > 0 →
-         cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded)) := rfl
+         cn.bitsConsumed ≤ cn.depth ∧ 0 < cn.bitsConsumed ∧ cn.guardBounded) &&
+       cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap)) := rfl
+
+/-- **WS-BP BP3.5**: what a passed CNode check says of each capability. -/
+theorem bootSafeCnodeCheck_caps {cn : CNode}
+    (hFold : cn.slots.fold true (fun acc _ cap => acc && bootSafeCapCheck cap) = true)
+    {slot : SeLe4n.Slot} {cap : Capability} (hLookup : cn.lookup slot = some cap) :
+    (∀ badge, cap.badge = some badge → badge.valid) ∧
+    (∀ rid, cap.target ≠ .replyCap rid) := by
+  have hc := SeLe4n.Kernel.RobinHood.RHTable.fold_and_true_of_get? cn.slots.table
+    (fun _ cap => bootSafeCapCheck cap) hFold hLookup
+  unfold bootSafeCapCheck at hc
+  rw [Bool.and_eq_true] at hc
+  obtain ⟨hBadge, hTarget⟩ := hc
+  refine ⟨fun badge hB => ?_, fun rid hT => ?_⟩
+  · rw [hB] at hBadge
+    simpa [SeLe4n.Badge.isValid, SeLe4n.Badge.valid] using hBadge
+  · rw [hT] at hTarget
+    cases hTarget
 
 /-- A boot **TCB** is detached and inactive: no pending message, ready IPC
     state, all three queue links empty (PR #889 review round 8 for
@@ -1730,11 +1782,13 @@ def bootSafeReplyCheck (r : Reply) : Bool :=
     Validates structural boot safety constraints that can be checked at
     runtime. Used by `bootFromPlatformChecked` to reject invalid objects.
 
-    **Coverage**: Checks all `bootSafeObject` conjuncts except CNode badge
-    validity. Badge validity requires iterating over all CNode slot entries
-    with a `get? → toList` bridge that would add complexity for a property
-    that is vacuously true for empty boot-config CNodes. Badge validity
-    remains checked at the Prop level via `bootFromPlatform_proofLayerInvariantBundle_general`.
+    **Coverage**: every `bootSafeObject` conjunct (`bootSafeObjectCheck_sound`).
+    Until WS-BP BP3.5 the CNode arm skipped the two clauses about what a slot
+    holds — a valid badge and no reply capability — on the stated ground that
+    boot CNodes are empty and the clauses were "checked at the Prop level" by
+    the boot bridge.  Neither held: a deployment's CNodes hold its threads'
+    capabilities, and the bridge assumed the clauses rather than checking
+    them.  `bootSafeCapCheck` decides both.
 
     **WS-RC R3 (DEEP-BOOT-01)**: VSpaceRoots are now admitted iff they
     pass `Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck` (asid bounded,
@@ -1765,11 +1819,17 @@ def bootSafeObjectCheck (obj : KernelObject) : Bool :=
   | .reply r => bootSafeReplyCheck r
 
 set_option maxHeartbeats 400000 in
-/-- AJ3-C (M-16): Partial soundness bridge — `bootSafeObjectCheck = true` implies
-    the structural conjuncts of `bootSafeObject` (all except CNode badge validity).
-    Badge validity is a Prop-level guarantee discharged by the boot invariant
-    bridge theorem `bootFromPlatform_proofLayerInvariantBundle_general`. -/
-theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
+/-- AJ3-C (M-16), completed at **WS-BP BP3.5**: `bootSafeObjectCheck = true`
+    implies every conjunct of `bootSafeObject` — the conclusion below is that
+    predicate's body, stated here because the predicate is defined further down.
+
+    It was `bootSafeObjectCheck_sound_structural` until BP3.5, and partial: the
+    CNode arm concluded the three structural clauses and not the two about what
+    the slots hold, with a docstring saying badge validity was "discharged by
+    the boot invariant bridge".  It was not — that bridge *assumed* it — so the
+    production boot installed CNodes no theorem had checked.  `bootSafeCapCheck`
+    decides both clauses, and this theorem is now whole. -/
+theorem bootSafeObjectCheck_sound (obj : KernelObject)
     (h : bootSafeObjectCheck obj = true) :
     -- Endpoints: empty queues
     (∀ ep, obj = .endpoint ep →
@@ -1779,10 +1839,15 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
     -- WS-RC R4.C: `.val = []` references the underlying List projection.
     (∀ notif, obj = .notification notif →
       notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
-    -- CNodes: structural (excluding badge validity)
+    -- CNodes: structural, and (WS-BP BP3.5) every held capability's badge is
+    -- valid and none is a reply capability
     (∀ cn, obj = .cnode cn →
       cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
-      (cn.bitsConsumed > 0 → cn.wellFormed)) ∧
+      (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+      (∀ slot cap badge, cn.lookup slot = some cap →
+        cap.badge = some badge → badge.valid) ∧
+      (∀ slot cap rid, cn.lookup slot = some cap →
+        cap.target ≠ .replyCap rid)) ∧
     -- TCBs: clean boot state
     -- PR #822: a boot TCB carries no reply object.
     (∀ tcb, obj = .tcb tcb →
@@ -1828,9 +1893,13 @@ theorem bootSafeObjectCheck_sound_structural (obj : KernelObject)
   | cnode cn =>
     simp only [bootSafeObjectCheck, bootSafeCnodeCheck_def, Bool.and_eq_true,
       decide_eq_true_eq] at h
-    obtain ⟨⟨hSlots, hDepth⟩, hWf⟩ := h
+    obtain ⟨⟨⟨hSlots, hDepth⟩, hWf⟩, hCaps⟩ := h
     exact ⟨fun _ he => by injection he, fun _ he => by injection he,
-           fun c hc => by injection hc; subst_vars; exact ⟨hSlots, hDepth, hWf⟩,
+           fun c hc => by
+             injection hc; subst_vars
+             exact ⟨hSlots, hDepth, hWf,
+               fun _ _ badge hL hB => (bootSafeCnodeCheck_caps hCaps hL).1 badge hB,
+               fun _ _ rid hL => (bootSafeCnodeCheck_caps hCaps hL).2 rid⟩,
            fun _ he => by injection he, fun _ he => by injection he,
            fun _ he => by injection he, fun _ he => by injection he⟩
   | tcb tcb =>
@@ -1983,10 +2052,7 @@ theorem bootVSpaceRootSafe_none
     each configured root's (`initialObjects`, in order) and then the binding's
     (`bootVSpaceRoot`). -/
 def bootVSpaceAsids (config : PlatformConfig) : List SeLe4n.ASID :=
-  config.initialObjects.filterMap (fun entry =>
-    match entry.obj with
-    | .vspaceRoot vsr => some vsr.asid
-    | _ => none) ++
+  config.initialObjects.filterMap bootEntryAsid? ++
   (match config.bootVSpaceRoot with
    | none => []
    | some entry => [entry.root.asid])
@@ -2018,12 +2084,10 @@ def bootVSpaceAsidsDistinct (config : PlatformConfig) : Bool :=
 theorem bootVSpaceAsidsDistinct_of_no_configured_roots (config : PlatformConfig)
     (h : ∀ e ∈ config.initialObjects, ∀ vs, e.obj ≠ KernelObject.vspaceRoot vs) :
     bootVSpaceAsidsDistinct config = true := by
-  have hNil : config.initialObjects.filterMap (fun entry =>
-      match entry.obj with
-      | .vspaceRoot vsr => some vsr.asid
-      | _ => none) = [] := by
+  have hNil : config.initialObjects.filterMap bootEntryAsid? = [] := by
     rw [List.filterMap_eq_nil_iff]
     intro e hMem
+    unfold bootEntryAsid?
     cases hObj : e.obj with
     | vspaceRoot vs => exact absurd hObj (h e hMem vs)
     | _ => rfl
@@ -4852,8 +4916,8 @@ def bootSafeObject (obj : KernelObject) : Prop :=
   --
   -- **WS-HP HP10.3, corrected at `v0.35.97`**: and no recorded reservation
   -- origin.  HP10.3 added that conjunct to the Bool mirror
-  -- (`bootSafeSchedContextCheck`) and to the structural bridge
-  -- (`bootSafeObjectCheck_sound_structural`) and **not here**, so this
+  -- (`bootSafeSchedContextCheck`) and to the soundness bridge
+  -- (`bootSafeObjectCheck_sound`, then `…_sound_structural`) and **not here**, so this
   -- Prop-level API — the one the post-boot safety theorems are stated over —
   -- certified a configuration the live validator rejects, carrying a loan
   -- history no boot state can have made.  One question, two answers, with the
@@ -4885,6 +4949,88 @@ theorem not_bootSafeObject_rpi5BootVSpaceRoot :
   rw [← SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRootCheck_iff,
     SeLe4n.Platform.RPi5.VSpaceBoot.rpi5BootVSpaceRoot_not_bootSafeUser] at hUser
   exact Bool.false_ne_true hUser
+
+-- ============================================================================
+-- WS-BP BP3.5: the shape of every object a boot installs
+-- ============================================================================
+
+/-- **WS-BP BP3.5**: what the proof-layer invariant bundle reads of an object
+    in a freshly booted state.  `bootSafeObject` with two arms widened to admit
+    the two kinds of object the *checked* boot installs beyond the
+    configuration:
+
+    * **A TCB may be queued.**  The per-core idle threads the boot enqueues
+      are `.Ready` where a configured thread is `.Inactive`, so the TCB arm
+      drops the thread-state clause — which no bundle conjunct reads — and
+      keeps the nine clean-state fields every conjunct does.
+    * **A VSpace root may map.**  The binding's boot root maps the kernel,
+      where a thread's maps nothing, so the VSpace arm asks only the three
+      per-mapping facts the bundle reads (`bootVSpaceRootMappingsSafe`); the
+      ASID facts are the table's, stated separately.
+
+    The arms sit at `bootSafeObject`'s positions, so a projection written
+    against one reads the same field of the other. -/
+def bootObjectShape (obj : KernelObject) : Prop :=
+  (∀ ep, obj = .endpoint ep →
+    ep.sendQ.head = none ∧ ep.sendQ.tail = none ∧
+    ep.receiveQ.head = none ∧ ep.receiveQ.tail = none) ∧
+  (∀ notif, obj = .notification notif →
+    notif.state = .idle ∧ notif.waitingThreads.val = [] ∧ notif.pendingBadge = none) ∧
+  (∀ cn, obj = .cnode cn →
+    cn.slotCountBounded ∧ cn.depth ≤ maxCSpaceDepth ∧
+    (cn.bitsConsumed > 0 → cn.wellFormed) ∧
+    (∀ slot cap badge, cn.lookup slot = some cap →
+      cap.badge = some badge → badge.valid) ∧
+    (∀ slot cap rid, cn.lookup slot = some cap →
+      cap.target ≠ .replyCap rid)) ∧
+  (∀ tcb, obj = .tcb tcb →
+    tcb.pendingMessage = none ∧ tcb.ipcState = .ready ∧
+    tcb.queueNext = none ∧ tcb.queuePrev = none ∧ tcb.queuePPrev = none ∧
+    tcb.timeoutBudget = none ∧
+    tcb.schedContextBinding = .unbound ∧
+    tcb.replyObject = none ∧
+    tcb.pendingReceiveReply = none) ∧
+  (∀ vs, obj = .vspaceRoot vs →
+    SeLe4n.Platform.RPi5.VSpaceBoot.bootVSpaceRootMappingsSafe vs) ∧
+  (∀ sc, obj = .schedContext sc →
+    schedContextWellFormed sc ∧ sc.boundThread = none ∧ sc.scReply = none ∧
+      sc.donationOrigin = none) ∧
+  (∀ r, obj = .reply r →
+    r.caller = none ∧ r.prev = none ∧ r.next = none)
+
+/-- **WS-BP BP3.5**: a boot-safe configured object has the boot shape.  A
+    configured VSpace root is a thread's, which maps nothing; reading that per
+    lookup needs its mapping table's `invExt`, which every object entry
+    carries. -/
+theorem bootSafeObject_bootObjectShape {obj : KernelObject} (h : bootSafeObject obj)
+    (hMappings : ∀ vs, obj = .vspaceRoot vs → vs.mappings.invExt) :
+    bootObjectShape obj :=
+  ⟨h.1, h.2.1, h.2.2.1,
+   fun tcb hEq =>
+     let t := h.2.2.2.1 tcb hEq
+     ⟨t.1, t.2.1, t.2.2.1, t.2.2.2.1, t.2.2.2.2.1, t.2.2.2.2.2.1, t.2.2.2.2.2.2.1,
+      t.2.2.2.2.2.2.2.1, t.2.2.2.2.2.2.2.2.1⟩,
+   fun vs hEq =>
+     SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeUserVSpaceRoot_mappingsSafe
+       (h.2.2.2.2.1 vs hEq) (hMappings vs hEq),
+   h.2.2.2.2.2.1, h.2.2.2.2.2.2⟩
+
+/-- **WS-BP BP3.5**: the binding's boot root has the boot shape — every arm
+    but the VSpace one is vacuous, and that one is its checks read per
+    mapping. -/
+theorem bootSafeVSpaceRoot_bootObjectShape {vs : VSpaceRoot}
+    (h : SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot vs) :
+    bootObjectShape (.vspaceRoot vs) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  exact SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRoot_mappingsSafe h
+
+/-- **WS-BP BP3.5**: an enqueued idle TCB has the boot shape — it is
+    `createIdleThread`'s structure defaults with `threadState := .Ready`, and
+    every clean-state field the TCB arm reads is a default. -/
+theorem queuedIdleThread_bootObjectShape (c : SeLe4n.Kernel.Concurrency.CoreId) :
+    bootObjectShape (.tcb (queuedIdleThread c)) := by
+  refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩ <;> intro x hx <;> cases hx
+  exact ⟨rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl, rfl⟩
 
 -- ============================================================================
 -- V4-A4b: Boot-safe object bridge — connect boot state objects to bootSafe
@@ -5086,144 +5232,77 @@ private theorem bootFromPlatform_untypedRegionsDisjoint
 /-! ### V4-A8: General Boot Invariant Bridge
 
 The composition theorem shows that for ANY `PlatformConfig`, the post-boot
-state satisfies all 9 components of `proofLayerInvariantBundle`. The proof
-uses the field preservation theorems to rewrite each component's state
-references back to the default state where the component is already proved.
+state satisfies all sixteen components of `proofLayerInvariantBundle`.
 
-The key technical mechanism: each invariant component reads only fields that
-are either (a) unchanged from default (scheduler, CDT, services, registries,
-ASID table, TLB, machine) or (b) irrelevant to the component.
-By rewriting the post-boot state's fields to default values, we reduce each
-component to the already-proved `default_*` case.
+**WS-BP BP3.5**: the argument is stated once, over a *boot-shaped* state
+(`proofLayerInvariantBundle_of_bootShape`): every object satisfies
+`bootObjectShape`, the untouched fields are their defaults
+(`bootQuiescentFields`), the ASID table is consistent with the roots, and the
+scheduler supplies its own run-queue facts.  The unchecked boot and the
+production boot are its two instances.
 -/
 
-/-- V4-A8: The post-boot state from any config satisfies
-    `proofLayerInvariantBundle`. This is the general boot invariant bridge.
+/-- **WS-BP BP3.5**: the fields a freshly booted state leaves at their defaults
+    — the capability derivation tree, the service registries, every TLB and
+    instruction-cache view, the shootdown state and the audit trail.  Boot
+    writes none of them: it installs objects, registers ASIDs and enqueues the
+    idle threads, and each of those is framed here. -/
+def bootQuiescentFields (st : SystemState) : Prop :=
+  st.cdt = (default : SystemState).cdt ∧
+  st.cdtNodeSlot = (default : SystemState).cdtNodeSlot ∧
+  st.services = (default : SystemState).services ∧
+  st.serviceRegistry = (default : SystemState).serviceRegistry ∧
+  st.tlb = (default : SystemState).tlb ∧
+  st.tlbShootdown = (default : SystemState).tlbShootdown ∧
+  st.perCoreTlb = (default : SystemState).perCoreTlb ∧
+  st.perCoreICache = (default : SystemState).perCoreICache ∧
+  st.declassificationAuditLog = (default : SystemState).declassificationAuditLog
 
-    All 12 components are proved by showing the post-boot state is equivalent
-    to the default state on the fields each component reads:
+/-- **WS-BP BP3.5**: **the proof-layer invariant bundle of any boot-shaped
+    state** — one argument for every boot this tree has, stated over what a
+    boot leaves rather than over one boot's construction.
 
-    1. schedulerInvariantBundleFull — scheduler is default
-    2. capabilityInvariantBundle — CDT is empty, objects.invExt from builder
-    3. coreIpcInvariantBundle — scheduler+CDT+IPC queues all default
-    4. ipcSchedulerCouplingInvariantBundle — scheduler default, no blocking
-    5. lifecycleInvariantBundle — metadata consistent from builder
-    6. serviceLifecycleCapabilityInvariantBundle — services empty
-    7. vspaceInvariantBundle — asidTable empty, no ASID mappings
-    8. crossSubsystemInvariant — registries empty, no stale refs
-    9. tlbConsistent — TLB is default (empty)
-    10. schedulerInvariantBundleExtended — SchedContexts boot-safe (Z9-G)
-    11. notificationWaiterConsistent — boot notifications have no waiters
-    12. pendingBounded — shootdown state is quiescent (WS-SM SM7.B)
--/
-theorem bootFromPlatform_proofLayerInvariantBundle_general
-    (config : PlatformConfig) (hSafe : config.bootSafe)
-    (hUntypedDisj : config.untypedRegionsDisjoint)
-    -- WS-RC R3 (DEEP-BOOT-01): Boot VSpaceRoots are introduced via the
-    -- dedicated `installBootVSpaceRoot` builder operation (extending
-    -- `bootFromPlatformChecked`), NOT through `initialObjects`.  This
-    -- precondition restricts the present (unchecked) bridge theorem to
-    -- VSpace-clean configs — `bootFromPlatform` itself does NOT install
-    -- a boot VSpaceRoot, so its post-state is necessarily VSpace-free
-    -- when `initialObjects` is also VSpace-free.  Substantive proof
-    -- of the full `proofLayerInvariantBundle` for the
-    -- `bootFromPlatformChecked` post-state with a boot VSpaceRoot
-    -- installed (i.e., a sibling theorem that handles the
-    -- `installBootVSpaceRoot` step) is a post-R3 hardening item;
-    -- the current R3 deliverable is the RUNTIME wiring + per-step
-    -- witness theorems (`installBootVSpaceRoot_objects_lookup`,
-    -- `installBootVSpaceRoot_asidTable_lookup`).
-    (hNoVSpaceInInitial :
-      ∀ entry, entry ∈ config.initialObjects → ∀ vs,
-        entry.obj ≠ KernelObject.vspaceRoot vs) :
-    Architecture.proofLayerInvariantBundle
-      (bootFromPlatform config).state := by
-  -- The post-boot state equals default on all fields that the 12 invariant
-  -- components read, so we can transport the default proof.
-  -- Since bootFromPlatform_empty_state shows the empty config case is rfl,
-  -- and the non-empty config only adds objects/irqHandlers (neither of which
-  -- affects the invariant components' relevant fields), the proof is:
-  -- show the post-boot state and default state agree on all invariant-read fields,
-  -- then apply the default bundle proof.
-  -- Field preservation facts
-  have hSch := bootFromPlatform_scheduler_eq config
-  have hCdt := bootFromPlatform_cdt_eq config
-  have hSvc := bootFromPlatform_services_eq config
-  have hSvcR := bootFromPlatform_serviceRegistry_eq config
-  have hIfR := bootFromPlatform_interfaceRegistry_eq config
-  have hAsid := bootFromPlatform_asidTable_eq config
-    (fun e hMem vs => hNoVSpaceInInitial e hMem vs)
-  have hTlb := bootFromPlatform_tlb_eq config
-  have hShoot := bootFromPlatform_tlbShootdown_eq config
-  -- Builder structural invariants
-  have hSlots := (bootFromPlatform config).hPerObjectSlots
-  have hAllTables := (bootFromPlatform config).hAllTables
-  -- Scheduler sub-field facts
-  have hCur : ((bootFromPlatform config).state.scheduler.currentOnCore bootCoreId) = none := by
-    rw [hSch]; decide
-  have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
-    rw [hSch]; decide
-  have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
-    rw [hSch]; decide
-  -- 1. schedulerInvariantBundleFull
-  have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
-    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · simp [queueCurrentConsistent, hCur]
-    · show (bootFromPlatform config).state.scheduler.runnable.Nodup
-      rw [hRun]; exact List.nodup_nil
-    · unfold currentThreadValid; rw [hCur]; trivial
-    · intro tid hMem; rw [hRun] at hMem; simp at hMem
-    · unfold currentTimeSlicePositive; rw [hCur]; trivial
-    · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
-    · unfold contextMatchesCurrent; rw [hCur]; trivial
-    · intro tid hMem; rw [hRun] at hMem; simp at hMem
-    · intro tid hMem
-      have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-      simp [RunQueue.toList, hRQflat] at hInFlat
-    · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
-      unfold domainTimeRemainingPositive; rw [hSch]; decide
-    · -- X2-A: domainScheduleEntriesPositive — boot scheduler has empty domainSchedule
-      intro e hMem
-      have hDS : (bootFromPlatform config).state.scheduler.domainSchedule = [] := by
-        rw [hSch]; decide
-      rw [hDS] at hMem; simp at hMem
-  -- Boot-safe object bridge and shared helpers
-  have hBS := bootFromPlatform_objects_bootSafe config hSafe
-  have hCdtNS := bootFromPlatform_cdtNodeSlot_eq config
-  -- WS-RC R3 (DEEP-BOOT-01): No VSpaceRoots in boot state.  With R3.1
-  -- admitting boot-safe VSpaceRoots into the `bootSafeObject` predicate,
-  -- absurdity is no longer immediate from the bootSafe witness; instead
-  -- we trace any post-boot VSpaceRoot back to `initialObjects` via
-  -- `foldObjects_objects_reachable` and contradict `hNoVSpaceInInitial`.
-  have hNoVSpace : ∀ (oid : SeLe4n.ObjId) (vs : VSpaceRoot),
-      (bootFromPlatform config).state.objects.get? oid ≠
-        some (KernelObject.vspaceRoot vs) := by
-    intro oid vs hObj
-    -- Trace the post-boot lookup back to initialObjects.
-    unfold bootFromPlatform at hObj
-    -- applyMachineConfig preserves objects.
-    rw [applyMachineConfig_objects_eq] at hObj
-    have hObj' : (foldObjects config.initialObjects
-        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
-          some (KernelObject.vspaceRoot vs) := by
-      simp only [RHTable_getElem?_eq_get?]; exact hObj
-    rcases foldObjects_objects_reachable config.initialObjects
-        (foldIrqs config.irqTable mkEmptyIntermediateState) oid _ hObj' with
-      ⟨entry, hMem, _hId, hObjEq⟩ | hBase
-    · -- Entry came from initialObjects with `entry.obj = .vspaceRoot vs`.
-      exact hNoVSpaceInInitial entry hMem vs (by rw [hObjEq])
-    · -- Base state: `foldIrqs` over the empty intermediate state has no objects.
-      rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
-      have hEmpty : (default : SystemState).objects[oid]? = none := by
-        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-      rw [hEmpty] at hBase; exact absurd hBase (by simp)
+    What a boot leaves splits cleanly.  The **objects** are boot-shaped
+    (`bootObjectShape`): every conjunct that quantifies over the object store
+    — the capability, IPC, lifecycle, service, cross-subsystem and
+    SchedContext halves, and the VSpace bundle's per-mapping half — is derived
+    here from that shape alone.  The **ASID table** is consistent with the
+    roots, which is the VSpace bundle's other half (uniqueness and cross-ASID
+    isolation both follow from it).  The **scheduler** facts that read the
+    run queue are the scheduler's, supplied by the boot that built it, since
+    only it knows what it enqueued; every object-side question about a queued
+    thread — its IPC readiness, its budget, its binding — is again the shape's.
+    And the **untouched fields** are their defaults (`bootQuiescentFields`).
+
+    `bootFromPlatform_proofLayerInvariantBundle_general` (the unchecked boot,
+    empty scheduler) and `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle`
+    (the production boot: checked, VSpace roots installed, idle threads
+    enqueued) are its two instances; the proof lived inside the first until
+    the second needed it, and a second copy of it would be two answers to one
+    question. -/
+theorem proofLayerInvariantBundle_of_bootShape (ist : IntermediateState)
+    (hShape : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      ist.state.objects[oid]? = some obj → bootObjectShape obj)
+    (hFields : bootQuiescentFields ist.state)
+    (hAsidTable : Architecture.asidTableConsistent ist.state)
+    (hUntyped : Kernel.untypedRegionsDisjoint ist.state)
+    (hSched : schedulerInvariantBundleFull ist.state)
+    (hCur : ist.state.scheduler.currentOnCore bootCoreId = none)
+    (hReplenish : replenishQueueValid ist.state)
+    (hEffective : effectiveParamsMatchRunQueue ist.state) :
+    Architecture.proofLayerInvariantBundle ist.state := by
+  obtain ⟨hCdt, hCdtNS, hSvc, hSvcR, hTlb, hShoot, hPerCoreTlb, hPerCoreICache,
+    hAudit⟩ := hFields
+  have hAllTables := ist.hAllTables
+  have hBS := hShape
+  have h1 := hSched
   -- lookupService returns none (services empty)
   have hLookupSvcNone : ∀ sid,
-      lookupService (bootFromPlatform config).state sid = none := by
+      lookupService ist.state sid = none := by
     intro sid; unfold lookupService; rw [hSvc]
     exact RHTable_get?_empty 16 (by omega)
   -- 2. capabilityInvariantBundle
-  have hCapBundle : capabilityInvariantBundle (bootFromPlatform config).state := by
+  have hCapBundle : capabilityInvariantBundle ist.state := by
     -- WS-RC R4.A.6: bundle has 6 conjuncts (cspaceSlotUnique dropped).
     -- The per-CNode `slotsUnique` invariant is carried structurally on every
     -- `UniqueSlotMap` value; the builder-phase `hSlots` witness is preserved
@@ -5243,7 +5322,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
       rw [this] at hLookup; exact absurd hLookup (by simp)
     · -- cdtAcyclicity: CDT is default (empty)
-      show (bootFromPlatform config).state.cdt.edgeWellFounded
+      show ist.state.cdt.edgeWellFounded
       rw [hCdt]; exact CapDerivationTree.empty_edgeWellFounded
     · -- cspaceDepthConsistent
       intro cnodeId cn hObj
@@ -5254,10 +5333,10 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       intro oid cn slot cap rid hObj hLookupSlot hTgt
       exact absurd hTgt (((hBS oid _ hObj).2.2.1 cn rfl).2.2.2.2 slot cap rid hLookupSlot)
   -- 5. lifecycleInvariantBundle
-  have hLifeBundle : lifecycleInvariantBundle (bootFromPlatform config).state :=
-    (bootFromPlatform config).hLifecycleConsistent
+  have hLifeBundle : lifecycleInvariantBundle ist.state :=
+    ist.hLifecycleConsistent
   -- 3. ipcInvariantFull (WS-RC R4.C.7: 15 sub-components after uniqueWaiters retirement)
-  have hIpcFull : ipcInvariantFull (bootFromPlatform config).state := by
+  have hIpcFull : ipcInvariantFull ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- ipcInvariant: notifications well-formed
       intro oid ntfn hObj
@@ -5270,7 +5349,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · -- all endpoints have well-formed queues
         intro epId ep hObj
         have hEp := (hBS epId _ hObj).1 ep rfl
-        show dualQueueEndpointWellFormed epId (bootFromPlatform config).state
+        show dualQueueEndpointWellFormed epId ist.state
         unfold dualQueueEndpointWellFormed; rw [hObj]
         constructor
         · -- sendQ well-formed
@@ -5404,11 +5483,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hTcb.2.1] at hIpc; cases hIpc
       · have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hObj
         have hTcb := (hBS tid.toObjId _ hObjRaw).2.2.2.1 tcb rfl
-        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep; cases hRep
+        rw [hTcb.2.2.2.2.2.2.2.2] at hRep; cases hRep
       · -- pendingReceiveReplyWellFormed uniqueness (17th.2): boot TCBs carry no stash.
         have hObjRaw := (SystemState.getTcb?_eq_some_iff _ tid₁ tcb₁).mp hObj₁
         have hTcb := (hBS tid₁.toObjId _ hObjRaw).2.2.2.1 tcb₁ rfl
-        rw [hTcb.2.2.2.2.2.2.2.2.1] at hRep₁; cases hRep₁
+        rw [hTcb.2.2.2.2.2.2.2.2] at hRep₁; cases hRep₁
       · -- IPC de-threading D6: donationOwnerUnique (18th, vacuous — boot TCBs are .unbound).
         have hTcb := (hBS tidA.toObjId _ hA).2.2.2.1 tcbA rfl
         rw [hTcb.2.2.2.2.2.2.1] at hBA; cases hBA
@@ -5426,22 +5505,24 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         rw [hTcb.2.2.1] at hNext; exact absurd hNext (by simp)
   -- 4. ipcSchedulerCouplingInvariantBundle
   have hCouplingBundle : ipcSchedulerCouplingInvariantBundle
-      (bootFromPlatform config).state := by
+      ist.state := by
     refine ⟨⟨h1.1, hCapBundle, hIpcFull⟩, ?_, ?_, ?_⟩
-    · -- ipcSchedulerCoherenceComponent (6 predicates, all vacuous: runnable = [])
+    · -- ipcSchedulerCoherenceComponent: every boot TCB is IPC-ready, so the
+      -- runnable half holds of whatever the run queue holds and the five
+      -- blocked halves are vacuous.
       refine ⟨?_, ?_, ?_, ?_, ?_, ?_⟩
-      · -- runnableThreadIpcReady: tid ∈ runnable → ... (runnable = [])
-        intro tid tcb _ hMem; rw [hRun] at hMem; simp at hMem
-      · -- blockedOnSendNotRunnable
-        intro tid tcb _ _ _; rw [hRun]; simp
-      · -- blockedOnReceiveNotRunnable
-        intro tid tcb _ _ _; rw [hRun]; simp
-      · -- blockedOnCallNotRunnable
-        intro tid tcb _ _ _; rw [hRun]; simp
-      · -- blockedOnReplyNotRunnable
-        intro tid tcb _ _ _ _; rw [hRun]; simp
-      · -- blockedOnNotificationNotRunnable
-        intro tid tcb _ _ _; rw [hRun]; simp
+      · intro tid tcb hObj _
+        exact ((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1
+      · intro tid tcb _ hObj hIpc
+        rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1] at hIpc; cases hIpc
+      · intro tid tcb _ hObj hIpc
+        rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1] at hIpc; cases hIpc
+      · intro tid tcb _ hObj hIpc
+        rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1] at hIpc; cases hIpc
+      · intro tid tcb _ _ hObj hIpc
+        rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1] at hIpc; cases hIpc
+      · intro tid tcb _ hObj hIpc
+        rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.1] at hIpc; cases hIpc
     · -- contextMatchesCurrent
       unfold contextMatchesCurrent; rw [hCur]; trivial
     · -- currentThreadDequeueCoherent (current = none → True)
@@ -5451,7 +5532,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       · unfold currentNotOnNotificationWaitList; rw [hCur]; trivial
   -- 6. serviceLifecycleCapabilityInvariantBundle
   have hServiceBundle : serviceLifecycleCapabilityInvariantBundle
-      (bootFromPlatform config).state := by
+      ist.state := by
     apply serviceLifecycleCapabilityInvariantBundle_of_components
     · -- servicePolicySurfaceInvariant (services empty → vacuous)
       intro sid svc hLookupSvc
@@ -5465,24 +5546,30 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
           simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
         rw [this] at hLookup; exact absurd hLookup (by simp)
       }
-  -- 7. vspaceInvariantBundle (no VSpaceRoots → all vacuously true)
+  -- 7. vspaceInvariantBundle (WS-BP BP3.5): the ASID half is the table's
+  -- consistency — two roots on one ASID would be registered at one key, so the
+  -- table's completeness names them the same object — and the three
+  -- per-mapping conjuncts are each root's shape.
+  have hAsidUnique : Architecture.vspaceAsidRootsUnique ist.state := by
+    intro oid₁ oid₂ root₁ root₂ h₁ h₂ hEq
+    have t₁ := hAsidTable.2 oid₁ root₁ h₁
+    have t₂ := hAsidTable.2 oid₂ root₂ h₂
+    rw [hEq, t₂] at t₁
+    exact (Option.some.inj t₁).symm
   have hVspaceBundle : Architecture.vspaceInvariantBundle
-      (bootFromPlatform config).state := by
-    refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · intro oid₁ _ _ _ hObj₁; exact absurd hObj₁ (hNoVSpace oid₁ _)
-    · intro oid root hObj; exact absurd hObj (hNoVSpace oid _)
-    · constructor
-      · intro asid oid hLookup; rw [hAsid] at hLookup
-        have : (default : SystemState).asidTable[asid]? = none := by
-          simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
-        rw [this] at hLookup; exact absurd hLookup (by simp)
-      · intro oid root hObj; exact absurd hObj (hNoVSpace oid _)
-    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
-    · intro oidA _ _ _ hObjA; exact absurd hObjA (hNoVSpace oidA _)
-    · intro oid root _ _ _ hObj; exact absurd hObj (hNoVSpace oid _)
+      ist.state := by
+    refine ⟨hAsidUnique, ?_, hAsidTable, ?_, ?_, ?_, ?_⟩
+    · intro oid root _; exact VSpaceRoot.noVirtualOverlap_trivial root
+    · intro oid root v p perms hObj hMap
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).1
+    · intro oid root v p perms hObj hMap
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).2.1
+    · intro oidA oidB rootA rootB hA hB hNe hEq
+      exact hNe (hAsidUnique oidA oidB rootA rootB hA hB hEq)
+    · intro oid root v p perms hObj hMap
+      exact ((hBS oid _ hObj).2.2.2.2.1 root rfl v p perms hMap).2.2
   -- 8. crossSubsystemInvariant (Z9-D + AE5-C + AF1-B + AM4-A + AK8-A: 12 predicates)
-  have hCrossBundle : crossSubsystemInvariant (bootFromPlatform config).state := by
+  have hCrossBundle : crossSubsystemInvariant ist.state := by
     refine ⟨?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
     · -- registryEndpointValid
       intro sid reg hLookup; rw [hSvcR] at hLookup
@@ -5545,27 +5632,30 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       have hTcb₁ := (hBS tid₁.toObjId _ h₁).2.2.2.1 tcb₁ rfl
       rw [hTcb₁.2.2.2.2.2.2.1] at hB₁
       simp [SchedContextBinding.scId?] at hB₁
-    · -- Z9-C: schedContextRunQueueConsistent — empty runnable list at boot
-      intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · -- Z9-C: schedContextRunQueueConsistent — every boot TCB is `.unbound`,
+      -- so no runnable thread names a scheduling context.
+      intro tid _ tcb hObj scId hBinding
+      rw [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.2.2.2.1] at hBinding
+      simp [SchedContextBinding.scId?] at hBinding
     · -- AF1-B7: blockingAcyclic — all TCBs have ipcState = .ready at boot
       intro tid hMem
       -- blockingChain uses fuel = objectIndex.length. If fuel = 0, chain = [].
       -- If fuel > 0, use step lemma: chain = match blockingServer tid with ...
       -- All boot TCBs have .ready ipcState → blockingServer = none → chain = []
-      cases hF : (bootFromPlatform config).state.objectIndex.length with
+      cases hF : ist.state.objectIndex.length with
       | zero =>
-        have : PriorityInheritance.blockingChain (bootFromPlatform config).state tid 0 = [] := rfl
-        rw [show (bootFromPlatform config).state.objectIndex.length = 0 from hF] at hMem
+        have : PriorityInheritance.blockingChain ist.state tid 0 = [] := rfl
+        rw [show ist.state.objectIndex.length = 0 from hF] at hMem
         rw [this] at hMem; simp at hMem
       | succ n =>
-        rw [show (bootFromPlatform config).state.objectIndex.length = n + 1 from hF] at hMem
+        rw [show ist.state.objectIndex.length = n + 1 from hF] at hMem
         rw [PriorityInheritance.blockingChain_step] at hMem
         -- Show blockingServer returns none for tid at boot
-        have hServer : PriorityInheritance.blockingServer (bootFromPlatform config).state tid = none := by
+        have hServer : PriorityInheritance.blockingServer ist.state tid = none := by
           -- The split stays over the store because `hBS` is a whole-store
           -- boot-shape fact keyed by `ObjId`; `blockingServer` now reads
           -- `getTcb?`, so the accessor is unfolded to meet it.
-          cases hObj : (bootFromPlatform config).state.objects[tid.toObjId]? with
+          cases hObj : ist.state.objects[tid.toObjId]? with
           | none => simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj]
           | some obj =>
             cases obj with
@@ -5575,11 +5665,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
             | _ => simp [PriorityInheritance.blockingServer, SystemState.getTcb?, hObj]
         simp [hServer] at hMem
     · -- AM4-F (AL6-C.hygiene): lifecycleObjectTypeLockstep at boot.
-      -- `bootFromPlatform_objectTypeMetadataConsistent` already witnesses
+      -- The builder's `hLifecycleConsistent` already witnesses
       -- `objectTypeMetadataConsistent`, which is semantically stronger
       -- than (and directly implies) the lockstep predicate.
       intro oid obj hObj
-      have hMeta := bootFromPlatform_objectTypeMetadataConsistent config
+      have hMeta := ist.hLifecycleConsistent
       -- objectTypeMetadataConsistent: ∀ oid, lookupObjectTypeMeta st oid
       --   = (st.objects[oid]?).map KernelObject.objectType
       -- With hObj : st.objects[oid]? = some obj, the RHS is
@@ -5591,24 +5681,27 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
       -- Discharged via the config-level `untypedRegionsDisjoint` precondition
       -- (passed as `hUntypedDisj`) plus the `foldObjects_objects_reachable`
       -- lemma which traces every post-boot untyped back to its entry.
-      exact bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj
+      exact hUntyped
   -- 9. tlbConsistent
-  have hTlbBundle : Architecture.tlbConsistent (bootFromPlatform config).state
-      (bootFromPlatform config).state.tlb := by
+  have hTlbBundle : Architecture.tlbConsistent ist.state
+      ist.state.tlb := by
     rw [hTlb]; exact Architecture.tlbConsistent_empty _
   -- 10. schedulerInvariantBundleExtended (Z9-G: SchedContext invariants at boot)
-  have hExtBundle : schedulerInvariantBundleExtended (bootFromPlatform config).state := by
+  have hExtBundle : schedulerInvariantBundleExtended ist.state := by
     refine ⟨h1, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
-    · -- budgetPositive: empty runnable list at boot
-      intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · -- budgetPositive: every boot TCB is `.unbound`, whose budget arm is `True`.
+      intro tid _
+      cases hGet : ist.state.getTcb? tid with
+      | none => trivial
+      | some tcb =>
+        have hObj := (SystemState.getTcb?_eq_some_iff _ tid tcb).mp hGet
+        simp only [((hBS tid.toObjId _ hObj).2.2.2.1 tcb rfl).2.2.2.2.2.2.1]
     · -- currentBudgetPositive: current = none at boot
       simp [currentBudgetPositive, hCur]
     · -- schedContextsWellFormed: boot-safe SchedContexts are well-formed (Z9-I)
       intro oid sc hObj
       exact ((hBS oid _ hObj).2.2.2.2.2.1 sc rfl).1
-    · -- replenishQueueValid: default scheduler has empty queue
-      simp only [replenishQueueValid, hSch]
-      exact ⟨empty_sorted, empty_sizeConsistent⟩
+    · exact hReplenish
     · -- schedContextBindingConsistent: all TCBs have .unbound at boot
       constructor
       · intro tid tcb hTcb scId hBound
@@ -5618,17 +5711,12 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
         -- At boot, all SchedContexts have boundThread = none (Z9-I bootSafeObject)
         have hNone := ((hBS scId.toObjId _ hSc).2.2.2.2.2.1 sc rfl).2.1
         rw [hNone] at hBound; cases hBound
-    · -- effectiveParamsMatchRunQueue: empty runQueue at boot
-      intro tid hMem
-      have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
-        rw [hSch]; decide
-      have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
-      simp [RunQueue.toList, hFlat] at hInFlat
+    · exact hEffective
     · -- boundThreadDomainConsistent: all TCBs have .unbound at boot
       intro tid scId
-      show match (bootFromPlatform config).state.objects[tid.toObjId]? with
+      show match ist.state.objects[tid.toObjId]? with
         | some (.tcb tcb) => tcb.schedContextBinding = .bound scId → _ | _ => True
-      cases hLookup : (bootFromPlatform config).state.objects[tid.toObjId]? with
+      cases hLookup : ist.state.objects[tid.toObjId]? with
       | none => trivial
       | some obj =>
         cases obj with
@@ -5638,7 +5726,7 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
           rw [hTcbProps.2.2.2.2.2.2.1] at hBound; cases hBound
         | _ => trivial
   -- AG7-D: notificationWaiterConsistent — boot notifications have empty waitingThreads
-  have hNtfnWaiter : notificationWaiterConsistent (bootFromPlatform config).state := by
+  have hNtfnWaiter : notificationWaiterConsistent ist.state := by
     intro oid ntfn tid hObj hMem
     have hNtfn := (hBS oid _ hObj).2.1 ntfn rfl
     -- WS-RC R4.C: hMem : tid ∈ ntfn.waitingThreads via Membership instance.
@@ -5647,46 +5735,158 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
   -- 12. pendingBounded (WS-SM SM7.B): boot never posts a shootdown descriptor,
   -- so the post-boot shootdown state is the quiescent default.
   have hPBBundle : SeLe4n.Kernel.Architecture.pendingBounded
-      (bootFromPlatform config).state.tlbShootdown := by
+      ist.state.tlbShootdown := by
     rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_pendingBounded
   -- 13. tlbInvalidationConsistent_perCore (WS-SM SM7.C): boot never fills a
   -- TLB, so every core's view is the empty default — vacuously consistent.
   have hPerCoreTlbBundle : SeLe4n.Kernel.Architecture.tlbInvalidationConsistent_perCore
-      (bootFromPlatform config).state := by
+      ist.state := by
     intro c e he
-    have hview : SeLe4n.Kernel.Architecture.tlbOnCore (bootFromPlatform config).state c
+    have hview : SeLe4n.Kernel.Architecture.tlbOnCore ist.state c
         = SeLe4n.Model.TlbState.empty := by
       unfold SeLe4n.Kernel.Architecture.tlbOnCore
-      rw [bootFromPlatform_perCoreTlb_eq]; exact SeLe4n.Model.default_perCoreTlb c
+      rw [hPerCoreTlb]; exact SeLe4n.Model.default_perCoreTlb c
     rw [hview] at he; simp [SeLe4n.Model.TlbState.empty] at he
   -- 14. icacheCoherent_perCore (WS-SM SM7.D): boot fills no instruction cache
   -- (it loads objects and page tables, it does not execute through them), so
   -- every core's view is the cold default — vacuously coherent.
   have hPerCoreICacheBundle : SeLe4n.Kernel.Architecture.icacheCoherent_perCore
-      (bootFromPlatform config).state := by
+      ist.state := by
     intro c l hl
-    have hview : SeLe4n.Kernel.Architecture.icacheOnCore (bootFromPlatform config).state c
+    have hview : SeLe4n.Kernel.Architecture.icacheOnCore ist.state c
         = SeLe4n.Model.ICacheState.empty := by
       unfold SeLe4n.Kernel.Architecture.icacheOnCore
-      rw [bootFromPlatform_perCoreICache_eq]; exact SeLe4n.Model.default_perCoreICache c
+      rw [hPerCoreICache]; exact SeLe4n.Model.default_perCoreICache c
     rw [hview] at hl; simp [SeLe4n.Model.ICacheState.empty] at hl
   -- 15. ackBounded (WS-SM SM7.F.3, PR #854 review): boot opens no round, so
   -- the post-boot shootdown state is the quiescent default — every slot and
   -- the round counter `0`.
   have hAckBounded : SeLe4n.Kernel.Architecture.ackBounded
-      (bootFromPlatform config).state.tlbShootdown := by
+      ist.state.tlbShootdown := by
     rw [hShoot]; exact SeLe4n.Model.default_tlbShootdown_ackBounded
   -- 16. auditLogBounded (WS-SM SM8.C.8): boot declassifies nothing, so the
   -- post-boot audit trail is the empty default — trivially within capacity.
   have hAuditBounded : SeLe4n.Kernel.auditLogBounded
-      (bootFromPlatform config).state.declassificationAuditLog := by
-    rw [bootFromPlatform_declassificationAuditLog_eq]
+      ist.state.declassificationAuditLog := by
+    rw [hAudit]
     exact SeLe4n.Model.default_auditLogBounded
   -- Compose all 16 components
   exact ⟨h1, hCapBundle, ⟨h1.1, hCapBundle, hIpcFull⟩, hCouplingBundle,
          hLifeBundle, hServiceBundle, hVspaceBundle, hCrossBundle, hTlbBundle, hExtBundle,
          hNtfnWaiter, hPBBundle, hPerCoreTlbBundle, hPerCoreICacheBundle, hAckBounded,
          hAuditBounded⟩
+
+/-- V4-A8: The post-boot state from any config satisfies
+    `proofLayerInvariantBundle` — the unchecked boot's instance of
+    `proofLayerInvariantBundle_of_bootShape` (WS-BP BP3.5).  Its objects are
+    the boot-safe configured objects, its scheduler is the default (so every
+    run-queue fact holds of an empty queue), and with no configured VSpace
+    root its ASID table is the empty default, consistent vacuously. -/
+theorem bootFromPlatform_proofLayerInvariantBundle_general
+    (config : PlatformConfig) (hSafe : config.bootSafe)
+    (hUntypedDisj : config.untypedRegionsDisjoint)
+    -- WS-RC R3 (DEEP-BOOT-01): Boot VSpaceRoots are introduced via the
+    -- dedicated `installBootVSpaceRoot` builder operation (extending
+    -- `bootFromPlatformChecked`), NOT through `initialObjects`.  This
+    -- precondition restricts the present (unchecked) bridge theorem to
+    -- VSpace-clean configs — `bootFromPlatform` itself does NOT install
+    -- a boot VSpaceRoot, so its post-state is necessarily VSpace-free
+    -- when `initialObjects` is also VSpace-free.  The checked boot, which
+    -- installs roots, has its own theorem since WS-BP BP3.5:
+    -- `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle`.
+    (hNoVSpaceInInitial :
+      ∀ entry, entry ∈ config.initialObjects → ∀ vs,
+        entry.obj ≠ KernelObject.vspaceRoot vs) :
+    Architecture.proofLayerInvariantBundle
+      (bootFromPlatform config).state := by
+  have hSch := bootFromPlatform_scheduler_eq config
+  -- Scheduler sub-field facts
+  have hCur : ((bootFromPlatform config).state.scheduler.currentOnCore bootCoreId) = none := by
+    rw [hSch]; decide
+  have hRun : (bootFromPlatform config).state.scheduler.runnable = [] := by
+    rw [hSch]; decide
+  have hRQflat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
+    rw [hSch]; decide
+  -- 1. schedulerInvariantBundleFull
+  have h1 : schedulerInvariantBundleFull (bootFromPlatform config).state := by
+    refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+    · simp [queueCurrentConsistent, hCur]
+    · show (bootFromPlatform config).state.scheduler.runnable.Nodup
+      rw [hRun]; exact List.nodup_nil
+    · unfold currentThreadValid; rw [hCur]; trivial
+    · intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · unfold currentTimeSlicePositive; rw [hCur]; trivial
+    · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
+    · unfold contextMatchesCurrent; rw [hCur]; trivial
+    · intro tid hMem; rw [hRun] at hMem; simp at hMem
+    · intro tid hMem
+      have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+      simp [RunQueue.toList, hRQflat] at hInFlat
+    · -- V5-H: domainTimeRemainingPositive — boot scheduler is default, DTR = 5
+      unfold domainTimeRemainingPositive; rw [hSch]; decide
+    · -- X2-A: domainScheduleEntriesPositive — boot scheduler has empty domainSchedule
+      intro e hMem
+      have hDS : (bootFromPlatform config).state.scheduler.domainSchedule = [] := by
+        rw [hSch]; decide
+      rw [hDS] at hMem; simp at hMem
+  -- WS-RC R3 (DEEP-BOOT-01): No VSpaceRoots in boot state.  With R3.1
+  -- admitting boot-safe VSpaceRoots into the `bootSafeObject` predicate,
+  -- absurdity is no longer immediate from the bootSafe witness; instead
+  -- we trace any post-boot VSpaceRoot back to `initialObjects` via
+  -- `foldObjects_objects_reachable` and contradict `hNoVSpaceInInitial`.
+  have hNoVSpace : ∀ (oid : SeLe4n.ObjId) (vs : VSpaceRoot),
+      (bootFromPlatform config).state.objects.get? oid ≠
+        some (KernelObject.vspaceRoot vs) := by
+    intro oid vs hObj
+    -- Trace the post-boot lookup back to initialObjects.
+    unfold bootFromPlatform at hObj
+    -- applyMachineConfig preserves objects.
+    rw [applyMachineConfig_objects_eq] at hObj
+    have hObj' : (foldObjects config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
+          some (KernelObject.vspaceRoot vs) := by
+      simp only [RHTable_getElem?_eq_get?]; exact hObj
+    rcases foldObjects_objects_reachable config.initialObjects
+        (foldIrqs config.irqTable mkEmptyIntermediateState) oid _ hObj' with
+      ⟨entry, hMem, _hId, hObjEq⟩ | hBase
+    · -- Entry came from initialObjects with `entry.obj = .vspaceRoot vs`.
+      exact hNoVSpaceInInitial entry hMem vs (by rw [hObjEq])
+    · -- Base state: `foldIrqs` over the empty intermediate state has no objects.
+      rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+      have hEmpty : (default : SystemState).objects[oid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [hEmpty] at hBase; exact absurd hBase (by simp)
+  refine proofLayerInvariantBundle_of_bootShape (bootFromPlatform config) ?_
+    ⟨bootFromPlatform_cdt_eq config, bootFromPlatform_cdtNodeSlot_eq config,
+     bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
+     bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
+     bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
+     bootFromPlatform_declassificationAuditLog_eq config⟩
+    ?_ (bootFromPlatform_untypedRegionsDisjoint config hUntypedDisj) h1 hCur ?_ ?_
+  · -- Every object is a boot-safe configured object.
+    intro oid obj hObj
+    refine bootSafeObject_bootObjectShape (bootFromPlatform_objects_bootSafe config hSafe oid obj hObj) ?_
+    intro vs hEq
+    subst hEq
+    exact (bootFromPlatform config).hPerObjectMappings oid vs hObj
+  · -- No root, and an empty table: consistent vacuously in both directions.
+    have hAsid := bootFromPlatform_asidTable_eq config
+      (fun e hMem vs => hNoVSpaceInInitial e hMem vs)
+    constructor
+    · intro asid oid hLookup; rw [hAsid] at hLookup
+      have : (default : SystemState).asidTable[asid]? = none := by
+        simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+      rw [this] at hLookup; exact absurd hLookup (by simp)
+    · intro oid root hObj; exact absurd hObj (hNoVSpace oid _)
+  · -- replenishQueueValid: the default scheduler's queues are empty.
+    simp only [replenishQueueValid, hSch]
+    exact ⟨empty_sorted, empty_sizeConsistent⟩
+  · -- effectiveParamsMatchRunQueue: the default run queue is empty.
+    intro tid hMem
+    have hFlat : ((bootFromPlatform config).state.scheduler.runQueueOnCore bootCoreId).flat = [] := by
+      rw [hSch]; decide
+    have hInFlat := (RunQueue.mem_toList_iff_mem _ tid).mpr hMem
+    simp [RunQueue.toList, hFlat] at hInFlat
 
 -- ============================================================================
 -- V4-A9: End-to-end bridge for general configs
@@ -5708,11 +5908,11 @@ theorem bootFromPlatform_proofLayerInvariantBundle_general
     config carrying a binding root already was.  Binding roots are installed by
     `installBootVSpaceRoot` consumed by the gated boot path
     `bootFromPlatformChecked` via the dedicated
-    `PlatformConfig.bootVSpaceRoot` field.  Substantive proof of
-    the freeze-equivalent for the `bootFromPlatformChecked` post-state
-    with a boot VSpaceRoot installed is a post-R3 hardening item;
-    the current R3 deliverable is the RUNTIME wiring + per-step
-    witness theorems plus this VSpace-clean bridge composition. -/
+    `PlatformConfig.bootVSpaceRoot` field.  **The production boot has its own
+    bridge since WS-BP BP3.5**: `bootToRuntime_invariantBridge_checked`, over
+    the checked, idle-enqueued boot of any configuration the checked boot
+    accepts — roots installed — which is the boot the hardware runs.  This one
+    stays for the unchecked boot and the fixtures built on it. -/
 theorem bootToRuntime_invariantBridge_general (config : PlatformConfig)
     (hSafe : config.bootSafe) (hUntypedDisj : config.untypedRegionsDisjoint)
     (hNoVSpaceInInitial :
@@ -6017,7 +6217,7 @@ theorem bootFromPlatformChecked_ok_tcb_bootSafeFields (config : PlatformConfig)
     ⟨e, hMem, _, hEObj⟩ | hBase
   · have hCheck : bootSafeObjectCheck e.obj = true := List.all_eq_true.mp hSafe e hMem
     rw [hEObj] at hCheck
-    exact (bootSafeObjectCheck_sound_structural _ hCheck).2.2.2.1 tcb rfl
+    exact (bootSafeObjectCheck_sound _ hCheck).2.2.2.1 tcb rfl
   · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
     have hEmpty : (default : SystemState).objects[oid]? = none := by
       simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
@@ -6387,5 +6587,692 @@ theorem deviceTreeCoversMmioRegions_no_peripherals (dt : DeviceTree)
   cases required with
   | nil => exact absurd rfl hNonEmpty
   | cons r rest => simp [hEmpty]
+
+-- ============================================================================
+-- WS-BP BP3.5: the production boot's proof-layer invariant bundle
+-- ============================================================================
+
+/-! ### WS-BP BP3.5: the state the hardware boot installs satisfies the bundle
+
+`bootFromPlatform_proofLayerInvariantBundle_general` is about the *unchecked*
+boot of a configuration carrying no VSpace root, and the state the hardware
+boot installs is neither: it carries the binding's root and the threads' roots,
+and the checked boot enqueues an idle thread on every declared core on top.
+This section discharges `proofLayerInvariantBundle_of_bootShape`'s hypotheses
+for that state, one per fact the boot establishes:
+
+* **every object is boot-shaped** — a boot-safe configured object, the
+  binding's root (its checks), or an enqueued idle TCB;
+* **the untouched fields are their defaults** — every step writes objects,
+  the object index, lifecycle metadata, the ASID table or a run queue, and
+  nothing else;
+* **the ASID table is consistent with the roots** — each install registers
+  its root's ASID at a key nothing else holds, which is what the boot's ASID
+  gate (`bootVSpaceAsidsDistinct`) and its object-id gates refuse to let fail;
+* **the untyped regions are disjoint** — the configuration's placement
+  conjunct, since nothing the checked boot adds is an untyped;
+* **the scheduler's run-queue facts hold** — the boot core's queue is empty
+  or holds exactly its idle thread, at priority `0`. -/
+
+/-- **WS-BP BP3.5**: a boot install writes objects, the object index,
+    lifecycle metadata and the ASID table — none of the quiescent fields. -/
+theorem createBootObject_bootQuiescentFields (ist : IntermediateState) (e : ObjectEntry)
+    (h : bootQuiescentFields ist.state) : bootQuiescentFields (createBootObject ist e).state :=
+  h
+
+/-- **WS-BP BP3.5**: enabling interrupts writes the machine state only. -/
+theorem bootEnableInterruptsOp_bootQuiescentFields (ist : IntermediateState)
+    (h : bootQuiescentFields ist.state) :
+    bootQuiescentFields (bootEnableInterruptsOp ist).state :=
+  h
+
+/-- **WS-BP BP3.5**: the idle enqueue is a store and a run-queue write, and a
+    store writes objects, the object index, lifecycle metadata and the ASID
+    table. -/
+theorem enqueueIdleThread_bootQuiescentFields (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId) (h : bootQuiescentFields ist.state) :
+    bootQuiescentFields (enqueueIdleThread ist c).state := by
+  rw [enqueueIdleThread_state]
+  unfold enqueueIdleThreadOnCore
+  have hs := SystemState.storeObject_eq_withObjectStored ist.state (idleThreadId c).toObjId
+    (KernelObject.tcb (queuedIdleThread c))
+  generalize ist.state.withObjectStored (idleThreadId c).toObjId
+    (KernelObject.tcb (queuedIdleThread c)) = st' at hs ⊢
+  unfold storeObject at hs
+  cases hs
+  exact h
+
+/-- **WS-BP BP3.5**: ...and so does the fold of it over any core list. -/
+theorem foldl_enqueueIdleThread_bootQuiescentFields
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState)
+    (h : bootQuiescentFields ist.state) :
+    bootQuiescentFields (L.foldl enqueueIdleThread ist).state := by
+  induction L generalizing ist with
+  | nil => exact h
+  | cons x xs ih => exact ih _ (enqueueIdleThread_bootQuiescentFields ist x h)
+
+/-- **WS-BP BP3.5**: the unchecked boot leaves every quiescent field at its
+    default. -/
+theorem bootFromPlatform_bootQuiescentFields (config : PlatformConfig) :
+    bootQuiescentFields (bootFromPlatform config).state :=
+  ⟨bootFromPlatform_cdt_eq config, bootFromPlatform_cdtNodeSlot_eq config,
+   bootFromPlatform_services_eq config, bootFromPlatform_serviceRegistry_eq config,
+   bootFromPlatform_tlb_eq config, bootFromPlatform_tlbShootdown_eq config,
+   bootFromPlatform_perCoreTlb_eq config, bootFromPlatform_perCoreICache_eq config,
+   bootFromPlatform_declassificationAuditLog_eq config⟩
+
+/-- **WS-BP BP3.5**: a successful checked boot leaves every quiescent field at
+    its default — the plain boot does, and the root install and the interrupt
+    enable frame them. -/
+theorem bootFromPlatformChecked_ok_bootQuiescentFields (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    bootQuiescentFields ist.state := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · exact bootEnableInterruptsOp_bootQuiescentFields _
+      (bootFromPlatform_bootQuiescentFields config)
+  · exact bootEnableInterruptsOp_bootQuiescentFields _
+      (createBootObject_bootQuiescentFields _ _ (bootFromPlatform_bootQuiescentFields config))
+
+/-- **WS-BP BP3.5**: a successful checked boot passed its ASID gate and its
+    boot-root safety gate — the two gate facts the bundle reads, read off the
+    result. -/
+theorem bootFromPlatformChecked_ok_vspaceGates (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    bootVSpaceAsidsDistinct config = true ∧ bootVSpaceRootSafe config = true := by
+  unfold bootFromPlatformChecked at h
+  split at h
+  · split at h
+    · split at h
+      · split at h
+        · split at h
+          · split at h
+            · split at h
+              · split at h
+                · split at h
+                  · exact ⟨by assumption, by assumption⟩
+                  · cases h
+                · cases h
+              · cases h
+            · cases h
+          · cases h
+        · cases h
+      · cases h
+    · cases h
+  · cases h
+
+/-- **WS-BP BP3.5**: every object a successful checked boot installs is
+    boot-shaped — a configured object passed `bootSafeObjectCheck`, and the
+    binding's root passed `bootSafeVSpaceRootCheck`. -/
+theorem bootFromPlatformChecked_ok_bootObjectShape (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      ist.state.objects[oid]? = some obj → bootObjectShape obj := by
+  obtain ⟨_, hSafeChk, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  obtain ⟨_, hRootSafe⟩ := bootFromPlatformChecked_ok_vspaceGates config ist h
+  have hBase : ∀ (oid : SeLe4n.ObjId) (obj : KernelObject),
+      (bootFromPlatform config).state.objects[oid]? = some obj → bootObjectShape obj := by
+    intro oid obj hObj
+    refine bootSafeObject_bootObjectShape
+      (bootFromPlatform_objects_bootSafe config ?_ oid obj hObj) ?_
+    · intro e hMem
+      exact bootSafeObjectCheck_sound _ (List.all_eq_true.mp hSafeChk e hMem)
+    · intro vs hEq
+      subst hEq
+      exact (bootFromPlatform config).hPerObjectMappings oid vs hObj
+  intro oid obj hObj
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, hSome, rfl⟩
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    exact hBase oid obj hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj
+      unfold bootVSpaceRootSafe at hRootSafe
+      rw [hSome] at hRootSafe
+      exact bootSafeVSpaceRoot_bootObjectShape
+        ((SeLe4n.Platform.RPi5.VSpaceBoot.bootSafeVSpaceRootCheck_iff _).mp hRootSafe)
+    · rw [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
+      exact hBase oid obj hObj
+
+/-- **WS-BP BP3.5**: a boot install keeps the ASID table consistent with the
+    roots when the key it writes holds nothing and — for a root — no root
+    already holds its ASID.  Those are the two ways an install could break the
+    table: overwrite a registered root, or re-point a registered ASID. -/
+private theorem createBootObject_preserves_asidTableConsistent (ist : IntermediateState)
+    (e : ObjectEntry) (hCons : Architecture.asidTableConsistent ist.state)
+    (hFresh : ist.state.objects[e.id]? = none)
+    (hAsidFresh : ∀ a, bootEntryAsid? e = some a → ist.state.asidTable[a]? = none) :
+    Architecture.asidTableConsistent (createBootObject ist e).state := by
+  have hObjK : ist.state.objects.invExt := ist.hAllTables.1.1
+  have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.2.2.1.1
+  obtain ⟨hSound, hComplete⟩ := hCons
+  have hObjNe : ∀ oid, e.id ≠ oid →
+      (createBootObject ist e).state.objects[oid]? = ist.state.objects[oid]? := by
+    intro oid hNe
+    rw [createBootObject_objects]
+    exact RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hNe (eq_of_beq hb)) hObjK
+  have hObjSelf : (createBootObject ist e).state.objects[e.id]? = some e.obj := by
+    rw [createBootObject_objects]
+    exact RHTable.getElem?_insert_self _ _ _ hObjK
+  have hPreSound : ∀ asid oid, ist.state.asidTable[asid]? = some oid →
+      ∃ root, (createBootObject ist e).state.objects[oid]? =
+        some (KernelObject.vspaceRoot root) ∧
+        root.asid = asid := by
+    intro asid oid hL
+    obtain ⟨root, hR, hRA⟩ := hSound asid oid hL
+    have hNe : e.id ≠ oid := by
+      intro hEq; subst hEq; rw [hFresh] at hR; cases hR
+    exact ⟨root, (hObjNe oid hNe).trans hR, hRA⟩
+  cases hE : bootEntryAsid? e with
+  | none =>
+    have hTbl : (createBootObject ist e).state.asidTable = ist.state.asidTable := by
+      rw [createBootObject_asidTable]
+      unfold bootEntryAsidTable
+      unfold bootEntryAsid? at hE
+      split
+      · rename_i vsr hObj
+        rw [hObj] at hE
+        cases hE
+      · rfl
+    refine ⟨fun asid oid hL => hPreSound asid oid (hTbl ▸ hL), ?_⟩
+    intro oid root hObj
+    rw [hTbl]
+    by_cases hId : e.id = oid
+    · subst hId
+      rw [hObjSelf] at hObj
+      have hEq : e.obj = .vspaceRoot root := Option.some.inj hObj
+      unfold bootEntryAsid? at hE
+      rw [hEq] at hE
+      cases hE
+    · rw [hObjNe oid hId] at hObj
+      exact hComplete oid root hObj
+  | some a =>
+    obtain ⟨r, hr, rfl⟩ : ∃ r, e.obj = .vspaceRoot r ∧ r.asid = a := by
+      unfold bootEntryAsid? at hE
+      split at hE
+      · rename_i vsr hObj
+        cases hE
+        exact ⟨vsr, hObj, rfl⟩
+      · cases hE
+    have hTbl : (createBootObject ist e).state.asidTable =
+        ist.state.asidTable.insert r.asid e.id := by
+      rw [createBootObject_asidTable]
+      unfold bootEntryAsidTable
+      rw [hr]
+    have hNew := hAsidFresh r.asid hE
+    constructor
+    · intro asid oid hL
+      rw [hTbl] at hL
+      by_cases hA : r.asid = asid
+      · subst hA
+        rw [RHTable_getElem?_eq_get?, RHTable.getElem?_insert_self _ _ _ hAsidK] at hL
+        cases hL
+        exact ⟨r, hObjSelf.trans (by rw [hr]), rfl⟩
+      · rw [RHTable_getElem?_eq_get?,
+          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hA (eq_of_beq hb)) hAsidK] at hL
+        exact hPreSound asid oid hL
+    · intro oid root hObj
+      rw [hTbl]
+      by_cases hId : e.id = oid
+      · subst hId
+        rw [hObjSelf, hr] at hObj
+        cases hObj
+        exact RHTable.getElem?_insert_self _ _ _ hAsidK
+      · rw [hObjNe oid hId] at hObj
+        have hPre := hComplete oid root hObj
+        have hA : r.asid ≠ root.asid := by
+          intro hEq; rw [← hEq, hNew] at hPre; cases hPre
+        rw [RHTable_getElem?_eq_get?,
+          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hA (eq_of_beq hb)) hAsidK]
+        exact hPre
+
+/-- **WS-BP BP3.5**: folding boot installs over entries with distinct ids and
+    distinct root ASIDs, none of them present yet, keeps the ASID table
+    consistent.  The id and ASID distinctness are exactly what the boot's
+    `wellFormed` and `bootVSpaceAsidsDistinct` gates decide. -/
+private theorem foldObjects_preserves_asidTableConsistent (objs : List ObjectEntry) :
+    ∀ (ist : IntermediateState), Architecture.asidTableConsistent ist.state →
+    (∀ e ∈ objs, ist.state.objects[e.id]? = none) →
+    objs.Pairwise (fun a b => a.id ≠ b.id) →
+    (objs.filterMap bootEntryAsid?).Nodup →
+    (∀ e ∈ objs, ∀ a, bootEntryAsid? e = some a → ist.state.asidTable[a]? = none) →
+    Architecture.asidTableConsistent (foldObjects objs ist).state := by
+  induction objs with
+  | nil => intro ist h _ _ _ _; exact h
+  | cons e rest ih =>
+    intro ist hCons hFresh hIds hNodup hAsidFresh
+    rw [List.pairwise_cons] at hIds
+    have hStep := createBootObject_preserves_asidTableConsistent ist e hCons
+      (hFresh e (List.mem_cons_self ..)) (hAsidFresh e (List.mem_cons_self ..))
+    have hObjK : ist.state.objects.invExt := ist.hAllTables.1.1
+    have hAsidK : ist.state.asidTable.invExt := ist.hAllTables.2.2.1.1
+    have hRestNodup : (rest.filterMap bootEntryAsid?).Nodup := by
+      rw [List.filterMap_cons] at hNodup
+      split at hNodup
+      · exact hNodup
+      · exact (List.nodup_cons.mp hNodup).2
+    show Architecture.asidTableConsistent (foldObjects rest (createBootObject ist e)).state
+    apply ih _ hStep _ hIds.2 hRestNodup
+    · intro e' hMem a ha
+      have hPre := hAsidFresh e' (List.mem_cons_of_mem _ hMem) a ha
+      rw [createBootObject_asidTable]
+      unfold bootEntryAsidTable
+      split
+      · rename_i vsr hObj
+        have hEa : bootEntryAsid? e = some vsr.asid := by
+          unfold bootEntryAsid?; rw [hObj]
+        have hNe : vsr.asid ≠ a := by
+          intro hEq
+          simp only [List.filterMap_cons, hEa] at hNodup
+          apply (List.nodup_cons.mp hNodup).1
+          rw [hEq]
+          exact List.mem_filterMap.mpr ⟨e', hMem, ha⟩
+        rw [RHTable_getElem?_eq_get?,
+          RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hNe (eq_of_beq hb)) hAsidK]
+        exact hPre
+      · exact hPre
+    · intro e' hMem
+      rw [createBootObject_objects, RHTable_getElem?_eq_get?,
+        RHTable.getElem?_insert_ne _ _ _ _ (fun hb => hIds.1 e' hMem (eq_of_beq hb)) hObjK]
+      exact hFresh e' (List.mem_cons_of_mem _ hMem)
+
+/-- **WS-BP BP3.5**: the plain boot's ASID table is consistent with its roots
+    when the configured ids and root ASIDs are distinct. -/
+private theorem bootFromPlatform_asidTableConsistent (config : PlatformConfig)
+    (hIds : config.initialObjects.Pairwise (fun a b => a.id ≠ b.id))
+    (hAsids : (config.initialObjects.filterMap bootEntryAsid?).Nodup) :
+    Architecture.asidTableConsistent (bootFromPlatform config).state := by
+  have hEmptyObj : ∀ oid : SeLe4n.ObjId,
+      (foldIrqs config.irqTable mkEmptyIntermediateState).state.objects[oid]? = none := by
+    intro oid
+    rw [foldIrqs_objects, mkEmpty_state_eq_default]
+    exact RHTable_get?_empty 16 (by omega)
+  have hEmptyAsid : ∀ a : SeLe4n.ASID,
+      (foldIrqs config.irqTable mkEmptyIntermediateState).state.asidTable[a]? = none := by
+    intro a
+    rw [foldIrqs_asidTable, mkEmpty_state_eq_default]
+    exact RHTable_get?_empty 16 (by omega)
+  have hBaseCons : Architecture.asidTableConsistent
+      (foldIrqs config.irqTable mkEmptyIntermediateState).state := by
+    constructor
+    · intro a oid hL; rw [hEmptyAsid] at hL; cases hL
+    · intro oid root hObj; rw [hEmptyObj] at hObj; cases hObj
+  have hFold := foldObjects_preserves_asidTableConsistent config.initialObjects
+    (foldIrqs config.irqTable mkEmptyIntermediateState) hBaseCons
+    (fun e _ => hEmptyObj e.id) hIds hAsids (fun _ _ a _ => hEmptyAsid a)
+  unfold bootFromPlatform
+  unfold Architecture.asidTableConsistent at hFold ⊢
+  rw [applyMachineConfig_objects_eq, applyMachineConfig_asidTable_eq]
+  exact hFold
+
+/-- **WS-BP BP3.5**: every ASID the plain boot registers is a configured
+    root's. -/
+private theorem bootFromPlatform_asidTable_configured (config : PlatformConfig)
+    (hCons : Architecture.asidTableConsistent (bootFromPlatform config).state)
+    (a : SeLe4n.ASID) (oid : SeLe4n.ObjId)
+    (hL : (bootFromPlatform config).state.asidTable[a]? = some oid) :
+    a ∈ config.initialObjects.filterMap bootEntryAsid? := by
+  obtain ⟨root, hR, hRA⟩ := hCons.1 a oid hL
+  have hR' : (foldObjects config.initialObjects
+      (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[oid]? =
+        some (.vspaceRoot root) := by
+    unfold bootFromPlatform at hR
+    rwa [applyMachineConfig_objects_eq] at hR
+  rcases foldObjects_objects_reachable config.initialObjects _ _ _ hR' with
+    ⟨e, hMem, _, hEObj⟩ | hBase
+  · refine List.mem_filterMap.mpr ⟨e, hMem, ?_⟩
+    unfold bootEntryAsid?
+    rw [hEObj]
+    exact congrArg some hRA
+  · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hBase
+    have hEmpty : (default : SystemState).objects[oid]? = none := by
+      simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+    rw [hEmpty] at hBase
+    cases hBase
+
+/-- **WS-BP BP3.5**: a successful checked boot's ASID table is consistent with
+    its roots — the configured roots and the binding's.  The gates the checked
+    boot runs are what make it so: `wellFormed` keeps the configured ids apart,
+    `bootVSpaceRootObjIdDistinct` keeps the binding's root off them, and
+    `bootVSpaceAsidsDistinct` keeps every root's ASID apart, the binding's
+    included. -/
+theorem bootFromPlatformChecked_ok_asidTableConsistent (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist) :
+    Architecture.asidTableConsistent ist.state := by
+  obtain ⟨hWf, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  obtain ⟨hAsidsGate, _⟩ := bootFromPlatformChecked_ok_vspaceGates config ist h
+  have hDist := bootFromPlatformChecked_ok_bootVSpaceRootObjIdDistinct config ist h
+  have hIds := config.wellFormed_objectIds_pairwise hWf
+  have hNodupAll : (bootVSpaceAsids config).Nodup := of_decide_eq_true hAsidsGate
+  have hNodup : (config.initialObjects.filterMap bootEntryAsid?).Nodup :=
+    (List.nodup_append.mp hNodupAll).1
+  have hBase := bootFromPlatform_asidTableConsistent config hIds hNodup
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, hSome, rfl⟩
+  · unfold Architecture.asidTableConsistent at hBase ⊢
+    rw [bootEnableInterruptsOp_objects_eq, bootEnableInterruptsOp_asidTable_eq]
+    exact hBase
+  · have hInstall : Architecture.asidTableConsistent
+        (installBootVSpaceRoot (bootFromPlatform config) entry.id entry.root
+          entry.hMappings).state := by
+      unfold installBootVSpaceRoot
+      apply createBootObject_preserves_asidTableConsistent _ _ hBase
+      · -- The binding's root id names no configured entry.
+        show (bootFromPlatform config).state.objects[entry.id]? = none
+        cases hL : (bootFromPlatform config).state.objects[entry.id]? with
+        | none => rfl
+        | some o =>
+          exfalso
+          have hL' : (foldObjects config.initialObjects
+              (foldIrqs config.irqTable mkEmptyIntermediateState)).state.objects[entry.id]? =
+                some o := by
+            unfold bootFromPlatform at hL
+            rwa [applyMachineConfig_objects_eq] at hL
+          rcases foldObjects_objects_reachable config.initialObjects _ _ _ hL' with
+            ⟨e, hMem, hId, _⟩ | hB
+          · unfold bootVSpaceRootObjIdDistinct at hDist
+            rw [hSome] at hDist
+            simp only [Bool.not_eq_true', List.any_eq_false, beq_iff_eq] at hDist
+            exact hDist e hMem hId
+          · rw [foldIrqs_objects, mkEmpty_state_eq_default] at hB
+            have hEmpty : (default : SystemState).objects[entry.id]? = none := by
+              simp only [RHTable_getElem?_eq_get?]; exact RHTable_get?_empty 16 (by omega)
+            rw [hEmpty] at hB
+            cases hB
+      · -- The binding's root ASID is no configured root's.
+        intro a ha
+        have haEq : a = entry.root.asid := by
+          simp only [bootEntryAsid?] at ha
+          exact (Option.some.inj ha).symm
+        subst haEq
+        cases hL : (bootFromPlatform config).state.asidTable[entry.root.asid]? with
+        | none => rfl
+        | some oid =>
+          exfalso
+          have hMemCfg := bootFromPlatform_asidTable_configured config hBase _ oid hL
+          unfold bootVSpaceAsids at hNodupAll
+          rw [hSome] at hNodupAll
+          exact (List.nodup_append.mp hNodupAll).2.2 _ hMemCfg _
+            (List.mem_singleton_self _) rfl
+    unfold Architecture.asidTableConsistent at hInstall ⊢
+    rw [bootEnableInterruptsOp_objects_eq, bootEnableInterruptsOp_asidTable_eq]
+    exact hInstall
+
+/-- **WS-BP BP3.5**: the idle enqueue keeps the ASID table consistent when the
+    slot it writes holds no root — it stores a TCB, which registers nothing,
+    and displaces nothing registered. -/
+private theorem enqueueIdleThread_preserves_asidTableConsistent (ist : IntermediateState)
+    (c : SeLe4n.Kernel.Concurrency.CoreId)
+    (hCons : Architecture.asidTableConsistent ist.state)
+    (hSlot : ∀ r, ist.state.objects[(idleThreadId c).toObjId]? ≠ some (.vspaceRoot r)) :
+    Architecture.asidTableConsistent (enqueueIdleThread ist c).state := by
+  have hTbl : (enqueueIdleThread ist c).state.asidTable = ist.state.asidTable := by
+    rw [enqueueIdleThread_state]
+    show (ist.state.withObjectStored (idleThreadId c).toObjId
+      (KernelObject.tcb (queuedIdleThread c))).asidTable = _
+    rw [storeObject_asidTable_non_vspaceRoot ist.state _ (idleThreadId c).toObjId
+      (KernelObject.tcb (queuedIdleThread c)) (fun r hr => by cases hr)
+      (SystemState.storeObject_eq_withObjectStored _ _ _)]
+    split
+    · rename_i r hr
+      exact absurd hr (hSlot r)
+    · rfl
+  obtain ⟨hSound, hComplete⟩ := hCons
+  constructor
+  · intro asid oid hL
+    rw [hTbl] at hL
+    obtain ⟨root, hR, hRA⟩ := hSound asid oid hL
+    have hNe : (idleThreadId c).toObjId ≠ oid := by
+      intro hEq; subst hEq; exact hSlot root hR
+    exact ⟨root, (enqueueIdleThread_objects_ne ist c oid hNe).trans hR, hRA⟩
+  · intro oid root hObj
+    rw [hTbl]
+    by_cases hEq : (idleThreadId c).toObjId = oid
+    · subst hEq
+      rw [enqueueIdleThread_objects_self] at hObj
+      cases hObj
+    · rw [enqueueIdleThread_objects_ne ist c oid hEq] at hObj
+      exact hComplete oid root hObj
+
+/-- **WS-BP BP3.5**: ...over the fold, given no idle slot starts out holding a
+    root: a slot the fold has written holds an idle TCB, and one it has not is
+    the pre-fold slot. -/
+private theorem foldl_enqueueIdleThread_preserves_asidTableConsistent
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) :
+    ∀ (ist : IntermediateState), Architecture.asidTableConsistent ist.state →
+    (∀ c ∈ L, ∀ r, ist.state.objects[(idleThreadId c).toObjId]? ≠ some (.vspaceRoot r)) →
+    Architecture.asidTableConsistent (L.foldl enqueueIdleThread ist).state := by
+  induction L with
+  | nil => intro ist h _; exact h
+  | cons x xs ih =>
+    intro ist hCons hSlots
+    apply ih _ (enqueueIdleThread_preserves_asidTableConsistent ist x hCons
+      (hSlots x (List.mem_cons_self ..)))
+    intro c hc r
+    by_cases hEq : (idleThreadId x).toObjId = (idleThreadId c).toObjId
+    · rw [← hEq, enqueueIdleThread_objects_self]
+      intro hb
+      cases hb
+    · rw [enqueueIdleThread_objects_ne ist x _ hEq]
+      exact hSlots c (List.mem_cons_of_mem _ hc) r
+
+/-- **WS-BP BP3.5**: untyped disjointness reads the untypeds alone, so a state
+    whose untypeds are all another's inherits it. -/
+theorem untypedRegionsDisjoint_of_untyped_subset {st st' : SystemState}
+    (h : Kernel.untypedRegionsDisjoint st)
+    (hSub : ∀ (oid : SeLe4n.ObjId) (ut : UntypedObject), st'.objects[oid]? = some (KernelObject.untyped ut) →
+      st.objects[oid]? = some (KernelObject.untyped ut)) :
+    Kernel.untypedRegionsDisjoint st' :=
+  fun oid₁ oid₂ ut₁ ut₂ h₁ h₂ => h oid₁ oid₂ ut₁ ut₂ (hSub _ _ h₁) (hSub _ _ h₂)
+
+/-- **WS-BP BP3.5**: an untyped a successful checked boot holds is one the
+    plain boot installed — the binding's root is not an untyped. -/
+private theorem bootFromPlatformChecked_ok_untyped (config : PlatformConfig)
+    (ist : IntermediateState) (h : bootFromPlatformChecked config = .ok ist)
+    (oid : SeLe4n.ObjId) (ut : UntypedObject)
+    (hObj : ist.state.objects[oid]? = some (KernelObject.untyped ut)) :
+    (bootFromPlatform config).state.objects[oid]? = some (KernelObject.untyped ut) := by
+  obtain ⟨_, _, hShape⟩ := bootFromPlatformChecked_ok_shape config ist h
+  rcases hShape with ⟨_, rfl⟩ | ⟨entry, _, rfl⟩
+  · rwa [bootEnableInterruptsOp_objects_eq] at hObj
+  · rw [bootEnableInterruptsOp_objects_eq] at hObj
+    by_cases hEq : entry.id = oid
+    · subst hEq
+      rw [installBootVSpaceRoot_objects_lookup] at hObj
+      cases hObj
+    · rwa [installBootVSpaceRoot_objects_ne _ _ _ _ _ hEq] at hObj
+
+/-- **WS-BP BP3.5**: the idle fold writes run queues and nothing else of the
+    scheduler. -/
+theorem foldl_enqueueIdleThread_scheduler_runQueueOnly
+    (L : List SeLe4n.Kernel.Concurrency.CoreId) (ist : IntermediateState) :
+    ∃ rq, (L.foldl enqueueIdleThread ist).state.scheduler =
+      { ist.state.scheduler with runQueue := rq } := by
+  induction L generalizing ist with
+  | nil => exact ⟨ist.state.scheduler.runQueue, rfl⟩
+  | cons x xs ih =>
+    obtain ⟨rq, hrq⟩ := ih (enqueueIdleThread ist x)
+    refine ⟨rq, ?_⟩
+    rw [List.foldl_cons, hrq, enqueueIdleThread_scheduler]
+    rfl
+
+/-- **WS-BP BP3.5**: the boot core's idle queue — the empty queue with the
+    boot core's idle thread inserted at its priority — holds exactly that
+    thread, at priority `0`.  A closed term, so both facts are evaluation. -/
+private theorem bootCoreIdleQueue_toList :
+    ((SeLe4n.Kernel.RunQueue.empty.remove (idleThreadId bootCoreId)).insert
+      (idleThreadId bootCoreId) (queuedIdleThread bootCoreId).priority).toList =
+      [idleThreadId bootCoreId] := by
+  decide
+
+private theorem bootCoreIdleQueue_threadPriority :
+    ((SeLe4n.Kernel.RunQueue.empty.remove (idleThreadId bootCoreId)).insert
+      (idleThreadId bootCoreId) (queuedIdleThread bootCoreId).priority).threadPriority[
+        idleThreadId bootCoreId]? = some ⟨0⟩ := by
+  decide
+
+/-- **WS-BP BP3.5**: **the state the checked, idle-enqueued boot installs
+    satisfies the proof-layer invariant bundle** — for any configuration the
+    checked boot accepts and any duplicate-free core list, so the hardware
+    boot's state (`bootAndInitialisePlatform`, over the binding's declared
+    cores) and the all-cores boot are both instances.
+
+    This is what a transition going live owes first: the next phase's first
+    row makes this boot live, and until this theorem no statement about the
+    proof-layer bundle covered the state it installs — the general bridge was
+    about the unchecked boot of a VSpace-free configuration, with an empty
+    scheduler.  Each hypothesis of `proofLayerInvariantBundle_of_bootShape` is
+    discharged from the boot itself: the objects' shape from the checked
+    boot's object and root checks and the idle TCBs' defaults, the ASID table
+    from the id and ASID gates, the untyped regions from `wellFormed`'s
+    placement conjunct, and the scheduler facts from what the fold enqueued —
+    on the boot core, nothing or its idle thread at priority `0`. -/
+theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    Architecture.proofLayerInvariantBundle ist.state := by
+  cases hChecked : bootFromPlatformChecked config with
+  | error e =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_rejects_invalid cores config e hChecked] at h
+    cases h
+  | ok base =>
+    rw [bootFromPlatformCheckedWithIdleThreadsFor_map_ok cores config base hChecked
+      (bootFromPlatformCheckedWithIdleThreadsFor_ok_affinitiesDeclared cores config ist h)] at h
+    injection h with h
+    subst h
+    obtain ⟨hWf, _, _⟩ := bootFromPlatformChecked_ok_shape config base hChecked
+    have hFresh := bootFromPlatformChecked_ok_idleSlotsFreshAt config base hChecked
+    have hBaseSch := bootFromPlatformChecked_ok_scheduler_eq config base hChecked
+    obtain ⟨rq, hSch⟩ := foldl_enqueueIdleThread_scheduler_runQueueOnly cores base
+    rw [hBaseSch] at hSch
+    have hBaseQ : base.state.scheduler.runQueueOnCore bootCoreId =
+        SeLe4n.Kernel.RunQueue.empty := by
+      rw [hBaseSch]; exact (default_state_perCoreInitialized bootCoreId).2.1
+    -- The boot core's run queue holds its idle thread at priority 0, or nothing.
+    have hRunnable : ∀ tid,
+        tid ∈ (cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore bootCoreId →
+        tid = idleThreadId bootCoreId ∧
+        (cores.foldl enqueueIdleThread base).state.objects[(idleThreadId bootCoreId).toObjId]? =
+          some (.tcb (queuedIdleThread bootCoreId)) ∧
+        ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
+          bootCoreId).threadPriority[tid]? = some ⟨0⟩ := by
+      intro tid hMem
+      by_cases hb : bootCoreId ∈ cores
+      · have hQ := foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb
+        rw [hBaseQ] at hQ
+        rw [hQ] at hMem ⊢
+        have hIn := (SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mpr hMem
+        rw [bootCoreIdleQueue_toList, List.mem_singleton] at hIn
+        subst hIn
+        exact ⟨rfl, (foldl_enqueueIdleThread_installs bootCoreId cores base hNodup hb).2,
+          bootCoreIdleQueue_threadPriority⟩
+      · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
+          (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ] at hMem
+        exact absurd hMem (SeLe4n.Kernel.RunQueue.not_mem_empty tid)
+    have hCur : (cores.foldl enqueueIdleThread base).state.scheduler.currentOnCore
+        bootCoreId = none := by
+      rw [hSch]; exact (default_state_perCoreInitialized bootCoreId).1
+    have hRunnableTcb : ∀ tid,
+        tid ∈ (cores.foldl enqueueIdleThread base).state.scheduler.runnable →
+        tid = idleThreadId bootCoreId ∧
+        (cores.foldl enqueueIdleThread base).state.objects[(idleThreadId bootCoreId).toObjId]? =
+          some (.tcb (queuedIdleThread bootCoreId)) ∧
+        ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
+          bootCoreId).threadPriority[tid]? = some ⟨0⟩ :=
+      fun tid hMem => hRunnable tid ((SeLe4n.Kernel.RunQueue.mem_toList_iff_mem _ _).mp hMem)
+    have hSched : schedulerInvariantBundleFull (cores.foldl enqueueIdleThread base).state := by
+      refine ⟨⟨?_, ?_, ?_⟩, ?_, ?_, ?_, ?_, ?_, ?_, ?_, ?_⟩
+      · simp [queueCurrentConsistent, hCur]
+      · show ((cores.foldl enqueueIdleThread base).state.scheduler.runQueueOnCore
+          bootCoreId).toList.Nodup
+        by_cases hb : bootCoreId ∈ cores
+        · rw [foldl_enqueueIdleThread_runQueueOnCore_eq bootCoreId cores base hNodup hb, hBaseQ]
+          exact SeLe4n.Kernel.RunQueue.insert_preserves_toList_nodup _ _ _
+            (SeLe4n.Kernel.RunQueue.remove_preserves_toList_nodup _ _
+              (by rw [SeLe4n.Kernel.RunQueue.toList_empty]; exact List.nodup_nil))
+        · rw [foldl_enqueueIdleThread_runQueueOnCore_frame cores base bootCoreId
+            (fun c' hc' hEq => hb (hEq ▸ hc')), hBaseQ, SeLe4n.Kernel.RunQueue.toList_empty]
+          exact List.nodup_nil
+      · unfold currentThreadValid; rw [hCur]; trivial
+      · intro tid hMem
+        obtain ⟨rfl, hObj, _⟩ := hRunnableTcb tid hMem
+        simp only [hObj]
+        decide
+      · unfold currentTimeSlicePositive; rw [hCur]; trivial
+      · unfold edfCurrentHasEarliestDeadline; rw [hCur]; trivial
+      · unfold contextMatchesCurrent; rw [hCur]; trivial
+      · intro tid hMem
+        obtain ⟨rfl, hObj, _⟩ := hRunnableTcb tid hMem
+        exact ⟨_, hObj⟩
+      · intro tid hMem
+        obtain ⟨rfl, hObj, hPrio⟩ := hRunnable tid hMem
+        simp only [hObj]
+        rw [hPrio]
+        rfl
+      · unfold domainTimeRemainingPositive
+        rw [hSch]
+        exact (by decide : (default : SchedulerState).domainTimeRemainingOnCore bootCoreId > 0)
+      · intro e hMem
+        have hDS : (cores.foldl enqueueIdleThread base).state.scheduler.domainSchedule = [] := by
+          rw [hSch]; rfl
+        rw [hDS] at hMem
+        simp at hMem
+    refine proofLayerInvariantBundle_of_bootShape (cores.foldl enqueueIdleThread base)
+      ?_ (foldl_enqueueIdleThread_bootQuiescentFields cores base
+        (bootFromPlatformChecked_ok_bootQuiescentFields config base hChecked))
+      (foldl_enqueueIdleThread_preserves_asidTableConsistent cores base
+        (bootFromPlatformChecked_ok_asidTableConsistent config base hChecked)
+        (fun c _ r hr => by rw [hFresh c] at hr; cases hr))
+      ?_ hSched hCur ?_ ?_
+    · -- Every object: the checked boot's, or an idle TCB.
+      intro oid obj hObj
+      rcases foldl_enqueueIdleThread_objects_cases cores base oid obj hObj with
+        hB | ⟨c, _, rfl⟩
+      · exact bootFromPlatformChecked_ok_bootObjectShape config base hChecked oid obj hB
+      · exact queuedIdleThread_bootObjectShape c
+    · -- The untypeds are the plain boot's, whose regions the placement
+      -- conjunct keeps apart.
+      refine untypedRegionsDisjoint_of_untyped_subset
+        (bootFromPlatform_untypedRegionsDisjoint config
+          (config.wellFormed_untypedRegionsDisjoint hWf)) ?_
+      intro oid ut hObj
+      rcases foldl_enqueueIdleThread_objects_cases cores base oid _ hObj with
+        hB | ⟨c, _, hEq⟩
+      · exact bootFromPlatformChecked_ok_untyped config base hChecked oid ut hB
+      · cases hEq
+    · -- The replenishment queues are the default's, which are empty.
+      simp only [replenishQueueValid, hSch]
+      exact ⟨empty_sorted, empty_sizeConsistent⟩
+    · -- The boot core's queued thread is its idle thread, bucketed at its priority.
+      intro tid hMem
+      obtain ⟨rfl, hObj, hPrio⟩ := hRunnable tid hMem
+      simp only [hObj]
+      rw [hPrio]
+      rfl
+
+/-- **WS-BP BP3.5**: the all-cores form. -/
+theorem bootFromPlatformCheckedWithIdleThreads_proofLayerInvariantBundle
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreads config = .ok ist) :
+    Architecture.proofLayerInvariantBundle ist.state := by
+  rw [← bootFromPlatformCheckedWithIdleThreadsFor_allCores] at h
+  exact bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle _
+    SeLe4n.Kernel.Concurrency.allCores_nodup config ist h
+
+/-- **WS-BP BP3.5**: the end-to-end bridge for the production boot — the
+    bundle of the state the checked, idle-enqueued boot installs, and the
+    frozen bundle of its freeze.  The counterpart of
+    `bootToRuntime_invariantBridge_general` for the boot the hardware runs. -/
+theorem bootToRuntime_invariantBridge_checked
+    (cores : List SeLe4n.Kernel.Concurrency.CoreId) (hNodup : cores.Nodup)
+    (config : PlatformConfig) (ist : IntermediateState)
+    (h : bootFromPlatformCheckedWithIdleThreadsFor cores config = .ok ist) :
+    Architecture.proofLayerInvariantBundle ist.state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze ist) :=
+  let hBundle :=
+    bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle cores hNodup config ist h
+  ⟨hBundle, SeLe4n.Model.freeze_preserves_invariants _ hBundle⟩
 
 end SeLe4n.Platform.Boot

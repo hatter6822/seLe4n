@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2 and BP3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation
+## v0.36.2 — WS-BP BP0, BP1, BP2 and BP3: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -668,16 +668,67 @@ configuration, and the proof that it boots.
   the boot seam calls is exactly the two installs and never reaches
   `ffiFatalHaltAll`. Its proof is `rfl`: `BaseIO` has no `LawfulMonad` instance
   in this toolchain, but its bind reduces.
-- **Registered, not closed: the production boot state's proof-layer bundle.**
+- **The production boot state's proof-layer bundle (BP3.5).**  Until this cut
   `bootFromPlatform_proofLayerInvariantBundle_general` and
-  `bootToRuntime_invariantBridge_general` are stated over the *unchecked*
-  `bootFromPlatform` of a config carrying no VSpace root. The RPi5 boot installs
-  the binding's root (since WS-RC R3) and, since this cut, a thread's, and the
-  checked boot then enqueues idle threads. So no theorem states the twelve-part
-  bundle of the state the hardware boot installs. Recorded as a docstring's
-  "post-R3 hardening item" and registered nowhere, it is registered now
-  (`docs/REGISTERED_DEBT.md` table B) and scheduled as **BP3.5**. That row must
-  land before BP4.1 makes the boot live — the numbering rule's semantic half.
+  `bootToRuntime_invariantBridge_general` were stated over the *unchecked*
+  `bootFromPlatform` of a configuration carrying no VSpace root. The RPi5 boot
+  installs the binding's root (since WS-RC R3) and, since this cut, a thread's,
+  and the checked boot then enqueues idle threads. So no theorem stated the
+  sixteen-conjunct bundle of the state the hardware boot installs; a docstring
+  recorded that as a "post-R3 hardening item" and nothing registered it.
+  - **One argument, two instances.** `proofLayerInvariantBundle_of_bootShape`
+    proves the bundle of any *boot-shaped* state:
+    - every object satisfies `bootObjectShape` (`bootSafeObject` with a queued
+      TCB and a mapping VSpace root admitted);
+    - the fields boot leaves alone are their defaults (`bootQuiescentFields`);
+    - the ASID table is consistent with the roots;
+    - the untyped regions are disjoint;
+    - the scheduler supplies its own run-queue facts.
+
+    The 550-line proof inside the unchecked theorem is now this lemma, and
+    that theorem is its first instance.
+  - **The production boot's theorem.**
+    `bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle` is
+    the second instance: the checked, idle-enqueued boot of every configuration
+    the checked boot accepts, over every duplicate-free core list.
+    `bootToRuntime_invariantBridge_checked` adds the freeze, and
+    `rpi5DeploymentBootState_invariantBridge` is stated of the state
+    `bootAndInitialiseRPi5OrHalt` installs. Each hypothesis is discharged from
+    the boot itself:
+    - the shapes from the object and root checks and the idle TCB's defaults
+      (`bootSafeVSpaceRoot_mappingsSafe` reads the root's three fold-checks
+      back per mapping);
+    - the ASID table by induction over the install fold, from the id and ASID
+      gates;
+    - the untyped regions from `wellFormed`'s placement conjunct;
+    - the run-queue facts from the fold: on the boot core, its idle thread at
+      priority `0`, or nothing (both decided on the closed queue term).
+  - **Helpers.** Two generic table facts join the Robin Hood library:
+    `RHTable.fold_and_true_of_get?` (a conjunction folded from `true` holds of
+    every entry `get?` returns) and `RHTable.get?_none_of_size_zero`.
+    `PlatformBinding.declaredCores_nodup` is new, and
+    `bootEntryAsid?` names the per-entry ASID that the ASID gate and the proof
+    both read.
+- **A gap the proof found in the checked boot, closed.** `bootSafeCnodeCheck`
+  looked at a CNode's shape and at nothing its slots held. A configuration
+  whose CNode held a reply capability was therefore accepted, and so was one
+  whose CNode held a capability with an out-of-range badge. A boot reply
+  capability can only dangle, because reply capabilities are minted at runtime
+  from retyped Reply objects. The installed state then violated
+  `replyCapPointsToValidReply` and `capabilityBadgesWellFormed`, clauses
+  `bootSafeObject` states and the bundle reads.
+  - The soundness bridge `bootSafeObjectCheck_sound_structural` was partial.
+    Its docstring said the badge clause was "checked at the Prop level" by the
+    boot bridge, but that bridge *assumed* it (`PlatformConfig.bootSafe`), and
+    no boot path established it.
+  - Low severity: the configuration is the integrator's, not attacker-supplied.
+    It is still a false-assurance gap in the gate the production boot relies
+    on.
+  - `bootSafeCapCheck` now refuses both, per capability, through the fold
+    lemma. `bootSafeObjectCheck_sound` (the renamed bridge) concludes every
+    conjunct of `bootSafeObject`.
+  - The RPi5 deployment's `decide`-checked gates still pass: its CNodes hold
+    unbadged object capabilities.
 - **Tests.**
   - `tests/TwoPhaseArchSuite.lean` TPH-015n..p: a configured user root is
     admitted with its ASID registered, beside the binding's; ASID collisions are
@@ -685,8 +736,14 @@ configuration, and the proof that it boots.
     distinct-ASID control; a root on ASID 0 or carrying a mapping is refused.
   - TPH-015g/h/i and `An9HardwareBindingSuite` R3-5 are restated to the inverted
     per-object fact.
+  - TPH-015q (BP3.5): a configured CNode holding a reply capability is
+    refused, by the object check and by the checked boot; the same CNode
+    holding an object capability boots (control). The badge half has no
+    runtime witness, because every public `Badge` constructor yields a valid
+    badge. Reverting the check is caught when the build fails:
+    `bootSafeObjectCheck_sound` stops elaborating.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.4)
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1..BP2.6, BP3.1..BP3.5)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

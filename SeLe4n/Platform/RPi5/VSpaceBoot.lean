@@ -461,4 +461,53 @@ theorem rpi5BootVSpaceRoot_mappings_invExt :
         RHTable.insert_preserves_invExt _ _ _ <|
         RHTable.empty_invExt 16 (by omega)
 
+
+-- ============================================================================
+-- WS-BP BP3.5 — what a boot root's checks say about each mapping
+-- ============================================================================
+
+/-- **WS-BP BP3.5**: what the invariant bundle reads of a VSpace root the boot
+    installs — every mapping W^X-compliant, below the ARMv8 LPA bound `2^52`
+    (`boundedAddressTranslation`'s default), at a canonical virtual address.
+
+    Both kinds of boot root satisfy it, for different reasons: the binding's
+    because its checks say so of every mapping
+    (`bootSafeVSpaceRoot_mappingsSafe`), a thread's because it maps nothing
+    (`bootSafeUserVSpaceRoot_mappingsSafe`).  So the bundle's three
+    per-mapping conjuncts are one argument over the boot state, not one per
+    kind of root. -/
+def bootVSpaceRootMappingsSafe (root : VSpaceRoot) : Prop :=
+  ∀ (v : VAddr) (p : PAddr) (perms : PagePermissions),
+    root.mappings[v]? = some (p, perms) →
+      perms.wxCompliant = true ∧ p.toNat < 2^52 ∧ v.isCanonical = true
+
+/-- **WS-BP BP3.5**: the binding's boot root satisfies the per-mapping facts —
+    each of its three mapping checks is a fold, read back per lookup by
+    `RHTable.fold_and_true_of_get?`, and the BCM2712's 44-bit physical address space
+    lies below the LPA bound. -/
+theorem bootSafeVSpaceRoot_mappingsSafe {root : VSpaceRoot}
+    (h : bootSafeVSpaceRoot root) : bootVSpaceRootMappingsSafe root := by
+  obtain ⟨_, hWx, _, hPa, hVa⟩ := h
+  intro v p perms hMap
+  rw [RHTable_getElem?_eq_get?] at hMap
+  have hWx' := RHTable.fold_and_true_of_get? root.mappings
+    (fun _ (entry : PAddr × PagePermissions) => entry.2.wxCompliant) hWx hMap
+  have hPa' := RHTable.fold_and_true_of_get? root.mappings
+    (fun _ (entry : PAddr × PagePermissions) => decide (entry.1.toNat < 2^44)) hPa hMap
+  have hVa' := RHTable.fold_and_true_of_get? root.mappings
+    (fun (vaddr : VAddr) (_ : PAddr × PagePermissions) => VAddr.isCanonical vaddr) hVa hMap
+  simp only [decide_eq_true_eq] at hPa'
+  exact ⟨hWx', by omega, hVa'⟩
+
+/-- **WS-BP BP3.5**: a thread's boot root satisfies the per-mapping facts
+    vacuously — it maps nothing, and a well-formed empty table resolves no
+    address. -/
+theorem bootSafeUserVSpaceRoot_mappingsSafe {root : VSpaceRoot}
+    (h : bootSafeUserVSpaceRoot root) (hExt : root.mappings.invExt) :
+    bootVSpaceRootMappingsSafe root := by
+  intro v p perms hMap
+  rw [RHTable_getElem?_eq_get?,
+    RHTable.get?_none_of_size_zero root.mappings hExt h.2.2 v] at hMap
+  cases hMap
+
 end SeLe4n.Platform.RPi5.VSpaceBoot

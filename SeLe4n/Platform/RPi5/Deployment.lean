@@ -399,4 +399,17 @@ theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig :
   -- none: its bind reduces, so the two programs are the same term.
   rfl
 
+
+/-- **WS-BP BP3.5**: the state the hardware boot installs for this deployment
+    satisfies the proof-layer invariant bundle, and its freeze the frozen one —
+    `bootToRuntime_invariantBridge_checked` at the binding's declared cores.
+    This is the row's own instance: the boot BP4.1 makes live is this one, and
+    the theorem is stated of the state `bootAndInitialiseRPi5OrHalt` installs
+    (`bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig`), not of a model of it. -/
+theorem rpi5DeploymentBootState_invariantBridge :
+    SeLe4n.Kernel.Architecture.proofLayerInvariantBundle rpi5DeploymentBootState.state ∧
+    SeLe4n.Model.apiInvariantBundle_frozen (SeLe4n.Model.freeze rpi5DeploymentBootState) :=
+  bootToRuntime_invariantBridge_checked _ PlatformBinding.declaredCores_nodup _ _
+    rpi5BoundPlatformConfig_boot
+
 end SeLe4n.Platform.RPi5

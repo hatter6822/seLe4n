@@ -19,8 +19,8 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 419,011 lines of production Lean across 342 files, 85,328 lines across 71 Lean test suites,
-13,871 theorem/lemma declarations, zero unsound constructs.
+Current state (as of v0.36.2): 420,033 lines of production Lean across 342 files, 85,359 lines across 71 Lean test suites,
+13,905 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
 ## 3. Architectural improvements over seL4
@@ -101,8 +101,12 @@ guaranteed gigabyte minus the kernel's reserved extent, and an untrusted
 initial thread, with no capability between them.  The boot now admits a
 thread's VSpace root (registering its ASID), refuses an untyped over memory it
 may not describe, and every gate of the checked boot on this configuration is
-decided by evaluation, so the hardware entry provably boots it.  BP3.5 (the
-proof-layer bundle of the booted state) and BP4..BP8 have not started.
+decided by evaluation, so the hardware entry provably boots it.  **BP3.5**
+proves the proof-layer invariant bundle of the state that boot installs — for
+every configuration the checked boot accepts, the RPi5 deployment an instance —
+through one argument the unchecked boot now shares, and made the checked boot
+refuse a CNode holding a reply capability or an out-of-range badge, which it
+had admitted.  BP4..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

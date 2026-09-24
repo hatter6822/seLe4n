@@ -3889,6 +3889,30 @@ run_check "INVARIANT" rg -n '^theorem rpi5BoundPlatformConfig_checked($|[ ({:\[\
 run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootState_witnessesInstalled($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^theorem bootAndInitialiseRPi5OrHalt_rpi5PlatformConfig($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
 run_check "INVARIANT" rg -n '^import SeLe4n\.Platform\.RPi5\.Deployment$' SeLe4n.lean
+# WS-BP BP3.5: the production boot state's proof-layer bundle.  One argument
+# over a boot-shaped state, and both boots its instances — the unchecked one
+# refines into it rather than carrying a second copy.
+run_check "INVARIANT" rg -n '^theorem proofLayerInvariantBundle_of_bootShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootObjectShape($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^def bootQuiescentFields($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^  refine proofLayerInvariantBundle_of_bootShape \(bootFromPlatform config\) \?_$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformCheckedWithIdleThreadsFor_proofLayerInvariantBundle($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    refine proofLayerInvariantBundle_of_bootShape \(cores\.foldl enqueueIdleThread base\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootToRuntime_invariantBridge_checked($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootFromPlatformChecked_ok_asidTableConsistent($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem rpi5DeploymentBootState_invariantBridge($|[ ({:\[\]])' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^  bootToRuntime_invariantBridge_checked _ PlatformBinding\.declaredCores_nodup _ _$' SeLe4n/Platform/RPi5/Deployment.lean
+run_check "INVARIANT" rg -n '^theorem PlatformBinding\.declaredCores_nodup($|[ ({:\[\]])' SeLe4n/Platform/Contract.lean
+run_check "INVARIANT" rg -n '^theorem RHTable\.fold_and_true_of_get\?($|[ ({:\[\]])' SeLe4n/Kernel/RobinHood/Invariant/Lookup.lean
+run_check "INVARIANT" rg -n '^theorem bootSafeVSpaceRoot_mappingsSafe($|[ ({:\[\]])' SeLe4n/Platform/RPi5/VSpaceBoot.lean
+# ...and the checked boot's CNode check decides slot contents: a reply
+# capability or an out-of-range badge is refused, and the soundness bridge
+# concludes every conjunct of `bootSafeObject` rather than the structural part.
+run_check "INVARIANT" rg -n '^def bootSafeCapCheck($|[ ({:\[\]])' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^    cn\.slots\.fold true \(fun acc _ cap => acc && bootSafeCapCheck cap\)$' SeLe4n/Platform/Boot.lean
+run_check "INVARIANT" rg -n '^theorem bootSafeObjectCheck_sound \(obj : KernelObject\)$' SeLe4n/Platform/Boot.lean
+run_negative_check "INVARIANT" rg -n 'bootSafeObjectCheck_sound_structural' SeLe4n tests
+run_check "INVARIANT" rg -n 'TPH-015q checked boot refuses a configured CNode holding a reply capability' tests/TwoPhaseArchSuite.lean
 # PR #892 review round 2: the FIFO stress test's round count rounds UP, so an
 # acquisition override below the thread count cannot make every worker loop
 # run zero times and the test pass on the lock's initial state.
