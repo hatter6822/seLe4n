@@ -98,7 +98,7 @@ demostración de Lean 4:
 |----------|-------|
 | **Versión** | `0.36.2` |
 | **Toolchain de Lean** | `v4.28.0` |
-| **LoC de producción en Lean** | 417.950 en 340 archivos |
+| **LoC de producción en Lean** | 417.966 en 340 archivos |
 | **LoC de pruebas en Lean** | 85.076 en 70 suites de pruebas |
 | **Declaraciones demostradas** | 13.815 declaraciones theorem/lemma (cero sorry/axiom) |
 | **Hardware objetivo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -238,7 +238,7 @@ v0.33.100). La fase restante es **SM10** (cierre de lanzamiento → v1.0.0). El
 flujo de trabajo del ABI de retorno de llamadas al sistema (**WS-RA**) está
 completo.
 
-**WS-RR** (preparación de lanzamiento SMP), la fase de remediación previa a 1.0, está **completa en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) y **RR4 — manejo de fallos: IPC de fallo completo con reinicio basado en respuesta (v0.34.44)**, que impide que un hilo con fallo se reanude en la instrucción que lo provocó: el fallo se registra en el TCB, se entrega al endpoint `faultHandler` del hilo a través de la cadena de llamada entre núcleos activa y se atiende con una respuesta que reinicia el hilo en un PC elegido o lo abandona. RR5–RR8 también han aterrizado (RR8 en v0.35.203). **SM10 está ahora bloqueada por WS-BP** (la ruta de arranque bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que es el contenido de SM10.1 y en la que no ha empezado ninguna subtarea; luego **SM10** (cierre de lanzamiento → v1.0.0).
+**WS-RR** (preparación de lanzamiento SMP), la fase de remediación previa a 1.0, está **completa en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) y **RR4 — manejo de fallos: IPC de fallo completo con reinicio basado en respuesta (v0.34.44)**, que impide que un hilo con fallo se reanude en la instrucción que lo provocó: el fallo se registra en el TCB, se entrega al endpoint `faultHandler` del hilo a través de la cadena de llamada entre núcleos activa y se atiende con una respuesta que reinicia el hilo en un PC elegido o lo abandona. RR5–RR8 también han aterrizado (RR8 en v0.35.203). **SM10 está ahora bloqueada por WS-BP** (la ruta de arranque bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que es el contenido de SM10.1 y cuya primera fase, BP0, se completó en v0.36.2; luego **SM10** (cierre de lanzamiento → v1.0.0).
 
 Plan maestro: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 con planes por fase en `docs/planning/SMP_*.md`. El registro canónico por fase

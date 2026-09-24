@@ -203,6 +203,12 @@ fn main() {
     verify_faulted_outcome_scanner();
     scan_tlb_rs_outer_shareable_guards_intact();
 
+    // FP/SIMD is trapped at EL0 and EL1 from each boot entry's first
+    // instruction, and nothing else writes CPACR_EL1.  The kernel is built
+    // FP-free; this makes a stray FP instruction a trap rather than a silent
+    // clobber of the interrupted thread's vector registers.
+    scan_fp_trap_prologue();
+
     // Only build assembly for aarch64 targets
     let target_arch = std::env::var("CARGO_CFG_TARGET_ARCH").unwrap_or_default();
     if target_arch != "aarch64" {
@@ -212,7 +218,7 @@ fn main() {
     let mut asm = cc::Build::new();
     // WS-RR RR1.6: pick an assembler that can actually target aarch64.
     // Left to its defaults, `cc` falls back to the host `cc` for
-    // `aarch64-unknown-none` and hands three ARM64 sources to an x86
+    // `aarch64-unknown-none-softfloat` and hands three ARM64 sources to an x86
     // assembler — 54 "no such instruction" errors from `boot.S` alone,
     // before the build even reaches `vectors.S`, all of them describing
     // the toolchain rather than the code.
@@ -7609,7 +7615,7 @@ fn scan_tlb_rs_outer_shareable_guards_intact() {
 /// sources for the *target* architecture, not the host's.
 ///
 /// `cc`'s default search finds no cross compiler for
-/// `aarch64-unknown-none` on a typical x86 host and falls back to the
+/// `aarch64-unknown-none-softfloat` on a typical x86 host and falls back to the
 /// bare `cc` on `PATH`.  That silently hands `boot.S`, `vectors.S` and
 /// `trap.S` to an x86 assembler, which reports every ARM64 mnemonic as
 /// "no such instruction" — 54 errors from `boot.S` alone, all of which
@@ -9445,5 +9451,333 @@ pub(crate) fn halt_syscall_before_lean_ready(core: usize, syscall_word: u64) -> 
         if faulted_outcome_status(GOOD_TRAP, &mutated).is_ok() {
             panic!("build.rs self-check: `faulted_outcome_status` accepted a broken dispatch fixture: {what}");
         }
+    }
+}
+
+// ============================================================================
+// FP/SIMD is trapped at EL0 and EL1 from each boot entry's first instruction
+// ============================================================================
+
+/// The boot entry points.  Each one is where a PE first executes kernel code,
+/// so each must turn FP/SIMD off before anything else runs on that PE.
+const FP_TRAPPING_ENTRIES: [&str; 2] = ["_start", "secondary_entry"];
+
+/// The canonical prologue every entry in `FP_TRAPPING_ENTRIES` opens with,
+/// as normalised statements (`asm_statement_items`).
+///
+/// `CPACR_EL1 := 0` sets `FPEN = 0b00` — trap every FP/SIMD access at EL0
+/// **and** EL1 (ARM ARM D19.2.30) — and `ZEN = SMEN = 0b00` besides, so SVE
+/// and SME are refused too.  The architecture has no encoding that traps EL1
+/// alone, so user FP traps as well until BP7 gives threads an FP context;
+/// until then an EL0 FP access is EC `0x07`, which the classifier delivers as
+/// a `userException` fault and which `halt_if_kernel_origin` halts on at EL1.
+/// The `isb` is what makes the write take effect before the next instruction
+/// (ARM ARM D19.2: writes to system registers are not guaranteed visible
+/// until a context synchronisation event).
+///
+/// The kernel is built FP-free (`aarch64-unknown-none-softfloat`,
+/// `scripts/check_fp_simd_free_objects.py`), so the trap costs the kernel
+/// nothing and turns a stray FP instruction into a halt rather than a silent
+/// clobber of the interrupted thread's `q0`–`q31`.
+const FP_TRAP_PROLOGUE: [&str; 2] = ["msr cpacr_el1, xzr", "isb"];
+
+/// The two spellings of `CPACR_EL1` an assembler accepts: the name, and its
+/// encoding `S3_0_C1_C0_2` (op0 = 3, op1 = 0, CRn = 1, CRm = 0, op2 = 2).
+/// Recognising only the name would let an FP-enabling write through under
+/// the other spelling.
+const CPACR_EL1_SPELLINGS: [&str; 2] = ["cpacr_el1", "s3_0_c1_c0_2"];
+
+/// One assembler item in source order: a label definition, or a statement
+/// (instruction or directive), whitespace-collapsed and lowercased.
+#[derive(Debug, PartialEq)]
+enum AsmItem {
+    Label(String),
+    Statement(String),
+}
+
+/// The items of an assembly code view, in order.  Preprocessor lines are
+/// skipped; AArch64 GAS separates statements with `;` as well as newlines;
+/// a line may open with any number of `name:` label definitions.
+fn asm_statement_items(view: &str) -> Vec<AsmItem> {
+    let mut items = Vec::new();
+    for line in view.lines() {
+        if line.trim_start().starts_with('#') {
+            continue;
+        }
+        for piece in line.split(';') {
+            let mut rest = piece.trim();
+            while let Some(colon) = rest.find(':') {
+                let head = &rest[..colon];
+                if head.is_empty()
+                    || !head
+                        .chars()
+                        .all(|c| c.is_ascii_alphanumeric() || c == '_' || c == '.' || c == '$')
+                {
+                    break;
+                }
+                items.push(AsmItem::Label(head.to_string()));
+                rest = rest[colon + 1..].trim_start();
+            }
+            if rest.is_empty() {
+                continue;
+            }
+            let lowered = rest.to_ascii_lowercase();
+            let normalised = lowered
+                .split(',')
+                .map(|part| part.split_whitespace().collect::<Vec<_>>().join(" "))
+                .collect::<Vec<_>>()
+                .join(", ");
+            items.push(AsmItem::Statement(normalised));
+        }
+    }
+    items
+}
+
+/// Whether `text` names `CPACR_EL1` in either spelling, as a whole word.
+fn names_cpacr_el1(text: &str) -> bool {
+    let lowered = text.to_ascii_lowercase();
+    CPACR_EL1_SPELLINGS.iter().any(|spelling| {
+        let bytes = lowered.as_bytes();
+        let mut search = 0usize;
+        while let Some(hit) = lowered[search..].find(spelling) {
+            let at = search + hit;
+            let end = at + spelling.len();
+            let word = |b: u8| b.is_ascii_alphanumeric() || b == b'_';
+            if (at == 0 || !word(bytes[at - 1])) && (end == bytes.len() || !word(bytes[end])) {
+                return true;
+            }
+            search = end;
+        }
+        false
+    })
+}
+
+/// The decision, over source text: every entry in `FP_TRAPPING_ENTRIES` is
+/// defined exactly once in `boot` and its first two items are
+/// `FP_TRAP_PROLOGUE`; no other assembly statement anywhere names
+/// `CPACR_EL1`; and no Rust source's code or `asm!` template names it.
+///
+/// "The first two items" is a canonical-spelling contract, not an analysis:
+/// the HAL writes these entries, so the prologue is required at the one
+/// position where nothing can run before it, and a label, a directive (an
+/// `.inst` emits code) or any instruction ahead of it is refused rather than
+/// reasoned about.  Every other mention is refused because a second write is
+/// the only way FP could be re-enabled after the prologue — and reads have no
+/// use in a kernel that never enables FP.
+fn fp_trap_prologue_status(
+    boot: &str,
+    other_asm: &[(&str, &str)],
+    rust: &[(&str, &str)],
+) -> Result<(), String> {
+    let items = asm_statement_items(&asm_code_view(boot));
+    let mut prologue_writes = 0usize;
+    for entry in FP_TRAPPING_ENTRIES {
+        let defs: Vec<usize> = items
+            .iter()
+            .enumerate()
+            .filter(|(_, item)| **item == AsmItem::Label(entry.to_string()))
+            .map(|(i, _)| i)
+            .collect();
+        let [at] = defs[..] else {
+            return Err(format!(
+                "`{entry}` is defined {} times in boot.S; expected exactly once",
+                defs.len()
+            ));
+        };
+        let opening: Vec<&AsmItem> = items[at + 1..]
+            .iter()
+            .take(FP_TRAP_PROLOGUE.len())
+            .collect();
+        let expected: Vec<AsmItem> = FP_TRAP_PROLOGUE
+            .iter()
+            .map(|s| AsmItem::Statement((*s).to_string()))
+            .collect();
+        if opening.len() != expected.len() || opening.iter().zip(&expected).any(|(a, b)| *a != b) {
+            return Err(format!(
+                "`{entry}` does not open with `{}` then `{}`; its first items are {opening:?}",
+                FP_TRAP_PROLOGUE[0], FP_TRAP_PROLOGUE[1]
+            ));
+        }
+        prologue_writes += 1;
+    }
+    let boot_mentions = items
+        .iter()
+        .filter(|item| matches!(item, AsmItem::Statement(s) if names_cpacr_el1(s)))
+        .count();
+    if boot_mentions != prologue_writes {
+        return Err(format!(
+            "boot.S names CPACR_EL1 in {boot_mentions} statements; only the \
+             {prologue_writes} entry prologues may"
+        ));
+    }
+    for (path, source) in other_asm {
+        if names_cpacr_el1(&asm_code_view(source)) {
+            return Err(format!(
+                "{path} names CPACR_EL1; only boot.S's entry prologues may"
+            ));
+        }
+    }
+    for (path, source) in rust {
+        if names_cpacr_el1(&rust_code_views(source).0) {
+            return Err(format!(
+                "{path} names CPACR_EL1 in code or an `asm!` template; the \
+                 boot prologues are its only writers"
+            ));
+        }
+    }
+    Ok(())
+}
+
+/// Pin `fp_trap_prologue_status` with token-preserving mutations: each
+/// refused case keeps the prologue's tokens and breaks the relation — the
+/// order, the operand, the position, the spelling of a second write, or the
+/// enclosure (a comment, a string).
+fn verify_fp_trap_prologue_scanner() {
+    const GOOD: &str = "_start:\n    msr     cpacr_el1, xzr\n    isb\n    mrs x1, mpidr_el1\n\
+                        secondary_entry:\n    MSR CPACR_EL1 ,XZR ; isb\n    msr daifset, #0xf\n";
+    let accept = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
+        if let Err(e) = fp_trap_prologue_status(boot, asm, rust) {
+            panic!("FP-trap scanner self-test: `{label}` must be accepted: {e}");
+        }
+    };
+    let refuse = |label: &str, boot: &str, asm: &[(&str, &str)], rust: &[(&str, &str)]| {
+        assert!(
+            fp_trap_prologue_status(boot, asm, rust).is_err(),
+            "FP-trap scanner self-test: `{label}` must be refused"
+        );
+    };
+    accept("canonical", GOOD, &[], &[]);
+    accept(
+        "a comment and a Rust comment mention it",
+        &format!("// CPACR_EL1 is written below\n{GOOD}"),
+        &[("trap.S", "/* msr cpacr_el1, x0 */\n")],
+        &[("cpu.rs", "// msr cpacr_el1, x0\nfn f() {}\n")],
+    );
+    refuse(
+        "order swapped",
+        &GOOD.replacen(
+            "msr     cpacr_el1, xzr\n    isb",
+            "isb\n    msr cpacr_el1, xzr",
+            1,
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "nonzero value",
+        &GOOD.replacen("cpacr_el1, xzr", "cpacr_el1, x0", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "an instruction ahead of it",
+        &GOOD.replacen(
+            "secondary_entry:\n",
+            "secondary_entry:\n    msr daifset, #0xf\n",
+            1,
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "an .inst ahead of it",
+        &GOOD.replacen("_start:\n", "_start:\n    .inst 0x1e604000\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "a label ahead of it",
+        &GOOD.replacen("_start:\n", "_start:\nearly:\n", 1),
+        &[],
+        &[],
+    );
+    refuse(
+        "the prologue only in a comment",
+        &GOOD.replacen(
+            "    msr     cpacr_el1, xzr\n",
+            "    // msr cpacr_el1, xzr\n",
+            1,
+        ),
+        &[],
+        &[],
+    );
+    refuse(
+        "entry missing",
+        &GOOD.replacen("secondary_entry:", "secondary:", 1),
+        &[],
+        &[],
+    );
+    refuse("entry defined twice", &format!("{GOOD}_start:\n"), &[], &[]);
+    refuse(
+        "re-enabled later",
+        &format!("{GOOD}    mov x0, #0x300000\n    msr cpacr_el1, x0\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "re-enabled through the encoding",
+        &format!("{GOOD}    msr S3_0_C1_C0_2, x0\n"),
+        &[],
+        &[],
+    );
+    refuse(
+        "written in another .S",
+        GOOD,
+        &[("trap.S", "    msr cpacr_el1, x0\n")],
+        &[],
+    );
+    refuse(
+        "written from an asm! template",
+        GOOD,
+        &[],
+        &[(
+            "cpu.rs",
+            "fn f() { unsafe { core::arch::asm!(\"msr cpacr_el1, {}\", in(reg) 3u64 << 20) } }\n",
+        )],
+    );
+    assert!(
+        !names_cpacr_el1("cpacr_el1_fpen"),
+        "FP-trap scanner self-test: a longer word is not the register"
+    );
+}
+
+/// Enforce `fp_trap_prologue_status` on the real sources.
+fn scan_fp_trap_prologue() {
+    verify_fp_trap_prologue_scanner();
+    let read = |path: &std::path::Path| {
+        println!("cargo:rerun-if-changed={}", path.display());
+        std::fs::read_to_string(path)
+            .unwrap_or_else(|e| panic!("FP-trap scanner: cannot read {}: {e}", path.display()))
+    };
+    let boot = read(std::path::Path::new("src/boot.S"));
+    let mut asm_paths = Vec::new();
+    let mut rust_paths = Vec::new();
+    collect_rust_sources(std::path::Path::new("src"), &mut rust_paths);
+    for entry in std::fs::read_dir("src")
+        .expect("FP-trap scanner: cannot read src/")
+        .flatten()
+    {
+        let path = entry.path();
+        if path.extension().and_then(|e| e.to_str()) == Some("S") && !path.ends_with("boot.S") {
+            asm_paths.push(path);
+        }
+    }
+    let asm: Vec<(String, String)> = asm_paths
+        .iter()
+        .map(|p| (p.display().to_string(), read(p)))
+        .collect();
+    let rust: Vec<(String, String)> = rust_paths
+        .iter()
+        .map(|p| (p.display().to_string(), read(p)))
+        .collect();
+    let asm_refs: Vec<(&str, &str)> = asm.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
+    let rust_refs: Vec<(&str, &str)> = rust.iter().map(|(p, s)| (p.as_str(), s.as_str())).collect();
+    if let Err(e) = fp_trap_prologue_status(&boot, &asm_refs, &rust_refs) {
+        panic!(
+            "FP/SIMD trap regression: {e}.\n\
+             Every boot entry must open with `msr cpacr_el1, xzr` then `isb`, \
+             so FP/SIMD is trapped at EL0 and EL1 before any code runs on the \
+             PE, and nothing else may write CPACR_EL1 (see FP_TRAP_PROLOGUE)."
+        );
     }
 }

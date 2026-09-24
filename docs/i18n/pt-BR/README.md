@@ -97,7 +97,7 @@ provas do Lean 4:
 |----------|-------|
 | **Versão** | `0.36.2` |
 | **Toolchain Lean** | `v4.28.0` |
-| **LoC Lean de produção** | 417.950 em 340 arquivos |
+| **LoC Lean de produção** | 417.966 em 340 arquivos |
 | **LoC Lean de testes** | 85.076 em 70 suítes de testes |
 | **Declarações provadas** | 13.815 declarações de teorema/lema (zero sorry/axiom) |
 | **Hardware alvo** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -235,7 +235,7 @@ encerrada na v0.33.100). A fase restante é a **SM10** (fechamento de release
 → v1.0.0). O workstream do ABI de retorno de syscalls (**WS-RA**) está
 completo.
 
-**O WS-RR** (prontidão de release SMP), a fase de remediação pré-1.0, está **completo em v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) e **RR4 — tratamento de faltas: IPC de falta completo com reinício baseado em resposta (v0.34.44)**, que impede que uma thread em falta seja retomada na instrução que falhou: a falta é registrada no TCB, entregue ao endpoint `faultHandler` da thread pela cadeia de chamada entre núcleos ativa e atendida por uma resposta que reinicia a thread em um PC escolhido ou a abandona. RR5–RR8 também foram concluídas (RR8 em v0.35.203). A **SM10 está agora bloqueada pelo WS-BP** (o caminho de boot bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que é o conteúdo da SM10.1 e no qual nenhuma subtarefa começou; então, a **SM10** (fechamento de release → v1.0.0).
+**O WS-RR** (prontidão de release SMP), a fase de remediação pré-1.0, está **completo em v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) e **RR4 — tratamento de faltas: IPC de falta completo com reinício baseado em resposta (v0.34.44)**, que impede que uma thread em falta seja retomada na instrução que falhou: a falta é registrada no TCB, entregue ao endpoint `faultHandler` da thread pela cadeia de chamada entre núcleos ativa e atendida por uma resposta que reinicia a thread em um PC escolhido ou a abandona. RR5–RR8 também foram concluídas (RR8 em v0.35.203). A **SM10 está agora bloqueada pelo WS-BP** (o caminho de boot bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), que é o conteúdo da SM10.1 e cuja primeira fase, BP0, foi concluída em v0.36.2; então, a **SM10** (fechamento de release → v1.0.0).
 
 Plano mestre: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 com planos por fase em `docs/planning/SMP_*.md`. O registro canônico por

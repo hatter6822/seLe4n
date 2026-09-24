@@ -47,9 +47,9 @@ hw_target = []
 # crate but are not kernel code.  `src/bin/rw_lock_oracle.rs` is the
 # Tier-5 cross-language correspondence oracle: it reads an op sequence
 # on stdin and prints the post-state on stdout, so it needs `std` by
-# construction and can never build for `aarch64-unknown-none`.
+# construction and can never build for `aarch64-unknown-none-softfloat`.
 #
-# Without this gate, `cargo build --target aarch64-unknown-none -p
+# Without this gate, `cargo build --target aarch64-unknown-none-softfloat -p
 # sele4n-hal` tries to compile the oracle for the bare-metal target and
 # fails with 35 errors that have nothing to do with the HAL — which is
 # what made the whole crate look uncross-compilable.  See the `[[bin]]`

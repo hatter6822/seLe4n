@@ -38,7 +38,7 @@
 //!
 //! `TLBI VMALLE1OS / VAE1OS / ASIDE1OS / VALE1OS` are introduced by
 //! **FEAT_TLBIOS**, mandatory from ARMv8.4-A (ARM ARM D8.13.2).  They
-//! are *not* part of the ARMv8.0-A baseline that `aarch64-unknown-none`
+//! are *not* part of the ARMv8.0-A baseline that `aarch64-unknown-none-softfloat`
 //! assembles against, and — more consequentially — they are not
 //! implemented by **Cortex-A76**, the ARMv8.2-A core in the RPi5's
 //! BCM2712.  On such a PE the encoding is UNDEFINED and executing it
@@ -65,8 +65,8 @@
 //!    exists to prevent.  A configuration that cannot be honoured is
 //!    reported, not approximated.
 //!
-//! This gap was invisible until WS-RR RR1 compiled the crate for
-//! `aarch64-unknown-none` for the first time: `cargo check` stops
+//! This gap was invisible until WS-RR RR1 compiled the crate for an
+//! AArch64 target for the first time: `cargo check` stops
 //! before the backend, so the four `asm!` templates were never handed
 //! to an assembler, and the host build compiles none of them
 //! (`#[cfg(target_arch = "aarch64")]`).

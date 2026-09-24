@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0: the three Lean/Rust pairs are driven through shared fixtures, and the twenty-two divergences that exposed are fixed
+## v0.36.2 — WS-BP BP0: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, and the kernel is FP-free
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -123,7 +123,81 @@ behavioural agreement for the lock is the Tier-5 cross-language oracle.
 Also: `check_identifier_naming.py` classifies the two new file types (`.hex`
 rendered blobs are not scanned; the corpus `MANIFEST` is scanned as config), and
 `tests/fixtures/README.md` indexes both new fixtures with their consumers and
-documents the corpus.  BP1..BP8 have not started.
+documents the corpus.
+
+**BP1.1 preparation — the elaborator leaves the production closure.**  The
+`@[documented_obligation]` tag attribute was registered with `initialize` and
+put `import Lean.Attributes` in `SeLe4n/Prelude.lean`, so Lean's elaborator —
+its module initialisers and its object code — was part of the closure BP1.1
+compiles for a freestanding `aarch64-unknown-none` image, for a no-op marker.
+The marker is now a type: a documented caller obligation is a declaration of
+type `DocumentedObligation` (one value, `.recorded`), found by type rather than
+by attribute.  Its one user, `resolveCapAddress_caller_rights_obligation`, is
+retyped.  The import had been carrying one more elaborator dependency: `API.lean`'s
+`register_option sele4n.debug.noisyResolution` — also an `initialize` — which
+**nothing read**, while its docstring said it flipped production callers to the
+gated extra-cap resolver.  It is retired, the texts describing it say what is
+true (every dispatch arm takes seL4's silent drop, and `PartialResolution = 51`
+is produced by nothing), and the missing opt-in — a deployment *constant*, since
+an option exists only at elaboration time — is registered in table C.  The
+de-threading gate's machinery pin on the Prelude's `initialize` goes with it.
+After this cut the closure imports only `Init` and `Std.Data.HashMap` /
+`Std.Data.HashSet` outside the project.
+
+**The kernel is FP-free, and FP/SIMD traps at EL1** — found while scoping BP1.2
+and reported as a security finding before it was fixed.  Rust's
+`aarch64-unknown-none` enables `neon` and `fp-armv8`, and the HAL built for it
+carried **129** FP/SIMD instructions (vector zeroing in `fdt_structure_check`,
+`d8`–`d15` spills in `bring_up_secondaries_inner`, …), while `trap.S` saves
+general-purpose registers only and nothing in the tree wrote `CPACR_EL1`.  On
+hardware the kernel would therefore either trap on its own first vector
+instruction with no handler, or — with FP access left enabled by firmware —
+silently overwrite the interrupted thread's `q0`–`q31` on every trap, a
+corruption and cross-thread leak channel.  Latent: no core runs the Lean
+runtime yet.  Four changes:
+
+- **The HAL builds for `aarch64-unknown-none-softfloat`** — `rust-toolchain.toml`
+  (which also gains the `llvm-tools` component), the cross gate, the CI job and
+  every script naming the target — so FP-freedom is a property of code
+  generation, as it is for seL4's kernel.
+- **Both boot entries open with `msr cpacr_el1, xzr` then `isb`**, trapping
+  FP/SIMD/SVE/SME at EL0 and EL1 before anything else runs on the PE.
+  `build.rs`'s `scan_fp_trap_prologue` requires exactly that prologue at `_start`
+  and `secondary_entry` and refuses any other write to `CPACR_EL1`, in either
+  spelling (`S3_0_C1_C0_2`), in any `.S` file or `asm!` template; its self-test
+  has thirteen token-preserving cases and all nine mutations of the scanner are
+  caught.
+- **`scripts/check_fp_simd_free_objects.py` is the evidence rather than the
+  flag**: the cross gate's new step [5/5] disassembles the release rlib and the
+  assembly archive with the toolchain-pinned `llvm-objdump` and refuses any
+  FP/SIMD/SVE register operand or `FPCR`/`FPSR` access, reading operands only
+  (symbols and comments dropped) and refusing input that is not AArch64 ELF or
+  yields no instructions.  25 self-test cases, in Tier 0; two mutations were
+  missed on the first run — the symbol strip and the lookahead had no witness —
+  and each gained one (`<d8>`, `at s1e1r`).  PASS on the softfloat objects, FAIL
+  with all 129 findings on the hard-float build.
+- **`check_aarch64_cross_target.py` requires the new step as a relation**:
+  executed (not echoed), over exactly the two release objects of this target,
+  with `clippy` and `llvm-tools` in both the toolchain file and the CI job.  And
+  it found a hole older than this cut: under `set -e` a command followed by
+  `&&` or `||` is exempt from errexit, so `cargo build … || true` kept every
+  token the gate checked while discarding the build's failure.
+  `shell_command_list` now records the operator ending each command and the
+  gate refuses `&&`/`||` after any load-bearing command.  Ten new cases (68 in
+  all).
+
+The cost is stated rather than hidden: the architecture has no encoding that
+traps EL1 alone, so a **user** FP instruction now traps too, and is delivered as
+a `userException` fault (EC `0x07`) until threads carry an FP context.  Two
+plan rows and three table B rows record what remains: **BP7.9**, per-thread
+FP/SIMD state with seL4's lazy switch; **BP5.5**, the EL2-to-EL1 drop `boot.S`
+lacks (the RPi5 firmware enters at EL2, and `CPTR_EL2` must not trap FP there);
+and BP5.2 now runs the disassembly gate over the **linked image**, because the
+target's own `compiler_builtins` is not FP-free — seven functions use `d`/`v`
+registers and `__negdf2` takes a hard-float `d0` argument no soft-float caller
+supplies.  WS-BP is 45 sub-tasks.  The `lib.rs` lint measurement was re-run on
+the new target (0 host findings, 1 cross) rather than carried over.
+BP1.2..BP1.4 and BP2..BP8 have not started.
 
 Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0)
 

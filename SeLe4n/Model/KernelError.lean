@@ -114,14 +114,15 @@ inductive KernelError where
                            -- type-level promotion failure path; the type
                            -- system enforces the discipline at call sites
                            -- that demand `NonNullCap` arguments.
-  | partialResolution      -- AN7-E (API-M01): `resolveExtraCaps` encountered
-                           -- an unresolvable capability address in the extra-
-                           -- cap list AND the `sele4n.debug.noisyResolution`
-                           -- option was enabled.  By default seL4-compatible
-                           -- semantics silently drop the unresolvable entries;
-                           -- under the noisy option the kernel surfaces this
-                           -- variant so callers can distinguish a *partial*
-                           -- resolution from a *complete* success.
+  | partialResolution      -- AN7-E (API-M01): the gated extra-cap resolver
+                           -- (`resolveExtraCapsGated`) met an unresolvable
+                           -- capability address.  seL4-compatible semantics
+                           -- silently drop such entries, and that is what
+                           -- every dispatch arm does; this variant lets a
+                           -- deployment that selects the gated resolver tell
+                           -- a *partial* resolution from a *complete* one.
+                           -- No arm selects it yet — the selection policy is
+                           -- registered debt (REGISTERED_DEBT.md table C).
   | missingSchedContext    -- R5.E (DEEP-SCH-04): a bound-budget scheduler
                            -- path lost track of its bound `SchedContext`
                            -- (object not found in `objects` table).  Pre-R5,

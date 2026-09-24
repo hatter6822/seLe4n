@@ -6,7 +6,7 @@
 # under certain conditions. See: https://github.com/hatter6822/seLe4n/blob/main/LICENSE
 # test_aarch64_cross_build.sh — WS-RR RR1: aarch64 compile coverage gate.
 #
-# Builds `sele4n-hal` for `aarch64-unknown-none`, the bare-metal target
+# Builds `sele4n-hal` for `aarch64-unknown-none-softfloat`, the bare-metal target
 # the kernel is actually deployed on.  Before RR1 no aarch64 target was
 # compiled anywhere in the tree or in CI, so every `#[cfg(target_arch =
 # "aarch64")]` block, every `asm!` site and all three `.S` files had zero
@@ -44,7 +44,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 RUST_DIR="$PROJECT_ROOT/rust"
 
-CROSS_TARGET="aarch64-unknown-none"
+CROSS_TARGET="aarch64-unknown-none-softfloat"
 CROSS_PKG="sele4n-hal"
 CROSS_FEATURES="hw_target"
 
@@ -61,14 +61,14 @@ fi
 cd "$RUST_DIR"
 
 # --------------------------------------------------------------------------
-# [1/4] Target availability.
+# [1/5] Target availability.
 #
 # `rust-toolchain.toml` lists the target, so rustup installs it on first
 # use.  A pre-seeded CI image or an offline environment can still be
 # missing it, so try once explicitly and fail with a usable message
 # rather than letting rustc report a missing `core`.
 # --------------------------------------------------------------------------
-echo "[1/4] Ensuring the ${CROSS_TARGET} target is installed..."
+echo "[1/5] Ensuring the ${CROSS_TARGET} target is installed..."
 if ! rustup target list --installed 2> /dev/null | grep -qx "${CROSS_TARGET}"; then
     echo "      target not installed; adding it"
     if ! rustup target add "${CROSS_TARGET}"; then
@@ -82,15 +82,15 @@ echo "      ✓ ${CROSS_TARGET} available"
 echo ""
 
 # --------------------------------------------------------------------------
-# [2/4] The gate itself: a real build, debug and release.
+# [2/5] The gate itself: a real build, debug and release.
 #
 # Both profiles are built because inline-asm register allocation and
 # constraint checking depend on the optimisation level: an `asm!` block
 # that satisfies the register allocator at `-O0` can fail to at `-O2`,
 # and the deployed kernel is a release build.
 # --------------------------------------------------------------------------
-echo "[2/4] Building ${CROSS_PKG} for ${CROSS_TARGET} (debug + release)..."
-# Discard any previous run's build-script output first.  Step [3/4] below
+echo "[2/5] Building ${CROSS_PKG} for ${CROSS_TARGET} (debug + release)..."
+# Discard any previous run's build-script output first.  Step [3/5] below
 # asserts that `boot.S`, `vectors.S` and `trap.S` reached an archive; if a
 # stale archive from an earlier run survived, that assertion would pass over
 # a build that assembled nothing — the exact "green gate over zero coverage"
@@ -100,6 +100,7 @@ echo "[2/4] Building ${CROSS_PKG} for ${CROSS_TARGET} (debug + release)..."
 # miss.  The cost is seconds: the crate has no dependencies for this target.
 for profile in debug release; do
     rm -rf "target/${CROSS_TARGET}/${profile}/build/${CROSS_PKG}-"*
+    rm -f "target/${CROSS_TARGET}/${profile}/deps/libsele4n_hal-"*
 done
 cargo build --target "${CROSS_TARGET}" -p "${CROSS_PKG}" --features "${CROSS_FEATURES}"
 cargo build --release --target "${CROSS_TARGET}" -p "${CROSS_PKG}" --features "${CROSS_FEATURES}"
@@ -107,7 +108,7 @@ echo "      ✓ debug and release cross builds succeeded"
 echo ""
 
 # --------------------------------------------------------------------------
-# [3/4] The three .S files really assembled.
+# [3/5] The three .S files really assembled.
 #
 # `build.rs` only assembles when `CARGO_CFG_TARGET_ARCH == "aarch64"`.
 # If that gate ever regressed, the build above would still pass while
@@ -115,7 +116,7 @@ echo ""
 # the failure shape this whole workstream exists to eliminate.  So the
 # archive is inspected rather than assumed.
 # --------------------------------------------------------------------------
-echo "[3/4] Verifying boot.S / vectors.S / trap.S assembled..."
+echo "[3/5] Verifying boot.S / vectors.S / trap.S assembled..."
 # Exactly one archive can exist now, since the directory was cleared above;
 # `head -1` is defensive rather than a choice between candidates.
 asm_archive="$(find "target/${CROSS_TARGET}/release/build" \
@@ -148,7 +149,7 @@ echo "      ✓ all three .S sources assembled into ${asm_archive##*/}"
 echo ""
 
 # --------------------------------------------------------------------------
-# [4/4] Lints, on the cross target, denied.
+# [4/5] Lints, on the cross target, denied.
 #
 # `scripts/test_rust.sh` runs clippy on the host, where every
 # `#[cfg(target_arch = "aarch64")]` block is removed before the linter
@@ -157,7 +158,7 @@ echo ""
 # warnings and one clippy finding living in blocks the host lane cannot
 # reach.
 # --------------------------------------------------------------------------
-echo "[4/4] Linting ${CROSS_PKG} on ${CROSS_TARGET} (clippy -D warnings)..."
+echo "[4/5] Linting ${CROSS_PKG} on ${CROSS_TARGET} (clippy -D warnings)..."
 if ! rustup component list --installed 2> /dev/null | grep -q '^clippy'; then
     echo "      ✗ FAILED — clippy component not installed."
     echo "        rust-toolchain.toml lists it; install with"
@@ -167,6 +168,28 @@ fi
 cargo clippy --target "${CROSS_TARGET}" -p "${CROSS_PKG}" \
     --features "${CROSS_FEATURES}" -- -D warnings
 echo "      ✓ clippy is clean on ${CROSS_TARGET}"
+echo ""
+
+# --------------------------------------------------------------------------
+# [5/5] The objects use no FP/SIMD register.
+#
+# `boot.S` traps FP/SIMD at EL0 and EL1 and the trap frame saves
+# general-purpose registers only, so kernel code must never touch a
+# vector register.  The softfloat target makes that a property of code
+# generation; this step checks it on what was actually generated, over
+# the release rlib (the Rust code) and the assembly archive (the three
+# `.S` files).  The globs name the RELEASE objects of THIS target: step
+# [2/5] cleared both directories, so each matches the one object this run
+# built, and a glob matching nothing reaches the checker as a missing file,
+# which it refuses.  `scripts/check_aarch64_cross_target.py` requires this
+# command, over exactly these two paths, and refuses an `&&` / `||` after
+# it that would exempt it from `set -e`.
+# --------------------------------------------------------------------------
+echo "[5/5] Disassembling the release objects for FP/SIMD register use..."
+python3 "${PROJECT_ROOT}/scripts/check_fp_simd_free_objects.py" \
+    target/"${CROSS_TARGET}"/release/deps/libsele4n_hal-*.rlib \
+    target/"${CROSS_TARGET}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
+echo "      ✓ no FP/SIMD register operand in the HAL's object code"
 echo ""
 
 echo "=== aarch64 cross-compile coverage: PASS ==="

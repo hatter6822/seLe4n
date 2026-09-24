@@ -16,8 +16,8 @@
 #
 # Prerequisites:
 #   - qemu-system-aarch64 installed (QEMU >= 8.0)
-#   - Rust toolchain with aarch64-unknown-none target
-#   - cargo build --release --target aarch64-unknown-none completes
+#   - Rust toolchain with aarch64-unknown-none-softfloat target
+#   - cargo build --release --target aarch64-unknown-none-softfloat completes
 #
 # Usage:
 #   ./scripts/test_qemu.sh              # Run QEMU integration tests
@@ -47,7 +47,7 @@ QEMU_CPU="${QEMU_CPU:-cortex-a76}"
 QEMU_MEMORY="${QEMU_MEMORY:-1G}"
 REQUIRE_QEMU="${REQUIRE_QEMU:-0}"
 RUST_DIR="${REPO_ROOT}/rust"
-RUST_TARGET="aarch64-unknown-none"
+RUST_TARGET="aarch64-unknown-none-softfloat"
 KERNEL_BIN="${RUST_DIR}/target/${RUST_TARGET}/release/sele4n-hal"
 
 # ── QEMU availability check ───────────────────────────────────────────────

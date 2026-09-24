@@ -7,6 +7,7 @@
 //   x1-x3 = reserved (zero)
 //
 // Boot sequence:
+//   0. Trap FP/SIMD at EL0 and EL1 (CPACR_EL1 := 0)
 //   1. Read MPIDR_EL1 — park all cores except core 0
 //   2. Save DTB pointer in callee-saved register (x19)
 //   3. Zero the BSS section
@@ -18,6 +19,25 @@
 .global secondary_entry
 
 _start:
+    // =====================================================================
+    // Step 0: trap FP/SIMD at EL0 and EL1 before anything else runs.
+    //
+    // CPACR_EL1 := 0 sets FPEN (and ZEN / SMEN) to 0b00: every FP, SIMD,
+    // SVE and SME access at EL0 or EL1 traps (ARM ARM D19.2.30).  The
+    // kernel is built FP-free (aarch64-unknown-none-softfloat), so the
+    // trap costs it nothing, and a stray FP instruction becomes a halt
+    // (`halt_if_kernel_origin`) instead of a silent clobber of the
+    // interrupted thread's q0-q31, which the trap frame does not save.
+    // No encoding traps EL1 alone, so EL0 FP traps too until threads
+    // carry an FP context (WS-BP BP7); until then an EL0 access is
+    // delivered as a userException fault.  The ISB makes the write take
+    // effect before the next instruction.  `build.rs`
+    // (`scan_fp_trap_prologue`) requires these two statements to open
+    // both boot entries and refuses any other write to CPACR_EL1.
+    // =====================================================================
+    msr     cpacr_el1, xzr
+    isb
+
     // =====================================================================
     // Step 1: Core ID check — only cluster-0 core-0 proceeds
     //
@@ -180,6 +200,12 @@ _start:
 // PSCI HVC path on aarch64 firmware.
 // =========================================================================
 secondary_entry:
+    // Step 0: trap FP/SIMD at EL0 and EL1 before anything else runs on
+    // this PE.  CPACR_EL1 is per-PE and PSCI CPU_ON gives no guarantee
+    // about its value; see `_start`'s Step 0.
+    msr     cpacr_el1, xzr
+    isb
+
     // Step 1: mask all maskable interrupts.  PSCI returns with DAIF
     // unset on some firmwares; do not assume.  Also mandatory before
     // the Step 1.5 invalid-context_id halt so the halt loop cannot be

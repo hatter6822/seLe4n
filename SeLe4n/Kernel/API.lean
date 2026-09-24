@@ -3407,11 +3407,12 @@ def resolveExtraCaps (cspaceRoot : SeLe4n.ObjId)
     | (_,    true)  => .error .partialResolution
     ```
 
-    The default ABI path continues to use `resolveExtraCaps` (silent drop)
-    to stay byte-compatible with the seL4 reference kernel.  Production
-    deployments that want the noisy behaviour gate via the debug option
-    `sele4n.debug.noisyResolution` — a compile-time `set_option` directive
-    in the consuming module. -/
+    The default ABI path uses `resolveExtraCaps` (silent drop) to stay
+    byte-compatible with the seL4 reference kernel.  **No deployment can
+    select the noisy behaviour yet**: the selection is a deployment policy
+    the dispatch arms must read, registered in `docs/REGISTERED_DEBT.md`
+    table C ("the partial-resolution policy").  Until it lands, this
+    resolver and `resolveExtraCapsGated` have no production caller. -/
 private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : (Array TransferCap × Bool) × SystemState :=
@@ -3436,14 +3437,14 @@ private def resolveExtraCapsDetailed (cspaceRoot : SeLe4n.ObjId)
                 ((acc.1.1.push { cap := cap, srcNode := node }, acc.1.2), stNode))
     ((#[], false), st)
 
-/-- AN7-E (API-M01) option declaration: `set_option sele4n.debug.noisyResolution true`
-    flips production callers from the silent-drop `resolveExtraCaps` to
-    the explicit-error `resolveExtraCapsDetailed` wrapper.  Disabled by
-    default so the ABI stays seL4-compatible. -/
-register_option sele4n.debug.noisyResolution : Bool := {
-  defValue := false
-  descr := "AN7-E (API-M01): When true, resolveExtraCaps surfaces partial resolution as KernelError.partialResolution instead of silently dropping unresolvable caps."
-}
+/- **Retired at `v0.36.2` (WS-BP BP1.1 preparation): the
+`sele4n.debug.noisyResolution` option.**  It was a `register_option` that no
+code read, so it selected nothing while its docstring said it flipped
+production callers; and `register_option` is an `initialize`, which put Lean's
+option registry — elaborator machinery — into the kernel's production closure,
+the closure BP1 compiles into a freestanding image.  The policy it described
+is registered debt (`docs/REGISTERED_DEBT.md` table C, "the
+partial-resolution policy"): a deployment constant the dispatch arms read. -/
 
 /-- AN7-E (API-M01) soundness (empty-input): on an empty capability-address
     array, the detailed variant returns an empty resolved-caps list and a
@@ -3488,8 +3489,8 @@ theorem resolveExtraCapsDetailed_ungranted
     `.error KernelError.partialResolution` when any input address fails
     to resolve; otherwise returns the resolved capability array.  Callers
     that enable the gated path opt in consciously by using this wrapper
-    instead of `resolveExtraCaps` — the debug option
-    `sele4n.debug.noisyResolution` documents the project-level policy. -/
+    instead of `resolveExtraCaps`; no dispatch arm does yet (see
+    `resolveExtraCapsDetailed`). -/
 private def resolveExtraCapsGated (cspaceRoot : SeLe4n.ObjId)
     (capAddrs : Array SeLe4n.CPtr) (depth : Nat) (granted : Bool)
     (st : SystemState) : Except KernelError (Array TransferCap × SystemState) :=

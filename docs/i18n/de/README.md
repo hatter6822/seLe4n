@@ -97,7 +97,7 @@ Lean-4-Beweissystem ermöglicht werden:
 |-------------|------|
 | **Version** | `0.36.2` |
 | **Lean-Toolchain** | `v4.28.0` |
-| **Produktions-LoC (Lean)** | 417.950 über 340 Dateien |
+| **Produktions-LoC (Lean)** | 417.966 über 340 Dateien |
 | **Test-LoC (Lean)** | 85.076 über 70 Testsuiten |
 | **Bewiesene Deklarationen** | 13.815 Theorem-/Lemma-Deklarationen (null sorry/axiom) |
 | **Zielhardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -237,7 +237,7 @@ Vervollständigung der Deklassifizierung (SM9, abgeschlossen bei v0.33.100).
 Die verbleibende Phase ist **SM10** (Release-Abschluss → v1.0.0). Der
 Workstream zum Syscall-Rückgabe-ABI (**WS-RA**) ist abgeschlossen.
 
-**WS-RR** (SMP-Release-Reife), die Remediationsphase vor 1.0, ist **abgeschlossen mit v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 sind ebenfalls abgeschlossen (RR8 mit v0.35.203). **SM10 ist jetzt durch WS-BP blockiert** (der Bare-Metal-Bootpfad, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), den Inhalt von SM10.1, in dem noch keine Teilaufgabe begonnen hat; danach **SM10** (Release-Abschluss → v1.0.0).
+**WS-RR** (SMP-Release-Reife), die Remediationsphase vor 1.0, ist **abgeschlossen mit v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)): RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) und **RR4 — Fehlerbehandlung: vollständige Fault-IPC mit antwortbasiertem Neustart (v0.34.44)**, die verhindert, dass ein fehlerhafter Thread an der auslösenden Instruktion fortgesetzt wird: der Fault wird im TCB vermerkt, über die aktive kernübergreifende Call-Kette an den `faultHandler`-Endpunkt des Threads zugestellt und mit einer Antwort beantwortet, die den Thread an einem gewählten PC neu startet oder ihn aufgibt. RR5–RR8 sind ebenfalls abgeschlossen (RR8 mit v0.35.203). **SM10 ist jetzt durch WS-BP blockiert** (der Bare-Metal-Bootpfad, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), den Inhalt von SM10.1, dessen erste Phase BP0 mit v0.36.2 abgeschlossen ist; danach **SM10** (Release-Abschluss → v1.0.0).
 
 Masterplan: [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 mit Plänen pro Phase in `docs/planning/SMP_*.md`. Die kanonische Aufzeichnung

@@ -60,7 +60,7 @@
 // has no unwinder, so `panic = "abort"` is not a preference there but a
 // requirement, and the value of the guard is its actionable message rather
 // than the link error that would follow.  `target_os = "none"` names exactly
-// that build (`aarch64-unknown-none`) and nothing else — no host profile, test
+// that build (`aarch64-unknown-none-softfloat`) and nothing else — no host profile, test
 // or otherwise, can satisfy it, and no test profile can suppress it on the
 // target.
 //

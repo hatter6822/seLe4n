@@ -53,7 +53,7 @@
 // comment — the discipline above says every unsafe block carries one, and
 // without this lint that sentence is unenforceable exactly where the hardware
 // access happens. The crate already writes the blocks explicitly on both the
-// host and `aarch64-unknown-none`; denying the lint is what keeps it doing so,
+// host and `aarch64-unknown-none-softfloat`; denying the lint is what keeps it doing so,
 // and it is edition 2024's default, so the behaviour is acquired here
 // deliberately rather than at some future edition bump.
 #![deny(unsafe_op_in_unsafe_fn)]
@@ -80,8 +80,9 @@
 //
 // **The cross lane is where the block lint has teeth.**  Most of this crate is
 // `#[cfg(target_arch = "aarch64")]`, so the host lane compiles those blocks out
-// and the lint cannot see them: deleting a real `// SAFETY:` comment produces 0
-// findings on the host and 2 on `aarch64-unknown-none`.  Both lanes run clippy
+// and the lint cannot see them: deleting the real `// SAFETY:` comment above
+// `cpu::wfe`'s `asm!` produces 0 findings on the host and 1 on
+// `aarch64-unknown-none-softfloat` (re-measured at v0.36.2).  Both lanes run clippy
 // with `-D warnings`, and the cross one is `scripts/test_aarch64_cross_build.sh`.
 //
 // What the lints do NOT cover, and what the scanner therefore still owns: a

@@ -99,12 +99,12 @@ pub enum KernelError {
     /// empty rights). Emitted by the kernel's `NonNullCap.ofCap?` type-level
     /// promotion failure path at `cspaceMint` / `cspaceCopy` / `cspaceMove`.
     NullCapability = 50,
-    /// AN7-E (API-M01): `resolveExtraCaps` encountered an unresolvable
-    /// capability address AND the noisy-resolution debug option was
-    /// enabled.  Default ABI path silently drops unresolvable caps
-    /// (seL4-compatible); this variant surfaces partial resolution
-    /// explicitly when the kernel is built with
-    /// `set_option sele4n.debug.noisyResolution true` on the Lean side.
+    /// AN7-E (API-M01): the gated extra-cap resolver met an unresolvable
+    /// capability address.  The default ABI path silently drops
+    /// unresolvable caps (seL4-compatible), and today every dispatch arm
+    /// takes it, so the kernel does not yet return this variant: the
+    /// deployment policy that would select the gated resolver is registered
+    /// debt (`docs/REGISTERED_DEBT.md` table C).
     PartialResolution = 51,
     /// R5.E (DEEP-SCH-04): A bound-budget scheduler path lost track of
     /// its bound `SchedContext` (object not found in the kernel `objects`

@@ -517,6 +517,13 @@ run_check "HYGIENE" "${SCRIPT_DIR}/check_lock_ffi_symmetry.sh"
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py" --self-test
 run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_aarch64_cross_target.py"
 
+# The FP/SIMD disassembly gate the cross build runs over the kernel's
+# release objects (`test_aarch64_cross_build.sh` step [5/5]).  Tier 0 runs
+# before any build, so here it pins the scanner only: its operand reading,
+# and its refusal of input it cannot decide, are what make a PASS on the
+# objects mean the kernel touches no FP/SIMD register.
+run_check "HYGIENE" python3 "${SCRIPT_DIR}/check_fp_simd_free_objects.py" --self-test
+
 # WS-RR RR1.9: the TLBI broadcast discipline `SMP_RUST_HAL_PLAN.md` §4.4
 # said tier 0 enforced.  It did not, and the sketch in §5.6 would not have
 # been it: one variant of four, the Lean tree only, and a raw-text grep that

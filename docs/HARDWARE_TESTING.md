@@ -86,7 +86,7 @@ sudo apt install openocd
 # Rust stable (the repo pins the toolchain via rust/rust-toolchain.toml).
 # Run the target-add from rust/ so the pinned toolchain override applies —
 # from the repo root it would land in your default toolchain instead.
-(cd rust && rustup target add aarch64-unknown-none)
+(cd rust && rustup target add aarch64-unknown-none-softfloat && rustup component add llvm-tools)
 
 # Lean 4.28.0 (already installed via setup_lean_env.sh)
 ./scripts/setup_lean_env.sh

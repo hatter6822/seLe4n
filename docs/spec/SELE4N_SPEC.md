@@ -51,7 +51,7 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 417,950 across 340 Lean files |
+| **Production LoC** | 417,966 across 340 Lean files |
 | **Test LoC** | 85,076 across 70 Lean test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -408,7 +408,7 @@ The H3 hardware binding targets **single-core operation** on Raspberry Pi 5:
    by raising the crate's target features to ARMv8.4-A, which would
    let the compiler emit v8.4 instructions anywhere on a target that
    cannot execute them.  Neither property was observable until RR1
-   compiled the HAL for `aarch64-unknown-none` for the first time:
+   compiled the HAL for an AArch64 target for the first time:
    `cargo check` stops before code generation and reported all four
    sites clean.
    SM1.F adds the GICD_SGIR-based SGI primitive surface
@@ -2114,6 +2114,20 @@ with 16 entries (4 types × 4 execution states) and a trap frame
 (`sele4n-hal/src/trap.rs`) that saves/restores all 31 general-purpose registers
 plus SP_EL0, ELR_EL1, SPSR_EL1, ESR_EL1, and FAR_EL1 (288-byte `TrapFrame`;
 16-byte aligned).
+
+**The frame saves no FP/SIMD register, and that is sound because the kernel
+touches none** (v0.36.2).  Both boot entries (`_start`, `secondary_entry`) open
+with `msr cpacr_el1, xzr; isb`, trapping every FP/SIMD/SVE/SME access at EL0 and
+EL1 before any other instruction runs on the PE; the HAL is built for
+`aarch64-unknown-none-softfloat`, whose code generation uses no vector register;
+and `scripts/check_fp_simd_free_objects.py` disassembles the release objects in
+the cross gate to prove it.  `build.rs` (`scan_fp_trap_prologue`) requires the
+prologue at both entries and refuses any other `CPACR_EL1` write.  An FP access
+from EL1 is therefore a kernel-origin exception and halts
+(`halt_if_kernel_origin`); one from EL0 is EC `0x07`, classified
+`.unknownReason` and delivered as a `userException` fault.  There is no
+encoding that traps EL1 alone, so user threads cannot use FP/SIMD until they
+carry an FP context — WS-BP BP7.9, with the lazy switch seL4 uses.
 
 **AK5-F (v0.29.8)**: The TrapFrame grew from 272 → 288 bytes to include
 read-only snapshots of `ESR_EL1` (offset 272) and `FAR_EL1` (offset 280).

@@ -316,7 +316,7 @@ jobs:
     runs-on: ubuntu-latest
 
     # WS-RR RR1.7: the kernel HAL's real deployment target is
-    # `aarch64-unknown-none`, and until this job existed nothing in the
+    # `aarch64-unknown-none-softfloat`, and until this job existed nothing in the
     # tree or in CI ever compiled it.  67 cfg-gated blocks, 57 `asm!`
     # sites and all three `.S` files had zero compile coverage; SM10.1
     # would have been the first thing to compile them while also being
@@ -346,11 +346,13 @@ jobs:
         uses: dtolnay/rust-toolchain@6c977a6ca4077a0ceb28ffbe03f59d46e9ac8772 # master
         with:
           toolchain: 1.94.1
-          # `clippy` is not optional here: step [4/4] of the gate lints
+          # `clippy` is not optional here: step [4/5] of the gate lints
           # the cross target with `-D warnings`, which is the only lane
           # that sees inside `#[cfg(target_arch = "aarch64")]` blocks.
-          components: clippy
-          targets: aarch64-unknown-none
+          # `llvm-tools` supplies the pinned `llvm-objdump` step [5/5]
+          # disassembles the objects with to prove them FP/SIMD-free.
+          components: clippy, llvm-tools
+          targets: aarch64-unknown-none-softfloat
 
       - name: Cache Cargo registry and build artifacts
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
@@ -370,5 +372,5 @@ jobs:
       # runs exactly what a developer runs locally — including the
       # release build, the check that all three `.S` files really
       # assembled, and the cross-target clippy pass.
-      - name: Build sele4n-hal for aarch64-unknown-none
+      - name: Build sele4n-hal for aarch64-unknown-none-softfloat
         run: ./scripts/test_aarch64_cross_build.sh

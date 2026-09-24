@@ -68,10 +68,12 @@ cover disjoint halves of the same crate:
   and `cargo clippy --all-targets --all-features -D warnings`.  CI job
   *Rust ABI Tests*.
 - `scripts/test_aarch64_cross_build.sh` — the **cross** lane (WS-RR RR1,
-  `v0.34.41`): `cargo build` for `aarch64-unknown-none` in both profiles,
-  a check that `boot.S`, `vectors.S` and `trap.S` really assembled, and
-  `cargo clippy -D warnings` on the same target.  CI job *aarch64 Cross
-  Build*.
+  `v0.34.41`): `cargo build` for `aarch64-unknown-none-softfloat` in both
+  profiles, a check that `boot.S`, `vectors.S` and `trap.S` really
+  assembled, `cargo clippy -D warnings` on the same target, and (since
+  `v0.36.2`) a disassembly of the release objects that refuses any FP/SIMD
+  register operand (`scripts/check_fp_simd_free_objects.py`) — the kernel
+  is FP-free and traps FP/SIMD at EL1.  CI job *aarch64 Cross Build*.
 
 **Neither lane subsumes the other.**  On the host, every
 `#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy

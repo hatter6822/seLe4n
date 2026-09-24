@@ -17,6 +17,16 @@
 ///
 /// Total size: 36 × 8 = 288 bytes, 16-byte aligned.
 ///
+/// **No FP/SIMD register is saved, and that is sound only because the
+/// kernel touches none.**  Both boot entries trap FP/SIMD at EL0 and EL1
+/// (`CPACR_EL1 := 0`, pinned by `build.rs`'s `scan_fp_trap_prologue`), the
+/// crate is built for `aarch64-unknown-none-softfloat`, and
+/// `scripts/check_fp_simd_free_objects.py` proves the release objects use
+/// no vector register.  Kernel code that touched one would halt at EL1 —
+/// and, were the trap ever lifted, would overwrite the interrupted thread's
+/// `q0`–`q31`, which nothing here would restore.  Per-thread FP state is
+/// WS-BP BP7.9's.
+///
 /// AK5-F (R-HAL-H04 / HIGH): ESR_EL1 and FAR_EL1 are saved at exception
 /// entry so that handlers read a STABLE snapshot rather than the live
 /// register. A nested exception (e.g., SError during data-abort handling)

@@ -12,7 +12,7 @@ all three ``.S`` files had zero compile coverage.  RR1 built that coverage;
 this gate keeps it, because every way of losing it again is silent:
 
 1. **TOOLCHAIN** -- ``rust/rust-toolchain.toml`` must list
-   ``aarch64-unknown-none`` under ``targets``.  Dropping it does not fail
+   ``aarch64-unknown-none-softfloat`` under ``targets``.  Dropping it does not fail
    anything on a machine that already has the target installed; it fails on
    the next fresh clone, and on a CI runner it fails as a missing ``core``,
    which reads as a source defect.
@@ -81,7 +81,7 @@ import tempfile
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import rust_code_view as _shared_rust_view  # noqa: E402
 
-CROSS_TARGET = "aarch64-unknown-none"
+CROSS_TARGET = "aarch64-unknown-none-softfloat"
 GATE_SCRIPT = "scripts/test_aarch64_cross_build.sh"
 TOOLCHAIN_FILE = "rust/rust-toolchain.toml"
 WORKFLOW_FILE = ".github/workflows/lean_action_ci.yml"
@@ -93,6 +93,18 @@ HOST_LANE = "scripts/test_rust.sh"
 # rather than silently uncovered -- the same hole a hand-written wrapper
 # list had in the TLBI gate (PR #883 review round 4).
 ASM_SOURCES = ("src/boot.S", "src/vectors.S", "src/trap.S")
+# The disassembly gate the cross gate must run over its RELEASE objects, and
+# the two objects it must be handed, as bash receives them after expansion.
+# Canonical spellings: the gate script writes them, so they are required
+# exactly rather than reasoned about.
+FP_CHECK_SCRIPT = "scripts/check_fp_simd_free_objects.py"
+FP_CHECKED_OBJECTS = (
+    f"target/{CROSS_TARGET}/release/deps/libsele4n_hal-*.rlib",
+    f"target/{CROSS_TARGET}/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a",
+)
+# Toolchain components the gate needs: clippy for the cross lint lane,
+# llvm-tools for the pinned llvm-objdump the FP/SIMD check disassembles with.
+REQUIRED_COMPONENTS = ("clippy", "llvm-tools")
 HAL_CRATE = "rust/sele4n-hal"
 ORACLE_PKG = "sele4n-hal"
 ORACLE_BIN = "rw_lock_oracle"
@@ -234,6 +246,25 @@ def expand_shell_vars(code: str) -> str:
 def shell_commands(script: str) -> list[str]:
     """Split a comment-stripped, variable-expanded script into commands.
 
+    The projection of `shell_command_list`, which also records the operator
+    that ends each command; see there.
+    """
+    return [command for command, _ in shell_command_list(script)]
+
+
+# Operators after which a failing command does not stop a `set -e` script:
+# bash exempts every command of an `&&` / `||` list but the last.  A
+# load-bearing command followed by one is run and its failure discarded, so
+# `cargo build ... || true` and `check ... && echo ok` both kept every token
+# the checks below look for while the gate could no longer fail on them.
+ERREXIT_EXEMPTING_OPERATORS = ("&&", "||")
+
+
+def shell_command_list(script: str) -> list[tuple[str, str]]:
+    """Split a comment-stripped, variable-expanded script into commands,
+    each with the operator that ends it (`;`, newline, `|`, `&&`, `||`, or
+    `""` at the end of the script).
+
     Backslash-continuations are joined first, so a command wrapped across
     lines is read whole -- the cross gate's `cargo clippy` invocation is
     written that way, and a line-based reader sees only its head.
@@ -273,19 +304,23 @@ def shell_commands(script: str) -> list[str]:
             index += 1
             continue
         if joined.startswith("&&", index) or joined.startswith("||", index):
-            commands.append("".join(current))
+            commands.append(("".join(current), joined[index : index + 2]))
             current = []
             index += 2
             continue
         if char in ";\n|":
-            commands.append("".join(current))
+            commands.append(("".join(current), char))
             current = []
             index += 1
             continue
         current.append(char)
         index += 1
-    commands.append("".join(current))
-    return [command.strip() for command in commands if command.strip()]
+    commands.append(("".join(current), ""))
+    return [
+        (command.strip(), operator)
+        for command, operator in commands
+        if command.strip()
+    ]
 
 
 def argv_of(command: str) -> list[str]:
@@ -293,7 +328,7 @@ def argv_of(command: str) -> list[str]:
 
     `shlex`, not `split()` plus `strip("\"'")`.  Quotes must be resolved by
     the same rules that produced them: `--target "${CROSS_TARGET}"` expands
-    to `--target "aarch64-unknown-none"`, so the quotes survive expansion
+    to `--target "aarch64-unknown-none-softfloat"`, so the quotes survive expansion
     and a naive comparison fails; and a quoted value CONTAINING A SPACE --
     `RUSTFLAGS="-D warnings" ./gate.sh` -- splits into two tokens under
     whitespace splitting, which pushed the real command word out of
@@ -469,7 +504,7 @@ def cargo_invocations(script: str, subcommand: str) -> list[list[str]]:
 
     Command position, not "a `cargo` token somewhere in the command".  The
     first version scanned every token, so `echo cargo build --target
-    aarch64-unknown-none --features hw_target` satisfied the check that the
+    aarch64-unknown-none-softfloat --features hw_target` satisfied the check that the
     gate script builds the cross target in both profiles -- CI would have
     run `echo` while Tier 0 reported the AArch64 surface compiled (PR #883
     review round 4).  That is the same defect as the `run: echo ./gate.sh`
@@ -658,19 +693,36 @@ def check_toolchain(root: str) -> list[str]:
             f"installs it on first use from rust/; without it a fresh clone "
             f"fails the aarch64 gate with a missing `core` crate."
         ]
-    # Exact ELEMENTS, not a substring of the array text.
-    # `targets = ["aarch64-unknown-none-softfloat"]` is a real and
-    # different target that contains the triple as a prefix, so a
-    # substring test passes while rustup installs something the gate
-    # script never builds for.
-    elements = re.findall(r'"([^"]*)"|\'([^\']*)\'', match.group(1))
-    listed = {a or b for a, b in elements}
+    # Exact ELEMENTS, not a substring of the array text.  A substring
+    # test is satisfied by any triple that contains this one -- and by
+    # `aarch64-unknown-none-softfloat-foo` -- while rustup installs
+    # something the gate script never builds for; and the hard-float
+    # `aarch64-unknown-none`, a prefix of the triple, is the FP-enabled
+    # target this gate exists to keep the kernel off.
+    listed = toml_array_elements(match.group(1))
+    problems: list[str] = []
     if CROSS_TARGET not in listed:
-        return [
+        problems.append(
             f"{TOOLCHAIN_FILE}: `targets` does not list `{CROSS_TARGET}` "
             f"as an element (found: {sorted(listed) or match.group(1).strip()})."
-        ]
-    return []
+        )
+    components = re.search(r"components\s*=\s*\[(.*?)\]", code, re.DOTALL)
+    have = toml_array_elements(components.group(1)) if components else set()
+    missing = [c for c in REQUIRED_COMPONENTS if c not in have]
+    if missing:
+        problems.append(
+            f"{TOOLCHAIN_FILE}: `components` does not list "
+            f"{', '.join(f'`{c}`' for c in missing)} as an element. The "
+            f"cross gate lints with clippy and disassembles with the "
+            f"pinned llvm-tools `llvm-objdump`; without them rustup does "
+            f"not install either on a fresh clone."
+        )
+    return problems
+
+
+def toml_array_elements(body: str) -> set[str]:
+    """The string elements of a TOML array body, quotes resolved."""
+    return {a or b for a, b in re.findall(r'"([^"]*)"|\'([^\']*)\'', body)}
 
 
 # `set` short flags, by the long name shell uses for them.
@@ -871,6 +923,51 @@ def check_gate_script(root: str) -> list[str]:
                 f"{' '.join(argv)!r}"
             )
 
+    # The FP/SIMD disassembly.  `boot.S` traps FP/SIMD at EL1 and the trap
+    # frame saves general-purpose registers only, so the kernel's objects
+    # must carry no FP/SIMD register operand; the softfloat target makes
+    # that a property of code generation and this step checks it on what
+    # was generated.  The relation, not the token: the check must be
+    # EXECUTED (not echoed), over the RELEASE objects of THIS target -- a
+    # debug build, or a hard-float build left elsewhere in `target/`,
+    # proves nothing about what is deployed -- and handed both the Rust
+    # code and the assembly.
+    wrappers = executing_wrappers(code)
+    fp_runs: list[list[str]] = []
+    for command in shell_commands(code):
+        argv = executed_argv(command, wrappers)
+        if argv and argv[0] in ("python3", "python") and len(argv) > 1:
+            argv = argv[1:]
+        if argv and argv[0].endswith(FP_CHECK_SCRIPT):
+            fp_runs.append(argv[1:])
+    if not any(set(FP_CHECKED_OBJECTS) <= set(args) for args in fp_runs):
+        problems.append(
+            f"{GATE_SCRIPT}: no executed `{FP_CHECK_SCRIPT}` over both "
+            f"release objects of {CROSS_TARGET} "
+            f"({' and '.join(FP_CHECKED_OBJECTS)}); found "
+            f"{fp_runs or 'no invocation'}. `boot.S` traps FP/SIMD at EL1 "
+            f"and the trap frame saves no vector register, so an FP "
+            f"instruction in the deployed objects is a kernel halt or a "
+            f"silent clobber of user state."
+        )
+
+    # A load-bearing command must be able to FAIL the script.  Under
+    # `set -e` a command followed by `&&` or `||` is exempt from errexit, so
+    # it runs, its failure is discarded, and every token above stays put.
+    for command, operator in shell_command_list(code):
+        argv = executed_argv(command, wrappers)
+        load_bearing = (
+            argv[:1] == ["cargo"]
+            and argv[1:2] in (["build"], ["clippy"])
+            and CROSS_TARGET in option_values(argv, "target")
+        ) or any(token.endswith(FP_CHECK_SCRIPT) for token in argv[:2])
+        if load_bearing and operator in ERREXIT_EXEMPTING_OPERATORS:
+            problems.append(
+                f"{GATE_SCRIPT}: `{command}` is followed by `{operator}`, "
+                f"which exempts it from `set -e`: it runs and its failure "
+                f"is discarded."
+            )
+
     # Failure propagation. Every command above is load-bearing, and bash
     # continues past a failure by default: with `set -e` removed, a debug
     # build that hits a profile-specific `asm!` error is followed by a
@@ -1061,7 +1158,7 @@ def check_workflow(root: str) -> list[str]:
     # A job runs the gate only if the script sits in an EXECUTABLE COMMAND
     # POSITION of a `run:` script.  Two weaker forms both passed before:
     # matching the path anywhere in the job body is satisfied by a step
-    # *name* ("Build sele4n-hal for aarch64-unknown-none" is one line from
+    # *name* ("Build sele4n-hal for aarch64-unknown-none-softfloat" is one line from
     # "replaced ./scripts/test_aarch64_cross_build.sh"), and matching it
     # anywhere in a `run:` value is satisfied by `run: echo
     # ./scripts/test_aarch64_cross_build.sh`, which executes nothing (PR
@@ -1081,15 +1178,30 @@ def check_workflow(root: str) -> list[str]:
     problems: list[str] = []
     # Matched as a `targets:` KEY carrying the triple, not as the triple
     # appearing anywhere in the job.  The step that runs the gate is named
-    # "Build sele4n-hal for aarch64-unknown-none", so a substring search
+    # "Build sele4n-hal for aarch64-unknown-none-softfloat", so a substring search
     # over the job body is satisfied by a step *name* and would report the
     # target installed after the `targets:` input was deleted -- which is
     # exactly what a first version of this check did.
     targets_key = re.compile(
         rf"^\s*targets\s*:\s*.*\b{re.escape(CROSS_TARGET)}\b", re.MULTILINE
     )
+    components_key = re.compile(r"^\s*components\s*:\s*(.*)$", re.MULTILINE)
     for name in runners:
         body = "\n".join(jobs[name])
+        declared = {
+            item.strip()
+            for match in components_key.finditer(body)
+            for item in match.group(1).split(",")
+        }
+        missing = [c for c in REQUIRED_COMPONENTS if c not in declared]
+        if missing:
+            problems.append(
+                f"{WORKFLOW_FILE}: job `{name}` runs the aarch64 gate but "
+                f"its rust-toolchain step does not install "
+                f"{', '.join(f'`{c}`' for c in missing)} (`components:` "
+                f"is an exact comma-separated list). The gate lints with "
+                f"clippy and disassembles with llvm-tools' llvm-objdump."
+            )
         if not targets_key.search(body):
             problems.append(
                 f"{WORKFLOW_FILE}: job `{name}` runs the aarch64 gate but "
@@ -1390,7 +1502,7 @@ def run_checks(root: str) -> list[str]:
 GOOD_TOOLCHAIN = f"""# comment naming {CROSS_TARGET} must not satisfy the gate
 [toolchain]
 channel = "1.94.1"
-components = ["clippy", "rustfmt"]
+components = ["clippy", "rustfmt", "llvm-tools"]
 targets = ["{CROSS_TARGET}"]
 profile = "minimal"
 """
@@ -1414,6 +1526,9 @@ CROSS_TARGET="{CROSS_TARGET}"
 cargo build --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
 cargo build --release --target "$CROSS_TARGET" -p sele4n-hal --features hw_target
 cargo clippy --target "$CROSS_TARGET" -p sele4n-hal --features hw_target -- -D warnings
+python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\
+    target/"${{CROSS_TARGET}}"/release/deps/libsele4n_hal-*.rlib \\
+    target/"${{CROSS_TARGET}}"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a
 """
 
 GOOD_WORKFLOW = f"""name: CI
@@ -1429,6 +1544,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@0000000000000000000000000000000000000000
         with:
           toolchain: 1.94.1
+          components: clippy, llvm-tools
           targets: {CROSS_TARGET}
       - name: Build sele4n-hal for {CROSS_TARGET}
         run: ./{GATE_SCRIPT}
@@ -2278,6 +2394,46 @@ def self_test() -> int:
             mutation="preserving",
         )
     )
+
+    # --- The FP/SIMD disassembly step, and the components it needs. ---
+    # Each keeps the check-script token and breaks one relation.
+    fp_line = f'python3 "${{PROJECT_ROOT}}/{FP_CHECK_SCRIPT}" \\\n'
+    for label, mutated in [
+        ("the FP check is echoed, not run",
+         GOOD_GATE.replace(fp_line, "echo " + fp_line)),
+        ("the FP check reads the debug objects",
+         GOOD_GATE.replace("/release/deps/", "/debug/deps/")),
+        ("the FP check reads the hard-float build",
+         GOOD_GATE.replace('target/"${CROSS_TARGET}"/release/build',
+                           "target/aarch64-unknown-none/release/build")),
+        ("the FP check is not handed the assembly",
+         GOOD_GATE.replace(" \\\n    target/\"${CROSS_TARGET}\"/release/build/sele4n-hal-*/out/libsele4n_hal_asm.a", "")),
+        ("the FP check's failure is discarded by `|| true`",
+         GOOD_GATE.replace("libsele4n_hal_asm.a\n", "libsele4n_hal_asm.a || true\n")),
+        ("the cross release build is exempted from errexit by `&&`",
+         GOOD_GATE.replace("--release --target \"$CROSS_TARGET\" -p sele4n-hal --features hw_target\n",
+                           "--release --target \"$CROSS_TARGET\" -p sele4n-hal --features hw_target && echo built\n")),
+    ]:
+        fixture = baseline()
+        fixture[GATE_SCRIPT] = mutated
+        cases.append(Case(label, fixture, True, check="gate_script", mutation="preserving"))
+    for label, old, new, target in [
+        ("the toolchain drops llvm-tools",
+         '"clippy", "rustfmt", "llvm-tools"', '"clippy", "rustfmt"', TOOLCHAIN_FILE),
+        ("the toolchain names llvm-tools only in a comment",
+         'components = ["clippy", "rustfmt", "llvm-tools"]',
+         'components = ["clippy", "rustfmt"]  # llvm-tools', TOOLCHAIN_FILE),
+        ("the toolchain lists the hard-float target",
+         f'targets = ["{CROSS_TARGET}"]', 'targets = ["aarch64-unknown-none"]', TOOLCHAIN_FILE),
+        ("the CI job installs clippy but not llvm-tools",
+         "components: clippy, llvm-tools", "components: clippy, llvm-tools-preview", WORKFLOW_FILE),
+    ]:
+        fixture = baseline()
+        base = fixture[target]
+        assert old in base, label
+        fixture[target] = base.replace(old, new)
+        check = "toolchain" if target == TOOLCHAIN_FILE else "workflow"
+        cases.append(Case(label, fixture, True, check=check, mutation="preserving"))
 
     # A case expected to be CAUGHT must actually differ from the clean
     # baseline.  A mutation that silently no-ops -- because the string it

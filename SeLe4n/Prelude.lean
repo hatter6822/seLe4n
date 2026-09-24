@@ -9,7 +9,6 @@
 
 import Std.Data.HashMap
 import Std.Data.HashSet
-import Lean.Attributes
 import SeLe4n.Kernel.RobinHood.Bridge
 
 namespace SeLe4n
@@ -55,16 +54,31 @@ predicates (defined below at `machineWordMax := 2^64`) must be enforced at every
 ABI entry point. The `CPtr.isWord64Bounded` and `Slot.isWord64Bounded` methods
 provide this check for capability pointers and slot indices. -/
 
-/-! ## AN4-F.1 (CAP-M01): `@[documented_obligation]` attribute
+/-! ## AN4-F.1 (CAP-M01): documented caller obligations
 
-Marker attribute for theorems that exist solely to surface a caller-facing
-invariant as machine-searchable documentation (no Prop content). The
-attribute is a no-op; it exists so reviewers can `grep -r @\[documented_obligation\]`
-to locate every such obligation. -/
+A caller obligation that has no `Prop` content — a contract on how a
+result must be used, which no theorem can state of the function itself —
+is recorded as a declaration of type `DocumentedObligation`.  The type is
+the marker: the environment answers "which declarations are documented
+obligations" by type, and a text search for `: DocumentedObligation`
+enumerates them.
 
-initialize SeLe4n.documentedObligationAttr : Lean.TagAttribute ←
-  Lean.registerTagAttribute `documented_obligation
-    "AN4-F.1 (CAP-M01): marks a declaration whose sole purpose is to record a caller obligation in machine-searchable form (no Prop content)."
+**WS-BP BP1.1.**  This was an `initialize`-registered tag attribute
+(`@[documented_obligation]`), which put `import Lean.Attributes` in the
+kernel's production closure.  That import is Lean's elaborator: its module
+initialisers would run in the kernel image before the first kernel
+instruction, and its object code would be linked into a freestanding
+`aarch64-unknown-none` binary for a no-op marker.  A type carries the same
+information with no import and no initialiser. -/
+
+/-- The type of a documented caller obligation: a declaration of this type
+records, in its docstring, a contract its callers must discharge.  It has
+exactly one value, so the declaration carries no content beyond its name,
+its docstring and its type. -/
+structure DocumentedObligation where
+  /-- The one value. -/
+  recorded ::
+deriving Inhabited
 
 /-- Identifier for objects in the global kernel object store.
     Value 0 is reserved as sentinel (H-06/WS-E3). -/

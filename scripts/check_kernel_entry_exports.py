@@ -95,7 +95,7 @@ LEAN_ROOT = REPO / "SeLe4n"
 HAL_SRC = REPO / "rust" / "sele4n-hal" / "src"
 BUILD_RS = REPO / "rust" / "sele4n-hal" / "build.rs"
 # The assembled HAL archive a cross build leaves behind (`cc::Build::compile`).
-ASM_ARCHIVE_GLOB = "rust/target/aarch64-unknown-none/*/build/sele4n-hal-*/out/libsele4n_hal_asm.a"
+ASM_ARCHIVE_GLOB = "rust/target/aarch64-unknown-none-softfloat/*/build/sele4n-hal-*/out/libsele4n_hal_asm.a"
 ASM_COMPILE_CALL = '.compile("sele4n_hal_asm")'
 # A preprocessor conditional: `.S` sources pass through cpp before the assembler.
 CPP_CONDITIONAL_OPEN = re.compile(r"^\s*#\s*(?:if|ifdef|ifndef)\b", re.MULTILINE)

@@ -2814,7 +2814,7 @@ def main(argv: list[str]) -> int:
     print("      authority: rustc (`clippy::undocumented_unsafe_blocks`) and rustdoc "
           "(`clippy::missing_safety_doc`), denied at the `sele4n-hal` / `sele4n-abi` "
           "crate roots and run with `-D warnings` on both the host and "
-          "`aarch64-unknown-none` lanes.")
+          "`aarch64-unknown-none-softfloat` lanes.")
     print("      heading verdict: a CANONICAL SPELLING — the heading's content must "
           "BE one of " + ", ".join(sorted(SAFETY_HEADING_TITLES)) + ", and every "
           "inline form is refused rather than rendered.  Deciding what markup "

@@ -88,7 +88,7 @@ architectural improvements enabled by the Lean 4 proof framework:
 |-----------|-------|
 | **Version** | `0.36.2` |
 | **Lean toolchain** | `v4.28.0` |
-| **Production Lean LoC** | 417,950 across 340 files |
+| **Production Lean LoC** | 417,966 across 340 files |
 | **Test Lean LoC** | 85,076 across 70 test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Rust crates** | 4 (`sele4n-types`, `sele4n-abi`, `sele4n-sys`, `sele4n-hal`) across 48 source files |
@@ -147,8 +147,10 @@ halves of the same crate: on the host every `#[cfg(target_arch = "aarch64")]`
 block is removed before rustc or clippy sees it, so the host lane cannot see
 the 67 cfg-gated blocks, 57 `asm!` sites or three `.S` sources that make up
 most of the HAL. The cross lane builds `sele4n-hal` for
-`aarch64-unknown-none` in both profiles, verifies the assembly sources really
-assembled, and lints the cross target — and it is a build rather than a
+`aarch64-unknown-none-softfloat` in both profiles, verifies the assembly
+sources really assembled, lints the cross target, and disassembles the release
+objects to prove they use no FP/SIMD register — the kernel is FP-free and traps
+FP/SIMD at EL1 from its first instruction — and it is a build rather than a
 `cargo check`, because `check` stops before code generation and never reaches
 an assembler.
 
@@ -269,8 +271,9 @@ can now act.
 
 **SM10 is blocked on WS-BP** (the bare-metal boot path,
 [`SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)), which became
-SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43 sub-tasks
-across nine phases, none started — aarch64 Lean object code, bare-metal runtime
+SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 45 sub-tasks
+across nine phases, of which BP0 (cross-implementation agreement) landed at
+v0.36.2 — aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the image, per-core readiness, the context
 restore, and first boot. Then **SM10** (release closure → v1.0.0).
 

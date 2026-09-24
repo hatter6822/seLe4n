@@ -141,7 +141,8 @@ stands behind.
 
 | Claim | Where it is made | Check it with | Artefact |
 |-------|------------------|---------------|----------|
-| The HAL compiles **and generates code** for `aarch64-unknown-none` in both profiles, with the three `.S` sources assembled and clippy denied | README, `CI_POLICY.md` | `./scripts/test_aarch64_cross_build.sh` | CI job `aarch64 Cross Build` |
+| The HAL compiles **and generates code** for `aarch64-unknown-none-softfloat` in both profiles, with the three `.S` sources assembled, clippy denied, and the release objects using no FP/SIMD register | README, `CI_POLICY.md` | `./scripts/test_aarch64_cross_build.sh` | CI job `aarch64 Cross Build` |
+| FP/SIMD is trapped at EL0 and EL1 from each boot entry's first instruction, and nothing else writes `CPACR_EL1` | `DEVELOPMENT.md`, `REGISTERED_DEBT.md` table B | `cargo build -p sele4n-hal` (the build script runs the scanner and its mutation self-test); `./scripts/test_aarch64_cross_build.sh` step [5/5] for the FP-free objects | `scan_fp_trap_prologue` / `verify_fp_trap_prologue_scanner` in `rust/sele4n-hal/build.rs`; `scripts/check_fp_simd_free_objects.py` |
 | The cross target cannot be silently dropped or weakened to a `check` | `CI_POLICY.md` | `python3 scripts/check_aarch64_cross_target.py` | 14-case self-test |
 | Broadcast TLB maintenance is confined and the non-IS variants are gated | `SELE4N_SPEC.md` | `python3 scripts/check_tlbi_broadcast_discipline.py` | `scripts/tlbi_local_allowlist.txt`, `rust/sele4n-hal/src/tlb.rs` |
 | No third-party code is linked into the runtime kernel binary | README, `THIRD_PARTY_LICENSES.md` | `./scripts/test_rust.sh` | `rust/` is `#![no_std]`, `core::*` only |

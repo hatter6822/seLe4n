@@ -32,11 +32,15 @@
 
 [toolchain]
 channel = "1.94.1"
-components = ["clippy", "rustfmt"]
+# `llvm-tools` supplies the toolchain-pinned `llvm-objdump` that
+# `scripts/check_fp_simd_free_objects.py` disassembles the kernel's
+# object code with, so the FP/SIMD gate reads with the same LLVM that
+# produced the objects rather than whichever version is on PATH.
+components = ["clippy", "rustfmt", "llvm-tools"]
 # WS-RR RR1.1: the bare-metal cross target the kernel HAL is actually
 # built for.  Listing it here means `rustup` installs `rust-std` for it
 # on first use from `rust/`, so `cargo build --target
-# aarch64-unknown-none -p sele4n-hal --features hw_target` works on a
+# aarch64-unknown-none-softfloat -p sele4n-hal --features hw_target` works on a
 # fresh clone without a separate `rustup target add` step.
 #
 # The directory override is what makes this load-bearing: `rustup` reads
@@ -46,5 +50,14 @@ components = ["clippy", "rustfmt"]
 # pin nor this target — the aarch64 build then fails with "can't find
 # crate for `core`" that looks like a source problem rather than a
 # working-directory one.  Always `cd rust/` first.
-targets = ["aarch64-unknown-none"]
+#
+# The **softfloat** variant, not `aarch64-unknown-none`: the latter
+# enables `neon` and `fp-armv8`, so the compiler is free to use vector
+# registers for zeroing, copies and spills -- and did, in 129
+# instructions of the HAL.  The trap frame saves general-purpose
+# registers only and `boot.S` traps FP/SIMD at EL1, so kernel code must
+# never touch an FP/SIMD register: the softfloat target makes that a
+# property of code generation, and `check_fp_simd_free_objects.py`
+# verifies it on the objects.  seL4 builds its kernel the same way.
+targets = ["aarch64-unknown-none-softfloat"]
 profile = "minimal"

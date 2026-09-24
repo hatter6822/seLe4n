@@ -71,7 +71,7 @@ the gate.** The hook is the backstop, not the first line.
 ### Rust
 
 ```bash
-rustup target add aarch64-unknown-none   # RR1.1 added this to rust-toolchain.toml
+rustup target add aarch64-unknown-none-softfloat   # listed in rust-toolchain.toml, with llvm-tools
 ```
 
 `rust/rust-toolchain.toml` pins the toolchain, and rustup's directory override
@@ -164,14 +164,27 @@ mismatch too.
 `test_rust.sh` compile the *host* target, where every
 `#[cfg(target_arch = "aarch64")]` block is removed before rustc or clippy sees
 it — so the hardware half of the HAL, which is most of it, is invisible to
-them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none` in both
-profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually assembled, and
-lints the cross target with `-D warnings`. It runs in CI as the
+them. The cross gate builds `sele4n-hal` for `aarch64-unknown-none-softfloat`
+in both profiles, verifies `boot.S` / `vectors.S` / `trap.S` actually
+assembled, lints the cross target with `-D warnings`, and disassembles the
+release objects with `scripts/check_fp_simd_free_objects.py`. It runs in CI as the
 `aarch64 Cross Build` job.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.
+
+**The kernel is FP-free, and the target is what makes it so.** `boot.S` traps
+FP/SIMD at EL0 and EL1 from each entry's first instruction and the trap frame
+saves general-purpose registers only, so kernel code must never touch a vector
+register. The hard-float `aarch64-unknown-none` target lets the compiler use
+them for zeroing, copies and spills — it put 129 such instructions in the HAL —
+so the HAL builds for `aarch64-unknown-none-softfloat`, and the cross gate's
+step [5/5] checks the generated code rather than trusting the flag. Do not
+write `neon`/`fp-armv8` target features, FP inline assembly or a second
+`CPACR_EL1` write: `build.rs` and the disassembly gate refuse all three. User
+FP/SIMD traps and is delivered as a fault until per-thread FP state lands
+(WS-BP BP7.9).
 
 ### Concurrency model checking and miri
 

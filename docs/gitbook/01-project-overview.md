@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 417,950 lines of production Lean across 340 files, 85,076 lines across 70 Lean test suites,
+Current state (as of v0.36.2): 417,966 lines of production Lean across 340 files, 85,076 lines across 70 Lean test suites,
 13,815 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -66,11 +66,15 @@ it had made false.
 
 **SM10 — release closure at v1.0.0 — is blocked on WS-BP**, the bare-metal boot
 path ([`SMP_BOOT_PATH_PLAN.md`](../planning/SMP_BOOT_PATH_PLAN.md)), which
-became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 43
+became SM10.1's content at v0.34.59 and is unblocked as of v0.35.203: 45
 sub-tasks across nine phases.  **BP0 landed at v0.36.2**: the three Lean/Rust
 pairs — the device-tree readers, the ABI encoder and decoder, the boot map and
 the Lean memory map — are driven through shared fixtures, so a divergence fails
-a gate rather than waiting for a reviewer.  BP1..BP8 have not started.
+a gate rather than waiting for a reviewer.  In the same version the kernel became
+**FP-free**: the HAL builds for `aarch64-unknown-none-softfloat`, both boot
+entries trap FP/SIMD at EL0 and EL1 from their first instruction, and the cross
+gate disassembles the release objects to prove it; user FP/SIMD traps until
+threads carry an FP context (BP7.9).  BP1..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

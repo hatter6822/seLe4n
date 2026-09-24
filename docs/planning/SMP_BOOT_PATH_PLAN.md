@@ -25,7 +25,7 @@
 > [`SMP_RELEASE_CLOSURE_PLAN.md`](SMP_RELEASE_CLOSURE_PLAN.md) §1.1 derives
 > from a sized breakdown; this plan sequences that breakdown without
 > re-pricing it
-> **Sub-task count**: 43 across 9 phases (BP0..BP8), each phase numbered in
+> **Sub-task count**: 45 across 9 phases (BP0..BP8), each phase numbered in
 > execution order
 
 ## 1. Why this plan exists
@@ -116,9 +116,9 @@ Every other phase pair here is strictly sequential.
 | BP2 | Bare-metal Lean runtime hosting — heap, shims, initialization, and the boot map the arena lives in | 6 | XL |
 | BP3 | The RPi5 deployment — `PlatformConfig`, root task, labeling | 4 | L |
 | BP4 | The boot seam — `lean_kernel_main` and its install ordering | 5 | L |
-| BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img` | 4 | M |
+| BP5 | The bootable image — `[[bin]]`, the link, `kernel8.img`, the firmware's entry state | 5 | M |
 | BP6 | Per-core readiness — the five dormant seams go live | 3 | M |
-| BP7 | The context restore — TTBR0, the full frame, delivery | 8 | XL |
+| BP7 | The context restore — TTBR0, the full frame, delivery, per-thread FP/SIMD state | 9 | XL |
 | BP8 | First boot and bring-up — QEMU, then the board | 5 | XL |
 
 ### 4.1 Why WS-XV is BP0 rather than a workstream of its own
@@ -205,10 +205,22 @@ The kernel's proofs are Lean; the target has no libc and no host toolchain.
 Everything downstream needs Lean object code for `aarch64-unknown-none`, so
 this is first.
 
+**The kernel is FP-free, and that is a property of its object code**
+(`v0.36.2`).  `boot.S` traps every FP/SIMD access at EL0 and EL1 from each
+entry's first instruction (`msr cpacr_el1, xzr`), and the trap frame saves
+general-purpose registers only, so no kernel object may carry an FP/SIMD
+register operand: at EL1 it would halt the core, and with the trap lifted it
+would silently overwrite the interrupted thread's `q0`–`q31`.  The HAL is
+built for `aarch64-unknown-none-softfloat` for that reason — the hard-float
+target put 129 vector instructions in it — and
+`scripts/check_fp_simd_free_objects.py` verifies the release objects in the
+cross gate.  The Lean C this phase emits is held to the same rule, which is
+why BP1.2 compiles it with `-mgeneral-regs-only` and runs that gate over it.
+
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | BP1.1 | A Lake target emitting the production closure's Lean C output — the C for `SeLe4n.lean`'s import closure and nothing else, so a staged or test module cannot reach the image | `lakefile.toml` | M |
-| BP1.2 | Cross-compile that C to `aarch64-unknown-none` with `leanc`/`clang`, `-ffreestanding`, no libc | `lakefile.toml`, `scripts/` | L |
+| BP1.2 | Cross-compile that C to `aarch64-unknown-none` with `leanc`/`clang`, `-ffreestanding`, `-mgeneral-regs-only`, no libc, and run `scripts/check_fp_simd_free_objects.py` over the objects.  `-mgeneral-regs-only` turns `double` arithmetic into soft-float library calls with a general-register ABI (measured: a multiply becomes a call, a negation an `eor`), which is what lets the runtime's `Float` coexist with the EL1 FP trap | `lakefile.toml`, `scripts/` | L |
 | BP1.3 | Archive the objects as `libsele4n.a`, the name `rust/sele4n-hal/src/boot.rs` already asserts is linked, and add the CI lane that builds it | `lakefile.toml`, `.github/workflows/` | M |
 | BP1.4 | Point `scripts/check_kernel_entry_exports.py` at the **cross** archive as well as the host one, so its `EXPECTED_UNRESOLVED` reconciliation decides the symbol set the image actually links.  Consumes BP1.3 | `scripts/check_kernel_entry_exports.py` | S |
 
@@ -268,17 +280,20 @@ configuration.
 defined by the archive rather than reconciled as expected-unresolved, and
 `BootEntryContract.lean` elaborates against the DTB wrapper.
 
-### BP5 — The bootable image (4 sub-tasks)
+### BP5 — The bootable image (5 sub-tasks)
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
 | BP5.1 | A `[[bin]]` `no_std` / `no_main` target whose entry is `_start` from `boot.S` under `link.ld` | `rust/Cargo.toml`, `rust/sele4n-hal/` | M |
-| BP5.2 | Link `libsele4n.a` and the HAL together into that binary; the first link is where BP2.2's shim list stops being a guess.  Consumes BP1.3, BP2.2, BP4.1 | `rust/`, `link.ld` | M |
+| BP5.2 | Link `libsele4n.a` and the HAL together into that binary; the first link is where BP2.2's shim list stops being a guess.  **Run `scripts/check_fp_simd_free_objects.py` over the linked image**, which is where it becomes conclusive: the target's `compiler_builtins` is **not** FP-free even for `aarch64-unknown-none-softfloat` (measured at `v0.36.2`: `__mulsc3`, `__muldc3`, `__multc3`, `__divsc3`, `__divdc3`, `__negsf2` and `__negdf2` use `d`/`v` registers, and `__negdf2` takes its argument in `d0`, a hard-float ABI a soft-float caller cannot satisfy), so what the gate decides on the objects BP1.2 and the cross gate check is necessary and not sufficient — only the image shows which members the link pulled in.  Consumes BP1.3, BP2.2, BP4.1 | `rust/`, `link.ld`, `scripts/` | M |
 | BP5.3 | `scripts/build_rpi5_image.sh` — `kernel8.img` plus `config.txt`.  **This is the deliverable `SM10.1.1` names**; the release cut consumes it from here | `scripts/build_rpi5_image.sh` | M |
 | BP5.4 | Build the image in CI, and publish its size and section map so a regression in either is visible in the run rather than on the board | `.github/workflows/` | S |
+| BP5.5 | **The firmware's entry state.**  `boot.S` assumes it is entered at EL1: it never reads `CurrentEL` and has no EL2-to-EL1 drop, while the RPi5 firmware enters a 64-bit kernel at **EL2**.  Both entries (`_start`, `secondary_entry` — PSCI `CPU_ON` enters at the caller's EL) read `CurrentEL` after the FP-trap prologue and, at EL2, program `HCR_EL2.RW` (EL1 is AArch64), `CPTR_EL2` so FP/SIMD is **not** trapped to EL2 (the EL1 trap `CPACR_EL1` sets must be the one that fires, or an EL0 FP access traps to an EL with no handler), `CNTHCTL_EL2` / `CNTVOFF_EL2` so EL1 owns the generic timer, and `SPSR_EL2` / `ELR_EL2` for an `eret` to EL1h with DAIF masked; an entry at EL3 or an unrecognised EL halts.  Pinned by a `build.rs` scanner beside `scan_fp_trap_prologue`, as a canonical sequence.  QEMU's `virt` machine enters at EL1 unless `virtualization=on`, so no current harness reaches the EL2 path; the first-boot phase runs it both ways.  Consumes nothing in this plan | `rust/sele4n-hal/src/boot.S`, `rust/sele4n-hal/build.rs` | M |
 
-**Acceptance**: `kernel8.img` is produced by CI on every push, and its
-`.text` contains `_start`, `__exception_vectors` and `lean_kernel_main`.
+**Acceptance**: `kernel8.img` is produced by CI on every push, its
+`.text` contains `_start`, `__exception_vectors` and `lean_kernel_main`, the
+linked image passes the FP/SIMD disassembly gate, and both entries reach EL1
+from an EL2 entry.
 
 ### BP6 — Per-core readiness (3 sub-tasks)
 
@@ -298,7 +313,7 @@ preempted again.  Flipping the mask is what makes the kernel run.
 **Acceptance**: all four PEs publish readiness under QEMU, and a PE that
 does not makes the boot fail rather than hang.
 
-### BP7 — The context restore (8 sub-tasks)
+### BP7 — The context restore (9 sub-tasks)
 
 `contextRestoreSeamLive` is `false`, and the three prerequisites its
 docstring names (register finding 19) are here, in the order they must
@@ -316,11 +331,13 @@ core; both are interim artefacts this phase removes.
 | BP7.6 | Flip `contextRestoreSeamLive` to `true` — one constant, three guards — and retire the sentinel poison and the two SM10.1 halts with it.  Consumes BP7.2, BP7.4, BP7.5 | `SeLe4n/Kernel/Concurrency/ContextRestoreSeam.lean`, `rust/sele4n-hal/src/svc_dispatch.rs`, `rust/sele4n-hal/src/trap.rs` | M |
 | BP7.7 | **The declassified badge, delivered** (WS-RR RR7.23, register finding 6).  SM9.C's data-carrying declassification is the one flow the kernel *deliberately* makes visible, and in the **wait-before-signal** ordering its badge reaches the waiter only through the return frame: the waiter blocked first, so there is no in-line result to read, and until the restore is live its frame is poisoned with `blocked_resume_sentinel_regs()`.  The transition and its audit record are proved; what is unproven is that the badge arrives.  Exercise it end to end on the live restore — a thread waits on a notification, a cleared sender declassifies a signal to it, and the waiter resumes reading *that badge* in `x0` with the trail carrying the matching record.  A sentinel value in `x0` is a failure of this row, not of SM9.  Consumes BP7.6 | `rust/sele4n-hal/src/svc_dispatch.rs`, `scripts/`, `docs/planning/SMP_DECLASSIFICATION_COMPLETION_PLAN.md` | M |
 | BP7.8 | **`MR4` onward reach the handler's IPC buffer** (WS-RR RR7's registered residual, re-homed here at `v0.35.203`).  The WS-RA return frame carries four message registers in `x2`-`x5` and no receive path writes `MR4` onward into the receiver's IPC buffer, so on hardware an `unknownSyscall` (13 words) or `userException` (5 words) handler sees its first four — the model delivers every word (`decodeFault_encodeFault`), which is what makes this a delivery gap rather than a model one.  `Architecture.IpcBufferRead` gains a write twin through the receiver's VSpace, which is why it consumes BP7.2: writing through a VSpace needs the root install.  The fault path and the `.receive` / `.replyRecv` arms take it together, as RR7 staged it.  Consumes BP7.2 and BP7.6 | `SeLe4n/Kernel/Architecture/IpcBufferRead.lean`, `SeLe4n/Kernel/Architecture/Fault.lean`, `SeLe4n/Kernel/IPC/Operations/` | M |
+| BP7.9 | **Per-thread FP/SIMD state.**  Since `v0.36.2` `boot.S` traps FP/SIMD at EL0 as well as EL1 (the architecture has no encoding that traps EL1 alone), so a user FP instruction raises EC `0x07`, which the classifier delivers as a `userException` fault: fail-closed, and no user thread can use floating point.  Give each thread an FP context — `v0`–`v31`, `FPCR`, `FPSR` — in the model (`TCB`, erased by `projectKernelObject` like the register context) and switch it **lazily**, as seL4's `CONFIG_HAVE_FPU` does: a per-core FP owner; on EC `0x07` from EL0, lift the trap, save the previous owner's state to its TCB, load the faulting thread's, record it as owner and restart the instruction; on a context switch away from the owner, re-arm the trap.  The save/restore routines are the only kernel code that may name an FP register, so they are hand-written assembly in a named section the disassembly gate exempts **by symbol**, reconciled both ways, and `scan_fp_trap_prologue`'s one-writer rule gains exactly their `CPACR_EL1` writes.  Information flow: the FP context is per-thread state the lazy switch must never let a different thread read, which is the property the owner/trap pair exists for and what the witness exercises.  Consumes BP7.3 (the frame the switch saves beside) and BP7.6 (the restore that resumes the faulting instruction) | `SeLe4n/Model/Object/Types.lean`, `SeLe4n/Kernel/Architecture/Fault.lean`, `rust/sele4n-hal/src/trap.S`, `rust/sele4n-hal/src/trap.rs`, `rust/sele4n-hal/build.rs`, `scripts/check_fp_simd_free_objects.py` | L |
 
 **Acceptance**: a thread blocked in `seL4_Recv` is resumed by its partner
 with the frame the kernel staged, on hardware, no path in the image still
 installs a sentinel, and a wait-before-signal declassified badge reaches the
-waiter's `x0` with its audit record.
+waiter's `x0` with its audit record, and two threads on one core each
+keep their own FP/SIMD state across preemption.
 
 ### BP8 — First boot and bring-up (5 sub-tasks)
 
@@ -330,7 +347,7 @@ them executes a line of kernel code.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP8.1 | Single-core boot under QEMU to the first idle dispatch — the first execution of `BP4.5`'s boot clean-to-PoU, whose emission is a boot-seam instruction sequence and whose *observation* is here | `scripts/` | L |
+| BP8.1 | Single-core boot under QEMU to the first idle dispatch — the first execution of `BP4.5`'s boot clean-to-PoU, whose emission is a boot-seam instruction sequence and whose *observation* is here.  Run **twice**, once at QEMU's default EL1 entry and once with `-machine virtualization=on`, so `BP5.5`'s EL2-to-EL1 drop executes before the board, which enters at EL2, is the first thing to run it | `scripts/` | L |
 | BP8.2 | Four-core bring-up under QEMU — `scripts/test_qemu_smp_bringup.sh` runs for the first time, and the two SM1.H acceptance boxes WS-RR RR7.16 unchecked are decided by it rather than asserted.  Consumes BP8.1 | `scripts/test_qemu_smp_bringup.sh`, `docs/planning/SMP_RUST_HAL_PLAN.md` | L |
 | BP8.3 | Boot on the board.  QEMU's `virt` machine is not a BCM2712: the PSCI implementation, the memory map and the GIC differ, and BP3's device-tree check is what refuses the wrong one | `docs/HARDWARE_TESTING.md` | XL |
 | BP8.5 | Read the per-core counters on the booted machine and check the containment `Concurrency.perCoreStatsPlausible` states — WS-RR RR7.33's registered half of register finding 98.  `Concurrency.perCoreStats` reads all four accessors and the predicate is proved and runtime-checked, but its *invocation* needs a machine: on hardware every core that has serviced a tick must report `0 < irqs`, and the timer-PPI and SGI counts must fit inside the IRQ total on every core.  A core reporting ticks it never took, or an accessor resolving to the wrong slot, fails here — which is what the counters were declared for and what nothing has ever executed.  Consumes BP8.2 | `SeLe4n/Kernel/Concurrency/Runtime.lean`, `rust/sele4n-hal/src/per_cpu_stats.rs` | S |

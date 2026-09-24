@@ -98,7 +98,7 @@ de preuve de Lean 4 :
 |----------|--------|
 | **Version** | `0.36.2` |
 | **Chaîne d'outils Lean** | `v4.28.0` |
-| **LoC Lean de production** | 417 950 réparties sur 340 fichiers |
+| **LoC Lean de production** | 417 966 réparties sur 340 fichiers |
 | **LoC Lean de test** | 85 076 réparties sur 70 suites de tests |
 | **Déclarations prouvées** | 13 815 déclarations theorem/lemma (zéro sorry/axiom) |
 | **Matériel cible** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
@@ -237,7 +237,7 @@ de la déclassification (SM9, clôturée à la v0.33.100). La phase restante est
 **SM10** (clôture de la version → v1.0.0). Le flux de travail sur l'ABI de
 retour des appels système (**WS-RA**) est terminé.
 
-**WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0, est **terminée en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 ont également abouti (RR8 en v0.35.203). **SM10 est désormais bloquée par WS-BP** (le chemin d'amorçage bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), qui est le contenu de SM10.1 et dont aucune sous-tâche n'a commencé ; puis **SM10** (clôture de la version → v1.0.0).
+**WS-RR** (préparation de la version SMP), la phase de remédiation pré-1.0, est **terminée en v0.35.203** ([`SMP_RELEASE_READINESS_PLAN.md`](../../../docs/planning/SMP_RELEASE_READINESS_PLAN.md)) : RR0 (v0.34.26), RR1 (v0.34.41), RR2 (v0.34.42), RR3 (v0.34.43) et **RR4 — gestion des fautes : IPC de faute complet avec redémarrage par réponse (v0.34.44)**, qui empêche la reprise d'un thread fautif sur l'instruction fautive : la faute est enregistrée dans le TCB, délivrée au point d'entrée `faultHandler` du thread via la chaîne d'appel inter-cœurs active, puis traitée par une réponse qui redémarre le thread à un PC choisi ou l'abandonne. RR5–RR8 ont également abouti (RR8 en v0.35.203). **SM10 est désormais bloquée par WS-BP** (le chemin d'amorçage bare-metal, [`SMP_BOOT_PATH_PLAN.md`](../../../docs/planning/SMP_BOOT_PATH_PLAN.md)), qui est le contenu de SM10.1 et dont la première phase, BP0, est terminée en v0.36.2 ; puis **SM10** (clôture de la version → v1.0.0).
 
 Plan directeur : [`SMP_MULTICORE_COMPLETION_PLAN.md`](../../../docs/planning/SMP_MULTICORE_COMPLETION_PLAN.md),
 avec les plans par phase dans `docs/planning/SMP_*.md`. Le registre canonique

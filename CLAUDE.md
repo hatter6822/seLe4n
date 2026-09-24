@@ -7152,14 +7152,16 @@ SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
 SMP work is complete") that was false of the phase's own first row.  WS-RR
 RR7.5 + RR7.15 split it out: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md)
-sequences **43 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
+sequences **45 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 landed at
 `v0.36.2`**; BP1..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
-IPC-buffer write there rather than leaving it owned by a finished phase.
+IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
+(the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
+`v0.36.2` by the FP-free-kernel cut below.
 
 Four things new code must respect.  **WS-BP takes its own prefix and renumbers
 nothing**: `SM10.1.1` still means the image *packaging* the release cut
@@ -7221,6 +7223,39 @@ refused a large well-formed device tree the Lean parser reads whole.  (4) **The
 boot map installs exactly the Lean map**: `DEVICE_WINDOW_TOP` is the Lean extent,
 the straddling block is an L3 table, and `check_physical_address_width.sh` no
 longer regex-parses `Board.lean` — the driven test decides it.
+
+**The kernel is FP-free, and FP/SIMD traps at EL1** (`v0.36.2`, found while
+scoping BP1).  Rust's `aarch64-unknown-none` enables `neon` and `fp-armv8`, and
+the HAL built for it carried 129 FP/SIMD instructions (vector zeroing, `d8`–`d15`
+spills) while the trap frame saves general-purpose registers only and nothing
+wrote `CPACR_EL1` — so on hardware the first vector instruction either trapped
+unhandled or, with FP access left on by firmware, every trap silently overwrote
+the interrupted thread's `q0`–`q31`.  Latent (no core runs the Lean runtime
+yet) and closed before it could ship.  Four things new code must respect.  (1)
+**The HAL's target is `aarch64-unknown-none-softfloat`** — `rust-toolchain.toml`,
+the cross gate, CI and every script that names it — so FP-freedom is a property
+of code generation, as it is for seL4's kernel; the Lean C is compiled with
+`-mgeneral-regs-only` for the same reason (BP1.2).  (2) **Both boot entries open
+with `msr cpacr_el1, xzr` then `isb`**, trapping FP/SIMD/SVE/SME at EL0 and EL1
+before anything else runs on the PE, and `build.rs`'s `scan_fp_trap_prologue`
+requires exactly that prologue at `_start` and `secondary_entry` and refuses any
+other write to `CPACR_EL1` in either spelling (`S3_0_C1_C0_2` included) in any
+`.S` file or `asm!` template.  There is no encoding that traps EL1 alone, so a
+**user** FP instruction traps too and is delivered as a `userException` fault
+until BP7.9 gives threads an FP context — fail-closed, and the known cost.  (3)
+**`scripts/check_fp_simd_free_objects.py` is the evidence rather than the flag**:
+the cross gate's step [5/5] disassembles the release rlib and the assembly
+archive and refuses any FP/SIMD/SVE register operand or `FPCR`/`FPSR` access,
+reading operands only and refusing input it cannot decide, and
+`check_aarch64_cross_target.py` requires that step — executed, over those two
+release objects, not followed by `&&`/`||` (which exempts a command from
+`set -e`; that check now covers the cross builds and the lint too).  (4) **It is
+conclusive only on the linked image**: the target's own `compiler_builtins` is
+*not* FP-free (the complex-arithmetic helpers and `__negsf2`/`__negdf2` use
+`d`/`v` registers, and `__negdf2` takes a hard-float `d0` argument no soft-float
+caller supplies), so BP5.2 runs the gate over the image, where the link decides
+which members are in.  And the firmware enters the RPi5 at **EL2**, which
+`boot.S` does not handle at all — BP5.5.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 
