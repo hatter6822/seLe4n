@@ -1047,23 +1047,51 @@ private theorem revokePendingTransfersStep_cases (nodes : List CdtNodeId)
         revokePendingTransfersStep nodes stAcc key
           = { stAcc with objects :=
               stAcc.objects.insert (SeLe4n.ThreadId.ofNat key.toNat).toObjId (.tcb tcb') } := by
-  unfold revokePendingTransfersStep
-  repeat' split
-  all_goals first
-    | exact Or.inl rfl
-    | exact Or.inr ⟨_, _,
-        (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) _).mp
-          (by assumption),
-        ⟨rfl, by
-          first
-            | exact ⟨rfl, Array.size_filter_le⟩
-            | (rename_i h _ _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
-            | (rename_i _ h _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
-            | (rename_i _ _ h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
-            | (rename_i h _; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
-            | (rename_i _ h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)
-            | (rename_i h; rw [h]; exact ⟨rfl, Array.size_filter_le⟩)⟩,
-        rfl⟩
+  -- Resolve the lookup on the typed accessor first and reduce the site's
+  -- witnessed match with its equation lemma — the recipe every migrated site
+  -- follows (`v0.35.64`, item (4)).  Each arm of the step is then a NAMED case
+  -- split on the field that arm branches on, closed by one tactic: the
+  -- hypotheses a branch needs are the ones its own `cases` introduced, so there
+  -- is nothing for a `first` to search and no inaccessible position to guess.
+  cases hT : stAcc.getTcb? (SeLe4n.ThreadId.ofNat key.toNat) with
+  | none =>
+    exact Or.inl (by
+      simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_none hT])
+  | some tcb =>
+    -- The store fact every `Or.inr` witness carries, read off the typed lookup
+    -- through the accessor's own characterisation rather than respelled.
+    have hKey :=
+      (SystemState.getTcb?_eq_some_iff stAcc (SeLe4n.ThreadId.ofNat key.toNat) tcb).mp hT
+    cases hS : tcb.ipcState with
+    | blockedOnSend ep | blockedOnCall ep =>
+      cases hM : tcb.pendingMessage with
+      | none =>
+        exact Or.inl (by
+          simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS, hM])
+      | some msg =>
+        cases hAny : msg.caps.any (fun tc => nodes.contains tc.srcNode) with
+        | false =>
+          exact Or.inl (by
+            simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
+              hS, hM, hAny, Bool.false_eq_true, ↓reduceIte])
+        | true =>
+          -- The one write: the parked message keeps its registers and loses the
+          -- capabilities derived from the revoked nodes.
+          refine Or.inr ⟨tcb,
+            { tcb with
+                pendingMessage := some { msg with
+                  caps := msg.caps.filter (fun tc => !nodes.contains tc.srcNode) } },
+            hKey, ⟨rfl, ?_⟩, ?_⟩
+          · rw [hM]
+            exact ⟨rfl, Array.size_filter_le⟩
+          · simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT,
+              hS, hM, hAny, ↓reduceIte, SystemState.rewriteObject]
+    | ready | blockedOnReceive _ | blockedOnNotification _ | blockedOnReply _ _ =>
+      -- Enumerated rather than `_`, on purpose: the definition's own `| _ =>` arm
+      -- would absorb a new `ThreadIpcState` constructor silently, and this proof
+      -- failing to elaborate is what makes somebody decide whether it should.
+      exact Or.inl (by
+        simp only [revokePendingTransfersStep, SystemState.getTcbWitnessed?_eq_some hT, hS])
 
 /-- **The whole sweep writes only TCBs, and only where one already was.**
 

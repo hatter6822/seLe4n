@@ -1,3 +1,53 @@
+## v0.36.0 — The minor bump: WS-RR is closed and audited, and the one proof the audit called brittle is deterministic
+
+**Why a minor version.**  Every cut since `v0.35.55` has been WS-RR RR8 or the
+work it found: 198 sub-tasks across RR0..RR8 closed at `v0.35.203`, the
+post-closure audit's findings landed at `v0.35.204`, and this cut retires the
+last item that audit reported as *documented, not changed*.  WS-BP and SM10 are
+unblocked, so what follows on `v0.36.x` is a different workstream, and the minor
+number says so.  No version site moved by hand: `scripts/bump_version.sh`
+rewrote every location `scripts/version_locations.sh` names, and
+`check_version_sync.sh` holds all thirty-six equal to `lakefile.toml`.
+
+**`revokePendingTransfersStep_cases` no longer searches for its own
+hypotheses.**  The store-shape case analysis every revoke frame rests on — a
+step of the in-flight sweep either leaves the accumulator alone or replaces one
+TCB with a message-dropped TCB — was proved by `repeat' split` followed by a
+seven-way `first` that tried `rename_i` at every plausible position, because
+after the splits the equation the writing branch needs
+(`tcb.pendingMessage = some msg`, which reduces `TCB.pendingCapsDropped`'s
+match) was an inaccessible hypothesis whose position depended on how many
+hypotheses the other splits had introduced.  Sound — Lean checks whichever
+alternative closes the goal — and brittle in exactly the way this tree's own
+rules describe: a hypothesis added by a split, or a change in how the matcher
+compiles, moves the position and the failure then names no reason.  The proof
+is now the recipe every migrated site follows (`v0.35.64`, item (4)): `cases hT`
+on the typed lookup, the site's witnessed match reduced by its equation lemma,
+then a **named** `cases` on each field the step branches on — `hS` on the
+`ipcState`, `hM` on the parked message, `hAny` on the filter's guard — with one
+closing tactic per branch, the hypotheses each branch needs being the ones its
+own `cases` introduced.  Two decisions are worth recording.  The non-blocked
+arms are **enumerated** (`ready`, `blockedOnReceive`, `blockedOnNotification`,
+`blockedOnReply`) rather than taken by a `_` alternative: the definition's own
+`| _ => stAcc` arm would absorb a new `ThreadIpcState` constructor silently, and
+this proof failing to elaborate is what makes somebody decide whether the sweep
+should reach it.  And the store fact the `Or.inr` witness carries is read off
+the accessor's characterisation (`getTcb?_eq_some_iff`) rather than respelled
+as a raw `objects[…]?` read, so the store-access census's per-site rows for the
+theorem do not move.  The statement, the name and the consumer
+(`revokePendingTransfersGo_frame`) are untouched, so nothing downstream can see
+the difference — which is the point of a proof-only cut.
+
+One mechanical note, because it cost a round.  The first draft failed to
+**parse**, not to elaborate, and the parser's recovery made the rest of the
+tactic block look wrong: a nested structure instance in a field value
+(`pendingMessage := some { msg with … }`) must start at a column to the right
+of the field it belongs to, or `sepByIndent` ends the enclosing instance at the
+line break — and the reported errors, an anonymous constructor elaborated
+against the wrong expected type and four *alternative has not been provided*,
+were all downstream of that one cut.  When a `cases` block's later alternatives
+are reported missing, look for a parse error above them before adding any.
+
 ## v0.35.204 — `.schedContextBind` binds only a thread the caller holds a writable TCB capability to
 
 **The finding, from the post-closure audit of this PR.**  `.schedContextBind`
