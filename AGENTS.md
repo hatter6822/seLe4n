@@ -10,7 +10,7 @@
 seLe4n is a production-oriented microkernel written in Lean 4 with machine-checked
 proofs, improving on seL4 architecture. Every kernel transition is an executable
 pure function with zero `sorry`/`axiom`. First hardware target: Raspberry Pi 5.
-Lean 4.28.0 toolchain, Lake build system, version 0.36.1.
+Lean 4.28.0 toolchain, Lake build system, version 0.36.2.
 
 > The version line above is one of the version sites that
 > `scripts/check_version_sync.sh` (a Tier 0 gate, also run by the
@@ -7146,7 +7146,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — PLANNED (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7156,8 +7156,8 @@ sequences **43 sub-tasks across 9 phases `BP0..BP8`** in execution order — the
 cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
-an *executed run* rather than by an artefact existing.  No sub-task has started;
-**WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+an *executed run* rather than by an artefact existing.  **BP0 landed at
+`v0.36.2`**; BP1..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase.
 
@@ -7200,6 +7200,27 @@ nothing in BP1..BP8 consumes it, and the only coupling is BP2.6 retiring two of
 its rows and updating a third.  `docs/REGISTERED_DEBT.md` keeps the WS-XV
 *finding* — the evidence that nominal gates miss behavioural drift — and no
 longer a work list.
+
+**BP0 — the three Lean/Rust pairs are driven through shared fixtures** (`v0.36.2`).
+Four things new code must respect.  (1) **A question answered on both sides
+of the boundary is compared by running both, never by a literal beside a
+comment naming the other side.**  The device-tree readers share
+`tests/fixtures/dtb/` (hand-written expectations in
+`scripts/generate_dtb_corpus.py`, never in the rendered files); the ABI's bit
+layout, register assignment and bounds share `tests/fixtures/abi_layout.expected`;
+the boot map and the Lean memory map share `tests/fixtures/boot_map.expected`.
+Both Lean tables go through `SeLe4n.Testing.checkSharedFixture`, and a new
+two-sided table does too.  (2) **A divergence the fixtures expose is fixed on the
+side that is wrong, never recorded as an exception**: the first run fixed thirteen
+Rust and eight Lean refusals, so both readers now share one rule set — the Rust
+walks run `fdt_structure_check` first, the Lean parser bounds depth
+(`fdtMaxDepth`), extent count (`fdtMaxMemoryExtents`) and 64-bit ends, and neither
+reads a cell width that is not one `<u32>`.  (3) **A Rust FDT walk's bound is the
+structure block's size** (`fdt_token_bound`), never a fixed fuel: 4096 tokens
+refused a large well-formed device tree the Lean parser reads whole.  (4) **The
+boot map installs exactly the Lean map**: `DEVICE_WINDOW_TOP` is the Lean extent,
+the straddling block is an L3 table, and `check_physical_address_width.sh` no
+longer regex-parses `Board.lean` — the driven test decides it.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

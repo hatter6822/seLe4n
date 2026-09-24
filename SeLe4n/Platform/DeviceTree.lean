@@ -1162,6 +1162,27 @@ def FdtAddressContext.forChildren (parent : FdtAddressContext) (node : FdtNode) 
               | some parentAddr => parent.translate parentAddr size
               | none => none }
 
+/-- **WS-BP BP0.1**: the deepest node nesting this parser reads — the root is
+at depth 1.  Held equal to the Rust walker's `FDT_MAX_DEPTH`, because the shared
+device-tree corpus (`tests/fixtures/dtb/`) found the two disagreeing: a blob
+nested 33 deep was refused there and read here.  No board's device tree comes
+near it; production trees nest about six deep. -/
+def fdtMaxDepth : Nat := 32
+
+mutual
+/-- **WS-BP BP0.1**: does `node`, counted as one level, nest within `budget`
+levels?  A node with no budget left is refused; its children share one level
+less. -/
+def FdtNode.withinDepth : Nat → FdtNode → Bool
+  | 0, _ => false
+  | budget + 1, ⟨_, _, children⟩ => fdtNodesWithinDepth budget children
+
+/-- **WS-BP BP0.1**: does every node of `nodes` nest within `budget` levels? -/
+def fdtNodesWithinDepth : Nat → List FdtNode → Bool
+  | _, [] => true
+  | budget, node :: rest => node.withinDepth budget && fdtNodesWithinDepth budget rest
+end
+
 /-- X4-A/H-7: Fuel-bounded generic FDT structure block traversal.
     Parses the FDT structure block into a tree of `FdtNode` values.
     Returns the root node containing all device nodes, properties, and children.
@@ -1201,7 +1222,12 @@ def parseFdtNodes (blob : ByteArray) (hdr : FdtHeader)
   | none => .error .malformedBlob -- The header declares blocks the blob does not hold
   | some v =>
     match go v v.structStart fuel with
-    | .ok (nodes, _, true) => .ok nodes
+    -- WS-BP BP0.1: and the tree nests no deeper than `fdtMaxDepth`, the bound
+    -- the Rust walker has always applied.  Checked once over the finished tree
+    -- rather than threaded through the walk, so every consumer of this parse
+    -- inherits it and the walk's own recursion is unchanged.
+    | .ok (nodes, _, true) =>
+      if fdtNodesWithinDepth fdtMaxDepth nodes then .ok nodes else .error .malformedBlob
     | .ok (_, _, false) => .error .malformedBlob
     | .error e => .error e
 where
@@ -1415,6 +1441,10 @@ of them each needs. -/
 def memoryNodeReg? (root : FdtNode) : Option ByteArray :=
   (memoryNodesWithCells root).findSome? (fun entry => entry.1.findProperty "reg")
 
+/-- **WS-BP BP0.1**: one past the largest address a 64-bit extent may reach.
+An extent must *end* below it, which is the Rust walker's `u64` bound. -/
+def fdtAddressLimit : Nat := 2 ^ 64
+
 /-- **PR #892 review round 5 audit**: read a `/memory` node's `reg` at the given
 cell widths, refusing one that is not a whole number of (address, size) pairs.
 
@@ -1427,7 +1457,47 @@ def extractMemoryRegionsChecked (regBytes : ByteArray)
     (addressCells sizeCells : Nat) : Option (List FdtMemoryRegion) :=
   match fdtWholeEntryCount regBytes ((addressCells + sizeCells) * 4) with
   | none => none
-  | some _ => some (extractMemoryRegionsGeneral regBytes addressCells sizeCells)
+  | some count =>
+    let regions := extractMemoryRegionsGeneral regBytes addressCells sizeCells
+    -- WS-BP BP0.1: every entry the count promises, or none.  The whole-pairs
+    -- test above says the *bytes* divide evenly; it does not say each tuple is
+    -- readable, and `extractMemoryRegionsGeneral` stops at the first one that
+    -- is not — at a cell width `readCells` does not support (three, or zero),
+    -- it stopped at the first and returned `[]`, so a `reg` the Rust walker
+    -- refuses read here as "this node declares no memory".  The shared corpus
+    -- (`three_address_cells`, `zero_size_cells`) found it.
+    --
+    -- And no extent may end at or past 2^64: such a `reg` describes memory no
+    -- 64-bit physical address reaches, and the Rust walker refuses it
+    -- (`base.checked_add(size)`).  Here it was a region whose `Nat` end only the
+    -- later physical-width check happened to refuse.
+    if regions.length == count && regions.all (fun r => r.base + r.size < fdtAddressLimit)
+    then some regions else none
+
+/-- **WS-BP BP0.1**: how many `/memory` extents a device tree may report before
+it is refused — held equal to the Rust walker's `MAX_MEMORY_EXTENTS`, whose
+store is a fixed array.  A Raspberry Pi 5 reports at most two.  The shared
+corpus found the two sides disagreeing about a blob reporting seventeen:
+refused there, read here.  Refusing is the fail-closed answer on both sides,
+since the alternative is reading part of the report. -/
+def fdtMaxMemoryExtents : Nat := 16
+
+/-- **WS-BP BP0.1**: a node's `#address-cells` and `#size-cells`, where
+declared, are each one `<u32>` (§2.3.5).
+
+`FdtNode.addressCells` reads the first four bytes of whatever the property
+holds and falls back to the default when it holds fewer, so an eight-byte value
+had its tail ignored and a two-byte one read as the default — while the Rust
+walker read four bytes from the value's start whatever its length, borrowing the
+next token's bytes for a short one.  Three readings of one malformed property;
+the shared corpus (`short_cells_property`, `long_cells_property`) found them,
+and both readers refuse it now. -/
+def FdtNode.cellPropertiesWellFormed (node : FdtNode) : Bool :=
+  let fourBytes := fun (name : String) =>
+    match node.findProperty name with
+    | none => true
+    | some bytes => bytes.size == 4
+  fourBytes "#address-cells" && fourBytes "#size-cells"
 
 /-- **PR #892 review round 5 audit**: the memory regions a parsed tree declares —
 every available top-level `/memory` node's `reg`, read at the cell widths its
@@ -1437,7 +1507,10 @@ This is the single answer the boot path takes, and the Lean counterpart of the
 Rust walker's extent store: same node filters, same cell widths, same
 whole-pairs refusal, and the same accumulation across nodes. -/
 def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
-  (memoryNodesWithCells root).foldl
+  -- WS-BP BP0.1: the widths the fold reads must themselves be well formed, and
+  -- the answer is refused past the extent capacity both readers share.
+  if !root.cellPropertiesWellFormed then none else
+  match (memoryNodesWithCells root).foldl
     (fun acc entry =>
       match acc with
       | none => none
@@ -1448,7 +1521,9 @@ def memoryRegionsFromNodes (root : FdtNode) : Option (List FdtMemoryRegion) :=
           match extractMemoryRegionsChecked regBytes entry.2.1 entry.2.2 with
           | none => none
           | some more => some (regions ++ more))
-    (some [])
+    (some []) with
+  | some regions => if regions.length ≤ fdtMaxMemoryExtents then some regions else none
+  | none => none
 
 /-- **PR #892 review round 9**: the `/reserved-memory` node's carve-outs.
 
@@ -1471,6 +1546,10 @@ def fdtReservedRanges (root : FdtNode) : Option (List (Nat × Nat)) :=
   match root.children.find? (fun n => n.name == "reserved-memory") with
   | none => some []
   | some reserved =>
+    -- WS-BP BP0.1: the carve-outs are read at the node's declared widths, so a
+    -- malformed width is a reservation set this parser cannot read — a refusal,
+    -- for the reason the entries below are: this list is a set of subtractions.
+    if !reserved.cellPropertiesWellFormed then none else
     reserved.children.foldl
       (fun acc child =>
         match acc with

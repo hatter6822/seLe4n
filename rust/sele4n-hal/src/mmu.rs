@@ -53,6 +53,19 @@ const BLOCK_NORMAL: u64 = DESC_VALID | AF | SH_INNER | ATTR_IDX_NORMAL | AP_RW_E
 /// RW EL1 + PXN + UXN (never execute from MMIO).
 const BLOCK_DEVICE: u64 = DESC_VALID | AF | ATTR_IDX_DEVICE | AP_RW_EL1 | PXN | UXN;
 
+/// **WS-BP BP0.4**: a level-3 descriptor is a *page* with `bits[1:0] = 0b11`
+/// (ARM ARM D8.3); the attribute fields are the block descriptor's.
+const DESC_PAGE: u64 = 0b10;
+
+/// Page descriptor for Device memory at level 3 (4 KiB).
+const PAGE_DEVICE: u64 = BLOCK_DEVICE | DESC_PAGE;
+
+/// Page descriptor for Normal memory at level 3 (4 KiB).
+const PAGE_NORMAL: u64 = BLOCK_NORMAL | DESC_PAGE;
+
+/// Bytes one L3 page descriptor maps (4 KiB).
+const L3_PAGE_SIZE: u64 = 1 << 12;
+
 // ---------------------------------------------------------------------------
 // MAIR_EL1 configuration (ARM ARM D17.2.95)
 // ---------------------------------------------------------------------------
@@ -236,10 +249,15 @@ pub const fn compute_sctlr_el1_bitmap() -> u64 {
 // could ask it a question, and the 960 MiB of linker-declared RAM it typed as
 // Device was invisible to every gate.
 //
-// The boundaries mirror `rpi5MemoryMapForConfig` in
-// `SeLe4n/Platform/RPi5/Board.lean`, the project's canonical BCM2712 physical
-// memory map; `scripts/check_physical_address_width.sh` holds the two equal and
-// holds `LOW_RAM_TOP` equal to the RAM extent `link.ld` declares.
+// The map is `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean`,
+// the project's canonical BCM2712 physical memory map — and that is checked by
+// driving rather than stated by mirroring (WS-BP BP0.4): the Lean suite emits
+// the map's kind at every boundary probe for every RAM variant into
+// `tests/fixtures/boot_map.expected`, and `the_boot_map_agrees_with_the_lean_map`
+// requires `boot_mapping_for` and the built tables to give the same kind at
+// every one of those probes and at every boundary constant below.
+// `scripts/check_physical_address_width.sh` holds `LOW_RAM_TOP` equal to the
+// RAM extent `link.ld` declares, which no Lean definition states.
 
 /// One past the last byte of the low RAM aperture (4032 MiB).
 ///
@@ -257,13 +275,27 @@ pub const LOW_RAM_TOP: u64 = 0xFC00_0000;
 /// access faults rather than reaching the GPU's memory through a Device alias.
 pub const DEVICE_WINDOW_BASE: u64 = 0xFE00_0000;
 
-/// One past the last byte of the device window, rounded up to the L2 block
-/// size from the Lean map's `0xFF85_0000` device extent.
+/// One past the last byte of the device window — exactly the end of the
+/// `.device` region `rpi5MemoryMapForConfig` declares.
 ///
-/// `[DEVICE_WINDOW_TOP, HIGH_RAM_BASE)` is declared reserved by
-/// `rpi5MemoryMapForConfig` and is left unmapped for the same fail-closed
-/// reason as the firmware carve-out.
-pub const DEVICE_WINDOW_TOP: u64 = 0xFFA0_0000;
+/// `[DEVICE_WINDOW_TOP, HIGH_RAM_BASE)` is declared reserved by that map and is
+/// left unmapped for the same fail-closed reason as the firmware carve-out.
+///
+/// **WS-BP BP0.4**: this was `0xFFA0_0000`, the extent rounded up to the 2 MiB
+/// block the level-2 tables describe, so `[0xFF85_0000, 0xFFA0_0000)` — space
+/// the Lean map *reserves* — was mapped Device.  A gate tolerated the round-up
+/// as a sub-block difference; driving one address set through both maps
+/// (`tests/fixtures/boot_map.expected`) made it a divergence, and it is closed
+/// rather than tolerated: the one block that straddles this address is
+/// described at 4 KiB granularity by a level-3 table ([`DEVICE_TAIL_BLOCK_BASE`]),
+/// so the tables map exactly the window the Lean map declares.
+pub const DEVICE_WINDOW_TOP: u64 = 0xFF85_0000;
+
+/// **WS-BP BP0.4**: the base of the one 2 MiB block whose addresses are not all
+/// of one kind — the block containing [`DEVICE_WINDOW_TOP`].  The boot tables
+/// describe it with a level-3 table of 4 KiB pages; every other block of the
+/// low 4 GiB is uniform and described by a single level-2 block descriptor.
+pub const DEVICE_TAIL_BLOCK_BASE: u64 = DEVICE_WINDOW_TOP & !((1 << 21) - 1);
 
 /// Base of the RAM aperture above the 4 GiB boundary (8 GiB and 16 GiB
 /// boards).  `rpi5MemoryMapForConfig` places its second RAM region here.
@@ -343,10 +375,11 @@ pub const fn boot_mapping_for(addr: u64, ram_top: u64) -> BootMapping {
 /// blob outright would boot nothing on a board that has *more* RAM than the
 /// tables can name, which is the wrong failure for the right reason.
 ///
-/// Every constant boundary of the map (`LOW_RAM_TOP`, `DEVICE_WINDOW_BASE`,
-/// `DEVICE_WINDOW_TOP`, `HIGH_RAM_BASE`) is already 2 MiB aligned and the cap is
-/// 1 GiB aligned, so after this clamp every boundary is block aligned at the
-/// granularity that describes it.
+/// Every constant boundary of the map is already aligned at the granularity
+/// that describes it — `LOW_RAM_TOP`, `DEVICE_WINDOW_BASE` and `HIGH_RAM_BASE`
+/// to 2 MiB, and `DEVICE_WINDOW_TOP` to the 4 KiB pages of the L3 table that
+/// describes its block (WS-BP BP0.4) — and the cap is 1 GiB aligned, so after
+/// this clamp every boundary is aligned at the granularity that describes it.
 #[must_use]
 pub const fn clamp_ram_top(raw: u64) -> u64 {
     let capped = if raw > BOOT_TABLE_COVERAGE {
@@ -490,7 +523,7 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 /// Boot translation tables: a level-0 table whose entry 0 reaches a level-1
 /// table, whose first four entries reach level-2 tables.
 ///
-/// Laid out as one `#[repr(C, align(4096))]` struct so all six tables are
+/// Laid out as one `#[repr(C, align(4096))]` struct so all seven tables are
 /// contiguous and 4 KiB aligned (each array is exactly one 4 KiB page), which
 /// lets [`enable_mmu`] clean the whole extent to the Point of Coherency in one
 /// range operation.
@@ -500,12 +533,16 @@ const DESC_ADDR_MASK: u64 = 0x0000_FFFF_FFFF_F000;
 ///   above 512 GiB faults.
 /// - **L1**: entries 0..3 are Table descriptors to `l2_low`; entries 4.. are
 ///   1 GiB Normal blocks up to the board's RAM top, invalid above it.
-/// - **L2** (`l2_low[g]`): 2 MiB blocks describing `[g GiB, (g+1) GiB)`.
+/// - **L2** (`l2_low[g]`): 2 MiB blocks describing `[g GiB, (g+1) GiB)`,
+///   except the entry for [`DEVICE_TAIL_BLOCK_BASE`], a Table descriptor.
+/// - **L3** (`l3_device_tail`, WS-BP BP0.4): 4 KiB pages describing the block
+///   that straddles [`DEVICE_WINDOW_TOP`] — Device below it, invalid above.
 #[repr(C, align(4096))]
 pub struct BootPageTables {
     l0: [u64; TABLE_ENTRIES],
     l1: [u64; TABLE_ENTRIES],
     l2_low: [[u64; TABLE_ENTRIES]; REFINED_GIB_COUNT],
+    l3_device_tail: [u64; TABLE_ENTRIES],
 }
 
 impl BootPageTables {
@@ -514,9 +551,14 @@ impl BootPageTables {
             l0: [0; TABLE_ENTRIES],
             l1: [0; TABLE_ENTRIES],
             l2_low: [[0; TABLE_ENTRIES]; REFINED_GIB_COUNT],
+            l3_device_tail: [0; TABLE_ENTRIES],
         }
     }
 }
+
+/// How many 4 KiB tables [`BootPageTables`] holds: L0, L1, the refined L2
+/// tables and the one L3 table.
+const BOOT_TABLE_COUNT: usize = 2 + REFINED_GIB_COUNT + 1;
 
 /// AK5-E (R-HAL-H01, R-HAL-M03): Interior-mutable wrapper around the boot
 /// translation tables.
@@ -599,7 +641,7 @@ const _: () = assert!(
     "TABLE_ENTRIES must be 512 (4 KiB / 8 bytes/entry) per ARMv8 D8.3"
 );
 const _: () = assert!(
-    core::mem::size_of::<BootPageTables>() == (2 + REFINED_GIB_COUNT) * 4096,
+    core::mem::size_of::<BootPageTables>() == BOOT_TABLE_COUNT * 4096,
     "BootPageTables must be a whole number of 4 KiB translation tables"
 );
 // The refined window must cover every non-gigabyte-aligned boundary of the map.
@@ -615,7 +657,15 @@ const _: () = assert!(
 // enough to keep the descriptors and `boot_mapping_for` in agreement.
 const _: () = assert!(LOW_RAM_TOP.is_multiple_of(L2_BLOCK_SIZE));
 const _: () = assert!(DEVICE_WINDOW_BASE.is_multiple_of(L2_BLOCK_SIZE));
-const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L2_BLOCK_SIZE));
+// WS-BP BP0.4: the window's top is the Lean extent, which is page aligned and
+// not block aligned; the block containing it is the one the L3 table describes,
+// and it lies wholly inside the device window's first gigabyte-aligned span so
+// its lower part is Device and nothing in it is RAM.
+const _: () = assert!(DEVICE_WINDOW_TOP.is_multiple_of(L3_PAGE_SIZE));
+const _: () = assert!(DEVICE_TAIL_BLOCK_BASE.is_multiple_of(L2_BLOCK_SIZE));
+const _: () = assert!(DEVICE_TAIL_BLOCK_BASE >= DEVICE_WINDOW_BASE);
+const _: () = assert!(DEVICE_TAIL_BLOCK_BASE + L2_BLOCK_SIZE <= HIGH_RAM_BASE);
+const _: () = assert!(L2_BLOCK_SIZE == 1 << 21);
 const _: () = assert!(HIGH_RAM_BASE.is_multiple_of(L1_BLOCK_SIZE));
 // The cap is where the level-0 walk ends: one valid L0 entry reaches exactly
 // one L1 table of gigabyte blocks, and the high-RAM aperture must begin inside
@@ -629,6 +679,13 @@ const _: () = assert!(HIGH_RAM_BASE < BOOT_TABLE_COVERAGE);
 #[inline]
 const fn l2_table_pa(base_pa: u64, g: usize) -> u64 {
     base_pa + ((2 + g) as u64) * 4096
+}
+
+/// **WS-BP BP0.4**: physical address of the L3 table, which sits after the
+/// refined L2 tables.
+#[inline]
+const fn l3_table_pa(base_pa: u64) -> u64 {
+    base_pa + ((2 + REFINED_GIB_COUNT) as u64) * 4096
 }
 
 /// **WS-RR RR7.1**: populate the boot translation tables in place.
@@ -667,6 +724,11 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, ram_top: u64)
     for g in 0..REFINED_GIB_COUNT {
         for i in 0..TABLE_ENTRIES {
             let base = (g as u64) * L1_BLOCK_SIZE + (i as u64) * L2_BLOCK_SIZE;
+            if base == DEVICE_TAIL_BLOCK_BASE {
+                // WS-BP BP0.4: the one non-uniform block, at page granularity.
+                tables.l2_low[g][i] = (l3_table_pa(base_pa) & DESC_ADDR_MASK) | DESC_TABLE;
+                continue;
+            }
             tables.l2_low[g][i] = match boot_mapping_for(base, ram_top) {
                 BootMapping::NormalRam => base | BLOCK_NORMAL,
                 BootMapping::Device => base | BLOCK_DEVICE,
@@ -674,17 +736,27 @@ fn populate_boot_tables(tables: &mut BootPageTables, base_pa: u64, ram_top: u64)
             };
         }
     }
+
+    for (k, entry) in tables.l3_device_tail.iter_mut().enumerate() {
+        let page = DEVICE_TAIL_BLOCK_BASE + (k as u64) * L3_PAGE_SIZE;
+        *entry = match boot_mapping_for(page, ram_top) {
+            BootMapping::NormalRam => page | PAGE_NORMAL,
+            BootMapping::Device => page | PAGE_DEVICE,
+            BootMapping::Unmapped => 0,
+        };
+    }
 }
 
 /// Build identity-mapped boot translation tables.
 ///
-/// **WS-RR RR7.1**: the map is [`boot_mapping_for`]'s, which mirrors
-/// `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean`:
+/// **WS-RR RR7.1**: the map is [`boot_mapping_for`]'s, which is
+/// `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean` (driven, not
+/// mirrored: WS-BP BP0.4's `the_boot_map_agrees_with_the_lean_map`):
 ///
 /// - `0x0000_0000 – 0xFBFF_FFFF`: Normal RAM (clamped to the board's RAM top)
 /// - `0xFC00_0000 – 0xFDFF_FFFF`: unmapped (VideoCore firmware carve-out)
-/// - `0xFE00_0000 – 0xFF9F_FFFF`: Device (BCM2712 peripherals + GIC-400)
-/// - `0xFFA0_0000 – 0xFFFF_FFFF`: unmapped (reserved above the GIC)
+/// - `0xFE00_0000 – 0xFF84_FFFF`: Device (BCM2712 peripherals + GIC-400)
+/// - `0xFF85_0000 – 0xFFFF_FFFF`: unmapped (reserved above the GIC)
 /// - `0x1_0000_0000 – ram_top`:   Normal RAM (8 GiB and 16 GiB boards)
 ///
 /// Before RR7.1 this mapped `0xC000_0000 – 0xFFFF_FFFF` as one Device block, so
@@ -1134,7 +1206,7 @@ mod tests {
         assert_eq!(TABLE_ENTRIES, 512);
         assert_eq!(
             core::mem::size_of::<BootPageTables>(),
-            (2 + REFINED_GIB_COUNT) * 512 * 8
+            BOOT_TABLE_COUNT * 512 * 8
         );
     }
 
@@ -1248,14 +1320,14 @@ mod tests {
     // =====================================================================
 
     #[test]
-    fn boot_table_extent_is_the_six_translation_tables() {
-        // **WS-RR RR7.1**: one L0 + one L1 + four L2 tables, each 512 entries
-        // × 8 bytes = 4096 bytes.  `enable_mmu` cleans exactly this extent to
+    fn boot_table_extent_is_every_translation_table() {
+        // **WS-RR RR7.1**: one L0 + one L1 + four L2 tables, and since WS-BP
+        // BP0.4 one L3 table, each 512 entries × 8 bytes = 4096 bytes.  `enable_mmu` cleans exactly this extent to
         // the Point of Coherency before the walker is switched on, so an
         // extent that under-reports the tables would leave a table dirty in
         // the D-cache while the walker reads memory.
-        assert_eq!(PageTableCell::size(), (2 + REFINED_GIB_COUNT) * 4096);
-        assert_eq!(PageTableCell::size(), 24576);
+        assert_eq!(PageTableCell::size(), BOOT_TABLE_COUNT * 4096);
+        assert_eq!(PageTableCell::size(), 28672);
     }
 
     #[test]
@@ -1366,6 +1438,8 @@ mod tests {
 #[cfg(test)]
 mod boot_map_tests {
     use super::*;
+    // WS-BP BP0.4: the Lean-table test parses a checked-in fixture into `Vec`s.
+    extern crate std;
 
     /// A 4 GiB board: RAM fills the low aperture and nothing sits above 4 GiB.
     const FOUR_GIB_RAM_TOP: u64 = LOW_RAM_TOP;
@@ -1408,14 +1482,28 @@ mod boot_map_tests {
             return None;
         }
 
-        // Level 2 — Block (2 MiB) or Table; the boot tables stop here.
+        // Level 2 — Block (2 MiB) or Table.
         let l2_index = ((va >> 21) & 0x1FF) as usize;
         let l2 = tables.l2_low[g][l2_index];
-        if l2 & 0b11 != 0b01 {
+        match l2 & 0b11 {
+            0b01 => {
+                let output = (l2 & DESC_ADDR_MASK) | (va & (L2_BLOCK_SIZE - 1));
+                return Some((output, l2 & !DESC_ADDR_MASK));
+            }
+            0b11 => {}
+            _ => return None,
+        }
+        // WS-BP BP0.4: level 3 — Page (4 KiB) only; the boot tables have one
+        // L3 table, and a table descriptor naming anything else is a defect.
+        if l2 & DESC_ADDR_MASK != l3_table_pa(base_pa) {
             return None;
         }
-        let output = (l2 & DESC_ADDR_MASK) | (va & (L2_BLOCK_SIZE - 1));
-        Some((output, l2 & !DESC_ADDR_MASK))
+        let l3 = tables.l3_device_tail[((va >> 12) & 0x1FF) as usize];
+        if l3 & 0b11 != 0b11 {
+            return None;
+        }
+        let output = (l3 & DESC_ADDR_MASK) | (va & (L3_PAGE_SIZE - 1));
+        Some((output, l3 & !DESC_ADDR_MASK))
     }
 
     /// Build a table set at a synthetic (4 KiB-aligned) physical base.
@@ -1426,22 +1514,130 @@ mod boot_map_tests {
         (tables, base_pa)
     }
 
+    /// **WS-BP BP0.4**: the boot map, driven through the Lean map rather than
+    /// mirrored from it.
+    ///
+    /// `tests/fixtures/boot_map.expected` is emitted by
+    /// `tests/Ak9PlatformSuite.lean` from `rpi5MemoryMapForConfig` itself: for
+    /// every RAM variant, the regions the map declares and the kind
+    /// `classifyAddress` gives at every probe.  This test pushes the same
+    /// probes — and every boundary constant of *this* map, with the byte below
+    /// it, so a boundary that moves on this side alone is probed too — through
+    /// [`boot_mapping_for`] and through a walk of the tables
+    /// [`populate_boot_tables`] builds, and requires the kind the Lean map
+    /// gives: RAM is Normal, a device region is Device, and reserved or
+    /// undeclared space is unmapped.
+    ///
+    /// It replaces a test asserting four hand-copied literals beside a comment
+    /// that said the boundaries "mirror" the Lean map, and it is what found the
+    /// device window mapping `[0xFF85_0000, 0xFFA0_0000)`, which the Lean map
+    /// reserves: closed by describing that block at page granularity.
     #[test]
-    fn the_boot_map_boundaries_mirror_the_lean_memory_map() {
-        // `rpi5MemoryMapForConfig` in `SeLe4n/Platform/RPi5/Board.lean`:
-        // RAM to 0xFC00_0000, a 32 MiB reserved firmware carve-out, the
-        // peripheral window from 0xFE00_0000, and high RAM at 0x1_0000_0000.
-        assert_eq!(LOW_RAM_TOP, 0xFC00_0000);
-        assert_eq!(DEVICE_WINDOW_BASE, 0xFE00_0000);
-        assert_eq!(HIGH_RAM_BASE, 0x1_0000_0000);
-        // The Lean map's device extent ends at 0xFF85_0000; the boot tables
-        // describe the fourth GiB at 2 MiB granularity, so the window rounds
-        // up to the next block boundary and the reserved tail above it is
-        // left unmapped.
-        assert_eq!(DEVICE_WINDOW_TOP, 0xFFA0_0000);
-        const LEAN_DEVICE_EXTENT_TOP: u64 = 0xFF85_0000;
-        const { assert!(LEAN_DEVICE_EXTENT_TOP <= DEVICE_WINDOW_TOP) };
-        const { assert!(DEVICE_WINDOW_TOP - LEAN_DEVICE_EXTENT_TOP < L2_BLOCK_SIZE) };
+    fn the_boot_map_agrees_with_the_lean_map() {
+        use std::vec::Vec;
+        const LEAN_TABLE: &str = include_str!("../../../tests/fixtures/boot_map.expected");
+        fn hex(s: &str) -> u64 {
+            u64::from_str_radix(s.trim_start_matches("0x"), 16).expect("hex in the boot-map table")
+        }
+        struct Variant<'a> {
+            ram_top: u64,
+            regions: Vec<(u64, u64, &'a str)>,
+            probes: Vec<(u64, &'a str)>,
+        }
+        let mut variants: Vec<Variant> = Vec::new();
+        for line in LEAN_TABLE.lines().filter(|l| !l.starts_with('#')) {
+            let cols: Vec<&str> = line.split_whitespace().collect();
+            match cols.as_slice() {
+                ["variant", _, "ramTop", top] => variants.push(Variant {
+                    ram_top: hex(top),
+                    regions: Vec::new(),
+                    probes: Vec::new(),
+                }),
+                ["region", base, size, kind] => variants
+                    .last_mut()
+                    .expect("a region belongs to a variant")
+                    .regions
+                    .push((hex(base), hex(size), kind)),
+                ["probe", addr, kind] => variants
+                    .last_mut()
+                    .expect("a probe belongs to a variant")
+                    .probes
+                    .push((hex(addr), kind)),
+                _ => panic!("unrecognised boot-map line {line:?}"),
+            }
+        }
+        assert_eq!(
+            variants.len(),
+            5,
+            "the Lean table carries the five RPi5 RAM variants"
+        );
+        for v in &variants {
+            let lean_kind = |a: u64| -> &str {
+                v.regions
+                    .iter()
+                    .find(|&&(b, sz, _)| b <= a && a < b + sz)
+                    .map_or("reserved", |&(_, _, k)| k)
+            };
+            // Every variant's RAM top is one the tables can describe exactly.
+            let top = clamp_ram_top(v.ram_top);
+            assert_eq!(
+                top, v.ram_top,
+                "variant top {:#x} is not describable",
+                v.ram_top
+            );
+            let (tables, base_pa) = build(top);
+            let mut addrs: Vec<u64> = Vec::new();
+            for &(a, kind) in &v.probes {
+                assert_eq!(
+                    kind,
+                    lean_kind(a),
+                    "the table's probe at {a:#x} names its own regions"
+                );
+                addrs.push(a);
+            }
+            for c in [
+                LOW_RAM_TOP,
+                DEVICE_WINDOW_BASE,
+                DEVICE_TAIL_BLOCK_BASE,
+                DEVICE_WINDOW_TOP,
+                HIGH_RAM_BASE,
+                top,
+                BOOT_TABLE_COVERAGE,
+            ] {
+                addrs.push(c - 1);
+                addrs.push(c);
+            }
+            for a in addrs {
+                let expected = match lean_kind(a) {
+                    "ram" => BootMapping::NormalRam,
+                    "device" => BootMapping::Device,
+                    "reserved" => BootMapping::Unmapped,
+                    other => panic!("unknown kind {other}"),
+                };
+                assert_eq!(
+                    boot_mapping_for(a, top),
+                    expected,
+                    "variant top {top:#x}: {a:#x} is {} in the Lean map",
+                    lean_kind(a)
+                );
+                let walked = walk(&tables, base_pa, a);
+                match expected {
+                    BootMapping::Unmapped => {
+                        assert!(walked.is_none(), "variant top {top:#x}: {a:#x} must fault")
+                    }
+                    kind => {
+                        let (pa, attrs) = walked
+                            .unwrap_or_else(|| panic!("variant top {top:#x}: {a:#x} must map"));
+                        assert_eq!(pa, a, "the boot map is an identity map");
+                        assert_eq!(
+                            attrs & ATTR_IDX_DEVICE != 0,
+                            kind == BootMapping::Device,
+                            "variant top {top:#x}: {a:#x} has the wrong memory type"
+                        );
+                    }
+                }
+            }
+        }
     }
 
     #[test]
@@ -1676,6 +1872,30 @@ mod boot_map_tests {
             for g in 0..REFINED_GIB_COUNT {
                 for i in 0..TABLE_ENTRIES {
                     let base = (g as u64) * L1_BLOCK_SIZE + (i as u64) * L2_BLOCK_SIZE;
+                    if base == DEVICE_TAIL_BLOCK_BASE {
+                        // WS-BP BP0.4: the one block described at page
+                        // granularity, and each of its pages homogeneous.
+                        assert_eq!(
+                            tables.l2_low[g][i],
+                            (l3_table_pa(base_pa) & DESC_ADDR_MASK) | DESC_TABLE,
+                            "L2[{g}][{i}] must reach the L3 table"
+                        );
+                        for (k, &entry) in tables.l3_device_tail.iter().enumerate() {
+                            let page = base + (k as u64) * L3_PAGE_SIZE;
+                            let expected = match boot_mapping_for(page, ram_top) {
+                                BootMapping::NormalRam => page | PAGE_NORMAL,
+                                BootMapping::Device => page | PAGE_DEVICE,
+                                BootMapping::Unmapped => 0,
+                            };
+                            assert_eq!(entry, expected, "L3[{k}]");
+                            assert_eq!(
+                                boot_mapping_for(page + L3_PAGE_SIZE - 1, ram_top),
+                                boot_mapping_for(page, ram_top),
+                                "L3[{k}] page is not homogeneous"
+                            );
+                        }
+                        continue;
+                    }
                     let expected = match boot_mapping_for(base, ram_top) {
                         BootMapping::NormalRam => base | BLOCK_NORMAL,
                         BootMapping::Device => base | BLOCK_DEVICE,
@@ -1691,7 +1911,6 @@ mod boot_map_tests {
                     );
                 }
             }
-            let _ = base_pa;
         }
     }
 

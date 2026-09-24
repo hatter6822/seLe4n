@@ -49,14 +49,14 @@ enforcement, and scheduling.
 
 | Attribute | Value |
 |-----------|-------|
-| **Package version** | `0.36.1` (`lakefile.toml`) |
+| **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 417,841 across 340 Lean files |
-| **Test LoC** | 84,834 across 70 Lean test suites |
+| **Production LoC** | 417,950 across 340 Lean files |
+| **Test LoC** | 85,076 across 70 Lean test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203, no sub-task started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), BP1..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -198,6 +198,46 @@ runtime tests (`an7d5_01..04`) exercising:
 The tests are constructed programmatically via `FdtNode` values with
 explicit big-endian `reg` property encoding; no synthesized DTB-blob
 infrastructure is required.
+
+### 6.2.2 Cross-implementation agreement (WS-BP BP0, v0.36.2)
+
+Three questions are answered on both sides of the Lean/Rust boundary, and until
+v0.36.2 every gate reconciling them was *nominal* — it compared declarations,
+never behaviour.  BP0 makes a divergence fail a gate:
+
+| Pair | Shared artefact | Consumers |
+|------|-----------------|-----------|
+| Rust `cmdline` FDT walker / Lean `DeviceTree` parser — *which `/memory` extents does this blob declare?* | `tests/fixtures/dtb/` — 58 blobs and a hand-written `MANIFEST` (regions, RAM top), rendered by `scripts/generate_dtb_corpus.py` | `cmdline::dtb_corpus_tests`, `tests/Ak9PlatformSuite.lean`; Tier 0 `check_dtb_corpus_consumers.py` |
+| `sele4n-abi` encoder / kernel decoder — *which bits and registers carry which field, within which bounds?* | `tests/fixtures/abi_layout.expected`, emitted from `MessageInfo.decode`/`encode`, `arm64DefaultLayout` and the ABI constants | `tests/SyscallReturnAbiSuite.lean`, `rust/sele4n-abi/tests/conformance.rs` |
+| `mmu::boot_mapping_for` / `rpi5MemoryMapForConfig` — *what does the boot map install at this address?* | `tests/fixtures/boot_map.expected`, the Lean map's kind at every boundary probe of every RAM variant | `tests/Ak9PlatformSuite.lean`, `mmu::boot_map_tests` |
+
+The corpus's first run found **thirteen** divergences on the Rust side and
+**eight** on the Lean side; each was fixed on the side that was wrong, so the
+two readers now share one set of refusals:
+
+- **Structure** (Rust gained `fdt_structure_check`, which both Rust walks run
+  first): exactly one top-level node, named by the empty string; properties
+  before children; unique property names and unique sibling names; node and
+  property names of at most 255 bytes; nesting of at most 32 levels (the Lean
+  parser gained `fdtMaxDepth`); a reservation block inside `totalsize`, and the structure and strings
+  blocks starting strictly inside it.
+- **Walk bound**: the Rust walks' fixed fuel of 4096 tokens is replaced by the
+  structure block's own size (`fdt_token_bound`, the Lean parser's derived
+  fuel), so a large well-formed device tree is no longer refused.
+- **Extents**: a `reg` read whole or refused (the Lean extractor no longer
+  truncates at an unreadable cell width), no extent ending at or past 2^64,
+  at most `fdtMaxMemoryExtents = 16` extents, and a `#address-cells` /
+  `#size-cells` value that is not exactly one `<u32>` refused on both sides.
+
+The boot-map pair found the device window mapped Device up to `0xFFA0_0000`,
+the Lean extent rounded up to a 2 MiB block, over space the Lean map reserves.
+`DEVICE_WINDOW_TOP` is the Lean extent `0xFF85_0000` exactly, and the one block
+straddling it is described by a level-3 table of 4 KiB pages
+(`DEVICE_TAIL_BLOCK_BASE`); the boot tables are seven 4 KiB tables.
+
+The device-tree pair is **interim**: BP2.6 removes the Rust walker from the
+boot path, which makes the Lean parse the blob's only parse, and retires the
+corpus and its gate with it.  The ABI and boot-map pairs are permanent.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering

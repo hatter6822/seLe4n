@@ -603,6 +603,21 @@ State the rationale in the PR body and in the CHANGELOG entry: what transition
 changed, why the new trace is correct, and what would have been wrong about
 keeping the old one. A fixture updated to make a test pass is a defect.
 
+**Two-sided fixtures** (WS-BP BP0, `v0.36.2`) are read by a Lean suite *and* a
+Rust suite, so a change to one is a claim about both implementations:
+
+```bash
+./scripts/generate_dtb_corpus.py            # tests/fixtures/dtb/: edit a CASE, never a .dtb.hex
+lake exe syscall_return_abi_suite           # prints the live abi_layout.expected on mismatch
+lake exe ak9_platform_suite                 # prints the live boot_map.expected on mismatch
+(cd rust && cargo test --all --features std,host_tools)   # the Rust side of all three
+```
+
+Expectations for the device-tree corpus are written by hand in the generator's
+case table; the two tables are emitted by Lean and must then be matched by the
+Rust side, never edited to match it.  A divergence one of them exposes is fixed
+on the side that is wrong.
+
 ### Generated artefacts
 
 ```bash

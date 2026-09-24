@@ -1,0 +1,86 @@
+# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)
+variant 0x40000000 ramTop 0x40000000
+region 0x0 0x40000000 ram
+region 0xfc000000 0x2000000 reserved
+region 0xfe000000 0x1850000 device
+region 0xff850000 0x7b0000 reserved
+probe 0x0 ram
+probe 0x3fffffff ram
+probe 0x40000000 reserved
+probe 0xfbffffff reserved
+probe 0xfc000000 reserved
+probe 0xfdffffff reserved
+probe 0xfe000000 device
+probe 0xff84ffff device
+probe 0xff850000 reserved
+probe 0xffffffff reserved
+probe 0x100000000 reserved
+probe 0x4000000000 reserved
+variant 0x80000000 ramTop 0x80000000
+region 0x0 0x80000000 ram
+region 0xfc000000 0x2000000 reserved
+region 0xfe000000 0x1850000 device
+region 0xff850000 0x7b0000 reserved
+probe 0x0 ram
+probe 0x7fffffff ram
+probe 0x80000000 reserved
+probe 0xfbffffff reserved
+probe 0xfc000000 reserved
+probe 0xfdffffff reserved
+probe 0xfe000000 device
+probe 0xff84ffff device
+probe 0xff850000 reserved
+probe 0xffffffff reserved
+probe 0x100000000 reserved
+probe 0x4000000000 reserved
+variant 0x100000000 ramTop 0xfc000000
+region 0x0 0xfc000000 ram
+region 0xfc000000 0x2000000 reserved
+region 0xfe000000 0x1850000 device
+region 0xff850000 0x7b0000 reserved
+probe 0x0 ram
+probe 0xfbffffff ram
+probe 0xfc000000 reserved
+probe 0xfdffffff reserved
+probe 0xfe000000 device
+probe 0xff84ffff device
+probe 0xff850000 reserved
+probe 0xffffffff reserved
+probe 0x100000000 reserved
+probe 0x4000000000 reserved
+variant 0x200000000 ramTop 0x200000000
+region 0x0 0xfc000000 ram
+region 0xfc000000 0x2000000 reserved
+region 0xfe000000 0x1850000 device
+region 0xff850000 0x7b0000 reserved
+region 0x100000000 0x100000000 ram
+probe 0x0 ram
+probe 0xfbffffff ram
+probe 0xfc000000 reserved
+probe 0xfdffffff reserved
+probe 0xfe000000 device
+probe 0xff84ffff device
+probe 0xff850000 reserved
+probe 0xffffffff reserved
+probe 0x100000000 ram
+probe 0x1ffffffff ram
+probe 0x200000000 reserved
+probe 0x4000000000 reserved
+variant 0x400000000 ramTop 0x400000000
+region 0x0 0xfc000000 ram
+region 0xfc000000 0x2000000 reserved
+region 0xfe000000 0x1850000 device
+region 0xff850000 0x7b0000 reserved
+region 0x100000000 0x300000000 ram
+probe 0x0 ram
+probe 0xfbffffff ram
+probe 0xfc000000 reserved
+probe 0xfdffffff reserved
+probe 0xfe000000 device
+probe 0xff84ffff device
+probe 0xff850000 reserved
+probe 0xffffffff reserved
+probe 0x100000000 ram
+probe 0x3ffffffff ram
+probe 0x400000000 reserved
+probe 0x4000000000 reserved

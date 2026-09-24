@@ -23,10 +23,13 @@ pub const MAX_EXTRA_CAPS: u64 = 3;
 /// The encode and decode methods now enforce this stricter bound.
 pub const MAX_LABEL: u64 = (1u64 << 20) - 1;
 
-// W6-G (LOW-1): Compile-time assertions ensuring Lean-Rust ABI constant sync.
-// If `maxLabel`, `maxMessageRegisters`, or `maxExtraCaps` change on the Lean side
-// (in `SeLe4n/Model/Object/Types.lean`), these assertions will fail at compile time,
-// preventing silent divergence between the Lean model and Rust FFI layer.
+// W6-G (LOW-1): compile-time pins on the three bounds' values.  They do NOT read
+// the Lean model, so on their own they cannot notice a Lean-side change: what
+// ties these constants — and the encoder's field layout — to
+// `SeLe4n/Model/Object/Types.lean` is WS-BP BP0.3's shared table
+// `tests/fixtures/abi_layout.expected`, which the Lean suite emits and
+// `tests/conformance.rs::abi_layout_matches_the_lean_table` renders from this
+// crate and compares byte for byte.
 const _: () = {
     assert!(
         MAX_LABEL == 1_048_575,

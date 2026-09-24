@@ -157,13 +157,24 @@ const FDT_HEADER_SIZE: usize = 40;
 /// answer one question.
 const FDT_MINIMUM_VERSION: u32 = 17;
 
-/// **WS-SM SM1.D.1**: Fuel bound for the DTB structure walk.
+/// **WS-BP BP0.1**: the longest node or property name, in bytes and not
+/// counting its terminator, that this parser reads.
 ///
-/// Caps the number of FDT tokens we'll consume before giving up.
-/// Real DTBs have a few hundred tokens; 4096 is a comfortable upper
-/// bound that still guards against pathological / malicious blobs
-/// with infinite NOP chains or recursive cycles.
-const FDT_WALK_FUEL: usize = 4096;
+/// Held equal to the Lean parser's bound (`readCStringWithin`'s default fuel of
+/// 256 reads 255 bytes and then the terminator), because the shared device-tree
+/// corpus (`tests/fixtures/dtb/`) found the two disagreeing: a 256-byte name
+/// was refused there and read here.  The Devicetree Specification's own limit
+/// is 31 characters per component, so no conforming blob comes near either.
+const FDT_MAX_NAME_LEN: usize = 255;
+
+// **WS-BP BP0.1**: there is no fixed walk fuel.  It was `FDT_WALK_FUEL = 4096`
+// tokens, and the shared corpus found it refusing a structure block the Lean
+// parser reads whole (`more_tokens_than_fixed_fuel`).  Every token consumes at
+// least four bytes and the offset only moves forward, so a walk of the
+// declared structure block ends within `size_dt_struct / 4` steps
+// ([`fdt_token_bound`]) — which is exactly the Lean parser's derived fuel, and
+// cannot run out before the block does.  A fixed figure could only ever refuse
+// a large, well-formed device tree.
 
 /// **WS-SM SM1.D.1**: Maximum nesting depth for DTB nodes.
 ///
@@ -577,6 +588,19 @@ fn validate_fdt_header(hdr: &FdtHeader) -> bool {
     if (hdr.off_mem_rsvmap as u64) < FDT_HEADER_SIZE as u64 {
         return false;
     }
+    // WS-BP BP0.1: and inside the blob the header claims.  The Lean reader
+    // (`FdtBlob.of?`) refuses a reservation block that starts past `totalsize`,
+    // and the shared corpus found this validator accepting it.
+    if hdr.off_mem_rsvmap > hdr.totalsize {
+        return false;
+    }
+    // WS-BP BP0.1: each block STARTS strictly inside the blob, as
+    // `FdtHeader.isValid` requires.  The end checks below allowed an empty
+    // strings block placed at `totalsize`, so a property-free blob was read
+    // here and refused there (`empty_strings_block_at_totalsize`).
+    if hdr.off_dt_struct >= hdr.totalsize || hdr.off_dt_strings >= hdr.totalsize {
+        return false;
+    }
     // Block end must fit inside the total size.  Use u64 arithmetic
     // so a malicious `off + size > u32::MAX` doesn't wrap silently.
     let struct_end = hdr.off_dt_struct as u64 + hdr.size_dt_struct as u64;
@@ -652,6 +676,272 @@ fn read_node_name(blob: &[u8], offset: usize) -> Option<(&[u8], usize)> {
     Some((name, next_offset))
 }
 
+/// **WS-BP BP0.1**: a blob whose header validates and whose declared blocks
+/// lie inside it — the Rust counterpart of the Lean parser's `FdtBlob.of?`.
+///
+/// Every structure-block read in this module is bounded by `struct_end`, every
+/// property-name read by the strings block, and both blocks and the start of
+/// the reservation block are inside the blob itself as well as inside the
+/// `totalsize` the header claims ([`validate_fdt_header`]).
+struct FdtLayout {
+    struct_start: usize,
+    struct_end: usize,
+    strings_off: usize,
+    strings_size: usize,
+}
+
+fn fdt_layout(blob: &[u8]) -> Option<FdtLayout> {
+    let hdr = parse_fdt_header(blob)?;
+    if !validate_fdt_header(&hdr) {
+        return None;
+    }
+    let struct_start = hdr.off_dt_struct as usize;
+    let struct_end = struct_start.checked_add(hdr.size_dt_struct as usize)?;
+    let strings_off = hdr.off_dt_strings as usize;
+    let strings_size = hdr.size_dt_strings as usize;
+    let strings_end = strings_off.checked_add(strings_size)?;
+    if struct_end > blob.len()
+        || strings_end > blob.len()
+        || hdr.off_mem_rsvmap as usize > blob.len()
+    {
+        return None;
+    }
+    Some(FdtLayout {
+        struct_start,
+        struct_end,
+        strings_off,
+        strings_size,
+    })
+}
+
+/// **WS-BP BP0.1**: how many tokens a walk of the declared structure block can
+/// take.  Every token is at least four bytes and every step advances the
+/// offset, so this bound is never reached by a walk that is still inside the
+/// block — the `+ 1` is the step that reads the terminator of a block made of
+/// nothing else.  It is the Lean parser's derived fuel (`sizeDtStruct / 4`),
+/// replacing a fixed figure that refused large well-formed device trees.
+fn fdt_token_bound(layout: &FdtLayout) -> usize {
+    (layout.struct_end - layout.struct_start) / 4 + 1
+}
+
+/// The token at `offset`, refused unless it lies wholly inside the block.
+fn fdt_struct_token(blob: &[u8], layout: &FdtLayout, offset: usize) -> Option<u32> {
+    if offset < layout.struct_start || offset.checked_add(4)? > layout.struct_end {
+        return None;
+    }
+    read_be_u32(blob, offset)
+}
+
+/// A node name at `offset` (just past its `FDT_BEGIN_NODE`), with the offset of
+/// the next token: refused when the name is longer than [`FDT_MAX_NAME_LEN`] or
+/// its padded end leaves the structure block.
+fn fdt_struct_node_name<'a>(
+    blob: &'a [u8],
+    layout: &FdtLayout,
+    offset: usize,
+) -> Option<(&'a [u8], usize)> {
+    let (name, next) = read_node_name(blob, offset)?;
+    if name.len() > FDT_MAX_NAME_LEN || next > layout.struct_end {
+        return None;
+    }
+    Some((name, next))
+}
+
+/// The property at `offset` (its `FDT_PROP` token): its name and the offset of
+/// the next token.  Refused when the value leaves the structure block, or the
+/// name is not a terminated string of at most [`FDT_MAX_NAME_LEN`] bytes inside
+/// the strings block.
+fn fdt_struct_property<'a>(
+    blob: &'a [u8],
+    layout: &FdtLayout,
+    offset: usize,
+) -> Option<(&'a [u8], usize)> {
+    let len = fdt_struct_token(blob, layout, offset.checked_add(4)?)? as usize;
+    let nameoff = fdt_struct_token(blob, layout, offset.checked_add(8)?)? as usize;
+    let value_start = offset.checked_add(12)?;
+    let value_end = value_start.checked_add(len)?;
+    if value_end > layout.struct_end {
+        return None;
+    }
+    let name = lookup_fdt_string(blob, layout.strings_off, layout.strings_size, nameoff)?;
+    if name.len() > FDT_MAX_NAME_LEN {
+        return None;
+    }
+    let padded = len.checked_add((4 - len % 4) % 4)?;
+    Some((name, value_start.checked_add(padded)?))
+}
+
+/// The offset just past the `FDT_END_NODE` that closes the node whose
+/// `FDT_BEGIN_NODE` is at `offset`.  Only called over a prefix
+/// [`fdt_structure_check`] has already walked, so every token is known good;
+/// the reads are still checked, and the loop is bounded by
+/// [`fdt_token_bound`].
+fn fdt_node_end(blob: &[u8], layout: &FdtLayout, offset: usize) -> Option<usize> {
+    let mut cursor = offset;
+    let mut depth: usize = 0;
+    for _ in 0..fdt_token_bound(layout) {
+        match fdt_struct_token(blob, layout, cursor)? {
+            FDT_BEGIN_NODE => {
+                cursor = fdt_struct_node_name(blob, layout, cursor.checked_add(4)?)?.1;
+                depth = depth.checked_add(1)?;
+            }
+            FDT_END_NODE => {
+                depth = depth.checked_sub(1)?;
+                cursor = cursor.checked_add(4)?;
+                if depth == 0 {
+                    return Some(cursor);
+                }
+            }
+            FDT_PROP => cursor = fdt_struct_property(blob, layout, cursor)?.1,
+            FDT_NOP => cursor = cursor.checked_add(4)?,
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Does a sibling that begins in `[start, stop)` carry `name`?  Between one
+/// child and the next a node holds only siblings and `FDT_NOP`s, since a
+/// property after a child is refused before a later sibling is reached.
+fn fdt_sibling_named(
+    blob: &[u8],
+    layout: &FdtLayout,
+    start: usize,
+    stop: usize,
+    name: &[u8],
+) -> Option<bool> {
+    let mut cursor = start;
+    for _ in 0..fdt_token_bound(layout) {
+        if cursor >= stop {
+            return Some(false);
+        }
+        match fdt_struct_token(blob, layout, cursor)? {
+            FDT_NOP => cursor = cursor.checked_add(4)?,
+            FDT_BEGIN_NODE => {
+                if fdt_struct_node_name(blob, layout, cursor.checked_add(4)?)?.0 == name {
+                    return Some(true);
+                }
+                cursor = fdt_node_end(blob, layout, cursor)?;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// Does a property that begins in `[start, stop)` carry `name`?  A node's
+/// properties are contiguous up to its first child, NOPs aside.
+fn fdt_property_named(
+    blob: &[u8],
+    layout: &FdtLayout,
+    start: usize,
+    stop: usize,
+    name: &[u8],
+) -> Option<bool> {
+    let mut cursor = start;
+    for _ in 0..fdt_token_bound(layout) {
+        if cursor >= stop {
+            return Some(false);
+        }
+        match fdt_struct_token(blob, layout, cursor)? {
+            FDT_NOP => cursor = cursor.checked_add(4)?,
+            FDT_PROP => {
+                let (other, next) = fdt_struct_property(blob, layout, cursor)?;
+                if other == name {
+                    return Some(true);
+                }
+                cursor = next;
+            }
+            _ => return None,
+        }
+    }
+    None
+}
+
+/// **WS-BP BP0.1**: is the structure block one the Lean parser
+/// (`parseFdtNodes` then `fdtRoot?`) would read whole?  `Some(())` if so.
+///
+/// The shared device-tree corpus (`tests/fixtures/dtb/`) found this module's
+/// walks accepting blobs the Lean parser refuses, each of which let the two
+/// read different RAM out of one blob.  The rules, each the Lean parser's:
+///
+///   - **exactly one top-level node, named by the empty string** (§3): a
+///     named root, a second top-level node, or a property before the root is
+///     refused — the walks recognised memory "at depth 1" whatever enclosed it;
+///   - **properties precede children** (§5.4.2): a late `#size-cells` would
+///     otherwise govern a `reg` read before it;
+///   - **property names are unique within a node** (§2.2.4): the walks took the
+///     *last* `reg` or `status`, the Lean parser has no answer to give, and
+///     refusing is the only reading that is not a guess;
+///   - **sibling names are unique** (§2.2.3): two `memory@0` nodes were both
+///     folded here;
+///   - **names are at most [`FDT_MAX_NAME_LEN`] bytes** and **nesting is at
+///     most [`FDT_MAX_DEPTH`]**, both held equal to the Lean bounds;
+///   - **the walk reaches a top-level `FDT_END`** with every node closed.
+///
+/// Duplicate detection rescans the current node's earlier properties or
+/// siblings rather than allocating, so a node with `n` children costs
+/// `O(n^2)` token reads.  A board's device tree has tens of children per node;
+/// the blob is firmware-supplied and bounded by [`MAX_DTB_SIZE`], and this walk
+/// is retired from the boot path with the rest of the Rust FDT walker by
+/// WS-BP BP2.6.
+fn fdt_structure_check(blob: &[u8], layout: &FdtLayout) -> Option<()> {
+    const NO_CHILD: usize = usize::MAX;
+    let mut seen_child = [false; FDT_MAX_DEPTH + 1];
+    let mut props_start = [0usize; FDT_MAX_DEPTH + 1];
+    let mut children_start = [NO_CHILD; FDT_MAX_DEPTH + 1];
+    let mut depth: usize = 0;
+    let mut root_seen = false;
+    let mut offset = layout.struct_start;
+    for _ in 0..fdt_token_bound(layout) {
+        match fdt_struct_token(blob, layout, offset)? {
+            FDT_BEGIN_NODE => {
+                let (name, next) = fdt_struct_node_name(blob, layout, offset.checked_add(4)?)?;
+                if depth == 0 {
+                    if root_seen || !name.is_empty() {
+                        return None;
+                    }
+                    root_seen = true;
+                } else {
+                    if children_start[depth] == NO_CHILD {
+                        children_start[depth] = offset;
+                    } else if fdt_sibling_named(blob, layout, children_start[depth], offset, name)?
+                    {
+                        return None;
+                    }
+                    seen_child[depth] = true;
+                }
+                depth = depth.checked_add(1)?;
+                if depth > FDT_MAX_DEPTH {
+                    return None;
+                }
+                seen_child[depth] = false;
+                props_start[depth] = next;
+                children_start[depth] = NO_CHILD;
+                offset = next;
+            }
+            FDT_END_NODE => {
+                depth = depth.checked_sub(1)?;
+                offset = offset.checked_add(4)?;
+            }
+            FDT_PROP => {
+                if depth == 0 || seen_child[depth] {
+                    return None;
+                }
+                let (name, next) = fdt_struct_property(blob, layout, offset)?;
+                if fdt_property_named(blob, layout, props_start[depth], offset, name)? {
+                    return None;
+                }
+                offset = next;
+            }
+            FDT_NOP => offset = offset.checked_add(4)?,
+            FDT_END => return (depth == 0 && root_seen).then_some(()),
+            _ => return None,
+        }
+    }
+    None
+}
+
 /// **WS-SM SM1.D.1**: Walk the FDT structure block looking for
 /// `/chosen/bootargs`.  Returns the bootargs value bytes (as a slice
 /// of `blob`) on success, or `None` if absent / unparseable.
@@ -685,25 +975,22 @@ fn read_node_name(blob: &[u8], offset: usize) -> Option<(&[u8], usize)> {
 ///   - `FDT_NOP`: skip; doesn't move depth or in_chosen.
 ///   - `FDT_END`: terminate the walk.
 ///
-/// Fuel-bounded by [`FDT_WALK_FUEL`]; depth-bounded by [`FDT_MAX_DEPTH`].
+/// Bounded by [`fdt_token_bound`]; depth-bounded by [`FDT_MAX_DEPTH`].  Reads
+/// only a blob [`fdt_structure_check`] accepts (WS-BP BP0.1), so this walk and
+/// the `/memory` walk refuse the same blobs.
 fn find_bootargs_in_dtb(blob: &[u8]) -> Option<&[u8]> {
-    let hdr = parse_fdt_header(blob)?;
-    if !validate_fdt_header(&hdr) {
-        return None;
-    }
-    let strings_off = hdr.off_dt_strings as usize;
-    let strings_size = hdr.size_dt_strings as usize;
-    let struct_start = hdr.off_dt_struct as usize;
-    let struct_end_exclusive = struct_start.checked_add(hdr.size_dt_struct as usize)?;
-    if struct_end_exclusive > blob.len() {
-        return None;
-    }
+    let layout = fdt_layout(blob)?;
+    fdt_structure_check(blob, &layout)?;
+    let strings_off = layout.strings_off;
+    let strings_size = layout.strings_size;
+    let struct_start = layout.struct_start;
+    let struct_end_exclusive = layout.struct_end;
 
     let mut offset = struct_start;
     let mut depth: usize = 0;
     let mut in_chosen = false;
     let mut chosen_depth: usize = 0;
-    let mut fuel = FDT_WALK_FUEL;
+    let mut fuel = fdt_token_bound(&layout);
 
     while fuel > 0 {
         fuel -= 1;
@@ -1210,18 +1497,16 @@ fn contiguous_ram_top(extents: &MemoryExtents) -> u64 {
 ///
 /// The fold happens at the node's `FDT_END_NODE`, not at the `reg` property,
 /// because `device_type` and `status` may follow `reg` within the same node.
-fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
-    let hdr = parse_fdt_header(blob)?;
-    if !validate_fdt_header(&hdr) {
-        return None;
-    }
-    let strings_off = hdr.off_dt_strings as usize;
-    let strings_size = hdr.size_dt_strings as usize;
-    let struct_start = hdr.off_dt_struct as usize;
-    let struct_end_exclusive = struct_start.checked_add(hdr.size_dt_struct as usize)?;
-    if struct_end_exclusive > blob.len() {
-        return None;
-    }
+fn find_memory_extents_in_dtb(blob: &[u8]) -> Option<MemoryExtents> {
+    // WS-BP BP0.1: the structural rules first, in one walk shared with the
+    // bootargs search, so the answer below is taken only from a blob the Lean
+    // parser would also read.
+    let layout = fdt_layout(blob)?;
+    fdt_structure_check(blob, &layout)?;
+    let strings_off = layout.strings_off;
+    let strings_size = layout.strings_size;
+    let struct_start = layout.struct_start;
+    let struct_end_exclusive = layout.struct_end;
 
     let mut offset = struct_start;
     let mut depth: usize = 0;
@@ -1240,7 +1525,7 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     // Normal-cacheable exactly as the maximum fold mapped a hole.
     let mut status_ok = true;
     let mut extents = MemoryExtents::new();
-    let mut fuel = FDT_WALK_FUEL;
+    let mut fuel = fdt_token_bound(&layout);
     // PR #892 review: whether the walk reached a top-level `FDT_END`.  Every
     // other way out of this loop leaves the structure block unparsed, and this
     // function *accumulates* rather than searching — so without the flag a blob
@@ -1326,9 +1611,20 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
                 if depth == 1 {
                     // Root properties: the cell widths that govern the `reg`
                     // of every child, `/memory` included.
+                    // WS-BP BP0.1: a cell width is one `<u32>` (§2.3.5).  A
+                    // value of any other length is refused: the read used to
+                    // take four bytes from `value_start` whatever the length,
+                    // so a two-byte value borrowed the next token's bytes and
+                    // an eight-byte one had its tail ignored.
                     if prop_name == b"#address-cells" {
+                        if len_usize != 4 {
+                            return None;
+                        }
                         address_cells = read_be_u32(blob, value_start)?;
                     } else if prop_name == b"#size-cells" {
+                        if len_usize != 4 {
+                            return None;
+                        }
                         size_cells = read_be_u32(blob, value_start)?;
                     }
                 } else if in_memory && depth == memory_depth {
@@ -1381,10 +1677,28 @@ fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
     if !terminated || depth != 0 {
         return None;
     }
+    Some(extents)
+}
+
+/// **WS-RR RR7.1**: the exclusive top of the contiguous run of RAM a blob's
+/// `/memory` nodes report from address 0 ([`contiguous_ram_top`]), or `None`
+/// when the blob is refused ([`find_memory_extents_in_dtb`]) or reports no RAM.
+fn find_ram_top_in_dtb(blob: &[u8]) -> Option<u64> {
+    let extents = find_memory_extents_in_dtb(blob)?;
     if extents.is_empty() {
         return None;
     }
     Some(contiguous_ram_top(&extents))
+}
+
+/// **WS-BP BP0.1**: the `[base, end)` extents of every operational top-level
+/// `/memory` node of `blob`, in blob order — the half of the walk the shared
+/// device-tree corpus (`tests/fixtures/dtb/`) compares against the Lean
+/// parser's `memoryRegionsFromNodes`.  `None` exactly when the blob is refused.
+/// Test-only: the boot path asks for the RAM top, never for the list.
+#[cfg(test)]
+pub(crate) fn memory_extents_from_blob(blob: &[u8]) -> Option<std::vec::Vec<(u64, u64)>> {
+    find_memory_extents_in_dtb(blob).map(|e| e.spans[..e.len].to_vec())
 }
 
 /// **WS-RR RR7.1**: test-friendly entry point — the exclusive top of the
@@ -2170,8 +2484,11 @@ mod tests {
         let mut hdr = [0u8; FDT_HEADER_SIZE];
         // magic
         hdr[0..4].copy_from_slice(&FDT_MAGIC.to_be_bytes());
-        // totalsize = 40 (just the header)
-        hdr[4..8].copy_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
+        // totalsize = 48: the header and eight bytes beyond it.  WS-BP BP0.1:
+        // it was 40, putting every block's offset AT `totalsize` — a header the
+        // Lean validator refuses (`FdtHeader.isValid` requires each offset
+        // strictly below it) and, until the same cut, this one accepted.
+        hdr[4..8].copy_from_slice(&(FDT_HEADER_SIZE as u32 + 8).to_be_bytes());
         // off_dt_struct = 40 (empty struct block)
         hdr[8..12].copy_from_slice(&(FDT_HEADER_SIZE as u32).to_be_bytes());
         // off_dt_strings = 40 (empty strings block)
@@ -2545,20 +2862,16 @@ mod tests {
         );
     }
 
-    /// **Audit-pass-2 regression**: fuel exhaustion check — a DTB
-    /// composed entirely of FDT_NOP tokens (with no FDT_END) would
-    /// consume fuel indefinitely without the FDT_WALK_FUEL bound.
-    /// The walker must terminate (returning None) after exhausting
-    /// fuel rather than spinning forever.
+    /// **Audit-pass-2 regression**, restated at WS-BP BP0.1: a DTB composed
+    /// entirely of `FDT_NOP` tokens, with no `FDT_END`, terminates and is
+    /// refused.  The bound is no longer a fixed fuel of 4096 tokens: every
+    /// token advances the offset, so the walk leaves the declared structure
+    /// block within [`fdt_token_bound`] steps and refuses there.
     #[test]
-    fn dtb_with_nop_chain_terminates_via_fuel_exhaustion() {
-        // Build a DTB whose structure block is all NOPs.  We need
-        // more than FDT_WALK_FUEL bytes of NOPs to force fuel
-        // exhaustion (each NOP consumes 1 fuel and 4 bytes).
-        // 4096 NOPs * 4 bytes = 16384 bytes of NOPs.  We'll build a
-        // DTB with FDT_WALK_FUEL + 100 NOPs, so we hit fuel
-        // exhaustion before structure-block end.
-        let nop_count = FDT_WALK_FUEL + 100;
+    fn dtb_with_nop_chain_and_no_terminator_is_refused() {
+        // More NOPs than the retired fixed fuel, so a regression to a fixed
+        // bound and the derived one are both exercised.
+        let nop_count = 4096 + 100;
         let mut s: Vec<u8> = Vec::with_capacity(nop_count * 4);
         for _ in 0..nop_count {
             s.extend_from_slice(&FDT_NOP.to_be_bytes());
@@ -2588,11 +2901,11 @@ mod tests {
         blob.extend_from_slice(&s);
         blob.extend_from_slice(&strings);
 
-        // Walker must terminate (returning None) — if fuel weren't
-        // bounded this test would hang.
+        // Walker must terminate (returning None) — a walk that did not
+        // leave the block would hang here.
         assert!(
             find_bootargs_in_dtb(&blob).is_none(),
-            "NOP-chain DTB must fail-close via fuel exhaustion"
+            "NOP-chain DTB with no terminator must fail closed"
         );
     }
 
@@ -3220,16 +3533,28 @@ mod memory_node_tests {
     }
 
     #[test]
-    fn a_memory_node_buried_under_exhausted_fuel_is_refused() {
-        // `FDT_WALK_FUEL` NOPs ahead of the terminator: the `/memory` node has
-        // already folded when the walk runs out of fuel, so the pre-fix code
-        // returned the accumulated top from a scan that never finished.
+    fn a_memory_node_behind_a_long_nop_run_is_read_whole() {
+        // 4096 NOPs ahead of the terminator.  PR #892 review: a walk that ran
+        // out of fixed fuel here returned the top it had accumulated from a
+        // scan that never finished, and the fix refused it.  WS-BP BP0.1: the
+        // shared corpus then showed the Lean parser reading the same blob
+        // whole, because its fuel is derived from the structure block's size —
+        // the refusal was a fixed bound's artefact, not a property of the blob.
+        // The walk is bounded by `fdt_token_bound` now and reads it whole; a
+        // scan that does not finish is still refused
+        // (`a_memory_node_in_a_truncated_structure_block_is_refused`).
+        //
+        // The rebuild used to start the new structure block at byte 0 of the
+        // blob, so it carried a second copy of the header and the walk refused
+        // `0xD00DFEED` as an unknown first token — the assertion held for a
+        // reason unrelated to its name.  The block is sliced from its own
+        // start now, and `fdt_structure_check` accepting it is asserted first.
         let mut blob = four_gibibyte_blob();
         let struct_start = FDT_HEADER_SIZE;
         let struct_len = read_size_dt_struct(&blob) as usize;
         let tail_at = struct_start + struct_len - 8;
-        let mut padded: Vec<u8> = blob[..tail_at].to_vec();
-        for _ in 0..FDT_WALK_FUEL {
+        let mut padded: Vec<u8> = blob[struct_start..tail_at].to_vec();
+        for _ in 0..4096 {
             padded.extend_from_slice(&FDT_NOP.to_be_bytes());
         }
         padded.extend_from_slice(&blob[tail_at..struct_start + struct_len]);
@@ -3244,7 +3569,13 @@ mod memory_node_tests {
         rebuilt[4..8].copy_from_slice(&totalsize.to_be_bytes());
         set_size_dt_struct(&mut rebuilt, new_struct_len as u32);
         blob = rebuilt;
-        assert_eq!(ram_top_from_blob(&blob), None);
+        let layout = fdt_layout(&blob).expect("the rebuilt header validates");
+        assert!(
+            4096 < fdt_token_bound(&layout),
+            "more tokens than the retired fixed fuel"
+        );
+        assert_eq!(fdt_structure_check(&blob, &layout), Some(()));
+        assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
     }
 
     #[test]
@@ -3740,5 +4071,161 @@ mod memory_node_tests {
             ],
         );
         assert_eq!(ram_top_from_blob(&blob), Some(0xFC00_0000));
+    }
+}
+
+/// **WS-BP BP0.1**: the shared device-tree fixture corpus, driven through this
+/// walker.
+///
+/// `tests/fixtures/dtb/` holds blobs the Lean parser's suite
+/// (`tests/Ak9PlatformSuite.lean`) consumes too, against one hand-written
+/// manifest (`scripts/generate_dtb_corpus.py` renders both).  Every fixture the
+/// manifest names is asserted here — its `/memory` extents and the RAM top they
+/// imply — so a filter added to this walker alone, or to the Lean parser alone,
+/// fails that side's assertion instead of passing silently.  The corpus is
+/// interim: WS-BP BP2.6 deletes this walker from the boot path and the corpus
+/// with it.
+#[cfg(test)]
+mod dtb_corpus_tests {
+    use super::*;
+    use std::format;
+    use std::path::PathBuf;
+    use std::string::String;
+    use std::vec::Vec;
+
+    fn corpus_dir() -> PathBuf {
+        PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../tests/fixtures/dtb")
+    }
+
+    fn parse_hex(text: &str) -> Vec<u8> {
+        let mut digits: Vec<u8> = Vec::new();
+        for line in text.lines() {
+            let code = line.split('#').next().unwrap_or("");
+            for c in code.chars().filter(|c| !c.is_whitespace()) {
+                digits.push(
+                    c.to_digit(16)
+                        .unwrap_or_else(|| panic!("bad hex digit {c:?}")) as u8,
+                );
+            }
+        }
+        assert!(digits.len().is_multiple_of(2), "odd number of hex digits");
+        digits.chunks(2).map(|p| (p[0] << 4) | p[1]).collect()
+    }
+
+    fn parse_u64(s: &str) -> u64 {
+        u64::from_str_radix(s.trim().trim_start_matches("0x"), 16)
+            .unwrap_or_else(|_| panic!("bad manifest number {s:?}"))
+    }
+
+    /// `None` = refused; `Some(vec![])` = no regions.
+    fn parse_regions(s: &str) -> Option<Vec<(u64, u64)>> {
+        match s.trim() {
+            "refused" => None,
+            "-" => Some(Vec::new()),
+            list => Some(
+                list.split(',')
+                    .map(|pair| {
+                        let (b, sz) = pair.split_once('+').expect("base+size");
+                        (parse_u64(b), parse_u64(sz))
+                    })
+                    .collect(),
+            ),
+        }
+    }
+
+    /// One manifest row: a fixture's name, the `(base, size)` extents it
+    /// declares (`None` = refused), and the RAM top they imply.
+    struct CorpusRow {
+        name: String,
+        regions: Option<Vec<(u64, u64)>>,
+        ram_top: Option<u64>,
+    }
+
+    fn manifest() -> Vec<CorpusRow> {
+        let text = std::fs::read_to_string(corpus_dir().join("MANIFEST"))
+            .expect("tests/fixtures/dtb/MANIFEST is readable");
+        text.lines()
+            .filter(|l| !l.trim().is_empty() && !l.starts_with('#'))
+            .map(|l| {
+                let cols: Vec<&str> = l.split('|').map(str::trim).collect();
+                assert_eq!(cols.len(), 3, "manifest row {l:?}");
+                let top = match cols[2] {
+                    "refused" => None,
+                    t => Some(parse_u64(t)),
+                };
+                CorpusRow {
+                    name: String::from(cols[0]),
+                    regions: parse_regions(cols[1]),
+                    ram_top: top,
+                }
+            })
+            .collect()
+    }
+
+    #[test]
+    fn every_corpus_fixture_agrees_with_the_manifest() {
+        let rows = manifest();
+        assert!(!rows.is_empty(), "the corpus manifest names no fixture");
+        // WS-BP BP0.2: the manifest names exactly the fixtures on disk, so a
+        // blob added to the directory without a row — which no suite would
+        // read — fails here as it fails the Lean suite's identical check.
+        let mut on_disk: Vec<String> = std::fs::read_dir(corpus_dir())
+            .expect("tests/fixtures/dtb is listable")
+            .filter_map(|e| {
+                let name = e.ok()?.file_name().into_string().ok()?;
+                name.strip_suffix(".dtb.hex").map(String::from)
+            })
+            .collect();
+        on_disk.sort();
+        let mut named: Vec<String> = rows.iter().map(|r| r.name.clone()).collect();
+        named.sort();
+        assert_eq!(on_disk, named, "corpus files and manifest rows differ");
+        let mut failures: Vec<String> = Vec::new();
+        for CorpusRow {
+            name,
+            regions,
+            ram_top: top,
+        } in &rows
+        {
+            let path = corpus_dir().join(format!("{name}.dtb.hex"));
+            let text = std::fs::read_to_string(&path)
+                .unwrap_or_else(|_| panic!("fixture {} is readable", path.display()));
+            let blob = parse_hex(&text);
+            // The manifest states extents as (base, size); this walker stores
+            // (base, end).  The conversion cannot overflow: the manifest never
+            // lists an extent ending past 2^64 — such a blob is `refused`.
+            let expected: Option<Vec<(u64, u64)>> = regions
+                .as_ref()
+                .map(|rs| rs.iter().map(|&(b, s)| (b, b + s)).collect());
+            let got = memory_extents_from_blob(&blob);
+            if got != expected {
+                failures.push(format!("{name}: extents {got:x?}, manifest {expected:x?}"));
+            }
+            let got_top = ram_top_from_blob(&blob);
+            if got_top != *top {
+                failures.push(format!("{name}: ram top {got_top:x?}, manifest {top:x?}"));
+            }
+            // Both walks read only a blob `fdt_structure_check` accepts, so a
+            // blob the corpus refuses yields no command line either.  The
+            // corpus carries `/chosen` fixtures that are refused, so this is
+            // not vacuous.
+            if regions.is_none() && find_bootargs_in_dtb(&blob).is_some() {
+                failures.push(format!("{name}: refused blob still yields bootargs"));
+            }
+        }
+        // And the corpus's one readable `/chosen` does yield its command line,
+        // so the refusals above are the check's and not a broken search.
+        let chosen = parse_hex(
+            &std::fs::read_to_string(corpus_dir().join("no_memory_node.dtb.hex")).unwrap(),
+        );
+        assert_eq!(
+            find_bootargs_in_dtb(&chosen),
+            Some(&b"smp_max_cores=2\0"[..])
+        );
+        assert!(
+            failures.is_empty(),
+            "corpus divergences:\n{}",
+            failures.join("\n")
+        );
     }
 }

@@ -394,10 +394,10 @@ The pairs, and what ties them today:
 
 | Pair | The shared question | Tie today |
 |------|---------------------|-----------|
-| `cmdline::find_ram_top_in_dtb` / `DeviceTree.memoryRegionsFromNodes` | which memory does this blob declare as available? | **none** — and to be *removed* rather than tied: the Rust reader leaves the boot path when BP builds the map from constants |
-| `cmdline`'s FDT token walk / `DeviceTree.parseFdtNodes` | is this structure block readable at all? | **none** — same disposition.  Round 7 closed five behavioural gaps here by hand, and the Lean side now enforces the header's declared extents as the Rust side always did; the *pair* is untouched |
-| `sele4n-abi::encode_syscall` / `Architecture.RegisterDecode` | which register carries which field? | hand-transcribed literals in a Rust test |
-| `mmu::boot_mapping_for` / `RPi5.rpi5MemoryMapForConfig` | what does the boot map at this address? | partial — `check_physical_address_width.sh` derives the *device window* from `Board.lean`, and one Rust test mirrors the boundaries |
+| `cmdline::find_ram_top_in_dtb` / `DeviceTree.memoryRegionsFromNodes` | which memory does this blob declare as available? | **the shared corpus** (BP0.1/BP0.2, `v0.36.2`): `tests/fixtures/dtb/`, 58 blobs read by both suites against one hand-written manifest, whose first run fixed thirteen Rust and eight Lean divergences.  Interim: BP2.6 still removes the Rust reader from the boot path |
+| `cmdline`'s FDT token walk / `DeviceTree.parseFdtNodes` | is this structure block readable at all? | **the same corpus**, and one shared rule set: the Rust walks run `fdt_structure_check`, the Rust counterpart of `parseFdtNodes`' refusals, before either reads anything.  Same disposition at BP2.6 |
+| `sele4n-abi::encode_syscall` / `Architecture.RegisterDecode` | which register carries which field? | **`tests/fixtures/abi_layout.expected`** (BP0.3, `v0.36.2`): the bit ownership of `MessageInfo`, the register of each field from `arm64DefaultLayout`, and the ABI bounds, emitted from Lean and rendered from the Rust encoder against the same bytes |
+| `mmu::boot_mapping_for` / `RPi5.rpi5MemoryMapForConfig` | what does the boot map at this address? | **`tests/fixtures/boot_map.expected`** (BP0.4, `v0.36.2`): the Lean map's kind at every boundary probe of every RAM variant, driven through `boot_mapping_for` and a walk of the built tables.  Its first run closed the device window's round-up over reserved space |
 | `objectLockBracketDomain` / `schedulerLockBracketDomain` | in what order does a bracket acquire a footprint? | **closed at v0.34.113** — one definition answers it |
 
 What remains — **now scheduled as WS-BP's BP0 phase**, so this is a pointer
@@ -407,10 +407,10 @@ rather than a work list.  Each row's design, files and estimate live in
 | Was | Now | Kind |
 |-----|-----|------|
 | XV1 | **BP2.6** — the device-tree pair removed rather than tied: the boot map built from linker symbols and board constants, the verified Lean parser left as the blob's only reader | scheduled since `v0.34.120` |
-| XV2 | **BP0.1** — the shared device-tree fixture corpus, read by both suites | interim; BP2.6 retires it |
-| XV3 | **BP0.2** — a Tier 0 check that both sides consume every fixture | interim; BP2.6 retires it |
-| XV4 | **BP0.3** — the `MessageInfo` layout emitted from Lean and asserted by the Rust conformance suite, replacing hand-transcribed shifts across 112 tests | permanent |
-| XV5 | **BP0.4** — one address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single mirrored-boundaries test | permanent |
+| XV2 | **BP0.1** — the shared device-tree fixture corpus, read by both suites | **LANDED `v0.36.2`**; interim, BP2.6 retires it |
+| XV3 | **BP0.2** — a Tier 0 check that both sides consume every fixture | **LANDED `v0.36.2`**; interim, BP2.6 retires it |
+| XV4 | **BP0.3** — the `MessageInfo` layout emitted from Lean and asserted by the Rust conformance suite, replacing hand-transcribed shifts across 112 tests | **LANDED `v0.36.2`**, with the register assignment added; permanent |
+| XV5 | **BP0.4** — one address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single mirrored-boundaries test | **LANDED `v0.36.2`**; permanent |
 
 None of the five is a soundness defect, and none of the drifts they would have
 caught is open: every instance is fixed, including the four the `v0.34.115`
@@ -767,7 +767,7 @@ Scope, findings and evidence for any of these are in
 | **WS-RM** | v0.35.4–v0.35.6 (complete; RM1–RM6 all at `v0.35.6` — seL4's `reply_remove` on the reply path, and the `seL4_ReplyRecv` leg-ordering defect found while closing it, [`REPLY_FRAME_REMOVAL_PLAN.md`](planning/REPLY_FRAME_REMOVAL_PLAN.md)) |
 | **WS-HP** | v0.35.16–v0.35.54 (HP1 at v0.35.35, HP2 at v0.35.36, HP3 at v0.35.37, HP4 at v0.35.38, HP5 at v0.35.39, the upstream-attribution retraction at v0.35.40, HP6 at v0.35.41 → v0.35.45, HP7 at v0.35.46, HP8 at v0.35.47, HP9 at v0.35.48, HP10 at v0.35.49 → v0.35.54, post-landing audit at v0.35.61 → v0.35.62 — the head-driven donation pop, the chain-preserving removal and the reservation's recorded origin, so a completed call chain returns a client's reservation at **every** reply-stack depth, 55 sub-tasks across 10 phases, [`DONATION_POP_TRIGGER_PLAN.md`](planning/DONATION_POP_TRIGGER_PLAN.md)) |
 | **WS-XV** | v0.34.114–v0.34.124 (registered, then **absorbed into WS-BP as its BP0 phase**; the finding is retained in this file, the work is [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md) §5 BP0) |
-| **WS-BP** | v0.34.59– (planned; **unblocked at `v0.35.203`**, WS-RR RR8 having closed — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
+| **WS-BP** | v0.34.59– (**in flight**: BP0 landed at `v0.36.2`, BP1..BP8 not started; **unblocked at `v0.35.203`**, WS-RR RR8 having closed — the bare-metal boot path **and the cross-implementation agreement it ends**, absorbing WS-XV as BP0 at `v0.34.124`, [`SMP_BOOT_PATH_PLAN.md`](planning/SMP_BOOT_PATH_PLAN.md)) |
 | **WS-LC** | v0.34.51–v0.34.56 |
 | **WS-CB** | v0.34.49– (planned; **unblocked at `v0.35.203`**, WS-RR having closed — the file partition in its plan's §2.3 was the parallel-running answer and is no longer needed) |
 | **WS-RR** | v0.34.26–v0.35.203 (complete; RR0 v0.34.26, RR1 v0.34.41, RR2 v0.34.42, RR3 v0.34.43, RR4 v0.34.44, RR5 v0.34.48, RR6 v0.34.50, RR7 v0.34.47 → v0.34.92, RR8 v0.35.55 → v0.35.203 — 198 sub-tasks across RR0..RR8, RR8 having grown 5 → 16 rows at `v0.35.56`) |

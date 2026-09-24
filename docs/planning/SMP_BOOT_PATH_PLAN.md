@@ -1,9 +1,9 @@
 # WS-BP — The bare-metal boot path, and the cross-implementation
 # agreement it ends
 
-> **Status**: **PLANNED — UNBLOCKED at `v0.35.203`**, WS-RR RR8 having closed.
-> Registered at `v0.34.59` by WS-RR RR7.5 + RR7.15 (register §6 findings 19,
-> 40–44).  No sub-task has started.  BP7.8 was added at `v0.35.203` by WS-RR
+> **Status**: **IN FLIGHT — BP0 LANDED at `v0.36.2`**; BP1..BP8 not started.
+> Unblocked at `v0.35.203`, WS-RR RR8 having closed.  Registered at `v0.34.59`
+> by WS-RR RR7.5 + RR7.15 (register §6 findings 19, 40–44).  BP7.8 was added at `v0.35.203` by WS-RR
 > RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 > IPC-buffer write here rather than leave it owned by a finished phase.
 >
@@ -177,14 +177,27 @@ performs the retirement.
 
 | Sub | Description | Files | Est |
 |-----|-------------|-------|-----|
-| BP0.1 | **The shared device-tree fixture corpus** (was XV2).  Blobs checked in as reviewable hex with a generator, and a manifest stating the regions each declares and the RAM top they imply, read by **both** the Rust walker's suite and the Lean parser's.  A filter added to one side alone then fails that side's assertion instead of passing silently.  **Interim**: the phase preamble names the later row that deletes the pair this ties, and deletes this with it — which is the right permanent answer and the reason this row is not larger | `tests/fixtures/dtb/`, `rust/sele4n-hal/src/cmdline.rs`, `tests/Ak9PlatformSuite.lean` | M |
-| BP0.2 | A Tier 0 check that **both** sides consume **every** fixture of the corpus, so adding a case to one suite alone is a failure rather than a silent gap.  Consumes BP0.1.  **Interim**, retired with it | `scripts/`, `tests/fixtures/dtb/` | S |
-| BP0.3 | **The ABI layout, stated once** (was XV4).  Emit the `MessageInfo` field layout and its bounds from Lean — the field shifts, `maxLabel`, `maxMessageRegisters`, `maxExtraCaps`, `errorLabelBase`, `SYSCALL_ABI_VERSION` — into a checked-in table, and have the Rust conformance suite assert its own constants against it, with a Tier 0 freshness gate on the pattern `generate_smp_theorem_manifest.py --check` already sets.  Today both sides spell `(length) \| (extraCaps <<< 7) \| (label <<< 9)` by hand.  **Permanent**: this pair is genuinely two-sided, the Rust encoder being the userspace ABI and the Lean decoder the kernel's | `SeLe4n/Model/Object/Types.lean`, `rust/sele4n-abi/`, `scripts/` | M |
-| BP0.4 | **The boot-map pair, driven rather than mirrored** (was XV5).  One address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single `the_boot_map_boundaries_mirror_the_lean_memory_map` test and the comment that says the boundaries "mirror" the Lean map.  Reuses BP0.3's emitter, so it is materially cheaper second.  **Permanent**, and the one row a later phase must keep passing: the boot map's extent changes source, not the requirement that the two sides agree on it | `rust/sele4n-hal/src/mmu.rs`, `SeLe4n/Platform/RPi5/Board.lean` | S |
+| BP0.1 | **LANDED `v0.36.2`.**  **The shared device-tree fixture corpus** (was XV2).  Blobs checked in as reviewable hex with a generator, and a manifest stating the regions each declares and the RAM top they imply, read by **both** the Rust walker's suite and the Lean parser's.  A filter added to one side alone then fails that side's assertion instead of passing silently.  **Interim**: the phase preamble names the later row that deletes the pair this ties, and deletes this with it — which is the right permanent answer and the reason this row is not larger | `tests/fixtures/dtb/`, `rust/sele4n-hal/src/cmdline.rs`, `tests/Ak9PlatformSuite.lean` | M |
+| BP0.2 | **LANDED `v0.36.2`** (`scripts/check_dtb_corpus_consumers.py`).  A Tier 0 check that **both** sides consume **every** fixture of the corpus, so adding a case to one suite alone is a failure rather than a silent gap.  Consumes BP0.1.  **Interim**, retired with it | `scripts/`, `tests/fixtures/dtb/` | S |
+| BP0.3 | **LANDED `v0.36.2`** (`tests/fixtures/abi_layout.expected`, which also carries the register assignment from `arm64DefaultLayout`).  **The ABI layout, stated once** (was XV4).  Emit the `MessageInfo` field layout and its bounds from Lean — the field shifts, `maxLabel`, `maxMessageRegisters`, `maxExtraCaps`, `errorLabelBase`, `SYSCALL_ABI_VERSION` — into a checked-in table, and have the Rust conformance suite assert its own constants against it, with a Tier 0 freshness gate on the pattern `generate_smp_theorem_manifest.py --check` already sets.  Today both sides spell `(length) \| (extraCaps <<< 7) \| (label <<< 9)` by hand.  **Permanent**: this pair is genuinely two-sided, the Rust encoder being the userspace ABI and the Lean decoder the kernel's | `SeLe4n/Model/Object/Types.lean`, `rust/sele4n-abi/`, `scripts/` | M |
+| BP0.4 | **LANDED `v0.36.2`** (`tests/fixtures/boot_map.expected`; `DEVICE_WINDOW_TOP` made exact, the straddling block described by an L3 table).  **The boot-map pair, driven rather than mirrored** (was XV5).  One address set through `mmu::boot_mapping_for` and `rpi5MemoryMapForConfig`, replacing the single `the_boot_map_boundaries_mirror_the_lean_memory_map` test and the comment that says the boundaries "mirror" the Lean map.  Reuses BP0.3's emitter, so it is materially cheaper second.  **Permanent**, and the one row a later phase must keep passing: the boot map's extent changes source, not the requirement that the two sides agree on it | `rust/sele4n-hal/src/mmu.rs`, `SeLe4n/Platform/RPi5/Board.lean` | S |
 
 **Acceptance**: a divergence introduced on either side of any of the three
 pairs fails a gate rather than a review; and `check_lock_ffi_symmetry.sh`'s
 docstring no longer overstates what a nominal reconciliation proves.
+
+**Met at `v0.36.2`**, each clause by a mutation rather than by an artefact
+existing: the corpus fails on the pre-fix Lean parser (8 fixtures) and the
+pre-fix Rust walker (12); the ABI table fails on a moved label shift and on two
+swapped register slots; the boot-map table fails on the old 2 MiB round-up.
+Where the two sides disagreed, the side that was wrong was fixed rather than the
+divergence recorded — see `CHANGELOG.md` `v0.36.2` for the twenty-two fixes (twenty-one in the device-tree pair, one in the boot map).  One
+decision the rows did not anticipate: BP0.3's freshness is decided where Lean
+can be asked (the suite that emits the table, Tier 2, and the Rust suite that
+reads it) rather than by a Tier 0 script, because deriving the table before a
+build would mean reading Lean source with a scanner, which this project retires;
+Tier 0 holds the *wiring* (both consumers named and reading the file) through
+the fixture index's `Used by` reconciliation.
 
 ### BP1 — aarch64 Lean object code (4 sub-tasks)
 

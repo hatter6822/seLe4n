@@ -3821,7 +3821,8 @@ run_check "INVARIANT" bash -lc 'rg -U -n "def recordCommittedCurrentThreadHw[^\n
 # exit is fail-open here and fail-closed there — which is why only this one
 # needs the flag.  Without it a truncated blob handed `init_mmu` a RAM ceiling
 # read out of a prefix the walk never validated.
-run_check "INVARIANT" bash -lc 'rg -U -n "fn find_ram_top_in_dtb[^\n]*(\n([ \t][^\n]*)?)*let mut terminated = false;[^\n]*(\n([ \t][^\n]*)?)*if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    if extents.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)" rust/sele4n-hal/src/cmdline.rs'
+run_check "INVARIANT" rg -U -n '^fn find_memory_extents_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let mut terminated = false;[^\n]*(\n([ \t][^\n]*)?)*\n    if !terminated \|\| depth != 0 \{\n        return None;\n    \}\n    Some\(extents\)\n\}' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -U -n '^fn find_ram_top_in_dtb\(blob: &\[u8\]\) -> Option<u64> \{\n    let extents = find_memory_extents_in_dtb\(blob\)\?;\n    if extents\.is_empty\(\) \{\n        return None;\n    \}\n    Some\(contiguous_ram_top\(&extents\)\)' rust/sele4n-hal/src/cmdline.rs
 # PR #892 review round 3: the RAM top is the end of the CONTIGUOUS run of
 # reported extents from address 0, decided over all of them at once, and the
 # peripheral window is the one gap the walk may cross — only from a cursor that
@@ -4150,7 +4151,7 @@ run_negative_check "INVARIANT" rg -n '^  sequence := SchedLockSet\.pairs$' SeLe4
 # reported `.ok` — the incomplete-walk trust the Rust RAM parser had in round 1,
 # in the parser that feeds the same boot path.
 # (Round 7 routed the walk through the bounded view, so the entry names it.)
-run_check "INVARIANT" rg -n -U 'match go v v\.structStart fuel with\n    \| \.ok \(nodes, _, true\) => \.ok nodes\n    \| \.ok \(_, _, false\) => \.error \.malformedBlob\n    \| \.error e => \.error e' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match go v v\.structStart fuel with(\n([ \t][^\n]*)?)*\n    \| \.ok \(nodes, _, true\) =>\n      if fdtNodesWithinDepth fdtMaxDepth nodes then \.ok nodes else \.error \.malformedBlob\n    \| \.ok \(_, _, false\) => \.error \.malformedBlob\n    \| \.error e => \.error e' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'else if token == fdtEnd then\n        \.ok \(\[\], offset \+ 4, true\)' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'else if token == fdtEndNode then\n        \.ok \(\[\], offset \+ 4, false\)' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: a partial exit reported as a parsed tree.
@@ -4192,7 +4193,7 @@ run_negative_check "INVARIANT" rg -n -U 'let base := match readBE64 regBytes 0 w
 run_check "INVARIANT" rg -n -U 'def memoryNodesWithCells \(root : FdtNode\) : List \(FdtNode × Nat × Nat\) :=\n  root\.children\.filterMap fun n =>' SeLe4n/Platform/DeviceTree.lean
 run_negative_check "INVARIANT" rg -n 'nodes\.flatMap \(fun parent =>' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n '^def fdtDefaultSizeCells : Nat := 1$' SeLe4n/Platform/DeviceTree.lean
-run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with\n  \| none => none\n  \| some _ => some \(extractMemoryRegionsGeneral regBytes addressCells sizeCells\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n -U 'match fdtWholeEntryCount regBytes \(\(addressCells \+ sizeCells\) \* 4\) with\n  \| none => none\n  \| some count =>\n    let regions := extractMemoryRegionsGeneral regBytes addressCells sizeCells(\n([ \t][^\n]*)?)*\n    if regions\.length == count' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n 'node\.name\.startsWith "memory@" && node\.name\.length > 7' SeLe4n/Platform/DeviceTree.lean
 run_check "INVARIANT" rg -n -U 'match memoryRegionsFromNodes root with\n      \| none => \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
 # NEGATIVE: the first-node selector, the fixed-stride extractor, and the
@@ -21160,5 +21161,43 @@ run_check "INVARIANT" rg -n 'st_adoption "a tactic that unfolds the accessor is 
 run_check "INVARIANT" rg -n 'st_adoption "a read through the accessor is adoption"' scripts/store_reader_hygiene_baseline.sh
 run_check "INVARIANT" rg -n 'st_adoption "a lemma NAME is not adoption \(whole-symbol guard\)"' scripts/store_reader_hygiene_baseline.sh
 run_check "INVARIANT" rg -n 'an unreadable adoption input fails the scan' scripts/store_reader_hygiene_baseline.sh
+
+# ============================================================================
+# WS-BP BP0 (`v0.36.2`) — the three Lean/Rust pairs are driven through shared
+# fixtures, and the divergences that exposed stay fixed
+# ============================================================================
+#
+# The device-tree readers share one rule set.  Both Rust walks read only a blob
+# the structure check accepts, and the walk bound is the block's own size — the
+# fixed fuel that refused a large, well-formed device tree must not come back.
+run_check "INVARIANT" rg -n '^fn fdt_structure_check\(blob: &\[u8\], layout: &FdtLayout\) -> Option<\(\)> \{' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -U -n '^fn find_bootargs_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let layout = fdt_layout\(blob\)\?;\n    fdt_structure_check\(blob, &layout\)\?;' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -U -n '^fn find_memory_extents_in_dtb\(blob: &\[u8\]\)[^\n]*(\n([ \t][^\n]*)?)*let layout = fdt_layout\(blob\)\?;\n    fdt_structure_check\(blob, &layout\)\?;' rust/sele4n-hal/src/cmdline.rs
+run_check "INVARIANT" rg -n 'let mut fuel = fdt_token_bound\(&layout\);' rust/sele4n-hal/src/cmdline.rs
+run_negative_check "INVARIANT" rg -n 'FDT_WALK_FUEL' rust/sele4n-hal/src/
+# ...and the Lean parser bounds depth over the finished tree, reads a `reg`
+# whole or not at all, and refuses more extents than the Rust store holds.
+run_check "INVARIANT" rg -n 'if fdtNodesWithinDepth fdtMaxDepth nodes then \.ok nodes else \.error \.malformedBlob' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'if regions\.length == count && regions\.all \(fun r => r\.base \+ r\.size < fdtAddressLimit\)' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'some regions => if regions\.length ≤ fdtMaxMemoryExtents then some regions else none' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'if !root\.cellPropertiesWellFormed then none else' SeLe4n/Platform/DeviceTree.lean
+run_check "INVARIANT" rg -n 'if !reserved\.cellPropertiesWellFormed then none else' SeLe4n/Platform/DeviceTree.lean
+# Both suites consume the corpus; the gate that holds that runs in Tier 0.
+run_check "INVARIANT" rg -n '^  dtbCorpus_every_fixture_agrees_with_the_manifest$' tests/
+run_check "INVARIANT" rg -n '^    fn every_corpus_fixture_agrees_with_the_manifest\(\) \{' rust/sele4n-hal/src/cmdline.rs
+# The two Lean-emitted tables go through one comparison, and the Rust side reads
+# the same bytes.
+run_check "INVARIANT" rg -n '^def checkSharedFixture \(title path rustConsumer : String\)' SeLe4n/Testing/Helpers.lean
+run_check "INVARIANT" rg -n 'checkSharedFixture "[^"]*" abiLayoutFixturePath' tests/SyscallReturnAbiSuite.lean
+run_check "INVARIANT" rg -n 'checkSharedFixture "[^"]*" "tests/fixtures/boot_map\.expected"' tests/
+run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/abi_layout\.expected"\)' rust/sele4n-abi/tests/conformance.rs
+run_check "INVARIANT" rg -n 'include_str!\("\.\./\.\./\.\./tests/fixtures/boot_map\.expected"\)' rust/sele4n-hal/src/mmu.rs
+# The boot map installs exactly the Lean map: the window's top is the Lean
+# extent, the straddling block is an L3 table, and the mirrored-literal test and
+# the regex scan of `Board.lean` it stood beside are gone.
+run_check "INVARIANT" rg -n '^pub const DEVICE_WINDOW_TOP: u64 = 0xFF85_0000;$' rust/sele4n-hal/src/mmu.rs
+run_check "INVARIANT" rg -n 'if base == DEVICE_TAIL_BLOCK_BASE \{' rust/sele4n-hal/src/mmu.rs
+run_negative_check "INVARIANT" rg -n 'the_boot_map_boundaries_mirror_the_lean_memory_map|LEAN_DEVICE_EXTENT_TOP' rust/sele4n-hal/src/
+run_negative_check "INVARIANT" rg -n 'lean_device_region|device_window_relation_verdict' scripts/check_physical_address_width.sh
 
 finalize_report

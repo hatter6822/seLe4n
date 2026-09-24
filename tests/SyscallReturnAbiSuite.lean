@@ -9,6 +9,7 @@
 
 import SeLe4n.Platform.FFI
 import SeLe4n.Testing.StateBuilder
+import SeLe4n.Testing.Helpers
 
 /-!
 # Syscall return ABI suite (WS-RA)
@@ -1081,25 +1082,78 @@ private def returnShapeTableLines : List String :=
 private def returnShapeFixturePath : String :=
   "tests/fixtures/syscall_return_shape.expected"
 
-private def runReturnShapeFixtureCheck : IO Unit := do
-  IO.println "--- WS-RR RR7.17 return-shape table (Lean/Rust shared fixture) ---"
-  let expectedContent := String.intercalate "\n" returnShapeTableLines ++ "\n"
-  let fixtureExists ← System.FilePath.pathExists returnShapeFixturePath
-  if !fixtureExists then
-    IO.println s!"  FAIL: shared fixture {returnShapeFixturePath} not found"
-    throw (IO.userError s!"missing fixture {returnShapeFixturePath}")
-  let actual ← IO.FS.readFile returnShapeFixturePath
-  if actual == expectedContent then
-    IO.println s!"  PASS: syscallReturnShape matches {returnShapeFixturePath}"
-    IO.println "        (rust/sele4n-abi/tests/conformance.rs asserts the same bytes)"
-  else
-    IO.println s!"  FAIL: syscallReturnShape differs from {returnShapeFixturePath}"
-    IO.println "        the live table is:"
-    for l in returnShapeTableLines do
-      IO.println s!"          {l}"
-    IO.println s!"        regenerate BOTH sides deliberately — the Rust mirror in"
-    IO.println "        rust/sele4n-abi/tests/conformance.rs reads the same file."
-    throw (IO.userError "return-shape fixture mismatch")
+private def runReturnShapeFixtureCheck : IO Unit :=
+  checkSharedFixture "WS-RR RR7.17 return-shape table" returnShapeFixturePath
+    "rust/sele4n-abi/tests/conformance.rs" returnShapeTableLines
+
+/-! ### WS-BP BP0.3 — the ABI layout, stated once
+
+The `MessageInfo` field layout, the register each syscall field travels in, and
+the ABI's bounds used to be written twice,
+by hand: `(length) ||| (extraCaps <<< 7) ||| (label <<< 9)` in
+`SeLe4n/Model/Object/Types.lean` and again in `rust/sele4n-abi`, whose
+conformance suite asserted hand-transcribed literals — so a layout change on
+the Lean side left every one of them green.  This table is emitted from the
+Lean definitions and checked in as `tests/fixtures/abi_layout.expected`; the
+Rust conformance suite renders the same table from *its* encoder and constants
+and compares against the same bytes.
+
+The layout is **measured, not restated**: each bit `j` of the word is decoded
+alone, and the field that comes back non-zero — holding `2^(j - shift)` and
+re-encoding to the same word — owns it.  A shift or width changed in the
+decoder therefore changes the table even if nobody edits a constant. -/
+
+private def abiLayoutFields : List String := ["length", "extraCaps", "label"]
+
+/-- Which field owns bit `j`, decided by decoding `2^j` alone and requiring the
+round trip; `reserved` for a bit the decoder refuses. -/
+private def abiLayoutBitOwner (j : Nat) : String :=
+  match MessageInfo.decode (2 ^ j) with
+  | none => "reserved"
+  | some mi =>
+    if MessageInfo.encode mi != 2 ^ j then "inconsistent"
+    else match mi.length != 0, mi.extraCaps != 0, mi.label != 0 with
+      | true, false, false => "length"
+      | false, true, false => "extraCaps"
+      | false, false, true => "label"
+      | _, _, _ => "inconsistent"
+
+/-- A field's shift and width, read off the bit ownership — or `noncontiguous`
+if its bits do not form one run. -/
+private def abiLayoutFieldLine (field : String) : String :=
+  let bits := (List.range 64).filter (abiLayoutBitOwner · == field)
+  match bits.head?, bits.getLast? with
+  | some lo, some hi =>
+    if bits.length == hi - lo + 1 then s!"field {field} shift {lo} width {bits.length}"
+    else s!"field {field} noncontiguous"
+  | _, _ => s!"field {field} absent"
+
+/-- Which general-purpose register carries each syscall field, read off the
+kernel's own decode layout (`arm64DefaultLayout`, which `decodeSyscallArgs`
+reads through) — the other half of the ABI pair, which the Rust encoder used to
+restate as array indices beside a comment naming this definition. -/
+private def abiRegisterLines : List String :=
+  let l := arm64DefaultLayout
+  [s!"register capPtr x{l.capPtrReg.val}", s!"register msgInfo x{l.msgInfoReg.val}"]
+    ++ (l.msgRegs.toList.zipIdx.map fun (r, i) => s!"register msgReg{i} x{r.val}")
+    ++ [s!"register syscallNum x{l.syscallNumReg.val}"]
+
+private def abiLayoutTableLines : List String :=
+  "# ABI layout: MessageInfo fields and bounds (Lean/Rust cross-check)"
+    :: (List.range 64).map (fun j => s!"bit {j} {abiLayoutBitOwner j}")
+    ++ abiLayoutFields.map abiLayoutFieldLine
+    ++ abiRegisterLines
+    ++ [ s!"maxMessageRegisters {maxMessageRegisters}",
+         s!"maxExtraCaps {maxExtraCaps}",
+         s!"maxLabel {MessageInfo.maxLabel}",
+         s!"errorLabelBase {Kernel.Architecture.errorLabelBase}",
+         s!"syscallAbiVersion {Kernel.Architecture.syscallAbiVersion}" ]
+
+private def abiLayoutFixturePath : String := "tests/fixtures/abi_layout.expected"
+
+private def runAbiLayoutFixtureCheck : IO Unit :=
+  checkSharedFixture "WS-BP BP0.3 ABI layout table" abiLayoutFixturePath
+    "rust/sele4n-abi/tests/conformance.rs" abiLayoutTableLines
 
 -- ============================================================================
 -- Runner
@@ -1121,6 +1175,7 @@ def runSyscallReturnAbiChecks : IO Unit := do
   runAuditReadEndToEnd
   runTraceFixtureCheck
   runReturnShapeFixtureCheck
+  runAbiLayoutFixtureCheck
   IO.println "===================================================="
   IO.println "All syscall-return-ABI checks PASS (post-flip convention holds)."
 

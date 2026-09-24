@@ -1,3 +1,132 @@
+## v0.36.2 — WS-BP BP0: the three Lean/Rust pairs are driven through shared fixtures, and the twenty-two divergences that exposed are fixed
+
+WS-BP's first phase.  Three questions are answered on both sides of the
+Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
+and registers carry a syscall's fields, and what the boot map installs at an
+address — and every gate reconciling them was nominal: it compared declarations,
+never behaviour.  Each pair now shares one checked-in artefact that both sides
+drive their own implementation against, and a divergence fails the side that
+diverged.  Where the fixtures found the two sides disagreeing, the side that was
+wrong was fixed; nothing was recorded as an accepted difference.
+
+**BP0.1 — the shared device-tree corpus.**  `tests/fixtures/dtb/` holds 58 blobs
+as annotated hex and a `MANIFEST` stating each one's `/memory` extents (or
+`refused`, or none) and the RAM top they imply.  The expectations are written by
+hand in `scripts/generate_dtb_corpus.py`'s case table, beside the case that
+produces them; the script renders bytes and never computes an expectation, since
+a third implementation of the walk would make the manifest agree with whatever it
+believes.  `cmdline::dtb_corpus_tests::every_corpus_fixture_agrees_with_the_manifest`
+and `tests/Ak9PlatformSuite.lean`'s `dtbCorpus_every_fixture_agrees_with_the_manifest`
+read every row, and each asserts at run time that the manifest names exactly the
+blobs on disk.  The Lean side answers through the production path —
+`parseAndValidateFdtHeader`, `parseFdtNodes`, `fdtRoot?`, `memoryRegionsFromNodes`
+— and cross-checks each manifest RAM top with `memoryRegionCoveredByUnion`, the
+predicate the RPi5 bridge validates a board with.
+
+Its first run found **thirteen divergences on the Rust side and eight on the Lean
+side**:
+
+- *Rust, structure.*  The walks accepted a named root, a second top-level node, a
+  property before the root, a property after a child (so a late `#size-cells`
+  changed nothing already folded), a repeated property (the last `reg` or `status`
+  won), a repeated sibling (two `memory@0` nodes both folded), and names of any
+  length — all refused by the Lean parser.  `fdt_structure_check` is the Rust
+  counterpart of `parseFdtNodes`' refusals, run first by **both** Rust walks (the
+  `/memory` walk and the `bootargs` search), over a new `FdtLayout` view that is
+  the counterpart of `FdtBlob.of?`.  Duplicate detection rescans the node's earlier
+  properties or siblings rather than allocating, and the docstring states the
+  quadratic cost and why it is acceptable on an interim, firmware-supplied path.
+- *Rust, walk bound.*  A fixed fuel of 4096 tokens refused a structure block the
+  Lean parser reads whole — and a real board's device tree is within an order of
+  magnitude of that.  `FDT_WALK_FUEL` is retired: every token advances the offset
+  by at least four bytes, so `fdt_token_bound` (the block's size over four, the
+  Lean parser's derived fuel) cannot run out before the block does.
+- *Rust, header and cells.*  A reservation block starting past `totalsize` was
+  accepted, and so was a structure or strings block starting exactly *at* it —
+  Lean's `FdtHeader.isValid` requires both offsets strictly inside the blob, so an
+  empty strings block at `totalsize` read as a valid header on one side only
+  (`empty_strings_block_at_totalsize`); and `#address-cells` / `#size-cells` were read as four bytes from the
+  value's start whatever its length, borrowing the next token for a short value.
+- *Lean, extents.*  `extractMemoryRegionsChecked` checked that a `reg`'s bytes
+  divided into whole tuples and then let `extractMemoryRegionsGeneral` stop at the
+  first unreadable one, so a three-cell or zero-cell width read as "this node
+  declares no memory"; it now requires every tuple the count promises.  An extent
+  ending at or past 2^64 was a `Nat` only a later physical-width check refused;
+  it is refused where it is read.  More than sixteen extents were read where the
+  Rust store refuses them (`fdtMaxMemoryExtents`, held equal to
+  `MAX_MEMORY_EXTENTS`).
+- *Lean, cells and depth.*  A cell-width property of any length but four bytes is
+  refused (`FdtNode.cellPropertiesWellFormed`, also swept onto
+  `fdtReservedRanges`, where an unreadable width is a set of subtractions this
+  parser cannot read).  `parseFdtNodes` bounds nesting at `fdtMaxDepth = 32`, the
+  Rust walker's `FDT_MAX_DEPTH`, checked once over the finished tree so every
+  consumer inherits it.
+
+Two further findings while landing it.  `a_memory_node_buried_under_exhausted_fuel_is_refused`
+had passed **vacuously**: its rebuild copied the 40-byte header into the new
+structure block, so the walk refused `0xD00DFEED` as an unknown first token and
+the assertion held for a reason unrelated to its name.  It is
+`a_memory_node_behind_a_long_nop_run_is_read_whole` now, sliced from the block's
+own start, asserting the structure check accepts it first.  And the `bootargs`
+search shares the new check, which the corpus alone could not show; two `/chosen`
+fixtures that are refused, and an assertion that a refused blob yields no command
+line, make removing the check from that walk fail.
+
+**BP0.2 — both sides consume every fixture.**  `scripts/check_dtb_corpus_consumers.py`
+(Tier 0) holds the corpus fresh against its generator with no orphaned blob, every
+blob to a manifest row and every row to a blob, the Rust consumer a `#[test]` with
+nothing between it and its `fn` (so no `#[ignore]`) inside the `#[cfg(test)]`
+module and driving both walks, the Lean runner a statement of `main`'s own body,
+and both suites run by a gate.  Every read goes through the code views, and its
+fifteen-case self-test keeps each token and breaks only the relation.
+
+**BP0.3 — the ABI layout, stated once.**  `tests/fixtures/abi_layout.expected`
+is emitted by `tests/SyscallReturnAbiSuite.lean` and rendered by
+`rust/sele4n-abi/tests/conformance.rs::abi_layout_matches_the_lean_table` against
+the same bytes.  The field layout is **measured, not restated**, on both sides by
+one rule — decode each bit `2^j` alone, and the field that comes back holding
+`2^(j - shift)` and re-encoding to the same word owns it — so a changed shift or
+width in either decoder changes that side's table.  It also carries which register
+each syscall field travels in (from `arm64DefaultLayout` on the Lean side, from
+encoding a request of distinct sentinels on the Rust side), the half of the pair
+the register listed as hand-transcribed, and the bounds `maxMessageRegisters`,
+`maxExtraCaps`, `maxLabel`, `errorLabelBase` and `syscallAbiVersion`.  Mutating
+the Rust label shift, or swapping two register slots, fails it.  The compile-time
+pins in `message_info.rs` stay, with a comment that no longer claims they read the
+Lean model.  The comparison is `SeLe4n.Testing.checkSharedFixture`, and the
+return-shape table moved onto it: one helper, one relation.
+
+**BP0.4 — the boot map, driven rather than mirrored.**  `tests/fixtures/boot_map.expected`
+is emitted by `tests/Ak9PlatformSuite.lean` from `rpi5MemoryMapForConfig`: for
+every RAM variant, its regions and the kind `classifyAddress` gives at every
+boundary probe.  `mmu::boot_map_tests::the_boot_map_agrees_with_the_lean_map`
+replaces `the_boot_map_boundaries_mirror_the_lean_memory_map` and pushes the same
+probes — plus every boundary constant of the Rust map and the byte below it —
+through `boot_mapping_for` and a walk of the tables `populate_boot_tables` builds.
+Its first run closed the one remaining divergence: `DEVICE_WINDOW_TOP` was
+`0xFFA0_0000`, the Lean device extent rounded up to a 2 MiB block, so
+`[0xFF85_0000, 0xFFA0_0000)` — space the Lean map reserves — was mapped Device, a
+difference `check_physical_address_width.sh` accepted as a designed tolerance.
+`DEVICE_WINDOW_TOP` is `0xFF85_0000` now and the block straddling it
+(`DEVICE_TAIL_BLOCK_BASE`) is described by a level-3 table of 4 KiB pages; the
+boot tables are seven 4 KiB tables (`BOOT_TABLE_COUNT`), and the test walk follows
+level-3 page descriptors.  The retired `Board.lean` regex scan, its boundary pins
+and the `LEAN_DEVICE_EXTENT_TOP` literal are deleted from
+`check_physical_address_width.sh`, which keeps the width audit and the linker's
+half (`link.ld` ends at `LOW_RAM_TOP`), and which now installs one `EXIT` trap for
+both of its temporaries — a second `trap … EXIT` had replaced the first.
+
+**The acceptance's last clause.**  `check_lock_ffi_symmetry.sh` states what it
+does not decide: it is a nominal reconciliation of symbols and types, and the
+behavioural agreement for the lock is the Tier-5 cross-language oracle.
+
+Also: `check_identifier_naming.py` classifies the two new file types (`.hex`
+rendered blobs are not scanned; the corpus `MANIFEST` is scanned as config), and
+`tests/fixtures/README.md` indexes both new fixtures with their consumers and
+documents the corpus.  BP1..BP8 have not started.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0)
+
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 
 Two P1 findings from Codex's review of PR #900, both verified on the tree before

@@ -1989,6 +1989,191 @@ def review9_runtime_contract_follows_the_installed_map : IO Unit := do
   expect "NEGATIVE review9 the restrictive contract agrees on the small board"
     (!@decide _ (rpi5RuntimeContractRestrictive.memoryAccessAllowedDecidable (stFor small) twoGiB))
 
+/-! ## WS-BP BP0.1 — the shared device-tree fixture corpus
+
+`tests/fixtures/dtb/` holds blobs the Rust walker's suite
+(`rust/sele4n-hal/src/cmdline.rs`, `dtb_corpus_tests`) consumes too, against one
+hand-written manifest rendered by `scripts/generate_dtb_corpus.py`.  Every
+fixture the manifest names is read here through the production parse path and
+its `/memory` extents compared with the manifest, so a filter added to the Lean
+parser alone, or to the Rust walker alone, fails that side's assertion rather
+than passing silently.  Every divergence is collected before the check fails, so
+one run names all of them. -/
+
+private def dtbCorpusDir : System.FilePath := "tests/fixtures/dtb"
+
+private def corpusHexDigit? (c : Char) : Option Nat :=
+  if '0' ≤ c && c ≤ '9' then some (c.toNat - '0'.toNat)
+  else if 'a' ≤ c && c ≤ 'f' then some (c.toNat - 'a'.toNat + 10)
+  else if 'A' ≤ c && c ≤ 'F' then some (c.toNat - 'A'.toNat + 10)
+  else none
+
+/-- A corpus `.dtb.hex` file's bytes: `#` starts a comment, whitespace is
+ignored, and every other hex digit pair is one byte. -/
+private def parseCorpusHex (text : String) : Except String ByteArray := do
+  let mut digits : Array Nat := #[]
+  for line in text.splitOn "\n" do
+    let code := (line.splitOn "#").headD ""
+    for c in code.toList do
+      if c.isWhitespace then continue
+      match corpusHexDigit? c with
+      | some d => digits := digits.push d
+      | none => throw s!"bad hex digit {repr c}"
+  if digits.size % 2 != 0 then throw "odd number of hex digits"
+  let mut bytes := ByteArray.empty
+  for i in [0:digits.size / 2] do
+    bytes := bytes.push (UInt8.ofNat (digits[2 * i]! * 16 + digits[2 * i + 1]!))
+  return bytes
+
+private def parseCorpusNat? (s : String) : Option Nat :=
+  let digits := (s.trimAscii.toString.dropPrefix "0x").toString
+  if digits.isEmpty then none
+  else digits.toList.foldl
+    (fun acc c => match acc, corpusHexDigit? c with
+      | some a, some d => some (a * 16 + d)
+      | _, _ => none) (some 0)
+
+/-- A manifest `regions` cell: `refused` is `none`, `-` is `some []`.  The
+outer `Option` is the manifest's own well-formedness. -/
+private def parseCorpusRegions? (s : String) : Option (Option (List (Nat × Nat))) :=
+  match s.trimAscii.toString with
+  | "refused" => some none
+  | "-" => some (some [])
+  | list =>
+    (list.splitOn ",").foldr
+      (fun pair acc => match acc, pair.splitOn "+" with
+        | some (some rest), [b, sz] =>
+          match parseCorpusNat? b, parseCorpusNat? sz with
+          | some base, some size => some (some ((base, size) :: rest))
+          | _, _ => none
+        | _, _ => none)
+      (some (some []))
+
+/-- The Lean parser's answer to the corpus question: the extents of every
+operational top-level `/memory` node, through exactly the steps
+`DeviceTree.fromDtbFull` takes before it subtracts reservations — the header,
+the whole structure block, the single root, then `memoryRegionsFromNodes`. -/
+def corpusDeclaredRegions (blob : ByteArray) : Option (List (Nat × Nat)) :=
+  match parseAndValidateFdtHeader blob with
+  | none => none
+  | some hdr =>
+    match parseFdtNodes blob hdr with
+    | .error _ => none
+    | .ok nodes =>
+      match fdtRoot? nodes with
+      | none => none
+      | some root => (memoryRegionsFromNodes root).map (·.map fun r => (r.base, r.size))
+
+/-- Does a manifest RAM top claim only reported memory?  The Rust walk may cross
+the peripheral window `[0xFC00_0000, 0x1_0000_0000)` from a fully reported low
+aperture, so what the top asserts is that `[0, min top 0xFC00_0000)` and — when
+it reaches past the window — `[0x1_0000_0000, top)` are covered by the union of
+the reported extents.  Decided by `memoryRegionCoveredByUnion`, the predicate the
+RPi5 device-tree bridge validates a board with, so a top the Rust side derives
+is checked against the Lean side's own notion of "reported". -/
+private def corpusTopIsReported (regions : List (Nat × Nat)) (top : Nat) : Bool :=
+  let lowTop := 0xFC000000
+  let highBase := 0x100000000
+  let rams : List SeLe4n.MemoryRegion := regions.map fun (b, sz) =>
+    { base := SeLe4n.PAddr.ofNat b, size := sz, kind := .ram }
+  let covers := fun (lo hi : Nat) =>
+    hi ≤ lo || memoryRegionCoveredByUnion rams
+      { base := SeLe4n.PAddr.ofNat lo, size := hi - lo, kind := .ram }
+  covers 0 (min top lowTop) && (top ≤ highBase || covers highBase top)
+
+def dtbCorpus_every_fixture_agrees_with_the_manifest : IO Unit := do
+  let manifest ← IO.FS.readFile (dtbCorpusDir / "MANIFEST")
+  let rows := (manifest.splitOn "\n").filter fun l => !l.trimAscii.isEmpty && !l.startsWith "#"
+  let mut failures : Array String := #[]
+  let mut checked := 0
+  for row in rows do
+    match row.splitOn "|" |>.map (fun (x : String) => x.trimAscii.toString) with
+    | [name, regionsCell, topCell] =>
+      let hexText ← IO.FS.readFile (dtbCorpusDir / s!"{name}.dtb.hex")
+      match parseCorpusHex hexText, parseCorpusRegions? regionsCell with
+      | .error e, _ => failures := failures.push s!"{name}: {e}"
+      | _, none => failures := failures.push s!"{name}: malformed regions cell {regionsCell}"
+      | .ok blob, some expected =>
+        checked := checked + 1
+        let got := corpusDeclaredRegions blob
+        if got != expected then
+          failures := failures.push s!"{name}: regions {repr got}, manifest {repr expected}"
+        -- The top is refused exactly when there are no regions to walk, and a
+        -- stated top claims only memory the regions report.
+        match expected, topCell with
+        | some (_ :: _), "refused" =>
+          failures := failures.push s!"{name}: regions but no top"
+        | some (_ :: _), t =>
+          match parseCorpusNat? t with
+          | some top =>
+            match expected with
+            | some rs =>
+              if !corpusTopIsReported rs top then
+                failures := failures.push s!"{name}: top {t} claims unreported memory"
+            | none => pure ()
+          | none => failures := failures.push s!"{name}: malformed top {t}"
+        | _, "refused" => pure ()
+        | _, t => failures := failures.push s!"{name}: top {t} with no regions"
+    | _ => failures := failures.push s!"malformed manifest row: {row}"
+  for f in failures do IO.println s!"  corpus divergence: {f}"
+  expect s!"WS-BP BP0.1 corpus: {checked} fixtures agree with the manifest"
+    (failures.isEmpty && checked == rows.length && checked > 0)
+  -- WS-BP BP0.2: the manifest names exactly the fixtures on disk, so a blob
+  -- added to the directory without a row — which no suite would read — fails
+  -- here as it fails the Rust suite's identical check.
+  let entries ← dtbCorpusDir.readDir
+  let onDisk := (entries.toList.filterMap fun e =>
+    if e.fileName.endsWith ".dtb.hex" then some (e.fileName.dropEnd 8).toString else none)
+  let named := rows.filterMap fun row => (row.splitOn "|").head?.map (·.trimAscii.toString)
+  expect "WS-BP BP0.2 corpus: every fixture on disk has a manifest row, and no more"
+    (onDisk.mergeSort (· ≤ ·) == named.mergeSort (· ≤ ·))
+
+/-! ## WS-BP BP0.4 — the boot-map pair, driven rather than mirrored
+
+`rust/sele4n-hal/src/mmu.rs`'s `boot_mapping_for` is what the boot translation
+tables install, and `rpi5MemoryMapForConfig` is the project's canonical BCM2712
+map.  They were held together by one Rust test asserting four hand-copied
+boundary literals and a comment saying the boundaries "mirror" the Lean map, and
+by a shell gate that regex-parsed the Lean source.  This table is emitted from
+the Lean map itself: for every RAM variant, the regions it declares and the kind
+`classifyAddress` gives at every probe — each region boundary and the byte below
+it, address 0, and one address far above every map.  The Rust suite
+(`mmu::tests::the_boot_map_agrees_with_the_lean_map`) pushes the same probes,
+and its own boundary constants, through `boot_mapping_for` and through a walk of
+the tables it builds, and requires the kind the Lean map gives. -/
+
+private def bootMapHex (n : Nat) : String :=
+  "0x" ++ String.ofList (Nat.toDigits 16 n)
+
+private def bootMapKindName : SeLe4n.MemoryKind → String
+  | .ram => "ram"
+  | .device => "device"
+  | .reserved => "reserved"
+
+/-- One address far above every variant's map (256 GiB), so the table also
+says what lies past the last region. -/
+private def bootMapFarProbe : Nat := 0x4000000000
+
+private def bootMapProbes (map : List SeLe4n.MemoryRegion) : List Nat :=
+  let edges := map.flatMap fun r => [r.base.toNat, r.endAddr]
+  let points := 0 :: bootMapFarProbe :: edges.flatMap fun b => if b == 0 then [0] else [b - 1, b]
+  (points.mergeSort (· ≤ ·)).eraseDups
+
+private def bootMapTableLines : List String :=
+  "# RPi5 boot map: the Lean memory map per RAM variant, and its kind at every probe (Lean/Rust cross-check)"
+    :: rpi5Variants.flatMap fun v =>
+      let map := rpi5MemoryMapForConfig v
+      let ramTop := (map.filter (·.kind == .ram)).foldl (fun acc r => max acc r.endAddr) 0
+      s!"variant {bootMapHex v.ramSize} ramTop {bootMapHex ramTop}"
+        :: map.map (fun r =>
+            s!"region {bootMapHex r.base.toNat} {bootMapHex r.size} {bootMapKindName r.kind}")
+        ++ (bootMapProbes map).map fun a =>
+            s!"probe {bootMapHex a} {bootMapKindName (classifyAddress (SeLe4n.PAddr.ofNat a) map)}"
+
+def bootMap_the_lean_map_is_the_shared_table : IO Unit :=
+  checkSharedFixture "WS-BP BP0.4 boot map" "tests/fixtures/boot_map.expected"
+    "rust/sele4n-hal/src/mmu.rs" bootMapTableLines
+
 end SeLe4n.Testing.Ak9PlatformSuite
 
 open SeLe4n.Testing.Ak9PlatformSuite in
@@ -2075,5 +2260,7 @@ def main : IO Unit := do
   deviceTreeBridge_21_empty_unit_address_is_not_memory
   deviceTreeBridge_22_every_register_block_is_a_window
   deviceTreeBridge_23_extent_past_the_window_is_refused
+  dtbCorpus_every_fixture_agrees_with_the_manifest
+  bootMap_the_lean_map_is_the_shared_table
   IO.println ""
   IO.println "=== All AK9 platform tests passed ==="
