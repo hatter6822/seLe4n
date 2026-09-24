@@ -7146,7 +7146,7 @@ per-phase plans at `docs/planning/SMP_*.md`, beginning with
 the glob covers but no canonical index named until WS-RR RR7.32 made that
 checkable.
 
-### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1 and BP2.1 v0.36.2)
+### WS-BP The bare-metal boot path — IN FLIGHT (registered v0.34.59; absorbs WS-XV as BP0 at v0.34.124; BP0, BP1, BP2.1 and BP2.2 v0.36.2)
 
 SM10.1 is not a release cut's first phase; it is a **bare-metal Lean runtime
 port**, and holding the two in one plan produced a phase goal ("all substantive
@@ -7157,7 +7157,7 @@ cross-implementation gates, the aarch64 Lean object code, bare-metal runtime
 hosting, the RPi5 deployment, the boot seam and its install ordering, the
 image, per-core readiness, the context restore, and first boot — with an acceptance gate whose every box is ticked by
 an *executed run* rather than by an artefact existing.  **BP0 and BP1 landed at
-`v0.36.2`**, and so did **BP2.1** (the Lean heap); the rest of BP2 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
+`v0.36.2`**, and so did **BP2.1** (the Lean heap) and **BP2.2** (the kernel's own Lean runtime, in Rust); BP2.3..BP2.6 and BP3..BP8 have not started.  **WS-BP is unblocked since `v0.35.203`**, WS-RR RR8 having closed.  BP7.8 was added
 at that version by RR8.16's hand-off check, which re-homed the registered `MR4`-onward
 IPC-buffer write there rather than leaving it owned by a finished phase; BP5.5
 (the firmware's EL2 entry) and BP7.9 (per-thread FP/SIMD state) were added at
@@ -7268,8 +7268,8 @@ staged module, fails the lane rather than putting the elaborator in the kernel.
 (2) **The allocator is a relation**: every object is compiled against
 `rust/sele4n-hal/lean_include/lean/config.h`, the toolchain's with
 `LEAN_MIMALLOC` swapped for `LEAN_SMALL_ALLOCATOR` and nothing else, and the
-archive must call `lean_alloc_small` and no `mi_*`; BP2's runtime is compiled
-against the same file.  A macro the toolchain adds to its `config.h` stops the
+archive must call `lean_alloc_small` and no `mi_*`; the kernel's runtime
+(BP2.2) serves the same allocator.  A macro the toolchain adds to its `config.h` stops the
 build until it is classified.  (3) **The compile is soft-float and `-Werror`**
 (`-mgeneral-regs-only -mabi=aapcs-soft`, the toolchain's own clang), and the
 generator's two by-construction diagnostics are classified per instance — an
@@ -7280,18 +7280,18 @@ closure stdlib modules must define exactly the global symbols the toolchain's
 own `libInit.a`/`libStd.a` object for it defines — keyed by the member's
 initializer, never its name, since `libInit.a` holds two `Grind.o`.  (5)
 **Every unresolved symbol is attributed to a provider derived from that
-provider's own object code or declarations** — allocator, runtime
-(`libleanrt.a`), Rust `compiler_builtins` for the target, the HAL (a production
-module's `@[extern]`), a stdlib `@[extern]` nobody supplies — and an
-unattributed one stops the build.  Measured: 381 unresolved, **no libc symbol
-at all**, six libm functions (`acosh`/`asinh`/`atanh`, both widths) no provider
-has; the report (`libsele4n.unresolved`) is BP2.2's input.  And
+provider's own object code or declarations** — allocator, the HAL (a production
+module's `@[extern]`), the kernel's runtime (BP2.2), Rust `compiler_builtins`
+for the target, or *unreachable* (an upstream runtime function or stdlib
+`@[extern]` the reachable link proves nothing names) — and an unattributed one
+stops the build.  Measured: 381 unresolved, **no libc symbol at all**.  And
 `check_kernel_entry_exports.py` decides on **both** archives: a requirement is
 met where both define it, an exemption stale where either does, and
 `--require-cross` makes an absent cross archive a failure.  Since BP2.1 the
-lane also holds the two HAL-provided classes to the HAL's own object code: every
-`allocator` and `hal` symbol, and the whole small-allocator API, must be a global
-**function** of `sele4n-hal`'s rlib for the target (74 of 74 at `v0.36.2`).
+lane also holds the HAL-provided classes to the HAL's own object code: every
+`allocator`, `hal` and (since BP2.2) `runtime` symbol, and the whole
+small-allocator API, must be a global **function** of `sele4n-hal`'s rlib for the
+target (192 of 192 at `v0.36.2`).
 
 **BP2.1 — the Lean heap is one arena the linker places** (`v0.36.2`,
 `rust/sele4n-hal/src/lean_heap.rs`).  Five things new code must respect.  (1)
@@ -7302,11 +7302,10 @@ each proved live by `scripts/check_link_script.py` — the cross lane's step
 [6/6], which links a probe under the script and mutates it until every
 assertion fires, because nothing else links `link.ld` before BP5.  (2) **One
 heap, one exhaustion condition**: the HAL exports `lean.h`'s `lean_alloc_small`
-/ `lean_free_small` / `lean_small_mem_size` under `hw_target`, and the runtime's
-big-object path and BP2.2's libc surface go through `Heap::alloc` / `Heap::free`
-on the same arena — the runtime BP2.2 builds replaces `alloc.cpp`'s
-small-allocator block with forwards here rather than linking a second
-allocator.  (3) **All allocator state is out of band**, so the allocator never
+/ `lean_free_small` / `lean_small_mem_size` under `hw_target`, and the kernel's
+runtime (BP2.2) allocates its big objects and scratch buffers through
+`Heap::alloc` / `Heap::free` on the same arena — upstream's `alloc.cpp` is not
+linked at all.  (3) **All allocator state is out of band**, so the allocator never
 touches the memory it serves, every free is validated in release builds (a
 double free is refused, not absorbed), and every operation is bounded; a new
 allocator feature must keep its state in the metadata pages, never inside an
@@ -7320,6 +7319,57 @@ size, and everything past it is `NOLOAD`.  Placing the arena also found that no
 boot refusal stops an untyped over kernel memory (`bootSafeUntypedCheck` accepts
 every region); not attacker-reachable, registered in `docs/REGISTERED_DEBT.md`
 table B, owned by BP3.2.
+
+**BP2.2 — the kernel's Lean runtime is its own, in Rust** (`v0.36.2`,
+`rust/sele4n-hal/src/lean_runtime/`; maintainer's decision: no C++ in the image).
+Upstream's `libleanrt` is C++ over the standard library, threads and an OS; the
+kernel provides the part its Lean objects reach.  Seven things new code must
+respect.  (1) **The surface is derived**: the archive lane links `libsele4n.a`
+with `--gc-sections` rooted at the library initializer — `initialize_seLe4n_SeLe4n`,
+package-prefixed; an earlier probe rooted at `initialize_SeLe4n` measured 62
+because the root was silently absent — and every production `@[export]`, and
+every symbol that link leaves undefined must be a global function of the HAL's
+rlib or `compiler_builtins`' (144 needed, 118 the runtime's).  The 111 upstream
+functions the runtime omits are *unreachable* by that link, so the image link
+(BP5.2) must use `--gc-sections` over the same roots.  (2) **Each symbol is
+faithful, environmental or fail-closed, and says which**: faithful ones are
+ported from `lean4` at the toolchain's commit; the environmental ones answer for
+a machine with no OS (platform queries, `Lean.githash` pinned to
+`lean --githash` by the lane, zero-byte entropy, temporary files failing with
+`unsupportedOperation`); `Float` formatting, `scaleB` and `pow`/`powf` halt, the
+last two overriding `compiler_builtins`' **weak** libm port by the linker's own
+rule (the lane refuses a strong one).  (3) **Upstream is the oracle**:
+`tests/LeanRuntimeConformanceSuite.lean` runs on upstream's runtime and holds
+`tests/fixtures/lean_runtime_conformance.expected` (9 215 results over the
+representation edges, signs, zero divisors and every UTF-8 width) to what
+upstream computes; `lean_runtime::conformance` recomputes every line with the
+kernel's runtime, on both the exclusive and shared paths of each mutating
+string operation, checks each result canonical, and ends leak-free.  A
+primitive added to the runtime gets fixture lines, or a stated reason it cannot.
+(4) **What the environmental answers rest on is proved**:
+`SeLe4n/Testing/RuntimeEnvironmentCensus.lean` (Tier 1) walks everything every
+production `@[export]` reaches, through bodies **and `implemented_by`** — what
+compiled code actually calls — and fails if it meets `IO.stdGenRef` or a
+constant implemented by one of the nine unprovided symbols; its list and
+`io::UNPROVIDED_SEMANTICS` are held equal by a Rust test.  (5) **The runtime
+never calls back into the program it serves**: `build.rs`'s readiness scanner
+refused the first draft's call to Lean's exported `IO.Error` builder, so the
+constructor is built directly and its tag pinned by the fixture.  (6) **No
+object is ever multi-threaded, and no task or promise exists**: nothing marks
+one, the kernel's Lean code runs one core at a time under the kernel-entry lock,
+and every path that would meet one halts.  `panic!` returns `default` and
+reports — that is what the proofs describe, so halting there would make the
+kernel diverge from its model on the paths the model covers.  (7) **A function
+that dereferences an object pointer it was handed is an `unsafe fn`**, with a
+`# Safety` section saying what the pointer must be — private helpers included.
+The first cut had fifteen safe helpers (`array`, `string`, `ref_cell`,
+`nat_val`, `slots`, `del_core`, …) whose `// SAFETY:` comments read *every
+caller passes a live …*: a caller's promise inside a safe signature, which the
+compiler then lets any safe caller break, and which no gate sees —
+`clippy::not_unsafe_ptr_arg_deref` covers `pub` functions only, and the
+justification scanner asks whether a block is *commented*, not whether the
+comment discharges anything.  A helper over state it owns (`Building`, the
+persistence `WorkStack`, the `apply` argument buffer) stays safe.
 
 Plan: [`docs/planning/SMP_BOOT_PATH_PLAN.md`](docs/planning/SMP_BOOT_PATH_PLAN.md).
 

@@ -194,6 +194,20 @@ lives in the arena's metadata pages and never inside an object, so keep it there
 `Heap::check_invariants` states the invariants and the host witness suite
 (`cargo test -p sele4n-hal lean_heap`) runs it after every mutation.
 
+**The Lean runtime** (WS-BP BP2.2) is `rust/sele4n-hal/src/lean_runtime/`: the
+kernel's own, in Rust, providing every symbol the archive's reachable link needs
+(the lane's step [7/8] links it and names any gap).  A symbol added to it is
+faithful to upstream, environmental or fail-closed, and says which in its
+docstring.  A primitive that computes gets lines in
+`tests/LeanRuntimeConformanceSuite.lean`, whose fixture upstream's runtime
+produces (`lake exe lean_runtime_conformance_suite --emit >
+tests/fixtures/lean_runtime_conformance.expected` regenerates it; then refresh
+the `.sha256`) and `cargo test -p sele4n-hal lean_runtime`
+recomputes.  An environmental or fail-closed one joins
+`io::UNPROVIDED_SEMANTICS` and `RuntimeEnvironmentCensus`'s list together; a Rust
+test holds them equal.  A helper that dereferences an object pointer it was
+handed is an `unsafe fn` with a `# Safety` section, private ones included.
+
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build
 found six defects and three lints; four of the defects were `check`-clean.

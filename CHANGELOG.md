@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1 and BP2.1: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, and the Lean heap has an arena and an allocator
+## v0.36.2 — WS-BP BP0, BP1, BP2.1 and BP2.2: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, and the kernel carries its own Lean runtime in Rust
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -373,13 +373,97 @@ table B with its remedy (a binding-declared reserved extent held to `link.ld`,
 and a `PlatformConfig.wellFormed` conjunct), owned by BP3.2, which chooses the
 first untypeds any configuration carries.
 
-What BP2.2 inherits is recorded in the BP2.1 row: the runtime's `alloc.cpp`
-defines the same three functions over per-thread heaps built on `new` and
-`std::vector`, and the runtime BP2.2 builds replaces that block with forwards to
-this heap rather than linking two allocators.  BP2.2..BP2.6 and BP3..BP8 have
-not started.
+**BP2.2 — the kernel's Lean runtime is its own, in Rust**
+(`rust/sele4n-hal/src/lean_runtime/`).  The Lean code BP1 compiles calls into
+Lean's runtime (`libleanrt`): about forty thousand lines of C++ over the
+standard library, threads and an operating system, shipped pre-built for the
+host alone.  The maintainer chose to keep C++ out of the image, so the kernel
+provides the part of that runtime its objects actually reach, in Rust, over
+BP2.1's heap.  Object layouts are byte-identical to `lean.h`'s and pinned by
+`const` assertions.
 
-Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1)
+- *The surface is derived, not chosen.*  The archive lane links `libsele4n.a`
+  with `rust-lld --gc-sections`, rooted at the library initializer and every
+  production `@[export]`, and every symbol that link leaves undefined must be a
+  global function of the HAL's rlib or of `compiler_builtins`: **144** are
+  needed, **118** of them the runtime's.  The first probe measured 62 because it
+  rooted at `initialize_SeLe4n`, which does not exist — the initializer is
+  package-prefixed (`initialize_seLe4n_SeLe4n`), and a missing root links
+  silently.  Of the whole archive's 381 unresolved symbols, **111** are
+  unreachable by that link and the runtime omits them, so BP5.2's image link
+  must use `--gc-sections` over the same roots; the plan row carries it.
+- *Each symbol says what it is.*  **Faithful** ones are ported from `lean4` at
+  the toolchain's commit: reference counting with an iterative release that
+  threads its to-do list through the dying objects' headers (a 200 000-cell list
+  is freed without recursion), persistence over a heap-chunked stack, closures
+  at every arity with one algorithm for exact, under- and over-application,
+  arrays, byte arrays, strings with upstream's UTF-8 recovery, `ST.Ref`, name
+  and sharing hashes (MurmurHash64A, and `mix_hash`'s own quirk kept), and
+  arbitrary-precision `Nat`/`Int` over 64-bit limbs — Knuth's Algorithm D for
+  division, with a debug assertion that it corrects at most twice (Theorem B),
+  which is what made the one otherwise-equivalent mutant decidable.
+  **Environmental** ones answer for a machine with no operating system:
+  platform queries, `Lean.githash` (held to `lean --githash` by the lane),
+  zero-byte entropy, temporary files failing with `unsupportedOperation`.
+  **Fail-closed** ones halt: `Float` formatting, `scaleB`, and `pow`/`powf`, the
+  last two overriding `compiler_builtins`' libm port by the linker's own rule —
+  that port is **weak**, which the lane checks, since a strong one would be a
+  duplicate definition.
+- *Upstream is the oracle.*  `tests/LeanRuntimeConformanceSuite.lean` computes
+  **9 215** results on upstream's own runtime — every representation edge of
+  `Nat` and `Int`, both signs, zero divisors, every UTF-8 width and every
+  malformed shape — and holds `tests/fixtures/lean_runtime_conformance.expected`
+  to them through `checkSharedFixture`.  `lean_runtime::conformance` reads the
+  same file and recomputes every line with the kernel's runtime, running each
+  mutating string operation on an exclusive and on a shared argument, checking
+  every numeric result canonical (a big `Nat` exceeds the small bound, a big
+  `Int` lies outside `i32`) and ending leak-free.  Fourteen token-preserving
+  mutations are caught.  The four the first run missed were closed rather than
+  excused — three by new cases (a surrogate decode, a truncated `set`, an
+  in-place push) and the fourth, a skipped normalization that changes only the
+  running time, by the correction-count assertion above — and one mutant, a
+  length argument the next statement overwrites, is equivalent and dropped
+  rather than counted.
+- *What the environmental answers rest on is proved.*
+  `SeLe4n/Testing/RuntimeEnvironmentCensus.lean` (Tier 1) walks everything
+  every production `@[export]` reaches — through bodies **and**
+  `implemented_by`, which is what compiled code calls — and fails if it meets
+  `IO.stdGenRef` (the generator the zero entropy would seed) or a constant
+  implemented by one of the nine unprovided symbols.  Four witnesses keep it
+  decisive, and a Rust test holds its list equal to
+  `io::UNPROVIDED_SEMANTICS`.  The walk is fuelled, and exhaustion counts as a
+  failure.
+- *The runtime never calls back into the program it serves.*  `build.rs`'s
+  readiness scanner refused the first draft's call to Lean's exported `IO.Error`
+  builder, so the constructor is built directly and its tag is pinned by the
+  fixture.
+- *No object is multi-threaded, and no task or promise exists.*  Every path that
+  would meet one halts.  `panic!` returns `default` and reports, because that is
+  what the proofs describe.
+- *A function that dereferences a pointer it was handed is an `unsafe fn`.*  The
+  first cut carried fifteen safe helpers whose comments read *every caller
+  passes a live …* — a caller's promise inside a safe signature.  No gate saw
+  it: `clippy::not_unsafe_ptr_arg_deref` covers `pub` functions only, and the
+  justification scanner asks whether a block is commented, not whether the
+  comment discharges anything.  Each one now states its contract in a
+  `# Safety` section, and its callers discharge it at their own `unsafe`
+  blocks.  Found while replacing two macros that generated `unsafe fn`s the
+  scanner (correctly) refused to read, and it found one aliasing hazard in
+  passing: `append` formed `&mut` records of both arguments at once, and the
+  two may be one string.  Helpers over state they own stay safe.
+- *One upstream defect, unreachable, not copied.*  Upstream's
+  `lean_string_utf8_extract` returns its borrowed argument without a new
+  reference when a position is too big to be a scalar — a reference-count error
+  on a string of 2^63 bytes.  The kernel's returns it with the reference the
+  contract asks for.
+
+Wired into the tiers: the census builds in Tier 1, the conformance suite runs in
+Tier 2, and the archive lane's step [7/8] performs the reachable link.  BP2.3
+changes as a consequence: this runtime needs no module initialization of its
+own, so the boot seam calls the library initializer directly.  BP2.3..BP2.6 and
+BP3..BP8 have not started.
+
+Refs: docs/planning/SMP_BOOT_PATH_PLAN.md §5 (BP0, BP1, BP2.1, BP2.2)
 
 ## v0.36.1 — `seL4_CNode_Revoke` destroys exactly the source's derivations, and a bind places a thread only on a reservation that can run it
 

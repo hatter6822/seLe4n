@@ -113,6 +113,13 @@ run_check_with_timeout "TRACE" lake exe syscall_dispatch_suite
 # PRE-MIGRATION assertions pin the defect and are inverted by the flip PR.
 # See `tests/SyscallReturnAbiSuite.lean`.
 run_check_with_timeout "TRACE" lake exe syscall_return_abi_suite
+
+# WS-BP BP2.2: the kernel's Rust Lean runtime is held to upstream's by a shared
+# fixture.  This suite runs on upstream's runtime and checks every line of
+# `tests/fixtures/lean_runtime_conformance.expected` is what upstream computes;
+# `lean_runtime::conformance` in the HAL recomputes the same lines with the
+# kernel's runtime.  See `tests/LeanRuntimeConformanceSuite.lean`.
+run_check_with_timeout "TRACE" lake exe lean_runtime_conformance_suite
 # WS-SM SM0.S — Foundations test suite for the SM0 typed identifiers
 # (CoreId, SharingDomain, SgiKind, LockKind, LockId, BklState) plus the
 # AN12-B inventory hardening + ArchAssumption 6-way machinery.  Runtime

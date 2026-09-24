@@ -390,6 +390,20 @@ impl<'a> Heap<'a> {
         }
     }
 
+    /// The number of live allocations: small objects plus page runs.  A leak
+    /// check reads this before and after the code it audits.
+    #[must_use]
+    pub fn live_allocations(&self) -> usize {
+        self.meta
+            .iter()
+            .map(|m| match PageState::decode(m.state) {
+                Some(PageState::Small(_)) => usize::from(m.live),
+                Some(PageState::RunHead(_)) => 1,
+                _ => 0,
+            })
+            .sum()
+    }
+
     fn page_addr(&self, page: usize) -> usize {
         self.data_base + page * PAGE_SIZE
     }
@@ -945,6 +959,37 @@ pub fn kernel_alloc_small(size: u32, slot: u32) -> Result<usize, KernelHeapError
     with_kernel_heap(|heap| heap.alloc_small(size as usize, slot as usize))?
         .map_err(KernelHeapError::Fault)?
         .ok_or(KernelHeapError::Exhausted)
+}
+
+/// `size` bytes aligned to `align` on the kernel heap — the general request the
+/// Lean runtime's big-object path and its scratch buffers make.
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service, `Exhausted` when the heap
+/// cannot serve the request (including an alignment beyond a page).
+pub fn kernel_alloc(size: usize, align: usize) -> Result<usize, KernelHeapError> {
+    with_kernel_heap(|heap| heap.alloc(size, align))?.ok_or(KernelHeapError::Exhausted)
+}
+
+/// Frees any live kernel-heap allocation at `addr`.
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
+/// a live allocation.
+pub fn kernel_free(addr: usize) -> Result<(), KernelHeapError> {
+    with_kernel_heap(|heap| heap.free(addr))?.map_err(KernelHeapError::Fault)
+}
+
+/// The usable size of the live kernel-heap allocation at `addr`.
+///
+/// # Errors
+///
+/// `Init` if the arena cannot be taken into service; `Fault` when `addr` is not
+/// a live allocation.
+pub fn kernel_usable_size(addr: usize) -> Result<usize, KernelHeapError> {
+    with_kernel_heap(|heap| heap.usable_size(addr))?.map_err(KernelHeapError::Fault)
 }
 
 /// `lean_free_small(p)` on the kernel heap.

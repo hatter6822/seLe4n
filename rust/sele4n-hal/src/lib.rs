@@ -350,7 +350,13 @@ pub mod lean_ready;
 // WS-BP BP2.1: the Lean heap.  The arena is the linker's `.lean_heap` section
 // and the allocator serves `lean.h`'s small-object API (`lean_alloc_small`,
 // `lean_free_small`, `lean_small_mem_size`, exported under `hw_target`) and the
-// general `malloc`-shaped interface BP2.2's libc surface is built on, from the
-// same arena.  All allocator state is out of band, so it never dereferences the
-// memory it hands out.
+// general `malloc`-shaped interface the runtime below allocates through, from
+// the same arena.  All allocator state is out of band, so it never dereferences
+// the memory it hands out.
 pub mod lean_heap;
+
+// WS-BP BP2.2: the kernel's own Lean runtime — objects, closures, big numbers,
+// strings, arrays, `ST.Ref` — over the heap above.  Its C entry points are
+// exported under `hw_target`; the set it must provide is derived from the Lean
+// archive's link and checked by the archive lane.
+pub mod lean_runtime;

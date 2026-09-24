@@ -19,7 +19,7 @@ works forward: executable semantics and proofs are developed together, and the
 kernel *is* the specification. This eliminates the verification gap between
 specification and implementation.
 
-Current state (as of v0.36.2): 417,966 lines of production Lean across 340 files, 85,076 lines across 70 Lean test suites,
+Current state (as of v0.36.2): 418,119 lines of production Lean across 341 files, 85,250 lines across 71 Lean test suites,
 13,815 theorem/lemma declarations, zero unsound constructs.
 Metrics source: [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key).
 
@@ -82,8 +82,13 @@ deciding on both archives (the `Lean aarch64 Archive` CI lane).  **BP2.1** gave
 the Lean runtime its heap: one arena the linker script places (64 MiB, asserted
 to fit the smallest board) and an allocator in the HAL behind `lean.h`'s
 small-object API, whose state is all out of band so it never touches the memory
-it serves and refuses every invalid free.  The rest of BP2 and BP3..BP8 have not
-started.
+it serves and refuses every invalid free.  **BP2.2** gave the kernel its own
+Lean runtime, written in Rust so the image carries no C++: every symbol the
+archive's reachable link needs (144, 118 of them the runtime's) is provided, each
+one faithful to upstream, answering for a machine with no operating system, or
+halting; 9 215 results computed on upstream's runtime are recomputed by the
+kernel's, and a Tier 1 census proves no kernel entry reaches the environmental
+answers.  BP2.3..BP2.6 and BP3..BP8 have not started.
 
 **WS-LC** ran ahead of RR7 and closed the two lock **datatype** residuals
 RR6 re-registered rather than absorbed — complete at v0.34.55. A queued core

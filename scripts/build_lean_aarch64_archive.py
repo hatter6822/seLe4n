@@ -105,15 +105,20 @@ RUST_TARGET = "aarch64-unknown-none-softfloat"
 
 # Who provides each unresolved symbol, in the order a symbol is attributed.
 # Every class is DERIVED from the provider's own object code or declarations,
-# and a symbol no class accounts for stops the build: the report is BP2.2's
-# input, and an unattributed symbol is a link failure nobody has planned for.
+# and a symbol no class accounts for stops the build.
 PROVIDERS = (
     ("allocator", "the small-allocator API the kernel's config.h selects -- the HAL's lean_heap defines it (BP2.1)"),
-    ("runtime", "defined by the toolchain's libleanrt.a -- the runtime BP2 builds for the target"),
-    ("compiler-builtins", f"defined by Rust's compiler_builtins for {RUST_TARGET} (linked at BP5)"),
     ("hal", "declared @[extern] by a production kernel module -- the HAL's object code defines it"),
-    ("stdlib-extern", "declared @[extern] by a closure stdlib module and provided by none of the above (BP2.2)"),
+    ("runtime", "defined by the kernel's own Lean runtime -- the HAL's lean_runtime module (BP2.2)"),
+    ("compiler-builtins", f"defined by Rust's compiler_builtins for {RUST_TARGET} (linked at BP5)"),
+    ("unreachable", "an upstream runtime function or stdlib @[extern] the kernel's runtime does not define; "
+                    "the reachable link proves no initializer or kernel entry names it"),
 )
+# The one upstream runtime entry the kernel's runtime defines that upstream's
+# runtime does not: libm's `pow` / `powf`, which `Float.pow` is.  The kernel's
+# definitions are fail-closed and strong, and override compiler_builtins' weak
+# ones by the linker's own rule.
+LIBM_OVERRIDES = frozenset({"pow", "powf"})
 MIMALLOC_SYMBOL = re.compile(r"^_?mi_")
 
 # Diagnostics Lean's C generator produces by construction, each with the only
@@ -576,14 +581,20 @@ def check_stdlib_fidelity(ours: Symbols, host: Symbols, stdlib: set[str]) -> Non
                       "toolchain's own objects:\n  " + "\n  ".join(problems[:20]))
 
 
-def classify_unresolved(unresolved: set[str], runtime: set[str], builtins: set[str],
-                        hal: set[str], stdlib_externs: set[str]) -> dict[str, list[str]]:
+def classify_unresolved(unresolved: set[str], kernel_runtime: set[str], upstream_runtime: set[str],
+                        builtins: Symbols, builtins_weak: set[str], hal: set[str],
+                        stdlib_externs: set[str]) -> dict[str, list[str]]:
     """Attribute each unresolved symbol to its provider, or `Refused`.
 
-    A HAL symbol some other provider also defines is refused too: at the
-    image link it is a duplicate definition, and whichever the linker prefers
-    silently decides whether the kernel reaches the hardware."""
-    shadowed = sorted(hal & (runtime | builtins | ALLOCATOR_API))
+    `kernel_runtime` is the HAL's global functions; `builtins` compiler_builtins'
+    symbols with their binding.  Three duplicates are refused, because at the
+    image link whichever definition the linker prefers would silently decide
+    the behaviour: a kernel `@[extern]` a runtime also defines, and a kernel
+    runtime function compiler_builtins defines strongly.  (A weak builtin is
+    overridden by the linker's own rule, and `LIBM_OVERRIDES` names the ones
+    the kernel overrides on purpose.)"""
+    builtins_defined = set().union(*(d for d, _ in builtins.values())) if builtins else set()
+    shadowed = sorted(hal & (upstream_runtime | builtins_defined | ALLOCATOR_API))
     if shadowed:
         raise Refused(f"kernel @[extern] symbols another provider also defines: {shadowed[:8]}")
     classes: dict[str, list[str]] = {name: [] for name, _ in PROVIDERS}
@@ -591,20 +602,82 @@ def classify_unresolved(unresolved: set[str], runtime: set[str], builtins: set[s
     for sym in sorted(unresolved):
         if sym in ALLOCATOR_API:
             classes["allocator"].append(sym)
-        elif sym in runtime:
-            classes["runtime"].append(sym)
-        elif sym in builtins:
-            classes["compiler-builtins"].append(sym)
         elif sym in hal:
             classes["hal"].append(sym)
-        elif sym in stdlib_externs:
-            classes["stdlib-extern"].append(sym)
+        elif sym in kernel_runtime:
+            classes["runtime"].append(sym)
+        elif sym in builtins_defined:
+            classes["compiler-builtins"].append(sym)
+        elif sym in upstream_runtime or sym in stdlib_externs:
+            classes["unreachable"].append(sym)
         else:
             unattributed.append(sym)
     if unattributed:
         raise Refused(f"{len(unattributed)} unresolved symbol(s) no provider accounts for: "
                       f"{unattributed[:12]}")
+    overridden = set(classes["runtime"]) & builtins_defined
+    duplicate = sorted(overridden - (LIBM_OVERRIDES & builtins_weak))
+    if duplicate:
+        raise Refused(f"kernel runtime functions compiler_builtins also defines: {duplicate[:8]} "
+                      f"(only a weak {sorted(LIBM_OVERRIDES)} is overridden, on purpose)")
     return classes
+
+
+def weak_definitions(output: str) -> set[str]:
+    """The symbols `llvm-nm -g -P` output defines with a weak binding."""
+    return {f[0] for f in (l.split() for l in output.splitlines())
+            if len(f) >= 2 and f[1] in ("W", "V")}
+
+
+LINK_UNDEFINED = re.compile(r"undefined symbol: (\S+)")
+
+
+def reachable_unresolved(roots: list[str]) -> set[str]:
+    """The symbols the image link must resolve: a `--gc-sections` link of the
+    archive rooted at the library initializer and every kernel `@[export]`,
+    with every undefined reference reported rather than fatal.
+
+    This is the derivation the runtime's surface comes from.  The whole
+    archive references far more -- a standard-library function the kernel
+    never reaches still names its runtime primitive -- and the image link
+    (BP5) drops those sections by the same rule, from the same roots."""
+    lld = fp_gate.rust_llvm_tool("rust-lld")
+    argv = [lld, "-flavor", "gnu", "--gc-sections", "-e", roots[0],
+            "--unresolved-symbols=report-all", "--error-limit=0", "-o", os.devnull]
+    argv += [f"--undefined={r}" for r in roots[1:]]
+    argv.append(str(ARCHIVE))
+    proc = subprocess.run(argv, capture_output=True, text=True)
+    found = set(LINK_UNDEFINED.findall(proc.stderr))
+    other = [l for l in proc.stderr.splitlines()
+             if "error:" in l and "undefined symbol" not in l]
+    if other:
+        raise Refused(f"the reachable link failed for a reason other than an undefined symbol: {other[:4]}")
+    return found
+
+
+RUNTIME_ENVIRONMENT = REPO / "rust/sele4n-hal/src/lean_runtime/io.rs"
+GITHASH_CONSTANT = re.compile(r'^pub const LEAN_GITHASH: &str = "([0-9a-f]+)";$', re.MULTILINE)
+
+
+def check_runtime_githash(source: str, githash: str) -> None:
+    """`Lean.githash` on the kernel is the runtime's `LEAN_GITHASH`, which must
+    be the toolchain's own `lean --githash`: a toolchain bump that forgets the
+    constant is refused here rather than reported by a string nobody reads."""
+    found = GITHASH_CONSTANT.findall(source)
+    if found != [githash]:
+        raise Refused(f"the kernel runtime's LEAN_GITHASH is {found}, the toolchain's is {githash}")
+
+
+def check_reachable_provided(reachable: set[str], classes: dict[str, list[str]]) -> None:
+    """Every symbol the reachable link needs has a provider the image links."""
+    unreachable = set(classes["unreachable"])
+    needed = sorted(reachable & unreachable)
+    if needed:
+        raise Refused(f"{len(needed)} symbol(s) the initializer or a kernel entry reaches that no "
+                      f"provider defines -- the kernel runtime must: {needed[:12]}")
+    stray = sorted(reachable - set().union(*map(set, classes.values())))
+    if stray:
+        raise Refused(f"the reachable link names symbols the archive-level census did not: {stray[:8]}")
 
 
 def defined_symbols(path: Path) -> set[str]:
@@ -653,12 +726,11 @@ def global_text(output: str) -> set[str]:
 
 
 def check_hal_providers(classes: dict[str, list[str]], hal_text: set[str]) -> None:
-    """The `allocator` and `hal` classes name the HAL as provider; hold that
-    to the HAL's object code.  Every symbol in either class, and the whole
-    small-allocator API whether or not this archive calls each member (the
-    runtime's free paths call the rest), must be a global function of the
-    HAL's rlib."""
-    wanted = set(classes["allocator"]) | set(classes["hal"]) | ALLOCATOR_API
+    """The `allocator`, `hal` and `runtime` classes name the HAL as provider;
+    hold that to the HAL's object code.  Every symbol in those classes, and the
+    whole small-allocator API whether or not this archive calls each member,
+    must be a global function of the HAL's rlib."""
+    wanted = set(classes["allocator"]) | set(classes["hal"]) | set(classes["runtime"]) | ALLOCATOR_API
     missing = sorted(wanted - hal_text)
     if missing:
         raise Refused(f"{len(missing)} symbol(s) attributed to the HAL that its object code does "
@@ -675,7 +747,7 @@ def extern_symbols(paths: list[Path]) -> set[str]:
 def write_unresolved_report(classes: dict[str, list[str]]) -> None:
     lines = [
         "# The symbols libsele4n.a references and does not define, by provider.",
-        "# Generated by scripts/build_lean_aarch64_archive.py; BP2.2's input.",
+        "# Generated by scripts/build_lean_aarch64_archive.py.",
     ]
     for name, meaning in PROVIDERS:
         lines.append(f"\n# {name}: {meaning} ({len(classes[name])})")
@@ -720,10 +792,16 @@ def build(jobs: int) -> int:
         raise Refused(f"{len(stdlib_inits)} stdlib initializers for {len(stdlib)} stdlib modules")
     check_stdlib_fidelity(units, host, stdlib_inits)
     prefix = Path(tc["prefix"])
+    rlib = hal_rlib()
+    hal_text = global_text(run([fp_gate.rust_llvm_tool("llvm-nm"), "-g", "-P", str(rlib)]).stdout)
+    builtins_path = rust_target_builtins()
+    nm_tool = fp_gate.rust_llvm_tool("llvm-nm")
     classes = classify_unresolved(
         unresolved,
-        runtime=defined_symbols(prefix / "lib/lean/libleanrt.a"),
-        builtins=defined_symbols(rust_target_builtins()),
+        kernel_runtime=hal_text,
+        upstream_runtime=defined_symbols(prefix / "lib/lean/libleanrt.a"),
+        builtins=nm(builtins_path),
+        builtins_weak=weak_definitions(run([nm_tool, "-g", "-P", str(builtins_path)]).stdout),
         hal=extern_symbols([REPO / (m.replace(".", "/") + ".lean") for m in package]),
         stdlib_externs=extern_symbols(
             [prefix / "src/lean" / (m.replace(".", "/") + ".lean") for m in stdlib]),
@@ -734,12 +812,20 @@ def build(jobs: int) -> int:
           f"{len(unresolved)} unresolved, every one attributed ("
           + ", ".join(f"{len(v)} {k}" for k, v in classes.items())
           + f") -> {UNRESOLVED_REPORT.relative_to(REPO)}")
-    rlib = hal_rlib()
-    hal_text = global_text(run([fp_gate.rust_llvm_tool("llvm-nm"), "-g", "-P", str(rlib)]).stdout)
     check_hal_providers(classes, hal_text)
-    print(f"[7/8] providers: the HAL's {RUST_TARGET} object code defines every allocator and hal "
-          f"symbol ({len(classes['allocator'])} + {len(classes['hal'])}) and the whole "
-          f"small-allocator API as functions")
+    initializer = unit_initializers({u: d for u, d in units.items()
+                                     if member_module(u) == ROOT_MODULE})
+    roots = sorted(initializer) + sorted(
+        set().union(*(entry_gate.lean_exports_in((REPO / (m.replace(".", "/") + ".lean")).read_text())
+                      for m in package)))
+    reachable = reachable_unresolved(roots)
+    check_reachable_provided(reachable, classes)
+    check_runtime_githash(RUNTIME_ENVIRONMENT.read_text(), tc["githash"])
+    print(f"[7/8] providers: the HAL's {RUST_TARGET} object code defines every allocator, hal and "
+          f"runtime symbol ({len(classes['allocator'])} + {len(classes['hal'])} + "
+          f"{len(classes['runtime'])}); the link rooted at the initializer and {len(roots) - 1} "
+          f"kernel export(s) needs {len(reachable)} symbol(s), every one provided; "
+          f"the runtime's githash is the toolchain's")
     status = fp_gate.check([ARCHIVE], fp_gate.default_objdump())
     print("[8/8] FP/SIMD register operands: " + ("none" if status == 0 else "FOUND"))
     return status
@@ -753,9 +839,9 @@ _TC_CONFIG = "#pragma once\n#include <lean/version.h>\n\n#define LEAN_MIMALLOC\n
 _SHIM_CONFIG = "/* c */\n#pragma once\n#include <lean/version.h>\n#define LEAN_SMALL_ALLOCATOR\n#define LEAN_IS_STAGE0 0\n"
 
 
-def _refused(fn, *args) -> bool:
+def _refused(fn, *args, **kwargs) -> bool:
     try:
-        fn(*args)
+        fn(*args, **kwargs)
     except Refused:
         return True
     return False
@@ -870,31 +956,61 @@ def self_test() -> int:
     ]:
         expect(f"diagnostic refused: {label}", bool(classify_diagnostics(line)[1]))
 
-    got = classify_unresolved({"lean_alloc_small", "lean_inc", "__adddf3", "ffi_x", "sin"},
-                              runtime={"lean_inc"}, builtins={"__adddf3", "sin"},
-                              hal={"ffi_x"}, stdlib_externs={"sin", "cosh"})
+    bi = {"cb": ({"__adddf3", "sin", "pow"}, set())}
+    got = classify_unresolved({"lean_alloc_small", "lean_inc", "__adddf3", "ffi_x", "sin", "lean_io_x"},
+                              kernel_runtime={"lean_inc", "ffi_x"}, upstream_runtime={"lean_inc", "lean_io_x"},
+                              builtins=bi, builtins_weak={"pow"}, hal={"ffi_x"},
+                              stdlib_externs={"sin", "cosh"})
     expect("each unresolved symbol goes to its first provider",
-           got == {"allocator": ["lean_alloc_small"], "runtime": ["lean_inc"],
-                   "compiler-builtins": ["__adddf3", "sin"], "hal": ["ffi_x"], "stdlib-extern": []})
-    expect("an unattributed symbol refused",
-           _refused(classify_unresolved, {"memcpy"}, set(), set(), set(), set()))
-    expect("a HAL symbol the runtime also defines refused",
-           _refused(classify_unresolved, {"ffi_x"}, {"ffi_x"}, set(), {"ffi_x"}, set()))
+           got == {"allocator": ["lean_alloc_small"], "hal": ["ffi_x"], "runtime": ["lean_inc"],
+                   "compiler-builtins": ["__adddf3", "sin"], "unreachable": ["lean_io_x"]})
+    kw = dict(kernel_runtime=set(), upstream_runtime=set(), builtins={}, builtins_weak=set(),
+              hal=set(), stdlib_externs=set())
+    expect("an unattributed symbol refused", _refused(classify_unresolved, {"memcpy"}, **kw))
+    expect("a HAL symbol the upstream runtime also defines refused",
+           _refused(classify_unresolved, {"ffi_x"}, **{**kw, "upstream_runtime": {"ffi_x"}, "hal": {"ffi_x"}}))
     expect("a HAL symbol compiler_builtins also defines refused",
-           _refused(classify_unresolved, {"ffi_x"}, set(), {"ffi_x"}, {"ffi_x"}, set()))
+           _refused(classify_unresolved, {"ffi_x"}, **{**kw, "builtins": {"cb": ({"ffi_x"}, set())},
+                                                        "hal": {"ffi_x"}}))
+    pow_kw = {**kw, "kernel_runtime": {"pow"}, "builtins": {"cb": ({"pow"}, set())}}
+    expect("the kernel runtime overrides a weak libm pow",
+           not _refused(classify_unresolved, {"pow"}, **{**pow_kw, "builtins_weak": {"pow"}}))
+    expect("a strong compiler_builtins pow is a duplicate, refused",
+           _refused(classify_unresolved, {"pow"}, **pow_kw))
+    expect("a kernel runtime function compiler_builtins also defines weakly is refused unless named",
+           _refused(classify_unresolved, {"sin"}, **{**kw, "kernel_runtime": {"sin"},
+                                                       "builtins": {"cb": ({"sin"}, set())},
+                                                       "builtins_weak": {"sin"}}))
+    expect("weak bindings are read", weak_definitions("pow W 0 8\nsin T 0 8\nx V 0 8\n") == {"pow", "x"})
+    expect("the link's undefined-symbol report is read",
+           LINK_UNDEFINED.findall("ld.lld: error: undefined symbol: lean_apply_1\n>>> referenced by x.o")
+           == ["lean_apply_1"])
+    good = 'pub const LEAN_GITHASH: &str = "abc123";\n'
+    expect("the runtime githash matching the toolchain passes",
+           not _refused(check_runtime_githash, good, "abc123"))
+    expect("a stale runtime githash is refused", _refused(check_runtime_githash, good, "def456"))
+    expect("a githash only mentioned in a comment is refused",
+           _refused(check_runtime_githash, '// pub const LEAN_GITHASH: &str = "abc123";\n', "abc123"))
+    expect("a reachable symbol no provider defines is refused",
+           _refused(check_reachable_provided, {"lean_io_x"}, got))
+    expect("a reachable symbol the census never saw is refused",
+           _refused(check_reachable_provided, {"lean_new"}, got))
+    expect("a reachable set every provider covers passes",
+           not _refused(check_reachable_provided, {"lean_inc", "ffi_x", "__adddf3"}, got))
 
     nm_out = ("lib.rmeta:\nx.rcgu.o:\nlean_alloc_small T 0 160\nlean_free_small T 0 8\n"
               "lean_small_mem_size T 0 8\nffi_x T 0 4\nffi_data D 0 8\nffi_ref U\n")
     expect("only global text symbols are providers", global_text(nm_out) ==
            {"lean_alloc_small", "lean_free_small", "lean_small_mem_size", "ffi_x"})
     provided = global_text(nm_out)
-    called = {"allocator": ["lean_alloc_small"], "hal": ["ffi_x"]}
+    called = {"allocator": ["lean_alloc_small"], "hal": ["ffi_x"], "runtime": []}
     expect("a HAL that defines its classes passes", not _refused(check_hal_providers, called, provided))
     for label, classes, text in [
         ("a hal symbol the HAL does not define", {**called, "hal": ["ffi_x", "ffi_y"]}, provided),
         ("a hal symbol the HAL defines only as data", {**called, "hal": ["ffi_data"]}, provided),
         ("an allocator call the HAL does not define", called, provided - {"lean_alloc_small"}),
         ("an allocator entry no object calls but the runtime will", called, provided - {"lean_small_mem_size"}),
+        ("a runtime symbol the HAL does not define", {**called, "runtime": ["lean_apply_1"]}, provided),
     ]:
         expect(f"providers refused: {label}", _refused(check_hal_providers, classes, text))
 

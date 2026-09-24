@@ -78,6 +78,16 @@ run_check "BUILD" lake build SeLe4n.Testing.BootEntryContract
 # catch.  Today: seven committing seams, two of them bracketed.
 run_check "BUILD" lake build SeLe4n.Testing.ExportCommitDisciplineCensus
 
+# WS-BP BP2.2: the kernel's Lean runtime answers a few primitives without an
+# operating system -- zero entropy, no file system -- and refuses floating-point
+# formatting and `pow`.  Each is sound only if no kernel entry uses the answer.
+# This census walks everything every production `@[export]` reaches, through
+# bodies and `implemented_by`, and fails if the walk meets `IO.stdGenRef` or a
+# constant implemented by one of those symbols.  Building it IS the check; its
+# witnesses (a generator read, a fail-closed call through a helper, one through
+# `implemented_by`, and a clean body) keep it decisive.
+run_check "BUILD" lake build SeLe4n.Testing.RuntimeEnvironmentCensus
+
 # v0.35.114: which declarations carry a body has ONE answer.  Four of the
 # censuses below derive a domain from the environment and each has to decide it
 # first; until this module they answered it five ways, and four of those matched

@@ -353,6 +353,11 @@ MACHINERY_PINS = {
     # reconciliation and the per-entry discipline check; it mints no
     # declaration.
     ("SeLe4n/Testing/ExportCommitDisciplineCensus.lean", "run_cmd"): 1,
+    # WS-BP BP2.2: the runtime-environment census, decided over the elaborated
+    # environment.  One `run_cmd` -- the witnesses and the walk from every
+    # production `@[export]` through bodies and `implemented_by`; it mints no
+    # declaration.
+    ("SeLe4n/Testing/RuntimeEnvironmentCensus.lean", "run_cmd"): 1,
     # WS-RR RR7.18: the lock-footprint bound census, decided over the elaborated
     # environment.  One `run_cmd` -- it derives the `LockSet` footprint set and
     # compares each bound's TYPE against the definition's own telescope; it

@@ -5,9 +5,9 @@
     "url": "https://github.com/hatter6822/seLe4n",
     "head": {
       "branch": "claude/nice-rubin-dzkos7",
-      "commit_sha": "a53fc60aa037c843872d8418924340dc6c6b2569",
-      "tree_sha": "d5112d2bb2aad2eba946ad0b1d891e285babb38a",
-      "committed_at_utc": "2026-09-24T06:41:49+00:00"
+      "commit_sha": "058a088e6bcaa17eee1a9d61107770ea45556e0d",
+      "tree_sha": "10f8c9167606f11d8928c0b621fb297d050afe46",
+      "committed_at_utc": "2026-09-24T15:25:37+00:00"
     }
   },
   "source_sync": {
@@ -17,19 +17,19 @@
       "tests/**/*.lean"
     ],
     "digest_algorithm": "sha256",
-    "source_digest": "a62f6745fe5201ca920c5c63bd1cf895654e6f753ef21525251db3e49273d4f9"
+    "source_digest": "8d15fe925c1935590d7f253101c2bafc7be4a6c29be3fbf994b1a307cacd86cd"
   },
   "summary": {
-    "module_count": 410,
-    "declaration_count": 23042
+    "module_count": 412,
+    "declaration_count": 23075
   },
   "readme_sync": {
     "version": "0.36.2",
     "lean_toolchain": "v4.28.0",
-    "production_files": 340,
-    "production_loc": 417966,
-    "test_files": 70,
-    "test_loc": 85076,
+    "production_files": 341,
+    "production_loc": 418119,
+    "test_files": 71,
+    "test_loc": 85250,
     "proved_theorem_lemma_decls": 13815,
     "hardware_target": "Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A)"
   },
@@ -289422,6 +289422,126 @@
       ]
     },
     {
+      "module": "SeLe4n.Testing.RuntimeEnvironmentCensus",
+      "path": "SeLe4n/Testing/RuntimeEnvironmentCensus.lean",
+      "declaration_count": 12,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.RuntimeEnvironmentCensus",
+          "line": 50,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "runtimeUnprovidedSymbols",
+          "line": 55,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "seededGenerator",
+          "line": 61,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "isUnprovided",
+          "line": 64,
+          "called": [
+            "contains",
+            "none"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "successors",
+          "line": 71,
+          "called": [
+            "bind",
+            "none",
+            "toList",
+            "value"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "forbiddenReach",
+          "line": 81,
+          "called": [
+            "contains",
+            "insert",
+            "isUnprovided",
+            "none",
+            "seededGenerator",
+            "successors"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessReadsGenerator",
+          "line": 100,
+          "called": [
+            "get",
+            "pure"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessHelper",
+          "line": 104,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessIndirectFloat",
+          "line": 106,
+          "called": [
+            "censusWitnessHelper"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessReference",
+          "line": 108,
+          "called": [
+            "censusWitnessHelper"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessImplementedBy",
+          "line": 111,
+          "called": [
+            "censusWitnessReference"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "censusWitnessClean",
+          "line": 113,
+          "called": [
+            "any",
+            "censusWitnessImplementedBy",
+            "censusWitnessIndirectFloat",
+            "censusWitnessReadsGenerator",
+            "contains",
+            "filter",
+            "forbiddenReach",
+            "isEmpty",
+            "length",
+            "none",
+            "of",
+            "remove",
+            "runtime",
+            "runtimeUnprovidedSymbols",
+            "seededGenerator",
+            "zero"
+          ]
+        }
+      ]
+    },
+    {
       "module": "SeLe4n.Testing.SchedFootprintCensus",
       "path": "SeLe4n/Testing/SchedFootprintCensus.lean",
       "declaration_count": 12,
@@ -302733,6 +302853,193 @@
           "line": 1147,
           "called": [
             "runAll"
+          ]
+        }
+      ]
+    },
+    {
+      "module": "tests.LeanRuntimeConformanceSuite",
+      "path": "tests/LeanRuntimeConformanceSuite.lean",
+      "declaration_count": 21,
+      "declarations": [
+        {
+          "kind": "namespace",
+          "name": "SeLe4n.Testing.LeanRuntimeConformance",
+          "line": 30,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "hex",
+          "line": 32,
+          "called": [
+            "ofList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hexInt",
+          "line": 34,
+          "called": [
+            "hex",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hexByte",
+          "line": 37,
+          "called": [
+            "length",
+            "ofList",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hexBytes",
+          "line": 41,
+          "called": [
+            "hexByte",
+            "isEmpty",
+            "join"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "hexString",
+          "line": 44,
+          "called": [
+            "hexBytes",
+            "toList"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "natCorpus",
+          "line": 47,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "intCorpus",
+          "line": 53,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "smallCorpus",
+          "line": 58,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "natLines",
+          "line": 60,
+          "called": [
+            "hex",
+            "ofNat",
+            "smallCorpus",
+            "toList",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "intLines",
+          "line": 86,
+          "called": [
+            "hex",
+            "hexInt",
+            "toList",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "stringCorpus",
+          "line": 106,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "charCorpus",
+          "line": 109,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "stringLines",
+          "line": 111,
+          "called": [
+            "get",
+            "hexString",
+            "isValid",
+            "length",
+            "set",
+            "toList",
+            "toNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "bytesCorpus",
+          "line": 137,
+          "called": [
+            "ofNat"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "wordCorpus",
+          "line": 142,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "hashLines",
+          "line": 144,
+          "called": [
+            "hexBytes",
+            "toList",
+            "toNat",
+            "wordCorpus"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "environmentLines",
+          "line": 155,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "fixtureLines",
+          "line": 159,
+          "called": [
+            "environmentLines",
+            "hashLines",
+            "intLines",
+            "natLines",
+            "stringLines"
+          ]
+        },
+        {
+          "kind": "def",
+          "name": "fixturePath",
+          "line": 162,
+          "called": []
+        },
+        {
+          "kind": "def",
+          "name": "main",
+          "line": 167,
+          "called": [
+            "checkSharedFixture",
+            "fixtureLines",
+            "fixturePath",
+            "length",
+            "runtime"
           ]
         }
       ]

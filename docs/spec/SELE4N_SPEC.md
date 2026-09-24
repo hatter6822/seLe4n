@@ -51,12 +51,12 @@ enforcement, and scheduling.
 |-----------|-------|
 | **Package version** | `0.36.2` (`lakefile.toml`) |
 | **Lean toolchain** | `v4.28.0` (`lean-toolchain`) |
-| **Production LoC** | 417,966 across 340 Lean files |
-| **Test LoC** | 85,076 across 70 Lean test suites |
+| **Production LoC** | 418,119 across 341 Lean files |
+| **Test LoC** | 85,250 across 71 Lean test suites |
 | **Proved declarations** | 13,815 theorem/lemma declarations (zero sorry/axiom) |
 | **Target hardware** | Raspberry Pi 5 (BCM2712 / ARM Cortex-A76 / ARMv8-A) |
 | **Latest audit** | pre-SM10 completeness audit at `v0.34.3` — [`UNFINISHED_SMP_WORK.md`](../planning/UNFINISHED_SMP_WORK.md), 171 confirmed findings. Prior baselines in [`docs/audits/`](../audits/) |
-| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), and **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4); the rest of BP2 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
+| **Active workstream** | **WS-BP (the bare-metal boot path)** — SM10.1's content, unblocked at v0.35.203; **BP0 (cross-implementation agreement) landed at v0.36.2** (§6.2.2), and **BP1 (aarch64 Lean object code) at v0.36.2** (§6.2.3), **BP2.1 (the Lean heap)** at v0.36.2 (§6.2.4), and **BP2.2 (the kernel's Lean runtime, in Rust)** at v0.36.2 (§6.2.5); BP2.3..BP2.6 and BP3..BP8 not started. **WS-RR (SMP release readiness)** is complete (v0.34.26 → v0.35.203, RR0–RR8). SM10 (release closure → v1.0.0) follows WS-BP. See [`REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Workstream history** | [`docs/REGISTERED_DEBT.md`](../REGISTERED_DEBT.md) |
 | **Metrics source of truth** | [`docs/codebase_map.json`](../../docs/codebase_map.json) (`readme_sync` key) |
 | **Codebase map** | `docs/codebase_map.json` (generated via `./scripts/generate_codebase_map.py --pretty`; validated with `--check`; auto-refreshed on `main` by `.github/workflows/codebase_map_sync.yml`) |
@@ -266,11 +266,10 @@ Archive` CI lane (`scripts/test_lean_aarch64_archive.sh`).  Its contract:
   `lean_alloc_small` / `lean_free_small` over the image's own arena (BP2.1).
   The runtime must be built against the same file.
 - **What it needs.**  Every unresolved symbol is attributed to a provider:
-  the small allocator, the Lean runtime, Rust's `compiler_builtins` for the
-  target, the HAL (a production module's `@[extern]`), or a stdlib `@[extern]`
-  no provider supplies.  At v0.36.2 the objects call no libc symbol; six libm
-  functions (`acosh`, `asinh`, `atanh`, each in both widths) are the residue
-  BP2.2 supplies.
+  the small allocator, the HAL (a production module's `@[extern]`), the
+  kernel's Lean runtime (§6.2.5), Rust's `compiler_builtins` for the target, or
+  *unreachable* — a symbol the lane's reachable link proves nothing needs.  At
+  v0.36.2: 381 unresolved = 1 + 73 + 118 + 78 + 111, and no libc symbol at all.
 - **Entries.**  `scripts/check_kernel_entry_exports.py` decides the HAL's
   kernel-entry requirements on this archive and the host one together: a
   requirement is met only where both define it.
@@ -316,6 +315,44 @@ places, by an allocator in the HAL (`rust/sele4n-hal/src/lean_heap.rs`).
   `scripts/check_link_script.py` (the cross lane's step 6) links a probe under
   `link.ld`, checks the arena's relations on the ELF, and proves each `ASSERT`
   live by mutating the script until it fires.
+
+### 6.2.5 The kernel's Lean runtime (WS-BP BP2.2, v0.36.2)
+
+The compiled Lean code calls into Lean's runtime.  Upstream's (`libleanrt`) is
+C++ over the standard library, threads and an operating system; the kernel
+carries its own, in Rust (`rust/sele4n-hal/src/lean_runtime/`), over the heap of
+§6.2.4.  Its object layouts are byte-identical to `lean.h`'s.
+
+- **Its surface is derived.**  The archive lane links `libsele4n.a` with
+  `--gc-sections`, rooted at the library initializer
+  (`initialize_seLe4n_SeLe4n`) and every production `@[export]`; each symbol
+  that link leaves undefined must be a global function of the HAL's rlib or of
+  `compiler_builtins`.  At v0.36.2 that is 144 symbols, 118 of them the
+  runtime's.  The 111 upstream functions it omits are unreachable by that link,
+  so the image link (BP5.2) uses `--gc-sections` over the same roots.
+- **Three kinds of symbol.**  *Faithful* ones are ported from `lean4` at the
+  toolchain's commit: reference counting with an iterative release, persistence,
+  closure application at every arity, arrays and byte arrays, UTF-8 strings,
+  `ST.Ref`, name and sharing hashes, and arbitrary-precision `Nat`/`Int` (Knuth's
+  Algorithm D for division).  *Environmental* ones answer for a machine with no
+  operating system: platform queries, `Lean.githash` (held equal to the
+  toolchain's), zero-byte entropy, temporary files refused with
+  `unsupportedOperation`.  *Fail-closed* ones halt: `Float` formatting, `scaleB`,
+  `pow`/`powf`.
+- **Checked against upstream.**  `tests/LeanRuntimeConformanceSuite.lean`
+  computes 9 215 results on upstream's runtime and holds
+  `tests/fixtures/lean_runtime_conformance.expected` to them;
+  `lean_runtime::conformance` recomputes every line with the kernel's runtime,
+  on exclusive and shared arguments, checks each result canonical, and ends
+  leak-free.
+- **What the environmental answers rest on is proved.**
+  `SeLe4n/Testing/RuntimeEnvironmentCensus.lean` walks everything every
+  production `@[export]` reaches, through bodies and `implemented_by`, and fails
+  the build if it meets `IO.stdGenRef` or a constant implemented by an
+  environmental or fail-closed symbol.
+- **Single-threaded by construction.**  No object is marked multi-threaded and
+  no task or promise exists; a path that would meet one halts.  `panic!`
+  returns `default` and reports, as the proofs describe.
 
 ### 6.3 Cache Coherency & Memory Ordering Assumptions
 The seLe4n model makes the following cache coherency and memory ordering
