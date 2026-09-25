@@ -441,7 +441,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             // SAFETY: `lean_per_core_timer_tick` is the C-callable wrapper the
             // Lean compiler emits for `Kernel.perCoreTimerTickEntry`
             // (`@[export lean_per_core_timer_tick]`).  It takes a `u64` core id
-            // and returns no value; calling it is sound from EL1 kernel context
+            // and returns its `BaseIO Unit` value, `lean_box(0)`; calling it is sound from EL1 kernel context
             // after the per-core hardware init has completed AND this core's
             // Lean runtime is initialized (the `lean_ready` gate just checked).
             extern "C" {
@@ -452,7 +452,7 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
                 /// (`lean_ready` checked on *this* PE).  `core_id` must be the
                 /// executing PE's own id: the tick charges that core's budget
                 /// and re-buckets its run queue.
-                fn lean_per_core_timer_tick(core_id: u64) -> crate::lean_runtime::LeanIoResult;
+                fn lean_per_core_timer_tick(core_id: u64) -> crate::lean_runtime::LeanBaseIoUnit;
             }
             // WS-SM SM5.I: the tick commits kernel state through the same
             // `modifyGetKernelState` read-then-write the syscall path uses,
@@ -471,11 +471,12 @@ pub fn per_core_timer_tick_isr(core_id: u64) {
             let res = crate::kernel_entry::with_kernel_entry(core_id as usize, || unsafe {
                 lean_per_core_timer_tick(core_id)
             });
-            // The export returns its owned `IO` result, released outside the
-            // bracket so a malformed one halts this PE without holding the
-            // kernel-entry lock (`lean_runtime::discharge_base_io`).
-            // SAFETY: `res` is the result the export just returned, whose one
-            // reference this caller owns.
+            // The export returns its `BaseIO Unit` value, `lean_box(0)`,
+            // checked outside the bracket so a malformed one halts this PE
+            // without holding the kernel-entry lock
+            // (`lean_runtime::discharge_base_io`).
+            // SAFETY: `res` is the value the export just returned; if it is
+            // a heap object this caller owns its one reference.
             unsafe { crate::lean_runtime::discharge_base_io(res, "lean_per_core_timer_tick") };
         }
     }

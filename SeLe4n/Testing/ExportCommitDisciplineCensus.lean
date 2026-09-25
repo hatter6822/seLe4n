@@ -298,6 +298,62 @@ private def censusWitnessNoCommit : BaseIO Unit := do
   let _ ← SeLe4n.Platform.FFI.getKernelState
   pure ()
 
+/-! ## Every export returns `BaseIO` of `Unit` or of a C scalar
+
+Post-BP4.5 ABI audit.  The C a Lean `@[export]` compiles to is decided by its
+type, and the HAL declares each one against that C.  Lean 4.28 passes no world
+argument and wraps no `IO` result: a `BaseIO α` export returns `α`'s own C
+representation — a `uint*_t` for a fixed-width scalar, `lean_object*` for
+anything boxed.  `scripts/check_kernel_entry_exports.py` holds every HAL
+declaration to the generated prototype, and for a `lean_object*` return it
+requires the `lean_runtime::LeanBaseIoUnit` wrapper, whose discharge accepts
+exactly `lean_box(0)`.  That is sound only if a boxed export result is always
+`Unit`, which is a fact about **types**, so the environment decides it here: an
+export's telescoped result must be `BaseIO α` with `α` one of `Unit`, `Bool`,
+`UInt8`, `UInt16`, `UInt32`, `UInt64` or `USize`, or that scalar bare for a
+pure export (`lean_classify_synchronous_exception`).  An `IO` export and a boxed
+result are refused rather than read — the spelling is this
+project's to choose, so a canonical one is required (round 16's exit). -/
+
+/-- The result types an export may return inside `BaseIO`. -/
+def exportResultTypes : List Name :=
+  [``Unit, ``Bool, ``UInt8, ``UInt16, ``UInt32, ``UInt64, ``USize]
+
+/-- `none` when `ty`'s telescoped result is `BaseIO α` with `α` in
+`exportResultTypes`; otherwise the reason it is not. -/
+def exportResultViolation (n : Name) (ty : Expr) : MetaM (Option String) :=
+  -- `forallTelescope`, **not** the reducing form: `BaseIO α` unfolds to
+  -- `EStateM`, which is itself a function type, so a reducing telescope walks
+  -- into the world argument Lean 4.28 no longer passes and never sees `BaseIO`.
+  -- The spelling is required to be canonical, so no alias needs unfolding.
+  Meta.forallTelescope ty fun _ body => do
+    let body ← instantiateMVars body
+    let admissible (t : Expr) : Bool :=
+      match t with
+      | .const a _ => exportResultTypes.contains a
+      | _ => false
+    match body with
+    | .app (.const ``BaseIO _) α =>
+        if admissible α then pure none
+        else pure (some s!"`{n}` returns `BaseIO {α}`, which crosses the C boundary as a \
+          boxed object the HAL cannot discharge; an export returns `BaseIO` of one of \
+          {exportResultTypes}")
+    | .const a _ =>
+        -- A pure export returns its value unwrapped; a C scalar is admissible
+        -- (`lean_classify_synchronous_exception` is one), `Unit` pointless.
+        if a != ``Unit && exportResultTypes.contains a then pure none
+        else pure (some s!"`{n}` is a pure export returning `{a}`, which is not a C scalar")
+    | _ => pure (some s!"`{n}`'s result type `{body}` is neither `BaseIO α` nor a C scalar; \
+        every `@[export]` of this kernel returns `Unit` or a C scalar, inside `BaseIO` or \
+        bare")
+
+private def exportResultWitnessUnit (_x : UInt64) : BaseIO Unit := pure ()
+private def exportResultWitnessScalar (x : UInt64) : BaseIO UInt64 := pure x
+private def exportResultWitnessBoxed (_x : UInt64) : BaseIO Nat := pure 0
+private def exportResultWitnessPure (x : UInt64) : UInt64 := x
+private def exportResultWitnessPureBoxed (_x : UInt64) : Nat := 0
+private def exportResultWitnessIO (_x : UInt64) : IO Unit := pure ()
+
 run_cmd Command.liftTermElabM do
   let env ← getEnv
   -- The environment is the production one; a seam defined in a module only
@@ -362,6 +418,29 @@ run_cmd Command.liftTermElabM do
     let violations := disciplineViolations env n d
     unless violations.isEmpty do
       throwError "export-commit census: {violations}"
+  -- Post-BP4.5 ABI audit: every export returns `Unit` or a C scalar.
+  let typeOf (n : Name) : MetaM Expr := do
+    match env.find? n with
+    | some info => pure info.type
+    | none => throwError "export-result census: `{n}` is not in the environment"
+  for n in [``exportResultWitnessUnit, ``exportResultWitnessScalar, ``exportResultWitnessPure] do
+    if let some why ← exportResultViolation n (← typeOf n) then
+      throwError "export-result census: an admissible witness was refused: {why}"
+  for n in [``exportResultWitnessBoxed, ``exportResultWitnessPureBoxed, ``exportResultWitnessIO] do
+    if (← exportResultViolation n (← typeOf n)).isNone then
+      throwError "export-result census: `{n}` was accepted — the check does not refuse the \
+        shape it exists for"
+  let mut checked := 0
+  for (n, info) in env.constants.toList do
+    if isProjectConstant n && (getExportNameFor? env n).isSome then
+      checked := checked + 1
+      if let some why ← exportResultViolation n info.type then
+        throwError "export-result census: {why}"
+  if checked == 0 then
+    throwError "export-result census: no project `@[export]` was found, so the check \
+      decided nothing"
+  logInfo m!"export-result census: {checked} project `@[export]`s, each returning `Unit` \
+    or a C scalar"
   logInfo m!"export-commit census: {derived.length} state-committing `@[export]` seams, \
     {bracketedSeams.length} of them bracketed ({bracketedSeams}); the rest are recorded \
     unbracketed with reasons"

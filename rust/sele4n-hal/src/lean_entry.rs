@@ -230,7 +230,7 @@ pub fn enter_lean_kernel(
         /// on the boot core, after the library initializer, before any other
         /// Lean upcall on any PE and before any secondary is released.  `dtb`
         /// must be a live `ByteArray` whose one reference the callee takes.
-        fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanIoResult;
+        fn lean_kernel_main(dtb: Obj) -> lean_runtime::LeanBaseIoUnit;
     }
     // SAFETY: `init_mmu` admitted `mmu::dtb_window(dtb_ptr)` — `MAX_DTB_SIZE`
     // bytes from the pointer, inside the guaranteed RAM the boot map covers and
@@ -249,8 +249,9 @@ pub fn enter_lean_kernel(
     // initialization.  `dtb` is the fresh `ByteArray` just built, whose one
     // reference is handed over.
     let res = unsafe { lean_kernel_main(dtb) };
-    // SAFETY: `res` is the `IO` result `lean_kernel_main` just returned, whose
-    // one reference this caller owns.
+    // SAFETY: `res` is the `BaseIO Unit` value `lean_kernel_main` just
+    // returned (`lean_box(0)`); if it is a heap object this caller owns its one
+    // reference.
     unsafe { lean_runtime::discharge_base_io(res, "lean_kernel_main") };
     // WS-BP BP4.5: the image's loaded bytes — where an initial task's code is
     // carried — are cleaned to the Point of Unification, and every instruction

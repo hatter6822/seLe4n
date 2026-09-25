@@ -248,10 +248,13 @@ to it that breaks any variant fails to elaborate.  Releasing a secondary consume
 `enter_lean_kernel` returns after the install, and `no_lean_kernel()` is for
 images and tests that link no kernel.  A new bring-up path takes the permit too
 — it is how the install is kept ahead of every secondary without a lock.
-A Lean `IO`/`BaseIO` export returns an owned `IO` result: declare it
-`-> lean_runtime::LeanIoResult` and hand the result to
-`lean_runtime::discharge_base_io`.  `check_kernel_entry_exports.py` checks each
-declaration against the C prototype the Lean compiler generated.
+Lean 4.28 returns an `IO`/`BaseIO` function's value directly (no world, no
+result wrapper): declare a `BaseIO Unit` export `-> lean_runtime::LeanBaseIoUnit`
+and hand the value to `lean_runtime::discharge_base_io`; only a module
+initializer returns an `IO` result (`lean_runtime::LeanIoResult`).  A HAL
+definition of a `BaseIO Unit` `@[extern]` returns `lean_runtime::base_io_unit()`.
+`check_kernel_entry_exports.py` checks both directions against the C prototypes
+the Lean compiler generated.
 
 **`cargo check` is not a substitute.** It stops before code generation, so it
 never hands an `asm!` template to an assembler. The first real cross build

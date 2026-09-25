@@ -179,7 +179,7 @@ def isApprovedBootApplication (value : Expr) : MetaM Bool :=
 /-- The type the exported entry must have.
 
 `rust/sele4n-hal/src/lean_entry.rs` declares `extern "C" { fn lean_kernel_main(dtb:
-Obj) -> LeanIoResult; }`, and a C symbol carries no type information, so the
+Obj) -> LeanBaseIoUnit; }`, and a C symbol carries no type information, so the
 linker accepts a Lean declaration of *any* shape under that name and Rust then
 calls it with an incompatible ABI — a boxed `ByteArray` where the entry expects
 an unboxed `UInt64`, for instance (PR #889 review round 18).  WS-BP BP4.3 moved

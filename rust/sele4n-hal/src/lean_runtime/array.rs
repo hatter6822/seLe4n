@@ -502,10 +502,13 @@ mod exports {
         dest: Obj,
         dest_off: Obj,
         len: Obj,
-        exact: bool,
+        exact: u8,
     ) -> Obj {
+        // `exact` crosses as the generated C's `uint8_t`, so it is read as a
+        // byte and compared rather than received as a Rust `bool`, whose
+        // validity a caller's byte of `2` would break.
         // SAFETY: the Lean calling convention for this primitive.
-        unsafe { byte_array_copy_slice(src, src_off, dest, dest_off, len, exact) }
+        unsafe { byte_array_copy_slice(src, src_off, dest, dest_off, len, exact != 0) }
     }
 
     /// `lean_byte_array_hash`.

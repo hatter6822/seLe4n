@@ -1,4 +1,4 @@
-## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch
+## v0.36.2 — WS-BP BP0, BP1, BP2, BP3 and BP4.1–BP4.5: the three Lean/Rust pairs are driven through shared fixtures, the twenty-two divergences that exposed are fixed, the kernel is FP-free, its Lean object code is built for the target, the Lean heap has an arena and an allocator, the kernel carries its own Lean runtime in Rust, the kernel is entered only after its library initializer succeeds, the boot map is built from constants with nothing parsed before the MMU is on, and the RPi5 deployment — a root task with its own address space and untypeds, and an untrusted initial thread — boots, proved by evaluation, into a state proved to satisfy the proof-layer invariant bundle, through a `lean_kernel_main` that exists, runs before any secondary core is released, and boots on the firmware's device tree — halting on a board that is not a Raspberry Pi 5 and booting any Raspberry Pi 5 on its own RAM variant — with the image cleaned to the Point of Unification before any thread can fetch, and the Lean/Rust C boundary is declared the way Lean 4.28 emits it, in both directions
 
 WS-BP's first phase.  Three questions are answered on both sides of the
 Lean/Rust boundary — which `/memory` extents a device tree declares, which bits
@@ -773,36 +773,48 @@ configuration, and the proof that it boots.
     closure plan's §3 obligation, now recorded as discharged.
   - The boot summary no longer claims a "3 GiB RAM" identity map, which BP2.6
     had already made false.
-- **A leak the BP4.1 audit found, closed (latent; reported as a possible
-  vulnerability).**  The Lean compiler emits a `BaseIO` export as a C function
-  returning an owned `lean_object*`: the `IO` result, which
-  `lean_io_result_mk_ok` heap-allocates on every call.  Six HAL declarations
-  declared no return value: `lean_kernel_main`, `lean_per_core_timer_tick`,
-  `lean_per_core_reschedule`, `lean_secondary_kernel_main`, `lean_handle_fault`
-  and `lean_handle_unknown_syscall`.  So every call leaked one object on the
-  Lean heap.
-  - Once a core is lean-ready (BP6), the timer tick alone (1000 Hz on four PEs)
-    exhausts the 64 MiB heap in minutes, and faults or unknown syscall numbers
-    from a user thread accelerate it: an uptime-bounded denial of service.
-    Unreachable today, because no core is ready.
-  - The six declarations return `lean_runtime::LeanIoResult`, a `#[must_use]`,
-    `#[repr(transparent)]` wrapper, so a dropped result fails the `-D warnings`
-    build.  Each call site hands it to `lean_runtime::discharge_base_io`, which
-    releases it outside the kernel-entry bracket and halts on anything but
-    `ok`, since a `BaseIO` action cannot fail.  The `IO`-result classifier moved
-    from `lean_entry.rs` to `lean_runtime` (`consume_io_result`), so the
-    initializer and the seams read one answer.
-  - `scripts/check_kernel_entry_exports.py` now holds every HAL foreign
-    declaration of a Lean-generated symbol to the C prototype the Lean compiler
-    itself generated under `.lake/build/ir` (10 checked).  The linker checks
-    names and never types, which is why nothing had seen this.  The self-test
-    keeps the symbol and moves one type per case: a dropped return, a
-    bare-pointer return, a narrowed or an extra parameter, a widened scalar.
-    Reverting one declaration on the real tree fails the gate, and dropping one
-    result fails compilation.
-  - `lean_runtime` tests: a thousand discharged results leave the heap as it
-    was, the classifier releases every heap result whatever its tag, and a
-    non-`ok` result halts.
+- **The C boundary read the way Lean 4.28 emits it — BP4.1's audit, and the
+  correction the post-BP4.5 ABI audit made to it (latent; reported as a
+  possible vulnerability).**  Six HAL declarations of `BaseIO Unit` exports
+  (`lean_kernel_main`, `lean_per_core_timer_tick`, `lean_per_core_reschedule`,
+  `lean_secondary_kernel_main`, `lean_handle_fault`,
+  `lean_handle_unknown_syscall`) declared no return while the generated C
+  returns `lean_object*`.
+  - BP4.1 fixed the declarations and read the value as an owned `IO` result
+    constructor, recording a per-call heap leak.  **That reading was wrong**:
+    Lean 4.28 passes no world argument and wraps no result, so only a module
+    initializer (`initialize_*`) returns an `IO` constructor, and a `BaseIO
+    Unit` export returns `lean_box(0)` — there was no leak.  The discharge BP4.1
+    added refused that scalar as malformed and halted, so the first tick,
+    reschedule, fault or bring-up on a ready core would have halted the PE and
+    the boot entry the system.
+  - The declarations return `lean_runtime::LeanBaseIoUnit` (`#[must_use]`,
+    `#[repr(transparent)]`), and `discharge_base_io` accepts exactly
+    `lean_box(0)`, releasing and halting on anything else.  The initializer
+    keeps `LeanIoResult`, classified by `consume_io_result`.
+  - **The other direction was unchecked too.**  Thirty-three HAL definitions of
+    `BaseIO Unit` `@[extern]` bindings — the TLB, cache, SGI, timer, MMIO, lock
+    and shootdown primitives — returned nothing while the generated C declares
+    each `lean_object* f(…)` and returns or `lean_dec`s the value, so the caller
+    read whatever was left in `x0` as an object reference.  Each returns
+    `lean_runtime::base_io_unit()` now.  `lean_byte_array_copy_slice` takes its
+    `uint8_t` flag as `u8` rather than `bool`.
+  - `scripts/check_kernel_entry_exports.py` holds every HAL declaration of a
+    Lean-generated symbol **and** every HAL definition the generated C calls
+    (100 of them) to the prototype the compiler wrote under `.lake/build/ir`;
+    the return spelling is decided per symbol (`export_return_spelling`), a
+    `lean_object*` binding may return `!` when it never returns, and a
+    `uint8_t` return may be `bool` but a parameter may not.  The self-test
+    keeps each symbol and moves one type per case, the retired `IO`-result
+    reading included; eight token-preserving mutations of the gate were each
+    caught.
+  - `SeLe4n/Testing/ExportCommitDisciplineCensus.lean` proves every project
+    `@[export]` (nine) returns `Unit` or a C scalar, in `BaseIO` or bare — which
+    is what makes "a boxed export result is `lean_box(0)`" sound — with five
+    witnesses, three of them refusals (a boxed `BaseIO Nat`, a pure `Nat`, an
+    `IO Unit`).
+  - `lean_runtime` tests: a thousand `lean_box(0)` values discharge with no
+    allocation, and an `IO` constructor or another scalar halts.
 - **BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it.**
   `lean_kernel_main` took the DTB pointer and did not read it, and booted a
   deployment whose board account was fixed at the smallest Raspberry Pi 5, so
@@ -811,7 +823,7 @@ configuration, and the proof that it boots.
     (`lean_entry::enter_lean_kernel`, through `cmdline::dtb_blob_from_ptr` inside
     the window `init_mmu` admitted, and `lean_runtime::array::byte_array_of`) and
     hands the `ByteArray`'s one reference to `lean_kernel_main`, now declared
-    `fn(dtb: Obj) -> LeanIoResult` and held to the compiler's C by the link gate.
+    `fn(dtb: Obj) -> LeanBaseIoUnit` and held to the compiler's C by the link gate.
     A pointer that yields no blob is handed over **empty** rather than refused
     in Rust, so the verified parser owns the refusal.
   - `kernelMain (dtb : ByteArray)` is `bootAndInitialiseRPi5FromDtbOrHalt` on it.

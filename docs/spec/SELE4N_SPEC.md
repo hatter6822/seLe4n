@@ -537,15 +537,21 @@ def kernelMain (dtb : ByteArray) : BaseIO Unit :=
   eighth committing seam, unbracketed, with the ordering as its reason.  The
   reachability census's pin shrank by the nineteen boot-path transformers the
   entry now reaches.
-- **A `BaseIO` export's result is owned, and released.**  The generated C
-  returns a heap-allocated `IO` result (`lean_object*`) on every call.  Every
-  HAL declaration of such an export returns `lean_runtime::LeanIoResult`, a
-  `#[must_use]` pointer wrapper, and its call site releases the result through
-  `discharge_base_io`.  Before this, six declarations dropped the result, so
-  each call leaked one object: latent, but an uptime-bounded denial of service
-  once cores are ready.  `check_kernel_entry_exports.py` holds every HAL
-  declaration of a Lean-generated symbol to the prototype the Lean compiler
-  generated, because the linker compares names and never types.
+- **Values cross the boundary, not `IO` results.**  Lean 4.28 returns an
+  `IO`/`BaseIO` function's value directly; only a module initializer returns an
+  `IO` result constructor.  A HAL declaration of a `BaseIO Unit` export returns
+  `lean_runtime::LeanBaseIoUnit`, a `#[must_use]` pointer wrapper, and its call
+  site checks it through `discharge_base_io`, which accepts `lean_box(0)` and
+  halts on anything else; the initializer's result is `LeanIoResult`.  A HAL
+  definition of a `BaseIO Unit` `@[extern]` binding returns `lean_box(0)`
+  (`lean_runtime::base_io_unit()`).  `check_kernel_entry_exports.py` holds every
+  HAL declaration of a Lean-generated symbol, and every HAL definition the
+  generated C calls, to the prototype the Lean compiler generated, because the
+  linker compares names and never types; `ExportCommitDisciplineCensus` proves
+  every `@[export]` returns `Unit` or a C scalar.  The post-BP4.5 ABI audit
+  corrected BP4.1's reading, which treated each export's `lean_box(0)` as a
+  malformed `IO` result — the first tick on a ready core would have halted it —
+  and thirty-three bindings that returned nothing where the C reads a value.
 - **Not yet read: the DTB pointer.**  The configuration fixes the smallest
   board as the board account.  Moving the entry onto the device-tree wrapper is
   BP4.3–BP4.4.
@@ -576,7 +582,7 @@ deployment's IRQ table and objects.
   the device-tree wrapper, the entry's type is `ByteArray → BaseIO Unit`, and the
   blob passed must be the entry's own parameter: a fixed blob, an edited copy and
   the retired config-taking call are refused witnesses.  The link gate holds the
-  Rust declaration `fn lean_kernel_main(dtb: Obj) -> LeanIoResult` to the C the
+  Rust declaration `fn lean_kernel_main(dtb: Obj) -> LeanBaseIoUnit` to the C the
   Lean compiler generated.
 - **Measured on boards.**  `tests/Ak9PlatformSuite.lean` runs the entry's pure
   half on 1, 2, 3, 4 and 8 GiB device trees — each boots on its own variant with

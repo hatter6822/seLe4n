@@ -497,19 +497,21 @@ pub fn io_result_mk_error(error: Obj) -> Obj {
     r
 }
 
-/// The owned `IO` result a Lean `IO` or `BaseIO` action returns across the C
-/// boundary: a `lean_object*` whose one reference the caller holds.
+/// The `IO` result a Lean **module initializer** (`initialize_<pkg>_<Module>`)
+/// returns across the C boundary: an owned heap constructor, tag 0 for `ok` and
+/// tag 1 for `error` (`lean_io_result_mk_ok` / `lean_io_result_mk_error`).
 ///
-/// A distinct type rather than a bare [`Obj`] because a raw pointer is not
-/// `must_use`, so a call whose result was dropped compiled silently — which is
-/// how six HAL seams leaked one heap object per call.  `#[must_use]` makes a
-/// dropped result a warning, and the crate's `-D warnings` lint makes it an
-/// error; `#[repr(transparent)]` makes it the pointer at the ABI, so a foreign
-/// declaration may name it as its return type.  `scripts/check_kernel_entry_exports.py`
-/// holds every HAL declaration whose generated C returns `lean_object*` to this
-/// type.
-#[must_use = "a Lean `IO` result owns a heap object: pass it to `discharge_base_io` \
-              or `consume_io_result`"]
+/// Only initializers return one.  Lean 4.28 compiles every *other* `IO` /
+/// `BaseIO` function without a world argument and without a result wrapper:
+/// it returns the action's value directly, so a `BaseIO Unit` export returns
+/// `lean_box(0)` and is declared [`LeanBaseIoUnit`].  The two are distinct
+/// types because reading one as the other is the defect the post-BP4.5 ABI
+/// audit found — every `BaseIO Unit` export's scalar was refused as a
+/// malformed `IO` result, so the first tick on a ready core would have halted
+/// it.  `#[must_use]` makes a dropped result an error under the crate's
+/// `-D warnings`; `#[repr(transparent)]` makes it the pointer at the ABI.
+#[must_use = "a Lean initializer's `IO` result owns a heap object: pass it to \
+              `consume_io_result`"]
 #[repr(transparent)]
 #[derive(Debug)]
 pub struct LeanIoResult(Obj);
@@ -521,6 +523,44 @@ impl LeanIoResult {
     }
 }
 
+/// The value a Lean `BaseIO Unit` function returns across the C boundary.
+///
+/// Lean 4.28 returns an `IO` / `BaseIO` action's value directly — no world
+/// argument, no `IO` result constructor — so this is `Unit`'s boxed
+/// representation, `lean_box(0)`, a scalar with nothing to release.  It is a
+/// distinct `#[must_use]` type rather than a bare [`Obj`] so a call's result
+/// cannot be ignored unchecked: [`discharge_base_io`] holds it to `lean_box(0)`
+/// and halts on anything else, which is the one signal a mis-declared export
+/// (one whose Lean type is not `BaseIO Unit`) can give at the boundary.
+/// `scripts/check_kernel_entry_exports.py` holds every HAL declaration of a
+/// non-initializer Lean export returning `lean_object*` to this type.
+#[must_use = "a `BaseIO Unit` export's value must be checked: pass it to `discharge_base_io`"]
+#[repr(transparent)]
+#[derive(Debug)]
+pub struct LeanBaseIoUnit(Obj);
+
+impl LeanBaseIoUnit {
+    /// The value, handed over.
+    pub fn into_obj(self) -> Obj {
+        self.0
+    }
+}
+
+/// `Unit`'s boxed representation, `lean_box(0)`: what a HAL `@[extern]` whose
+/// Lean type is `BaseIO Unit` (or any `… → BaseIO Unit`) must return.
+///
+/// The generated C declares every such extern `lean_object* f(…)` and uses the
+/// value — returns it upward or `lean_dec`s it — so a Rust definition that
+/// returns nothing leaves whatever the last computation put in `x0` to be read
+/// as an object reference.  The post-BP4.5 ABI audit found thirty-three HAL
+/// externs doing exactly that.  `scripts/check_kernel_entry_exports.py` holds
+/// every HAL definition of a Lean-called symbol to the C prototype the Lean
+/// compiler generated for it, return type included.
+#[must_use]
+pub fn base_io_unit() -> Obj {
+    boxed(0)
+}
+
 /// Why an `IO` result is not `ok`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum IoResultRefused {
@@ -529,7 +569,7 @@ pub enum IoResultRefused {
     /// Lean, and the runtime never does that.
     Error,
     /// A scalar, or a constructor whose tag is neither `ok` (0) nor `error`
-    /// (1).  No generated `IO` action returns one, so it is refused as a
+    /// (1).  No generated initializer returns one, so it is refused as a
     /// malformed result rather than read as success.
     Malformed {
         /// The tag found, or `None` for a scalar.
@@ -537,8 +577,10 @@ pub enum IoResultRefused {
     },
 }
 
-/// Classify and consume an `IO` result: `Ok(())` exactly for a heap
-/// constructor with tag 0 (`lean.h`'s `lean_io_result_is_ok`).  Every heap
+/// Classify and consume a module initializer's `IO` result ([`LeanIoResult`]):
+/// `Ok(())` exactly for a heap constructor with tag 0 (`lean.h`'s
+/// `lean_io_result_is_ok`).  Not for any other export: those return their
+/// value directly, and a `BaseIO Unit` one goes to [`discharge_base_io`].  Every heap
 /// object, whatever its tag, has the one reference it arrived with released.
 ///
 /// # Safety
@@ -562,27 +604,31 @@ pub unsafe fn consume_io_result(res: Obj) -> Result<(), IoResultRefused> {
     }
 }
 
-/// Consume the result of a `BaseIO` export the HAL called, or halt.
+/// Check the value a `BaseIO Unit` export the HAL called returned, or halt.
 ///
-/// A Lean `BaseIO α` export compiles to a C function returning an **owned**
-/// `IO` result (`lean_io_result_mk_ok`, a fresh heap constructor on every
-/// call), so a caller that drops it leaks one object on the Lean heap per call
-/// — which, on a per-tick seam, exhausts the heap in minutes.  Every HAL call
-/// of such an export hands its result here.  `BaseIO` cannot fail, so anything
-/// but `ok` means the boundary itself is broken, and that halts rather than
-/// continues; `symbol` names the export in the report.
+/// Lean 4.28 returns the action's value directly, so the only value a
+/// `BaseIO Unit` function can return is `lean_box(0)`, a scalar that owns
+/// nothing.  Anything else means the boundary is broken — the export's Lean
+/// type is not the one its declaration claims — and that halts rather than
+/// continues; a heap object is released first so the report is the only
+/// effect.  `symbol` names the export in the report.
 ///
 /// # Safety
 ///
-/// `res` must be the result a `BaseIO` export just returned to this caller;
-/// this call consumes it.
-pub unsafe fn discharge_base_io(res: LeanIoResult, symbol: &str) {
-    // SAFETY: forwarded from the caller, which owns the one reference.
-    if unsafe { consume_io_result(res.into_obj()) }.is_err() {
-        diagnostic(
-            "BaseIO export returned a non-ok result: ",
-            symbol.as_bytes(),
-        );
-        fatal("a BaseIO export returned a result BaseIO cannot produce");
+/// `res` must be the value an export just returned to this caller; if it is a
+/// heap object, this call consumes its one reference.
+pub unsafe fn discharge_base_io(res: LeanBaseIoUnit, symbol: &str) {
+    let o = res.into_obj();
+    if is_scalar(o) && unbox(o) == 0 {
+        return;
     }
+    if !is_scalar(o) {
+        // SAFETY: a heap object the caller handed over by its contract.
+        unsafe { dec(o) };
+    }
+    diagnostic(
+        "BaseIO Unit export returned a value other than lean_box(0): ",
+        symbol.as_bytes(),
+    );
+    fatal("a BaseIO Unit export returned a value BaseIO Unit cannot produce");
 }

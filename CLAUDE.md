@@ -7526,18 +7526,29 @@ compile.  (4) **The install is the eighth committing seam, recorded unbracketed*
 in `ExportCommitDisciplineCensus` with that ordering as its reason, and the
 reachability census's pin shrank by the nineteen boot-path transformers it now
 reaches.  A new step the boot entry reaches is therefore *live*, not pinned.
-(5) **A Lean `IO`/`BaseIO` export returns an OWNED result, and the HAL must
-release it.**  The generated C is `lean_object* f(…)`, a heap-allocated `IO`
-result on every call; six HAL declarations wrote no return and so leaked one
-object per call on the Lean heap — on the per-tick seam, the whole 64 MiB in
-minutes once a core is ready.  Such a declaration returns
-`lean_runtime::LeanIoResult` (`#[must_use]`, `#[repr(transparent)]`, so dropping
-it is a compile error) and its caller hands it to
-`lean_runtime::discharge_base_io`, outside the kernel-entry bracket.  **The
-linker checks names, never types**, so `check_kernel_entry_exports.py` holds
-every HAL foreign declaration of a Lean-generated symbol to the C prototype the
-Lean compiler generated under `.lake/build/ir` — a new seam's signature is
-checked against the compiler's own statement of the ABI, not against a table.
+(5) **A Lean function crossing the C boundary returns its VALUE, and each side
+must declare exactly the C the Lean compiler generated.**  Lean 4.28 passes no
+world argument and wraps no `IO` result: a `BaseIO Unit` export returns
+`lean_box(0)`, a `BaseIO UInt64` one a `uint64_t`, and only a module
+**initializer** (`initialize_*`) returns an `IO` result constructor.  So a HAL
+declaration of a `BaseIO Unit` export returns `lean_runtime::LeanBaseIoUnit`
+and its caller hands it to `lean_runtime::discharge_base_io`, which accepts
+`lean_box(0)` and halts on anything else; the initializer's is
+`lean_runtime::LeanIoResult`, classified by `consume_io_result`.  Both wrappers
+are `#[must_use]` and `#[repr(transparent)]`.  In the other direction, a HAL
+**definition** of an `@[extern]` binding returns what the generated C declares
+— a `BaseIO Unit` binding is `lean_object* f(…)`, so it returns
+`lean_runtime::base_io_unit()`: a definition returning nothing leaves whatever
+was in `x0` to be read as an object reference.  **The linker checks names,
+never types**, so `check_kernel_entry_exports.py` holds every HAL foreign
+declaration of a Lean-generated symbol **and** every HAL definition the
+generated C calls to the prototype the Lean compiler wrote under
+`.lake/build/ir`, and `ExportCommitDisciplineCensus` proves every `@[export]`
+returns `Unit` or a C scalar — which is what makes "a boxed export result is
+`lean_box(0)`" sound.  (BP4.1 first read the export results as `IO`
+constructors, so the discharge refused `lean_box(0)` and the first tick on a
+ready core would have halted it; and thirty-three HAL bindings returned
+nothing.  The post-BP4.5 ABI audit fixed both.)
 
 **BP4.3/BP4.4 — the device tree reaches Lean, and the entry boots on it**
 (`v0.36.2`).  Four things new code must respect.  (1) **The entry takes the

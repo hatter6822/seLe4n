@@ -919,23 +919,43 @@ fn the_census_decides_exactly_the_symbols_this_runtime_does_not_provide() {
     );
 }
 
-/// A `BaseIO` export's result, discharged, leaves the heap as it was: the one
-/// reference the call returned is released.  This is the leak the HAL's six
-/// `BaseIO` seams had while their declarations dropped the result — one object
-/// per call, on the per-tick path.
+/// A `BaseIO Unit` export returns `lean_box(0)` directly under Lean 4.28 — no
+/// world argument, no `IO` result constructor — so that is the value the
+/// discharge accepts, and it allocates and frees nothing.
 #[test]
-fn a_discharged_base_io_result_is_released() {
+fn a_base_io_unit_value_is_accepted() {
     let before = live();
     for _ in 0..1000 {
-        let res = io_result_mk_ok(boxed(0));
-        // SAFETY: `res` is a fresh `IO` result owned here.
-        unsafe { discharge_base_io(LeanIoResult(res), "test_export") };
+        // SAFETY: a scalar, owning nothing.
+        unsafe { discharge_base_io(LeanBaseIoUnit(base_io_unit()), "test_export") };
     }
-    assert_eq!(live(), before, "discharging an `ok` result must free it");
+    assert_eq!(live(), before, "a boxed unit owns nothing");
+    assert!(is_scalar(base_io_unit()) && unbox(base_io_unit()) == 0);
 }
 
-/// The classification `discharge_base_io` decides by: only a tag-0 heap
-/// constructor is `ok`, and every heap object is released whatever it held.
+/// The retired reading: an `IO` result constructor is what a module
+/// *initializer* returns, never a `BaseIO Unit` export, and the discharge the
+/// HAL's five seams and the boot entry use refuses one.  Before the post-BP4.5
+/// ABI audit the discharge accepted exactly this and refused `lean_box(0)`, so
+/// the first tick on a ready core would have halted it.  The constructor is
+/// released before the halt.
+#[test]
+#[should_panic(expected = "a BaseIO Unit export returned a value BaseIO Unit cannot produce")]
+fn an_io_result_constructor_is_not_a_base_io_unit_value() {
+    // SAFETY: a fresh heap object owned here.
+    unsafe { discharge_base_io(LeanBaseIoUnit(io_result_mk_ok(boxed(0))), "test_export") };
+}
+
+/// A scalar other than `lean_box(0)` is not `Unit` either.
+#[test]
+#[should_panic(expected = "a BaseIO Unit export returned a value BaseIO Unit cannot produce")]
+fn a_non_unit_scalar_halts() {
+    // SAFETY: a scalar, owning nothing.
+    unsafe { discharge_base_io(LeanBaseIoUnit(boxed(1)), "test_export") };
+}
+
+/// The classification an initializer's result is decided by: only a tag-0
+/// heap constructor is `ok`, and every heap object is released whatever it held.
 #[test]
 fn an_io_result_is_classified_and_released() {
     let before = live();
@@ -956,16 +976,6 @@ fn an_io_result_is_classified_and_released() {
         );
     }
     assert_eq!(live(), before, "every classified result must be freed");
-}
-
-/// `BaseIO` cannot fail, so an error result means the boundary is broken, and
-/// the discharge refuses to continue.  On the host `fatal` panics, which is the
-/// observable.
-#[test]
-#[should_panic(expected = "a BaseIO export returned a result BaseIO cannot produce")]
-fn a_non_ok_base_io_result_halts() {
-    // SAFETY: a fresh `IO` error result owned here.
-    unsafe { discharge_base_io(LeanIoResult(io_result_mk_error(boxed(0))), "test_export") };
 }
 
 /// WS-BP BP4.3: the device tree's copy is a `ByteArray` of exactly the blob's

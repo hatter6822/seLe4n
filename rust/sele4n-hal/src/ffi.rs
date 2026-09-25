@@ -101,8 +101,9 @@ pub extern "C" fn ffi_timer_read_counter() -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerReprogram`
 #[no_mangle]
-pub extern "C" fn ffi_timer_reprogram() {
+pub extern "C" fn ffi_timer_reprogram() -> crate::lean_runtime::Obj {
     crate::timer::reprogram_timer();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Get the current tick count from the timer driver.
@@ -143,8 +144,9 @@ pub extern "C" fn ffi_timer_get_tick_count() -> u64 {
 /// race the other timer-state tests).
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTimerAdvanceTickCount`
 #[no_mangle]
-pub extern "C" fn ffi_timer_advance_tick_count() {
+pub extern "C" fn ffi_timer_advance_tick_count() -> crate::lean_runtime::Obj {
     let _ = crate::timer::increment_tick_count();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Acknowledge a pending GIC interrupt (read GICC_IAR).
@@ -163,8 +165,9 @@ pub extern "C" fn ffi_gic_acknowledge() -> u32 {
 /// fire again.
 /// Lean binding: `SeLe4n.Platform.FFI.ffiGicEoi`
 #[no_mangle]
-pub extern "C" fn ffi_gic_eoi(intid: u32) {
+pub extern "C" fn ffi_gic_eoi(intid: u32) -> crate::lean_runtime::Obj {
     crate::gic::end_of_interrupt(crate::gic::GICC_BASE, intid);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Check if an interrupt ID is spurious (INTID >= 1020).
@@ -194,8 +197,9 @@ pub extern "C" fn ffi_gic_is_spurious(intid: u32) -> bool {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiAll`
 #[no_mangle]
-pub extern "C" fn ffi_tlbi_all() {
+pub extern "C" fn ffi_tlbi_all() -> crate::lean_runtime::Obj {
     crate::tlb::tlbi_vmalle1();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Flush TLB entries by ASID at EL1 (TLBI ASIDE1 + DSB ISH + ISB).
@@ -205,8 +209,9 @@ pub extern "C" fn ffi_tlbi_all() {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByAsid`
 #[no_mangle]
-pub extern "C" fn ffi_tlbi_by_asid(asid: u16) {
+pub extern "C" fn ffi_tlbi_by_asid(asid: u16) -> crate::lean_runtime::Obj {
     crate::tlb::tlbi_aside1(asid);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Flush TLB entries by virtual address + ASID at EL1 (TLBI VAE1 + DSB ISH + ISB).
@@ -216,8 +221,9 @@ pub extern "C" fn ffi_tlbi_by_asid(asid: u16) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiByVaddr`
 #[no_mangle]
-pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) {
+pub extern "C" fn ffi_tlbi_by_vaddr(asid: u16, vaddr: u64) -> crate::lean_runtime::Obj {
     crate::tlb::tlbi_vae1(asid, vaddr);
+    crate::lean_runtime::base_io_unit()
 }
 
 // ============================================================================
@@ -321,7 +327,12 @@ const fn decode_tlb_invalidation_tag(
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTlbiForSharing`
 #[no_mangle]
-pub extern "C" fn ffi_tlbi_for_sharing(domain_tag: u32, op_tag: u32, asid: u16, vaddr: u64) {
+pub extern "C" fn ffi_tlbi_for_sharing(
+    domain_tag: u32,
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) -> crate::lean_runtime::Obj {
     // Audit-pass-1: fail-closed on unknown tags.  Silent fallback
     // (the pre-audit behaviour) violated the kernel's correctness
     // contract — the caller assumed the TLB was invalidated.
@@ -342,6 +353,7 @@ pub extern "C" fn ffi_tlbi_for_sharing(domain_tag: u32, op_tag: u32, asid: u16, 
         ),
     };
     crate::tlb::tlbi_for_sharing(domain, op);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Read a 32-bit value from an MMIO address using volatile semantics.
@@ -356,8 +368,9 @@ pub extern "C" fn ffi_mmio_read32(addr: u64) -> u32 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiMmioWrite32`
 #[no_mangle]
-pub extern "C" fn ffi_mmio_write32(addr: u64, val: u32) {
+pub extern "C" fn ffi_mmio_write32(addr: u64, val: u32) -> crate::lean_runtime::Obj {
     crate::mmio::mmio_write32(addr as usize, val);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Read a 64-bit value from an MMIO address using volatile semantics.
@@ -372,8 +385,9 @@ pub extern "C" fn ffi_mmio_read64(addr: u64) -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiMmioWrite64`
 #[no_mangle]
-pub extern "C" fn ffi_mmio_write64(addr: u64, val: u64) {
+pub extern "C" fn ffi_mmio_write64(addr: u64, val: u64) -> crate::lean_runtime::Obj {
     crate::mmio::mmio_write64(addr as usize, val);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Transmit a single character on the debug UART (PL011).
@@ -381,8 +395,9 @@ pub extern "C" fn ffi_mmio_write64(addr: u64, val: u64) {
 /// Blocks until the TX FIFO has space. Used for kernel debug output.
 /// Lean binding: `SeLe4n.Platform.FFI.ffiUartPutc`
 #[no_mangle]
-pub extern "C" fn ffi_uart_putc(c: u8) {
+pub extern "C" fn ffi_uart_putc(c: u8) -> crate::lean_runtime::Obj {
     crate::uart::boot_puts(&[c]);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Disable all maskable interrupts (set PSTATE.DAIF = 0b1111).
@@ -398,16 +413,18 @@ pub extern "C" fn ffi_disable_interrupts() -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRestoreInterrupts`
 #[no_mangle]
-pub extern "C" fn ffi_restore_interrupts(saved_daif: u64) {
+pub extern "C" fn ffi_restore_interrupts(saved_daif: u64) -> crate::lean_runtime::Obj {
     crate::interrupts::restore_interrupts(saved_daif);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// Enable IRQ delivery (clear PSTATE.I).
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiEnableInterrupts`
 #[no_mangle]
-pub extern "C" fn ffi_enable_interrupts() {
+pub extern "C" fn ffi_enable_interrupts() -> crate::lean_runtime::Obj {
     crate::interrupts::enable_irq();
+    crate::lean_runtime::base_io_unit()
 }
 
 // ============================================================================
@@ -434,8 +451,9 @@ pub extern "C" fn ffi_enable_interrupts() {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgi`
 #[no_mangle]
-pub extern "C" fn ffi_send_sgi(target_mask: u8, intid: u8) {
+pub extern "C" fn ffi_send_sgi(target_mask: u8, intid: u8) -> crate::lean_runtime::Obj {
     crate::gic::send_sgi(target_mask, intid);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM1.F.6**: Send an SGI to the calling core only.
@@ -444,8 +462,9 @@ pub extern "C" fn ffi_send_sgi(target_mask: u8, intid: u8) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToSelf`
 #[no_mangle]
-pub extern "C" fn ffi_send_sgi_to_self(intid: u8) {
+pub extern "C" fn ffi_send_sgi_to_self(intid: u8) -> crate::lean_runtime::Obj {
     crate::gic::send_sgi_to_self(intid);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM1.F.6**: Send an SGI to all cores except the caller.
@@ -454,8 +473,9 @@ pub extern "C" fn ffi_send_sgi_to_self(intid: u8) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiSendSgiToAllButSelf`
 #[no_mangle]
-pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) {
+pub extern "C" fn ffi_send_sgi_to_all_but_self(intid: u8) -> crate::lean_runtime::Obj {
     crate::gic::send_sgi_to_all_but_self(intid);
+    crate::lean_runtime::base_io_unit()
 }
 
 // ============================================================================
@@ -519,11 +539,12 @@ fn shootdown_core_id_checked(core_id: u64, caller: &str) -> usize {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownAckRound`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_ack_round(core_id: u64, gen: u64) {
+pub extern "C" fn ffi_shootdown_ack_round(core_id: u64, gen: u64) -> crate::lean_runtime::Obj {
     crate::shootdown::ack_round(
         shootdown_core_id_checked(core_id, "ffi_shootdown_ack_round"),
         gen,
     );
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM7.F.3**: Acquire-load the highest round generation the
@@ -615,8 +636,9 @@ pub extern "C" fn ffi_shootdown_allocate_round_generation() -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownRoundLockRelease`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_round_lock_release() {
+pub extern "C" fn ffi_shootdown_round_lock_release() -> crate::lean_runtime::Obj {
     crate::shootdown::round_lock_release();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM7.B.6 + SM7.B.7**: park this PE permanently — the
@@ -692,8 +714,9 @@ pub extern "C" fn ffi_shootdown_online_mask() -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishBegin`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_publish_begin() {
+pub extern "C" fn ffi_shootdown_publish_begin() -> crate::lean_runtime::Obj {
     crate::shootdown::publish_begin_in(&crate::shootdown::SHOOTDOWN_OPS);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM7.B (debt (1))**: write one operand at slot `index` into the
@@ -704,7 +727,12 @@ pub extern "C" fn ffi_shootdown_publish_begin() {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishSlot`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16, vaddr: u64) {
+pub extern "C" fn ffi_shootdown_publish_slot(
+    index: u64,
+    op_tag: u32,
+    asid: u16,
+    vaddr: u64,
+) -> crate::lean_runtime::Obj {
     crate::shootdown::publish_slot_in(
         &crate::shootdown::SHOOTDOWN_OPS,
         index as usize,
@@ -714,6 +742,7 @@ pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16,
             vaddr,
         },
     );
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM7.B (debt (1)) + SM7.F.3**: commit the publish of `len`
@@ -724,8 +753,9 @@ pub extern "C" fn ffi_shootdown_publish_slot(index: u64, op_tag: u32, asid: u16,
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiShootdownPublishCommit`
 #[no_mangle]
-pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
+pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) -> crate::lean_runtime::Obj {
     crate::shootdown::publish_commit_in(&crate::shootdown::SHOOTDOWN_OPS, len as usize, gen);
+    crate::lean_runtime::base_io_unit()
 }
 
 // ============================================================================
@@ -744,7 +774,14 @@ pub extern "C" fn ffi_shootdown_publish_commit(len: u64, gen: u64) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiSyscallReturnFrame`
 #[no_mangle]
-pub extern "C" fn ffi_syscall_return_frame(x0: u64, x1: u64, x2: u64, x3: u64, x4: u64, x5: u64) {
+pub extern "C" fn ffi_syscall_return_frame(
+    x0: u64,
+    x1: u64,
+    x2: u64,
+    x3: u64,
+    x4: u64,
+    x5: u64,
+) -> crate::lean_runtime::Obj {
     // Deliberately the SAME core-id source as the mailbox's reader
     // (`dispatch_svc` keys both its entry-lock bracket and its
     // `return_frame_read_in` on `per_cpu::current_core_id_from_tpidr()`).
@@ -767,6 +804,7 @@ pub extern "C" fn ffi_syscall_return_frame(x0: u64, x1: u64, x2: u64, x3: u64, x
         core,
         [x0, x1, x2, x3, x4, x5],
     );
+    crate::lean_runtime::base_io_unit()
 }
 
 // ============================================================================
@@ -831,8 +869,9 @@ pub extern "C" fn ffi_current_core_id() -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIdleWait`.
 #[no_mangle]
-pub extern "C" fn ffi_idle_wait() {
+pub extern "C" fn ffi_idle_wait() -> crate::lean_runtime::Obj {
     crate::cpu::idle_wait();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM1.I.3**: bounded variant of [`ffi_idle_wait`].
@@ -1070,8 +1109,9 @@ pub extern "C" fn ffi_ticket_lock_acquire(handle: u64) -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiTicketLockRelease`.
 #[no_mangle]
-pub extern "C" fn ffi_ticket_lock_release(handle: u64) {
+pub extern "C" fn ffi_ticket_lock_release(handle: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::ticket_lock_release(handle);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM2.D.1**: peek at the `TicketLock`'s holder state.
@@ -1115,16 +1155,18 @@ pub extern "C" fn ffi_rw_lock_static_handle(idx: u64) -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireRead`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_acquire_read(handle: u64) {
+pub extern "C" fn ffi_rw_lock_acquire_read(handle: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_acquire_read(handle);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM2.D.2**: release a read lock on the `RwLock` identified by `handle`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseRead`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_release_read(handle: u64) {
+pub extern "C" fn ffi_rw_lock_release_read(handle: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_release_read(handle);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-LC LC3.7**: begin a cancellable acquisition on `handle`, in
@@ -1149,8 +1191,9 @@ pub extern "C" fn ffi_rw_lock_is_served(handle: u64, ticket: u64) -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCompleteRead`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_complete_read(handle: u64, ticket: u64) {
+pub extern "C" fn ffi_rw_lock_complete_read(handle: u64, ticket: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_complete_read(handle, ticket);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-LC LC3.7**: complete a write acquisition begun with
@@ -1158,8 +1201,9 @@ pub extern "C" fn ffi_rw_lock_complete_read(handle: u64, ticket: u64) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockCompleteWrite`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_complete_write(handle: u64, ticket: u64) {
+pub extern "C" fn ffi_rw_lock_complete_write(handle: u64, ticket: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_complete_write(handle, ticket);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-LC LC3.7**: withdraw a request begun with `ffi_rw_lock_enqueue`,
@@ -1185,16 +1229,18 @@ pub extern "C" fn ffi_rw_lock_cancel_count(handle: u64) -> u64 {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockAcquireWrite`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_acquire_write(handle: u64) {
+pub extern "C" fn ffi_rw_lock_acquire_write(handle: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_acquire_write(handle);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM2.D.2**: release a write lock on the `RwLock` identified by `handle`.
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiRwLockReleaseWrite`.
 #[no_mangle]
-pub extern "C" fn ffi_rw_lock_release_write(handle: u64) {
+pub extern "C" fn ffi_rw_lock_release_write(handle: u64) -> crate::lean_runtime::Obj {
     crate::lock_bridge::rw_lock_release_write(handle);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM2.D.2**: snapshot of the `RwLock` state.
@@ -1394,8 +1440,9 @@ pub const SUSPEND_BEFORE_LEAN_READY_STATUS: u32 = 2;
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiCacheCleanPagetableRange`
 #[no_mangle]
-pub extern "C" fn cache_clean_pagetable_range(addr: u64, len: u64) {
-    clean_pagetable_range_within_identity_map(addr, len)
+pub extern "C" fn cache_clean_pagetable_range(addr: u64, len: u64) -> crate::lean_runtime::Obj {
+    clean_pagetable_range_within_identity_map(addr, len);
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-RR RR7.2**: the plain-Rust body of [`cache_clean_pagetable_range`].
@@ -1430,8 +1477,9 @@ pub(crate) fn clean_pagetable_range_within_identity_map(addr: u64, len: u64) {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcIallu`
 #[no_mangle]
-pub extern "C" fn cache_ic_iallu() {
+pub extern "C" fn cache_ic_iallu() -> crate::lean_runtime::Obj {
     crate::cache::ic_iallu();
+    crate::lean_runtime::base_io_unit()
 }
 
 /// **WS-SM SM7.D.1**: Invalidate all instruction caches across the Inner
@@ -1446,8 +1494,9 @@ pub extern "C" fn cache_ic_iallu() {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcIalluIs`
 #[no_mangle]
-pub extern "C" fn cache_ic_ialluis() {
+pub extern "C" fn cache_ic_ialluis() -> crate::lean_runtime::Obj {
     crate::cache::ic_invalidate_all_inner_shareable();
+    crate::lean_runtime::base_io_unit()
 }
 
 // ===========================================================================
@@ -1488,11 +1537,16 @@ pub extern "C" fn cache_ic_ialluis() {
 ///
 /// Lean binding: `SeLe4n.Platform.FFI.ffiIcMaintenance`
 #[no_mangle]
-pub extern "C" fn cache_ic_maintenance(op_tag: u32, addr: u64, size: u64) {
+pub extern "C" fn cache_ic_maintenance(
+    op_tag: u32,
+    addr: u64,
+    size: u64,
+) -> crate::lean_runtime::Obj {
     match crate::cache::decode_icache_invalidation(op_tag, addr, size) {
         Some(op) => crate::cache::apply_icache_invalidation(op),
         None => panic!("cache_ic_maintenance: invalid op_tag {op_tag}"),
     }
+    crate::lean_runtime::base_io_unit()
 }
 
 // AN9-D inner (WS-SM SM6.E: per-core form) — Lean-emitted
@@ -1878,7 +1932,7 @@ mod tests {
         // Pin the FFI signature.  A future ABI change would break
         // every Lean caller — pinning here surfaces the regression
         // at compile time.
-        let _: extern "C" fn(u32, u32, u16, u64) = ffi_tlbi_for_sharing;
+        let _: extern "C" fn(u32, u32, u16, u64) -> crate::lean_runtime::Obj = ffi_tlbi_for_sharing;
     }
 
     #[test]
@@ -1935,9 +1989,9 @@ mod tests {
     #[test]
     fn ffi_send_sgi_signature_pin() {
         // Pin every FFI export's signature.
-        let _: extern "C" fn(u8, u8) = ffi_send_sgi;
-        let _: extern "C" fn(u8) = ffi_send_sgi_to_self;
-        let _: extern "C" fn(u8) = ffi_send_sgi_to_all_but_self;
+        let _: extern "C" fn(u8, u8) -> crate::lean_runtime::Obj = ffi_send_sgi;
+        let _: extern "C" fn(u8) -> crate::lean_runtime::Obj = ffi_send_sgi_to_self;
+        let _: extern "C" fn(u8) -> crate::lean_runtime::Obj = ffi_send_sgi_to_all_but_self;
     }
 
     #[test]
@@ -1986,7 +2040,7 @@ mod tests {
     #[test]
     fn ffi_idle_wait_signatures_pinned() {
         // Pin the FFI export signatures.
-        let _: extern "C" fn() = ffi_idle_wait;
+        let _: extern "C" fn() -> crate::lean_runtime::Obj = ffi_idle_wait;
         let _: extern "C" fn(u64) -> u64 = ffi_idle_wait_bounded;
     }
 
@@ -2216,16 +2270,16 @@ mod tests {
     fn ffi_signatures_pinned() {
         let _t_handle: extern "C" fn(u64) -> u64 = ffi_ticket_lock_static_handle;
         let _t_acq: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire;
-        let _t_rel: extern "C" fn(u64) = ffi_ticket_lock_release;
+        let _t_rel: extern "C" fn(u64) -> crate::lean_runtime::Obj = ffi_ticket_lock_release;
         let _t_peek: extern "C" fn(u64) -> u64 = ffi_ticket_lock_peek_holder;
         let _t_ac: extern "C" fn(u64) -> u64 = ffi_ticket_lock_acquire_count;
         let _t_rc: extern "C" fn(u64) -> u64 = ffi_ticket_lock_release_count;
 
         let _r_handle: extern "C" fn(u64) -> u64 = ffi_rw_lock_static_handle;
-        let _r_ar: extern "C" fn(u64) = ffi_rw_lock_acquire_read;
-        let _r_rr: extern "C" fn(u64) = ffi_rw_lock_release_read;
-        let _r_aw: extern "C" fn(u64) = ffi_rw_lock_acquire_write;
-        let _r_rw: extern "C" fn(u64) = ffi_rw_lock_release_write;
+        let _r_ar: extern "C" fn(u64) -> crate::lean_runtime::Obj = ffi_rw_lock_acquire_read;
+        let _r_rr: extern "C" fn(u64) -> crate::lean_runtime::Obj = ffi_rw_lock_release_read;
+        let _r_aw: extern "C" fn(u64) -> crate::lean_runtime::Obj = ffi_rw_lock_acquire_write;
+        let _r_rw: extern "C" fn(u64) -> crate::lean_runtime::Obj = ffi_rw_lock_release_write;
         let _r_snap: extern "C" fn(u64) -> u64 = ffi_rw_lock_snapshot;
         let _r_arc: extern "C" fn(u64) -> u64 = ffi_rw_lock_acquire_read_count;
         let _r_rrc: extern "C" fn(u64) -> u64 = ffi_rw_lock_release_read_count;
@@ -2418,7 +2472,7 @@ mod tests {
     fn ffi_shootdown_signatures_pinned() {
         // Pin every shootdown FFI export signature; an ABI change
         // that broke the Lean @[extern] bindings would surface here.
-        let _: extern "C" fn(u64, u64) = ffi_shootdown_ack_round;
+        let _: extern "C" fn(u64, u64) -> crate::lean_runtime::Obj = ffi_shootdown_ack_round;
         let _: extern "C" fn(u64) -> u64 = ffi_shootdown_acked_generation;
         let _: extern "C" fn(u64, u64) -> u64 = ffi_shootdown_all_acked_for_round;
         let _: extern "C" fn(u64) -> u64 = ffi_shootdown_self_service_round;
@@ -2426,7 +2480,7 @@ mod tests {
         // (gen, initiator, online_mask, timeout_ticks) rather than
         // re-reading CORE_IRQ_READY on the Rust side.
         let _: extern "C" fn(u64, u64, u64, u64) -> u64 = ffi_shootdown_wait_all_acked;
-        let _: extern "C" fn(u64, u64) = ffi_shootdown_publish_commit;
+        let _: extern "C" fn(u64, u64) -> crate::lean_runtime::Obj = ffi_shootdown_publish_commit;
     }
 
     /// **PR #854 review**: the fail-closed halt seams are non-returning
