@@ -1175,6 +1175,22 @@ def _scalar_close(text: str, start: int) -> int:
 # content rather than YAML syntax.
 BLOCK_SCALAR = re.compile(r"[^\n]*:[ \t]*[|>][-+]?\d*[ \t]*(?=\n|$)")
 
+# A SHA-pinned GitHub Action reference is an immutable content address, not an
+# identifier chosen by this repository.  Its hexadecimal payload can
+# coincidentally contain a registered two-letter workstream family followed by
+# a digit (for example, `...@02cb1...`).  Blank only the 40-hex ref following
+# `@`; the action owner and repository remain visible to the naming gate.
+GITHUB_ACTION_SHA = re.compile(
+    r"(?m)(^[ \t]*(?:-[ \t]*)?uses:[ \t]*[^\s#@]+@)([0-9a-fA-F]{40})(?=[ \t]*(?:#|$))"
+)
+
+
+def strip_github_action_shas(text: str) -> str:
+    """Blank immutable SHA refs in YAML `uses:` values, preserving offsets."""
+    return GITHUB_ACTION_SHA.sub(
+        lambda m: m.group(1) + " " * len(m.group(2)), text
+    )
+
 
 def strip_config(text: str) -> str:
     """YAML / TOML / plain-text data: blank `#` comments, keep the rest.
@@ -1202,6 +1218,7 @@ def strip_config(text: str) -> str:
     failure modes over-KEEP, which turns prose into false positives --
     the direction that gets a gate switched off.
     """
+    text = strip_github_action_shas(text)
     out, i, n = [], 0, len(text)
     # Value position: what may precede a quote that opens a scalar.
     # `-` is YAML's block-sequence indicator, so `- "echo # x"` is a

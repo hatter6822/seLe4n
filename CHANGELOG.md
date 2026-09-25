@@ -1,3 +1,12 @@
+## v0.35.36 — Exempt pinned GitHub Action SHAs from identifier naming
+
+Fixed the Tier 0 identifier-naming gate so immutable 40-character commit SHAs
+in GitHub Actions `uses:` references cannot be mistaken for internal workstream
+codes.  The YAML scanner blanks only the digest while continuing to scan the
+action owner and repository, with regression witnesses for the exact and
+near-miss forms.  This unblocks SHA-pinned dependency updates without weakening
+the internal-first naming policy.
+
 ## v0.35.35 — PR #895 review round 22: the name a claim cites is its load-bearing half
 
 Four P2 findings, and the pattern across them is one this branch has been

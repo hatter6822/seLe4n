@@ -105,6 +105,17 @@ check("rb is not an f-string prefix",
       CODED in gate.strip_hash("x = rb" + q + "{" + CODED + "}" + q), False)
 check("a comment is blanked", CODED in gate.strip_hash("# " + CODED), False)
 
+# A pinned action's SHA is a content address supplied by an upstream project,
+# not a local identifier.  A digest may accidentally spell a registered
+# family plus phase number, while the action name itself must remain scanned.
+action_sha = "02" + "cb1" + "01ec7c40f2c49e1d9714d64511d8e1b74de"
+action_line = "      - uses: dtolnay/rust-toolchain@" + action_sha + " # master\n"
+action_view = gate.strip_config(action_line)
+check("a GitHub Action SHA is blanked", action_sha in action_view, False)
+check("a GitHub Action name remains visible", "rust-toolchain" in action_view, True)
+check("only a full 40-hex action ref is blanked",
+      "cb1" in gate.strip_config("- uses: owner/repo@02cb1\n"), True)
+
 
 # --- Shell is not Python, and its two quote kinds differ --------------
 # Sharing the Python stripper blanked quoted shell as prose, so an
